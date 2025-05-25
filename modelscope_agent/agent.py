@@ -11,9 +11,6 @@ from modelscope_agent.tools.base import (TOOL_REGISTRY, BaseTool,
 from modelscope_agent.utils.qwen_agent.base import (BaseChatModel,
                                                     get_chat_model)
 
-# from qwen_agent.llm import get_chat_model
-# from qwen_agent.llm.base import BaseChatModel
-
 
 def enable_run_callback(func):
 
@@ -113,7 +110,6 @@ class Agent(ABC):
     @enable_run_callback
     def run(self, messages: List[Union[Dict, 'Message']], **kwargs
             ) -> Union[Iterator[List['Message']], Iterator[List[Dict]]]:
-        # from qwen_agent.llm.schema import CONTENT, DEFAULT_SYSTEM_MESSAGE, ROLE, SYSTEM, ContentItem, Message
         from modelscope_agent.utils.qwen_agent.schema import CONTENT, ROLE, SYSTEM, ContentItem, Message
         """Return one response generator based on the received messages.
 
@@ -169,7 +165,6 @@ class Agent(ABC):
     # @abstractmethod
     def _run(self, messages: List, *args, **kwargs):
         from modelscope_agent.utils.qwen_agent.schema import FUNCTION
-        # from qwen_agent.llm.schema import FUNCTION
 
         stream = kwargs.get('stream', True)
         messages = copy.deepcopy(messages)
