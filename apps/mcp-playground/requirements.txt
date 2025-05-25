@@ -1,5 +1,5 @@
 exceptiongroup
-fastmcp   # todo: tbd...
+fastmcp
 gradio
 http://modelscope-agent.oss-cn-hangzhou.aliyuncs.com/tmp/modelscope_agent-0.8.0rc2-py3-none-any.whl
 langchain
@@ -10,4 +10,3 @@ langgraph
 mcp
 modelscope_studio==1.2.3
 oss2
-qwen-agent==0.0.21
