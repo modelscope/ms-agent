@@ -2,7 +2,8 @@ from datetime import datetime
 from typing import Dict, Union
 
 from modelscope_agent import Agent
-from qwen_agent.llm.base import BaseChatModel
+# from qwen_agent.llm.base import BaseChatModel
+from modelscope_agent.utils.qwen_agent.base import BaseChatModel
 
 
 class AgentWithMCP(Agent):
