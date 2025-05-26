@@ -4,6 +4,7 @@ import re
 import time
 import traceback
 from functools import wraps
+from werkzeug.utils import secure_filename
 
 import json
 import requests
@@ -93,7 +94,8 @@ def builder_chat(uuid_str):
     for file in files:
         ci_dir = get_user_ci_dir()
         os.makedirs(ci_dir, exist_ok=True)
-        file_path = os.path.join(ci_dir, uuid_str + '_' + file.filename)
+        secure_fn = secure_filename(file.filename)
+        file_path = os.path.join(ci_dir, uuid_str + '_' + secure_fn)
         if '../' in file_path:
             raise Exception('Access not allowed.')
         file.save(file_path)
@@ -225,7 +227,8 @@ def import_builder(uuid_str):
             return jsonify({'error': 'No selected file'}), 400
 
         # 保存文件到服务器的文件系统
-        file_path = os.path.join(IMPORT_ZIP_TEMP_DIR, uuid_str, file.filename)
+        secure_fn = secure_filename(file.filename)
+        file_path = os.path.join(IMPORT_ZIP_TEMP_DIR, uuid_str, secure_fn)
         if '../' in file_path:
             raise Exception('Access not allowed.')
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -318,7 +321,8 @@ def save_builder_config(uuid_str):
     if not os.path.exists(upload_dir):
         os.makedirs(upload_dir)
     for file in files:
-        file_path = os.path.join(upload_dir, file.filename)
+        secure_fn = secure_filename(file.filename)
+        file_path = os.path.join(upload_dir, secure_fn)
         if '../' in file_path:
             raise Exception('Access not allowed.')
         file.save(file_path)
