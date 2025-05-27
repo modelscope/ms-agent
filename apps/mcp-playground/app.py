@@ -290,14 +290,14 @@ def cancel(chatbot_value):
         user_config=user_config())
 
 
-async def retry(config_form_value, mcp_config_value, mcp_servers_btn_value,
+def retry(config_form_value, mcp_config_value, mcp_servers_btn_value,
                 chatbot_value, oss_state_value, e: gr.EventData):
     index = e._data['payload'][0]['index']
     chatbot_value = chatbot_value[:index]
-
-    async for chunk in submit(None, config_form_value, mcp_config_value,
+    res = submit(None, config_form_value, mcp_config_value,
                               mcp_servers_btn_value, chatbot_value,
-                              oss_state_value):
+                              oss_state_value)
+    for chunk in res:
         yield chunk
 
 
