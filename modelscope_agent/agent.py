@@ -209,7 +209,6 @@ class Agent(ABC):
                 if not used_any_tool:
                     break
         yield response
-        print(f'messages: {messages}')
 
     def _call_tool(self,
                    tool_name: str,

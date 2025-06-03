@@ -156,6 +156,7 @@ def submit(input_value, config_form_value, mcp_config_value,
 
         agent_messages = format_messages(chatbot_value[:-1],
                                          oss_state_value['oss_cache'])
+        # response = agent_executor.run(agent_messages[-1]["content"], history=history_config["history"])
         response = agent_executor.run(agent_messages, history=history_config)
         text = ''
         tool_name = ''
@@ -246,7 +247,10 @@ def submit(input_value, config_form_value, mcp_config_value,
                 tool_args = ''
                 tool_content = ''
                 current_content[-1]['options']['status'] = 'done'
+                # faca_dic["content"] = faca_dic["content"] + f'\n\n**🎯 结果**\n```\n{chunk_content}\n```'
             yield gr.skip(), gr.skip(), gr.update(value=chatbot_value)
+        print('ok')
+        # yield gr.skip(), gr.skip(), gr.update(value=chatbot_value)
     except ExceptionGroup as eg:
         e = eg.exceptions[0]
         chatbot_value[-1]['loading'] = False
@@ -287,11 +291,12 @@ def cancel(chatbot_value):
 
 
 def retry(config_form_value, mcp_config_value, mcp_servers_btn_value,
-          chatbot_value, oss_state_value, e: gr.EventData):
+                chatbot_value, oss_state_value, e: gr.EventData):
     index = e._data['payload'][0]['index']
     chatbot_value = chatbot_value[:index]
     res = submit(None, config_form_value, mcp_config_value,
-                 mcp_servers_btn_value, chatbot_value, oss_state_value)
+                              mcp_servers_btn_value, chatbot_value,
+                              oss_state_value)
     for chunk in res:
         yield chunk
 
