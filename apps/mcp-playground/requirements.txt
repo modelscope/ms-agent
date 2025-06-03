@@ -2,11 +2,6 @@ exceptiongroup
 fastmcp
 gradio
 http://modelscope-agent.oss-cn-hangzhou.aliyuncs.com/releases/v0.8.0/modelscope_agent-0.8.0rc3-py3-none-any.whl
-langchain
-langchain-openai
-langchain_core
-langchain_mcp_adapters
-langgraph
 mcp
-modelscope_studio==1.2.3
+modelscope_studio==1.4.0
 oss2

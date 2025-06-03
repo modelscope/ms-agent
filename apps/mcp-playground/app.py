@@ -1,6 +1,6 @@
 # flake8: noqa: E501
 import os
-
+from uuid import uuid4 as uuid
 import gradio as gr
 import json
 import modelscope_studio.components.antd as antd
@@ -12,7 +12,7 @@ from config import (bot_avatars, bot_config, default_locale,
                     default_mcp_config, default_mcp_prompts,
                     default_mcp_servers, default_theme, mcp_prompt_model,
                     model_options, model_options_map, primary_color,
-                    user_config, welcome_config)
+                    user_config, welcome_config, default_addition_prompt)
 from env import api_key, internal_mcp_config
 from exceptiongroup import ExceptionGroup
 from modelscope_agent.agents.agent_with_mcp import AgentWithMCP
@@ -21,6 +21,7 @@ from modelscope_studio.components.pro.multimodal_input import \
     MultimodalInputUploadConfig
 from openai import AsyncOpenAI
 from tools.oss import file_path_to_oss_url
+from logger import logger, request_id_var
 from ui_components.config_form import ConfigForm
 from ui_components.mcp_servers_button import McpServersButton
 
@@ -28,8 +29,11 @@ from ui_components.mcp_servers_button import McpServersButton
 def run_install(command: str):
     import subprocess
     try:
-        result = subprocess.run(
-            command, capture_output=True, text=True, shell=True, check=True)
+        result = subprocess.run(command,
+                                capture_output=True,
+                                text=True,
+                                shell=True,
+                                check=True)
         print('STDOUT:', result.stdout)
         print('STDERR:', result.stderr)
         print(f"'{command}' executed successfully.")
@@ -98,6 +102,7 @@ def submit(input_value, config_form_value, mcp_config_value,
         (x for x in model_options if x['value'] == model_value))
     model_params = model_config.get('model_params', {})
     sys_prompt = config_form_value.get('sys_prompt', '')
+    sys_prompt = sys_prompt + default_addition_prompt
     history_config = config_form_value.get('history_config', [])
 
     enabled_mcp_servers = [
@@ -138,14 +143,18 @@ def submit(input_value, config_form_value, mcp_config_value,
         tool_name = ''
         tool_args = ''
         tool_content = ''
+        # set request id
+        request_id_var.set(uuid())
 
         in_api_config = {
             'model': model,
             'model_server': 'https://api-inference.modelscope.cn/v1/',
             'api_key': api_key,
         }
-        mcp_config = merge_mcp_config(
-            json.loads(mcp_config_value), internal_mcp_config)
+        in_api_config['generate_cfg'] = model_params
+        print(f'in_api_config: {in_api_config}')
+        mcp_config = merge_mcp_config(json.loads(mcp_config_value),
+                                      internal_mcp_config)
         mcp_config = parse_mcp_config(mcp_config, enabled_mcp_servers)
 
         agent_executor = AgentWithMCP(
@@ -156,8 +165,8 @@ def submit(input_value, config_form_value, mcp_config_value,
 
         agent_messages = format_messages(chatbot_value[:-1],
                                          oss_state_value['oss_cache'])
-        # response = agent_executor.run(agent_messages[-1]["content"], history=history_config["history"])
         response = agent_executor.run(agent_messages, history=history_config)
+
         text = ''
         tool_name = ''
         tool_args = ''
@@ -174,7 +183,66 @@ def submit(input_value, config_form_value, mcp_config_value,
             #     prev_chunk_type = "text"
             # for msg in chunk:
             if msg['role'] == 'assistant':
-                if msg.get('reasoning_content'):
+                if msg.get('content') or msg.get('function_call'):
+                    if prev_chunk_type == 'think':
+                        current_content[-1]['options'] = {
+                            'title': '已深度思考',
+                            'status': 'done'
+                        }
+                    if msg.get('content'):
+                        msg_type = 'text'
+                        if prev_chunk_type != msg_type:
+                            current_content.append({})
+                        assert isinstance(msg['content'],
+                                          str), 'Now only supports text messages'
+                        if not isinstance(current_content[-1].get('content'), str):
+                            current_content[-1]['content'] = ''
+                        current_content[-1]['type'] = 'text'
+                        current_content[-1]['content'] = msg['content']
+                        prev_chunk_type = msg_type
+                    if msg.get('function_call'):
+                        msg_type = 'tool_call'
+                        if prev_chunk_type != msg_type:
+                            current_content.append({})
+
+                        current_content[-1]['type'] = 'tool'
+                        current_content[-1]['editable'] = False
+                        current_content[-1]['copyable'] = False
+                        if not isinstance(current_content[-1].get('options'),
+                                          dict):
+                            current_content[-1]['options'] = {
+                                'title': '思考中...',
+                                'status': 'pending'
+                            }
+                        if msg['function_call']['name']:
+                            _mcp, _tool = msg['function_call']['name'].split('---')
+                            format_tool_name = f'[{_mcp}] {_tool}'
+                            if use_tool:
+                                last_tool = tool_name.split('   ')[-1]
+                                # deepseek api 存在多返回'}\n</tool'后又在下一chunk删除的情况
+                                if last_tool != format_tool_name or (
+                                        tool_args
+                                        not in msg['function_call']['arguments']
+                                        and tool_args.strip('}\n</tool')
+                                        != msg['function_call']['arguments'].strip(
+                                    '}\n</tool').strip('}')):
+                                    tool_name = tool_name + '   ' + format_tool_name
+                                    tool_content = tool_content + f'**📝 参数**\n```json\n{tool_args}\n```\n\n'
+                                    tool_args = ''
+                                    current_content[-1]['options'][
+                                        'title'] = f'**🔧 调用 MCP 工具** `{tool_name}`'
+                            else:
+                                tool_name = format_tool_name
+                                current_content[-1]['options'][
+                                    'title'] = f'**🔧 调用 MCP 工具** `{tool_name}`'
+                        if msg['function_call']['arguments']:
+                            tool_args = msg['function_call']['arguments']
+                            current_content[-1][
+                                'content'] = tool_content + f'**📝 参数**\n```json\n{tool_args}\n```\n\n'
+                        if msg['function_call']['name']:
+                            use_tool = True
+                        prev_chunk_type = msg_type
+                elif msg.get('reasoning_content'):
                     msg_type = 'think'
                     if prev_chunk_type != msg_type:
                         current_content.append({})
@@ -182,61 +250,14 @@ def submit(input_value, config_form_value, mcp_config_value,
                                       str), 'Now only supports text messages'
                     if not isinstance(current_content[-1].get('content'), str):
                         current_content[-1]['content'] = ''
-                    current_content[-1]['type'] = 'text'
+                    current_content[-1]['type'] = 'tool'
+                    current_content[-1]['options'] = {
+                        'title': '思考中...',
+                        'status': 'pending'
+                    }
                     current_content[-1]['content'] = msg['reasoning_content']
                     prev_chunk_type = msg_type
-                if msg.get('content'):
-                    msg_type = 'text'
-                    if prev_chunk_type != msg_type:
-                        current_content.append({})
-                    assert isinstance(msg['content'],
-                                      str), 'Now only supports text messages'
-                    if not isinstance(current_content[-1].get('content'), str):
-                        current_content[-1]['content'] = ''
-                    current_content[-1]['type'] = 'text'
-                    current_content[-1]['content'] = msg['content']
-                    prev_chunk_type = msg_type
-                if msg.get('function_call'):
-                    msg_type = 'tool_call'
-                    if prev_chunk_type != msg_type:
-                        current_content.append({})
 
-                    current_content[-1]['type'] = 'tool'
-                    current_content[-1]['editable'] = False
-                    current_content[-1]['copyable'] = False
-                    if not isinstance(current_content[-1].get('options'),
-                                      dict):
-                        current_content[-1]['options'] = {
-                            'title': '',
-                            'status': 'pending'
-                        }
-                    if use_tool:
-                        last_tool = tool_name.split(' ')[-1]
-                        # deepseek api 存在多返回'}\n</tool'后又在下一chunk删除的情况
-                        if (msg['function_call']['name']
-                                and last_tool != msg['function_call']['name']
-                            ) or (tool_args
-                                  not in msg['function_call']['arguments']
-                                  and tool_args.strip('}\n</tool') !=
-                                  msg['function_call']['arguments'].strip(
-                                      '}\n</tool').strip('}')):
-                            tool_name = tool_name + ' ' + msg['function_call'][
-                                'name']
-                            tool_content = tool_content + f'**📝 参数**\n```json\n{tool_args}\n```\n\n'
-                            tool_args = ''
-                            current_content[-1]['options'][
-                                'title'] = f'**🔧 调用 MCP 工具** `{tool_name}`'
-                    elif msg['function_call']['name']:
-                        tool_name = msg['function_call']['name']
-                        current_content[-1]['options'][
-                            'title'] = f'**🔧 调用 MCP 工具** `{tool_name}`'
-                    if msg['function_call']['arguments']:
-                        tool_args = msg['function_call']['arguments']
-                        current_content[-1][
-                            'content'] = tool_content + f'**📝 参数**\n```json\n{tool_args}\n```\n\n'
-                    if msg['function_call']['name']:
-                        use_tool = True
-                    prev_chunk_type = msg_type
             if msg['role'] == 'function':
                 use_tool = False
                 chunk_content = msg['content']
@@ -247,10 +268,8 @@ def submit(input_value, config_form_value, mcp_config_value,
                 tool_args = ''
                 tool_content = ''
                 current_content[-1]['options']['status'] = 'done'
-                # faca_dic["content"] = faca_dic["content"] + f'\n\n**🎯 结果**\n```\n{chunk_content}\n```'
+            print(f'current_content : {current_content}')
             yield gr.skip(), gr.skip(), gr.update(value=chatbot_value)
-        print('ok')
-        # yield gr.skip(), gr.skip(), gr.update(value=chatbot_value)
     except ExceptionGroup as eg:
         e = eg.exceptions[0]
         chatbot_value[-1]['loading'] = False
@@ -260,7 +279,9 @@ def submit(input_value, config_form_value, mcp_config_value,
             'content':
             f'<span style="color: var(--color-red-500)">{str(e)}</span>'
         }]
-        print('Error: ', e)
+        logger.error({
+            "error": str(e),
+        })
         raise gr.Error(str(e))
     except Exception as e:
         chatbot_value[-1]['loading'] = False
@@ -270,10 +291,27 @@ def submit(input_value, config_form_value, mcp_config_value,
             'content':
             f'<span style="color: var(--color-red-500)">{str(e)}</span>'
         }]
-        print('Error: ', e)
+        logger.error({
+            "error": str(e),
+        })
         raise gr.Error(str(e))
     finally:
-        chatbot_value[-1]['status'] = 'done'
+        chatbot_value[-1]["status"] = "done"
+        logger.info({
+            "model":
+            model,
+            "sys_prompt":
+            sys_prompt,
+            "messages":
+            chatbot_value,
+            **({
+                "mcp_servers": mcp_config
+            } if mcp_config is not None else {
+                   "mcp_servers": None,
+                   "mcp_config": mcp_config_value,
+                   "enabled_mcp_servers": enabled_mcp_servers
+               })
+        })
         yield gr.update(loading=False), gr.update(disabled=False), gr.update(
             value=chatbot_value,
             bot_config=bot_config(),
@@ -290,14 +328,13 @@ def cancel(chatbot_value):
         user_config=user_config())
 
 
-async def retry(config_form_value, mcp_config_value, mcp_servers_btn_value,
-                chatbot_value, oss_state_value, e: gr.EventData):
+def retry(config_form_value, mcp_config_value, mcp_servers_btn_value,
+          chatbot_value, oss_state_value, e: gr.EventData):
     index = e._data['payload'][0]['index']
     chatbot_value = chatbot_value[:index]
-
-    async for chunk in submit(None, config_form_value, mcp_config_value,
-                              mcp_servers_btn_value, chatbot_value,
-                              oss_state_value):
+    res = submit(None, config_form_value, mcp_config_value,
+                 mcp_servers_btn_value, chatbot_value, oss_state_value)
+    for chunk in res:
         yield chunk
 
 
@@ -399,23 +436,19 @@ def load(mcp_servers_btn_value, browser_state_value, url_mcp_config_value):
             url_mcp_config = json.loads(url_mcp_config_value)
         except:
             url_mcp_config = {}
-        return gr.update(
-            value=json.dumps(
-                merge_mcp_config(
-                    json.loads(browser_state_value['mcp_config']),
-                    url_mcp_config),
-                indent=4)), gr.update(
-                    welcome_config=welcome_config(
-                        browser_state_value['mcp_prompts'])), gr.update(
-                            value=mcp_servers_btn_value)
+        return gr.update(value=json.dumps(
+            merge_mcp_config(json.loads(browser_state_value['mcp_config']),
+                             url_mcp_config),
+            indent=4)), gr.update(welcome_config=welcome_config(
+                browser_state_value['mcp_prompts'])), gr.update(
+                    value=mcp_servers_btn_value)
     elif url_mcp_config_value:
         try:
             url_mcp_config = json.loads(url_mcp_config_value)
         except:
             url_mcp_config = {}
-        return gr.update(
-            value=json.dumps(merge_mcp_config(url_mcp_config, {}),
-                             indent=4)), gr.skip(), gr.skip()
+        return gr.update(value=json.dumps(merge_mcp_config(url_mcp_config, {}),
+                                          indent=4)), gr.skip(), gr.skip()
     return gr.skip()
 
 
@@ -470,42 +503,64 @@ with gr.Blocks(css=css, js=js) as demo:
     with ms.Application(), antdx.XProvider(
             locale=default_locale, theme=default_theme), ms.AutoLoading():
 
-        with antd.Badge.Ribbon(placement='start'):
-            with ms.Slot('text'):
+        with antd.Badge.Ribbon(placement="end", color="#6b7280"):
+            with ms.Slot("text"):
                 with antd.Typography.Link(
-                        elem_style=dict(color='#fff'),
-                        type='link',
-                        href='https://modelscope.cn/mcp',
-                        href_target='_blank'):
-                    with antd.Flex(
-                            align='center', gap=2, elem_style=dict(padding=2)):
-                        antd.Icon(
-                            'ExportOutlined', elem_style=dict(marginRight=4))
-                        ms.Text('前往')
-                        antd.Image(
-                            './assets/modelscope-mcp.png',
-                            preview=False,
-                            width=20,
-                            height=20)
-                        ms.Text('ModelScope MCP 广场')
-            with ms.Div(elem_style=dict(overflow='hidden')):
-                with antd.Flex(
-                        justify='center',
-                        gap='small',
-                        align='center',
-                        elem_classes='mcp-playground-header'):
-                    with ms.Div(elem_style=dict(flexShrink=0, display='flex')):
-                        antd.Image(
-                            './assets/logo.png',
-                            preview=False,
-                            elem_style=dict(backgroundColor='#fff'),
-                            width=50,
-                            height=50)
-                    antd.Typography.Title(
-                        'MCP Playground',
-                        level=1,
-                        elem_style=dict(fontSize=28, margin=0))
-
+                        elem_style=dict(color="#fff"),
+                        type="link",
+                        href=
+                        "https://modelscope.cn/studios/modelscope/mcp-playground-v1",
+                        href_target="_blank"):
+                    with antd.Flex(align="center",
+                                   gap=2,
+                                   elem_style=dict(padding=2)):
+                        antd.Icon("ExportOutlined",
+                                  elem_style=dict(marginRight=4))
+                        ms.Text("回到旧版")
+            with antd.Badge.Ribbon(placement="start"):
+                with ms.Slot("text"):
+                    with antd.Typography.Link(elem_style=dict(color="#fff"),
+                                              type="link",
+                                              href="https://modelscope.cn/mcp",
+                                              href_target="_blank"):
+                        with antd.Flex(align="center",
+                                       gap=2,
+                                       elem_style=dict(padding=2)):
+                            antd.Icon("ExportOutlined",
+                                      elem_style=dict(marginRight=4))
+                            ms.Text("前往")
+                            antd.Image("./assets/modelscope-mcp.png",
+                                       preview=False,
+                                       width=20,
+                                       height=20)
+                            ms.Text("ModelScope MCP 广场")
+                with ms.Div(elem_style=dict(overflow="hidden")):
+                    with antd.Flex(justify="center",
+                                   gap="small",
+                                   align="center",
+                                   elem_classes="mcp-playground-header"):
+                        with ms.Div(
+                                elem_style=dict(flexShrink=0, display='flex')):
+                            antd.Image("./assets/logo.png",
+                                       preview=False,
+                                       elem_style=dict(backgroundColor="#fff"),
+                                       width=50,
+                                       height=50)
+                        antd.Typography.Title("MCP Playground",
+                                              level=1,
+                                              elem_style=dict(fontSize=28,
+                                                              margin=0))
+                with antd.Divider(plain=True, elem_style=dict(margin=6)):
+                    with antd.Flex(align="center", gap=4):
+                        ms.Text("Powered by")
+                        antd.Icon("GithubOutlined")
+                        with antd.Typography.Link(
+                                href=
+                                "https://github.com/modelscope/modelscope-agent",
+                                href_target="_blank",
+                                elem_style=dict(display="flex",
+                                                alignItems="center")):
+                            ms.Text("modelscope-agent")
         with antd.Tabs():
             with antd.Tabs.Item(label='实验场'):
                 with antd.Flex(
@@ -513,20 +568,17 @@ with gr.Blocks(css=css, js=js) as demo:
                         gap='middle',
                         elem_style=dict(
                             height=
-                            'calc(100vh - 46px - 16px - 50px - 16px - 16px - 21px - 16px)',
+                            'calc(100vh - 46px - 16px - 50px - 16px - 16px - 21px - 16px - 22px - 6px - 6px)',
                             maxHeight=1500)):
                     with antd.Card(
-                            elem_style=dict(
-                                flex=1,
-                                height=0,
-                                display='flex',
-                                flexDirection='column'),
-                            styles=dict(
-                                body=dict(
-                                    flex=1,
-                                    height=0,
-                                    display='flex',
-                                    flexDirection='column'))):
+                            elem_style=dict(flex=1,
+                                            height=0,
+                                            display='flex',
+                                            flexDirection='column'),
+                            styles=dict(body=dict(flex=1,
+                                                  height=0,
+                                                  display='flex',
+                                                  flexDirection='column'))):
                         chatbot = pro.Chatbot(
                             height=0,
                             bot_config=bot_config(),
@@ -551,9 +603,9 @@ with gr.Blocks(css=css, js=js) as demo:
                                 allow_speech=True,
                                 max_count=10)) as input:
                         with ms.Slot('prefix'):
-                            with antd.Button(
-                                    value=None, variant='text',
-                                    color='default') as clear_btn:
+                            with antd.Button(value=None,
+                                             variant='text',
+                                             color='default') as clear_btn:
                                 with ms.Slot('icon'):
                                     antd.Icon('ClearOutlined')
                             mcp_servers_btn = McpServersButton(
@@ -573,17 +625,18 @@ with gr.Blocks(css=css, js=js) as demo:
         inputs=[mcp_servers_btn, browser_state, url_mcp_config],
         outputs=[mcp_config, chatbot, mcp_servers_btn])
 
-    chatbot.welcome_prompt_select(
-        fn=select_welcome_prompt, inputs=[input], outputs=[input], queue=False)
+    chatbot.welcome_prompt_select(fn=select_welcome_prompt,
+                                  inputs=[input],
+                                  outputs=[input],
+                                  queue=False)
     retry_event = chatbot.retry(
         fn=retry,
         inputs=[config_form, mcp_config, mcp_servers_btn, chatbot, oss_state],
         outputs=[input, clear_btn, chatbot])
     clear_btn.click(fn=clear, outputs=[chatbot], queue=False)
-    mcp_servers_btn.change(
-        fn=save_mcp_servers,
-        inputs=[mcp_servers_btn, browser_state],
-        outputs=[browser_state])
+    mcp_servers_btn.change(fn=save_mcp_servers,
+                           inputs=[mcp_servers_btn, browser_state],
+                           outputs=[browser_state])
 
     load_success_save_mcp_config_event = load_event.success(
         fn=save_mcp_config_wrapper(initial=True),
@@ -599,19 +652,17 @@ with gr.Blocks(css=css, js=js) as demo:
         inputs=[mcp_servers_btn],
         outputs=[mcp_config, mcp_servers_btn, chatbot, browser_state],
         cancels=[save_mcp_config_event, load_success_save_mcp_config_event])
-    submit_event = input.submit(
-        fn=submit,
-        inputs=[
-            input, config_form, mcp_config, mcp_servers_btn, chatbot, oss_state
-        ],
-        outputs=[input, clear_btn, chatbot])
-    input.cancel(
-        fn=cancel,
-        inputs=[chatbot],
-        outputs=[input, clear_btn, chatbot],
-        cancels=[submit_event, retry_event],
-        queue=False)
+    submit_event = input.submit(fn=submit,
+                                inputs=[
+                                    input, config_form, mcp_config,
+                                    mcp_servers_btn, chatbot, oss_state
+                                ],
+                                outputs=[input, clear_btn, chatbot])
+    input.cancel(fn=cancel,
+                 inputs=[chatbot],
+                 outputs=[input, clear_btn, chatbot],
+                 cancels=[submit_event, retry_event],
+                 queue=False)
 
-demo.queue(
-    default_concurrency_limit=100, max_size=100).launch(
-        ssr_mode=False, max_threads=100)
+demo.queue(default_concurrency_limit=100, max_size=100).launch(ssr_mode=False,
+                                                               max_threads=100)

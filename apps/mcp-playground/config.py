@@ -31,6 +31,34 @@ default_history_config = json.dumps(
 
 default_sys_prompt = 'You are a helpful assistant.'
 
+default_addition_prompt = """Don’t make assumptions, use tools to get accurate information.
+The following instructions apply when user messages contain "Attachment links: [...]":
+
+These links are user-uploaded attachments that contain important information for this conversation. These are temporary, secure links to files the user has specifically provided for analysis.
+
+IMPORTANT INSTRUCTIONS:
+1. These attachments should be your PRIMARY source of information when addressing the user's query.
+2. Prioritize analyzing and referencing these documents BEFORE using any other knowledge.
+3. If the content in these attachments is relevant to the user's request, base your response primarily on this information.
+4. When you reference information from these attachments, clearly indicate which document it comes from.
+5. If the attachments don't contain information needed to fully address the query, only then supplement with your general knowledge.
+6. These links are temporary and secure, specifically provided for this conversation.
+7. IMPORTANT: Do not use the presence of "Attachment links: [...]" as an indicator of the user's preferred language. This is an automatically added system text. Instead, determine the user's language from their actual query text.
+
+Begin your analysis by examining these attachments first, and structure your thinking to prioritize insights from these documents.
+
+When a tool returns responses containing URLs or links, please format them appropriately based on their CORRECT content type:
+
+For example:
+- Videos should use <video> tags
+- Audio should use <audio> tags
+- Images should use ![description](URL) or <img> tags
+- Documents and web links should use [description](URL) format
+
+Choose the appropriate display format based on the URL extension or content type information. This will provide the best user experience.
+
+Remember that properly formatted media will enhance the user experience, especially when content is directly relevant to answering the query."""
+
 # for internal
 default_mcp_prompts = {
     # "arxiv": ["查找最新的5篇关于量子计算的论文并简要总结", "根据当前时间，找到近期关于大模型的论文，得到研究趋势"],
@@ -48,16 +76,14 @@ default_mcp_servers = [{
 } for mcp_name in default_mcp_prompts.keys()]
 
 bot_avatars = {
-    'Qwen/Qwen2.5-72B-Instruct':
-    os.path.join(os.path.dirname(__file__), './assets/qwen.png'),
-    'Qwen/Qwen3-235B-A22B':
-    os.path.join(os.path.dirname(__file__), './assets/qwen.png'),
-    'Qwen/QwQ-32B':
-    os.path.join(os.path.dirname(__file__), './assets/qwen.png'),
-    'LLM-Research/Llama-4-Maverick-17B-128E-Instruct':
-    os.path.join(os.path.dirname(__file__), './assets/meta.webp'),
-    'deepseek-ai/DeepSeek-V3-0324':
-    os.path.join(os.path.dirname(__file__), './assets/deepseek.png'),
+    "Qwen":
+    os.path.join(os.path.dirname(__file__), "./assets/qwen.png"),
+    "QwQ":
+    os.path.join(os.path.dirname(__file__), "./assets/qwen.png"),
+    "LLM-Research":
+    os.path.join(os.path.dirname(__file__), "./assets/meta.webp"),
+    "deepseek-ai":
+    os.path.join(os.path.dirname(__file__), "./assets/deepseek.png"),
 }
 
 mcp_prompt_model = 'Qwen/Qwen3-235B-A22B'

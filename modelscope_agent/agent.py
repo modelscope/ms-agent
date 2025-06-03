@@ -171,8 +171,6 @@ class Agent(ABC):
         num_llm_calls_available = 20
         response = []
         extra_generate_cfg = {'lang': 'zh'}
-        enable_thinking = kwargs.get('enable_thinking', False)
-        extra_generate_cfg['extra_body'] = {'enable_thinking': enable_thinking}
         if kwargs.get('seed') is not None:
             extra_generate_cfg['seed'] = kwargs['seed']
         while True and num_llm_calls_available > 0:
