@@ -1,7 +1,7 @@
 exceptiongroup
 fastmcp
 gradio
-http://modelscope-agent.oss-cn-hangzhou.aliyuncs.com/releases/v0.8.0/modelscope_agent-0.8.0rc3-py3-none-any.whl
+http://modelscope-agent.oss-cn-hangzhou.aliyuncs.com/releases/v0.8.0/modelscope_agent-0.8.0rc5-py3-none-any.whl
 mcp
 modelscope_studio==1.4.0
 oss2
