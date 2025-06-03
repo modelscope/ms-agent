@@ -48,14 +48,16 @@ default_mcp_servers = [{
 } for mcp_name in default_mcp_prompts.keys()]
 
 bot_avatars = {
-    "Qwen":
-    os.path.join(os.path.dirname(__file__), "./assets/qwen.png"),
-    "QwQ":
-    os.path.join(os.path.dirname(__file__), "./assets/qwen.png"),
-    "LLM-Research":
-    os.path.join(os.path.dirname(__file__), "./assets/meta.webp"),
-    "deepseek-ai":
-    os.path.join(os.path.dirname(__file__), "./assets/deepseek.png"),
+    'Qwen/Qwen2.5-72B-Instruct':
+    os.path.join(os.path.dirname(__file__), './assets/qwen.png'),
+    'Qwen/Qwen3-235B-A22B':
+    os.path.join(os.path.dirname(__file__), './assets/qwen.png'),
+    'Qwen/QwQ-32B':
+    os.path.join(os.path.dirname(__file__), './assets/qwen.png'),
+    'LLM-Research/Llama-4-Maverick-17B-128E-Instruct':
+    os.path.join(os.path.dirname(__file__), './assets/meta.webp'),
+    'deepseek-ai/DeepSeek-V3-0324':
+    os.path.join(os.path.dirname(__file__), './assets/deepseek.png'),
 }
 
 mcp_prompt_model = 'Qwen/Qwen3-235B-A22B'
