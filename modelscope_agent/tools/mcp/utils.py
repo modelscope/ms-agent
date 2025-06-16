@@ -1,3 +1,5 @@
+import os
+
 def fix_json_brackets(json_str):
     # 初始化堆栈和结果字符串
     stack = []

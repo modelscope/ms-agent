@@ -2,11 +2,13 @@ import os
 import shutil
 from contextlib import AsyncExitStack
 from types import TracebackType
+from datetime import timedelta
 from typing import Any, Dict, Literal
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.sse import sse_client
 from mcp.client.stdio import stdio_client
+
 
 EncodingErrorHandler = Literal['strict', 'ignore', 'replace']
 
@@ -16,6 +18,8 @@ DEFAULT_ENCODING_ERROR_HANDLER: EncodingErrorHandler = 'strict'
 DEFAULT_HTTP_TIMEOUT = 5
 DEFAULT_SSE_READ_TIMEOUT = 60 * 5
 
+DEFAULT_STREAMABLE_HTTP_TIMEOUT = timedelta(seconds=30)
+DEFAULT_STREAMABLE_HTTP_SSE_READ_TIMEOUT = timedelta(seconds=60 * 5)
 
 class MCPClient:
 
@@ -55,6 +59,7 @@ class MCPClient:
 
     async def connect_to_server(self, server_name: str, **kwargs):
         print(f'kwargs: {kwargs}')
+        transport = kwargs.get('transport')
         command = kwargs.get('command')
         url = kwargs.get('url')
         session_kwargs = kwargs.get('session_kwargs')
@@ -62,16 +67,58 @@ class MCPClient:
             raise ValueError(
                 "'url' or 'command' parameter is required for connection")
         if url:
-            # transport: 'sse'
-            sse_transport = await self.exit_stack.enter_async_context(
-                sse_client(
-                    url, kwargs.get('headers'),
-                    kwargs.get('timeout', DEFAULT_HTTP_TIMEOUT),
-                    kwargs.get('sse_read_timeout', DEFAULT_SSE_READ_TIMEOUT)))
-            read, write = sse_transport
-            session_kwargs = session_kwargs or {}
-            session = await self.exit_stack.enter_async_context(
-                ClientSession(read, write, **session_kwargs))
+            if transport == 'streamable_http':
+                try:
+                    from mcp.client.streamable_http import streamablehttp_client
+                except ImportError:
+                    raise ImportError(
+                        "Could not import streamablehttp_client. ",
+                        "To use streamable http connections, please upgrade the required dependency with: ",
+                        "'pip install -U mcp'",
+                    ) from None
+                httpx_client_factory = kwargs.get("httpx_client_factory")
+                other_kwargs = {}
+                if httpx_client_factory is not None:
+                    other_kwargs['httpx_client_factory'] = httpx_client_factory
+                streamable_transport = await self.exit_stack.enter_async_context(
+                    streamablehttp_client(
+                        url,
+                        headers=kwargs.get('headers'),
+                        timeout=kwargs.get('timeout', DEFAULT_HTTP_TIMEOUT),
+                        sse_read_timeout=kwargs.get("sse_read_timeout", DEFAULT_STREAMABLE_HTTP_SSE_READ_TIMEOUT),
+                        **other_kwargs
+                    )
+                )
+                read, write, _ = streamable_transport
+                session_kwargs = session_kwargs or {}
+                session = await self.exit_stack.enter_async_context(
+                    ClientSession(read, write, **session_kwargs))
+            elif transport == 'websocket':
+                try:
+                    from mcp.client.websocket import websocket_client
+                except ImportError:
+                    raise ImportError(
+                        "Could not import websocket_client. ",
+                        "To use Websocket connections, please install the required dependency with: ",
+                        "'pip install mcp[ws]' or 'pip install websockets'",
+                    ) from None
+                websocket_transport = await self.exit_stack.enter_async_context(
+                    websocket_client(url)
+                )
+                read, write = websocket_transport
+                session_kwargs = session_kwargs or {}
+                session = await self.exit_stack.enter_async_context(
+                    ClientSession(read, write, **session_kwargs))
+            else:
+                sse_transport = await self.exit_stack.enter_async_context(
+                    sse_client(
+                        url, kwargs.get('headers'),
+                        kwargs.get('timeout', DEFAULT_HTTP_TIMEOUT),
+                        kwargs.get('sse_read_timeout', DEFAULT_SSE_READ_TIMEOUT)))
+                read, write = sse_transport
+                session_kwargs = session_kwargs or {}
+                session = await self.exit_stack.enter_async_context(
+                    ClientSession(read, write, **session_kwargs))
 
         elif command:
             # transport: 'stdio'
