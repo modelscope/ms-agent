@@ -218,6 +218,8 @@ class BaseTool(ABC):
                     'description':
                     para['description']
                 }
+                if 'type' in para and para['type'] == 'array':
+                    function_details['items'] = para['items']
                 if 'enum' in para and para['enum'] not in ['', []]:
                     function_details['enum'] = para['enum']
                 function['parameters']['properties'][
