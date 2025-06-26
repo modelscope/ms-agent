@@ -5,9 +5,8 @@ from typing import Dict, Optional, Type
 from ms_agent.agent import Agent
 from ms_agent.config import Config
 from ms_agent.utils import get_logger
+from ms_agent.workflow.base import Workflow
 from omegaconf import DictConfig
-
-from .base import Workflow
 
 logger = get_logger()
 
