@@ -5,12 +5,12 @@ import sys
 from contextlib import contextmanager
 from typing import List, Optional
 
-from modelscope_agent.agent.runtime import Runtime
-from modelscope_agent.callbacks import Callback
-from modelscope_agent.llm.utils import Message
-from modelscope_agent.tools.filesystem_tool import FileSystemTool
-from modelscope_agent.utils import get_logger
 from file_parser import extract_code_blocks
+from ms_agent.agent.runtime import Runtime
+from ms_agent.callbacks import Callback
+from ms_agent.llm.utils import Message
+from ms_agent.tools.filesystem_tool import FileSystemTool
+from ms_agent.utils import get_logger
 from omegaconf import DictConfig
 
 logger = get_logger()
@@ -54,10 +54,13 @@ class EvalCallback(Callback):
     @staticmethod
     def check_install():
         try:
-            result = subprocess.run(
-                ['npm', 'install'], capture_output=True, text=True, check=True)
+            result = subprocess.run(['npm', 'install'],
+                                    capture_output=True,
+                                    text=True,
+                                    check=True)
         except subprocess.CalledProcessError as e:
-            output = (e.stdout.decode('utf-8') if e.stdout else '') + '\n' + (e.stderr.decode('utf-8') if e.stderr else '')
+            output = (e.stdout.decode('utf-8') if e.stdout else '') + '\n' + (
+                e.stderr.decode('utf-8') if e.stderr else '')
         else:
             output = result.stdout + '\n' + result.stderr
         return output
@@ -66,17 +69,17 @@ class EvalCallback(Callback):
     def check_runtime():
         try:
             os.system('pkill -f node')
-            result = subprocess.run(
-                ['npm', 'run', 'dev'],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                stdin=subprocess.DEVNULL
-            )
+            result = subprocess.run(['npm', 'run', 'dev'],
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=5,
+                                    stdin=subprocess.DEVNULL)
         except subprocess.CalledProcessError as e:
-            output = (e.stdout.decode('utf-8') if e.stdout else '') + '\n' + (e.stderr.decode('utf-8') if e.stderr else '')
+            output = (e.stdout.decode('utf-8') if e.stdout else '') + '\n' + (
+                e.stderr.decode('utf-8') if e.stderr else '')
         except subprocess.TimeoutExpired as e:
-            output = (e.stdout.decode('utf-8') if e.stdout else '') + '\n' + (e.stderr.decode('utf-8') if e.stderr else '')
+            output = (e.stdout.decode('utf-8') if e.stdout else '') + '\n' + (
+                e.stderr.decode('utf-8') if e.stderr else '')
         else:
             output = result.stdout + '\n' + result.stderr
         os.system('pkill -f node')
@@ -104,18 +107,21 @@ class EvalCallback(Callback):
         self.cur_round = 0
         return input('>>> Feedback:')
 
-    async def do_arch_update(self, runtime: Runtime, messages: List[Message], updated_arch: str):
+    async def do_arch_update(self, runtime: Runtime, messages: List[Message],
+                             updated_arch: str):
         _arch_update_system = """You are an assistant that helps architect maintain and update PRDs & code architectures. The architect's workflow is:
 
 1. Design PRD & architecture based on original requirements
 2. Allocate tasks to complete requirements according to PRD & code architecture
 3. Fix bugs or add new requirements based on user feedback
 
-However, when fixing bugs or adding new requirements, it may involve the updating the PRD & code architecture. 
-Next, I will provide you with the original design and the parts that need to be updated. You need to help me merge these two parts into a complete design.
+However, when fixing bugs or adding new requirements, it may involve the updating the PRD & code architecture.
+Next, I will provide you with the original design and the parts that need to be updated.
+You need to help me merge these two parts into a complete design.
 
 Your instructions to follow:
-1. Accurately assess which parts of the original design need to be modified&merged based on the updates, and carefully merge them without missing any information
+1. Accurately assess which parts of the original design need to be modified&merged based on the updates,
+and carefully merge them without missing any information
 2. Avoid making the PRD & code architecture increasingly lengthy after merging - you need to avoid redundant information
 3. Discard any content which does not belong to PRD & architecture, like:
     * Imprecise information
@@ -143,7 +149,7 @@ Now let's begin:
             Message(role='system', content=_arch_update_system),
             Message(role='user', content=query),
         ]
-        logger.info(f'[Arch Updater]: ')
+        logger.info('[Arch Updater]: ')
         _content = ''
         for _response_message in runtime.llm.generate(_messages):
             new_content = _response_message.content[len(_content):]
@@ -151,7 +157,8 @@ Now let's begin:
             sys.stdout.flush()
             _content = _response_message.content
 
-        front, design = _response_message.content.split('```text:design.txt', maxsplit=1) # noqa
+        front, design = _response_message.content.split(
+            '```text:design.txt', maxsplit=1)  # noqa
         design, end = design.rsplit('```', 1)
         return design
 
@@ -159,7 +166,8 @@ Now let's begin:
         _classify_system = """You are an assistant help me to identify whether a feedback is an issue or a new feature.
 
 You need to follow these instructions:
-1. Only return as an issue when it's a pure bug. If the feedback contains any new feature requirements, define it as a feature.
+1. Only return as an issue when it's a pure bug. If the feedback contains any new feature requirements,
+define it as a feature.
 2. Return only `issue` or `feature`, do not return anything else.
 
 Now begin:
@@ -213,7 +221,8 @@ For example:
 To fix this bug, the ... module need to add ... fix ... replace ...
 
 ```text:design.txt
-//Only place the actual changes of architecture here, you only need to output the **changed** parts, and mark clearly how to update.
+//Only place the actual changes of architecture here, you only need to output the **changed** parts,
+and mark clearly how to update.
 1. Add Route ...
 2. Add new files ...
 3. User interface changed to ...
@@ -264,16 +273,16 @@ After updating, you do not need to verify or run `npm install/build`, the build/
 
     async def after_generate_response(self, runtime: Runtime,
                                       messages: List[Message]):
-        design, _ = extract_code_blocks(messages[-1].content, target_filename='design.txt')
+        design, _ = extract_code_blocks(
+            messages[-1].content, target_filename='design.txt')
         if len(design) > 0:
-            front, design = messages[-1].content.split('```text:design.txt', maxsplit=1)
+            front, design = messages[-1].content.split(
+                '```text:design.txt', maxsplit=1)
             design, end = design.rsplit('```', 1)
             design = design.strip()
             if design:
-                messages[2].content = await self.do_arch_update(runtime=runtime,
-                                                                messages=messages,
-                                                                updated_arch=design)
-
+                messages[2].content = await self.do_arch_update(
+                    runtime=runtime, messages=messages, updated_arch=design)
 
     async def after_tool_call(self, runtime: Runtime, messages: List[Message]):
         runtime.should_stop = runtime.should_stop and self.feedback_ended

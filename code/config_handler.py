@@ -1,4 +1,4 @@
-from modelscope_agent.config.config import ConfigLifecycleHandler
+from ms_agent.config.config import ConfigLifecycleHandler
 from omegaconf import DictConfig
 
 
@@ -9,9 +9,7 @@ class ConfigHandler(ConfigLifecycleHandler):
         if tag == 'Architecture':
             if '235' in config.llm.model:
                 # 235B model works better with an arch review
-                config.callbacks = [
-                    'codes/coding_callback'
-                ]
+                config.callbacks = ['codes/coding_callback']
             else:
                 config.callbacks = ['codes/coding_callback']
         elif tag == 'Refiner':

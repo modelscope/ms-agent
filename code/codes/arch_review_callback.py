@@ -1,10 +1,10 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 from typing import List
 
-from modelscope_agent.agent import Runtime
-from modelscope_agent.callbacks import Callback
-from modelscope_agent.llm import Message
-from modelscope_agent.utils import get_logger
+from ms_agent.agent import Runtime
+from ms_agent.callbacks import Callback
+from ms_agent.llm import Message
+from ms_agent.utils import get_logger
 from omegaconf import DictConfig
 
 logger = get_logger()
@@ -73,7 +73,7 @@ Now Begin:
         query = (
             f'The original requirement is: \n```text\n{messages[1].content}\n```\n\n '
             f'The plan and tasks given by the architect is: \n```text\n{messages[2].content}\n```\n\n '
-            f'The task arguments is : \n```json\n{messages[2].tool_calls[0] if messages[2].tool_calls else "Tool not called."}\n```\n\n'
+            f'The task arguments is : \n```json\n{messages[2].tool_calls[0] if messages[2].tool_calls else "Tool not called."}\n```\n\n'  # noqa
         )
 
         _messages = [

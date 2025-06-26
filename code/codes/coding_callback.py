@@ -2,11 +2,11 @@
 from typing import List
 
 import json
-from modelscope_agent.agent.runtime import Runtime
-from modelscope_agent.callbacks import Callback
-from modelscope_agent.llm.utils import Message
-from modelscope_agent.tools.filesystem_tool import FileSystemTool
-from modelscope_agent.utils import get_logger
+from ms_agent.agent.runtime import Runtime
+from ms_agent.callbacks import Callback
+from ms_agent.llm.utils import Message
+from ms_agent.tools.filesystem_tool import FileSystemTool
+from ms_agent.utils import get_logger
 from omegaconf import DictConfig
 
 logger = get_logger()
