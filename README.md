@@ -95,12 +95,12 @@ To start, all you need to do is initialize an `RolePlay` object with correspondi
      - Using the qwen-max model requires replacing YOUR_DASHSCOPE_API_KEY in the example with your API-KEY for the code to run properly. YOUR_DASHSCOPE_API_KEY can be obtained [here](https://help.aliyun.com/zh/dashscope/developer-reference/activate-dashscope-and-create-an-api-key). The drawing tool also calls DASHSCOPE API (wanx), so no additional configuration is required.
      - When using the weather forecast tool, you need to replace YOUR_AMAP_TOKEN in the example with your AMAP weather API-KEY so that the code can run normally. YOUR_AMAP_TOKEN is available [here](https://lbs.amap.com/api/javascript-api-v2/guide/services/weather).
 
-
 ```Python
 # 配置环境变量；如果您已经提前将api-key提前配置到您的运行环境中，可以省略这个步骤
 import os
-os.environ['DASHSCOPE_API_KEY']=YOUR_DASHSCOPE_API_KEY
-os.environ['AMAP_TOKEN']=YOUR_AMAP_TOKEN
+
+os.environ['DASHSCOPE_API_KEY'] = YOUR_DASHSCOPE_API_KEY
+os.environ['AMAP_TOKEN'] = YOUR_AMAP_TOKEN
 
 # 选用RolePlay 配置agent
 from modelscope_agent.agents.role_play import RolePlay  # NOQA

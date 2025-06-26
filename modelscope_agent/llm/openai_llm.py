@@ -2,7 +2,8 @@
 import inspect
 from typing import Any, Dict, Generator, Iterable, List, Optional
 
-from modelscope_agent.utils import assert_package_exist, get_logger, retry
+import openai
+from modelscope_agent.utils import get_logger, retry
 from omegaconf import DictConfig, OmegaConf
 from openai.types.chat.chat_completion_message_tool_call import (
     ChatCompletionMessageToolCall, Function)
@@ -30,8 +31,6 @@ class OpenAI(LLM):
                  base_url: Optional[str] = None,
                  api_key: Optional[str] = None):
         super().__init__(config)
-        assert_package_exist('openai')
-        import openai
         self.model: str = config.llm.model
         base_url = base_url or config.llm.openai_base_url
         api_key = api_key or config.llm.openai_api_key

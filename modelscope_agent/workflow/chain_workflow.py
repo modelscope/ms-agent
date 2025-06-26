@@ -1,6 +1,5 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import os.path
-from abc import abstractmethod
 from typing import Dict, Optional, Type
 
 from modelscope_agent.agent import Agent
@@ -73,7 +72,6 @@ class ChainWorkflow(Workflow):
             current_task = next_task
         self.workflow_chains = result
 
-    @abstractmethod
     async def run(self, inputs, **kwargs):
         config = None
         for task in self.workflow_chains:

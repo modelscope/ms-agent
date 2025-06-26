@@ -1,3 +1,4 @@
 dotenv
 modelscope
 omegaconf
+openai
