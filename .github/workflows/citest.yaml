@@ -3,34 +3,25 @@ name: citest
 on:
   push:
     branches:
-      - master
+      - main
       - "release/**"
     paths-ignore:
       - "setup.*"
       - "requirements.txt"
-      - "apps/**"
-      - "docs/**"
-      - "demo/**"
-      - "config/**"
-      - "resource/**"
+      - "output/**"
       - "README.md"
       - "README_CN.md"
-      - "NOTICE"
       - ".github/workflows/lint.yaml"
+      - ".github/workflows/publish.yaml"
 
   pull_request:
     paths-ignore:
       - "setup.*"
       - "requirements.txt"
-      - "apps/**"
-      - "docs/**"
-      - "demo/**"
-      - "config/**"
-      - "resource/**"
       - "README.md"
       - "README_zh-CN.md"
-      - "NOTICE"
       - ".github/workflows/lint.yaml"
+      - ".github/workflows/publish.yaml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
