@@ -14,10 +14,11 @@ echo "${CODE_INTERPRETER_WORK_DIR}"
 # cp file
 cp tests/* "${CODE_INTERPRETER_WORK_DIR}/"
 ls  "${CODE_INTERPRETER_WORK_DIR}"
-pip install playwright
-playwright install --with-deps chromium
+# pip install playwright
+# playwright install --with-deps chromium
 
 # install package
+pip install pytest
 
 # run ci
 pytest tests
