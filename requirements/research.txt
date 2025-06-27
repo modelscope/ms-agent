@@ -1,0 +1,7 @@
+docling
+docling-core
+exa-py
+json5
+mcp
+modelscope
+openai
