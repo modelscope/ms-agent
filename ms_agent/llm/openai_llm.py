@@ -2,13 +2,12 @@
 import inspect
 from typing import Any, Dict, Generator, Iterable, List, Optional
 
+from ms_agent.llm import LLM
+from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.utils import assert_package_exist, get_logger, retry
 from omegaconf import DictConfig, OmegaConf
 from openai.types.chat.chat_completion_message_tool_call import (
     ChatCompletionMessageToolCall, Function)
-
-from .llm import LLM
-from .utils import Message, Tool, ToolCall
 
 logger = get_logger()
 
@@ -315,55 +314,3 @@ class OpenAI(LLM):
             openai_messages.append(message)
 
         return openai_messages
-
-
-if __name__ == '__main__':
-    import os
-
-    # 创建一个嵌套的字典结构
-    conf: DictConfig = OmegaConf.create({
-        'llm': {
-            'model': 'Qwen/Qwen3-235B-A22B',
-            'openai_base_url': 'https://api-inference.modelscope.cn/v1',
-            'openai_api_key': os.getenv('MODELSCOPE_API_KEY'),
-            'generation_config': {
-                'stream': True,
-                'max_tokens': 50
-            }
-        }
-    })
-
-    messages = [
-        Message(role='assistant', content='You are a helpful assistant.'),
-        # Message(role='user', content='经度：116.4074，纬度：39.9042是什么地方。用这个名字作为目录名'),
-        Message(role='user', content='请你简单介绍杭州'),
-    ]
-
-    # tools = [
-    #     Tool(server_name='amap-maps', tool_name='maps_regeocode',
-    #     description='将一个高德经纬度坐标转换为行政区划地址信息',
-    #     parameters={'type': 'object', 'properties': {'location': {'type': 'string', 'description': '经纬度'}},
-    #     'required': ['location']}),
-    #     Tool(tool_name='mkdir', description='在文件系统创建目录',
-    #     parameters={'type': 'object', 'properties': {'dir_name': {'type': 'string', 'description': '目录名'}},
-    #     'required': ['dir_name']})
-    # ]
-    tools = None
-
-    # 打印配置
-    print(OmegaConf.to_yaml(conf))
-
-    llm = OpenAI(conf)
-
-    res = llm.generate(
-        messages=messages, tools=tools, extra_body={'enable_thinking': False})
-    for chunk in res:
-        print(chunk)
-
-    # kwargs覆盖conf
-    # message = llm.generate(messages=messages, tools=tools, stream=False, extra_body={'enable_thinking': False})
-    # print(message)
-    # messages.append(message)
-    # messages.append(Message(role='tool', content='北京市朝阳区崔各庄阿里巴巴朝阳科技园'))
-    # message = llm.generate(messages=messages, tools=tools, stream=False, extra_body={'enable_thinking': False})
-    # print(message)

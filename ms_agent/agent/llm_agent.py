@@ -59,7 +59,8 @@ class LLMAgent(Agent):
         self.task = kwargs.get('task', 'default')
         self.load_cache = kwargs.get('load_cache', True)
         self.mcp_server_file = kwargs.get('mcp_server_file', None)
-        self.mcp_config: Dict[str, Any] = self._parse_mcp_servers(kwargs.get('mcp_config', {}))
+        self.mcp_config: Dict[str, Any] = self._parse_mcp_servers(
+            kwargs.get('mcp_config', {}))
         self._task_begin()
 
     def register_callback(self, callback: Callback):

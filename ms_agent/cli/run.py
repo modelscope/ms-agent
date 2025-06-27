@@ -3,12 +3,13 @@ import argparse
 import asyncio
 import os
 
+from ms_agent.agent.llm_agent import LLMAgent
+from ms_agent.config import Config
+from ms_agent.utils import strtobool
+from ms_agent.workflow.chain_workflow import ChainWorkflow
+
 from modelscope import snapshot_download
 from modelscope.cli.base import CLICommand
-from ms_agent.utils import strtobool
-from ms_agent.config import Config
-from ms_agent.agent.llm_agent import LLMAgent
-from ms_agent.workflow.chain_workflow import ChainWorkflow
 
 
 def subparser_func(args):
@@ -29,10 +30,12 @@ class RunCMD(CLICommand):
         """
         parser: argparse.ArgumentParser = parsers.add_parser(RunCMD.name)
         parser.add_argument(
-            "--query",
+            '--query',
             required=True,
             nargs='+',
-            help="The query or prompt to send to the LLM. Multiple words can be provided as a single query string.")
+            help=
+            'The query or prompt to send to the LLM. Multiple words can be provided as a single query string.'
+        )
         parser.add_argument(
             '--config',
             required=False,
@@ -45,7 +48,8 @@ class RunCMD(CLICommand):
             type=str,
             default='false',
             help=
-            'Trust the code belongs to the config file, set this if you trust the code')
+            'Trust the code belongs to the config file, set this if you trust the code'
+        )
         parser.add_argument(
             '--load_cache',
             required=False,
@@ -59,29 +63,25 @@ class RunCMD(CLICommand):
             required=False,
             type=str,
             default=None,
-            help='The extra mcp server config'
-            )
+            help='The extra mcp server config')
         parser.add_argument(
             '--mcp_server_file',
             required=False,
             type=str,
             default=None,
-            help='An extra mcp server file.'
-        )
+            help='An extra mcp server file.')
         parser.add_argument(
             '--openai_api_key',
             required=False,
             type=str,
             default=None,
-            help='API key for accessing an OpenAI-compatible service.'
-        )
+            help='API key for accessing an OpenAI-compatible service.')
         parser.add_argument(
             '--modelscope_api_key',
             required=False,
             type=str,
             default=None,
-            help='API key for accessing ModelScope api-inference services.'
-        )
+            help='API key for accessing ModelScope api-inference services.')
         parser.set_defaults(func=subparser_func)
 
     def execute(self):
@@ -90,7 +90,8 @@ class RunCMD(CLICommand):
             self.args.config = os.path.join(dir_name, 'agent.yaml')
         if not os.path.exists(self.args.config):
             self.args.config = snapshot_download(self.args.config)
-        self.args.trust_remote_code: bool = strtobool(self.args.trust_remote_code)  # noqa
+        self.args.trust_remote_code: bool = strtobool(
+            self.args.trust_remote_code)  # noqa
         self.args.load_cache = strtobool(self.args.load_cache)
 
         config = Config.from_task(self.args.config)
