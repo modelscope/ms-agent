@@ -127,7 +127,8 @@ if __name__ == '__main__':
     setup(
         name='ms-agent',
         version=get_version(),
-        description='ms-agent: Empowering agents with autonomous exploration',
+        description=
+        'MS-Agent: Lightweight Framework for Empowering Agents with Autonomous Exploration',
         long_description=readme(),
         long_description_content_type='text/markdown',
         author='The ModelScope teams',
@@ -151,7 +152,6 @@ if __name__ == '__main__':
             'Programming Language :: Python :: 3.12',
         ],
         license='Apache License 2.0',
-        # tests_require=parse_requirements('requirements/tests.txt'),
         install_requires=install_requires,
         extras_require=extra_requires,
         entry_points={'console_scripts': ['ms-agent=ms_agent.cli:main']},
