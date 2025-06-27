@@ -61,14 +61,7 @@ jobs:
 
     - name: Run tests
       env:
-        AMAP_TOKEN: ${{ secrets.AMAP_TOKEN }}
-        BING_SEARCH_V7_SUBSCRIPTION_KEY: ${{ secrets.BING_SEARCH_V7_SUBSCRIPTION_KEY }}
-        DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
-        MODELSCOPE_API_TOKEN: ${{ secrets.MODELSCOPE_API_TOKEN }}
-        OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
-        OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
-        OSS_BUCKET_NAME: ${{ secrets.OSS_BUCKET_NAME }}
-        OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
       shell: bash
       run: bash .dev_scripts/dockerci.sh
