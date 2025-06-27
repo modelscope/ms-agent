@@ -3,3 +3,4 @@ mcp
 modelscope
 numpy
 omegaconf
+openai
