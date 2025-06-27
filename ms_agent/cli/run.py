@@ -3,68 +3,110 @@ import argparse
 import asyncio
 import os
 
-from ms_agent.agent.llm_agent import LLMAgent
-from ms_agent.config import Config
+from modelscope import snapshot_download
+from modelscope.cli.base import CLICommand
 from ms_agent.utils import strtobool
+from ms_agent.config import Config
+from ms_agent.agent.llm_agent import LLMAgent
 from ms_agent.workflow.chain_workflow import ChainWorkflow
 
-from modelscope import snapshot_download
 
-if __name__ == '__main__':
-    arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument(
-        '--config_dir_or_id',
-        required=False,
-        type=str,
-        default=None,
-        help='The directory or the repo id of the config file')
-    arg_parser.add_argument(
-        '--trust_remote_code',
-        required=False,
-        type=str,
-        default='false',
-        help=
-        'Trust the code belongs to the config file, set this if you trust the code'
-    )
-    arg_parser.add_argument(
-        '--load_cache',
-        required=False,
-        type=str,
-        default='true',
-        help=
-        'Load previous step histories from cache, this is useful when a query fails '
-        'and retry')
-    arg_parser.add_argument(
-        '--mcp_server_file',
-        required=False,
-        type=str,
-        default=None,
-        help='An extra mcp server file.')
-    args, _ = arg_parser.parse_known_args()
-    if not args.config_dir_or_id:
-        dir_name = os.path.dirname(__file__)
-        args.config_dir_or_id = os.path.join(dir_name, 'agent.yaml')
-        args.trust_remote_code = 'true'
-    if not os.path.exists(args.config_dir_or_id):
-        args.config_dir_or_id = snapshot_download(args.config_dir_or_id)
-    args.trust_remote_code: bool = strtobool(args.trust_remote_code)  # noqa
-    args.load_cache = strtobool(args.load_cache)
+def subparser_func(args):
+    """ Function which will be called for a specific sub parser.
+    """
+    return RunCMD(args)
 
-    config = Config.from_task(args.config_dir_or_id)
-    if Config.is_workflow(config):
-        engine = ChainWorkflow(
-            config=config,
-            trust_remote_code=args.trust_remote_code,
-            load_cache=args.load_cache,
-            mcp_server_file=args.mcp_server_file)
-    else:
-        engine = LLMAgent(
-            config=config,
-            trust_remote_code=args.trust_remote_code,
-            load_cache=args.load_cache,
-            mcp_server_file=args.mcp_server_file)
 
-    query = ('编写一个专门售卖圣诞礼物品类的电商为网站，包含前后端，前端的商品、用户等都使用后端ajax接口实现。'
-             '后端使用node.js，且不需要连接中间件，使用json文件作为数据库即可'
-             )  # input('>>>Please input the query:')
-    asyncio.run(engine.run(query))
+class RunCMD(CLICommand):
+    name = 'run'
+
+    def __init__(self, args):
+        self.args = args
+
+    @staticmethod
+    def define_args(parsers: argparse.ArgumentParser):
+        """ define args for download command.
+        """
+        parser: argparse.ArgumentParser = parsers.add_parser(RunCMD.name)
+        parser.add_argument(
+            "--query",
+            required=True,
+            nargs='+',
+            help="The query or prompt to send to the LLM. Multiple words can be provided as a single query string.")
+        parser.add_argument(
+            '--config',
+            required=False,
+            type=str,
+            default=None,
+            help='The directory or the repo id of the config file')
+        parser.add_argument(
+            '--trust_remote_code',
+            required=False,
+            type=str,
+            default='false',
+            help=
+            'Trust the code belongs to the config file, set this if you trust the code')
+        parser.add_argument(
+            '--load_cache',
+            required=False,
+            type=str,
+            default='true',
+            help=
+            'Load previous step histories from cache, this is useful when a query fails '
+            'and retry')
+        parser.add_argument(
+            '--mcp_server',
+            required=False,
+            type=str,
+            default=None,
+            help='The extra mcp server config'
+            )
+        parser.add_argument(
+            '--mcp_server_file',
+            required=False,
+            type=str,
+            default=None,
+            help='An extra mcp server file.'
+        )
+        parser.add_argument(
+            '--openai_api_key',
+            required=False,
+            type=str,
+            default=None,
+            help='API key for accessing an OpenAI-compatible service.'
+        )
+        parser.add_argument(
+            '--modelscope_api_key',
+            required=False,
+            type=str,
+            default=None,
+            help='API key for accessing ModelScope api-inference services.'
+        )
+        parser.set_defaults(func=subparser_func)
+
+    def execute(self):
+        if not self.args.config:
+            dir_name = os.path.dirname(__file__)
+            self.args.config = os.path.join(dir_name, 'agent.yaml')
+        if not os.path.exists(self.args.config):
+            self.args.config = snapshot_download(self.args.config)
+        self.args.trust_remote_code: bool = strtobool(self.args.trust_remote_code)  # noqa
+        self.args.load_cache = strtobool(self.args.load_cache)
+
+        config = Config.from_task(self.args.config)
+
+        if Config.is_workflow(config):
+            engine = ChainWorkflow(
+                config=config,
+                trust_remote_code=self.args.trust_remote_code,
+                load_cache=self.args.load_cache,
+                mcp_server=self.args.mcp_server,
+                mcp_server_file=self.args.mcp_server_file)
+        else:
+            engine = LLMAgent(
+                config=config,
+                trust_remote_code=self.args.trust_remote_code,
+                mcp_server=self.args.mcp_server,
+                mcp_server_file=self.args.mcp_server_file)
+        query = self.args.query
+        asyncio.run(engine.run(' '.join(query)))

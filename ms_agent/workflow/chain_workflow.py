@@ -72,11 +72,11 @@ class ChainWorkflow(Workflow):
         self.workflow_chains = result
 
     async def run(self, inputs, **kwargs):
-        config = None
+        agent_config = None
         for task in self.workflow_chains:
             task_info = getattr(self.config, task)
             agent_cls: Type[Agent] = self.find_agent(task_info.agent.name)
-            _cfg = getattr(task_info, 'config', config)
+            _cfg = getattr(task_info, 'agent_config', agent_config)
             init_args = getattr(task_info.agent, 'kwargs', {})
             init_args.pop('trust_remote_code', None)
             init_args['trust_remote_code'] = self.trust_remote_code
@@ -84,7 +84,7 @@ class ChainWorkflow(Workflow):
             init_args['task'] = task
             init_args['load_cache'] = self.load_cache
             if isinstance(_cfg, str):
-                if config is not None:
+                if agent_config is not None:
                     logger.info(
                         f'Task {task} has its own config: {_cfg}, '
                         f'the config from the previous task will be ignored.')

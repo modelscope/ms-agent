@@ -118,8 +118,7 @@ def parse_requirements(fname='requirements.txt', with_version=True):
 
 
 if __name__ == '__main__':
-    install_requires, deps_link = parse_requirements(
-        'requirements/framework.txt')
+    install_requires, deps_link = parse_requirements('requirements.txt')
     extra_requires = {}
     all_requires = []
     all_requires.extend(install_requires)
@@ -154,6 +153,8 @@ if __name__ == '__main__':
         license='Apache License 2.0',
         install_requires=install_requires,
         extras_require=extra_requires,
-        entry_points={'console_scripts': ['ms-agent=ms_agent.cli:main']},
+        entry_points={
+            'console_scripts': ['ms-agent=ms_agent.cli.cli:run_cmd']
+        },
         dependency_links=deps_link,
         zip_safe=False)

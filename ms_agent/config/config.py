@@ -48,6 +48,7 @@ class ConfigLifecycleHandler:
 class Config:
     """All tasks begin from a config"""
 
+    tag: str = ''
     supported_config_names = [
         'workflow.yaml', 'workflow.yml', 'agent.yaml', 'agent.yml'
     ]
@@ -114,7 +115,7 @@ class Config:
         args, unknown = arg_parser.parse_known_args()
         _dict_config = {}
         if unknown:
-            for idx in range(0, len(unknown), 2):
+            for idx in range(1, len(unknown)-1, 2):
                 key = unknown[idx]
                 value = unknown[idx + 1]
                 assert key.startswith(

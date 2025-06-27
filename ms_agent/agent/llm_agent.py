@@ -46,7 +46,7 @@ class LLMAgent(Agent):
             config_dir_or_id,
             config,
             env,
-            tag=kwargs.get('tag'),
+            tag=kwargs.get('tag', None),
             trust_remote_code=kwargs.get('trust_remote_code', False))
         self.callbacks: List[Callback] = []
         self.tool_manager: Optional[ToolManager] = None
@@ -59,19 +59,21 @@ class LLMAgent(Agent):
         self.task = kwargs.get('task', 'default')
         self.load_cache = kwargs.get('load_cache', True)
         self.mcp_server_file = kwargs.get('mcp_server_file', None)
-        self.mcp_config: Dict[str, Any] = self._parse_mcp_servers()
+        self.mcp_config: Dict[str, Any] = self._parse_mcp_servers(kwargs.get('mcp_config', {}))
         self._task_begin()
 
     def register_callback(self, callback: Callback):
         """Register a callback."""
         self.callbacks.append(callback)
 
-    def _parse_mcp_servers(self) -> Dict[str, Any]:
+    def _parse_mcp_servers(self, mcp_config) -> Dict[str, Any]:
         if self.mcp_server_file is not None and os.path.isfile(
                 self.mcp_server_file):
             with open(self.mcp_server_file, 'r') as f:
-                return json.load(f)
-        return {}
+                config = json.load(f)
+                config.update(mcp_config)
+                return config
+        return mcp_config
 
     def _register_callback_from_config(self):
         local_dir = self.config.local_dir if hasattr(self.config,
