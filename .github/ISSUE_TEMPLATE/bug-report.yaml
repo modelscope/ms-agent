@@ -1,6 +1,6 @@
 name: Bug report
 title: "[<Agent component: framework|tool|llm|etc...>] "
-description: Problems and issues with code of Modelscope-Agent
+description: Problems and issues with code of MS-Agent
 labels: [bug]
 assignees:
   - zzhangpurdue
@@ -11,7 +11,7 @@ body:
       value: |
         Thank you for reporting the problem!
         Please make sure what you are reporting is a bug with reproducible steps. To ask questions
-        or share ideas, please post on our [Discussion page](https://github.com/modelscope/modelscope-agent/discussions) instead.
+        or share ideas, please post on our [Discussion page](https://github.com/modelscope/ms-agent/discussions) instead.
 
   - type: checkboxes
     id: checks
@@ -20,14 +20,14 @@ body:
       description: |
         Just a few checks to make sure you need to create a bug report.
 
-        _Sorry to sound so draconian 👿; but every second spent replying to issues is time not spent improving Modelscope-Agent 🙇._
+        _Sorry to sound so draconian 👿; but every second spent replying to issues is time not spent improving MS-Agent 🙇._
       options:
         - label: I have searched GitHub for a duplicate issue and I'm sure this is something new
           required: false
-        - label: I have read and followed [the docs & demos](https://github.com/modelscope/modelscope-agent/tree/master/demo) and still think this is a bug
+        - label: I have read and followed [the docs & demos](https://github.com/modelscope/ms-agent/tree/master/demo) and still think this is a bug
           required: false
         - label: >
-            I am confident that the issue is with modelscope-agent
+            I am confident that the issue is with ms-agent
             (not my code, or another library in the ecosystem)
           required: false
 
@@ -47,7 +47,7 @@ body:
   - type: textarea
     attributes:
       label: Versions / Dependencies
-      description: Please specify the versions of Modelscope-agent, Python, OS, and other libraries that are used.
+      description: Please specify the versions of MS-Agent, Python, OS, and other libraries that are used.
       placeholder: >
         Please specify the versions of dependencies.
     validations:
@@ -73,7 +73,7 @@ body:
     attributes:
       label: Issue Severity
       description: |
-        How does this issue affect your experience as a Modelscope-Agent user?
+        How does this issue affect your experience as a MS-Agent user?
       multiple: false
       options:
           - "Low: It annoys or frustrates me."

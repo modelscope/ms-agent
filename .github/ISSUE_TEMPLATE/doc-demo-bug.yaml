@@ -1,11 +1,11 @@
 name: Documentation
 title: "[<Agent component: framework|tool|llm|etc...>] "
-description: Report an issue with the Modelscope-agent documentation
+description: Report an issue with the MS-Agent documentation
 labels: [docs, triage]
 body:
   - type: markdown
     attributes:
-      value: Thank you for helping us improve the Modelscope-agent documentation and demo!
+      value: Thank you for helping us improve the MS-Agent documentation and demo!
 
   - type: textarea
     attributes:
@@ -21,6 +21,6 @@ body:
       label: Link
       description: |
         If the problem is related to an existing section, please add a link to
-        the section. For example, https://github.com/modelscope/modelscope-agent/blob/master/demo/demo_alpha_umi.ipynb.
+        the section. For example, https://github.com/modelscope/ms-agent/blob/main/demo/demo_alpha_umi.ipynb.
     validations:
       required: false

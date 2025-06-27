@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 
-# Contribute to ModelScope-Agent
+# Contribute to MS-Agent
 
 We sincerely appreciate every contribution, regardless of its form. While contributing code is certainly impactful,
 there are many other ways to aid the community.
@@ -28,23 +28,23 @@ Twitter or WeChat, whenever our library comes to your rescue,
 or simply give the repository a star as a token of your appreciation.
 
 However, you choose to contribute, please be mindful and respect our
-[code of conduct](https://github.com/modelscope/modelscope-agent/blob/master/CODE_OF_CONDUCT.md).
+[code of conduct](https://github.com/modelscope/MS-Agent/blob/master/CODE_OF_CONDUCT.md).
 
 
 ## Ways to contribute
 
-There are several ways you can contribute to Modelscope-agent:
+There are several ways you can contribute to MS-Agent:
 
-* Fix outstanding issues with the existing code, found them at [here](https://github.com/modelscope/modelscope-agent/issues).
-* Submit issues related to bugs or desired new features [here](https://github.com/modelscope/modelscope-agent/issues/new/choose)
-* Implement new tools, please refer the doc [here](https://github.com/modelscope/modelscope-agent/tree/master/docs/contributing/tool_contribution_guide.md)
-* Contribute to the examples or to the documentation, [here](https://github.com/modelscope/modelscope-agent/tree/master/examples)
+* Fix outstanding issues with the existing code, found them at [here](https://github.com/modelscope/MS-Agent/issues).
+* Submit issues related to bugs or desired new features [here](https://github.com/modelscope/MS-Agent/issues/new/choose)
+* Implement new tools, please refer the doc [here](https://github.com/modelscope/MS-Agent/tree/master/docs/contributing/tool_contribution_guide.md)
+* Contribute to the examples or to the documentation, [here](https://github.com/modelscope/MS-Agent/tree/master/examples)
 
 > All contributions are equally valuable to the community.
 
 ## Styles
 
-Modelscope-agent follow the same styles as the Modelscope project. Please find detail at [here](https://github.com/modelscope/modelscope-agent/blob/master/.pre-commit-config.yaml)
+MS-Agent follow the same styles as the Modelscope project. Please find detail at [here](https://github.com/modelscope/MS-Agent/blob/master/.pre-commit-config.yaml)
 Please make sure follow the following steps to install the pre-commit hooks:
 
 ```shell

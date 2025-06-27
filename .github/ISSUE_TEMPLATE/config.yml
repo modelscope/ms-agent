@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
   - name: Ask a question or get support
-    url: https://github.com/modelscope/modelscope-agent/discussions/new?category=q-a
-    about: Ask a question or request support for using Modelscope-Agent
+    url: https://github.com/modelscope/ms-agent/discussions/new?category=q-a
+    about: Ask a question or request support for using MS-Agent
