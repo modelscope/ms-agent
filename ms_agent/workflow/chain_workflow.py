@@ -94,5 +94,5 @@ class ChainWorkflow(Workflow):
             else:
                 agent = agent_cls(config=_cfg, **init_args)
             inputs = await agent.run(inputs, **kwargs)
-            config = agent.prepare_config_for_next_step()
+            # config = agent.prepare_config_for_next_step()
         return inputs

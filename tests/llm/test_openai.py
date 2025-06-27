@@ -1,10 +1,10 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import os
 import unittest
-from omegaconf import OmegaConf, DictConfig
 
-from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.llm.openai_llm import OpenAI
+from ms_agent.llm.utils import Message, Tool, ToolCall
+from omegaconf import DictConfig, OmegaConf
 
 
 class OpenaiLLM(unittest.TestCase):
@@ -16,7 +16,9 @@ class OpenaiLLM(unittest.TestCase):
         },
         'generation_config': {
             'stream': False,
-            'extra_body': {'enable_thinking': False},
+            'extra_body': {
+                'enable_thinking': False
+            },
             'max_tokens': 50
         }
     })
@@ -34,26 +36,44 @@ class OpenaiLLM(unittest.TestCase):
     ]
 
     tools = [
-        Tool(server_name='amap-maps', tool_name='maps_regeocode',
-        description='将一个高德经纬度坐标转换为行政区划地址信息',
-        parameters={'type': 'object', 'properties': {'location': {'type': 'string', 'description': '经纬度'}},
-        'required': ['location']}),
-        Tool(tool_name='mkdir', description='在文件系统创建目录',
-        parameters={'type': 'object', 'properties': {'dir_name': {'type': 'string', 'description': '目录名'}},
-        'required': ['dir_name']})
+        Tool(
+            server_name='amap-maps',
+            tool_name='maps_regeocode',
+            description='将一个高德经纬度坐标转换为行政区划地址信息',
+            parameters={
+                'type': 'object',
+                'properties': {
+                    'location': {
+                        'type': 'string',
+                        'description': '经纬度'
+                    }
+                },
+                'required': ['location']
+            }),
+        Tool(
+            tool_name='mkdir',
+            description='在文件系统创建目录',
+            parameters={
+                'type': 'object',
+                'properties': {
+                    'dir_name': {
+                        'type': 'string',
+                        'description': '目录名'
+                    }
+                },
+                'required': ['dir_name']
+            })
     ]
 
     def test_call_no_stream(self):
         llm = OpenAI(self.conf)
-        res = llm.generate(
-            messages=self.messages, tools=None)
+        res = llm.generate(messages=self.messages, tools=None)
         print(res)
-        assert(res.content)
+        assert (res.content)
 
     def test_call_stream(self):
         llm = OpenAI(self.conf)
-        res = llm.generate(
-            messages=self.messages, tools=None, stream=True)
+        res = llm.generate(messages=self.messages, tools=None, stream=True)
         msg = None
         for chunk in res:
             yield chunk
@@ -63,7 +83,10 @@ class OpenaiLLM(unittest.TestCase):
     def test_call_thinking(self):
         llm = OpenAI(self.conf)
         res = llm.generate(
-            messages=self.messages, tools=None, stream=True, extra_body={'enable_thinking': True})
+            messages=self.messages,
+            tools=None,
+            stream=True,
+            extra_body={'enable_thinking': True})
         msg = None
         for chunk in res:
             yield chunk
@@ -72,22 +95,23 @@ class OpenaiLLM(unittest.TestCase):
 
     def test_continue_run(self):
         llm = OpenAI(self.conf)
-        res = llm.generate(
-            messages=self.continue_messages, tools=None)
+        res = llm.generate(messages=self.continue_messages, tools=None)
         print(res)
         assert (len(res.content) > 100)
 
     def test_call_tool(self):
         llm = OpenAI(self.conf)
-        res = llm.generate(
-            messages=self.tool_messages, tools=self.tools)
+        res = llm.generate(messages=self.tool_messages, tools=self.tools)
         print(res)
         assert (len(res.tool_calls))
 
     def test_call_tool_stream(self):
         llm = OpenAI(self.conf)
         res = llm.generate(
-            messages=self.tool_messages, tools=self.tools, stream=True, extra_body={'enable_thinking': False})
+            messages=self.tool_messages,
+            tools=self.tools,
+            stream=True,
+            extra_body={'enable_thinking': False})
         msg = None
         for chunk in res:
             yield chunk

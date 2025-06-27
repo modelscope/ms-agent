@@ -50,9 +50,9 @@ prompt:
       * Follow the file structure requirements of vite.js
 
     Now, I will call the `split_to_sub_task` tool with corrected and detailed subtasks.
-    
+
     Then, you must call tool `split_to_sub_task` with the following args example:
-    
+
     **Final Tool Args Example:**
 
     ```json

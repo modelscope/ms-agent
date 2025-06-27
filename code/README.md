@@ -73,5 +73,3 @@ This system appears to be an automated code generation and refinement tool that 
 - codes/eval_callback 自动编译npm（开发者如果使用其他语言，也可以将这里修改为其他编译方式）并交给Refiner进行检查和修复：
     * Refiner会先根据错误分析可能受影响的文件，并使用`split_to_sub_task`分配任务收集信息
     * Refiner根据收集的信息重新分配fix任务，用`split_to_sub_task`进行修复
-
-  

@@ -39,44 +39,44 @@ prompt:
       * MANDATORY: Call tool `split_to_sub_task` to distribute tasks
 
     After you output all your design, you need to call `split_to_sub_task` with arguments.
-    
+
     For example:
-    The user requirement is: 
-    
+    The user requirement is:
+
     ... original user requirements here ...
-    
+
     To fulfill the user's requirement, these functionalities need to be implemented:
-    
+
     ... functionalities here ...
-    
+
     To implement these functionalities, I should design these modules:
-    
+
     ... modules here ...
-    
+
     So the file structure should be:
-    
+
     ... draw a file structure here ...
-    
+
     The import and interface relations between these files are:
-    
+
     ... interface designs here ...
-    
+
     At last, I can group these modules into groups, each module in one group considered to have a closer relation than others:
-    
+
     Group1:
     ... group1 files here ...
     ... group1 reason here ...
-    
+
     Group2:
     ... group2 files here ...
     ... group2 reason here ...
-    
+
     ... other groups here ...
-    
+
     Now, I will call the `split_to_sub_task` tool with corrected and detailed subtasks.
-    
+
     Then, you must call tool `split_to_sub_task` with the following args example:
-    
+
     **Final Tool Args Example:**
 
     ```json

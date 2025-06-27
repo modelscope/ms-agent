@@ -2,13 +2,12 @@
 import inspect
 from typing import Any, Dict, Generator, Iterable, List, Optional
 
+from ms_agent.llm import LLM
+from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.utils import assert_package_exist, get_logger, retry
 from omegaconf import DictConfig, OmegaConf
 from openai.types.chat.chat_completion_message_tool_call import (
     ChatCompletionMessageToolCall, Function)
-
-from ms_agent.llm import LLM
-from ms_agent.llm.utils import Message, Tool, ToolCall
 
 logger = get_logger()
 
@@ -315,4 +314,3 @@ class OpenAI(LLM):
             openai_messages.append(message)
 
         return openai_messages
-

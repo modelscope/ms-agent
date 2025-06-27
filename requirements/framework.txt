@@ -1,4 +1,4 @@
 dotenv
+mcp
 modelscope
 omegaconf
-mcp
