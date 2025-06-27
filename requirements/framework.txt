@@ -1,4 +1,5 @@
 dotenv
 mcp
 modelscope
+numpy
 omegaconf
