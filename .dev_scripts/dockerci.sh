@@ -19,6 +19,7 @@ ls  "${CODE_INTERPRETER_WORK_DIR}"
 
 # install package
 pip install pytest
+python setup.py install
 
 # run ci
 pytest tests
