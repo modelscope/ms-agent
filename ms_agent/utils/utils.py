@@ -162,7 +162,7 @@ def remove_resource_info(text):
     return cleaned_text
 
 
-def load_image_from_url_to_pil(url: str) -> Image.Image:
+def load_image_from_url_to_pil(url: str) -> 'Image.Image':
     """
     Loads an image from a given URL and converts it into a PIL Image object in memory.
 
