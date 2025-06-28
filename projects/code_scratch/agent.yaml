@@ -13,6 +13,9 @@ generation_config:
   extra_body:
     enable_thinking: false
 
+todos:
+  - may be when generation, a module from frontend to backend generate in one worker works better, this makes all works need read file first
+
 prompt:
   system: |
     You are a senior software architect. Your responsibility is to break down complex requirements into implementable modules and assign each module into subtasks. You need to follow these instructions:
