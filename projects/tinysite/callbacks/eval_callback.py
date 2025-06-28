@@ -6,11 +6,11 @@ from contextlib import contextmanager
 from typing import List, Optional
 
 from file_parser import extract_code_blocks
-from ms_agent.agent.runtime import Runtime
-from ms_agent.callbacks import Callback
-from ms_agent.llm.utils import Message
-from ms_agent.tools.filesystem_tool import FileSystemTool
-from ms_agent.utils import get_logger
+from modelscope_agent.agent.runtime import Runtime
+from modelscope_agent.callbacks import Callback
+from modelscope_agent.llm.utils import Message
+from modelscope_agent.tools.filesystem_tool import FileSystemTool
+from modelscope_agent.utils import get_logger
 from omegaconf import DictConfig
 
 logger = get_logger()
@@ -24,7 +24,7 @@ class EvalCallback(Callback):
         super().__init__(config)
         self.feedback_ended = False
         self.file_system = FileSystemTool(config)
-        self.compile_round = 20
+        self.compile_round = 300
         self.cur_round = 0
 
     async def on_task_begin(self, runtime: Runtime, messages: List[Message]):
@@ -69,14 +69,20 @@ class EvalCallback(Callback):
     def check_runtime():
         try:
             os.system('pkill -f node')
-            result = subprocess.run(['npm', 'run', 'dev'],
-                                    capture_output=True,
-                                    text=True,
-                                    timeout=5,
-                                    stdin=subprocess.DEVNULL)
+            if os.getcwd().endswith('backend'):
+                result = subprocess.run(['npm', 'run', 'dev'],
+                                        capture_output=True,
+                                        text=True,
+                                        timeout=5,
+                                        stdin=subprocess.DEVNULL)
+            else:
+                result = subprocess.run(['npm', 'run', 'build'],
+                                        capture_output=True,
+                                        text=True,
+                                        check=True)
         except subprocess.CalledProcessError as e:
-            output = (e.stdout.decode('utf-8') if e.stdout else '') + '\n' + (
-                e.stderr.decode('utf-8') if e.stderr else '')
+            output = (e.stdout if e.stdout else '') + '\n' + (
+                e.stderr if e.stderr else '')
         except subprocess.TimeoutExpired as e:
             output = (e.stdout.decode('utf-8') if e.stdout else '') + '\n' + (
                 e.stderr.decode('utf-8') if e.stderr else '')
@@ -116,12 +122,10 @@ class EvalCallback(Callback):
 3. Fix bugs or add new requirements based on user feedback
 
 However, when fixing bugs or adding new requirements, it may involve the updating the PRD & code architecture.
-Next, I will provide you with the original design and the parts that need to be updated.
-You need to help me merge these two parts into a complete design.
+Next, I will provide you with the original design and the parts that need to be updated. You need to help me merge these two parts into a complete design.
 
 Your instructions to follow:
-1. Accurately assess which parts of the original design need to be modified&merged based on the updates,
-and carefully merge them without missing any information
+1. Accurately assess which parts of the original design need to be modified&merged based on the updates, and carefully merge them without missing any information
 2. Avoid making the PRD & code architecture increasingly lengthy after merging - you need to avoid redundant information
 3. Discard any content which does not belong to PRD & architecture, like:
     * Imprecise information
@@ -134,7 +138,7 @@ and carefully merge them without missing any information
 ```
 
 Now let's begin:
-"""
+""" # noqa
         query = (f'The system of the architect is: \n\n'
                  f'{messages[0].content}\n\n'
                  f'The original query is :\n\n'
@@ -166,12 +170,12 @@ Now let's begin:
         _classify_system = """You are an assistant help me to identify whether a feedback is an issue or a new feature.
 
 You need to follow these instructions:
-1. Only return as an issue when it's a pure bug. If the feedback contains any new feature requirements,
-define it as a feature.
-2. Return only `issue` or `feature`, do not return anything else.
+1. Only return as an issue when it's a pure bug. If the feedback contains any new feature requirements, define it as a feature.
+2. Sometimes user may query a question, which is not bug and not feature, return `query`
+2. Return only `issue` or `feature` or `query`, do not return anything else.
 
 Now begin:
-"""
+""" # noqa
         _messages = [
             Message(role='system', content=_classify_system),
             Message(role='user', content=query),
@@ -201,6 +205,7 @@ Now begin:
             query = self.get_human_feedback().strip()
         else:
             human_feedback = False
+            logger.warn(f'[Compile Feedback]: {query}]')
         if not query:
             self.feedback_ended = True
             feedback = (
@@ -221,15 +226,14 @@ For example:
 To fix this bug, the ... module need to add ... fix ... replace ...
 
 ```text:design.txt
-//Only place the actual changes of architecture here, you only need to output the **changed** parts,
-and mark clearly how to update.
+//Only place the actual changes of architecture here, you only need to output the **changed** parts, and mark clearly how to update.
 1. Add Route ...
 2. Add new files ...
 3. User interface changed to ...
 ```
 
 After output design.txt, call `split_to_sub_task` again to correct the abnormal files or implement the new features.
-"""
+""" # noqa
 
             else:
                 step2 = """Step 2. Call `split_to_sub_task` again to correct the abnormal files.
@@ -243,28 +247,59 @@ You have called `split_to_sub_task` to generate this project, the call and respo
 
 {all_local_files}
 
-These files may be not matched with your PRD & design, consider the actual files first.
+This list of files may be not matched with your PRD & design.
 
-Detect then conduct a complete report to identify which code file needs to be corrected and how to correct them.
+If the query is a question, you can use `split_to_sub_task` to answer, in this scenario you do not have to fix any files.
+
+If it's a bug or a new feature, detect then conduct a complete report to identify which code file needs to be corrected/created and how to correct them.
 The instructions for problem checking and fixing:
 Step 1. First call `split_to_sub_task` at least once to start some subtasks to collect detailed problems from all the related files
 
+* Give the detail description of the problem as best as you can
+* Tell the subtasks which files to read, and the code positions requiring focused attention
+* Check some related files to find the root cause according to the issues and your PRD & design
+* Start multiple subtasks one time to check multiple issues in parallel, analyze the relations between the issues
+
 An example of your query:
 
-```
-You are a subtask to collect information for me, the user feedback is ..., you need to read the ... file and find the root cause, remember you are a evaluator, not a programmer, do not write code, just collect information.
+```json
+[
+  {{
+    "system": "You are a ...",
+    "query": "You are a subtask to collect information for me, the user feedback is var undefined, you need to read the ... file and find the root cause of ..., remember you are a evaluator, not a programmer, do not write code, just collect information."
+  }},
+  {{
+    "system": "You are a ...",
+    "query": "You are a subtask to collect information ..."
+  }},
+  ... more subtasks here ...
+]
 ```
 
-You need to consider both the frontend and backend files, some error happens because the http interfaces are not matched between them.
+If there are issues with frontend data display/storage/updating, you should highly suspect whether the HTTP interface data formats between frontend and backend are matched.
 
 {step2}
 
-**You need to remind the subtask do a minimum change in case that the normal code is damaged**
+* Remind the subtask do a minimum change in case that the normal code is damaged
+* Give the detail description of the problem as best as you can, and the key positions of the problem to guide the programmers
+* Tell the subtasks how to fix the problem as best as you can
+* Start multiple subtasks one time to fix multiple issues in parallel
+* Be aware one update may affect other files, you should update all affected files based on the issues and your PRD & design
 
 An example of your query:
 
-```
-The problem/feature is ..., you need to fix/implement ... file and ... file, read the existing code file first, then do a minimum change to prevent the damages to the functionalities which work normally.
+```json
+[
+  {{
+    "system": "You are a ...",
+    "query": "The problem is an undefined issue of ... It happens in the ...file ...module ...function, you need to fix/implement ... file ...function, change it to ..., read the existing code file first, then do a minimum change to prevent the damages to the functionalities which work normally."
+  }},
+  {{
+    "system": "You are a ...",
+    "query": "The problem is ... you need to fix ..."
+  }},
+  ... more subtasks here ...
+]
 ```
 
 After updating, you do not need to verify or run `npm install/build`, the build/user feedback will be given to you automatically.

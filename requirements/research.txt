@@ -5,3 +5,4 @@ json5
 mcp
 modelscope
 openai
+Pillow

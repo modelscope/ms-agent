@@ -2,7 +2,7 @@ llm:
   service: openai
   model: claude-3-7-sonnet-20250219
   openai_api_key:
-  openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  openai_base_url:
 
 generation_config:
   top_p: 0.6
@@ -11,8 +11,6 @@ generation_config:
   max_completion_tokens: 120000
   stream: true
   extra_body:
-    dashscope_extend_params:
-      provider: idealab
     enable_thinking: false
 
 prompt:
@@ -44,10 +42,12 @@ prompt:
       * Retry the failed tasks
       * The preference language of the frontend is react
       * Use `split_to_sub_task` to distribute tasks
-    6. Use vite to build your frontend code
-      * Generate frontend/vite.config.ts
-      * vite.js needs a entrypoint `frontend/index.html`
-      * Follow the file structure requirements of vite.js
+    6. Project requirements
+      * Use vite.js to build your frontend code
+      * Do not use ts check in package.json of both frontend and backend
+      * Do not let your backend silent crash, make sure the error messages can be printed in the terminal when running `npm run dev`
+      * Do not use a conflict port of frontend and backend, use obscure ports
+      * Do not use mock data in your frontend if a backend is in your plan
 
     Now, I will call the `split_to_sub_task` tool with corrected and detailed subtasks.
 
@@ -79,7 +79,7 @@ prompt:
 
 handler: config_handler
 
-max_chat_round: 50
+max_chat_round: 300
 
 output_dir: output
 

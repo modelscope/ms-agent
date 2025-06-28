@@ -26,6 +26,7 @@ class FileSystemTool(ToolBase):
         else:
             self._exclude_functions = []
         self.output_dir = getattr(config, 'output_dir', 'output')
+        self.call_history = set()
 
     async def connect(self):
         logger.warning_once(
@@ -165,6 +166,14 @@ class FileSystemTool(ToolBase):
         Returns:
             The file content or error message.
         """
+        key = self.config.tag + '-' + path
+        if key in self.call_history:
+            return (
+                'You have read this file once, keep reading may cause dead loop.\n'
+                'If the actual content conflicts with your inputs, '
+                'consider the file has been modified already, you need to feedback this problem.'
+            )
+        self.call_history.add(key)
         try:
             with open(os.path.join(self.output_dir, path), 'r') as f:
                 content = f.read()

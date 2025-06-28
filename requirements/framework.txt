@@ -1,4 +1,5 @@
 dotenv
+json5
 mcp
 modelscope
 numpy

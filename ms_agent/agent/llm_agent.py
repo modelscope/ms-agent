@@ -271,17 +271,22 @@ class LLMAgent(Agent):
 
         config, _messages = read_history(task=self.task, query=query)
         if config is not None and _messages is not None:
-            runtime = Runtime(llm=self.llm)
             if hasattr(config, 'runtime'):
+                runtime = Runtime(llm=self.llm)
                 runtime.from_dict(config.runtime)
                 delattr(config, 'runtime')
+                if runtime.round >= self.max_chat_round:
+                    runtime.should_stop = False
+                    runtime.round = 1
+            else:
+                runtime = self.runtime
             return config, runtime, _messages
         else:
             return self.config, self.runtime, messages  # noqa
 
     def _save_history(self, messages: List[Message], **kwargs):
         query = messages[1].content
-        if not query or not self.task:
+        if not query or not self.task or self.task == 'subtask':
             return
         config: DictConfig = deepcopy(self.config)  # noqa
         config.runtime = self.runtime.to_dict()
@@ -321,8 +326,9 @@ class LLMAgent(Agent):
                         self.runtime, messages)
 
             for message in messages:
-                self._log_output('[' + message.role + ']:', tag=self.tag)
-                self._log_output(message.content, tag=self.tag)
+                if message.role != 'system':
+                    self._log_output('[' + message.role + ']:', tag=self.tag)
+                    self._log_output(message.content, tag=self.tag)
             while not self.runtime.should_stop:
                 messages = await self._step(messages, self.tag)
                 self.runtime.round += 1

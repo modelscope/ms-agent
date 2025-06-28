@@ -7,10 +7,8 @@ from io import BytesIO
 from typing import List, Optional
 
 import json
-import json5
 import requests
 from omegaconf import DictConfig, OmegaConf
-from PIL import Image
 
 from modelscope.hub.utils.utils import get_cache_dir
 
@@ -107,6 +105,7 @@ def text_hash(text: str, keep_n_chars: int = 8) -> str:
 
 
 def json_loads(text: str) -> dict:
+    import json5
     text = text.strip('\n')
     if text.startswith('```') and text.endswith('\n```'):
         text = '\n'.join(text.split('\n')[1:-1])
@@ -163,7 +162,7 @@ def remove_resource_info(text):
     return cleaned_text
 
 
-def load_image_from_url_to_pil(url: str) -> Image.Image:
+def load_image_from_url_to_pil(url: str) -> 'Image.Image':
     """
     Loads an image from a given URL and converts it into a PIL Image object in memory.
 
@@ -173,6 +172,7 @@ def load_image_from_url_to_pil(url: str) -> Image.Image:
     Returns:
         A PIL Image object if successful, None otherwise.
     """
+    from PIL import Image
     try:
         response = requests.get(url)
         # Raise an HTTPError for bad responses (4xx or 5xx)

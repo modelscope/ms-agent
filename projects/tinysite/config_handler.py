@@ -9,13 +9,15 @@ class ConfigHandler(ConfigLifecycleHandler):
         if tag == 'Architecture':
             if '235' in config.llm.model:
                 # 235B model works better with an arch review
-                config.callbacks = ['codes/coding_callback']
+                config.callbacks = ['callbacks/coding_callback']
             else:
-                config.callbacks = ['codes/coding_callback']
+                config.callbacks = ['callbacks/coding_callback']
         elif tag == 'Refiner':
-            config.callbacks = ['codes/eval_callback', 'codes/coding_callback']
+            config.callbacks = [
+                'callbacks/eval_callback', 'callbacks/coding_callback'
+            ]
         elif 'worker' in tag:
-            config.callbacks = ['codes/artifact_callback']
+            config.callbacks = ['callbacks/artifact_callback']
             delattr(config.tools, 'split_task')
             config.tools.file_system = DictConfig({
                 'mcp':

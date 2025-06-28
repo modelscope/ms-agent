@@ -72,7 +72,8 @@ class SplitTask(ToolBase):
             agent = LLMAgent(
                 config=config,
                 trust_remote_code=trust_remote_code,
-                tag=f'{self.config.tag}-r{self.round}-{self.tag_prefix}{i}')
+                tag=f'{self.config.tag}-r{self.round}-{self.tag_prefix}{i}',
+                task='subtask')
             sub_tasks.append(agent.run(query))
         result = await asyncio.gather(*sub_tasks)
         res = []
