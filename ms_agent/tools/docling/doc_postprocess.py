@@ -1,7 +1,6 @@
-from typing import List, Union
+from typing import Union
 
 from docling_core.types import DoclingDocument
-from docling_core.types.doc import PictureItem
 
 
 class PostProcess:
@@ -17,13 +16,10 @@ class PostProcess:
         Filter documents based on specific criteria.
         """
         # Filter out pictures that are too small
-        kept_pictures: List[PictureItem] = []
+        # kept_pictures: List[PictureItem] = []
         for pic_item in doc.pictures:
-            if (hasattr(pic_item, 'image') and pic_item.image is not None
-                    and pic_item.image.size.height * pic_item.image.size.width
-                    >= PostProcess.MIN_PICTURE_SIZE):
-                kept_pictures.append(pic_item)
-
-        doc.pictures = kept_pictures
+            if hasattr(pic_item, 'image') and pic_item.image is not None:
+                if pic_item.image.size.height * pic_item.image.size.width < PostProcess.MIN_PICTURE_SIZE:
+                    pic_item.image = None  # Remove image if too small
 
         return doc
