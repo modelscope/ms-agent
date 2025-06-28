@@ -1,7 +1,7 @@
 dotenv
+json5
 mcp
 modelscope
 numpy
 omegaconf
 openai
-json5
