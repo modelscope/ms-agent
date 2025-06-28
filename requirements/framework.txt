@@ -4,3 +4,4 @@ modelscope
 numpy
 omegaconf
 openai
+json5
