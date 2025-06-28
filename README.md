@@ -29,6 +29,14 @@
 
 ## Introduction
 
+MS-Agent is a lightweight framework designed to empower agents with autonomous exploration capabilities. It provides a flexible and extensible architecture that allows developers to create agents capable of performing complex tasks, such as code generation, data analysis, and tool calling for general purposes with MCP (Model Calling Protocol) support.
+
+### Features
+
+- **Multi-Agent for general purpose**: Chat with agent with tool-calling capabilities based on MCP.
+- **Deep Research**: To enable advanced capabilities for autonomous exploration and complex task execution.
+- **Code Generation**: Supports code generation tasks with artifacts.
+- **Lightweight and Extensible**: Easy to extend and customize for various applications.
 
 
 > [WARNING] For historical archive versions, please refer to: https://github.com/modelscope/ms-agent/tree/0.8.0
@@ -67,6 +75,14 @@
 
 ## Installation
 
+### Install from source
+
+```shell
+git clone git@github.com:modelscope/ms-agent.git
+
+cd ms-agent
+pip install -e .
+```
 
 
 
@@ -82,6 +98,9 @@
 
 
 ## Quickstart
+
+### Code Generation Agent
+Refer to [Website Generation](projects/code_scratch/README.md)
 
 
 
