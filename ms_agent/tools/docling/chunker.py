@@ -10,7 +10,7 @@ from docling_core.transforms.chunker.tokenizer.huggingface import \
 from docling_core.transforms.serializer.markdown import MarkdownParams
 from docling_core.types import DoclingDocument
 from docling_core.types.doc import DocItemLabel
-from msagent.utils.logger import get_logger
+from ms_agent.utils.logger import get_logger
 from rich.console import Console
 from rich.panel import Panel
 
@@ -136,7 +136,7 @@ class HybridDocumentChunker:
 
 
 if __name__ == '__main__':
-    from msagent.tools.docling.doc_loader import DocLoader
+    from ms_agent.tools.docling.doc_loader import DocLoader
     urls = [
         'https://arxiv.org/pdf/2408.09869',
         'https://arxiv.org/pdf/2502.15214',

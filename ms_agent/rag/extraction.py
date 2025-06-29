@@ -7,8 +7,8 @@ from docling_core.transforms.chunker import BaseChunk
 from docling_core.types import DoclingDocument
 from docling_core.types.doc import DocItem, DocItemLabel
 from ms_agent.rag.schema import KeyInformation
-from msagent.tools.docling.chunker import HybridDocumentChunker
-from msagent.tools.docling.doc_loader import DocLoader
+from ms_agent.tools.docling.chunker import HybridDocumentChunker
+from ms_agent.tools.docling.doc_loader import DocLoader
 
 
 class KeyInformationExtraction(ABC):

@@ -11,10 +11,10 @@ from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling_core.types import DoclingDocument
 from docling_core.types.doc import DocItem, ImageRef
-from msagent.tools.docling.doc_postprocess import PostProcess
-from msagent.utils import load_image_from_url_to_pil
-from msagent.utils.logger import get_logger
-from msagent.utils.patcher import patch
+from ms_agent.tools.docling.doc_postprocess import PostProcess
+from ms_agent.utils.logger import get_logger
+from ms_agent.utils.patcher import patch
+from ms_agent.utils.utils import load_image_from_url_to_pil
 
 logger = get_logger()
 
