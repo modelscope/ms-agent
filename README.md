@@ -103,6 +103,8 @@ pip install -e .
 Refer to [Website Generation](projects/code_scratch/README.md)
 
 
+### Deep Research
+Refer to [Example](projects/deep_research/run.py)
 
 
 ## License
