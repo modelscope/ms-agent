@@ -104,6 +104,15 @@ Refer to [Website Generation](projects/code_scratch/README.md)
 
 
 ### Deep Research
+This project provides a framework for deep research, enabling agents to autonomously explore and execute complex tasks.
+
+- **Autonomous Exploration**
+- **Multi-modal report generation**
+- **Lightweight and Extensible**
+- **Fast and Efficient**
+
+For interleaved text and image report, refer to the [Report](projects/deep_research/examples/task_20250617a/report.md).
+
 Refer to [Example](projects/deep_research/run.py)
 
 

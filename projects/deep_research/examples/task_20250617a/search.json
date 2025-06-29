@@ -1,0 +1,98 @@
+[
+  {
+    "query": "Agent-based Reinforcement Learning research",
+    "arguments": {
+      "query": "Agent-based Reinforcement Learning research",
+      "text": true,
+      "type": "auto",
+      "num_results": 10,
+      "start_published_date": "2025-05-17",
+      "end_published_date": "2025-06-17",
+      "start_crawl_date": null,
+      "end_crawl_date": null
+    },
+    "results": [
+      {
+        "url": "https://arxiv.org/pdf/2506.02718",
+        "id": "https://arxiv.org/abs/2506.02718",
+        "title": "Heterogeneous Group-Based Reinforcement Learning for LLM-based Multi-Agent Systems",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://arxiv.org/pdf/2506.09046",
+        "id": "https://arxiv.org/abs/2506.09046",
+        "title": "Agentic Neural Networks: Self-Evolving Multi-Agent Systems via Textual Backpropagation",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://arxiv.org/pdf/2506.08507",
+        "id": "https://arxiv.org/abs/2506.08507",
+        "title": "MasHost Builds It All: Autonomous Multi-Agent System Directed by Reinforcement Learning",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://arxiv.org/pdf/2506.06523",
+        "id": "https://arxiv.org/abs/2506.06523",
+        "title": "Reinforcement Learning for Autonomous Warehouse Orchestration in SAP Logistics Execution: Redefining Supply Chain Agility",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://arxiv.org/pdf/2505.18457",
+        "id": "https://arxiv.org/abs/2505.18457",
+        "title": "EdgeAgentX: A Novel Framework for Agentic AI at the Edge in Military Communication Networks",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://arxiv.org/pdf/2505.14544",
+        "id": "https://arxiv.org/abs/2505.14544",
+        "title": "Multi-agent Reinforcement Learning vs. Fixed-Time Control for Traffic Signal Optimization: A Simulation Study",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://arxiv.org/pdf/2506.01442",
+        "id": "https://arxiv.org/abs/2506.01442",
+        "title": "Agentic Episodic Control",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://arxiv.org/pdf/2506.00539",
+        "id": "https://arxiv.org/abs/2506.00539",
+        "title": "ARIA: Training Language Agents with Intention-Driven Reward Aggregation",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://arxiv.org/pdf/2506.01536",
+        "id": "https://arxiv.org/abs/2506.01536",
+        "title": "Quantum Agents",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      }
+    ]
+  }
+]
