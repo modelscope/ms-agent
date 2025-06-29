@@ -79,26 +79,37 @@ class CodingCallback(Callback):
             tasks = json.loads(tasks)
         for task in tasks:
             task['_system'] = task['system']
-            task['system'] = (
-                f'{task["system"]}\n\n'
-                f'The architectural design is {arch_design}\n\n'
-                f'The coding instruction of frontend: {self._frontend_prompt}\n\n'
-                f'The files existing on the filesystem is: {files}\n\n'
-                f'* If your task is coding, output your code with this format:\n\n'
-                f'```js:index.js\n'
-                f'... code ...\n'
-                f'```\n'
-                f'* If your task is checking code files only or show code piece examples, use normal format:\n\n'
-                f'```js\n'
-                f'... code ...\n'
-                f'```\n'
-                f'The `index.js` will be used to saving. '
-                f'You only need to generate/fix/analyze the files listed in the query, '
-                f'other modules will be handled in other tasks.\n'
-                f'You need consider the interfaces between your and other modules '
-                f'according to the architectural design.\n\n '
-                f'Do not leave a blank image placeholder, you should use image links from unsplash\n\n'
-                f'Now Begin:\n')
+            task['system'] = f"""{task["system"]}
+
+The architectural design is:
+{arch_design}
+
+The coding instruction of frontend: 
+{self._frontend_prompt}
+
+The files existing on the filesystem is: 
+{files}
+
+* If your task is coding, output your code with this format:
+
+```js:index.js
+... code ...
+```
+The `index.js` will be used to saving. 
+
+* If your task is checking code files or show code piece examples, use normal format:
+
+```js
+... code ...
+```
+
+* Always read the code file then its dependencies listed in existed files and the PRD&design to align interfaces before writing.
+* Pay attention all arguments and imports related to the error line, do not miss any details.
+* You only need to generate/fix/analyze the files listed in the query, other modules will be handled in other tasks.
+* Do not leave a blank image placeholder, you should use image links from unsplash.
+
+Now Begin:
+"""
         messages[-1].tool_calls[0]['arguments'] = json.dumps({'tasks': tasks})
 
     async def after_tool_call(self, runtime: Runtime, messages: List[Message]):

@@ -52,6 +52,11 @@ class EvalCallback(Callback):
             yield
 
     @staticmethod
+    def _parse_e_msg(e):
+        return (e.stdout.decode('utf-8') if e.stdout and hasattr(e.stdout, 'decode') else '') + '\n' + (
+                e.stderr.decode('utf-8') if e.stderr and hasattr(e.stderr, 'decode') else '')
+
+    @staticmethod
     def check_install():
         try:
             result = subprocess.run(['npm', 'install'],
@@ -59,8 +64,7 @@ class EvalCallback(Callback):
                                     text=True,
                                     check=True)
         except subprocess.CalledProcessError as e:
-            output = (e.stdout.decode('utf-8') if e.stdout else '') + '\n' + (
-                e.stderr.decode('utf-8') if e.stderr else '')
+            output = EvalCallback._parse_e_msg(e)
         else:
             output = result.stdout + '\n' + result.stderr
         return output
@@ -81,11 +85,9 @@ class EvalCallback(Callback):
                                         text=True,
                                         check=True)
         except subprocess.CalledProcessError as e:
-            output = (e.stdout if e.stdout else '') + '\n' + (
-                e.stderr if e.stderr else '')
+            output = EvalCallback._parse_e_msg(e)
         except subprocess.TimeoutExpired as e:
-            output = (e.stdout.decode('utf-8') if e.stdout else '') + '\n' + (
-                e.stderr.decode('utf-8') if e.stderr else '')
+            output = EvalCallback._parse_e_msg(e)
         else:
             output = result.stdout + '\n' + result.stderr
         os.system('pkill -f node')
@@ -256,8 +258,10 @@ The instructions for problem checking and fixing:
 Step 1. First call `split_to_sub_task` at least once to start some subtasks to collect detailed problems from all the related files
 
 * Give the detail description of the problem as best as you can
-* Tell the subtasks which files to read, and the code positions requiring focused attention
+* Tell the subtasks which files to read, and the code positions requiring focused attention, especially error code lines
+* Pay attention to all arguments and imports related to the error line
 * Check some related files to find the root cause according to the issues and your PRD & design
+* You may check multiple rounds if you are not sure about the root cause
 * Start multiple subtasks one time to check multiple issues in parallel, analyze the relations between the issues
 
 An example of your query:

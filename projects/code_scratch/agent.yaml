@@ -2,7 +2,7 @@ llm:
   service: openai
   model: claude-3-7-sonnet-20250219
   openai_api_key:
-  openai_base_url:
+  openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 
 generation_config:
   top_p: 0.6
@@ -11,10 +11,10 @@ generation_config:
   max_completion_tokens: 120000
   stream: true
   extra_body:
+    dashscope_extend_params:
+      provider: idealab
     enable_thinking: false
 
-todos:
-  - may be when generation, a module from frontend to backend generate in one worker works better, this makes all works need read file first
 
 prompt:
   system: |
@@ -30,22 +30,26 @@ prompt:
       * The data flow
       * Module/Class definition
       * Functions, interfaces and imports between modules to make them work together
-      * The http interfaces and detailed data structures between frontend and backend
+      * The http interfaces and detailed data structures(arguments, responses) between frontend and backend
       * Put your all frontend code in the frontend folder, put your all backend code in the backend folder, use node.js as your backend language
       * Consider: If your design is split and implemented with separate tasks, will there be issues with coordination between the code modules, such as how different modules call each other, the timing of calls, and the parameters for calls?
-    3. Organize your sub-modules into groups, each group will be implemented in one task
-      * For example, goods.jsx,details.jsx can be grouped, because they work together, group them to reduce mistakes
-      * DO NOT forget organize project files, like package.json(node.js), pom.xml(java) or setup.py(python)
-      * 3~4 files in a group averagely
-    4. Resources
+    3. Resources
       * Beauty and Functionality is the most important thing
       * Use valid links as possible as you can, e.g., images from unsplash-like websites
-    5. Code tasks
+    4. Code tasks
       * You must output your PRD and architectural design listed above, do not write code yourself
       * Retry the failed tasks
       * The preference language of the frontend is react
-      * Use `split_to_sub_task` to distribute tasks
-    6. Project requirements
+      * Use `split_to_sub_task` to distribute tasks:
+        - Low level modules written first, which means if backend is in your plan, write them first
+        - Modules of one functionality(e.g. the user management of frontend and backend) should be together, each task 3~4 files
+        - Tell subtask their dependencies
+        Example:
+          UserDB -> UserService -> UserController -> http api -> UserRoute -> UserUIComponent
+          The first task: UserDB/UserService/UserController
+          The second task: UserRoute/UserUIComponent, read the UserController file first to align the calling interfaces
+
+    5. Project requirements
       * Use vite.js to build your frontend code
       * Do not use ts check in package.json of both frontend and backend
       * Do not let your backend silent crash, make sure the error messages can be printed in the terminal when running `npm run dev`
@@ -62,11 +66,11 @@ prompt:
     [
       {
         "system": "You are a senior frontend developer. You must follow instructions: ... instructions here ...",
-        "query": "Create frontend/package.json in root directory with project name 'christmas-ecommerce', create frontend/vite.config.ts in ..."
+        "query": "You should write 1. frontend/... 2. frontend/... Read the backend/... file to get the interfaces you should follow ..."
       },
       {
-        "system": "You are a frontend developer. ...",
-        "query": "Create frontend/index.html, frontend/index.tsx ..."
+        "system": "You are a senior backend developer. ...",
+        "query": "Create backend/..., backend/..., Read the ... files ..."
       },
       ... more subtasks here ...
     ]

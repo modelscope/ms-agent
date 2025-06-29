@@ -75,7 +75,12 @@ class SplitTask(ToolBase):
                 tag=f'{self.config.tag}-r{self.round}-{self.tag_prefix}{i}',
                 task='subtask')
             sub_tasks.append(agent.run(query))
-        result = await asyncio.gather(*sub_tasks)
+
+        result = []
+        for t in sub_tasks:
+            r = await t
+            result.append(r)
+        # result = await asyncio.gather(*sub_tasks)
         res = []
         for messages in result:
             res.append(messages[-1].content)
