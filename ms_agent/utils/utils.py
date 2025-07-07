@@ -14,11 +14,52 @@ from modelscope.hub.utils.utils import get_cache_dir
 
 
 def assert_package_exist(package, message: Optional[str] = None):
+    """
+    Checks whether a specified Python package is available in the current environment.
+
+    If the package is not found, an AssertionError is raised with a customizable message.
+    This is useful for ensuring that required dependencies are installed before proceeding
+    with operations that depend on them.
+
+    Args:
+        package (str): The name of the package to check.
+        message (Optional[str]): A custom error message to display if the package is not found.
+                                 If not provided, a default message will be used.
+
+    Raises:
+        AssertionError: If the specified package is not found in the current environment.
+
+    Example:
+        >>> assert_package_exist('numpy')
+        # Proceed only if numpy is installed; otherwise, raises AssertionError
+    """
     message = message or f'Cannot find the pypi package: {package}, please install it by `pip install -U {package}`'
     assert importlib.util.find_spec(package), message
 
 
 def strtobool(val) -> bool:
+    """
+    Convert a string representation of truth to `True` or `False`.
+
+    True values are: 'y', 'yes', 't', 'true', 'on', and '1'.
+    False values are: 'n', 'no', 'f', 'false', 'off', and '0'.
+    The input is case-insensitive.
+
+    Args:
+        val (str): A string representing a boolean value.
+
+    Returns:
+        bool: `True` if the string represents a true value, `False` if it represents a false value.
+
+    Raises:
+        ValueError: If the input string does not match any known truth value.
+
+    Example:
+        >>> strtobool('Yes')
+        True
+        >>> strtobool('0')
+        False
+    """
     val = val.lower()
     if val in {'y', 'yes', 't', 'true', 'on', '1'}:
         return True
@@ -28,12 +69,45 @@ def strtobool(val) -> bool:
 
 
 def str_to_md5(text: str) -> str:
+    """
+    Converts a given string into its corresponding MD5 hash.
+
+    This function encodes the input string using UTF-8 and computes the MD5 hash,
+    returning the result as a 32-character hexadecimal string.
+
+    Args:
+        text (str): The input string to be hashed.
+
+    Returns:
+        str: The MD5 hash of the input string, represented as a hexadecimal string.
+
+    Example:
+        >>> str_to_md5("hello world")
+        '5eb63bbbe01eeed093cb22bb8f5acdc3'
+    """
     text_bytes = text.encode('utf-8')
     md5_hash = hashlib.md5(text_bytes)
     return md5_hash.hexdigest()
 
 
 def escape_yaml_string(text: str) -> str:
+    """
+    Escapes special characters in a string to make it safe for use in YAML documents.
+
+    This function escapes backslashes, dollar signs, and double quotes by adding
+    a backslash before each of them. This is useful when dynamically inserting
+    strings into YAML content to prevent syntax errors or unintended behavior.
+
+    Args:
+        text (str): The input string that may contain special characters.
+
+    Returns:
+        str: A new string with special YAML characters escaped.
+
+    Example:
+        >>> escape_yaml_string('Path: C:\\Program Files\\App, value="$VAR"')
+        'Path: C:\\\\Program Files\\\\App, value=\\\"$VAR\\\"'
+    """
     text = text.replace('\\', '\\\\')
     text = text.replace('$', '\\$')
     text = text.replace('"', '\\"')
@@ -42,6 +116,25 @@ def escape_yaml_string(text: str) -> str:
 
 def save_history(query: str, task: str, config: DictConfig,
                  messages: List['Message']):
+    """
+        将指定的配置和对话历史保存到缓存目录中，用于后续读取或恢复。
+
+        该函数会根据输入的查询语句生成一个 MD5 哈希值作为唯一标识符，
+        并据此创建对应的缓存文件夹。随后将传入的配置对象保存为 YAML 文件，
+        对话消息列表序列化为 JSON 文件进行存储。
+
+        Args:
+            query (str): 用户输入的原始查询语句，用于生成缓存文件夹名的唯一标识（MD5 哈希）。
+            task (str): 当前任务名称，用于命名对应的 .yaml 和 .json 缓存文件。
+            config (DictConfig): 需要保存的配置对象，通常由 OmegaConf 构建。
+            messages (List[Message]): 包含多个 Message 实例的对话记录列表，需支持 to_dict() 方法用于序列化。
+
+        Returns:
+            None: 无返回值。操作结果体现为磁盘上的缓存文件写入。
+
+        Raises:
+            可能抛出文件操作异常（如权限错误）或序列化异常（如对象无法被转换为字典）。
+    """
     cache_dir = os.path.join(get_cache_dir(), 'workflow_cache')
     os.makedirs(cache_dir, exist_ok=True)
     folder = str_to_md5(query)
@@ -55,6 +148,26 @@ def save_history(query: str, task: str, config: DictConfig,
 
 
 def read_history(query: str, task: str):
+    """
+    从缓存目录中读取与给定查询和任务相关的配置信息和对话历史记录。
+
+    该函数根据输入的 query 生成一个 MD5 哈希作为唯一标识符，用于定位缓存文件夹。
+    然后尝试加载对应的 YAML 配置文件和 JSON 格式的对话消息历史文件（包含 Message 对象列表）。
+
+    如果文件不存在，则对应返回值为 None。配置文件会经过字段补全处理，消息文件会反序列化为 Message 实例列表。
+
+    Args:
+        query (str): 用户输入的查询语句，用于生成缓存目录名的唯一标识（MD5 哈希）。
+        task (str): 当前任务名称，用于匹配对应的 .yaml 和 .json 缓存文件。
+
+    Returns:
+        Tuple[Optional[Config], Optional[List[Message]]]: 包含两个元素的元组：
+            - Config 对象或 None（若配置文件不存在）
+            - Message 实例列表或 None（若消息文件不存在）
+
+    Raises:
+        可能抛出文件操作或反序列化异常（如 JSONDecodeError）。
+    """
     from ms_agent.llm import Message
     from ms_agent.config import Config
     cache_dir = os.path.join(get_cache_dir(), 'workflow_cache')
@@ -105,6 +218,21 @@ def text_hash(text: str, keep_n_chars: int = 8) -> str:
 
 
 def json_loads(text: str) -> dict:
+    """
+    将输入的字符串解析为 JSON 对象。支持标准 JSON 和部分非标准格式（如带有注释的 JSON），必要时使用 json5 进行兼容性解析。
+
+    该函数会自动去除字符串两端的换行符，并尝试移除可能存在的 Markdown 代码块标记（```json ... \n```）。
+    首先尝试使用标准 json 模块解析，若失败则使用 json5 模块进行更宽松的解析。
+
+    Args:
+        text (str): 待解析的 JSON 字符串，可能包含 Markdown 代码块包裹或格式问题。
+
+    Returns:
+        dict: 解析得到的 Python dict object。
+
+    Raises:
+        json.decoder.JSONDecodeError: 如果最终无法解析该字符串为有效 JSON，则抛出标准 JSON 解码错误。
+    """
     import json5
     text = text.strip('\n')
     if text.startswith('```') and text.endswith('\n```'):

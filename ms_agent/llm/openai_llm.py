@@ -13,12 +13,15 @@ logger = get_logger()
 
 
 class OpenAI(LLM):
-    """Base Class for OpenAI SDK LLMs
+    """Base Class for OpenAI SDK LLMs.
+
+    This class provides the base implementation for interacting with OpenAI-compatible models,
+    including support for chat completions, streaming responses, and continue generates.
 
     Args:
-        config(`DictConfig`): The config instance to use.
-        base_url(`Optional[str]`): The base_url.
-        api_key(`Optional[str]`): The api_key.
+        config (`DictConfig`): The configuration object containing model and generation settings.
+        base_url (`Optional[str]`): Custom base URL for the API endpoint. Defaults to None.
+        api_key (`Optional[str]`): Authentication key for the API. Defaults to None.
     """
     input_msg = {
         'role', 'content', 'tool_calls', 'partial', 'prefix', 'tool_call_id'
@@ -44,6 +47,16 @@ class OpenAI(LLM):
     def format_tools(self,
                      tools: Optional[List[Tool]] = None
                      ) -> List[Dict[str, Any]]:
+        """Formats a list of tools into the structure expected by the OpenAI API.
+
+        If server_name is present in a tool, it will be used as a prefix for the function name.
+
+        Args:
+            tools (`Optional[List[Tool]]`): A list of Tool objects to format.
+
+        Returns:
+            List[Dict[str, Any]]: A list of formatted tool definitions suitable for OpenAI API.
+        """
         if tools:
             tools = [{
                 'type': 'function',
@@ -66,14 +79,16 @@ class OpenAI(LLM):
                  messages: List[Message],
                  tools: Optional[List[Tool]] = None,
                  **kwargs) -> Message | Generator[Message, None, None]:
-        """Generate response.
+        """Generates a response based on the given conversation history and optional tools.
 
         Args:
-            messages(`List[Message]`): The previous messages.
-            tools(`Optional[List[Tool]]`): The tools to use.
-            **kwargs: Extra generation kwargs.
+            messages (`List[Message]`): The conversation history.
+            tools (`Optional[List[Tool]]`): Optional list of available functions/tools.
+            **kwargs: Additional parameters passed to the model.
+
         Returns:
-            The Message or Genrator of messages.
+            Union[Message, Generator[Message, None, None]]: Either a single Message object (non-streaming)
+                or a generator yielding Message chunks (streaming).
         """
         parameters = inspect.signature(
             self.client.chat.completions.create).parameters
@@ -96,20 +111,46 @@ class OpenAI(LLM):
                   messages: List[Message],
                   tools: Optional[List[Tool]] = None,
                   **kwargs) -> Any:
+        """Calls the OpenAI chat completion API with the provided messages and tools.
+
+        Args:
+            messages (`List[Message]`): Formatted message history.
+            tools (`Optional[List[Tool]]`): Optional list of tools to use.
+            **kwargs: Additional parameters for the API call.
+
+        Returns:
+            Any: Raw output from the OpenAI chat completion API.
+        """
         messages = self._format_input_message(messages)
         return self.client.chat.completions.create(
             model=self.model, messages=messages, tools=tools, **kwargs)
 
     def merge_stream_message(self, pre_message_chunk: Optional[Message],
                              message_chunk: Message) -> Optional[Message]:
-        """Merge new chunk of message into the previous chunks of a message, used in stream mode.
+        """Merges a new chunk of message into the previous chunks during streaming.
+
+        Used to accumulate partial results into a complete Message object.
 
         Args:
-            pre_message_chunk: Previous chunk of message.
-            message_chunk: Latest chunk of message.
+            pre_message_chunk (`Optional[Message]`): Previously accumulated message chunk.
+            message_chunk (`Message`): New message chunk to merge.
 
         Returns:
-            Merged message.
+            Optional[Message]: Merged message with updated content and tool calls.
+
+        Example:
+            ```python
+            message = None
+            for msg in llm.generate():
+                yield msg  # Stream raw chunk
+                message = llm.merge_stream_message(message, msg)  # Accumulate into full message
+            ```
+
+        Note:
+            - **Content Merging**: Textual content (`content`, `reasoning_content`) is appended cumulatively.
+            - **Tool Call Merging**: If the same tool call index appears in consecutive chunks,
+              its `arguments` and `tool_name` will be updated incrementally.
+            - If a new tool call index is found, it will be added as a new entry in `tool_calls`.
         """
         if not pre_message_chunk:
             return message_chunk
@@ -148,7 +189,7 @@ class OpenAI(LLM):
                                   completion: Iterable,
                                   tools: Optional[List[Tool]] = None,
                                   **kwargs) -> Generator[Message, None, None]:
-        """Continue generate in stream mode.
+        """Recursively continues generating until the model finishes naturally in streaming mode.
 
         Args:
             messages(`List[Message]`): The previous messages.
@@ -157,7 +198,7 @@ class OpenAI(LLM):
             **kwargs: Extra generation kwargs.
 
         Yields:
-            the completion chunk
+            Message: Incremental chunks of the generated message.
         """
         message = None
         for chunk in completion:
@@ -172,7 +213,7 @@ class OpenAI(LLM):
                 print(
                     f'finish_reason: {chunk.choices[0].finish_reason}， continue generate.'
                 )
-                completion = self._continue_generate_recursive(
+                completion = self._continue_generate_single(
                     messages, message, tools, **kwargs)
                 for chunk in self._stream_continue_generate(
                         messages, completion, tools, **kwargs):
@@ -180,6 +221,14 @@ class OpenAI(LLM):
 
     @staticmethod
     def _stream_format_output_message(completion_chunk) -> Message:
+        """Formats a single chunk from the streaming response into a Message object.
+
+        Args:
+            completion_chunk: A single item from the streamed response.
+
+        Returns:
+            Message: A Message object representing the current chunk.
+        """
         tool_calls = None
         reasoning_content = ''
         content = ''
@@ -209,6 +258,14 @@ class OpenAI(LLM):
 
     @staticmethod
     def _format_output_message(completion) -> Message:
+        """Formats the full non-streaming response into a Message object.
+
+       Args:
+           completion: The raw response from the OpenAI API.
+
+       Returns:
+           Message: A Message object containing the final response.
+       """
         content = completion.choices[0].message.content or ''
         if hasattr(completion.choices[0].message, 'reasoning_content'):
             reasoning_content = completion.choices[
@@ -235,6 +292,12 @@ class OpenAI(LLM):
 
     @staticmethod
     def _merge_partial_message(messages: List[Message], new_message: Message):
+        """Merges a partial message into the last message in the message list.
+
+        Args:
+            messages (`List[Message]`): Current list of messages.
+            new_message (`Message`): Partial message to merge.
+        """
         messages[-1].reasoning_content += new_message.reasoning_content
         messages[-1].content += new_message.content
         if new_message.tool_calls:
@@ -243,16 +306,32 @@ class OpenAI(LLM):
             else:
                 messages[-1].tool_calls = new_message.tool_calls
 
-    def _continue_generate_recursive(self,
-                                     messages: List[Message],
-                                     new_message,
-                                     tools: List[Tool] = None,
-                                     **kwargs):
+    def _call_llm_for_continue_gen(self,
+                                   messages: List[Message],
+                                   new_message: Message,
+                                   tools: List[Tool] = None,
+                                   **kwargs) -> Any:
+        """Prepares and calls the LLM for continuation when the response is unfinished.
+
+        If the previous message marked as unfinished, it will be updated with the new content.
+        Otherwise, a new message marked as unfinished will be added to the message list.
+
+        Args:
+            messages (`List[Message]`): Current list of conversation messages.
+            new_message (`Message`): The newly generated partial message.
+            tools (`List[Tool]`, optional): Available functions or tools.
+            **kwargs: Additional generation parameters passed to the LLM.
+
+        Returns:
+            Any: The raw output from the LLM API call (e.g., chat completion object).
+        """
         # ref: https://bailian.console.aliyun.com/?tab=doc#/doc/?type=model&url=https%3A%2F%2Fhelp.aliyun.com%2Fdocument_detail%2F2862210.html&renderType=iframe # noqa
         # TODO: Move to dashscope_llm and find a proper continue way for openai_llm generating
         if messages[-1].to_dict().get('partial', False):
             self._merge_partial_message(messages, new_message)
         else:
+            # In platforms Bailian, setting `message.partial = True` indicates that the message
+            #         is not yet complete and may be continued in the next generation step.
             new_message.partial = True
             messages.append(new_message)
 
@@ -264,12 +343,26 @@ class OpenAI(LLM):
                            completion,
                            tools: List[Tool] = None,
                            **kwargs) -> Message:
+        """Recursively continues generating until the model finishes naturally.
+
+        This method checks whether the generation was stopped due to length limitations,
+        and if so, triggers another call to the LLM using the accumulated context.
+
+        Args:
+            messages (`List[Message]`): The current conversation history.
+            completion (`Any`): Initial or intermediate response from the LLM.
+            tools (`List[Tool]`, optional): Optional list of available tools.
+            **kwargs: Additional parameters used in generation.
+
+        Returns:
+            Message: A fully formed Message object containing the complete response.
+        """
         new_message = self._format_output_message(completion)
         if completion.choices[0].finish_reason in ['length', 'null']:
             logger.info(
                 f'finish_reason: {completion.choices[0].finish_reason}， continue generate.'
             )
-            completion = self._continue_generate_recursive(
+            completion = self._continue_generate_single(
                 messages, new_message, tools, **kwargs)
             return self._continue_generate(messages, completion, tools,
                                            **kwargs)
@@ -282,6 +375,14 @@ class OpenAI(LLM):
 
     def _format_input_message(self,
                               messages: List[Message]) -> List[Dict[str, Any]]:
+        """Converts a list of Message objects into the format expected by the OpenAI API.
+
+        Args:
+            messages (`List[Message]`): List of Message objects.
+
+        Returns:
+            List[Dict[str, Any]]: List of dictionaries compatible with OpenAI's input format.
+        """
         openai_messages = []
         for message in messages:
             if isinstance(message, Message):

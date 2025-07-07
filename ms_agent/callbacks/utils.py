@@ -1,2 +1,4 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
-callbacks_mapping = {}
+from ms_agent.callbacks.input_callback import InputCallback
+
+callbacks_mapping = {'input_callback': InputCallback}

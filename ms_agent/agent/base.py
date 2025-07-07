@@ -12,12 +12,21 @@ from omegaconf import DictConfig
 
 
 class Agent:
-    """The base Agent class.
+    """
+    Base class for all agents. Provides core functionality such as configuration loading,
+    lifecycle handling via external code, and defining the interface for agent execution.
+
+    The agent can be initialized either with a config object directly or by loading from a config directory or ID.
+    If external code (e.g., custom handlers) is involved, the agent must be explicitly trusted via
+    `trust_remote_code=True`.
 
     Args:
-        config_dir_or_id (`Optional[str]`): The directory or id of the config file.
-        config (`Optional[DictConfig]`): The configuration object.
-        env (`Optional[Dict[str, str]]`): The extra environment variables.
+        config_dir_or_id (Optional[str]): Path or identifier to load the configuration from.
+        config (Optional[DictConfig]): Pre-loaded configuration object.
+        env (Optional[Dict[str, str]]): Additional environment variables to inject into the config.
+        tag (Optional[str]): A custom tag for identifying this agent run.
+        trust_remote_code (bool): Whether to allow loading of external code (e.g., custom handler modules).
+
     """
 
     DEFAULT_TAG = 'Agent-default'
@@ -43,6 +52,15 @@ class Agent:
         self._register_config_handler()
 
     def _register_config_handler(self):
+        """
+        Registers a `ConfigLifecycleHandler` based on the configuration's `handler` field.
+
+        This method dynamically imports and instantiates a subclass of `ConfigLifecycleHandler`
+        defined in an external module. Requires `trust_remote_code=True` and a valid `local_dir`.
+
+        Raises:
+            AssertionError: If the handler cannot be found or loaded due to security restrictions or invalid paths.
+        """
         handler_file = getattr(self.config, 'handler', None)
         if handler_file is not None:
             local_dir = self.config.local_dir
@@ -69,14 +87,24 @@ class Agent:
             assert self.handler is not None, 'Config Lifecycle handler registered, but cannot be initialized.'
 
     def _task_begin(self):
+        """
+        Invokes the `task_begin` method of the registered `ConfigLifecycleHandler`.
+
+        This hook is called at the beginning of the task to allow for pre-processing logic
+        such as logging, setup, or dynamic messages updates.
+        """
         if self.handler is not None:
             self.config = self.handler.task_begin(self.config, self.tag)
 
     def prepare_config_for_next_step(self):
-        """Call ConfigLifecycleHandler.task_end to prepare config for the next step.
+        """
+        Invokes the `task_end` method of the registered `ConfigLifecycleHandler`, if any.
+
+        This hook is typically called between steps to allow for post-processing logic
+        and to generate an updated configuration for the next step.
 
         Returns:
-            The new config for next step.
+            DictConfig: Updated configuration for the next step, or the original config if no handler exists.
         """
         if self.handler is not None:
             config = self.handler.task_end(self.config, self.tag)
@@ -87,12 +115,20 @@ class Agent:
     @abstractmethod
     async def run(self, inputs: Union[str, List[Message]],
                   **kwargs) -> List[Message]:
-        """Run the agent.
+        """
+        Main method to execute the agent.
+
+        This method should define the logic of how the agent processes input and generates output messages.
 
         Args:
-            inputs(`Union[str, List[Message]]`): The inputs can be a prompt string,
-                or a list of messages from the previous agent
+            inputs (Union[str, List[Message]]): Input data for the agent. Can be a raw string prompt,
+                                                or a list of previous interaction messages.
+            **kwargs: Additional runtime arguments that may affect behavior.
+
         Returns:
-            The final messages
+            List[Message]: A list of message objects representing the agent's response or interaction history.
+
+        Raises:
+            NotImplementedError: Must be implemented by subclasses.
         """
         pass
