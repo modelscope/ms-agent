@@ -1,4 +1,5 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import base64
 import hashlib
 import importlib
 import os.path
@@ -8,6 +9,7 @@ from typing import List, Optional
 
 import json
 import requests
+from docling.backend.html_backend import HTMLDocumentBackend
 from omegaconf import DictConfig, OmegaConf
 
 from modelscope.hub.utils.utils import get_cache_dir
@@ -186,3 +188,93 @@ def load_image_from_url_to_pil(url: str) -> 'Image.Image':
     except IOError as e:
         print(f'Error opening image with PIL: {e}')
         return None
+
+
+def load_image_from_uri_to_pil(uri: str) -> tuple:
+    """
+    Load image from URI as a PIL Image object and extract its format extension.
+    URI format: data:[<mime>][;base64],<encoded>
+
+    Args:
+        uri (str): The image data URI
+
+    Returns:
+        tuple: (PIL Image object, file extension string) or None if failed
+    """
+    from PIL import Image
+    try:
+        header, encoded = uri.split(',', 1)
+        if ';base64' in header:
+            raw = base64.b64decode(encoded)
+        else:
+            raw = encoded.encode('utf-8')
+        m = re.match(r'data:(image/[^;]+)', header)
+        ext = m.group(1).split('/')[-1] if m else 'bin'
+        img = Image.open(BytesIO(raw))
+        return img, ext
+    except ValueError as e:
+        print(f'Error parsing URI format: {e}')
+        return None
+    except base64.binascii.Error as e:
+        print(f'Error decoding base64 data: {e}')
+        return None
+    except IOError as e:
+        print(f'Error opening image: {e}')
+        return None
+    except Exception as e:
+        print(f'Unexpected error loading image from URI: {e}')
+        return None
+
+
+def validate_url(img_url: str, backend: HTMLDocumentBackend) -> str:
+    """
+    Validates and resolves a relative image URL using the base URL from the HTML document's metadata.
+
+    This function attempts to resolve relative image URLs by looking for base URLs in the following order:
+    1. <base href="..."> tag
+    2. <link rel="canonical" href="..."> tag
+    3. <meta property="og:url" content="..."> tag
+
+    Args:
+        img_url (str): The image URL to validate/resolve
+        backend (HTMLDocumentBackend): The HTML document backend containing the parsed document
+
+    Returns:
+        str: The resolved absolute URL if successful, None otherwise
+    """
+    from urllib.parse import urljoin, urlparse
+
+    # Check if we have a valid soup object in the backend
+    if not backend or not hasattr(
+            backend, 'soup') or not backend.soup or not backend.soup.head:
+        return None
+
+    # Potential sources of base URLs to try
+    base_url = None
+    sources = [
+        # Try base tag
+        lambda: backend.soup.head.find('base', href=True)['href']
+        if backend.soup.head.find('base', href=True) else None,
+        # Try canonical link
+        lambda: backend.soup.head.find('link', rel='canonical', href=True)[
+            'href'] if backend.soup.head.find(
+                'link', rel='canonical', href=True) else None,
+        # Try OG URL meta tag
+        lambda: backend.soup.head.find(
+            'meta', property='og:url', content=True)['content'] if backend.soup
+        .head.find('meta', property='og:url', content=True) else None
+    ]
+
+    # Try each source until we find a valid base URL
+    for source_fn in sources:
+        try:
+            base_url = source_fn()
+            if base_url:
+                valid_url = urljoin(base_url, img_url)
+                return valid_url
+        except Exception as e:
+            print(f'Error resolving base URL: {e}')
+            continue  # Silently try the next source
+
+    # No valid base URL found
+    return None

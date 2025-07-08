@@ -10,13 +10,71 @@ from docling.datamodel.document import ConversionResult
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling_core.types import DoclingDocument
-from docling_core.types.doc import DocItem, ImageRef
+from docling_core.types.doc import DocItem, DocItemLabel, ImageRef
 from ms_agent.tools.docling.doc_postprocess import PostProcess
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.patcher import patch
-from ms_agent.utils.utils import load_image_from_url_to_pil
+from ms_agent.utils.utils import (load_image_from_uri_to_pil,
+                                  load_image_from_url_to_pil, validate_url)
 
 logger = get_logger()
+
+
+def html_handle_figure(self, element: Tag, doc: DoclingDocument) -> None:
+    """
+    Patch the `docling.backend.html_backend.HTMLDocumentBackend.handle_figure` method.
+    """
+    logger.debug(
+        f'Patching HTMLDocumentBackend.handle_figure for {doc.origin.filename}'
+    )
+
+    img_element: Tag = element.find('img')
+    if isinstance(img_element, Tag):
+        img_url = img_element.attrs.get('src', None)
+        if img_url.startswith('data:'):
+            img_pil, ext = load_image_from_uri_to_pil(img_url)
+        else:
+            if not img_url.startswith('http'):
+                img_url = validate_url(img_url=img_url, backend=self)
+            img_pil = load_image_from_url_to_pil(
+                img_url) if img_url.startswith('http') else None
+    else:
+        img_pil = None
+
+    dpi: int = int(img_pil.info.get('dpi', (96, 96))[0]) if img_pil else 96
+    img_ref: ImageRef = None
+    if img_pil:
+        img_ref = ImageRef.from_pil(
+            image=img_pil,
+            dpi=dpi,
+        )
+
+    contains_captions = element.find(['figcaption'])
+    if isinstance(contains_captions, Tag):
+        texts = []
+        for item in contains_captions:
+            texts.append(item.text)
+
+        fig_caption = doc.add_text(
+            label=DocItemLabel.CAPTION,
+            text=(''.join(texts)).strip(),
+            content_layer=self.content_layer,
+        )
+        doc.add_picture(
+            annotations=[],
+            image=img_ref,
+            parent=self.parents[self.level],
+            caption=fig_caption,
+            content_layer=self.content_layer,
+        )
+    else:
+        doc.add_picture(
+            annotations=[],
+            image=img_ref,
+            parent=self.parents[self.level],
+            caption=None,
+            content_layer=self.content_layer,
+        )
 
 
 def html_handle_image(self, element: Tag, doc: DoclingDocument) -> None:
@@ -28,7 +86,14 @@ def html_handle_image(self, element: Tag, doc: DoclingDocument) -> None:
 
     # Get the image from element
     img_url: str = element.attrs.get('src', None)
-    img_pil = load_image_from_url_to_pil(img_url)
+
+    if img_url.startswith('data:'):
+        img_pil, ext = load_image_from_uri_to_pil(img_url)
+    else:
+        if not img_url.startswith('http'):
+            img_url = validate_url(img_url=img_url, backend=self)
+        img_pil = load_image_from_url_to_pil(img_url)
+
     dpi: int = int(img_pil.info.get('dpi', (96, 96))[0]) if img_pil else 96
 
     img_ref: ImageRef = None
