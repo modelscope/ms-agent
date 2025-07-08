@@ -213,7 +213,7 @@ class OpenAI(LLM):
                 print(
                     f'finish_reason: {chunk.choices[0].finish_reason}， continue generate.'
                 )
-                completion = self._continue_generate_single(
+                completion = self._call_llm_for_continue_gen(
                     messages, message, tools, **kwargs)
                 for chunk in self._stream_continue_generate(
                         messages, completion, tools, **kwargs):
@@ -362,7 +362,7 @@ class OpenAI(LLM):
             logger.info(
                 f'finish_reason: {completion.choices[0].finish_reason}， continue generate.'
             )
-            completion = self._continue_generate_single(
+            completion = self._call_llm_for_continue_gen(
                 messages, new_message, tools, **kwargs)
             return self._continue_generate(messages, completion, tools,
                                            **kwargs)
