@@ -277,4 +277,4 @@ def validate_url(img_url: str, backend: HTMLDocumentBackend) -> str:
             continue  # Silently try the next source
 
     # No valid base URL found
-    return None
+    return img_url

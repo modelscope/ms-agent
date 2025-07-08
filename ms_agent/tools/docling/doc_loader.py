@@ -31,6 +31,10 @@ def html_handle_figure(self, element: Tag, doc: DoclingDocument) -> None:
     img_element: Tag = element.find('img')
     if isinstance(img_element, Tag):
         img_url = img_element.attrs.get('src', None)
+    else:
+        img_url = None
+
+    if img_url:
         if img_url.startswith('data:'):
             img_pil, ext = load_image_from_uri_to_pil(img_url)
         else:
@@ -87,12 +91,15 @@ def html_handle_image(self, element: Tag, doc: DoclingDocument) -> None:
     # Get the image from element
     img_url: str = element.attrs.get('src', None)
 
-    if img_url.startswith('data:'):
-        img_pil, ext = load_image_from_uri_to_pil(img_url)
+    if img_url:
+        if img_url.startswith('data:'):
+            img_pil, ext = load_image_from_uri_to_pil(img_url)
+        else:
+            if not img_url.startswith('http'):
+                img_url = validate_url(img_url=img_url, backend=self)
+            img_pil = load_image_from_url_to_pil(img_url)
     else:
-        if not img_url.startswith('http'):
-            img_url = validate_url(img_url=img_url, backend=self)
-        img_pil = load_image_from_url_to_pil(img_url)
+        img_pil = None
 
     dpi: int = int(img_pil.info.get('dpi', (96, 96))[0]) if img_pil else 96
 
@@ -224,6 +231,7 @@ class DocLoader:
         return doc
 
     @patch(HTMLDocumentBackend, 'handle_image', html_handle_image)
+    @patch(HTMLDocumentBackend, 'handle_figure', html_handle_figure)
     def load(self, urls_or_files: list[str]) -> List[DoclingDocument]:
 
         # TODO: Support progress bar for document loading (with pather)
