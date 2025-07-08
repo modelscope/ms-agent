@@ -12,6 +12,23 @@ from .code import Code
 
 
 class CodeAgent(Agent):
+    """
+    An agent that dynamically loads and executes a Python class from an external code file.
+
+    This agent is designed to run custom logic defined in external `.py` files. It requires the user to explicitly trust
+    remote or external code by setting `trust_remote_code=True`. The agent will locate the specified code file,
+    load it into the current environment, and instantiate the first class extending `Code` found in that module.
+
+    Args:
+        config_dir_or_id (Optional[str]): Path or identifier to load the configuration from.
+        config (Optional[DictConfig]): Pre-loaded configuration object.
+        env (Optional[Dict[str, str]]): Additional environment variables to inject into the config.
+        code_file (str): Path to the Python module containing the code logic to be executed.
+        **kwargs: Additional keyword arguments passed to the parent Agent constructor.
+
+    Raises:
+        AssertionError: If required directories are missing or if external code execution is not trusted.
+    """
 
     def __init__(self,
                  config_dir_or_id: Optional[str] = None,
@@ -29,13 +46,23 @@ class CodeAgent(Agent):
         self.code_file = code_file
 
     async def run(self, inputs, **kwargs):
-        """Run the agent.
+        """
+        Load and execute the external code module.
+
+        This method verifies that external code execution is allowed (`trust_remote_code=True`),
+        adds relevant paths to `sys.path`, imports the module, finds the appropriate class,
+        instantiates it, and runs its `run()` method with the provided input.
 
         Args:
-            inputs(`Union[str, List[Message]]`): The inputs can be a prompt string,
-                or a list of messages from the previous agent
+            inputs (Union[str, List[Message]]): Input data for the agent. Can be a raw string prompt,
+                                               or a list of previous interaction messages.
+            **kwargs: Additional runtime arguments passed to the code's `run()` method.
+
         Returns:
-            The final messages
+            List[Message]: A list of message objects representing the agent's response or interaction history.
+
+        Raises:
+            AssertionError: If no suitable class extending `Code` is found in the module.
         """
         assert self.trust_remote_code, (
             f'[External Code]A code file is required to run in the CodeAgent: {self.code_file}'

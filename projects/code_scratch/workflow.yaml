@@ -1,14 +1,26 @@
-coding:
+architecture:
   next:
-    - refine
-  agent_config: agent.yaml
+    - coding
+  agent_config: architecture.yaml
   agent:
     name: LLMAgent
     kwargs:
       tag: Architecture
 
-refine:
+
+coding:
+  next:
+    - refine
+  agent_config: coding.yaml
   agent:
     name: LLMAgent
     kwargs:
-      tag: Refiner
+      tag: Coding
+
+
+refine:
+  agent_config: refine.yaml
+  agent:
+    name: LLMAgent
+    kwargs:
+      tag: Refine

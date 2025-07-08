@@ -14,11 +14,11 @@ class DashScope(OpenAI):
             base_url=config.llm.dashscope_base_url,
             api_key=config.llm.dashscope_api_key)
 
-    def _continue_generate(self,
-                           messages: List[Message],
-                           new_message,
-                           tools: List[Tool] = None,
-                           **kwargs):
+    def _call_llm_for_continue_gen(self,
+                                   messages: List[Message],
+                                   new_message,
+                                   tools: List[Tool] = None,
+                                   **kwargs):
         # ref: https://bailian.console.aliyun.com/?tab=doc#/doc/?type=model&url=https%3A%2F%2Fhelp.aliyun.com%2Fdocument_detail%2F2862210.html&renderType=iframe # noqa
         if messages and messages[-1].to_dict().get('partial', False):
 

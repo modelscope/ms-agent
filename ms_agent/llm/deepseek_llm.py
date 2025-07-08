@@ -15,11 +15,11 @@ class DeepSeek(OpenAI):
             base_url=config.llm.deepseek_base_url,
             api_key=config.llm.deepseek_api_key)
 
-    def _continue_generate(self,
-                           messages: List[Message],
-                           new_message,
-                           tools: List[Tool] = None,
-                           **kwargs):
+    def _call_llm_for_continue_gen(self,
+                                   messages: List[Message],
+                                   new_message,
+                                   tools: List[Tool] = None,
+                                   **kwargs):
         # ref: https://api-docs.deepseek.com/zh-cn/guides/chat_prefix_completion
         if messages and messages[-1].to_dict().get('prefix', False):
 

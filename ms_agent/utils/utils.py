@@ -16,11 +16,52 @@ from modelscope.hub.utils.utils import get_cache_dir
 
 
 def assert_package_exist(package, message: Optional[str] = None):
+    """
+    Checks whether a specified Python package is available in the current environment.
+
+    If the package is not found, an AssertionError is raised with a customizable message.
+    This is useful for ensuring that required dependencies are installed before proceeding
+    with operations that depend on them.
+
+    Args:
+        package (str): The name of the package to check.
+        message (Optional[str]): A custom error message to display if the package is not found.
+                                 If not provided, a default message will be used.
+
+    Raises:
+        AssertionError: If the specified package is not found in the current environment.
+
+    Example:
+        >>> assert_package_exist('numpy')
+        # Proceed only if numpy is installed; otherwise, raises AssertionError
+    """
     message = message or f'Cannot find the pypi package: {package}, please install it by `pip install -U {package}`'
     assert importlib.util.find_spec(package), message
 
 
 def strtobool(val) -> bool:
+    """
+    Convert a string representation of truth to `True` or `False`.
+
+    True values are: 'y', 'yes', 't', 'true', 'on', and '1'.
+    False values are: 'n', 'no', 'f', 'false', 'off', and '0'.
+    The input is case-insensitive.
+
+    Args:
+        val (str): A string representing a boolean value.
+
+    Returns:
+        bool: `True` if the string represents a true value, `False` if it represents a false value.
+
+    Raises:
+        ValueError: If the input string does not match any known truth value.
+
+    Example:
+        >>> strtobool('Yes')
+        True
+        >>> strtobool('0')
+        False
+    """
     val = val.lower()
     if val in {'y', 'yes', 't', 'true', 'on', '1'}:
         return True
@@ -30,40 +71,125 @@ def strtobool(val) -> bool:
 
 
 def str_to_md5(text: str) -> str:
+    """
+    Converts a given string into its corresponding MD5 hash.
+
+    This function encodes the input string using UTF-8 and computes the MD5 hash,
+    returning the result as a 32-character hexadecimal string.
+
+    Args:
+        text (str): The input string to be hashed.
+
+    Returns:
+        str: The MD5 hash of the input string, represented as a hexadecimal string.
+
+    Example:
+        >>> str_to_md5("hello world")
+        '5eb63bbbe01eeed093cb22bb8f5acdc3'
+    """
     text_bytes = text.encode('utf-8')
     md5_hash = hashlib.md5(text_bytes)
     return md5_hash.hexdigest()
 
 
 def escape_yaml_string(text: str) -> str:
+    """
+    Escapes special characters in a string to make it safe for use in YAML documents.
+
+    This function escapes backslashes, dollar signs, and double quotes by adding
+    a backslash before each of them. This is useful when dynamically inserting
+    strings into YAML content to prevent syntax errors or unintended behavior.
+
+    Args:
+        text (str): The input string that may contain special characters.
+
+    Returns:
+        str: A new string with special YAML characters escaped.
+
+    Example:
+        >>> escape_yaml_string('Path: C:\\Program Files\\App, value="$VAR"')
+        'Path: C:\\\\Program Files\\\\App, value=\\\"$VAR\\\"'
+    """
     text = text.replace('\\', '\\\\')
     text = text.replace('$', '\\$')
     text = text.replace('"', '\\"')
     return text
 
 
-def save_history(query: str, task: str, config: DictConfig,
+def save_history(output_dir: str, query: str, task: str, config: DictConfig,
                  messages: List['Message']):
-    cache_dir = os.path.join(get_cache_dir(), 'workflow_cache')
+    """
+    Saves the specified configuration and conversation history to a cache directory for later retrieval or restoration.
+
+    This function  saves the provided configuration object as a YAML file and serializes the list of conversation
+    messages into a JSON file for storage.
+
+    The generated cache structure is as follows:
+        <output_dir>
+            └── memory
+                ├── <task>.yaml     <- Configuration
+                └── <task>.json     <- Message history
+
+    Args:
+        output_dir (str): Base directory where the cache folder will be created.
+        task (str): The current task name, used to name the corresponding .yaml and .json cache files.
+        config (DictConfig): The configuration object to be saved, typically constructed using OmegaConf.
+        messages (List[Message]): A list of Message instances representing the conversation history. Each message must
+                                  support the `to_dict()` method for serialization.
+
+    Returns:
+        None: No return value. The result of the operation is the writing of cache files to disk.
+
+    Raises:
+        OSError: If there are issues creating directories or writing files (e.g., permission errors).
+        TypeError / ValueError: If the config or messages cannot be serialized properly.
+        AttributeError: If any message in the list does not implement the `to_dict()` method.
+    """
+    cache_dir = os.path.join(output_dir, 'memory')
     os.makedirs(cache_dir, exist_ok=True)
-    folder = str_to_md5(query)
-    os.makedirs(os.path.join(cache_dir, folder), exist_ok=True)
-    config_file = os.path.join(cache_dir, folder, f'{task}.yaml')
-    message_file = os.path.join(cache_dir, folder, f'{task}.json')
+    config_file = os.path.join(cache_dir, f'{task}.yaml')
+    message_file = os.path.join(cache_dir, f'{task}.json')
     with open(config_file, 'w') as f:
         OmegaConf.save(config, f)
     with open(message_file, 'w') as f:
         json.dump([message.to_dict() for message in messages], f)
 
 
-def read_history(query: str, task: str):
+def read_history(output_dir: str, task: str):
+    """
+    Reads configuration information and conversation history associated with the given task from the cache directory.
+
+    This function attempts to locate cached files using a subdirectory under `<output_dir>/memory`. It then tries
+    to load two files:
+        - `<task>.yaml`: A YAML-formatted configuration file.
+        - `<task>.json`: A JSON-formatted list of Message objects.
+
+    If either file does not exist, the corresponding return value will be `None`. The configuration object is
+    enhanced by filling in any missing default fields before being returned. The message list is deserialized into
+    actual `Message` instances.
+
+    Args:
+        output_dir (str): Base directory where the cache folder is located.
+        task (str): The current task name, used to match the corresponding `.yaml` and `.json` cache files.
+
+    Returns:
+        Tuple[Optional[Config], Optional[List[Message]]]: A tuple containing:
+            - Config object or None: Loaded and optionally enriched configuration.
+            - List of Message instances or None: Deserialized conversation history.
+
+    Raises:
+        FileNotFoundError: If the expected cache directory exists but required files cannot be found.
+        json.JSONDecodeError: If the JSON file contains invalid syntax.
+        omegaconf.errors.ConfigValidationError: If the loaded YAML config has incorrect structure.
+        TypeError / AttributeError: If the deserialized JSON data lacks expected keys or structure for Message
+                                    objects.
+    """
     from ms_agent.llm import Message
     from ms_agent.config import Config
-    cache_dir = os.path.join(get_cache_dir(), 'workflow_cache')
+    cache_dir = os.path.join(output_dir, 'memory')
     os.makedirs(cache_dir, exist_ok=True)
-    folder = str_to_md5(query)
-    config_file = os.path.join(cache_dir, folder, f'{task}.yaml')
-    message_file = os.path.join(cache_dir, folder, f'{task}.json')
+    config_file = os.path.join(cache_dir, f'{task}.yaml')
+    message_file = os.path.join(cache_dir, f'{task}.json')
     config = None
     messages = None
     if os.path.exists(config_file):
@@ -107,6 +233,25 @@ def text_hash(text: str, keep_n_chars: int = 8) -> str:
 
 
 def json_loads(text: str) -> dict:
+    """
+    Parses an input string into a JSON object. Supports standard JSON and some non-standard formats
+    (e.g., JSON with comments), falling back to json5 for lenient parsing when necessary.
+
+    This function automatically strips leading and trailing newline characters and attempts to remove possible Markdown
+    code block delimiters (```json ... \n```). It first tries to parse the string using the standard json module. If
+    that fails, it uses the json5 module for more permissive parsing.
+
+    Args:
+        text (str): The JSON string to be parsed, which may be wrapped in a Markdown code block or contain formatting
+                    issues.
+
+    Returns:
+        dict: The parsed Python dictionary object.
+
+    Raises:
+        json.decoder.JSONDecodeError: If the string cannot be parsed into valid JSON after all attempts, a standard
+                                      JSON decoding error is raised.
+    """
     import json5
     text = text.strip('\n')
     if text.startswith('```') and text.endswith('\n```'):
@@ -149,13 +294,13 @@ def download_pdf(url: str, out_file_path: str, reuse: bool = True):
 
 def remove_resource_info(text):
     """
-    移除文本中所有 <resource_info>...</resource_info> 标签及其包含的内容。
+    Removes all <resource_info>...</resource_info> tags and their enclosed content from the given text.
 
     Args:
-        text (str): 待处理的原始文本。
+        text (str): The original text to be processed.
 
     Returns:
-        str: 移除 <resource_info> 标签后的文本。
+        str: The text with <resource_info> tags and their contents removed.
     """
     pattern = r'<resource_info>.*?</resource_info>'
 
