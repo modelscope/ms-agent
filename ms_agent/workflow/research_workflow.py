@@ -228,6 +228,8 @@ class ResearchWorkflow:
                 if res.url.startswith('https://arxiv.org/abs/') or res.url.startswith(
                         'https://arxiv.org/pdf/'):
                     res.url = res.url.replace('arxiv.org/abs', 'arxiv.org/pdf')
+                elif res.url.startswith('https://arxiv.org/html/'):
+                    res.url = res.url.replace('arxiv.org/html', 'arxiv.org/pdf')
                 results_new.append(res)
             single_res.response.results = results_new
 
