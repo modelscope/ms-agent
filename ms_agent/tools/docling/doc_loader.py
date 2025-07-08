@@ -218,6 +218,73 @@ class DocLoader:
         return ref_item_d
 
     @staticmethod
+    def _preprocess(url_or_files: List[str]) -> List[str]:
+        """
+        Pre-process the URLs or files before conversion.
+
+        Args:
+            urls_or_files (List[str]): The list of URLs or files to preprocess.
+
+        Returns:
+            List[str]: The pre-processed list of URLs or files.
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def check_url_valid(url: tuple[int, str]) -> tuple[int, str] | None:
+            """
+            Check if the URL is valid and accessible.
+            """
+            import requests
+            from urllib.parse import urlparse
+
+            idx, _url = url
+            try:
+                # Parse URL to check if it's valid
+                parsed_url = urlparse(_url)
+                if not parsed_url.netloc:
+                    logger.warning(f'Invalid URL format: {_url}')
+                    return None
+
+                # Try to send a HEAD request to check if the URL is accessible
+                response = requests.head(_url, timeout=10)
+                if response.status_code >= 400:
+                    response = requests.get(_url, stream=True, timeout=10)
+                    if response.status_code >= 400:
+                        logger.warning(
+                            f'URL returned error status {response.status_code}: {_url}'
+                        )
+                    return None
+                return url
+            except requests.RequestException as e2:
+                logger.warning(f'Failed to access URL {_url}: {e2}')
+                return None
+
+        # Step1: Remove urls or files that cannot be processed
+        http_urls = [(i, url) for i, url in enumerate(url_or_files)
+                     if url and url.startswith('http')]
+        file_paths = [(i, file) for i, file in enumerate(url_or_files)
+                      if file and not file.startswith('http')]
+        preprocessed = []
+        with ThreadPoolExecutor() as executor:
+            futures = [
+                executor.submit(check_url_valid, url) for url in http_urls
+            ]
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    preprocessed.append(result)
+
+        # Step2: Add file paths that are valid
+        preprocessed.extend(file_paths)
+
+        # Restore the original order of URLs or files
+        preprocessed = sorted(preprocessed, key=lambda x: x[0])
+        logger.info(
+            f'Preprocessed {len(preprocessed)} URLs or files for conversion.')
+
+        return [item[1] for item in preprocessed]
+
+    @staticmethod
     def _postprocess(doc: DoclingDocument) -> Union[DoclingDocument, None]:
         """
         Post-process the document after conversion.
@@ -233,6 +300,8 @@ class DocLoader:
     @patch(HTMLDocumentBackend, 'handle_image', html_handle_image)
     @patch(HTMLDocumentBackend, 'handle_figure', html_handle_figure)
     def load(self, urls_or_files: list[str]) -> List[DoclingDocument]:
+
+        urls_or_files: List[str] = self._preprocess(urls_or_files)
 
         # TODO: Support progress bar for document loading (with pather)
         results: Iterator[ConversionResult] = self._converter.convert_all(
