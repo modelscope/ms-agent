@@ -114,73 +114,80 @@ def escape_yaml_string(text: str) -> str:
     return text
 
 
-def save_history(query: str, task: str, config: DictConfig,
+def save_history(output_dir: str, query: str, task: str, config: DictConfig,
                  messages: List['Message']):
     """
     Saves the specified configuration and conversation history to a cache directory for later retrieval or restoration.
-    This function generates an MD5 hash from the input query string as a unique identifier and creates a corresponding
-    cache subdirectory. It then saves the provided configuration object as a YAML file and serializes the list of
-    conversation messages into a JSON file for storage.
+
+    This function  saves the provided configuration object as a YAML file and serializes the list of conversation
+    messages into a JSON file for storage.
+
+    The generated cache structure is as follows:
+        <output_dir>
+            └── memory
+                ├── <task>.yaml     <- Configuration
+                └── <task>.json     <- Message history
 
     Args:
-        query (str): The user's original input query string, used to generate a unique identifier (MD5 hash) for the
-        cache folder name.
+        output_dir (str): Base directory where the cache folder will be created.
         task (str): The current task name, used to name the corresponding .yaml and .json cache files.
         config (DictConfig): The configuration object to be saved, typically constructed using OmegaConf.
         messages (List[Message]): A list of Message instances representing the conversation history. Each message must
-        support the to_dict() method for serialization.
+                                  support the `to_dict()` method for serialization.
 
     Returns:
         None: No return value. The result of the operation is the writing of cache files to disk.
 
     Raises:
-        May raise file operation exceptions (e.g., permission errors) or serialization errors (e.g., if an object
-        cannot be converted to a dictionary).
+        OSError: If there are issues creating directories or writing files (e.g., permission errors).
+        TypeError / ValueError: If the config or messages cannot be serialized properly.
+        AttributeError: If any message in the list does not implement the `to_dict()` method.
     """
-    cache_dir = os.path.join(get_cache_dir(), 'workflow_cache')
+    cache_dir = os.path.join(output_dir, 'memory')
     os.makedirs(cache_dir, exist_ok=True)
-    folder = str_to_md5(query)
-    os.makedirs(os.path.join(cache_dir, folder), exist_ok=True)
-    config_file = os.path.join(cache_dir, folder, f'{task}.yaml')
-    message_file = os.path.join(cache_dir, folder, f'{task}.json')
+    config_file = os.path.join(cache_dir, f'{task}.yaml')
+    message_file = os.path.join(cache_dir, f'{task}.json')
     with open(config_file, 'w') as f:
         OmegaConf.save(config, f)
     with open(message_file, 'w') as f:
         json.dump([message.to_dict() for message in messages], f)
 
 
-def read_history(query: str, task: str):
+def read_history(output_dir: str, task: str):
     """
-    Reads configuration information and conversation history associated with the given query and task from the cache
-    directory.
+    Reads configuration information and conversation history associated with the given task from the cache directory.
 
-    This function generates an MD5 hash from the input query string as a unique identifier to locate the corresponding
-    cache subdirectory. It then attempts to load the associated YAML configuration file and JSON-formatted message
-    history file (containing a list of Message objects).
+    This function attempts to locate cached files using a subdirectory under `<output_dir>/memory`. It then tries
+    to load two files:
+        - `<task>.yaml`: A YAML-formatted configuration file.
+        - `<task>.json`: A JSON-formatted list of Message objects.
 
-    If the files do not exist, the corresponding return values will be None. The configuration file is processed with
-    field completion, and the messages file is deserialized into a list of Message instances.
+    If either file does not exist, the corresponding return value will be `None`. The configuration object is
+    enhanced by filling in any missing default fields before being returned. The message list is deserialized into
+    actual `Message` instances.
 
     Args:
-        query (str): The user's input query string, used to generate a unique identifier (MD5 hash) for locating the
-        cache directory.
-        task (str): The current task name, used to match the corresponding .yaml and .json cache files.
+        output_dir (str): Base directory where the cache folder is located.
+        task (str): The current task name, used to match the corresponding `.yaml` and `.json` cache files.
 
     Returns:
-        Tuple[Optional[Config], Optional[List[Message]]]: A tuple containing two elements:
-            - A Config object or None (if the configuration file does not exist)
-            - A list of Message instances or None (if the message file does not exist)
+        Tuple[Optional[Config], Optional[List[Message]]]: A tuple containing:
+            - Config object or None: Loaded and optionally enriched configuration.
+            - List of Message instances or None: Deserialized conversation history.
 
     Raises:
-        May raise file operation or deserialization exceptions (e.g., JSONDecodeError).
+        FileNotFoundError: If the expected cache directory exists but required files cannot be found.
+        json.JSONDecodeError: If the JSON file contains invalid syntax.
+        omegaconf.errors.ConfigValidationError: If the loaded YAML config has incorrect structure.
+        TypeError / AttributeError: If the deserialized JSON data lacks expected keys or structure for Message
+                                    objects.
     """
     from ms_agent.llm import Message
     from ms_agent.config import Config
-    cache_dir = os.path.join(get_cache_dir(), 'workflow_cache')
+    cache_dir = os.path.join(output_dir, 'memory')
     os.makedirs(cache_dir, exist_ok=True)
-    folder = str_to_md5(query)
-    config_file = os.path.join(cache_dir, folder, f'{task}.yaml')
-    message_file = os.path.join(cache_dir, folder, f'{task}.json')
+    config_file = os.path.join(cache_dir, f'{task}.yaml')
+    message_file = os.path.join(cache_dir, f'{task}.json')
     config = None
     messages = None
     if os.path.exists(config_file):
@@ -234,14 +241,14 @@ def json_loads(text: str) -> dict:
 
     Args:
         text (str): The JSON string to be parsed, which may be wrapped in a Markdown code block or contain formatting
-        issues.
+                    issues.
 
     Returns:
         dict: The parsed Python dictionary object.
 
     Raises:
         json.decoder.JSONDecodeError: If the string cannot be parsed into valid JSON after all attempts, a standard
-        JSON decoding error is raised.
+                                      JSON decoding error is raised.
     """
     import json5
     text = text.strip('\n')

@@ -167,18 +167,10 @@ class FileSystemTool(ToolBase):
             The file content or error message.
         """
         key = self.config.tag + '-' + path
-        if key in self.call_history:
-            return (
-                'You have read this file once, keep reading may cause dead loop.\n'
-                'If the actual content conflicts with your inputs, '
-                'consider the file has been modified already, you need to feedback this problem.'
-            )
         self.call_history.add(key)
         try:
             with open(os.path.join(self.output_dir, path), 'r') as f:
-                content = f.read()
-                content = f'File content is: ```\n{content}\n```\nAll file content is above wrapped in the ```.'
-                return content
+                return f.read()
         except Exception as e:
             return f'Read file <{path}> failed, error: ' + str(e)
 

@@ -1,0 +1,58 @@
+llm:
+  service: openai
+  model: claude-3-7-sonnet-20250219
+  openai_api_key:
+  openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+
+generation_config:
+  top_p: 0.6
+  temperature: 0.2
+  top_k: 20
+  stream: true
+  extra_body:
+    dashscope_extend_params:
+      provider: idealab
+    enable_thinking: false
+
+
+prompt:
+  system: |
+    You are a senior software project manager. Your responsibility is call `split_to_sub_task` to split the coding tasks, you should follow instructions:
+    1. Read the `files.json` file, distribute the coding task by the `split_to_sub_task` tool, assign them all in one calling.
+      * Do not miss any file in `files.json`
+      * Do not modify the `files.json` file
+    2. Group the code files by:
+      * 8~10 files in one group.
+      * Group closely related modules especially modules ** on a complete calling stack ** or ** depends on each other **, minimize the dependencies between groups.
+      * List groups from backend to frontend, from low level to high levels.
+      * All files should start from the frontend or backend folder
+      * Project files must before other files
+    3. Additional instructions:
+      * Present all information in a concise yet comprehensive manner
+      * Additional remind the tasks the IP and port for communication between components according to the PRD
+    4. If any subtask fails, you should retry, if all code files are done, you job is done.
+
+    Now Begin:
+
+handler: config_handler
+
+callbacks:
+  - callbacks/coding_callback
+
+tools:
+  split_task:
+    mcp: false
+    tag_prefix: worker-
+
+  file_system:
+    mcp: false
+    exclude:
+      - create_directory
+      - write_file
+      - list_files
+
+max_chat_round: 100
+
+output_dir: output
+
+help: |

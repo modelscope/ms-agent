@@ -200,6 +200,10 @@ class LLMAgent(Agent):
             List[Message]: Standardized message history including system and user prompts.
         """
         if isinstance(inputs, list):
+            system = getattr(
+                getattr(self.config, 'prompt', DictConfig({})), 'system', None)
+            if system is not None and system != inputs[0].content:
+                inputs[0].content = system
             return inputs
         assert isinstance(
             inputs, str
@@ -399,15 +403,15 @@ class LLMAgent(Agent):
         if not query or not self.load_cache or not self.task:
             return self.config, self.runtime, messages  # noqa
 
-        config, _messages = read_history(task=self.task, query=query)
+        config, _messages = read_history(
+            getattr(self.config, 'output_dir', 'output'),
+            task=self.task,
+            query=query)
         if config is not None and _messages is not None:
             if hasattr(config, 'runtime'):
                 runtime = Runtime(llm=self.llm)
                 runtime.from_dict(config.runtime)
                 delattr(config, 'runtime')
-                if runtime.round >= self.max_chat_round:
-                    runtime.should_stop = False
-                    runtime.round = 1
             else:
                 runtime = self.runtime
             return config, runtime, _messages
@@ -427,7 +431,11 @@ class LLMAgent(Agent):
         config: DictConfig = deepcopy(self.config)  # noqa
         config.runtime = self.runtime.to_dict()
         save_history(
-            query=query, task=self.task, config=config, messages=messages)
+            getattr(config, 'output_dir', 'output'),
+            query=query,
+            task=self.task,
+            config=config,
+            messages=messages)
 
     async def run(self, messages: Union[List[Message], str],
                   **kwargs) -> List[Message]:
