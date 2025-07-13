@@ -135,9 +135,11 @@ class Config:
                     if isinstance(value, BaseContainer):
                         traverse_config(value)
                     else:
-                        if name in extra:
+                        if name in extra or name.upper() in extra:
                             logger.info(f'Replacing {name} with extra value.')
-                            setattr(_config, name, extra[name])
+                            setattr(
+                                _config, name,
+                                extra[name if name in extra else name.upper()])
                         if (isinstance(value, str) and value.startswith('<')
                                 and value.endswith('>')
                                 and value[1:-1] in extra):

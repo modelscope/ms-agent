@@ -24,6 +24,9 @@ from .plan.base import Planer
 from .plan.utils import planer_mapping
 from .runtime import Runtime
 
+DEFAULT_YAML = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), 'agent.yaml')
+
 
 class LLMAgent(Agent):
     """
@@ -48,7 +51,7 @@ class LLMAgent(Agent):
     DEFAULT_SYSTEM = 'You are a helpful assistant.'
 
     def __init__(self,
-                 config_dir_or_id: Optional[str] = None,
+                 config_dir_or_id: Optional[str] = DEFAULT_YAML,
                  config: Optional[DictConfig] = None,
                  env: Optional[Dict[str, str]] = None,
                  **kwargs):
@@ -67,7 +70,7 @@ class LLMAgent(Agent):
         self.runtime: Optional[Runtime] = None
         self.max_chat_round: int = 0
         self.task = kwargs.get('task', 'default')
-        self.load_cache = kwargs.get('load_cache', True)
+        self.load_cache = kwargs.get('load_cache', False)
         self.mcp_server_file = kwargs.get('mcp_server_file', None)
         self.mcp_config: Dict[str, Any] = self._parse_mcp_servers(
             kwargs.get('mcp_config', {}))
@@ -404,9 +407,7 @@ class LLMAgent(Agent):
             return self.config, self.runtime, messages  # noqa
 
         config, _messages = read_history(
-            getattr(self.config, 'output_dir', 'output'),
-            task=self.task,
-            query=query)
+            getattr(self.config, 'output_dir', 'output'), task=self.task)
         if config is not None and _messages is not None:
             if hasattr(config, 'runtime'):
                 runtime = Runtime(llm=self.llm)

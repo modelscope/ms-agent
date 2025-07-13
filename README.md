@@ -103,6 +103,47 @@ pip install -e .
 
 ## Quickstart
 
+### Using MCP
+This project supports interaction with models via the MCP (Model Context Protocol). Below is a complete example showing
+how to configure and run an LLMAgent with MCP support.
+
+By default, the agent uses ModelScope's API inference service. Before running the agent, make sure to set your
+ModelScope API key.
+```bash
+export MODELSCOPE_API_KEY={your_modelscope_api_key}
+```
+You can find or generate your API key at https://modelscope.cn/my/myaccesstoken.
+
+```python
+from ms_agent import LLMAgent
+import asyncio
+
+# Configure MCP server
+mcp = {
+    "mcpServers": {
+        "fetch": {
+            "type": "sse",
+            "url": "https://your_mcp_url.api-inference.modelscope.net/sse"
+        }
+    }
+}
+
+async def main():
+    # Initialize the agent with MCP configuration
+    llm_agent = LLMAgent(mcp_config=mcp)
+    # Run a task
+    await llm_agent.run('Briefly introduce modelscope.cn')
+
+if __name__ == '__main__':
+    # Launch the async main function
+    asyncio.run(main())
+```
+----
+💡 Tip: You can find available MCP server configurations at modelscope.cn/mcp.
+
+For example: https://modelscope.cn/mcp/servers/@modelcontextprotocol/fetch.
+Replace the url in `mcp["mcpServers"]["fetch"]` with your own MCP server endpoint.
+
 ### Code Generation Agent
 Refer to [Website Generation](projects/code_scratch/README.md)
 

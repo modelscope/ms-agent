@@ -86,9 +86,10 @@ class RunCMD(CLICommand):
 
     def execute(self):
         if not self.args.config:
-            dir_name = os.path.dirname(__file__)
-            self.args.config = os.path.join(dir_name, 'agent.yaml')
-        if not os.path.exists(self.args.config):
+            current_dir = os.getcwd()
+            if os.path.exists(os.path.join(current_dir, 'agent.yaml')):
+                self.args.config = os.path.join(current_dir, 'agent.yaml')
+        elif not os.path.exists(self.args.config):
             self.args.config = snapshot_download(self.args.config)
         self.args.trust_remote_code: bool = strtobool(
             self.args.trust_remote_code)  # noqa
