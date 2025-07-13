@@ -123,7 +123,7 @@ mcp = {
     "mcpServers": {
         "fetch": {
             "type": "sse",
-            "url": "https://your_mcp_url.api-inference.modelscope.net/sse"
+            "url": "https://{your_mcp_url}.api-inference.modelscope.net/sse"
         }
     }
 }
