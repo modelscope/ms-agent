@@ -54,7 +54,7 @@ class RunCMD(CLICommand):
             '--load_cache',
             required=False,
             type=str,
-            default='true',
+            default='false',
             help=
             'Load previous step histories from cache, this is useful when a query fails '
             'and retry')
@@ -108,6 +108,7 @@ class RunCMD(CLICommand):
                 config=config,
                 trust_remote_code=self.args.trust_remote_code,
                 mcp_server=self.args.mcp_server,
-                mcp_server_file=self.args.mcp_server_file)
+                mcp_server_file=self.args.mcp_server_file,
+                load_cache=self.args.load_cache)
         query = self.args.query
         asyncio.run(engine.run(' '.join(query)))

@@ -67,7 +67,7 @@ class LLMAgent(Agent):
         self.runtime: Optional[Runtime] = None
         self.max_chat_round: int = 0
         self.task = kwargs.get('task', 'default')
-        self.load_cache = kwargs.get('load_cache', True)
+        self.load_cache = kwargs.get('load_cache', False)
         self.mcp_server_file = kwargs.get('mcp_server_file', None)
         self.mcp_config: Dict[str, Any] = self._parse_mcp_servers(
             kwargs.get('mcp_config', {}))
@@ -404,9 +404,7 @@ class LLMAgent(Agent):
             return self.config, self.runtime, messages  # noqa
 
         config, _messages = read_history(
-            getattr(self.config, 'output_dir', 'output'),
-            task=self.task,
-            query=query)
+            getattr(self.config, 'output_dir', 'output'), task=self.task)
         if config is not None and _messages is not None:
             if hasattr(config, 'runtime'):
                 runtime = Runtime(llm=self.llm)
@@ -432,7 +430,6 @@ class LLMAgent(Agent):
         config.runtime = self.runtime.to_dict()
         save_history(
             getattr(config, 'output_dir', 'output'),
-            query=query,
             task=self.task,
             config=config,
             messages=messages)

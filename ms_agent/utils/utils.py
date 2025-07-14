@@ -9,7 +9,6 @@ from typing import List, Optional
 
 import json
 import requests
-from docling.backend.html_backend import HTMLDocumentBackend
 from omegaconf import DictConfig, OmegaConf
 
 from modelscope.hub.utils.utils import get_cache_dir
@@ -116,7 +115,7 @@ def escape_yaml_string(text: str) -> str:
     return text
 
 
-def save_history(output_dir: str, query: str, task: str, config: DictConfig,
+def save_history(output_dir: str, task: str, config: DictConfig,
                  messages: List['Message']):
     """
     Saves the specified configuration and conversation history to a cache directory for later retrieval or restoration.
@@ -371,7 +370,7 @@ def load_image_from_uri_to_pil(uri: str) -> tuple:
         return None
 
 
-def validate_url(img_url: str, backend: HTMLDocumentBackend) -> str:
+def validate_url(img_url: str, backend: 'HTMLDocumentBackend') -> str:
     """
     Validates and resolves a relative image URL using the base URL from the HTML document's metadata.
 
