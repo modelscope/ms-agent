@@ -1,5 +1,6 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import asyncio
+from copy import copy
 from typing import Any, Dict, List, Optional
 
 import json
@@ -44,10 +45,11 @@ class ToolManager:
         def extend_tool(tool_ins: ToolBase, server_name: str,
                         tool_list: List[Tool]):
             for tool in tool_list:
-                assert tool[
-                    'tool_name'] not in self._tool_index, f'Tool name duplicated {tool["tool_name"]}'
-                self._tool_index[tool['tool_name']] = (tool_ins, server_name,
-                                                       tool)
+                key = server_name + ':' + tool['tool_name']
+                assert key not in self._tool_index, f'Tool name duplicated {tool["tool_name"]}'
+                tool = copy(tool)
+                tool['tool_name'] = key
+                self._tool_index[key] = (tool_ins, server_name, tool)
 
         mcps = await self.servers.get_tools()
         for server_name, tool_list in mcps.items():
@@ -69,7 +71,9 @@ class ToolManager:
             assert tool_name in self._tool_index, f'Tool name {tool_name} not found'
             tool_ins, server_name, _ = self._tool_index[tool_name]
             return await tool_ins.call_tool(
-                server_name, tool_name=tool_name, tool_args=tool_args)
+                server_name,
+                tool_name=tool_name.split(':')[1],
+                tool_args=tool_args)
         except Exception as e:
             return f'Tool calling failed: {str(e)}'
 

@@ -205,7 +205,8 @@ class LLMAgent(Agent):
         if isinstance(inputs, list):
             system = getattr(
                 getattr(self.config, 'prompt', DictConfig({})), 'system', None)
-            if system is not None and system != inputs[0].content:
+            if system is not None and inputs[
+                    0].role == 'system' and system != inputs[0].content:
                 inputs[0].content = system
             return inputs
         assert isinstance(
@@ -433,7 +434,6 @@ class LLMAgent(Agent):
         config.runtime = self.runtime.to_dict()
         save_history(
             getattr(config, 'output_dir', 'output'),
-            query=query,
             task=self.task,
             config=config,
             messages=messages)

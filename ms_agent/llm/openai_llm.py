@@ -61,13 +61,9 @@ class OpenAI(LLM):
             tools = [{
                 'type': 'function',
                 'function': {
-                    'name':
-                    f'{tool["tool_name"]}'
-                    if tool.get('server_name') else tool['tool_name'],
-                    'description':
-                    tool['description'],
-                    'parameters':
-                    tool['parameters']
+                    'name': tool['tool_name'],
+                    'description': tool['description'],
+                    'parameters': tool['parameters']
                 }
             } for tool in tools]
         else:

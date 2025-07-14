@@ -115,7 +115,7 @@ def escape_yaml_string(text: str) -> str:
     return text
 
 
-def save_history(output_dir: str, query: str, task: str, config: DictConfig,
+def save_history(output_dir: str, task: str, config: DictConfig,
                  messages: List['Message']):
     """
     Saves the specified configuration and conversation history to a cache directory for later retrieval or restoration.

@@ -24,7 +24,7 @@ class ChainWorkflow(Workflow):
         else:
             self.config = Config.from_task(config_dir_or_id, env)
         self.trust_remote_code = trust_remote_code or False
-        self.load_cache = kwargs.get('load_cache', True)
+        self.load_cache = kwargs.get('load_cache', False)
         self.mcp_server_file = kwargs.get('mcp_server_file', None)
         self.workflow_chains = []
         self.build_workflow()
