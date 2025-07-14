@@ -102,13 +102,15 @@ class RunCMD(CLICommand):
                 trust_remote_code=self.args.trust_remote_code,
                 load_cache=self.args.load_cache,
                 mcp_server=self.args.mcp_server,
-                mcp_server_file=self.args.mcp_server_file)
+                mcp_server_file=self.args.mcp_server_file,
+                task=self.args.query)
         else:
             engine = LLMAgent(
                 config=config,
                 trust_remote_code=self.args.trust_remote_code,
                 mcp_server=self.args.mcp_server,
                 mcp_server_file=self.args.mcp_server_file,
-                load_cache=self.args.load_cache)
+                load_cache=self.args.load_cache,
+                task=self.args.query)
         query = self.args.query
         asyncio.run(engine.run(' '.join(query)))

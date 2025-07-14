@@ -350,6 +350,7 @@ class LLMAgent(Agent):
                 sys.stdout.write(new_content)
                 sys.stdout.flush()
                 _content = _response_message.content
+            sys.stdout.write('\n')
         else:
             _response_message = self.llm.generate(messages, tools=tools)
             if _response_message.content:
@@ -375,6 +376,10 @@ class LLMAgent(Agent):
         else:
             self.runtime.should_stop = True
         await self._loop_callback('after_tool_call', messages)
+        self._log_output(
+            f'[usage] prompt_tokens: {_response_message.prompt_tokens}, '
+            f'completion_tokens: {_response_message.completion_tokens}',
+            tag=tag)
         return messages
 
     def _prepare_llm(self):

@@ -197,18 +197,19 @@ class OpenAI(LLM):
         for chunk in completion:
             message_chunk = self._stream_format_output_message(chunk)
             message = self._merge_stream_message(message, message_chunk)
-            yield message
-            if chunk.choices and chunk.choices[0].finish_reason in [
-                    'length', 'null'
-            ]:
+            if chunk.choices and chunk.choices[0].finish_reason:
                 try:
-                    # When stop_reason = 'length', there will be a next final chunk containing only usage information.
+                    # When stop_reason = 'null', there will not be a next final chunk containing only usage information.
                     next_chunk = next(completion)
                     message.completion_tokens += next_chunk.usage.completion_tokens
                     message.prompt_tokens += next_chunk.usage.prompt_tokens
                 except Exception as e:  # noqa
                     pass
 
+            yield message
+            if chunk.choices and chunk.choices[0].finish_reason in [
+                    'length', 'null'
+            ]:
                 print(
                     f'finish_reason: {chunk.choices[0].finish_reason}， continue generate.'
                 )
