@@ -12,6 +12,20 @@ logger = get_logger()
 
 
 class ChainWorkflow(Workflow):
+    """A workflow implementation that executes tasks in a sequential chain.
+
+    Tasks are defined in a configuration dictionary where each task specifies its next task(s).
+    The chain starts from the task that is not listed as the 'next' of any other task.
+
+    Args:
+        config_dir_or_id (Optional[str]): Path or ID to a directory containing the workflow configuration.
+        config (Optional[DictConfig]): Direct configuration dictionary for the workflow.
+        env (Optional[Dict[str, str]]): Environment variables used when loading the config.
+        trust_remote_code (Optional[bool]): Whether to allow loading of remote code. Defaults to False.
+        **kwargs: Additional configuration options, including:
+            - load_cache (bool): Whether to use cached results from previous runs. Default is True.
+            - mcp_server_file (Optional[str]): Path to an MCP server file if needed. Default is None.
+    """
 
     def __init__(self,
                  config_dir_or_id: Optional[str] = None,
@@ -30,6 +44,16 @@ class ChainWorkflow(Workflow):
         self.build_workflow()
 
     def build_workflow(self):
+        """
+        Build the execution chain based on the configuration.
+
+        Parses the workflow configuration to determine the order of tasks.
+        Each task may specify a 'next' field indicating which task follows.
+        This method constructs a list of task names representing the execution flow.
+
+        Raises:
+            ValueError: If no starting task can be determined (i.e., no task without a predecessor).
+        """
         if not self.config:
             return []
 
@@ -72,6 +96,21 @@ class ChainWorkflow(Workflow):
         self.workflow_chains = result
 
     async def run(self, inputs, **kwargs):
+        """
+        Execute the chain of tasks sequentially.
+
+        For each task in the built workflow chain:
+        - Determine the agent type and instantiate it.
+        - Run the agent with the provided inputs.
+        - Pass the result as input to the next agent.
+
+        Args:
+            inputs (Any): Initial input data for the first task in the chain.
+            **kwargs: Additional keyword arguments passed to each agent's run method.
+
+        Returns:
+            Any: The final output after executing all tasks in the chain.
+        """
         agent_config = None
         for task in self.workflow_chains:
             task_info = getattr(self.config, task)
