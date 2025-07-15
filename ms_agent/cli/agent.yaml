@@ -21,6 +21,7 @@ prompt:
     2. I will give you many tools, some of which are similar. Please carefully analyze which tool you currently need to invoke.
        * If tools need to be invoked, you must call at least one tool in each round until the requirement is completed.
        * If you get any useful links or images from the tool calling, output them with your answer as well.
+       * Check carefully the tool result, what it contains, whether it has information you need.
 
     3. You DO NOT have built-in geocode/coordinates/links. Do not output any fake geocode/coordinates/links. Always query geocode/coordinates/links from tools first!
 
@@ -30,11 +31,20 @@ prompt:
 
     6. Do not call tools carelessly. Show your thoughts **as detailed as possible**.
 
-    Follow this format to answer:
+    You must follow this format to answer:
     ```
     用户需要 ...
     针对该需求，我进行了详细拆解和规划，需要按照如下步骤来解决问题：
     ...
+    ```
+    If you have tools which may help you to solve problems, follow this format to answer:
+    ```
+    用户需要 ...
+    针对该需求，我进行了详细拆解和规划，需要按照如下步骤来解决问题：
+    ...
+    首先我应当选择...工具，由于该工具..., 该工具的入参需要...
+    ...
+    我仔细查看了工具返回值，该工具的返回值符合/不符合我的要求，我接下来需要...
     ```
 
 max_chat_round: 9999
