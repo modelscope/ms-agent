@@ -92,7 +92,7 @@ class HierarchicalKeyInformationExtraction(KeyInformationExtraction):
 
         target_chunks.extend(
             HybridDocumentChunker.find_all_chunks_with_label(
-                chunks=self.chunks, label=DocItem.Label.HEADING))
+                chunks=self.chunks, label=DocItemLabel.SECTION_HEADER))
 
         # TODO: add filter to determine which headings to keep (rule-based and llm-based)
 
@@ -104,6 +104,9 @@ class HierarchicalKeyInformationExtraction(KeyInformationExtraction):
 
         key_chunks: List[BaseChunk] = self.process_pictures_tables()
         print(f'Found {len(key_chunks)} key chunks with pictures and tables.')
+
+        # TODO: TBD ...
+        heading_chunks: List[BaseChunk] = self.process_headings()
 
         for key_chunk in key_chunks:
 
