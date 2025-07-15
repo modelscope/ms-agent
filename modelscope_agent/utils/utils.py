@@ -329,8 +329,15 @@ def parse_code(text: str, lang: str = '') -> str:
     if match:
         code = match.group(1)
     else:
+        if lang == 'json':
+            try:
+                # 成功解析则返回
+                json5.loads(text)
+                return text
+            except ValueError as e:
+                logger.error(f'json parse error: {e}')
+                pass
         logger.error(f'{pattern} not match following text:')
         logger.error(text)
         raise Exception('Code Pattern Not Matched')
-        return ''  # just assume original text is code
     return code
