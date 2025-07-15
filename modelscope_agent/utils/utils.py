@@ -335,7 +335,7 @@ def parse_code(text: str, lang: str = '') -> str:
                 json5.loads(text)
                 return text
             except ValueError as e:
-                logger.error(f"json parse error: {e}")
+                logger.error(f'json parse error: {e}')
                 pass
         logger.error(f'{pattern} not match following text:')
         logger.error(text)
