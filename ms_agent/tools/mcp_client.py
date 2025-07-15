@@ -55,7 +55,7 @@ class MCPClient(ToolBase):
                 self.sessions[server_name].call_tool(tool_name, tool_args),
                 timeout=TOOL_CALL_TIMEOUT)
         except asyncio.TimeoutError:
-            # TODO: 如何获取hang前tool打印的信息以返回给模型？
+            # TODO: How to get the information printed by the tool before hanging to return to the model?
             return f'execute tool call timeout: [{server_name}]{tool_name}, args: {tool_args}'
 
         texts = []
