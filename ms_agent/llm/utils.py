@@ -45,5 +45,9 @@ class Message:
     partial: bool = False
     prefix: bool = False
 
+    # usage
+    completion_tokens: int = 0
+    prompt_tokens: int = 0
+
     def to_dict(self):
         return asdict(self)

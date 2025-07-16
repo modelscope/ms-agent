@@ -370,7 +370,9 @@ def load_image_from_uri_to_pil(uri: str) -> tuple:
         return None
 
 
-def validate_url(img_url: str, backend: 'HTMLDocumentBackend') -> str:
+def validate_url(
+        img_url: str,
+        backend: 'docling.backend.html_backend.HTMLDocumentBackend') -> str:
     """
     Validates and resolves a relative image URL using the base URL from the HTML document's metadata.
 

@@ -1,5 +1,6 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import inspect
+from copy import deepcopy
 from typing import Any, Dict, Generator, Iterable, List, Optional
 
 from ms_agent.llm import LLM
@@ -37,6 +38,7 @@ class OpenAI(LLM):
         self.model: str = config.llm.model
         base_url = base_url or config.llm.openai_base_url
         api_key = api_key or config.llm.openai_api_key
+
         self.client = openai.OpenAI(
             api_key=api_key,
             base_url=base_url,
@@ -118,11 +120,13 @@ class OpenAI(LLM):
             Any: Raw output from the OpenAI chat completion API.
         """
         messages = self._format_input_message(messages)
+        if kwargs.get('stream', False):
+            kwargs['stream_options'] = {'include_usage': True}
         return self.client.chat.completions.create(
             model=self.model, messages=messages, tools=tools, **kwargs)
 
-    def merge_stream_message(self, pre_message_chunk: Optional[Message],
-                             message_chunk: Message) -> Optional[Message]:
+    def _merge_stream_message(self, pre_message_chunk: Optional[Message],
+                              message_chunk: Message) -> Optional[Message]:
         """Merges a new chunk of message into the previous chunks during streaming.
 
         Used to accumulate partial results into a complete Message object.
@@ -134,14 +138,6 @@ class OpenAI(LLM):
         Returns:
             Optional[Message]: Merged message with updated content and tool calls.
 
-        Example:
-            ```python
-            message = None
-            for msg in llm.generate():
-                yield msg  # Stream raw chunk
-                message = llm.merge_stream_message(message, msg)  # Accumulate into full message
-            ```
-
         Note:
             - **Content Merging**: Textual content (`content`, `reasoning_content`) is appended cumulatively.
             - **Tool Call Merging**: If the same tool call index appears in consecutive chunks,
@@ -150,7 +146,7 @@ class OpenAI(LLM):
         """
         if not pre_message_chunk:
             return message_chunk
-        message = pre_message_chunk
+        message = deepcopy(pre_message_chunk)
         message.reasoning_content += message_chunk.reasoning_content
         message.content += message_chunk.content
         if message_chunk.tool_calls:
@@ -197,12 +193,20 @@ class OpenAI(LLM):
             Message: Incremental chunks of the generated message.
         """
         message = None
+
         for chunk in completion:
             message_chunk = self._stream_format_output_message(chunk)
+            message = self._merge_stream_message(message, message_chunk)
+            if chunk.choices and chunk.choices[0].finish_reason:
+                try:
+                    # When stop_reason = 'null', there will not be a next final chunk containing only usage information.
+                    next_chunk = next(completion)
+                    message.completion_tokens += next_chunk.usage.completion_tokens
+                    message.prompt_tokens += next_chunk.usage.prompt_tokens
+                except Exception as e:  # noqa
+                    pass
 
-            message = self.merge_stream_message(message, message_chunk)
             yield message
-
             if chunk.choices and chunk.choices[0].finish_reason in [
                     'length', 'null'
             ]:
@@ -213,7 +217,7 @@ class OpenAI(LLM):
                     messages, message, tools, **kwargs)
                 for chunk in self._stream_continue_generate(
                         messages, completion, tools, **kwargs):
-                    yield chunk
+                    yield self._merge_stream_message(messages[-1], chunk)
 
     @staticmethod
     def _stream_format_output_message(completion_chunk) -> Message:
@@ -250,7 +254,9 @@ class OpenAI(LLM):
             content=content,
             reasoning_content=reasoning_content,
             tool_calls=tool_calls,
-            id=completion_chunk.id)
+            id=completion_chunk.id,
+            prompt_tokens=completion_chunk.usage.prompt_tokens,
+            completion_tokens=completion_chunk.usage.completion_tokens)
 
     @staticmethod
     def _format_output_message(completion) -> Message:
@@ -284,7 +290,9 @@ class OpenAI(LLM):
             content=content,
             reasoning_content=reasoning_content,
             tool_calls=tool_calls,
-            id=completion.id)
+            id=completion.id,
+            prompt_tokens=completion.usage.prompt_tokens,
+            completion_tokens=completion.usage.completion_tokens)
 
     @staticmethod
     def _merge_partial_message(messages: List[Message], new_message: Message):
@@ -296,6 +304,8 @@ class OpenAI(LLM):
         """
         messages[-1].reasoning_content += new_message.reasoning_content
         messages[-1].content += new_message.content
+        messages[-1].prompt_tokens += new_message.prompt_tokens
+        messages[-1].completion_tokens += new_message.completion_tokens
         if new_message.tool_calls:
             if messages[-1].tool_calls:
                 messages[-1].tool_calls += new_message.tool_calls

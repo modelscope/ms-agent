@@ -14,16 +14,21 @@ from modelscope.hub.utils.utils import get_cache_dir
 
 
 class Workflow:
+    """Base class for workflows that define a sequence of agent-based processing steps.
+
+    A workflow manages the execution flow of multiple agents, each responsible for
+    a specific task in the overall process. Subclasses should implement the `run` method.
+    """
 
     @staticmethod
     def find_agent(type: str) -> Optional[Type[Agent]]:
-        """Find an agent by name
+        """Find and return an Agent class by its type name.
 
         Args:
-            type(`str`): The type of agent to find
+            type (`str`): The name of the agent type to find.
 
         Returns:
-            The Agent class
+            Optional[Type[Agent]]: The corresponding Agent class if found, otherwise None.
         """
         if type == 'LLMAgent':
             return LLMAgent

@@ -1,4 +1,6 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import asyncio
+import os
 from contextlib import AsyncExitStack
 from typing import Any, Dict, List, Literal, Optional
 
@@ -21,6 +23,7 @@ DEFAULT_ENCODING_ERROR_HANDLER: EncodingErrorHandler = 'strict'
 
 DEFAULT_HTTP_TIMEOUT = 5
 DEFAULT_SSE_READ_TIMEOUT = 60 * 5
+TOOL_CALL_TIMEOUT = os.getenv('TOOL_CALL_TIMEOUT', 15)
 
 
 class MCPClient(ToolBase):
@@ -47,8 +50,14 @@ class MCPClient(ToolBase):
 
     async def call_tool(self, server_name: str, tool_name: str,
                         tool_args: dict):
-        response = await self.sessions[server_name].call_tool(
-            tool_name, tool_args)
+        try:
+            response = await asyncio.wait_for(
+                self.sessions[server_name].call_tool(tool_name, tool_args),
+                timeout=TOOL_CALL_TIMEOUT)
+        except asyncio.TimeoutError:
+            # TODO: How to get the information printed by the tool before hanging to return to the model?
+            return f'execute tool call timeout: [{server_name}]{tool_name}, args: {tool_args}'
+
         texts = []
         if response.isError:
             sep = '\n\n'

@@ -66,7 +66,7 @@ class ToolManager:
         try:
             tool_name = tool_info['tool_name']
             tool_args = tool_info['arguments']
-            if isinstance(tool_args, str):
+            while isinstance(tool_args, str):
                 tool_args = json.loads(tool_args)
             assert tool_name in self._tool_index, f'Tool name {tool_name} not found'
             tool_ins, server_name, _ = self._tool_index[tool_name]

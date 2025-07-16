@@ -1,6 +1,7 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import importlib
 import inspect
+import os
 import sys
 from abc import abstractmethod
 from typing import Dict, List, Optional, Union
@@ -9,6 +10,9 @@ from ms_agent.config import Config
 from ms_agent.config.config import ConfigLifecycleHandler
 from ms_agent.llm import Message
 from omegaconf import DictConfig
+
+DEFAULT_YAML = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), 'agent.yaml')
 
 
 class Agent:
@@ -37,10 +41,13 @@ class Agent:
                  env: Optional[Dict[str, str]] = None,
                  tag: Optional[str] = None,
                  trust_remote_code: bool = False):
-        if config_dir_or_id is None:
+        if config_dir_or_id is not None:
+            self.config: DictConfig = Config.from_task(config_dir_or_id, env)
+        elif config is not None:
             self.config: DictConfig = config
         else:
-            self.config: DictConfig = Config.from_task(config_dir_or_id, env)
+            self.config: DictConfig = Config.from_task(DEFAULT_YAML)
+
         if tag is None:
             self.tag = getattr(config, 'tag', None) or self.DEFAULT_TAG
         else:

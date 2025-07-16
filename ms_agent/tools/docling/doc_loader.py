@@ -1,5 +1,6 @@
 # flake8: noqa
 import os
+from pathlib import Path
 from typing import Dict, Iterator, List, Union
 
 from bs4 import Tag
@@ -9,6 +10,10 @@ from docling.datamodel.base_models import InputFormat
 from docling.datamodel.document import ConversionResult
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.models.document_picture_classifier import \
+    DocumentPictureClassifier
+from docling.models.layout_model import LayoutModel
+from docling.models.table_structure_model import TableStructureModel
 from docling_core.types import DoclingDocument
 from docling_core.types.doc import DocItem, DocItemLabel, ImageRef
 from ms_agent.tools.docling.doc_postprocess import PostProcess
@@ -118,6 +123,29 @@ def html_handle_image(self, element: Tag, doc: DoclingDocument) -> None:
         prov=None,
         content_layer=self.content_layer,
     )
+
+
+def download_models_ms(
+    local_dir=None,
+    force: bool = False,
+    progress: bool = False,
+) -> Path:
+    from modelscope import snapshot_download
+
+    download_path: str = snapshot_download(model_id='ds4sd/docling-models', )
+    return Path(download_path)
+
+
+def download_models_pic_classifier_ms(
+    local_dir=None,
+    force: bool = False,
+    progress: bool = False,
+) -> Path:
+    from modelscope import snapshot_download
+
+    download_path: str = snapshot_download(
+        model_id='ds4sd/DocumentFigureClassifier', )
+    return Path(download_path)
 
 
 class DocLoader:
@@ -297,6 +325,10 @@ class DocLoader:
 
         return doc
 
+    @patch(LayoutModel, 'download_models', download_models_ms)
+    @patch(TableStructureModel, 'download_models', download_models_ms)
+    @patch(DocumentPictureClassifier, 'download_models',
+           download_models_pic_classifier_ms)
     @patch(HTMLDocumentBackend, 'handle_image', html_handle_image)
     @patch(HTMLDocumentBackend, 'handle_figure', html_handle_figure)
     def load(self, urls_or_files: list[str]) -> List[DoclingDocument]:
@@ -330,29 +362,18 @@ class DocLoader:
 
 
 if __name__ == '__main__':
-    import time
 
     urls = [
-        # 'https://arxiv.org/pdf/2408.09869',
+        'https://arxiv.org/pdf/2408.09869',
         # 'https://arxiv.org/pdf/2502.15214',
         # 'https://arxiv.org/pdf/2505.13400',  # todo: cannot convert
         # 'https://github.com/modelscope/evalscope',
         # 'https://www.news.cn/talking/20250530/691e47a5d1a24c82bfa2371d1af40630/c.html',
         # 'https://www.chinaxiantour.com/chengdu-travel-guide/how-to-eat-hot-pot.html',
-        'https://www.chinahighlights.com/hangzhou/food-restaurant.htm',
+        # 'https://www.chinahighlights.com/hangzhou/food-restaurant.htm',
         # 'aaa',
     ]
 
     doc_loader = DocLoader()
-
-    t1 = time.time()
     doc_results = doc_loader.load(urls_or_files=urls)
-    print(
-        f'Loaded {len(doc_results)} documents in {time.time() - t1:.2f} seconds.'
-    )
-    print(len(doc_results))
-
-    doc: DoclingDocument = doc_results[0]
-    for pic in doc.pictures:
-        print(f'Picture: {pic.self_ref} ...')
-        pic.image.pil_image.show()
+    print(doc_results)
