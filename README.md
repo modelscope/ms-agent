@@ -48,6 +48,12 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 
 ## 🎉 News
 
+* 🔥July 16, 2025: Release MS-Agent v1.0.0rc0, which includes the following updates:
+  - Support for Agent chat with MCP (Model Context Protocol)
+  - Support for Deep Research (Agentic Insight), refer to: [Report_Demo](projects/deep_research/examples/task_20250617a/report.md), [Script_Demo](projects/deep_research/run.py)
+  - Support for [MCP-Playground](https://modelscope.cn/mcp/playground)
+  - Add callback mechanism for Agent chat
+
 
 <details><summary>Archive</summary>
 
@@ -78,6 +84,13 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 
 
 ## Installation
+
+### Install from PyPI
+
+```shell
+pip install ms-agent
+```
+
 
 ### Install from source
 
