@@ -15,7 +15,7 @@ from ms_agent.rag.utils import rag_mapping
 from ms_agent.tools import ToolManager
 from ms_agent.utils import async_retry
 from ms_agent.utils.logger import logger
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from ..utils.utils import read_history, save_history
 from .base import Agent
@@ -308,8 +308,9 @@ class LLMAgent(Agent):
             for _line in line.split('\\n'):
                 logger.info(f'[{tag}] {_line}')
 
-    @async_retry(max_attempts=2)
-    async def _step(self, messages: List[Message], tag: str) -> List[Message]:
+    @async_retry(max_attempts=2, delay=1.0)
+    async def _step(self, messages: List[Message],
+                    tag: str) -> List[Message]:  # type: ignore
         """
         Execute a single step in the agent's interaction loop.
 
@@ -345,12 +346,18 @@ class LLMAgent(Agent):
                 self.config.generation_config, 'stream', False):
             self._log_output('[assistant]:', tag=tag)
             _content = ''
+            is_first = True
             for _response_message in self._handle_stream_message(
                     messages, tools=tools):
+                if is_first:
+                    messages.append(_response_message)
+                    is_first = False
                 new_content = _response_message.content[len(_content):]
                 sys.stdout.write(new_content)
                 sys.stdout.flush()
                 _content = _response_message.content
+                messages[-1] = _response_message
+                yield messages
             sys.stdout.write('\n')
         else:
             _response_message = self.llm.generate(messages, tools=tools)
@@ -381,7 +388,7 @@ class LLMAgent(Agent):
             f'[usage] prompt_tokens: {_response_message.prompt_tokens}, '
             f'completion_tokens: {_response_message.completion_tokens}',
             tag=tag)
-        return messages
+        yield messages
 
     def _prepare_llm(self):
         """Initialize the LLM model from the configuration."""
@@ -440,13 +447,8 @@ class LLMAgent(Agent):
             config=config,
             messages=messages)
 
-    async def run(self, messages: Union[List[Message], str],
-                  **kwargs) -> List[Message]:
-        """
-        Main method to execute the agent.
-
-        Runs the agent loop, which includes generating responses,
-        calling tools, and managing memory and planning.
+    async def _run(self, messages: Union[List[Message], str], **kwargs):
+        """Run the agent, mainly contains a llm calling and tool calling loop.
 
         Args:
             messages (Union[List[Message], str]): Input data for the agent. Can be a raw string prompt,
@@ -483,7 +485,9 @@ class LLMAgent(Agent):
                     self._log_output('[' + message.role + ']:', tag=self.tag)
                     self._log_output(message.content, tag=self.tag)
             while not self.runtime.should_stop:
-                messages = await self._step(messages, self.tag)
+                yield_step = self._step(messages, self.tag)
+                async for messages in yield_step:
+                    yield messages
                 self.runtime.round += 1
                 # +1 means the next round the assistant may give a conclusion
                 if self.runtime.round >= self.max_chat_round + 1:
@@ -495,15 +499,35 @@ class LLMAgent(Agent):
                                 f'Task {messages[1].content} failed, max round({self.max_chat_round}) exceeded.'
                             ))
                     self.runtime.should_stop = True
+                    yield messages
                 # save history
                 self._save_history(messages, **kwargs)
 
             await self._loop_callback('on_task_end', messages)
             await self._cleanup_tools()
-            return messages
         except Exception as e:
             if hasattr(self.config, 'help'):
                 logger.error(
                     f'[{self.tag}] Runtime error, please follow the instructions:\n\n {self.config.help}'
                 )
             raise e
+
+    async def run(self, messages: Union[List[Message], str],
+                  **kwargs) -> List[Message]:
+        stream = kwargs.get('stream', False)
+        if stream:
+            OmegaConf.update(
+                self.config, 'generation_config.stream', True, merge=True)
+
+        if stream:
+
+            async def stream_generator():
+                async for chunk in self._run(messages=messages, **kwargs):
+                    yield chunk
+
+            return stream_generator()
+        else:
+            res = None
+            async for chunk in self._run(messages=messages, **kwargs):
+                res = chunk
+            return res

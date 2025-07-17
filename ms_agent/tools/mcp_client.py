@@ -61,7 +61,13 @@ class MCPClient(ToolBase):
         texts = []
         if response.isError:
             sep = '\n\n'
-            return f'execute error: {sep.join(response.content)}'
+            if all(isinstance(item, str) for item in response.content):
+                return f'execute error: {sep.join(response.content)}'
+            else:
+                item_list = []
+                for item in response.content:
+                    item_list.append(item.text)
+                return f'execute error: {sep.join(item_list)}'
         for content in response.content:
             if content.type == 'text':
                 texts.append(content.text)
