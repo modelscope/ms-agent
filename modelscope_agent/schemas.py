@@ -164,56 +164,28 @@ class Plan(BaseModel):
             task = self.task_map[task_id]
             task.reset()
 
-    def replace_task(self, task, decomposed_tasks=None):
+    def replace_task(self, new_task: Task):
         """
-        Replace an existing task with a new task or a list of decomposed tasks.
+        Replace an existing task with the new input task based on task_id, and reset all tasks depending on it.
 
         Args:
-            task (Task): The original task to be replaced.
-            decomposed_tasks (List[Task], optional): A list of tasks to replace the original one.
-                If not provided, this behaves like the original `replace_task(new_task)`.
+            new_task (Task): The new task that will replace an existing one.
 
         Returns:
             None
         """
-        if decomposed_tasks is None:
-            assert task.task_id in self.task_map, "Task ID not found in task_map"
-            self.task_map[task.task_id] = task
+        assert new_task.task_id in self.task_map
+        # Replace the task in the task map and the task list
+        self.task_map[new_task.task_id] = new_task
+        for i, task in enumerate(self.tasks):
+            if task.task_id == new_task.task_id:
+                self.tasks[i] = new_task
+                break
 
-            for i, t in enumerate(self.tasks):
-                if t.task_id == task.task_id:
-                    self.tasks[i] = task
-                    break
-
-            for t in self.tasks:
-                if task.task_id in t.dependent_task_ids:
-                    self.reset_task(t.task_id)
-
-        else:
-            original_task_id = task.task_id
-            assert original_task_id in self.task_map, "Original task ID not found in task_map"
-
-            index = -1
-            for i, t in enumerate(self.tasks):
-                if t.task_id == original_task_id:
-                    index = i
-                    break
-            if index == -1:
-                raise ValueError("Original task not found in tasks list")
-
-            self.tasks.pop(index)
-
-            self.tasks[index:index] = decomposed_tasks
-
-            del self.task_map[original_task_id]
-            for t in decomposed_tasks:
-                self.task_map[t.task_id] = t
-
-            self.current_task_id = decomposed_tasks[0].task_id
-
-            for t in self.tasks:
-                if original_task_id in t.dependent_task_ids:
-                    self.reset_task(t.task_id)
+        # Reset dependent tasks
+        for task in self.tasks:
+            if new_task.task_id in task.dependent_task_ids:
+                self.reset_task(task.task_id)
 
     def append_task(self, new_task: Task):
         """
