@@ -38,6 +38,5 @@ In the field of computational chemistry, we often use Gaussian software to simul
 So, how are external electric fields typically simulated in theoretical calculations?
 ```
 
-<video controls width="640" height="360">
-    <source src="https://modelscope.cn/models/ms-agent/ms_agent_resources/resolve/master/agentic_insight_case_chem_0718a.mp4" type="video/mp4">
-</video>
+#### Report
+<https://github.com/user-attachments/assets/b1091dfc-9429-46ad-b7f8-7cbd1cf3209b>
