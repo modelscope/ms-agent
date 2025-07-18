@@ -34,7 +34,7 @@ if __name__ == '__main__':
     )
 
     # Get web-search engine client
-    # For the ExaSearch, you can get your API key from https://exa.ai/
+    # For the ExaSearch, you can get your API key from https://exa.ai
     exa_search = ExaSearch(api_key='xxx-xxx')
 
     run_workflow(
