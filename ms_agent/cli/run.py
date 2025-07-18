@@ -31,7 +31,7 @@ class RunCMD(CLICommand):
         parser: argparse.ArgumentParser = parsers.add_parser(RunCMD.name)
         parser.add_argument(
             '--query',
-            required=True,
+            required=False,
             nargs='+',
             help=
             'The query or prompt to send to the LLM. Multiple words can be provided as a single query string.'
@@ -114,4 +114,6 @@ class RunCMD(CLICommand):
                 load_cache=self.args.load_cache,
                 task=self.args.query)
         query = self.args.query
+        if not query:
+            query = input('>>>')
         asyncio.run(engine.run(' '.join(query)))
