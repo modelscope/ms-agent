@@ -11,7 +11,9 @@ import json
 import requests
 from omegaconf import DictConfig, OmegaConf
 
-from modelscope.hub.utils.utils import get_cache_dir
+from .logger import get_logger
+
+logger = get_logger()
 
 
 def assert_package_exist(package, message: Optional[str] = None):
