@@ -7,7 +7,7 @@
 <p>
 
 <p align="center">
-<a href="https://modelscope.cn/home">Modelscope Hub</a> ｜ <a href="https://arxiv.org/abs/2309.00986">Paper</a>
+<a href="https://modelscope.cn/mcp/playground">MCP Playground</a> ｜ <a href="https://arxiv.org/abs/2309.00986">Paper</a>
 <br>
 </p>
 
@@ -47,6 +47,8 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 
 
 ## 🎉 News
+
+* 🔥July 18, 2025: Release MS-Agent v1.0.0, improve the experience of Agent chat with MCP, and update the readme for [Agentic Insight](projects/deep_research/README.md).
 
 * 🔥July 16, 2025: Release MS-Agent v1.0.0rc0, which includes the following updates:
   - Support for Agent chat with MCP (Model Context Protocol)
@@ -158,7 +160,10 @@ For example: https://modelscope.cn/mcp/servers/@modelcontextprotocol/fetch.
 Replace the url in `mcp["mcpServers"]["fetch"]` with your own MCP server endpoint.
 
 
-### Agentic Insight - Lightweight, Efficient, and Extensible Multi-modal Deep Research Framework
+### Agentic Insight
+
+#### - Lightweight, Efficient, and Extensible Multi-modal Deep Research Framework
+
 This project provides a framework for **Deep Research**, enabling agents to autonomously explore and execute complex tasks.
 
 #### 🌟 Features
