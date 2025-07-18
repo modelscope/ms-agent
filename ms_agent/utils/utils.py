@@ -336,7 +336,7 @@ def load_image_from_url_to_pil(url: str) -> 'Image.Image':
         return None
 
 
-def load_image_from_uri_to_pil(uri: str) -> tuple:
+def load_image_from_uri_to_pil(uri: str) -> 'Image.Image':
     """
     Load image from URI as a PIL Image object and extract its format extension.
     URI format: data:[<mime>][;base64],<encoded>
@@ -354,10 +354,8 @@ def load_image_from_uri_to_pil(uri: str) -> tuple:
             raw = base64.b64decode(encoded)
         else:
             raw = encoded.encode('utf-8')
-        m = re.match(r'data:(image/[^;]+)', header)
-        ext = m.group(1).split('/')[-1] if m else 'bin'
         img = Image.open(BytesIO(raw))
-        return img, ext
+        return img
     except ValueError as e:
         print(f'Error parsing URI format: {e}')
         return None
@@ -365,7 +363,7 @@ def load_image_from_uri_to_pil(uri: str) -> tuple:
         print(f'Error decoding base64 data: {e}')
         return None
     except IOError as e:
-        print(f'Error opening image: {e}')
+        print(f'Error opening image with PIL: {e}')
         return None
     except Exception as e:
         print(f'Unexpected error loading image from URI: {e}')
