@@ -41,7 +41,7 @@ def html_handle_figure(self, element: Tag, doc: DoclingDocument) -> None:
 
     if img_url:
         if img_url.startswith('data:'):
-            img_pil, ext = load_image_from_uri_to_pil(img_url)
+            img_pil = load_image_from_uri_to_pil(img_url)
         else:
             if not img_url.startswith('http'):
                 img_url = validate_url(img_url=img_url, backend=self)
@@ -98,7 +98,7 @@ def html_handle_image(self, element: Tag, doc: DoclingDocument) -> None:
 
     if img_url:
         if img_url.startswith('data:'):
-            img_pil, ext = load_image_from_uri_to_pil(img_url)
+            img_pil = load_image_from_uri_to_pil(img_url)
         else:
             if not img_url.startswith('http'):
                 img_url = validate_url(img_url=img_url, backend=self)
