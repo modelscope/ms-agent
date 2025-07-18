@@ -74,11 +74,9 @@ class OpenaiLLM(unittest.TestCase):
     def test_call_stream(self):
         llm = OpenAI(self.conf)
         res = llm.generate(messages=self.messages, tools=None, stream=True)
-        msg = None
         for chunk in res:
             yield chunk
-            msg = llm.merge_stream_message(msg, chunk)
-        assert (len(msg.content))
+        assert (len(chunk.content))
 
     def test_call_thinking(self):
         llm = OpenAI(self.conf)
@@ -87,17 +85,15 @@ class OpenaiLLM(unittest.TestCase):
             tools=None,
             stream=True,
             extra_body={'enable_thinking': True})
-        msg = None
         for chunk in res:
             yield chunk
-            msg = llm.merge_stream_message(msg, chunk)
-        assert (msg.reasoning_content)
+        assert (chunk.reasoning_content)
 
     def test_continue_run(self):
         llm = OpenAI(self.conf)
         res = llm.generate(messages=self.continue_messages, tools=None)
         print(res)
-        assert (len(res.content) > 100)
+        assert (res.completion_tokens > 100)
 
     def test_call_tool(self):
         llm = OpenAI(self.conf)
@@ -112,11 +108,9 @@ class OpenaiLLM(unittest.TestCase):
             tools=self.tools,
             stream=True,
             extra_body={'enable_thinking': False})
-        msg = None
         for chunk in res:
             yield chunk
-            msg = llm.merge_stream_message(msg, chunk)
-        assert (len(msg.tool_calls))
+        assert (len(chunk.tool_calls))
 
 
 if __name__ == '__main__':

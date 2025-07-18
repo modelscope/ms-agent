@@ -135,9 +135,14 @@ class Config:
                     if isinstance(value, BaseContainer):
                         traverse_config(value)
                     else:
-                        if name in extra:
+                        # Find the key in extra that matches name (case-insensitive)
+                        key_match = next(
+                            (key
+                             for key in extra if key.lower() == name.lower()),
+                            None)
+                        if key_match is not None:
                             logger.info(f'Replacing {name} with extra value.')
-                            setattr(_config, name, extra[name])
+                            setattr(_config, name, extra[key_match])
                         if (isinstance(value, str) and value.startswith('<')
                                 and value.endswith('>')
                                 and value[1:-1] in extra):

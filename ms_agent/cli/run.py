@@ -31,7 +31,7 @@ class RunCMD(CLICommand):
         parser: argparse.ArgumentParser = parsers.add_parser(RunCMD.name)
         parser.add_argument(
             '--query',
-            required=True,
+            required=False,
             nargs='+',
             help=
             'The query or prompt to send to the LLM. Multiple words can be provided as a single query string.'
@@ -86,9 +86,10 @@ class RunCMD(CLICommand):
 
     def execute(self):
         if not self.args.config:
-            dir_name = os.path.dirname(__file__)
-            self.args.config = os.path.join(dir_name, 'agent.yaml')
-        if not os.path.exists(self.args.config):
+            current_dir = os.getcwd()
+            if os.path.exists(os.path.join(current_dir, 'agent.yaml')):
+                self.args.config = os.path.join(current_dir, 'agent.yaml')
+        elif not os.path.exists(self.args.config):
             self.args.config = snapshot_download(self.args.config)
         self.args.trust_remote_code: bool = strtobool(
             self.args.trust_remote_code)  # noqa
@@ -102,13 +103,17 @@ class RunCMD(CLICommand):
                 trust_remote_code=self.args.trust_remote_code,
                 load_cache=self.args.load_cache,
                 mcp_server=self.args.mcp_server,
-                mcp_server_file=self.args.mcp_server_file)
+                mcp_server_file=self.args.mcp_server_file,
+                task=self.args.query)
         else:
             engine = LLMAgent(
                 config=config,
                 trust_remote_code=self.args.trust_remote_code,
                 mcp_server=self.args.mcp_server,
                 mcp_server_file=self.args.mcp_server_file,
-                load_cache=self.args.load_cache)
+                load_cache=self.args.load_cache,
+                task=self.args.query)
         query = self.args.query
+        if not query:
+            query = input('>>>')
         asyncio.run(engine.run(' '.join(query)))
