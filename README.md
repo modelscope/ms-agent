@@ -122,6 +122,8 @@ pip install -e .
 This project supports interaction with models via the MCP (Model Context Protocol). Below is a complete example showing
 how to configure and run an LLMAgent with MCP support.
 
+✅ Chat with agents using the MCP protocol: [MCP Playground](https://modelscope.cn/mcp/playground)
+
 By default, the agent uses ModelScope's API inference service. Before running the agent, make sure to set your
 ModelScope API key.
 ```bash
