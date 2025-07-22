@@ -10,6 +10,7 @@ from typing import List, Optional
 import json
 import requests
 from omegaconf import DictConfig, OmegaConf
+from PIL import Image
 
 from .logger import get_logger
 
@@ -321,7 +322,6 @@ def load_image_from_url_to_pil(url: str) -> 'Image.Image':
     Returns:
         A PIL Image object if successful, None otherwise.
     """
-    from PIL import Image
     try:
         response = requests.get(url)
         # Raise an HTTPError for bad responses (4xx or 5xx)
@@ -348,7 +348,6 @@ def load_image_from_uri_to_pil(uri: str) -> 'Image.Image':
     Returns:
         tuple: (PIL Image object, file extension string) or None if failed
     """
-    from PIL import Image
     try:
         header, encoded = uri.split(',', 1)
         if ';base64' in header:
@@ -371,25 +370,54 @@ def load_image_from_uri_to_pil(uri: str) -> 'Image.Image':
         return None
 
 
-def validate_url(
-        img_url: str,
-        backend: 'docling.backend.html_backend.HTMLDocumentBackend') -> str:
+def resolve_url(img_url: str,
+                backend: 'docling.backend.html_backend.HTMLDocumentBackend',
+                base_url: str) -> str:
     """
     Validates and resolves a relative image URL using the base URL from the HTML document's metadata.
+    If the base URL is not provided or is invalid, the function attempts to resolve relative image
+    URLs by looking for base URLs in the following order:
+    1. `<base href="...">` tag
+    2. `<link rel="canonical" href="...">` tag
+    3. `<meta property="og:url" content="...">` tag
 
-    This function attempts to resolve relative image URLs by looking for base URLs in the following order:
-    1. <base href="..."> tag
-    2. <link rel="canonical" href="..."> tag
-    3. <meta property="og:url" content="..."> tag
 
     Args:
         img_url (str): The image URL to validate/resolve
         backend (HTMLDocumentBackend): The HTML document backend containing the parsed document
+        base_url (str): The base URL to use for resolving relative URLs.
 
     Returns:
         str: The resolved absolute URL if successful, None otherwise
     """
     from urllib.parse import urljoin, urlparse
+
+    base_url = None if base_url is None else base_url.strip()
+
+    def normalized_base(url: str) -> str:
+        '''
+        If the base URL doesn't ends with '/' and the last segment doesn't contain a dot
+        (meaning it doesn't look like a file), it indicates that it's actually a directory.
+        In this case, append a '/' to ensure correct concatenation.
+        '''
+        parsed = urlparse(url)
+        if parsed.scheme in {'http', 'https'}:
+            if not parsed.path.endswith('/'):
+                need_append_slash = ('.' not in parsed.path.split('/')[-1]
+                                     or 'arxiv.org' in parsed.netloc)
+
+        return url + '/' if need_append_slash else url
+
+    # If the base URL is already valid, just join it with the image URL
+    if base_url and urlparse(base_url).scheme and urlparse(base_url).netloc:
+        base_url = normalized_base(base_url)
+        try:
+            valid_url = urljoin(base_url, img_url)
+            return valid_url
+        except Exception as e:
+            logger.error(
+                f'Error joining base URL with image URL: {e}, continuing to resolve...'
+            )
 
     # Check if we have a valid soup object in the backend
     if not backend or not hasattr(
@@ -424,3 +452,31 @@ def validate_url(
 
     # No valid base URL found
     return img_url
+
+
+def extract_image(
+    img_url: Optional[str],
+    backend: 'docling.backend.html_backend.HTMLDocumentBackend',
+    base_url: Optional[str] = None,
+) -> Optional['Image.Image']:
+    """
+    Extracts an image from image URL, resolving the URL if necessary.
+
+    Args:
+        img_url (Optional[str]): The image URL to extract.
+        backend (HTMLDocumentBackend): The HTML document backend containing the parsed document.
+        base_url (Optional[str]): The base URL to use for resolving relative URLs.
+
+    Returns:
+        Optional[Image.Image]: A PIL Image object if successful, None otherwise.
+    """
+    if not img_url or not isinstance(img_url, str):
+        return None
+
+    if img_url.startswith('data:'):
+        img_pil = load_image_from_uri_to_pil(img_url)
+    else:
+        if not img_url.startswith('http'):
+            img_url = resolve_url(img_url, backend, base_url)
+        img_pil = load_image_from_url_to_pil(img_url) if img_url else None
+    return img_pil if isinstance(img_pil, Image.Image) else None
