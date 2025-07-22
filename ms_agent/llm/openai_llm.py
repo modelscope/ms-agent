@@ -197,27 +197,33 @@ class OpenAI(LLM):
         for chunk in completion:
             message_chunk = self._stream_format_output_message(chunk)
             message = self._merge_stream_message(message, message_chunk)
+            # chunk[-2]: chunk with finish_reason and last contents
+            # chunk[-1]: chunk with usage only
             if chunk.choices and chunk.choices[0].finish_reason:
-                try:
-                    # When stop_reason = 'null', there will not be a next final chunk containing only usage information.
-                    next_chunk = next(completion)
-                    message.completion_tokens += next_chunk.usage.completion_tokens
-                    message.prompt_tokens += next_chunk.usage.prompt_tokens
-                except Exception as e:  # noqa
-                    pass
+                next_chunk = next(completion)
+                message.prompt_tokens += next_chunk.usage.prompt_tokens
+                message.completion_tokens += next_chunk.usage.completion_tokens
+                first_run = not messages[-1].to_dict().get('partial', False)
+                if chunk.choices[0].finish_reason in ['length', 'null']:
+                    print(
+                        f'finish_reason: {chunk.choices[0].finish_reason}， continue generate.'
+                    )
+
+                    completion = self._call_llm_for_continue_gen(
+                        messages, message, tools, **kwargs)
+                    for chunk in self._stream_continue_generate(
+                            messages, completion, tools, **kwargs):
+                        if first_run:
+                            yield self._merge_stream_message(
+                                messages[-1], chunk)
+                        else:
+                            yield chunk
+                elif not first_run:
+                    self._merge_partial_message(messages, message)
+                    messages[-1].partial = False
+                    message = messages[-1]
 
             yield message
-            if chunk.choices and chunk.choices[0].finish_reason in [
-                    'length', 'null'
-            ]:
-                print(
-                    f'finish_reason: {chunk.choices[0].finish_reason}， continue generate.'
-                )
-                completion = self._call_llm_for_continue_gen(
-                    messages, message, tools, **kwargs)
-                for chunk in self._stream_continue_generate(
-                        messages, completion, tools, **kwargs):
-                    yield self._merge_stream_message(messages[-1], chunk)
 
     @staticmethod
     def _stream_format_output_message(completion_chunk) -> Message:
@@ -340,6 +346,7 @@ class OpenAI(LLM):
             #         is not yet complete and may be continued in the next generation step.
             new_message.partial = True
             messages.append(new_message)
+        messages[-1].api_calls += 1
 
         messages = self._format_input_message(messages)
         return self._call_llm(messages, tools, **kwargs)
