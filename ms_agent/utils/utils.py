@@ -401,12 +401,13 @@ def resolve_url(img_url: str,
         In this case, append a '/' to ensure correct concatenation.
         '''
         parsed = urlparse(url)
-        if parsed.scheme in {'http', 'https'}:
-            if not parsed.path.endswith('/'):
-                need_append_slash = ('.' not in parsed.path.split('/')[-1]
-                                     or 'arxiv.org' in parsed.netloc)
+    need_append_slash = False
+    if parsed.scheme in {'http', 'https'}:
+        if not parsed.path.endswith('/'):
+            need_append_slash = ('.' not in parsed.path.split('/')[-1]
+                                 or 'arxiv.org' in parsed.netloc)
 
-        return url + '/' if need_append_slash else url
+    return url + '/' if need_append_slash else url
 
     # If the base URL is already valid, just join it with the image URL
     if base_url and urlparse(base_url).scheme and urlparse(base_url).netloc:
