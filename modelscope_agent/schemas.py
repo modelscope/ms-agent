@@ -58,6 +58,7 @@ class Task(BaseModel):
     task_type: str = ''
     code: str = ''
     result: str = ''
+    is_success: bool = False
     is_finished: bool = False
     code_cells: List[CodeCell] = []
 
