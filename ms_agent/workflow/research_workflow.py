@@ -351,7 +351,7 @@ class ResearchWorkflow:
     def run(self,
             user_prompt: str,
             urls_or_files: Optional[List[str]] = None,
-            **kwargs):
+            **kwargs) -> None:
 
         if urls_or_files:
             prepared_resources = urls_or_files
