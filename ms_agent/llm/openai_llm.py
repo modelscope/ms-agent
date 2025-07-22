@@ -200,9 +200,13 @@ class OpenAI(LLM):
             # chunk[-2]: chunk with finish_reason and last contents
             # chunk[-1]: chunk with usage only
             if chunk.choices and chunk.choices[0].finish_reason:
-                next_chunk = next(completion)
-                message.prompt_tokens += next_chunk.usage.prompt_tokens
-                message.completion_tokens += next_chunk.usage.completion_tokens
+                try:
+                    # When stop_reason = 'null', there will not be a next final chunk containing only usage information.
+                    next_chunk = next(completion)
+                    message.prompt_tokens += next_chunk.usage.prompt_tokens
+                    message.completion_tokens += next_chunk.usage.completion_tokens
+                except Exception:  # noqa
+                    pass
                 first_run = not messages[-1].to_dict().get('partial', False)
                 if chunk.choices[0].finish_reason in ['length', 'null']:
                     print(
