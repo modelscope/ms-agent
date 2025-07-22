@@ -3,7 +3,7 @@
 import copy
 import os
 import re
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 import json
 from ms_agent.llm.openai import OpenAIChat
@@ -14,7 +14,7 @@ from ms_agent.tools.exa.schema import dump_batch_search_results
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.thread_util import thread_executor
 from ms_agent.utils.utils import remove_resource_info, text_hash
-from ms_agent.workflow.principle import Principle
+from ms_agent.workflow.principle import MECEPrinciple, Principle
 
 logger = get_logger()
 
@@ -25,8 +25,8 @@ class ResearchWorkflow:
     def __init__(
             self,
             client: OpenAIChat,
-            principle: Principle,
-            search_engine=None,  # todo
+            principle: Principle = MECEPrinciple(),
+            search_engine=None,
             workdir: str = None,
             reuse: bool = False,
             **kwargs):
@@ -320,8 +320,16 @@ class ResearchWorkflow:
 
         return True
 
-    def run(self, user_prompt: str, **kwargs):
+    def _rewrite_prompt(self, user_prompt: str) -> str:
+        """
+        Rewrite the user prompt into a structured search request format.
 
+        Args:
+            user_prompt (str): The input user prompt.
+
+        Returns:
+            str: The rewritten prompt in the required search request format.
+        """
         # Rewrite the user prompt
         from datetime import datetime
         args_template: str = '{"query": "xxx", "num_results": 20, "start_published_date": "2025-01-01", "end_published_date": "2025-05-30"}'
@@ -336,23 +344,36 @@ class ResearchWorkflow:
                                             temperature=0.0,
                                             stream=False)
         resp_content: str = resp_d.get('content', '')
-        print(f'>>Rewritten Prompt: {resp_content}')
+        logger.info(f'Rewritten Prompt: {resp_content}')
 
-        # Parse the rewritten prompt
-        search_request_d: Dict[str, Any] = ResearchWorkflow.parse_json_from_content(resp_content)
-        assert search_request_d, 'Rewritten search request cannot be empty !'
+        return resp_content
 
-        if isinstance(search_request_d, list):
-            search_request_d = search_request_d[0]
+    def run(self,
+            user_prompt: str,
+            urls_or_files: Optional[List[str]] = None,
+            **kwargs):
 
-        search_request: ExaSearchRequest = ExaSearchRequest(**search_request_d)
-        search_res_file: str = self.search(search_requests=[search_request])
+        if urls_or_files:
+            prepared_resources = urls_or_files
+        else:
+            search_prompt: str = self._rewrite_prompt(user_prompt)
+            # Parse the rewritten prompt
+            search_request_d: Dict[str, Any] = ResearchWorkflow.parse_json_from_content(search_prompt)
+            assert search_request_d, 'Rewritten search request cannot be empty !'
 
-        search_results: List[Dict[str, Any]] = ExaSearchResult.load_from_disk(file_path=search_res_file)
-        assert search_results, 'Search results cannot be empty, workflow stopped!'
+            if isinstance(search_request_d, list):
+                search_request_d = search_request_d[0]
 
-        urls_or_files = [res_d['url'] for res_d in search_results[0]['results']]
-        extractor = HierarchicalKeyInformationExtraction(urls_or_files=urls_or_files)
+            search_request: ExaSearchRequest = ExaSearchRequest(**search_request_d)
+            search_res_file: str = self.search(search_requests=[search_request])
+
+            search_results: List[Dict[str, Any]] = ExaSearchResult.load_from_disk(file_path=search_res_file)
+            assert search_results, 'Search results cannot be empty, workflow stopped!'
+
+            prepared_resources = [res_d['url'] for res_d in search_results[0]['results']]
+
+
+        extractor = HierarchicalKeyInformationExtraction(urls_or_files=prepared_resources)
         key_info_list: List[KeyInformation] = extractor.extract()
 
         # Dump pictures/table to resources directory

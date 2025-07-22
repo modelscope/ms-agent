@@ -1,7 +1,17 @@
+
+# todo: only for test
+docling
+docling-core
 dotenv
+exa-py
+json5
 json5
 mcp
+mcp
+modelscope
 modelscope
 numpy
 omegaconf
 openai
+openai
+Pillow
