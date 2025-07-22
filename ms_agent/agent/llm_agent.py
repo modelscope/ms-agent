@@ -72,6 +72,7 @@ class LLMAgent(Agent):
         self.mcp_config: Dict[str, Any] = self._parse_mcp_servers(
             kwargs.get('mcp_config', {}))
         self._task_begin()
+        self.tool_name_map = {}
 
     def register_callback(self, callback: Callback):
         """
@@ -296,6 +297,43 @@ class LLMAgent(Agent):
         for message in self.llm.generate(messages, tools=tools):
             yield message
 
+    def _truncation_tool_name(self, tools: List[Tool]):
+        max_length = int(os.environ.get('MAX_TOOL_NAME_LENGTH', 64))
+        if max_length < 4:
+            max_length = 64
+        for tool in tools:
+            original_name = tool['tool_name']
+            if len(original_name) <= max_length:
+                continue
+            parts = original_name.split(':', 1)
+            if len(parts) != 2:
+                raise ValueError(
+                    f"Invalid tool_name format: {original_name}, expected 'server:fun'"
+                )
+
+            server_name, fun_name = parts
+            max_server_len = max_length - len(fun_name) - 3
+            if max_server_len <= 0:
+                raise ValueError(
+                    f"Function name too long: {fun_name} in {original_name}, can't truncate server name"
+                )
+            # Truncate server name and append '...'
+            truncated_server = server_name[:max_server_len] + '...'
+            new_name = f'{truncated_server}:{fun_name}'
+            # Create mapping relationship
+            if new_name in self.tool_name_map and self.tool_name_map[
+                    new_name] != original_name:
+                raise ValueError(
+                    f"Tool name truncation collision: '{original_name}' and "
+                    f"'{self.tool_name_map[new_name]}' both truncate to '{new_name}'. "
+                    'Please provide more distinct tool names to avoid this issue.'
+                )
+            self.tool_name_map[new_name] = original_name
+
+            tool['tool_name'] = new_name
+
+        return tools
+
     @staticmethod
     def _log_output(content: str, tag: str):
         """
@@ -344,6 +382,7 @@ class LLMAgent(Agent):
         messages = await self._update_plan(messages)
         await self._loop_callback('on_generate_response', messages)
         tools = await self.tool_manager.get_tools()
+        tools = self._truncation_tool_name(tools)
         if hasattr(self.config, 'generation_config') and getattr(
                 self.config.generation_config, 'stream', False):
             self._log_output('[assistant]:', tag=tag)
@@ -371,6 +410,13 @@ class LLMAgent(Agent):
         if _response_message.tool_calls:
             self._log_output('[tool_calling]:', tag=tag)
             for tool_call in _response_message.tool_calls:
+                if len(self.tool_name_map) > 0:
+                    # Toolname restore
+                    tool_call['tool_name'] = self.tool_name_map.get(
+                        tool_call['tool_name'], tool_call['tool_name'])
+                    for tool in tools:
+                        tool['tool_name'] = self.tool_name_map.get(
+                            tool['tool_name'], tool['tool_name'])
                 tool_call = deepcopy(tool_call)
                 if isinstance(tool_call['arguments'], str):
                     tool_call['arguments'] = json.loads(tool_call['arguments'])
