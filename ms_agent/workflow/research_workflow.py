@@ -29,11 +29,13 @@ class ResearchWorkflow:
             search_engine=None,
             workdir: str = None,
             reuse: bool = False,
+            verbose: bool = False,
             **kwargs):
         self._client = client
         self._principle = principle
         self._search_engine = search_engine
         self._reuse = reuse
+        self._verbose = verbose
 
         self._todo_d: Dict[str, Any] = {
             'markdown': None,
@@ -52,6 +54,9 @@ class ResearchWorkflow:
         self.workdir = workdir
         self.workdir_structure: Dict[
             str, str] = self._construct_workdir_structure(workdir)
+
+        if self._verbose:
+            logger.info(f'Workflow workdir structure: {self.workdir_structure}')
 
         # Init pdf parser  Note: unused
         # self.parser_workdir = self.workdir_structure['resources_dir']
@@ -372,9 +377,14 @@ class ResearchWorkflow:
 
             prepared_resources = [res_d['url'] for res_d in search_results[0]['results']]
 
+        if self._verbose:
+            logger.info(f'Prepared resources: {prepared_resources}')
 
         extractor = HierarchicalKeyInformationExtraction(urls_or_files=prepared_resources)
         key_info_list: List[KeyInformation] = extractor.extract()
+
+        if self._verbose:
+            logger.info(f'Extracted key information items: {len(key_info_list)}')
 
         # Dump pictures/table to resources directory
         resource_map: Dict[
@@ -392,7 +402,8 @@ class ResearchWorkflow:
         context: str = '\n'.join(
             [key_info.text for key_info in key_info_list if key_info.text])
 
-        logger.info(f'\n\nContext:\n{context}\n\n')
+        if self._verbose:
+            logger.info(f'\n\nContext:\n{context}\n\n')
 
         prompt_sum: str = (f'结合用户输入：{user_prompt}，请帮我总结以下内容，生成一份markdown格式的报告；'
                            f'其中图片被表示为<resource_info>xxx</resource_info>之间的placeholder，要求尽量保留重要的图片和表格，保持图片或表格以及附近对应上下文的位置关系；'
@@ -405,6 +416,10 @@ class ResearchWorkflow:
             {'role': 'system', 'content': self.default_system},
             {'role': 'user', 'content': f'{prompt_sum}{context}' if context.strip() else prompt_sum_lite}
         ]
+
+        if self._verbose:
+            logger.info(f'\n\nStart summarizing with messages: {messages_sum}')
+
         aggregated_chunks = self._chat(messages=messages_sum, temperature=0.3)
         resp_content: str = aggregated_chunks.get('content', '')
         logger.info(f'\n\nSummary Content:\n{resp_content}')
