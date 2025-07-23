@@ -409,9 +409,13 @@ class ResearchWorkflow:
         resp_content: str = aggregated_chunks.get('content', '')
         logger.info(f'\n\nSummary Content:\n{resp_content}')
 
-        # Replace resource name with actual relative path   ![图片1](images/image1.png)
+        # Replace resource name with actual relative path
         for item_name, item_relative_path in resource_map.items():
             resp_content = resp_content.replace(
+                f'src="<resource_info>{item_name}</resource_info>"',
+                f'src="{item_relative_path}"',
+                1
+            ).replace(
                 f'<resource_info>{item_name}</resource_info>',
                 f'![{os.path.basename(item_relative_path)}]({item_relative_path})<br>',
                 1

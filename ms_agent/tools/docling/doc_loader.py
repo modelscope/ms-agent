@@ -132,7 +132,9 @@ def download_models_ms(
 ) -> Path:
     from modelscope import snapshot_download
 
-    download_path: str = snapshot_download(model_id='ds4sd/docling-models', )
+    model_id: str = 'ds4sd/docling-models'
+    logger.info(f'Downloading or reloading {model_id} from ModelScope Hub ...')
+    download_path: str = snapshot_download(model_id=model_id)
     return Path(download_path)
 
 
@@ -143,8 +145,9 @@ def download_models_pic_classifier_ms(
 ) -> Path:
     from modelscope import snapshot_download
 
-    download_path: str = snapshot_download(
-        model_id='ds4sd/DocumentFigureClassifier', )
+    model_id: str = 'ds4sd/DocumentFigureClassifier'
+    logger.info(f'Downloading or reloading {model_id} from ModelScope Hub ...')
+    download_path: str = snapshot_download(model_id=model_id)
     return Path(download_path)
 
 
