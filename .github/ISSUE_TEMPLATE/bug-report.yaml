@@ -1,9 +1,11 @@
+
 name: Bug report
 title: "[<Agent component: framework|tool|llm|etc...>] "
 description: Problems and issues with code of MS-Agent
 labels: [bug]
 assignees:
-  - zzhangpurdue
+  - wangxingjun778
+  - tastelikefeet
   - suluyana
 body:
   - type: markdown
@@ -19,28 +21,22 @@ body:
       label: Initial Checks
       description: |
         Just a few checks to make sure you need to create a bug report.
-
-        _Sorry to sound so draconian 👿; but every second spent replying to issues is time not spent improving MS-Agent 🙇._
       options:
-        - label: I have searched GitHub for a duplicate issue and I'm sure this is something new
+        - label: I have searched related issues and docs but cannot get the expected help.
           required: false
-        - label: I have read and followed [the docs & demos](https://github.com/modelscope/ms-agent/tree/master/demo) and still think this is a bug
-          required: false
-        - label: >
-            I am confident that the issue is with ms-agent
-            (not my code, or another library in the ecosystem)
+        - label: The bug has not been fixed in the latest version.
           required: false
 
   - type: textarea
     attributes:
-      label: What happened + What you expected to happen
-      description: Describe 1. the bug 2. expected behavior 3. useful information (e.g., logs)
+      label: A clear and concise description of what the bug is.
+      description: ''
       placeholder: >
-        Please provide the context in which the problem occurred and explain what happened. Further,
-        please also explain why you think the behaviour is erroneous. It is extremely helpful if you can
-        copy and paste the fragment of logs showing the exact error messages or wrong behaviour here.
+        To help us understand the issue better, please provide the following:
 
-        **NOTE**: please copy and paste texts instead of taking screenshots of them for easy future search.
+        - What command or script did you run?
+        - What happened? What did you expect to happen?
+        - If there are any error messages, please copy and paste the exact log output (no screenshots).
     validations:
       required: true
 
@@ -52,32 +48,3 @@ body:
         Please specify the versions of dependencies.
     validations:
       required: true
-
-  - type: textarea
-    attributes:
-      label: Reproduction script
-      description: >
-        Please provide a reproducible script. Providing a narrow reproduction (minimal / no external dependencies) will
-        help us triage and address issues in the timely manner!
-      placeholder: >
-        Please provide a short code snippet (less than 50 lines if possible) that can be copy-pasted to
-        reproduce the issue. The snippet should have **no external library dependencies**
-        (i.e., use fake or mock data / environments).
-
-        **NOTE**: If the code snippet cannot be run by itself, the issue will be marked as "needs-repro-script"
-        until the repro instruction is updated.
-    validations:
-      required: true
-
-  - type: dropdown
-    attributes:
-      label: Issue Severity
-      description: |
-        How does this issue affect your experience as a MS-Agent user?
-      multiple: false
-      options:
-          - "Low: It annoys or frustrates me."
-          - "Medium: It is a significant difficulty but I can work around it."
-          - "High: It blocks me from completing my task."
-    validations:
-        required: false
