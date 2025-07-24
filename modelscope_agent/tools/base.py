@@ -337,7 +337,9 @@ class ToolServiceProxy(BaseTool):
         self._register_tool()
 
         if not self.tool_name:
-            print("Skipping tool registration and status check because 'tool_name' is not defined or empty.")
+            print(
+                "Skipping tool registration and status check because 'tool_name' is not defined or empty."
+            )
             return  # When tool_name is an empty string, skip registration and status check.
 
         max_retry = 10
@@ -375,7 +377,9 @@ class ToolServiceProxy(BaseTool):
         try:
             # Check if `tool_name` is defined and not empty.
             if not self.tool_name:
-                print("Skipping tool registration because 'tool_name' is not defined or empty.")
+                print(
+                    "Skipping tool registration because 'tool_name' is not defined or empty."
+                )
                 return  # Return directly, skipping registration.
 
             service_token = os.getenv('TOOL_MANAGER_AUTH', '')
@@ -432,8 +436,8 @@ class ToolServiceProxy(BaseTool):
             return result['status']
         except Exception as e:
             raise RuntimeError(
-                f'Get error during checking status from tool manager service: {self.tool_name} {self.tenant_id}. detail {e}, {traceback.format_exc()}'
-            )
+                f'Get error during checking status from tool manager service: {self.tool_name} {self.tenant_id}. '
+                f'detail {e}, {traceback.format_exc()}')
 
     def _get_tool_info(self):
         try:
@@ -454,14 +458,14 @@ class ToolServiceProxy(BaseTool):
             response.raise_for_status()
             tool_info = ToolServiceProxy.parse_service_response(response)
             # check required params
-            name = tool_info['name']
-            description = tool_info['description']
-            parameters = tool_info['parameters']
+            name = tool_info['name']  # noqa
+            description = tool_info['description']  # noqa
+            parameters = tool_info['parameters']  # noqa
             return tool_info
         except Exception as e:
             raise RuntimeError(
-                f'Get error during getting tool info from tool manager, {self.tool_name} {self.tenant_id}. detail {e}, {traceback.format_exc()}'
-            )
+                f'Get error during getting tool info from tool manager, {self.tool_name} {self.tenant_id}. detail {e}, '
+                f'{traceback.format_exc()}')
 
     def call(self, params: str, **kwargs):
         # ms_token
