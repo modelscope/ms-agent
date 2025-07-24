@@ -402,6 +402,10 @@ class ResearchWorkflow:
         context: str = '\n'.join(
             [key_info.text for key_info in key_info_list if key_info.text])
 
+        if not context.strip():
+            logger.warning('No context extracted from the provided resources, workflow stopped!')
+            return
+
         if self._verbose:
             logger.info(f'\n\nContext:\n{context}\n\n')
 

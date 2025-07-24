@@ -1,9 +1,7 @@
 # flake8: noqa
 import os
-from pathlib import Path
 from typing import Dict, Iterator, List, Union
 
-from bs4 import Tag
 from docling.backend.html_backend import HTMLDocumentBackend
 from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
@@ -15,140 +13,19 @@ from docling.models.document_picture_classifier import \
 from docling.models.layout_model import LayoutModel
 from docling.models.table_structure_model import TableStructureModel
 from docling_core.types import DoclingDocument
-from docling_core.types.doc import DocItem, DocItemLabel, ImageRef
+from docling_core.types.doc import DocItem
 from ms_agent.tools.docling.doc_postprocess import PostProcess
+from ms_agent.tools.docling.patches import (download_models_ms,
+                                            download_models_pic_classifier_ms,
+                                            html_handle_figure,
+                                            html_handle_image,
+                                            patch_easyocr_models)
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.patcher import patch
-from ms_agent.utils.utils import (load_image_from_uri_to_pil,
-                                  load_image_from_url_to_pil, validate_url)
 
 logger = get_logger()
 
-
-def html_handle_figure(self, element: Tag, doc: DoclingDocument) -> None:
-    """
-    Patch the `docling.backend.html_backend.HTMLDocumentBackend.handle_figure` method.
-    """
-    logger.debug(
-        f'Patching HTMLDocumentBackend.handle_figure for {doc.origin.filename}'
-    )
-
-    img_element: Tag = element.find('img')
-    if isinstance(img_element, Tag):
-        img_url = img_element.attrs.get('src', None)
-    else:
-        img_url = None
-
-    if img_url:
-        if img_url.startswith('data:'):
-            img_pil = load_image_from_uri_to_pil(img_url)
-        else:
-            if not img_url.startswith('http'):
-                img_url = validate_url(img_url=img_url, backend=self)
-            img_pil = load_image_from_url_to_pil(
-                img_url) if img_url.startswith('http') else None
-    else:
-        img_pil = None
-
-    dpi: int = int(img_pil.info.get('dpi', (96, 96))[0]) if img_pil else 96
-    img_ref: ImageRef = None
-    if img_pil:
-        img_ref = ImageRef.from_pil(
-            image=img_pil,
-            dpi=dpi,
-        )
-
-    contains_captions = element.find(['figcaption'])
-    if isinstance(contains_captions, Tag):
-        texts = []
-        for item in contains_captions:
-            texts.append(item.text)
-
-        fig_caption = doc.add_text(
-            label=DocItemLabel.CAPTION,
-            text=(''.join(texts)).strip(),
-            content_layer=self.content_layer,
-        )
-        doc.add_picture(
-            annotations=[],
-            image=img_ref,
-            parent=self.parents[self.level],
-            caption=fig_caption,
-            content_layer=self.content_layer,
-        )
-    else:
-        doc.add_picture(
-            annotations=[],
-            image=img_ref,
-            parent=self.parents[self.level],
-            caption=None,
-            content_layer=self.content_layer,
-        )
-
-
-def html_handle_image(self, element: Tag, doc: DoclingDocument) -> None:
-    """
-    Patch the `docling.backend.html_backend.HTMLDocumentBackend.handle_image` method to use the custom.
-    """
-    logger.debug(
-        f'Patching HTMLDocumentBackend.handle_image for {doc.origin.filename}')
-
-    # Get the image from element
-    img_url: str = element.attrs.get('src', None)
-
-    if img_url:
-        if img_url.startswith('data:'):
-            img_pil = load_image_from_uri_to_pil(img_url)
-        else:
-            if not img_url.startswith('http'):
-                img_url = validate_url(img_url=img_url, backend=self)
-            img_pil = load_image_from_url_to_pil(img_url)
-    else:
-        img_pil = None
-
-    dpi: int = int(img_pil.info.get('dpi', (96, 96))[0]) if img_pil else 96
-
-    img_ref: ImageRef = None
-    if img_pil:
-        img_ref = ImageRef.from_pil(
-            image=img_pil,
-            dpi=dpi,
-        )
-
-    doc.add_picture(
-        annotations=[],
-        image=img_ref,
-        parent=self.parents[self.level],
-        caption=None,
-        prov=None,
-        content_layer=self.content_layer,
-    )
-
-
-def download_models_ms(
-    local_dir=None,
-    force: bool = False,
-    progress: bool = False,
-) -> Path:
-    from modelscope import snapshot_download
-
-    model_id: str = 'ds4sd/docling-models'
-    logger.info(f'Downloading or reloading {model_id} from ModelScope Hub ...')
-    download_path: str = snapshot_download(model_id=model_id)
-    return Path(download_path)
-
-
-def download_models_pic_classifier_ms(
-    local_dir=None,
-    force: bool = False,
-    progress: bool = False,
-) -> Path:
-    from modelscope import snapshot_download
-
-    model_id: str = 'ds4sd/DocumentFigureClassifier'
-    logger.info(f'Downloading or reloading {model_id} from ModelScope Hub ...')
-    download_path: str = snapshot_download(model_id=model_id)
-    return Path(download_path)
+patch_easyocr_models()
 
 
 class DocLoader:
