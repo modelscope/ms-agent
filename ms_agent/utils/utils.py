@@ -9,6 +9,7 @@ from typing import List, Optional
 
 import json
 import requests
+import yaml
 from omegaconf import DictConfig, OmegaConf
 
 from .logger import get_logger
@@ -424,3 +425,34 @@ def validate_url(
 
     # No valid base URL found
     return img_url
+
+
+def get_default_config():
+    """
+    Load and return the default configuration from 'ms_agent/agent/agent.yaml'.
+
+    Uses module-relative path resolution to ensure stable file location handling.
+    Reads the YAML configuration file using PyYAML's safe_load method to prevent
+    arbitrary code execution.
+
+    Returns:
+        dict: A dictionary containing the configuration data from the YAML file.
+
+    Raises:
+        FileNotFoundError: If the configuration file does not exist at the resolved path.
+        yaml.YAMLError: If there is a syntax error in the YAML file.
+
+    Example:
+        >>> config = get_default_config()
+        >>> print(config["llm"]["model"])
+        Qwen/Qwen3-235B-A22B
+    """
+    # Construct path relative to current module's directory
+    config_path = os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__),  # ms_agent/utils/
+            '..',  # ↑ up to ms_agent/
+            'agent',  # → agent/
+            'agent.yaml'))
+    with open(config_path, 'r', encoding='utf-8') as file:
+        return yaml.safe_load(file)
