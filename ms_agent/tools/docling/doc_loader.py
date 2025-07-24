@@ -25,8 +25,6 @@ from ms_agent.utils.patcher import patch
 
 logger = get_logger()
 
-patch_easyocr_models()
-
 
 class DocLoader:
 
@@ -212,6 +210,9 @@ class DocLoader:
     @patch(HTMLDocumentBackend, 'handle_image', html_handle_image)
     @patch(HTMLDocumentBackend, 'handle_figure', html_handle_figure)
     def load(self, urls_or_files: list[str]) -> List[DoclingDocument]:
+
+        # Patch easyocr model paths
+        patch_easyocr_models()
 
         urls_or_files: List[str] = self._preprocess(urls_or_files)
 

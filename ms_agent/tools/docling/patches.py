@@ -138,33 +138,61 @@ def download_models_pic_classifier_ms(
 
 
 def patch_easyocr_models():
-    from easyocr.config import (
-        detection_models as det_models_dict,
-        recognition_models as rec_models_dict,
-    )
+    # from easyocr.config import (
+    #     detection_models as det_models_dict,
+    #     recognition_models as rec_models_dict,
+    # )
+    #
+    # logger.info('Patching EasyOCR models URLs for ModelScope...')
+    #
+    # det_models_dict['craft'][
+    #     'url'] = 'https://modelscope.cn/models/ms-agent/craft_mlt_25k/resolve/master/craft_mlt_25k.zip'
+    # det_models_dict['dbnet18'][
+    #     'url'] = 'https://modelscope.cn/models/ms-agent/pretrained_ic15_res18/resolve/master/pretrained_ic15_res18.zip'
+    # det_models_dict['dbnet50'][
+    #     'url'] = 'https://modelscope.cn/models/ms-agent/pretrained_ic15_res50/resolve/master/pretrained_ic15_res50.zip'
+    #
+    # rec_models_dict['gen2']['english_g2'][
+    #     'url'] = 'https://modelscope.cn/models/ms-agent/english_g2/resolve/master/english_g2.zip'
+    # rec_models_dict['gen2']['latin_g2'][
+    #     'url'] = 'https://modelscope.cn/models/ms-agent/latin_g2/resolve/master/latin_g2.zip'
+    # rec_models_dict['gen2']['zh_sim_g2'][
+    #     'url'] = 'https://modelscope.cn/models/ms-agent/zh_sim_g2/resolve/master/zh_sim_g2.zip'
+    # rec_models_dict['gen2']['japanese_g2'][
+    #     'url'] = 'https://modelscope.cn/models/ms-agent/japanese_g2/resolve/master/japanese_g2.zip'
+    # rec_models_dict['gen2']['korean_g2'][
+    #     'url'] = 'https://modelscope.cn/models/ms-agent/korean_g2/resolve/master/korean_g2.zip'
+    # rec_models_dict['gen2']['telugu_g2'][
+    #     'url'] = 'https://modelscope.cn/models/ms-agent/telugu_g2/resolve/master/telugu_g2.zip'
+    # rec_models_dict['gen2']['kannada_g2'][
+    #     'url'] = 'https://modelscope.cn/models/ms-agent/kannada_g2/resolve/master/kannada_g2.zip'
+    # rec_models_dict['gen2']['cyrillic_g2'][
+    #     'url'] = 'https://modelscope.cn/models/ms-agent/cyrillic_g2/resolve/master/cyrillic_g2.zip'
+
+    from easyocr.config import detection_models, recognition_models
 
     logger.info('Patching EasyOCR models URLs for ModelScope...')
 
-    det_models_dict['craft'][
+    detection_models['craft'][
         'url'] = 'https://modelscope.cn/models/ms-agent/craft_mlt_25k/resolve/master/craft_mlt_25k.zip'
-    det_models_dict['dbnet18'][
+    detection_models['dbnet18'][
         'url'] = 'https://modelscope.cn/models/ms-agent/pretrained_ic15_res18/resolve/master/pretrained_ic15_res18.zip'
-    det_models_dict['dbnet50'][
+    detection_models['dbnet50'][
         'url'] = 'https://modelscope.cn/models/ms-agent/pretrained_ic15_res50/resolve/master/pretrained_ic15_res50.zip'
 
-    rec_models_dict['gen2']['english_g2'][
+    recognition_models['gen2']['english_g2'][
         'url'] = 'https://modelscope.cn/models/ms-agent/english_g2/resolve/master/english_g2.zip'
-    rec_models_dict['gen2']['latin_g2'][
+    recognition_models['gen2']['latin_g2'][
         'url'] = 'https://modelscope.cn/models/ms-agent/latin_g2/resolve/master/latin_g2.zip'
-    rec_models_dict['gen2']['zh_sim_g2'][
+    recognition_models['gen2']['zh_sim_g2'][
         'url'] = 'https://modelscope.cn/models/ms-agent/zh_sim_g2/resolve/master/zh_sim_g2.zip'
-    rec_models_dict['gen2']['japanese_g2'][
+    recognition_models['gen2']['japanese_g2'][
         'url'] = 'https://modelscope.cn/models/ms-agent/japanese_g2/resolve/master/japanese_g2.zip'
-    rec_models_dict['gen2']['korean_g2'][
+    recognition_models['gen2']['korean_g2'][
         'url'] = 'https://modelscope.cn/models/ms-agent/korean_g2/resolve/master/korean_g2.zip'
-    rec_models_dict['gen2']['telugu_g2'][
+    recognition_models['gen2']['telugu_g2'][
         'url'] = 'https://modelscope.cn/models/ms-agent/telugu_g2/resolve/master/telugu_g2.zip'
-    rec_models_dict['gen2']['kannada_g2'][
+    recognition_models['gen2']['kannada_g2'][
         'url'] = 'https://modelscope.cn/models/ms-agent/kannada_g2/resolve/master/kannada_g2.zip'
-    rec_models_dict['gen2']['cyrillic_g2'][
+    recognition_models['gen2']['cyrillic_g2'][
         'url'] = 'https://modelscope.cn/models/ms-agent/cyrillic_g2/resolve/master/cyrillic_g2.zip'
