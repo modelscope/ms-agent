@@ -22,18 +22,19 @@ def run_workflow(user_prompt: str, task_dir: str, reuse: bool,
 
 if __name__ == '__main__':
 
-    query: str = 'xxx'
+    query: str = 'Survey of the Deep Research on the AI Agent within the recent 3 month, including the latest research papers, open-source projects, and industry applications.'  # noqa
     task_workdir: str = '/path/to/your_task_dir'
     reuse: bool = False
 
     # Get chat client OpenAI compatible api
     chat_client = OpenAIChat(
         api_key='sk-xxx',
-        base_url='https://dashscope.aliyuncs.com/compatible-mode/v1',
-        model='gemini-2.5-flash-preview-04-17',
+        base_url='https://your_base_url',
+        model='gemini-2.5-pro',
     )
 
     # Get web-search engine client
+    # For the ExaSearch, you can get your API key from https://exa.ai
     exa_search = ExaSearch(api_key='xxx-xxx')
 
     run_workflow(

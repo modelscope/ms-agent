@@ -7,7 +7,7 @@
 <p>
 
 <p align="center">
-<a href="https://modelscope.cn/home">Modelscope Hub</a> ｜ <a href="https://arxiv.org/abs/2309.00986">Paper</a> ｜ <a href="https://modelscope.cn/mcp/playground">MCP Playground</a>
+<a href="https://modelscope.cn/mcp/playground">MCP Playground</a> ｜ <a href="https://arxiv.org/abs/2309.00986">Paper</a>
 <br>
 </p>
 
@@ -47,6 +47,8 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 
 
 ## 🎉 News
+
+* 🔥July 18, 2025: Release MS-Agent v1.0.0, improve the experience of Agent chat with MCP, and update the readme for [Agentic Insight](projects/deep_research/README.md).
 
 * 🔥July 16, 2025: Release MS-Agent v1.0.0rc0, which includes the following updates:
   - Support for Agent chat with MCP (Model Context Protocol)
@@ -120,6 +122,8 @@ pip install -e .
 This project supports interaction with models via the MCP (Model Context Protocol). Below is a complete example showing
 how to configure and run an LLMAgent with MCP support.
 
+✅ Chat with agents using the MCP protocol: [MCP Playground](https://modelscope.cn/mcp/playground)
+
 By default, the agent uses ModelScope's API inference service. Before running the agent, make sure to set your
 ModelScope API key.
 ```bash
@@ -157,21 +161,48 @@ if __name__ == '__main__':
 For example: https://modelscope.cn/mcp/servers/@modelcontextprotocol/fetch.
 Replace the url in `mcp["mcpServers"]["fetch"]` with your own MCP server endpoint.
 
-### Code Generation Agent
-Refer to [Website Generation](projects/code_scratch/README.md)
+
+### Agentic Insight
+
+#### - Lightweight, Efficient, and Extensible Multi-modal Deep Research Framework
+
+This project provides a framework for **Deep Research**, enabling agents to autonomously explore and execute complex tasks.
+
+#### 🌟 Features
+
+- **Autonomous Exploration** - Autonomous exploration for various complex tasks
+
+- **Multimodal** - Capable of processing diverse data modalities and generating research reports rich in both text and images.
+
+- **Lightweight & Efficient** - Support "search-then-execute" mode, completing complex research tasks within few minutes, significantly reducing token consumption.
 
 
-### Deep Research
-This project provides a framework for deep research, enabling agents to autonomously explore and execute complex tasks.
+#### 📺 Demonstration
 
-- **Autonomous Exploration**
-- **Multi-modal report generation**
-- **Lightweight and Extensible**
-- **Fast and Efficient**
+Here is a demonstration of the Agentic Insight framework in action, showcasing its capabilities in handling complex research tasks efficiently.
 
-For interleaved text and image report, refer to the [Report](projects/deep_research/examples/task_20250617a/report.md).
+- **User query**
 
-Refer to [Example](projects/deep_research/run.py)
+- - Chinese:
+
+```text
+在计算化学这个领域，我们通常使用Gaussian软件模拟各种情况下分子的结构和性质计算，比如在关键词中加入'field=x+100'代表了在x方向增加了电场。但是，当体系是经典的单原子催化剂时，它属于分子催化剂，在反应环境中分子的朝向是不确定的，那么理论模拟的x方向电场和实际电场是不一致的。
+
+请问：通常情况下，理论计算是如何模拟外加电场存在的情况？
+```
+
+- - English:
+```text
+In the field of computational chemistry, we often use Gaussian software to simulate the structure and properties of molecules under various conditions. For instance, adding 'field=x+100' to the keywords signifies an electric field applied along the x-direction. However, when dealing with a classical single-atom catalyst, which falls under molecular catalysis, the orientation of the molecule in the reaction environment is uncertain. This means the x-directional electric field in the theoretical simulation might not align with the actual electric field.
+
+So, how are external electric fields typically simulated in theoretical calculations?
+```
+
+#### Report
+<https://github.com/user-attachments/assets/b1091dfc-9429-46ad-b7f8-7cbd1cf3209b>
+
+
+For more details, please refer to [Deep Research](projects/deep_research/README.md).
 
 
 ## License

@@ -4,7 +4,7 @@ import inspect
 import os
 import sys
 from abc import abstractmethod
-from typing import Dict, List, Optional, Union
+from typing import Any, AsyncGenerator, Dict, List, Optional, Union
 
 from ms_agent.config import Config
 from ms_agent.config.config import ConfigLifecycleHandler
@@ -120,8 +120,9 @@ class Agent:
         return config
 
     @abstractmethod
-    async def run(self, inputs: Union[str, List[Message]],
-                  **kwargs) -> List[Message]:
+    async def run(
+            self, inputs: Union[str, List[Message]], **kwargs
+    ) -> Union[List[Message], AsyncGenerator[List[Message], Any]]:
         """
         Main method to execute the agent.
 

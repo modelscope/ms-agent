@@ -11,7 +11,9 @@ import json
 import requests
 from omegaconf import DictConfig, OmegaConf
 
-from modelscope.hub.utils.utils import get_cache_dir
+from .logger import get_logger
+
+logger = get_logger()
 
 
 def assert_package_exist(package, message: Optional[str] = None):
@@ -227,7 +229,7 @@ def text_hash(text: str, keep_n_chars: int = 8) -> str:
         # Return the last 8 characters
         return hex_digest[-keep_n_chars:]
     except Exception as e:
-        print(f'An error occurred: {e}')
+        logger.error(f'Error generating hash for text: {text}. Error: {e}')
         return ''
 
 
@@ -275,7 +277,8 @@ def download_pdf(url: str, out_file_path: str, reuse: bool = True):
     """
 
     if reuse and os.path.exists(out_file_path):
-        print(f"File '{out_file_path}' already exists. Skipping download.")
+        logger.info(
+            f"File '{out_file_path}' already exists. Skipping download.")
         return
 
     try:
@@ -286,9 +289,9 @@ def download_pdf(url: str, out_file_path: str, reuse: bool = True):
         with open(out_file_path, 'wb') as pdf_file:
             for chunk in response.iter_content(chunk_size=8192):
                 pdf_file.write(chunk)
-        print(f"PDF downloaded successfully to '{out_file_path}'")
+        logger.info(f"PDF downloaded successfully to '{out_file_path}'")
     except requests.exceptions.RequestException as e:
-        print(f'Error downloading PDF: {e}')
+        logger.error(f'Error downloading PDF: {e}')
 
 
 def remove_resource_info(text):
@@ -327,14 +330,14 @@ def load_image_from_url_to_pil(url: str) -> 'Image.Image':
         img = Image.open(image_bytes)
         return img
     except requests.exceptions.RequestException as e:
-        print(f'Error fetching image from URL: {e}')
+        logger.error(f'Error fetching image from URL: {e}')
         return None
     except IOError as e:
-        print(f'Error opening image with PIL: {e}')
+        logger.error(f'Error opening image with PIL: {e}')
         return None
 
 
-def load_image_from_uri_to_pil(uri: str) -> tuple:
+def load_image_from_uri_to_pil(uri: str) -> 'Image.Image':
     """
     Load image from URI as a PIL Image object and extract its format extension.
     URI format: data:[<mime>][;base64],<encoded>
@@ -352,21 +355,19 @@ def load_image_from_uri_to_pil(uri: str) -> tuple:
             raw = base64.b64decode(encoded)
         else:
             raw = encoded.encode('utf-8')
-        m = re.match(r'data:(image/[^;]+)', header)
-        ext = m.group(1).split('/')[-1] if m else 'bin'
         img = Image.open(BytesIO(raw))
-        return img, ext
+        return img
     except ValueError as e:
-        print(f'Error parsing URI format: {e}')
+        logger.error(f'Error parsing URI format: {e}')
         return None
     except base64.binascii.Error as e:
-        print(f'Error decoding base64 data: {e}')
+        logger.error(f'Error decoding base64 data: {e}')
         return None
     except IOError as e:
-        print(f'Error opening image: {e}')
+        logger.error(f'Error opening image with PIL: {e}')
         return None
     except Exception as e:
-        print(f'Unexpected error loading image from URI: {e}')
+        logger.error(f'Unexpected error loading image from URI: {e}')
         return None
 
 
@@ -396,7 +397,6 @@ def validate_url(
         return None
 
     # Potential sources of base URLs to try
-    base_url = None
     sources = [
         # Try base tag
         lambda: backend.soup.head.find('base', href=True)['href']
@@ -419,7 +419,7 @@ def validate_url(
                 valid_url = urljoin(base_url, img_url)
                 return valid_url
         except Exception as e:
-            print(f'Error resolving base URL: {e}')
+            logger.error(f'Error resolving base URL: {e}')
             continue  # Silently try the next source
 
     # No valid base URL found

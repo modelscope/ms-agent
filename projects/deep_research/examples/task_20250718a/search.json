@@ -1,0 +1,197 @@
+[
+  {
+    "query": "在计算化学这个领域，我们通常使用Gaussian软件模拟各种情况下分子的结构和性质计算，比如在关键词中加入'field=x+100'代表了在x方向增加了电场。但是，当体系是经典的单原子催化剂时，它属于分子催化剂，在反应环境中分子的朝向是不确定的，那么理论模拟的x方向电场和实际电场是不一致的。请问：通常情况下，理论计算是如何模拟外加电场存在的情况？",
+    "arguments": {
+      "query": "在计算化学这个领域，我们通常使用Gaussian软件模拟各种情况下分子的结构和性质计算，比如在关键词中加入'field=x+100'代表了在x方向增加了电场。但是，当体系是经典的单原子催化剂时，它属于分子催化剂，在反应环境中分子的朝向是不确定的，那么理论模拟的x方向电场和实际电场是不一致的。请问：通常情况下，理论计算是如何模拟外加电场存在的情况？",
+      "text": true,
+      "type": "auto",
+      "num_results": 20,
+      "start_published_date": null,
+      "end_published_date": null,
+      "start_crawl_date": null,
+      "end_crawl_date": null
+    },
+    "results": [
+      {
+        "url": "https://onlinelibrary.wiley.com/doi/10.1002/(SICI)1521-3951(200001)217:1%3C293::AID-PSSB293%3E3.0.CO;2-N",
+        "id": "https://onlinelibrary.wiley.com/doi/10.1002/(SICI)1521-3951(200001)217:1%3C293::AID-PSSB293%3E3.0.CO;2-N",
+        "title": "Electric Fields in Electronic Structure Calculations: Electric Polarizabilities and IR and Raman Spectra from First Principles",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://pubs.rsc.org/en/content/articlepdf/2013/cc/c3cc44112a",
+        "id": "https://pubs.rsc.org/en/content/articlepdf/2013/cc/c3cc44112a",
+        "title": "Electric-field effects on the [FeFe]-hydrogenase active site.",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://www.sciencedirect.com/science/article/pii/S0039602803014110",
+        "id": "https://www.sciencedirect.com/science/article/pii/S0039602803014110",
+        "title": "Electric field effects in the chemisorption of CO on bimetallic RhCu surface models",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://mattermodeling.stackexchange.com/questions/1075/how-to-calculate-energy-of-a-molecule-in-an-aligned-electric-field/1076",
+        "id": "https://mattermodeling.stackexchange.com/questions/1075/how-to-calculate-energy-of-a-molecule-in-an-aligned-electric-field/1076",
+        "title": "How to calculate energy of a molecule in an aligned electric field?",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://pubs.rsc.org/en/content/articlelanding/2018/CS/C8CS00354H",
+        "id": "https://pubs.rsc.org/en/content/articlelanding/2018/CS/C8CS00354H",
+        "title": "Structure and reactivity/selectivity control by oriented-external electric fields.",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://pubs.rsc.org/en/content/articlelanding/2007/CP/b705938h",
+        "id": "https://pubs.rsc.org/en/content/articlelanding/2007/CP/b705938h",
+        "title": "Estimations of electric field effects on the oxygen reduction reaction based on the density functional theory.",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://www.tandfonline.com/doi/full/10.1080/00268976.2020.1781272",
+        "id": "https://www.tandfonline.com/doi/full/10.1080/00268976.2020.1781272",
+        "title": "Theoretical understanding the effects of external electric field on the hydrolysis of anticancer drug titanocene dichloride",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://www.echemi.com/community/external-electric-field-in-vasp_mjart2204273524_841.html",
+        "id": "https://www.echemi.com/community/external-electric-field-in-vasp_mjart2204273524_841.html",
+        "title": "External Electric Field in VASP? - ECHEMI.com",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://mattermodeling.stackexchange.com/questions/6714/quantum-chemistry-in-external-electrostatic-field",
+        "id": "https://mattermodeling.stackexchange.com/questions/6714/quantum-chemistry-in-external-electrostatic-field",
+        "title": "Quantum chemistry in external electrostatic field?",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://www.sciencedirect.com/science/article/pii/S001346869900242X",
+        "id": "https://www.sciencedirect.com/science/article/pii/S001346869900242X",
+        "title": "Ab initio cluster model study of electric field effects for terminal and bridge bonded CO on Pt(100)",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://files.batistalab.com/publications/control_oxadd_redel_efield.pdf",
+        "id": "https://files.batistalab.com/publications/control_oxadd_redel_efield.pdf",
+        "title": "Control of Reversible Oxidative Addition/Reductive Elimination of Surface-Attached Catalysts by External Electric Fields",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://pubs.acs.org/doi/10.1021/acscatal.9b01910",
+        "id": "https://pubs.acs.org/doi/10.1021/acscatal.9b01910",
+        "title": "Effect of External Electric Field on Methane Conversion on IrO2(110) Surface: A Density Functional Theory Study",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://onlinelibrary.wiley.com/doi/10.1002/qua.26443",
+        "id": "https://onlinelibrary.wiley.com/doi/10.1002/qua.26443",
+        "title": "Oriented external electric fields regulating the oxidation reaction of\n \n CH\n 4\n \n catalyzed by\n Mn‐corrolazine",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://www.frontiersin.org/articles/10.3389/fchem.2022.896944/pdf",
+        "id": "https://www.frontiersin.org/articles/10.3389/fchem.2022.896944/pdf",
+        "title": "Oriented External Electric Fields Regurating the Reaction Mechanism of CH4 Oxidation Catalyzed by Fe(IV)-Oxo-Corrolazine: Insight from Density Functional Calculations",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://www.sciencedirect.com/science/article/pii/0009261488801362",
+        "id": "https://www.sciencedirect.com/science/article/pii/0009261488801362",
+        "title": "Electric fields acting as catalysts in chemical reactions. An ab initio study of the Walden inversion reaction",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://pubs.acs.org/doi/10.1021/jacs.0c05128",
+        "id": "https://pubs.acs.org/doi/10.1021/jacs.0c05128",
+        "title": "Electric-field mediated chemistry: uncovering and exploiting the potential of (oriented) electric fields to exert chemical catalysis and reaction control.",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://arxiv.org/pdf/2205.15229.pdf",
+        "id": "https://arxiv.org/pdf/2205.15229.pdf",
+        "title": "Laser-induced dynamic alignment of the HD molecule without the Born-Oppenheimer approximation.",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://www.sciencedirect.com/science/article/pii/S1381116996004906",
+        "id": "https://www.sciencedirect.com/science/article/pii/S1381116996004906",
+        "title": "Electric field effects in heterogeneous catalysis",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://pubs.acs.org/doi/10.1021/acs.jpcb.2c05371?cookieSet=1",
+        "id": "https://pubs.acs.org/doi/10.1021/acs.jpcb.2c05371?cookieSet=1",
+        "title": "Modeling of the Electrostatic Interaction and Catalytic Activity of [NiFe] Hydrogenases on a Planar Electrode",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://pubs.acs.org/doi/10.1021/jacsau.1c00512?cookieSet=1",
+        "id": "https://pubs.acs.org/doi/10.1021/jacsau.1c00512?cookieSet=1",
+        "title": "The Solvation-Induced Onsager Reaction Field Rather than the Double-Layer Field Controls CO2 Reduction on Gold",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      }
+    ]
+  }
+]
