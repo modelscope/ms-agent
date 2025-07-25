@@ -47,7 +47,7 @@ class TextToImageTool(BaseTool):
         prompt = params['text']
         if prompt is None:
             return None
-        seed = kwargs.get('seed', None)
+        seed = kwargs.get('seed', 1234)
         model = kwargs.get('model', 'wanx-v1')
         extra_input = {}
         lora_index = params.get('lora_index', None)

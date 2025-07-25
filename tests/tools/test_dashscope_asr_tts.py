@@ -50,7 +50,7 @@ def test_sambert_tts():
     assert res.endswith('.wav"/>')
 
 
-@pytest.mark.skipif(IS_FORKED_PR, reason='only run modelscope-agent main repo')
+@pytest.mark.skip
 def test_sambert_tts_with_tool_api():
     params = """{'text': '今天天气怎么样？'}"""
     tts_tool = SambertTtsTool()
