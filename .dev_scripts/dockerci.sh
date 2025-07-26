@@ -29,7 +29,7 @@ playwright install --with-deps chromium
 pip install fastapi pydantic uvicorn docker sqlmodel transformers ray
 pip install pymongo motor llama-index-storage-docstore-mongodb==0.1.3 llama-index-storage-index-store-mongodb==0.1.2 llama-index-readers-mongodb==0.1.7
 pip install tensorflow pyclipper shapely tf_slim
-pip install moviepy
+pip install oss2 moviepy==1.0.3
 
 # run ci
 pytest tests

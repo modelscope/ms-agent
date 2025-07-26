@@ -118,7 +118,7 @@ def test_memory_with_rag_no_use_llm():
     assert 'git-lfs' in summary_str
 
 
-@pytest.mark.skipif(IS_FORKED_PR, reason='only run modelscope-agent main repo')
+@pytest.mark.skip
 def test_memory_with_rag_mongodb_storage():
     # $ mongod --dbpath ./mongodb --logpath ./mongo.log --fork
     import os

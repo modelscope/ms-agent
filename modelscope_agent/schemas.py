@@ -177,7 +177,7 @@ class Plan(BaseModel):
             None
         """
         if decomposed_tasks is None:
-            assert task.task_id in self.task_map, "Task ID not found in task_map"
+            assert task.task_id in self.task_map, 'Task ID not found in task_map'
             self.task_map[task.task_id] = task
 
             for i, t in enumerate(self.tasks):
@@ -191,7 +191,7 @@ class Plan(BaseModel):
 
         else:
             original_task_id = task.task_id
-            assert original_task_id in self.task_map, "Original task ID not found in task_map"
+            assert original_task_id in self.task_map, 'Original task ID not found in task_map'
 
             index = -1
             for i, t in enumerate(self.tasks):
@@ -199,7 +199,7 @@ class Plan(BaseModel):
                     index = i
                     break
             if index == -1:
-                raise ValueError("Original task not found in tasks list")
+                raise ValueError('Original task not found in tasks list')
 
             self.tasks.pop(index)
 
