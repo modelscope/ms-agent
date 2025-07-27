@@ -10,6 +10,8 @@ from ms_agent.tools.filesystem_tool import FileSystemTool
 from ms_agent.tools.mcp_client import MCPClient
 from ms_agent.tools.split_task import SplitTask
 
+MAX_TOOL_NAME = 64
+
 
 class ToolManager:
     """Interacting with Agent class, hold all tools
@@ -45,7 +47,11 @@ class ToolManager:
         def extend_tool(tool_ins: ToolBase, server_name: str,
                         tool_list: List[Tool]):
             for tool in tool_list:
-                key = server_name + ':' + tool['tool_name']
+                max_server_len = MAX_TOOL_NAME - len(
+                    tool['tool_name']) - 1  # 减去 ':' 的 1 个字符
+                if len(server_name) > max_server_len:
+                    server_name = server_name[:max_server_len]
+                key = f"{server_name}:{tool['tool_name']}"
                 assert key not in self._tool_index, f'Tool name duplicated {tool["tool_name"]}'
                 tool = copy(tool)
                 tool['tool_name'] = key
