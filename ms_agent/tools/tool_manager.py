@@ -1,5 +1,6 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import asyncio
+import os
 from copy import copy
 from typing import Any, Dict, List, Optional
 
@@ -10,7 +11,7 @@ from ms_agent.tools.filesystem_tool import FileSystemTool
 from ms_agent.tools.mcp_client import MCPClient
 from ms_agent.tools.split_task import SplitTask
 
-MAX_TOOL_NAME = 64
+MAX_TOOL_NAME_LEN = os.getenv('MAX_TOOL_NAME_LEN', 64)
 
 
 class ToolManager:
