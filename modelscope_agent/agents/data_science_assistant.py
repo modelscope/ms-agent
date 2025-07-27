@@ -827,11 +827,11 @@ class DataScienceAssistant(RolePlay):
                         }) for t in self.plan.tasks
                     ]),
                     current_task=json.dumps({
-                            'task_id': task.task_id,
-                            'dependent_task_ids': task.dependent_task_ids,
-                            'instruction': task.instruction,
-                            'task_type': task.task_type
-                        }))
+                        'task_id': task.task_id,
+                        'dependent_task_ids': task.dependent_task_ids,
+                        'instruction': task.instruction,
+                        'task_type': task.task_type
+                    }))
             }]
             resp = self._call_llm(prompt=None, messages=messages, stop=None)
             tasks_text = ''

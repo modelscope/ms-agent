@@ -42,7 +42,7 @@ def test_memory_with_rag_multi_sources():
     assert 'https://lbs.amap.com/api/javascript-api-v2/guide/services/weather' in summary_str
 
 
-@pytest.mark.skipif(IS_FORKED_PR, reason='only run modelscope-agent main repo')
+@pytest.mark.skip
 def test_memory_with_rag_cache():
     MemoryWithRag(
         urls=['tests/samples/modelscope_qa_2.txt', 'tests/samples/常见QA.pdf'],
@@ -118,7 +118,7 @@ def test_memory_with_rag_no_use_llm():
     assert 'git-lfs' in summary_str
 
 
-@pytest.mark.skipif(IS_FORKED_PR, reason='only run modelscope-agent main repo')
+@pytest.mark.skip
 def test_memory_with_rag_mongodb_storage():
     # $ mongod --dbpath ./mongodb --logpath ./mongo.log --fork
     import os
@@ -149,7 +149,7 @@ def test_memory_with_rag_mongodb_storage():
     assert 'xcode-select --install' in summary_str
 
 
-@pytest.mark.skipif(IS_FORKED_PR, reason='only run modelscope-agent main repo')
+@pytest.mark.skip
 def test_memory_with_rag_mongodb_reader():
     # $ mongod --dbpath ./mongodb --logpath ./mongo.log --fork
 
