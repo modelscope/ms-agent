@@ -440,6 +440,9 @@ class ResearchWorkflow:
                 1
             )
 
+        if self._verbose:
+            logger.info(f'\n\nFinal Report Content:\n{resp_content}')
+
         # Remove unused <resource_info> tags
         # TODO: 存在未经转换的<resource_info>，待处理
         resp_content = remove_resource_info(resp_content)
