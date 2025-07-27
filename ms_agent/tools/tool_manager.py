@@ -48,7 +48,7 @@ class ToolManager:
         def extend_tool(tool_ins: ToolBase, server_name: str,
                         tool_list: List[Tool]):
             for tool in tool_list:
-                max_server_len = MAX_TOOL_NAME - len(
+                max_server_len = MAX_TOOL_NAME_LEN - len(
                     tool['tool_name']) - 1  # 减去 ':' 的 1 个字符
                 if len(server_name) > max_server_len:
                     key = f"{server_name[:max_server_len]}:{tool['tool_name']}"
