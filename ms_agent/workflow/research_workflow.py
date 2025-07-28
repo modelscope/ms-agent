@@ -227,16 +227,8 @@ class ResearchWorkflow:
             return self._search_engine.search(search_request=search_request)
 
         def filter_search_res(single_res: ExaSearchResult):
-            results_new = []
-            results = single_res.response.results
-            for res in results:
-                if res.url.startswith('https://arxiv.org/abs/') or res.url.startswith(
-                        'https://arxiv.org/pdf/'):
-                    res.url = res.url.replace('arxiv.org/abs', 'arxiv.org/pdf')
-                elif res.url.startswith('https://arxiv.org/html/'):
-                    res.url = res.url.replace('arxiv.org/html', 'arxiv.org/pdf')
-                results_new.append(res)
-            single_res.response.results = results_new
+
+            # TODO: Implement filtering logic
 
             return single_res
 
@@ -359,6 +351,7 @@ class ResearchWorkflow:
             **kwargs) -> None:
 
         if urls_or_files:
+            # If urls_or_files is provided, then disable search and use the provided resources directly
             prepared_resources = urls_or_files
         else:
             search_prompt: str = self._rewrite_prompt(user_prompt)
@@ -380,7 +373,7 @@ class ResearchWorkflow:
         if self._verbose:
             logger.info(f'Prepared resources: {prepared_resources}')
 
-        extractor = HierarchicalKeyInformationExtraction(urls_or_files=prepared_resources)
+        extractor = HierarchicalKeyInformationExtraction(urls_or_files=prepared_resources, verbose=self._verbose)
         key_info_list: List[KeyInformation] = extractor.extract()
 
         if self._verbose:
@@ -426,6 +419,7 @@ class ResearchWorkflow:
 
         aggregated_chunks = self._chat(messages=messages_sum, temperature=0.3)
         resp_content: str = aggregated_chunks.get('content', '')
+        resp_content = resp_content.lstrip('```markdown\n').rstrip('```')
         logger.info(f'\n\nSummary Content:\n{resp_content}')
 
         # Replace resource name with actual relative path

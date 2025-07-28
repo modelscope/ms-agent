@@ -22,6 +22,7 @@ from ms_agent.tools.docling.patches import (download_models_ms,
                                             patch_easyocr_models)
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.patcher import patch
+from ms_agent.utils.utils import normalize_arxiv_url
 
 logger = get_logger()
 
@@ -34,7 +35,9 @@ class DocLoader:
     # Number of threads for document conversion
     DOC_CONVERT_NUM_THREADS = os.environ.get('DOC_CONVERT_NUM_THREADS', 16)
 
-    def __init__(self):
+    def __init__(self, verbose: bool = False):
+
+        self._verbose = verbose
 
         accelerator_options = AcceleratorOptions()
         accelerator_options.num_threads = self.DOC_CONVERT_NUM_THREADS
@@ -165,6 +168,11 @@ class DocLoader:
                 logger.warning(f'Failed to access URL {_url}: {e2}')
                 return None
 
+        # Normalize URLs for arxiv.org
+        url_or_files = [
+            normalize_arxiv_url(url_or_file) for url_or_file in url_or_files
+        ]
+
         # Step1: Remove urls or files that cannot be processed
         http_urls = [(i, url) for i, url in enumerate(url_or_files)
                      if url and url.startswith('http')]
@@ -215,6 +223,9 @@ class DocLoader:
         patch_easyocr_models()
 
         urls_or_files: List[str] = self._preprocess(urls_or_files)
+
+        if self._verbose:
+            logger.info(f'Preprocessed `urls_or_files`: {urls_or_files}')
 
         # TODO: Support progress bar for document loading (with pather)
         results: Iterator[ConversionResult] = self._converter.convert_all(
