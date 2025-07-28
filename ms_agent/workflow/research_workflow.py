@@ -404,6 +404,7 @@ class ResearchWorkflow:
 
         prompt_sum: str = (f'结合用户输入：{user_prompt}，请帮我总结以下内容，生成一份markdown格式的报告；'
                            f'其中图片被表示为<resource_info>xxx</resource_info>之间的placeholder，要求尽量保留重要的图片和表格，保持图片或表格以及附近对应上下文的位置关系；'
+                           f'公式使用LaTeX语法渲染；'
                            f'符合MECE原则（Mutually Exclusive and Collectively Exhaustive）；'
                            f'如果收集到的信息足够多，则尽量精简和结构化，保留其中最重要的信息，最终生成一份图文并茂的报告：\n\n')
 
