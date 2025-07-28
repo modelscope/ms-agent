@@ -192,11 +192,14 @@ def openapi_schema_convert(schema: dict, auth: dict = {}):
     host = schema.get('host', '') if schema else ''  # Check if schema is None
 
     if host:
-        schema = swagger_to_openapi(schema) if schema else {}  # Call only if schema is not None
+        schema = swagger_to_openapi(schema) if schema else {
+        }  # Call only if schema is not None
 
-    schema = jsonref.replace_refs(schema) if schema else {}  # Call only if schema is not None
+    schema = jsonref.replace_refs(schema) if schema else {
+    }  # Call only if schema is not None
 
-    servers = schema.get('servers', []) if schema else []  # Check if schema is None
+    servers = schema.get('servers', []) if schema else [
+    ]  # Check if schema is None
 
     if servers:
         servers_url = servers[0].get('url')

@@ -203,7 +203,9 @@ class Agent(ABC):
                 tool_cfg = tool[tool_name]
             except StopIteration:
                 # If the tool is an empty dictionary, proceed to register the next tool.
-                print("Empty tool dictionary provided, skipping the registration of the current tool")
+                print(
+                    'Empty tool dictionary provided, skipping the registration of the current tool'
+                )
                 return
 
         # If the tool is a string, assign it directly to tool_name.
@@ -212,7 +214,9 @@ class Agent(ABC):
 
         # If the tool_name is empty, skip the registration of the current tool.
         if not tool_name:
-            print("No tool name provided, skipping the registration of the current tool")
+            print(
+                'No tool name provided, skipping the registration of the current tool'
+            )
             return
 
         if tool_name not in TOOL_REGISTRY and not self.use_tool_api:
