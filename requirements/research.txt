@@ -1,4 +1,4 @@
-docling
+docling<=2.38.1
 docling-core
 exa-py
 json5
