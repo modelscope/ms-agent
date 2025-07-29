@@ -3,7 +3,7 @@ import math
 import os
 import unittest
 
-from ms_agent.llm.openai_llm import OpenAI
+from ms_agent.llm.openai_llm import MAX_CONTINUE_RUNS, OpenAI
 from ms_agent.llm.utils import Message, Tool
 from omegaconf import DictConfig, OmegaConf
 
@@ -134,6 +134,7 @@ class OpenaiLLM(unittest.TestCase):
         print(res)
         assert math.ceil(res.completion_tokens
                          / API_CALL_MAX_TOKEN) == res.api_calls
+        assert res.completion_tokens <= API_CALL_MAX_TOKEN
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_call_apis_count_continue_stream(self):
@@ -144,6 +145,7 @@ class OpenaiLLM(unittest.TestCase):
             print(chunk)
         assert math.ceil(chunk.completion_tokens
                          / API_CALL_MAX_TOKEN) == chunk.api_calls
+        assert chunk.api_calls <= API_CALL_MAX_TOKEN
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_call_tool_stream(self):
