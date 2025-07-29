@@ -118,10 +118,21 @@ def parse_requirements(fname='requirements.txt', with_version=True):
 
 
 if __name__ == '__main__':
-    install_requires, deps_link = parse_requirements('requirements.txt')
+    print(
+        'Usage: `python setup.py sdist bdist_wheel` or `pip install .[framework]` from source code'
+    )
+
+    install_requires, deps_link = parse_requirements(
+        'requirements/framework.txt')
+
     extra_requires = {}
     all_requires = []
+    extra_requires['research'], _ = parse_requirements(
+        'requirements/research.txt')
+
     all_requires.extend(install_requires)
+    all_requires.extend(extra_requires['research'])
+    extra_requires['all'] = all_requires
 
     setup(
         name='ms-agent',
