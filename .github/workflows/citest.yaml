@@ -66,6 +66,7 @@ jobs:
     - name: Run tests
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        MODELSCOPE_API_KEY: ${{ secrets.MODELSCOPE_API_KEY }}
 
       shell: bash
       run: bash .dev_scripts/dockerci.sh
