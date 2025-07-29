@@ -1,0 +1,13 @@
+{
+  "name": "gradio-research-app",
+  "version": "1.0.0",
+  "description": "Gradio研究工作流应用",
+  "main": "app.py",
+  "scripts": {
+    "dev": "python app.py",
+    "install": "pip install -r requirements.txt"
+  },
+  "keywords": ["gradio", "research", "workflow"],
+  "author": "",
+  "license": "MIT"
+}

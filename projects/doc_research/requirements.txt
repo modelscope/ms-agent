@@ -1,0 +1,5 @@
+gradio>=4.0.0
+https://modelscope.cn/models/ms-agent/ms_agent_resources/resolve/master/ms_agent-1.0.1rc0-py3-none-any.whl
+openai>=1.0.0
+python-dotenv>=1.0.0
+requests>=2.28.0
