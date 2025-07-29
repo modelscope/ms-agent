@@ -134,7 +134,7 @@ class OpenaiLLM(unittest.TestCase):
         print(res)
         assert math.ceil(res.completion_tokens
                          / API_CALL_MAX_TOKEN) == res.api_calls
-        assert res.completion_tokens <= API_CALL_MAX_TOKEN
+        assert res.api_calls <= MAX_CONTINUE_RUNS
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_call_apis_count_continue_stream(self):
@@ -145,7 +145,7 @@ class OpenaiLLM(unittest.TestCase):
             print(chunk)
         assert math.ceil(chunk.completion_tokens
                          / API_CALL_MAX_TOKEN) == chunk.api_calls
-        assert chunk.api_calls <= API_CALL_MAX_TOKEN
+        assert res.api_calls <= MAX_CONTINUE_RUNS
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_call_tool_stream(self):
