@@ -22,7 +22,7 @@ from ms_agent.tools.docling.patches import (download_models_ms,
                                             patch_easyocr_models)
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.patcher import patch
-from ms_agent.utils.utils import normalize_arxiv_url
+from ms_agent.utils.utils import normalize_url_or_file
 
 logger = get_logger()
 
@@ -170,7 +170,7 @@ class DocLoader:
 
         # Normalize URLs for arxiv.org
         url_or_files = [
-            normalize_arxiv_url(url_or_file) for url_or_file in url_or_files
+            normalize_url_or_file(url_or_file) for url_or_file in url_or_files
         ]
 
         # Step1: Remove urls or files that cannot be processed

@@ -459,21 +459,22 @@ def get_default_config():
         return yaml.safe_load(file)
 
 
-def normalize_arxiv_url(arxiv_url: str):
+def normalize_url_or_file(url_or_file: str):
     """
-    Normalizes an arXiv URL to its PDF version. If the URL is already in PDF format, it remains unchanged.
+    Normalizes url or file path.
 
     Args:
-        arxiv_url: The arXiv URL to normalize. It can be in the form of:
+        url_or_file: The url or file to normalize.
+        For arxiv, it can be in the form of:
             - https://arxiv.org/abs/...
             - https://arxiv.org/html/...
 
     Returns:
-        str: The normalized arXiv URL pointing to the PDF version.
+        str: The normalized url or file path.
     """
-    if arxiv_url.startswith('https://arxiv.org/abs/'):
-        arxiv_url = arxiv_url.replace('arxiv.org/abs', 'arxiv.org/pdf')
-    elif arxiv_url.startswith('https://arxiv.org/html/'):
-        arxiv_url = arxiv_url.replace('arxiv.org/html', 'arxiv.org/pdf')
+    if url_or_file.startswith('https://arxiv.org/abs/'):
+        url_or_file = url_or_file.replace('arxiv.org/abs', 'arxiv.org/pdf')
+    elif url_or_file.startswith('https://arxiv.org/html/'):
+        url_or_file = url_or_file.replace('arxiv.org/html', 'arxiv.org/pdf')
 
-    return arxiv_url
+    return url_or_file
