@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/3af76dcd-b229-4597-835f-51617371ebad" alt="Doc Research Logo" width="400" height="400">
+  <img src="https://github.com/user-attachments/assets/3af76dcd-b229-4597-835f-51617371ebad" alt="Doc Research Logo" width="300" height="300">
 
   # Doc Research Workflow
 
@@ -25,7 +25,15 @@
 
 ## 演示
 
-ModelScope创空间体验： [DocResearchStudio](https://modelscope.cn/studios/ms-agent/DocResearch/summary)
+### ModelScope创空间
+参考链接： [DocResearchStudio](https://modelscope.cn/studios/ms-agent/DocResearch/summary)
+
+### 本地运行Gradio应用
+
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/4c1cea67-bef1-4dc1-86f1-8ad299d3b656" alt="本地运行" width="700">
+  <p><em>本地运行的Gradio界面展示</em></p>
+</div>
 
 
 ## 安装和运行
