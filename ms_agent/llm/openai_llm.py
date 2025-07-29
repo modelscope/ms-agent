@@ -219,7 +219,7 @@ class OpenAI(LLM):
                         'length', 'null'
                 ] and (max_runs is None or max_runs != 0):
                     logger.info(
-                        f'finish_reason: {chunk.choices[0].finish_reason}， continue generate.'
+                        f'finish_reason: {chunk.choices[0].finish_reason}, continue generate.'
                     )
                     completion = self._call_llm_for_continue_gen(
                         messages, message, tools, **kwargs)
