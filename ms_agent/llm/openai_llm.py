@@ -225,7 +225,7 @@ class OpenAI(LLM):
                         messages, message, tools, **kwargs)
                     for chunk in self._stream_continue_generate(
                             messages, completion, tools,
-                            max_runs - 1 if max_runs else None, **kwargs):
+                            max_runs - 1 if max_runs is not None else None, **kwargs):
                         if first_run:
                             yield self._merge_stream_message(
                                 messages[-1], chunk)
@@ -395,7 +395,7 @@ class OpenAI(LLM):
             completion = self._call_llm_for_continue_gen(
                 messages, new_message, tools, **kwargs)
             return self._continue_generate(messages, completion, tools,
-                                           max_runs - 1 if max_runs else None,
+                                           max_runs - 1 if max_runs is not None else None,
                                            **kwargs)
         elif messages[-1].to_dict().get('partial', False):
             self._merge_partial_message(messages, new_message)
