@@ -26,7 +26,7 @@ class ArxivSearch(SearchEngine):
                 self.client.results(search=arxiv.Search(**search_args)))
             search_result = ArxivSearchResult(
                 query=search_request.query,
-                arguments=search_request.to_dict(),
+                arguments=search_args,
                 response=response)
         except Exception as e:
             raise RuntimeError(f'Failed to perform search: {e}') from e

@@ -34,10 +34,10 @@ class SerpApiSearch(SearchEngine):
             SearchResult: The search results
         """
         search_args = search_request.to_dict()
+
         try:
             self.client.params_dict.update(search_args)
             response = self.client.get_dict()
-
             search_result = SerpApiSearchResult(
                 provider=self.provider,
                 query=search_request.query,
