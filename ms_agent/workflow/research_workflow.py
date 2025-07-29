@@ -9,8 +9,9 @@ import json
 from ms_agent.llm.openai import OpenAIChat
 from ms_agent.rag.extraction import HierarchicalKeyInformationExtraction
 from ms_agent.rag.schema import KeyInformation
-from ms_agent.tools.exa import ExaSearchRequest, ExaSearchResult
 from ms_agent.tools.exa.schema import dump_batch_search_results
+from ms_agent.tools.search.search_base import SearchRequest, SearchResult
+from ms_agent.tools.search.search_request import get_search_request_generator
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.thread_util import thread_executor
 from ms_agent.utils.utils import remove_resource_info, text_hash
@@ -202,7 +203,7 @@ class ResearchWorkflow:
 
         self._dump_todo_file()
 
-    def search(self, search_requests: List[ExaSearchRequest]) -> str:
+    def search(self, search_requests: List[SearchRequest]) -> str:
 
         if self._reuse:
             # Load existing search results if they exist
@@ -218,10 +219,10 @@ class ResearchWorkflow:
 
         # Perform search using the provided search request
         @thread_executor()
-        def search_single_request(search_request: ExaSearchRequest):
+        def search_single_request(search_request: SearchRequest):
             return self._search_engine.search(search_request=search_request)
 
-        def filter_search_res(single_res: ExaSearchResult):
+        def filter_search_res(single_res: SearchResult):
             results_new = []
             results = single_res.response.results
             for res in results:
@@ -235,7 +236,7 @@ class ResearchWorkflow:
 
             return single_res
 
-        search_results: List[ExaSearchResult] = search_single_request(search_requests)
+        search_results: List[SearchResult] = search_single_request(search_requests)
         search_results = [
             filter_search_res(single_res) for single_res in search_results
         ]
@@ -324,12 +325,15 @@ class ResearchWorkflow:
 
         # Rewrite the user prompt
         from datetime import datetime
-        args_template: str = '{"query": "xxx", "num_results": 20, "start_published_date": "2025-01-01", "end_published_date": "2025-05-30"}'
-        prompt_rewrite: str = (f'生成search request，具体要求为： '
-                               f'\n1. 必须符合以下arguments格式：{args_template}'
-                               f'\n2. 其中，query参数的值直接使用用户原始输入，即：{user_prompt}'
-                               f'\n3. 参数需要符合搜索引擎的要求，num_results需要根据实际问题的复杂程度来估算，最大25，最小1,对于复杂的问题，num_results的值需要尽量大；'
-                               f'\n3. start_published_date和end_published_date需要根据实际问题的时间范围来估算，默认均为None。当前日期为：{datetime.now().strftime("%Y-%m-%d")}')
+
+        engine_type = getattr(self._search_engine, 'engine_type', None)
+        try:
+            search_request_generator = get_search_request_generator(
+                engine_type=engine_type, user_prompt=user_prompt)
+        except ValueError as e:
+            raise ValueError(f'Error creating search request generator: {e}')
+
+        prompt_rewrite: str = search_request_generator.get_rewrite_prompt()
 
         messages_rewrite = [{'role': 'user', 'content': prompt_rewrite}]
         resp_d: Dict[str, Any] = self._chat(messages=messages_rewrite,
@@ -345,10 +349,10 @@ class ResearchWorkflow:
         if isinstance(search_request_d, list):
             search_request_d = search_request_d[0]
 
-        search_request: ExaSearchRequest = ExaSearchRequest(**search_request_d)
+        search_request = search_request_generator.create_request(search_request_d)
         search_res_file: str = self.search(search_requests=[search_request])
 
-        search_results: List[Dict[str, Any]] = ExaSearchResult.load_from_disk(file_path=search_res_file)
+        search_results: List[Dict[str, Any]] = SearchResult.load_from_disk(file_path=search_res_file)
         assert search_results, 'Search results cannot be empty, workflow stopped!'
 
         urls_or_files = [res_d['url'] for res_d in search_results[0]['results']]

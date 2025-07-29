@@ -1,6 +1,8 @@
+arxiv
 docling<=2.38.1
 docling-core
 exa-py
+google-search-results
 json5
 mcp
 modelscope
