@@ -3,6 +3,7 @@
 import copy
 import os
 import re
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
 
 import json
@@ -328,7 +329,6 @@ class ResearchWorkflow:
             str: The rewritten prompt in the required search request format.
         """
         # Rewrite the user prompt
-        from datetime import datetime
         args_template: str = '{"query": "xxx", "num_results": 20, "start_published_date": "2025-01-01", "end_published_date": "2025-05-30"}'
         prompt_rewrite: str = (f'生成search request，具体要求为： '
                                f'\n1. 必须符合以下arguments格式：{args_template}'
@@ -357,7 +357,8 @@ class ResearchWorkflow:
             search_prompt: str = self._rewrite_prompt(user_prompt)
             # Parse the rewritten prompt
             search_request_d: Dict[str, Any] = ResearchWorkflow.parse_json_from_content(search_prompt)
-            assert search_request_d, 'Rewritten search request cannot be empty !'
+            if not search_request_d:
+                raise ValueError('Rewritten search request cannot be empty!')
 
             if isinstance(search_request_d, list):
                 search_request_d = search_request_d[0]
@@ -366,7 +367,8 @@ class ResearchWorkflow:
             search_res_file: str = self.search(search_requests=[search_request])
 
             search_results: List[Dict[str, Any]] = ExaSearchResult.load_from_disk(file_path=search_res_file)
-            assert search_results, 'Search results cannot be empty, workflow stopped!'
+            if not search_results:
+                raise ValueError('Search results cannot be empty, workflow stopped!')
 
             prepared_resources = [res_d['url'] for res_d in search_results[0]['results']]
 
