@@ -168,7 +168,7 @@ class DocLoader:
                 logger.warning(f'Failed to access URL {_url}: {e2}')
                 return None
 
-        # Normalize URLs for arxiv.org
+        # Normalize URLs
         url_or_files = [
             normalize_url_or_file(url_or_file) for url_or_file in url_or_files
         ]
