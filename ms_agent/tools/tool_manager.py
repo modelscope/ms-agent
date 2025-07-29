@@ -1,5 +1,6 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import asyncio
+import os
 from copy import copy
 from typing import Any, Dict, List, Optional
 
@@ -9,6 +10,8 @@ from ms_agent.tools.base import ToolBase
 from ms_agent.tools.filesystem_tool import FileSystemTool
 from ms_agent.tools.mcp_client import MCPClient
 from ms_agent.tools.split_task import SplitTask
+
+MAX_TOOL_NAME_LEN = int(os.getenv('MAX_TOOL_NAME_LEN', 64))
 
 
 class ToolManager:
@@ -45,7 +48,12 @@ class ToolManager:
         def extend_tool(tool_ins: ToolBase, server_name: str,
                         tool_list: List[Tool]):
             for tool in tool_list:
-                key = server_name + ':' + tool['tool_name']
+                # Subtract 1 for the ':' character
+                max_server_len = MAX_TOOL_NAME_LEN - len(tool['tool_name']) - 1
+                if len(server_name) > max_server_len:
+                    key = f"{server_name[:max(0, max_server_len)]}:{tool['tool_name']}"
+                else:
+                    key = f"{server_name}:{tool['tool_name']}"
                 assert key not in self._tool_index, f'Tool name duplicated {tool["tool_name"]}'
                 tool = copy(tool)
                 tool['tool_name'] = key
