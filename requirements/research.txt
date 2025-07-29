@@ -1,5 +1,5 @@
 docling<=2.38.1
-docling-core
+docling-core<=2.38.2
 exa-py
 json5
 mcp
