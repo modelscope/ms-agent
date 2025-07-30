@@ -28,6 +28,7 @@ class OpenaiLLM(unittest.TestCase):
             'max_tokens': API_CALL_MAX_TOKEN
         }
     })
+
     messages = [
         Message(role='assistant', content='You are a helpful assistant.'),
         Message(role='user', content='浙江的省会是哪里？'),
