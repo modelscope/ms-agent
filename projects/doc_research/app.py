@@ -1,4 +1,6 @@
 # flake8: noqa
+# isort: skip_file
+# yapf: disable
 import base64
 import os
 import re
@@ -18,16 +20,13 @@ from ms_agent.workflow.research_workflow import ResearchWorkflow
 
 
 class ResearchWorkflowExtend:
-
     def __init__(self, client, workdir: str):
         self.client = client
         self.workdir = workdir
 
         # TODO: download easyocr model first, for temp use
         target_dir: str = '~/.EasyOCR/model'
-        if not os.path.exists(
-                os.path.join(
-                    os.path.expanduser(target_dir), 'craft_mlt_25k.pth')):
+        if not os.path.exists(os.path.join(os.path.expanduser(target_dir), 'craft_mlt_25k.pth')):
             from modelscope import snapshot_download
 
             os.makedirs(os.path.expanduser(target_dir), exist_ok=True)
@@ -43,10 +42,8 @@ class ResearchWorkflowExtend:
             print(f'EasyOCR模型已下载到: {os.path.expanduser(target_dir)}')
             # unzip craft_mlt_25k.zip, latin_g2.zip
             import zipfile
-            zip_path_craft = os.path.join(
-                os.path.expanduser(target_dir), 'craft_mlt_25k.zip')
-            zip_path_latin = os.path.join(
-                os.path.expanduser(target_dir), 'latin_g2.zip')
+            zip_path_craft = os.path.join(os.path.expanduser(target_dir), 'craft_mlt_25k.zip')
+            zip_path_latin = os.path.join(os.path.expanduser(target_dir), 'latin_g2.zip')
             if os.path.exists(zip_path_craft):
                 with zipfile.ZipFile(zip_path_craft, 'r') as zip_ref_craft:
                     zip_ref_craft.extractall(os.path.expanduser(target_dir))
@@ -106,17 +103,14 @@ IMAGE_SERVER_PORT = 52682
 IMAGE_SERVER_URL = f'http://localhost:{IMAGE_SERVER_PORT}'
 
 # 并发控制配置
-GRADIO_DEFAULT_CONCURRENCY_LIMIT = int(
-    os.environ.get('GRADIO_DEFAULT_CONCURRENCY_LIMIT', '8'))
+GRADIO_DEFAULT_CONCURRENCY_LIMIT = int(os.environ.get('GRADIO_DEFAULT_CONCURRENCY_LIMIT', '8'))
 TASK_TIMEOUT = int(os.environ.get('TASK_TIMEOUT', '1200'))  # 20分钟超时
 
 
 # 简化的用户状态管理器
 class UserStatusManager:
-
     def __init__(self):
-        self.active_users = {
-        }  # {user_id: {'start_time': time, 'status': status}}
+        self.active_users = {}  # {user_id: {'start_time': time, 'status': status}}
         self.lock = threading.Lock()
 
     def get_user_status(self, user_id: str) -> dict:
@@ -139,18 +133,14 @@ class UserStatusManager:
                 'start_time': time.time(),
                 'status': 'running'
             }
-            print(
-                f'用户任务开始 - 用户: {user_id[:8]}***, 当前活跃用户数: {len(self.active_users)}'
-            )
+            print(f'用户任务开始 - 用户: {user_id[:8]}***, 当前活跃用户数: {len(self.active_users)}')
 
     def finish_user_task(self, user_id: str):
         """标记用户任务完成"""
         with self.lock:
             if user_id in self.active_users:
                 del self.active_users[user_id]
-                print(
-                    f'用户任务完成 - 用户: {user_id[:8]}***, 剩余活跃用户数: {len(self.active_users)}'
-                )
+                print(f'用户任务完成 - 用户: {user_id[:8]}***, 剩余活跃用户数: {len(self.active_users)}')
 
     def get_system_status(self) -> dict:
         """获取系统状态"""
@@ -278,8 +268,7 @@ class ReusableTCPServer(socketserver.TCPServer):
     allow_reuse_address = True
 
 
-def create_static_image_server(workdir: str = BASE_WORKDIR,
-                               port: int = IMAGE_SERVER_PORT) -> str:
+def create_static_image_server(workdir: str = BASE_WORKDIR, port: int = IMAGE_SERVER_PORT) -> str:
     """创建静态图片服务器"""
     import threading
     import http.server
@@ -287,7 +276,6 @@ def create_static_image_server(workdir: str = BASE_WORKDIR,
     from urllib.parse import quote
 
     class ImageHandler(http.server.SimpleHTTPRequestHandler):
-
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=workdir, **kwargs)
 
@@ -305,8 +293,7 @@ def create_static_image_server(workdir: str = BASE_WORKDIR,
     try:
         httpd = ReusableTCPServer(('', port), ImageHandler)
         # 在后台线程中启动服务器，设置为非守护进程以保持长期运行
-        server_thread = threading.Thread(
-            target=httpd.serve_forever, daemon=False)
+        server_thread = threading.Thread(target=httpd.serve_forever, daemon=False)
         server_thread.start()
         print(f'图片服务器已启动在端口 {port}，服务目录: {workdir}')
         return f'http://localhost:{port}'
@@ -343,8 +330,7 @@ def ensure_image_server_running(workdir: str = BASE_WORKDIR) -> str:
         return None
 
 
-def convert_markdown_images_to_base64(markdown_content: str,
-                                      workdir: str) -> str:
+def convert_markdown_images_to_base64(markdown_content: str, workdir: str) -> str:
     """将markdown中的相对路径图片转换为base64格式（适用于在线环境）"""
 
     def replace_image(match):
@@ -413,9 +399,7 @@ def convert_markdown_images_to_base64(markdown_content: str,
     return re.sub(pattern, replace_image, markdown_content)
 
 
-def convert_markdown_images_to_urls(markdown_content: str,
-                                    workdir: str,
-                                    server_url: str = None) -> str:
+def convert_markdown_images_to_urls(markdown_content: str, workdir: str, server_url: str = None) -> str:
     """将markdown中的相对路径图片转换为可访问的URL（本地环境使用）"""
 
     # 如果没有提供服务器URL，确保图片服务器运行
@@ -457,8 +441,7 @@ def convert_markdown_images_to_urls(markdown_content: str,
     return re.sub(pattern, replace_image, markdown_content)
 
 
-def convert_markdown_images_to_file_info(markdown_content: str,
-                                         workdir: str) -> str:
+def convert_markdown_images_to_file_info(markdown_content: str, workdir: str) -> str:
     """将markdown中的图片转换为文件信息显示（回退方案）"""
 
     def replace_image(match):
@@ -519,35 +502,25 @@ def convert_markdown_to_html(markdown_content: str) -> str:
         protected_content = markdown_content
 
         # 保护 $$...$$（块级公式）
-        protected_content = re.sub(
-            r'\$\$([^$]+?)\$\$',
-            protect_latex,
-            protected_content,
-            flags=re.DOTALL)
+        protected_content = re.sub(r'\$\$([^$]+?)\$\$', protect_latex, protected_content, flags=re.DOTALL)
 
         # 保护 $...$ （行内公式）
-        protected_content = re.sub(r'(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)',
-                                   protect_latex, protected_content)
+        protected_content = re.sub(r'(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)', protect_latex, protected_content)
 
         # 保护 \[...\]（块级公式）
-        protected_content = re.sub(
-            r'\\\[([^\\]+?)\\\]',
-            protect_latex,
-            protected_content,
-            flags=re.DOTALL)
+        protected_content = re.sub(r'\\\[([^\\]+?)\\\]', protect_latex, protected_content, flags=re.DOTALL)
 
         # 保护 \(...\)（行内公式）
-        protected_content = re.sub(
-            r'\\\(([^\\]+?)\\\)',
-            protect_latex,
-            protected_content,
-            flags=re.DOTALL)
+        protected_content = re.sub(r'\\\(([^\\]+?)\\\)', protect_latex, protected_content, flags=re.DOTALL)
 
         # 配置markdown扩展
         extensions = [
-            'markdown.extensions.extra', 'markdown.extensions.codehilite',
-            'markdown.extensions.toc', 'markdown.extensions.tables',
-            'markdown.extensions.fenced_code', 'markdown.extensions.nl2br'
+            'markdown.extensions.extra',
+            'markdown.extensions.codehilite',
+            'markdown.extensions.toc',
+            'markdown.extensions.tables',
+            'markdown.extensions.fenced_code',
+            'markdown.extensions.nl2br'
         ]
 
         # 配置扩展参数
@@ -563,7 +536,9 @@ def convert_markdown_to_html(markdown_content: str) -> str:
 
         # 创建markdown实例
         md = markdown.Markdown(
-            extensions=extensions, extension_configs=extension_configs)
+            extensions=extensions,
+            extension_configs=extension_configs
+        )
 
         # 转换为HTML
         html_content = md.convert(protected_content)
@@ -962,12 +937,10 @@ def read_markdown_report(workdir: str) -> Tuple[str, str, str]:
 
         # 统一使用base64方式处理图片
         try:
-            processed_markdown = convert_markdown_images_to_base64(
-                markdown_content, workdir)
+            processed_markdown = convert_markdown_images_to_base64(markdown_content, workdir)
         except Exception as e:
             print(f'base64转换失败，使用文件信息显示: {e}')
-            processed_markdown = convert_markdown_images_to_file_info(
-                markdown_content, workdir)
+            processed_markdown = convert_markdown_images_to_file_info(markdown_content, workdir)
 
         # 检查是否为非local_mode，如果是则转换为HTML
         local_mode = os.environ.get('LOCAL_MODE', 'true').lower() == 'true'
@@ -996,13 +969,11 @@ def list_resources_files(workdir: str) -> str:
         files = []
         for root, dirs, filenames in os.walk(resources_path):
             for filename in filenames:
-                rel_path = os.path.relpath(
-                    os.path.join(root, filename), workdir)
+                rel_path = os.path.relpath(os.path.join(root, filename), workdir)
                 files.append(rel_path)
 
         if files:
-            return '📁 资源文件列表:\n' + '\n'.join(f'• {file}'
-                                             for file in sorted(files))
+            return '📁 资源文件列表:\n' + '\n'.join(f'• {file}' for file in sorted(files))
         else:
             return 'resources 文件夹为空'
     except Exception as e:
@@ -1014,7 +985,8 @@ def run_research_workflow_internal(
         uploaded_files,
         urls_text: str,
         user_id: str,
-        progress_callback=None) -> Tuple[str, str, str, str, str]:
+        progress_callback=None
+) -> Tuple[str, str, str, str, str]:
     """内部研究工作流执行函数"""
     try:
         if progress_callback:
@@ -1067,8 +1039,7 @@ def run_research_workflow_internal(
             progress_callback(0.90, '处理研究报告...')
 
         # 读取markdown报告
-        markdown_report, html_report, report_error = read_markdown_report(
-            task_workdir)
+        markdown_report, html_report, report_error = read_markdown_report(task_workdir)
 
         if progress_callback:
             progress_callback(0.95, '整理资源文件...')
@@ -1087,11 +1058,12 @@ def run_research_workflow_internal(
 
 
 def run_research_workflow(
-    user_prompt: str,
-    uploaded_files,
-    urls_text: str,
-    request: gr.Request,
-    progress=gr.Progress()) -> Tuple[str, str, str, str, str]:
+        user_prompt: str,
+        uploaded_files,
+        urls_text: str,
+        request: gr.Request,
+        progress=gr.Progress()
+) -> Tuple[str, str, str, str, str]:
     """运行研究工作流（使用Gradio内置队列控制）"""
     try:
         # 检查LOCAL_MODE环境变量，默认为true
@@ -1121,9 +1093,13 @@ def run_research_workflow(
 
         try:
             # 直接执行任务，由Gradio队列控制并发
-            result = run_research_workflow_internal(user_prompt,
-                                                    uploaded_files, urls_text,
-                                                    user_id, progress_callback)
+            result = run_research_workflow_internal(
+                user_prompt,
+                uploaded_files,
+                urls_text,
+                user_id,
+                progress_callback
+            )
 
             progress(1.0, desc='任务完成！')
             return result
@@ -1252,7 +1228,7 @@ def create_interface():
 
         /* 非local_mode HTML报告滚动样式 */
         .scrollable-html-report {
-            height: 650px !important;
+            height: 750px !important;
             overflow-y: auto !important;
             border: 1px solid var(--border-color-primary) !important;
             border-radius: 0.5rem !important;
@@ -1262,13 +1238,13 @@ def create_interface():
 
         /* HTML报告内容区域样式 */
         #html-report {
-            height: 650px !important;
+            height: 750px !important;
             overflow-y: auto !important;
         }
 
         /* 全屏模式下的HTML报告滚动 */
         #fullscreen-html {
-            height: calc(100vh - 2.5rem) !important;
+            height: calc(100vh - 1.2rem) !important;
             overflow-y: auto !important;
         }
 
@@ -1310,50 +1286,78 @@ def create_interface():
         @media (max-width: 768px) {
             .scrollable-html-report,
             #html-report {
-                height: 500px !important;
+                height: 600px !important;
                 padding: 0.75rem !important;
             }
 
             #fullscreen-html {
-                height: calc(100vh - 2rem) !important;
+                height: calc(100vh - 1.2rem) !important;
             }
 
             #fullscreen-modal {
-                padding: 0.25rem !important;
+                padding: 0.2rem !important;
             }
 
             #fullscreen-modal .gr-column {
-                padding: 0.5rem !important;
-                height: calc(100vh - 0.5rem) !important;
+                padding: 0.2rem !important;
+                height: calc(100vh - 0.4rem) !important;
             }
 
             #fullscreen-markdown {
-                height: calc(100vh - 1.5rem) !important;
+                height: calc(100vh - 1.2rem) !important;
+            }
+
+            #fullscreen-btn {
+                min-width: 20px !important;
+                width: 20px !important;
+                height: 20px !important;
+                font-size: 0.8rem !important;
+            }
+
+            #close-btn {
+                min-width: 18px !important;
+                width: 18px !important;
+                height: 18px !important;
+                font-size: 0.8rem !important;
             }
         }
 
         @media (max-width: 480px) {
             .scrollable-html-report,
             #html-report {
-                height: 400px !important;
+                height: 500px !important;
                 padding: 0.5rem !important;
             }
 
             #fullscreen-html {
-                height: calc(100vh - 1.5rem) !important;
+                height: calc(100vh - 1rem) !important;
             }
 
             #fullscreen-modal {
-                padding: 0.25rem !important;
+                padding: 0.15rem !important;
             }
 
             #fullscreen-modal .gr-column {
-                padding: 0.25rem !important;
-                height: calc(100vh - 0.5rem) !important;
+                padding: 0.15rem !important;
+                height: calc(100vh - 0.3rem) !important;
             }
 
             #fullscreen-markdown {
                 height: calc(100vh - 1rem) !important;
+            }
+
+            #fullscreen-btn {
+                min-width: 18px !important;
+                width: 18px !important;
+                height: 18px !important;
+                font-size: 0.75rem !important;
+            }
+
+            #close-btn {
+                min-width: 16px !important;
+                width: 16px !important;
+                height: 16px !important;
+                font-size: 0.75rem !important;
             }
         }
 
@@ -1366,7 +1370,7 @@ def create_interface():
             height: 100vh !important;
             background: var(--background-fill-primary) !important;
             z-index: 9999 !important;
-            padding: 0.5rem !important;
+            padding: 0.25rem !important;
             box-sizing: border-box !important;
         }
 
@@ -1374,42 +1378,46 @@ def create_interface():
             background: var(--background-fill-primary) !important;
             border: 1px solid var(--border-color-primary) !important;
             border-radius: 0.5rem !important;
-            padding: 0.5rem !important;
-            height: calc(100vh - 1rem) !important;
+            padding: 0.25rem !important;
+            height: calc(100vh - 0.5rem) !important;
             overflow: hidden !important;
             box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15) !important;
         }
 
         #fullscreen-markdown {
-            height: calc(100vh - 2.5rem) !important;
+            height: calc(100vh - 1.5rem) !important;
             overflow-y: auto !important;
             background: var(--background-fill-primary) !important;
             color: var(--body-text-color) !important;
         }
 
         #fullscreen-btn {
-            min-width: 40px !important;
-            height: 40px !important;
+            min-width: 24px !important;
+            width: 24px !important;
+            height: 24px !important;
             padding: 0 !important;
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
-            font-size: 1.2rem !important;
-            margin-bottom: 0.5rem !important;
+            font-size: 0.9rem !important;
+            margin-bottom: 0.25rem !important;
+            border-radius: 4px !important;
         }
 
         #close-btn {
-            min-width: 30px !important;
-            height: 30px !important;
+            min-width: 22px !important;
+            width: 22px !important;
+            height: 22px !important;
             padding: 0 !important;
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
-            font-size: 1.2rem !important;
+            font-size: 0.9rem !important;
             margin-left: auto !important;
             background: var(--button-secondary-background-fill) !important;
             color: var(--button-secondary-text-color) !important;
             border: 1px solid var(--border-color-primary) !important;
+            border-radius: 4px !important;
         }
 
         #close-btn:hover {
@@ -1422,6 +1430,12 @@ def create_interface():
             margin: 0 !important;
             flex: 1 !important;
             font-size: 1.1rem !important;
+        }
+
+        /* 全屏模式标题行样式 */
+        #fullscreen-modal .gr-row {
+            margin-bottom: 0.25rem !important;
+            align-items: center !important;
         }
 
         /* 全屏模式下的markdown样式优化 */
@@ -1882,7 +1896,8 @@ def create_interface():
         .gr-markdown::-webkit-scrollbar-thumb:hover {
             background: #94a3b8;
         }
-        """) as demo:
+        """
+    ) as demo:
 
         # 状态管理 - 用于保持数据持久性
         current_workdir = gr.State('')
@@ -1915,10 +1930,10 @@ def create_interface():
                 # 用户提示输入
                 user_prompt = gr.Textbox(
                     label='用户提示 | User Prompt',
-                    placeholder=
-                    '请输入您的研究问题或任务描述(可为空)...\nPlease enter your research question or task description (Optional)...',
+                    placeholder='请输入您的研究问题或任务描述(可为空)...\nPlease enter your research question or task description (Optional)...',
                     lines=4,
-                    max_lines=8)
+                    max_lines=8
+                )
 
                 with gr.Row():
                     with gr.Column():
@@ -1928,28 +1943,36 @@ def create_interface():
                             file_count='multiple',
                             file_types=None,
                             interactive=True,
-                            height=120)
+                            height=120
+                        )
 
                     with gr.Column():
                         # URLs输入
                         urls_text = gr.Textbox(
                             label='URLs输入 | URLs Input',
-                            placeholder=
-                            '请输入URLs，每行一个...\nEnter URLs, one per line...\n\nhttps://example1.com\nhttps://example2.com',
+                            placeholder='请输入URLs，每行一个...\nEnter URLs, one per line...\n\nhttps://example1.com\nhttps://example2.com',
                             lines=6,
-                            max_lines=10)
+                            max_lines=10
+                        )
 
                 # 运行按钮
                 run_btn = gr.Button(
-                    '🚀 开始研究 | Start Research', variant='primary', size='lg')
+                    '🚀 开始研究 | Start Research',
+                    variant='primary',
+                    size='lg'
+                )
 
                 # 清理按钮
                 clear_btn = gr.Button(
-                    '🧹 清理工作空间 | Clear Workspace', variant='secondary')
+                    '🧹 清理工作空间 | Clear Workspace',
+                    variant='secondary'
+                )
 
                 # 恢复按钮
                 restore_btn = gr.Button(
-                    '🔄 重载最近结果 | Reload Latest Results', variant='secondary')
+                    '🔄 重载最近结果 | Reload Latest Results',
+                    variant='secondary'
+                )
 
                 # 会话状态指示器
                 session_status = gr.HTML()
@@ -1958,7 +1981,8 @@ def create_interface():
                 refresh_status_btn = gr.Button(
                     '🔄 刷新系统状态 | Refresh System Status',
                     variant='secondary',
-                    size='sm')
+                    size='sm'
+                )
 
             with gr.Column(scale=3, elem_classes=['output-column']):
                 gr.HTML('<h3 class="section-header">📊 输出区域 | Output Area</h3>')
@@ -1968,22 +1992,23 @@ def create_interface():
                         # 结果显示
                         result_output = gr.Textbox(
                             label='执行结果 | Execution Results',
-                            lines=22,
-                            max_lines=25,
+                            lines=26,
+                            max_lines=30,
                             interactive=False,
-                            show_copy_button=True)
+                            show_copy_button=True
+                        )
 
                         # 工作目录显示
                         workdir_output = gr.Textbox(
                             label='工作目录 | Working Directory',
                             lines=2,
                             interactive=False,
-                            show_copy_button=True)
+                            show_copy_button=True
+                        )
 
                     with gr.TabItem('📄 研究报告 | Research Report'):
                         # 检查是否为非local_mode来决定显示格式
-                        local_mode = os.environ.get('LOCAL_MODE',
-                                                    'true').lower() == 'true'
+                        local_mode = os.environ.get('LOCAL_MODE', 'true').lower() == 'true'
 
                         if local_mode:
                             # Local模式：显示Markdown
@@ -1992,32 +2017,32 @@ def create_interface():
                                     # Markdown报告显示
                                     markdown_output = gr.Markdown(
                                         label='Markdown报告 | Markdown Report',
-                                        height=650)
-                                with gr.Column(scale=1, min_width=50):
+                                        height=750
+                                    )
+                                with gr.Column(scale=1, min_width=30):
                                     # 全屏按钮
                                     fullscreen_btn = gr.Button(
                                         '⛶',
                                         size='sm',
                                         variant='secondary',
-                                        elem_id='fullscreen-btn')
+                                        elem_id='fullscreen-btn'
+                                    )
 
                             # 全屏模态框
-                            with gr.Row(
-                                    visible=False, elem_id='fullscreen-modal'
-                            ) as fullscreen_modal:
+                            with gr.Row(visible=False, elem_id='fullscreen-modal') as fullscreen_modal:
                                 with gr.Column():
                                     with gr.Row():
-                                        gr.HTML(
-                                            '<h3 style="margin: 0; flex: 1;">📄 研究报告 - 全屏模式</h3>'
-                                        )
+                                        gr.HTML('<h3 style="margin: 0; flex: 1;">📄 研究报告 - 全屏模式</h3>')
                                         close_btn = gr.Button(
                                             '✕',
                                             size='sm',
                                             variant='secondary',
-                                            elem_id='close-btn')
+                                            elem_id='close-btn'
+                                        )
                                     fullscreen_markdown = gr.Markdown(
-                                        height=600,
-                                        elem_id='fullscreen-markdown')
+                                        height=700,
+                                        elem_id='fullscreen-markdown'
+                                    )
 
                             # 为本地模式创建空的HTML组件（保持兼容性）
                             html_output = gr.HTML(visible=False)
@@ -2031,37 +2056,33 @@ def create_interface():
                                         label='研究报告 | Research Report',
                                         value='',
                                         elem_id='html-report',
-                                        elem_classes=[
-                                            'scrollable-html-report'
-                                        ])
-                                with gr.Column(scale=1, min_width=50):
+                                        elem_classes=['scrollable-html-report']
+                                    )
+                                with gr.Column(scale=1, min_width=30):
                                     # 全屏按钮
                                     fullscreen_btn = gr.Button(
                                         '⛶',
                                         size='sm',
                                         variant='secondary',
-                                        elem_id='fullscreen-btn')
+                                        elem_id='fullscreen-btn'
+                                    )
 
                             # 全屏模态框
-                            with gr.Row(
-                                    visible=False, elem_id='fullscreen-modal'
-                            ) as fullscreen_modal:
+                            with gr.Row(visible=False, elem_id='fullscreen-modal') as fullscreen_modal:
                                 with gr.Column():
                                     with gr.Row():
-                                        gr.HTML(
-                                            '<h3 style="margin: 0; flex: 1;">📄 研究报告 - 全屏模式</h3>'
-                                        )
+                                        gr.HTML('<h3 style="margin: 0; flex: 1;">📄 研究报告 - 全屏模式</h3>')
                                         close_btn = gr.Button(
                                             '✕',
                                             size='sm',
                                             variant='secondary',
-                                            elem_id='close-btn')
+                                            elem_id='close-btn'
+                                        )
                                     fullscreen_html = gr.HTML(
                                         value='',
                                         elem_id='fullscreen-html',
-                                        elem_classes=[
-                                            'scrollable-html-report'
-                                        ])
+                                        elem_classes=['scrollable-html-report']
+                                    )
 
                             # 为非local模式创建空的markdown组件（保持兼容性）
                             markdown_output = gr.Markdown(visible=False)
@@ -2071,10 +2092,11 @@ def create_interface():
                         # 资源文件列表
                         resources_output = gr.Textbox(
                             label='资源文件信息 | Resources Info',
-                            lines=25,
+                            lines=30,
                             max_lines=50,
                             interactive=False,
-                            show_copy_button=True)
+                            show_copy_button=True
+                        )
 
         # 使用说明
         gr.HTML("""
@@ -2123,20 +2145,9 @@ def create_interface():
                 if not is_authenticated:
                     return (
                         user_status_html,
-                        '',
-                        '',
-                        '',
-                        '',
-                        '',
-                        '',  # 界面显示 (6个)
-                        '',
-                        '',
-                        '',
-                        '',
-                        '',
-                        '',  # 状态保存 (6个)
-                        '',
-                        '',  # 输入状态保存 (2个)
+                        '', '', '', '', '', '',  # 界面显示 (6个)
+                        '', '', '', '', '', '',  # 状态保存 (6个)
+                        '', '',  # 输入状态保存 (2个)
                         """<div class="status-indicator status-info">📊 会话状态: 游客模式（请登录后使用）</div>""",  # 会话状态
                         get_system_status_html()  # 系统状态
                     )
@@ -2196,12 +2207,13 @@ def create_interface():
         # 保存状态的包装函数
         def run_research_workflow_with_state(
                 user_prompt_val, uploaded_files_val, urls_text_val,
-                current_workdir_val, current_result_val, current_markdown_val,
-                current_html_val, current_resources_val,
+                current_workdir_val, current_result_val, current_markdown_val, current_html_val, current_resources_val,
                 current_user_prompt_val, current_urls_text_val,
-                request: gr.Request):
+                request: gr.Request
+        ):
             result, workdir, markdown, html, resources = run_research_workflow(
-                user_prompt_val, uploaded_files_val, urls_text_val, request)
+                user_prompt_val, uploaded_files_val, urls_text_val, request
+            )
 
             local_mode = os.environ.get('LOCAL_MODE', 'true').lower() == 'true'
 
@@ -2216,11 +2228,14 @@ def create_interface():
                         🚫 游客模式 - {user_id_or_error}
                     </div>
                     """
-                    return (result, workdir, markdown, html, resources,
-                            workdir, result, markdown, html, resources,
-                            user_prompt_val, urls_text_val, status_html,
-                            get_system_status_html(),
-                            get_user_status_html(request))
+                    return (
+                        result, workdir, markdown, html, resources,
+                        workdir, result, markdown, html, resources,
+                        user_prompt_val, urls_text_val,
+                        status_html,
+                        get_system_status_html(),
+                        get_user_status_html(request)
+                    )
                 user_id = user_id_or_error
 
             # 保存会话数据
@@ -2247,26 +2262,16 @@ def create_interface():
                 """
 
             return (
-                result,
-                workdir,
-                markdown,
-                html,
-                resources,  # 输出显示
-                workdir,
-                result,
-                markdown,
-                html,
-                resources,  # 状态保存
-                user_prompt_val,
-                urls_text_val,  # 输入状态保存
+                result, workdir, markdown, html, resources,  # 输出显示
+                workdir, result, markdown, html, resources,  # 状态保存
+                user_prompt_val, urls_text_val,  # 输入状态保存
                 status_html,  # 状态指示器
                 get_system_status_html(),  # 系统状态
                 get_user_status_html(request)  # 用户状态
             )
 
         # 恢复状态函数
-        def restore_latest_results(workdir, result, markdown, html, resources,
-                                   user_prompt_state, urls_text_state,
+        def restore_latest_results(workdir, result, markdown, html, resources, user_prompt_state, urls_text_state,
                                    request: gr.Request):
             local_mode = os.environ.get('LOCAL_MODE', 'true').lower() == 'true'
 
@@ -2281,8 +2286,7 @@ def create_interface():
                         🚫 游客模式 - {user_id_or_error}
                     </div>
                     """
-                    return result, workdir, markdown, html, resources, user_prompt_state, urls_text_state, status_html, get_system_status_html(
-                    )
+                    return result, workdir, markdown, html, resources, user_prompt_state, urls_text_state, status_html, get_system_status_html()
                 user_id = user_id_or_error
 
             # 重新加载会话数据
@@ -2302,15 +2306,17 @@ def create_interface():
                 </div>
                 """
 
-            return (session_data.get('result', result),
-                    session_data.get('workdir', workdir),
-                    session_data.get('markdown',
-                                     markdown), session_data.get('html', html),
-                    session_data.get('resources', resources),
-                    session_data.get('user_prompt', user_prompt_state),
-                    session_data.get('urls_text',
-                                     urls_text_state), status_html,
-                    get_system_status_html())
+            return (
+                session_data.get('result', result),
+                session_data.get('workdir', workdir),
+                session_data.get('markdown', markdown),
+                session_data.get('html', html),
+                session_data.get('resources', resources),
+                session_data.get('user_prompt', user_prompt_state),
+                session_data.get('urls_text', urls_text_state),
+                status_html,
+                get_system_status_html()
+            )
 
         # 清理函数
         def clear_all_inputs_and_state(request: gr.Request):
@@ -2327,8 +2333,8 @@ def create_interface():
                         🚫 游客模式 - {user_id_or_error}
                     </div>
                     """
-                    return '', None, '', '', '', '', '', '', '', '', '', '', '', '', '', status_html, get_system_status_html(
-                    ), get_user_status_html(request)
+                    return '', None, '', '', '', '', '', '', '', '', '', '', '', '', '', status_html, get_system_status_html(), get_user_status_html(
+                        request)
                 user_id = user_id_or_error
 
             # 强制清理用户任务
@@ -2351,16 +2357,13 @@ def create_interface():
                 </div>
                 """
 
-            return '', None, '', '', '', '', '', '', '', '', '', '', '', '', '', status_html, get_system_status_html(
-            ), get_user_status_html(request)
+            return '', None, '', '', '', '', '', '', '', '', '', '', '', '', '', status_html, get_system_status_html(), get_user_status_html(
+                request)
 
         # 清理工作空间并保持状态
-        def clear_workspace_keep_state(current_workdir_val, current_result_val,
-                                       current_markdown_val, current_html_val,
-                                       current_resources_val,
-                                       request: gr.Request):
-            clear_result, clear_markdown, clear_resources = clear_workspace(
-                request)
+        def clear_workspace_keep_state(current_workdir_val, current_result_val, current_markdown_val, current_html_val,
+                                       current_resources_val, request: gr.Request):
+            clear_result, clear_markdown, clear_resources = clear_workspace(request)
 
             local_mode = os.environ.get('LOCAL_MODE', 'true').lower() == 'true'
 
@@ -2373,8 +2376,7 @@ def create_interface():
                 </div>
                 """
 
-            return clear_result, clear_markdown, clear_resources, current_workdir_val, current_result_val, current_markdown_val, current_html_val, current_resources_val, status_html, get_system_status_html(
-            )
+            return clear_result, clear_markdown, clear_resources, current_workdir_val, current_result_val, current_markdown_val, current_html_val, current_resources_val, status_html, get_system_status_html()
 
         # 刷新系统状态函数
         def refresh_system_status():
@@ -2384,14 +2386,14 @@ def create_interface():
         demo.load(
             fn=initialize_page,
             outputs=[
-                user_status, user_prompt, urls_text, result_output,
-                workdir_output, markdown_output,
-                html_output if not local_mode else markdown_output,
-                resources_output, current_workdir, current_result,
-                current_markdown, current_html, current_resources,
-                current_user_prompt, current_urls_text, session_status,
-                system_status
-            ])
+                user_status,
+                user_prompt, urls_text,
+                result_output, workdir_output, markdown_output, html_output if not local_mode else markdown_output,
+                resources_output,
+                current_workdir, current_result, current_markdown, current_html, current_resources,
+                current_user_prompt, current_urls_text, session_status, system_status
+            ]
+        )
 
         # 定期刷新状态显示
         def periodic_status_update(request: gr.Request):
@@ -2401,94 +2403,92 @@ def create_interface():
         # 使用定时器组件实现定期状态更新
         status_timer = gr.Timer(10)  # 每10秒触发一次
         status_timer.tick(
-            fn=periodic_status_update, outputs=[user_status, system_status])
+            fn=periodic_status_update,
+            outputs=[user_status, system_status]
+        )
 
         # 全屏功能事件绑定
         fullscreen_btn.click(
             fn=toggle_fullscreen,
             inputs=[current_markdown, current_html],
-            outputs=[fullscreen_modal, fullscreen_markdown, fullscreen_html])
+            outputs=[fullscreen_modal, fullscreen_markdown, fullscreen_html]
+        )
 
         close_btn.click(
             fn=close_fullscreen,
-            outputs=[fullscreen_modal, fullscreen_markdown, fullscreen_html])
+            outputs=[fullscreen_modal, fullscreen_markdown, fullscreen_html]
+        )
 
         # 事件绑定
         run_btn.click(
             fn=run_research_workflow_with_state,
             inputs=[
-                user_prompt, uploaded_files, urls_text, current_workdir,
-                current_result, current_markdown, current_html,
-                current_resources, current_user_prompt, current_urls_text
+                user_prompt, uploaded_files, urls_text,
+                current_workdir, current_result, current_markdown, current_html, current_resources,
+                current_user_prompt, current_urls_text
             ],
             outputs=[
-                result_output, workdir_output, markdown_output,
-                html_output if not local_mode else markdown_output,
-                resources_output, current_workdir, current_result,
-                current_markdown, current_html, current_resources,
-                current_user_prompt, current_urls_text, session_status,
-                system_status, user_status
+                result_output, workdir_output, markdown_output, html_output if not local_mode else markdown_output,
+                resources_output,
+                current_workdir, current_result, current_markdown, current_html, current_resources,
+                current_user_prompt, current_urls_text, session_status, system_status, user_status
             ],
-            show_progress=True)
+            show_progress=True
+        )
 
         # 恢复最近结果
         restore_btn.click(
             fn=restore_latest_results,
-            inputs=[
-                current_workdir, current_result, current_markdown,
-                current_html, current_resources, current_user_prompt,
-                current_urls_text
-            ],
-            outputs=[
-                result_output, workdir_output, markdown_output,
-                html_output if not local_mode else markdown_output,
-                resources_output, user_prompt, urls_text, session_status,
-                system_status
-            ])
+            inputs=[current_workdir, current_result, current_markdown, current_html, current_resources,
+                    current_user_prompt, current_urls_text],
+            outputs=[result_output, workdir_output, markdown_output, html_output if not local_mode else markdown_output,
+                     resources_output, user_prompt, urls_text, session_status, system_status]
+        )
 
         # 刷新系统状态
         refresh_status_btn.click(
-            fn=refresh_system_status, outputs=[system_status])
+            fn=refresh_system_status,
+            outputs=[system_status]
+        )
 
         clear_btn.click(
             fn=clear_workspace_keep_state,
-            inputs=[
-                current_workdir, current_result, current_markdown,
-                current_html, current_resources
-            ],
+            inputs=[current_workdir, current_result, current_markdown, current_html, current_resources],
+            outputs=[result_output, markdown_output, resources_output, current_workdir, current_result,
+                     current_markdown, current_html, current_resources, session_status, system_status]
+        ).then(
+            fn=clear_all_inputs_and_state,
             outputs=[
-                result_output, markdown_output, resources_output,
-                current_workdir, current_result, current_markdown,
-                current_html, current_resources, session_status, system_status
-            ]).then(
-                fn=clear_all_inputs_and_state,
-                outputs=[
-                    user_prompt, uploaded_files, urls_text, result_output,
-                    workdir_output, markdown_output,
-                    html_output if not local_mode else markdown_output,
-                    resources_output, current_workdir, current_result,
-                    current_markdown, current_html, current_resources,
-                    current_user_prompt, current_urls_text, session_status,
-                    system_status, user_status
-                ])
+                user_prompt, uploaded_files, urls_text,
+                result_output, workdir_output, markdown_output, html_output if not local_mode else markdown_output,
+                resources_output,
+                current_workdir, current_result, current_markdown, current_html, current_resources,
+                current_user_prompt, current_urls_text, session_status, system_status, user_status
+            ]
+        )
 
         # 示例数据
         gr.Examples(
-            examples=
-            [[
-                '深入分析和总结下列文档', None,
-                'https://modelscope.cn/models/ms-agent/ms_agent_resources/resolve/master/numina_dataset.pdf'
+            examples=[
+                [
+                    '深入分析和总结下列文档',
+                    None,
+                    'https://modelscope.cn/models/ms-agent/ms_agent_resources/resolve/master/numina_dataset.pdf'
+                ],
+                [
+                    'Qwen3跟Qwen2.5对比，有哪些优化？',
+                    None,
+                    'https://arxiv.org/abs/2505.09388\nhttps://arxiv.org/abs/2412.15115'
+                ],
+                [
+                    'Analyze and summarize the following documents in English',
+                    None,
+                    'https://arxiv.org/abs/2505.09388'
+                ]
             ],
-             [
-                 'Qwen3跟Qwen2.5对比，有哪些优化？', None,
-                 'https://arxiv.org/abs/2505.09388\nhttps://arxiv.org/abs/2412.15115'
-             ],
-             [
-                 'Analyze and summarize the following documents in English',
-                 None, 'https://arxiv.org/abs/2505.09388'
-             ]],
             inputs=[user_prompt, uploaded_files, urls_text],
-            label='示例 | Examples')
+            label='示例 | Examples'
+        )
 
     return demo
 
@@ -2506,4 +2506,5 @@ if __name__ == '__main__':
         server_port=7860,
         share=False,
         debug=True,
-        show_error=True)
+        show_error=True
+    )
