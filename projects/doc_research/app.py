@@ -1,5 +1,4 @@
 # flake8: noqa
-# yapf: disable
 import base64
 import os
 import re
@@ -2481,9 +2480,12 @@ def create_interface():
                 'https://modelscope.cn/models/ms-agent/ms_agent_resources/resolve/master/numina_dataset.pdf'
             ],
              [
-                 'Analyze and summarize the following documents in English',
-                 None,
+                 'Qwen3跟Qwen2.5对比，有哪些优化？', None,
                  'https://arxiv.org/abs/2505.09388\nhttps://arxiv.org/abs/2412.15115'
+             ],
+             [
+                 'Analyze and summarize the following documents in English',
+                 None, 'https://arxiv.org/abs/2505.09388'
              ]],
             inputs=[user_prompt, uploaded_files, urls_text],
             label='示例 | Examples')
