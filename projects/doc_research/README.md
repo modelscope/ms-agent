@@ -21,17 +21,17 @@
 
 ## Features
 
-  - 🔍 **In-depth Document Research**: Supports in-depth analysis and summarization of documents
-  - 📝 **Multiple Input Types**: Supports multi-file uploads and URL inputs
-  - 📊 **Multimodal Reports**: Supports text and image reports in Markdown format
-  - ⚙️ **Flexible Deployment**: Supports local execution and ModelScope Creator Space execution modes
+  - 🔍 **Deep Document Research**: Support deep analysis and summarization of documents
+  - 📝 **Multiple Input Types**: Support multi-file uploads and URL inputs
+  - 📊 **Multimodal Reports**: Support text and image reports in Markdown format
+  - ⚙️ **Flexible Deployment**: Support local run and [ModelScope Studio](https://modelscope.cn/studios)
 
 
 <br>
 
 ## Demo
 
-### ModelScope Creator Space
+### ModelScope Studio
 Reference Link: [DocResearchStudio](https://modelscope.cn/studios/ms-agent/DocResearch)
 
 
@@ -39,7 +39,7 @@ Reference Link: [DocResearchStudio](https://modelscope.cn/studios/ms-agent/DocRe
 ### Local Gradio Application
 
 <div align="center">
-<img src="https://github.com/user-attachments/assets/4c1cea67-bef1-4dc1-8600-c6f99e4501b3" alt="Local Run" width="750">
+<img src="https://github.com/user-attachments/assets/4c1cea67-bef1-4dc1-86f1-8ad299d3b656" alt="Gradio Local Run" width="750">
 <p><em>Gradio Interface Displayed in Local Run</em></p>
 </div>
 
