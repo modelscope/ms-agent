@@ -98,9 +98,8 @@ class ArxivSearchResult(SearchResult):
 
             processed.append(
                 BaseResult(
-                    url=getattr(res, 'pdf_url') if getattr(
-                        res, 'pdf_url', None) else getattr(
-                            res, 'entry_id', None),
+                    url=getattr(res, 'pdf_url', None)
+                    or getattr(res, 'entry_id', None),
                     id=getattr(res, 'entry_id', None),
                     title=getattr(res, 'title', None),
                     highlights=None,

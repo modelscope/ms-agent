@@ -38,7 +38,7 @@ class ExaSearchRequestGenerator(SearchRequestGenerator):
             f'\n1. 必须符合以下arguments格式：{self.get_args_template()}'
             f'\n2. 其中，query参数的值直接使用用户原始输入，即：{self.user_prompt}'
             f'\n3. 参数需要符合搜索引擎的要求，num_results需要根据实际问题的复杂程度来估算，最大25，最小1,对于复杂的问题，num_results的值需要尽量大；'
-            f'\n3. start_published_date和end_published_date需要根据实际问题的时间范围来估算，默认均为None。'
+            f'\n4. start_published_date和end_published_date需要根据实际问题的时间范围来估算，默认均为None。'
             f'当前日期为：{datetime.now().strftime("%Y-%m-%d")}')
 
     def create_request(self, search_request_d: Dict[str,

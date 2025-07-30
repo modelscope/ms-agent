@@ -331,7 +331,7 @@ class ResearchWorkflow:
                 search_request_generator = get_search_request_generator(
                     engine_type=engine_type, user_prompt=user_prompt)
             except ValueError as e:
-                raise ValueError(f'Error creating search request generator: {e}')
+                raise ValueError(f'Error creating search request generator: {e}') from e
 
             prompt_rewrite: str = search_request_generator.get_rewrite_prompt()
             messages_rewrite = [{'role': 'user', 'content': prompt_rewrite}]
