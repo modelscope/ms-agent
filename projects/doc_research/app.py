@@ -1291,20 +1291,20 @@ def create_interface():
             }
 
             #fullscreen-html {
-                height: calc(100vh - 1.2rem) !important;
+                height: calc(100vh - 1rem) !important;
             }
 
             #fullscreen-modal {
-                padding: 0.2rem !important;
+                padding: 0.1rem !important;
             }
 
             #fullscreen-modal .gr-column {
-                padding: 0.2rem !important;
-                height: calc(100vh - 0.4rem) !important;
+                padding: 0.1rem !important;
+                height: calc(100vh - 0.2rem) !important;
             }
 
             #fullscreen-markdown {
-                height: calc(100vh - 1.2rem) !important;
+                height: calc(100vh - 1rem) !important;
             }
 
             #fullscreen-btn {
@@ -1330,20 +1330,20 @@ def create_interface():
             }
 
             #fullscreen-html {
-                height: calc(100vh - 1rem) !important;
+                height: calc(100vh - 0.8rem) !important;
             }
 
             #fullscreen-modal {
-                padding: 0.15rem !important;
+                padding: 0.05rem !important;
             }
 
             #fullscreen-modal .gr-column {
-                padding: 0.15rem !important;
-                height: calc(100vh - 0.3rem) !important;
+                padding: 0.05rem !important;
+                height: calc(100vh - 0.1rem) !important;
             }
 
             #fullscreen-markdown {
-                height: calc(100vh - 1rem) !important;
+                height: calc(100vh - 0.8rem) !important;
             }
 
             #fullscreen-btn {
@@ -1370,7 +1370,7 @@ def create_interface():
             height: 100vh !important;
             background: var(--background-fill-primary) !important;
             z-index: 9999 !important;
-            padding: 0.25rem !important;
+            padding: 0.15rem !important;
             box-sizing: border-box !important;
         }
 
@@ -1378,17 +1378,22 @@ def create_interface():
             background: var(--background-fill-primary) !important;
             border: 1px solid var(--border-color-primary) !important;
             border-radius: 0.5rem !important;
-            padding: 0.25rem !important;
-            height: calc(100vh - 0.5rem) !important;
+            padding: 0.15rem !important;
+            height: calc(100vh - 0.3rem) !important;
             overflow: hidden !important;
             box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15) !important;
         }
 
         #fullscreen-markdown {
-            height: calc(100vh - 1.5rem) !important;
+            height: calc(100vh - 1.2rem) !important;
             overflow-y: auto !important;
             background: var(--background-fill-primary) !important;
             color: var(--body-text-color) !important;
+        }
+
+        #fullscreen-html {
+            height: calc(100vh - 1.2rem) !important;
+            overflow-y: auto !important;
         }
 
         #fullscreen-btn {
@@ -1430,12 +1435,16 @@ def create_interface():
             margin: 0 !important;
             flex: 1 !important;
             font-size: 1.1rem !important;
+            line-height: 1.2 !important;
+            padding: 0 !important;
         }
 
         /* 全屏模式标题行样式 */
         #fullscreen-modal .gr-row {
-            margin-bottom: 0.25rem !important;
+            margin-bottom: 0.15rem !important;
             align-items: center !important;
+            padding: 0 !important;
+            min-height: auto !important;
         }
 
         /* 全屏模式下的markdown样式优化 */

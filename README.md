@@ -97,7 +97,7 @@ pip install ms-agent
 ### Install from source
 
 ```shell
-git clone git@github.com:modelscope/ms-agent.git
+git clone https://github.com/modelscope/ms-agent.git
 
 cd ms-agent
 pip install -e .

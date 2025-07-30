@@ -49,7 +49,7 @@ To set up the Agentic Insight framework, follow these steps:
 
 * Install from source code
 ```bash
-git clone git@github.com:modelscope/ms-agent.git
+git clone https://github.com/modelscope/ms-agent.git
 
 pip install -r requirements/research.txt
 ```

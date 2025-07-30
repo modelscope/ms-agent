@@ -40,7 +40,7 @@
 
 1. 安装依赖：
 ```bash
-git clone git@github.com:modelscope/ms-agent.git
+git clone https://github.com/modelscope/ms-agent.git
 
 cd ms-agent/projects/doc_research
 pip install -r requirements.txt
