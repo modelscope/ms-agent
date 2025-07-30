@@ -38,7 +38,7 @@
 ### 本地运行Gradio应用
 
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/4c1cea67-bef1-4dc1-86f1-8ad299d3b656" alt="本地运行" width="800">
+  <img src="https://github.com/user-attachments/assets/4c1cea67-bef1-4dc1-86f1-8ad299d3b656" alt="本地运行" width="750">
   <p><em>本地运行的Gradio界面展示</em></p>
 </div>
 
@@ -136,8 +136,8 @@ https://arxiv.org/abs/2412.15115
 
 * 研究报告：
 
-<img src="https://github.com/user-attachments/assets/4a44b2ab-c3c9-49cd-bec2-cd05664cb086"
-     width="800"
+<img src="https://github.com/user-attachments/assets/71de24a5-34fa-47c2-8600-c6f99e4501b3"
+     width="750"
      alt="Image"
      style="height: auto;"
 />
