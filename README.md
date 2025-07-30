@@ -216,10 +216,10 @@ For more details, please refer to [Deep Research](projects/deep_research/README.
 This project provides a framework for **Doc Research**, enabling agents to autonomously explore and execute complex tasks related to document analysis and research.
 
 #### Features
-&nbsp;&nbsp;&nbsp;&nbsp;🔍 Document Deep Research: Supports in-depth analysis and summarization of documents <br>
-&nbsp;&nbsp;&nbsp;&nbsp;📝 Multiple Input Types: Supports uploading multiple files and URLs <br>
-&nbsp;&nbsp;&nbsp;&nbsp;📊 Multimodal Reports: Generates rich Markdown reports with texts, tables and images <br>
-&nbsp;&nbsp;&nbsp;&nbsp;⚙️ Flexible Deployment: Supports both local execution and deployment on [ModelScope Studio](https://modelscope.cn/studios) <br>
+&nbsp;&nbsp;&nbsp;&nbsp;🔍 **Document Deep Research** - Supports in-depth analysis and summarization of documents <br>
+&nbsp;&nbsp;&nbsp;&nbsp;📝 **Multiple Input Types** - Supports uploading multiple files and URLs <br>
+&nbsp;&nbsp;&nbsp;&nbsp;📊 **Multimodal Reports** - Generates rich Markdown reports with texts, tables and images <br>
+&nbsp;&nbsp;&nbsp;&nbsp;⚙️ **Flexible Deployment** - Supports both local execution and deployment on [ModelScope Studio](https://modelscope.cn/studios) <br>
 
 
 #### Demo
@@ -229,10 +229,10 @@ This project provides a framework for **Doc Research**, enabling agents to auton
 
 **2. Local Gradio Application**
 
-* Research Report
+* Research Report for [Numina Math](http://faculty.bicmr.pku.edu.cn/~dongbin/Publications/numina_dataset.pdf)
 <div align="center">
   <img src="https://github.com/user-attachments/assets/4c1cea67-bef1-4dc1-86f1-8ad299d3b656" alt="LocalGradioApplication" width="750">
-  <p><em>Demo: LocalGradioApplication</em></p>
+  <p><em>Demo: Numina Math Research Report</em></p>
 </div>
 
 
