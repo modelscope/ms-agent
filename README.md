@@ -49,7 +49,7 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 ## 🎉 News
 
 * 🚀July 30, 2025: Release MS-Agent v1.1.0, which includes the following updates:
-  - 🔥 Support [Doc Research](projects/doc_research/README_zh), demo: [DocResearchStudio](https://modelscope.cn/studios/ms-agent/DocResearch)
+  - 🔥 Support [Doc Research](projects/doc_research/README.md), demo: [DocResearchStudio](https://modelscope.cn/studios/ms-agent/DocResearch)
   - Add `General Web Search Engine` for Agentic Insight (DeepResearch)
   - Add `Max Continuous Runs` for Agent chat with MCP.
 
@@ -236,7 +236,7 @@ This project provides a framework for **Doc Research**, enabling agents to auton
 </div>
 
 
-For more details, refer to [Doc Research](projects/doc_research/README_zh),
+For more details, refer to [Doc Research](projects/doc_research/README.md),
 
 <br>
 
