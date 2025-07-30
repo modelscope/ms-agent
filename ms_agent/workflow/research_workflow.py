@@ -3,7 +3,8 @@
 import copy
 import os
 import re
-from typing import Any, Dict, List, Union
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Union
 
 import json
 from ms_agent.llm.openai import OpenAIChat
@@ -14,7 +15,7 @@ from ms_agent.tools.exa.schema import dump_batch_search_results
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.thread_util import thread_executor
 from ms_agent.utils.utils import remove_resource_info, text_hash
-from ms_agent.workflow.principle import Principle
+from ms_agent.workflow.principle import MECEPrinciple, Principle
 
 logger = get_logger()
 
@@ -25,15 +26,17 @@ class ResearchWorkflow:
     def __init__(
             self,
             client: OpenAIChat,
-            principle: Principle,
-            search_engine=None,  # todo
+            principle: Principle = MECEPrinciple(),
+            search_engine=None,
             workdir: str = None,
             reuse: bool = False,
+            verbose: bool = False,
             **kwargs):
         self._client = client
         self._principle = principle
         self._search_engine = search_engine
         self._reuse = reuse
+        self._verbose = verbose
 
         self._todo_d: Dict[str, Any] = {
             'markdown': None,
@@ -52,6 +55,9 @@ class ResearchWorkflow:
         self.workdir = workdir
         self.workdir_structure: Dict[
             str, str] = self._construct_workdir_structure(workdir)
+
+        if self._verbose:
+            logger.info(f'Workflow workdir structure: {self.workdir_structure}')
 
         # Init pdf parser  Note: unused
         # self.parser_workdir = self.workdir_structure['resources_dir']
@@ -222,16 +228,8 @@ class ResearchWorkflow:
             return self._search_engine.search(search_request=search_request)
 
         def filter_search_res(single_res: ExaSearchResult):
-            results_new = []
-            results = single_res.response.results
-            for res in results:
-                if res.url.startswith('https://arxiv.org/abs/') or res.url.startswith(
-                        'https://arxiv.org/pdf/'):
-                    res.url = res.url.replace('arxiv.org/abs', 'arxiv.org/pdf')
-                elif res.url.startswith('https://arxiv.org/html/'):
-                    res.url = res.url.replace('arxiv.org/html', 'arxiv.org/pdf')
-                results_new.append(res)
-            single_res.response.results = results_new
+
+            # TODO: Implement filtering logic
 
             return single_res
 
@@ -320,10 +318,17 @@ class ResearchWorkflow:
 
         return True
 
-    def run(self, user_prompt: str, **kwargs):
+    def _rewrite_prompt(self, user_prompt: str) -> str:
+        """
+        Rewrite the user prompt into a structured search request format.
 
+        Args:
+            user_prompt (str): The input user prompt.
+
+        Returns:
+            str: The rewritten prompt in the required search request format.
+        """
         # Rewrite the user prompt
-        from datetime import datetime
         args_template: str = '{"query": "xxx", "num_results": 20, "start_published_date": "2025-01-01", "end_published_date": "2025-05-30"}'
         prompt_rewrite: str = (f'生成search request，具体要求为： '
                                f'\n1. 必须符合以下arguments格式：{args_template}'
@@ -336,24 +341,45 @@ class ResearchWorkflow:
                                             temperature=0.0,
                                             stream=False)
         resp_content: str = resp_d.get('content', '')
-        print(f'>>Rewritten Prompt: {resp_content}')
+        logger.info(f'Rewritten Prompt: {resp_content}')
 
-        # Parse the rewritten prompt
-        search_request_d: Dict[str, Any] = ResearchWorkflow.parse_json_from_content(resp_content)
-        assert search_request_d, 'Rewritten search request cannot be empty !'
+        return resp_content
 
-        if isinstance(search_request_d, list):
-            search_request_d = search_request_d[0]
+    def run(self,
+            user_prompt: str,
+            urls_or_files: Optional[List[str]] = None,
+            **kwargs) -> None:
 
-        search_request: ExaSearchRequest = ExaSearchRequest(**search_request_d)
-        search_res_file: str = self.search(search_requests=[search_request])
+        if urls_or_files:
+            # If urls_or_files is provided, then disable search and use the provided resources directly
+            prepared_resources = urls_or_files
+        else:
+            search_prompt: str = self._rewrite_prompt(user_prompt)
+            # Parse the rewritten prompt
+            search_request_d: Dict[str, Any] = ResearchWorkflow.parse_json_from_content(search_prompt)
+            if not search_request_d:
+                raise ValueError('Rewritten search request cannot be empty!')
 
-        search_results: List[Dict[str, Any]] = ExaSearchResult.load_from_disk(file_path=search_res_file)
-        assert search_results, 'Search results cannot be empty, workflow stopped!'
+            if isinstance(search_request_d, list):
+                search_request_d = search_request_d[0]
 
-        urls_or_files = [res_d['url'] for res_d in search_results[0]['results']]
-        extractor = HierarchicalKeyInformationExtraction(urls_or_files=urls_or_files)
+            search_request: ExaSearchRequest = ExaSearchRequest(**search_request_d)
+            search_res_file: str = self.search(search_requests=[search_request])
+
+            search_results: List[Dict[str, Any]] = ExaSearchResult.load_from_disk(file_path=search_res_file)
+            if not search_results:
+                raise ValueError('Search results cannot be empty, workflow stopped!')
+
+            prepared_resources = [res_d['url'] for res_d in search_results[0]['results']]
+
+        if self._verbose:
+            logger.info(f'Prepared resources: {prepared_resources}')
+
+        extractor = HierarchicalKeyInformationExtraction(urls_or_files=prepared_resources, verbose=self._verbose)
         key_info_list: List[KeyInformation] = extractor.extract()
+
+        if self._verbose:
+            logger.info(f'Extracted key information items: {len(key_info_list)}')
 
         # Dump pictures/table to resources directory
         resource_map: Dict[
@@ -371,10 +397,16 @@ class ResearchWorkflow:
         context: str = '\n'.join(
             [key_info.text for key_info in key_info_list if key_info.text])
 
-        logger.info(f'\n\nContext:\n{context}\n\n')
+        if not context.strip():
+            logger.warning('No context extracted from the provided resources, workflow stopped!')
+            return
+
+        if self._verbose:
+            logger.info(f'\n\nContext:\n{context}\n\n')
 
         prompt_sum: str = (f'结合用户输入：{user_prompt}，请帮我总结以下内容，生成一份markdown格式的报告；'
                            f'其中图片被表示为<resource_info>xxx</resource_info>之间的placeholder，要求尽量保留重要的图片和表格，保持图片或表格以及附近对应上下文的位置关系；'
+                           f'公式使用LaTeX语法渲染；'
                            f'符合MECE原则（Mutually Exclusive and Collectively Exhaustive）；'
                            f'如果收集到的信息足够多，则尽量精简和结构化，保留其中最重要的信息，最终生成一份图文并茂的报告：\n\n')
 
@@ -384,17 +416,29 @@ class ResearchWorkflow:
             {'role': 'system', 'content': self.default_system},
             {'role': 'user', 'content': f'{prompt_sum}{context}' if context.strip() else prompt_sum_lite}
         ]
+
+        if self._verbose:
+            logger.info(f'\n\nStart summarizing with messages: {messages_sum}')
+
         aggregated_chunks = self._chat(messages=messages_sum, temperature=0.3)
         resp_content: str = aggregated_chunks.get('content', '')
+        resp_content = resp_content.lstrip('```markdown\n').rstrip('```')
         logger.info(f'\n\nSummary Content:\n{resp_content}')
 
-        # Replace resource name with actual relative path   ![图片1](images/image1.png)
+        # Replace resource name with actual relative path
         for item_name, item_relative_path in resource_map.items():
             resp_content = resp_content.replace(
+                f'src="<resource_info>{item_name}</resource_info>"',
+                f'src="{item_relative_path}"',
+                1
+            ).replace(
                 f'<resource_info>{item_name}</resource_info>',
                 f'![{os.path.basename(item_relative_path)}]({item_relative_path})<br>',
                 1
             )
+
+        if self._verbose:
+            logger.info(f'\n\nFinal Report Content:\n{resp_content}')
 
         # Remove unused <resource_info> tags
         # TODO: 存在未经转换的<resource_info>，待处理

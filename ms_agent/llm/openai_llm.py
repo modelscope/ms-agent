@@ -12,6 +12,8 @@ from openai.types.chat.chat_completion_message_tool_call import (
 
 logger = get_logger()
 
+MAX_CONTINUE_RUNS = 3
+
 
 class OpenAI(LLM):
     """Base Class for OpenAI SDK LLMs.
@@ -28,14 +30,18 @@ class OpenAI(LLM):
         'role', 'content', 'tool_calls', 'partial', 'prefix', 'tool_call_id'
     }
 
-    def __init__(self,
-                 config: DictConfig,
-                 base_url: Optional[str] = None,
-                 api_key: Optional[str] = None):
+    def __init__(
+        self,
+        config: DictConfig,
+        base_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+    ):
         super().__init__(config)
         assert_package_exist('openai')
         import openai
         self.model: str = config.llm.model
+        self.max_continue_runs = getattr(config.llm, 'max_continue_runs',
+                                         None) or MAX_CONTINUE_RUNS
         base_url = base_url or config.llm.openai_base_url
         api_key = api_key or config.llm.openai_api_key
 
@@ -76,6 +82,7 @@ class OpenAI(LLM):
     def generate(self,
                  messages: List[Message],
                  tools: Optional[List[Tool]] = None,
+                 max_continue_runs: Optional[int] = None,
                  **kwargs) -> Message | Generator[Message, None, None]:
         """Generates a response based on the given conversation history and optional tools.
 
@@ -99,11 +106,14 @@ class OpenAI(LLM):
 
         # Complex task may produce long response
         # Call continue_generate to keep generating if the finish_reason is `length`
+        max_continue_runs = max_continue_runs or self.max_continue_runs
         if stream:
             return self._stream_continue_generate(messages, completion, tools,
+                                                  max_continue_runs - 1,
                                                   **args)
         else:
-            return self._continue_generate(messages, completion, tools, **args)
+            return self._continue_generate(messages, completion, tools,
+                                           max_continue_runs - 1, **args)
 
     def _call_llm(self,
                   messages: List[Message],
@@ -180,6 +190,7 @@ class OpenAI(LLM):
                                   messages: List[Message],
                                   completion: Iterable,
                                   tools: Optional[List[Tool]] = None,
+                                  max_runs: Optional[int] = None,
                                   **kwargs) -> Generator[Message, None, None]:
         """Recursively continues generating until the model finishes naturally in streaming mode.
 
@@ -193,31 +204,43 @@ class OpenAI(LLM):
             Message: Incremental chunks of the generated message.
         """
         message = None
-
         for chunk in completion:
             message_chunk = self._stream_format_output_message(chunk)
             message = self._merge_stream_message(message, message_chunk)
+            # chunk[-2]: chunk with finish_reason and last contents
+            # chunk[-1]: chunk with usage only
             if chunk.choices and chunk.choices[0].finish_reason:
                 try:
-                    # When stop_reason = 'null', there will not be a next final chunk containing only usage information.
                     next_chunk = next(completion)
-                    message.completion_tokens += next_chunk.usage.completion_tokens
                     message.prompt_tokens += next_chunk.usage.prompt_tokens
-                except Exception as e:  # noqa
+                    message.completion_tokens += next_chunk.usage.completion_tokens
+                except (StopIteration, AttributeError):
+                    # The stream may end without a final usage chunk, which is acceptable.
                     pass
+                first_run = not messages[-1].to_dict().get('partial', False)
+                if chunk.choices[0].finish_reason in [
+                        'length', 'null'
+                ] and (max_runs is None or max_runs != 0):
+                    logger.info(
+                        f'finish_reason: {chunk.choices[0].finish_reason}, continue generate.'
+                    )
+                    completion = self._call_llm_for_continue_gen(
+                        messages, message, tools, **kwargs)
+                    for chunk in self._stream_continue_generate(
+                            messages, completion, tools,
+                            max_runs - 1 if max_runs is not None else None,
+                            **kwargs):
+                        if first_run:
+                            yield self._merge_stream_message(
+                                messages[-1], chunk)
+                        else:
+                            yield chunk
+                elif not first_run:
+                    self._merge_partial_message(messages, message)
+                    messages[-1].partial = False
+                    message = messages[-1]
 
             yield message
-            if chunk.choices and chunk.choices[0].finish_reason in [
-                    'length', 'null'
-            ]:
-                print(
-                    f'finish_reason: {chunk.choices[0].finish_reason}， continue generate.'
-                )
-                completion = self._call_llm_for_continue_gen(
-                    messages, message, tools, **kwargs)
-                for chunk in self._stream_continue_generate(
-                        messages, completion, tools, **kwargs):
-                    yield self._merge_stream_message(messages[-1], chunk)
 
     @staticmethod
     def _stream_format_output_message(completion_chunk) -> Message:
@@ -255,8 +278,9 @@ class OpenAI(LLM):
             reasoning_content=reasoning_content,
             tool_calls=tool_calls,
             id=completion_chunk.id,
-            prompt_tokens=completion_chunk.usage.prompt_tokens,
-            completion_tokens=completion_chunk.usage.completion_tokens)
+            prompt_tokens=getattr(completion_chunk.usage, 'prompt_tokens', 0),
+            completion_tokens=getattr(completion_chunk.usage,
+                                      'completion_tokens', 0))
 
     @staticmethod
     def _format_output_message(completion) -> Message:
@@ -340,6 +364,7 @@ class OpenAI(LLM):
             #         is not yet complete and may be continued in the next generation step.
             new_message.partial = True
             messages.append(new_message)
+        messages[-1].api_calls += 1
 
         messages = self._format_input_message(messages)
         return self._call_llm(messages, tools, **kwargs)
@@ -348,6 +373,7 @@ class OpenAI(LLM):
                            messages: List[Message],
                            completion,
                            tools: List[Tool] = None,
+                           max_runs: Optional[int] = None,
                            **kwargs) -> Message:
         """Recursively continues generating until the model finishes naturally.
 
@@ -364,14 +390,17 @@ class OpenAI(LLM):
             Message: A fully formed Message object containing the complete response.
         """
         new_message = self._format_output_message(completion)
-        if completion.choices[0].finish_reason in ['length', 'null']:
+        if completion.choices[0].finish_reason in [
+                'length', 'null'
+        ] and (max_runs is None or max_runs != 0):
             logger.info(
                 f'finish_reason: {completion.choices[0].finish_reason}， continue generate.'
             )
             completion = self._call_llm_for_continue_gen(
                 messages, new_message, tools, **kwargs)
-            return self._continue_generate(messages, completion, tools,
-                                           **kwargs)
+            return self._continue_generate(
+                messages, completion, tools,
+                max_runs - 1 if max_runs is not None else None, **kwargs)
         elif messages[-1].to_dict().get('partial', False):
             self._merge_partial_message(messages, new_message)
             messages[-1].partial = False

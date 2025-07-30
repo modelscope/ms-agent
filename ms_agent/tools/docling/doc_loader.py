@@ -1,194 +1,30 @@
 # flake8: noqa
 import os
-import time
-from functools import partial
-from pathlib import Path
-from typing import Dict, Iterator, List, Optional, Union
+from typing import Dict, Iterator, List, Union
 
-from bs4 import Tag
 from docling.backend.html_backend import HTMLDocumentBackend
 from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
-from docling.datamodel.document import (ConversionResult,
-                                        _DocumentConversionInput)
+from docling.datamodel.document import ConversionResult
 from docling.datamodel.pipeline_options import PdfPipelineOptions
-from docling.datamodel.settings import settings
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.models.document_picture_classifier import \
     DocumentPictureClassifier
 from docling.models.layout_model import LayoutModel
 from docling.models.table_structure_model import TableStructureModel
-from docling.utils.utils import chunkify
 from docling_core.types import DoclingDocument
-from docling_core.types.doc import DocItem, DocItemLabel, ImageRef
+from docling_core.types.doc import DocItem
 from ms_agent.tools.docling.doc_postprocess import PostProcess
+from ms_agent.tools.docling.patches import (convert_ms, download_models_ms,
+                                            download_models_pic_classifier_ms,
+                                            html_handle_figure,
+                                            html_handle_image,
+                                            patch_easyocr_models)
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.patcher import patch
-from ms_agent.utils.utils import extract_image
-from PIL import Image
+from ms_agent.utils.utils import normalize_url_or_file
 
 logger = get_logger()
-
-
-def convert_ms(self, conv_input: _DocumentConversionInput,
-               raises_on_error: bool) -> Iterator[ConversionResult]:
-    """
-    Patch the `docling.document_converter.DocumentConverter._convert` method for image parsing.
-    """
-    start_time = time.monotonic()
-
-    def _add_custom_attributes(doc: DoclingDocument, target: str,
-                               attributes_dict: Dict) -> DoclingDocument:
-        """
-        Add custom attributes to the target object.
-        """
-        for key, value in attributes_dict.items():
-            target_obj = getattr(doc, target) if target is not None else doc
-            if not hasattr(target_obj, key):
-                setattr(target_obj, key, value)
-            else:
-                raise ValueError(
-                    f"Attribute '{key}' already exists in the document.")
-        return doc
-
-    for input_batch in chunkify(
-            conv_input.docs(self.format_to_options),
-            settings.perf.doc_batch_size,  # pass format_options
-    ):
-        # parallel processing only within input_batch
-        # with ThreadPoolExecutor(
-        #    max_workers=settings.perf.doc_batch_concurrency
-        # ) as pool:
-        #   yield from pool.map(self.process_document, input_batch)
-        # Note: PDF backends are not thread-safe, thread pool usage was disabled.
-
-        for item in map(
-                partial(
-                    self._process_document, raises_on_error=raises_on_error),
-                map(
-                    lambda doc: _add_custom_attributes(
-                        doc, '_backend', {'current_url': self.current_url}),
-                    input_batch)):
-            elapsed = time.monotonic() - start_time
-            start_time = time.monotonic()
-            logger.info(
-                f'Finished converting document {item.input.file.name} in {elapsed:.2f} sec.'
-            )
-            yield item
-
-
-def html_handle_figure(self, element: Tag, doc: DoclingDocument) -> None:
-    """
-    Patch the `docling.backend.html_backend.HTMLDocumentBackend.handle_figure` method.
-    """
-    logger.debug(
-        f'Patching HTMLDocumentBackend.handle_figure for {doc.origin.filename}'
-    )
-
-    img_element: Tag = element.find('img')
-    if isinstance(img_element, Tag):
-        img_url = img_element.attrs.get('src', None)
-    else:
-        img_url = None
-
-    # extract image from url or data URI
-    img_pil: Optional[Image.Image] = extract_image(
-        img_url=img_url,
-        backend=self,
-        base_url=self.current_url if hasattr(self, 'current_url') else None)
-
-    dpi: int = int(img_pil.info.get('dpi', (96, 96))[0]) if img_pil else 96
-    img_ref: ImageRef = None
-    if img_pil:
-        img_ref = ImageRef.from_pil(
-            image=img_pil,
-            dpi=dpi,
-        )
-
-    contains_captions = element.find(['figcaption'])
-    if isinstance(contains_captions, Tag):
-        texts = []
-        for item in contains_captions:
-            texts.append(item.text)
-
-        fig_caption = doc.add_text(
-            label=DocItemLabel.CAPTION,
-            text=(''.join(texts)).strip(),
-            content_layer=self.content_layer,
-        )
-        doc.add_picture(
-            annotations=[],
-            image=img_ref,
-            parent=self.parents[self.level],
-            caption=fig_caption,
-            content_layer=self.content_layer,
-        )
-    else:
-        doc.add_picture(
-            annotations=[],
-            image=img_ref,
-            parent=self.parents[self.level],
-            caption=None,
-            content_layer=self.content_layer,
-        )
-
-
-def html_handle_image(self, element: Tag, doc: DoclingDocument) -> None:
-    """
-    Patch the `docling.backend.html_backend.HTMLDocumentBackend.handle_image` method to use the custom.
-    """
-    logger.debug(
-        f'Patching HTMLDocumentBackend.handle_image for {doc.origin.filename}')
-
-    # Get the image from element
-    img_url: str = element.attrs.get('src', None)
-
-    # extract image from url or data URI
-    img_pil: Optional[Image.Image] = extract_image(
-        img_url=img_url,
-        backend=self,
-        base_url=self.current_url if hasattr(self, 'current_url') else None)
-
-    dpi: int = int(img_pil.info.get('dpi', (96, 96))[0]) if img_pil else 96
-
-    img_ref: ImageRef = None
-    if img_pil:
-        img_ref = ImageRef.from_pil(
-            image=img_pil,
-            dpi=dpi,
-        )
-
-    doc.add_picture(
-        annotations=[],
-        image=img_ref,
-        parent=self.parents[self.level],
-        caption=None,
-        prov=None,
-        content_layer=self.content_layer,
-    )
-
-
-def download_models_ms(
-    local_dir=None,
-    force: bool = False,
-    progress: bool = False,
-) -> Path:
-    from modelscope import snapshot_download
-
-    download_path: str = snapshot_download(model_id='ds4sd/docling-models', )
-    return Path(download_path)
-
-
-def download_models_pic_classifier_ms(
-    local_dir=None,
-    force: bool = False,
-    progress: bool = False,
-) -> Path:
-    from modelscope import snapshot_download
-
-    download_path: str = snapshot_download(
-        model_id='ds4sd/DocumentFigureClassifier', )
-    return Path(download_path)
 
 
 class DocLoader:
@@ -199,7 +35,9 @@ class DocLoader:
     # Number of threads for document conversion
     DOC_CONVERT_NUM_THREADS = os.environ.get('DOC_CONVERT_NUM_THREADS', 16)
 
-    def __init__(self):
+    def __init__(self, verbose: bool = False):
+
+        self._verbose = verbose
 
         accelerator_options = AcceleratorOptions()
         accelerator_options.num_threads = self.DOC_CONVERT_NUM_THREADS
@@ -330,6 +168,11 @@ class DocLoader:
                 logger.warning(f'Failed to access URL {_url}: {e2}')
                 return None
 
+        # Normalize URLs
+        url_or_files = [
+            normalize_url_or_file(url_or_file) for url_or_file in url_or_files
+        ]
+
         # Step1: Remove urls or files that cannot be processed
         http_urls = [(i, url) for i, url in enumerate(url_or_files)
                      if url and url.startswith('http')]
@@ -377,7 +220,13 @@ class DocLoader:
     @patch(HTMLDocumentBackend, 'handle_figure', html_handle_figure)
     def load(self, urls_or_files: list[str]) -> List[DoclingDocument]:
 
+        # Patch easyocr model paths
+        patch_easyocr_models()
+
         urls_or_files: List[str] = self._preprocess(urls_or_files)
+
+        if self._verbose:
+            logger.info(f'Preprocessed `urls_or_files`: {urls_or_files}')
 
         # TODO: Support progress bar for document loading (with pather)
         results: Iterator[ConversionResult] = self._converter.convert_all(
