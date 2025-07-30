@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Generator, List, Optional
 
 import arxiv
+import json
 from arxiv import SortCriterion, SortOrder
 from ms_agent.tools.search.search_base import (BaseResult, SearchRequest,
                                                SearchResponse, SearchResult)
@@ -45,6 +46,22 @@ class ArxivSearchRequest(SearchRequest):
             'sort_order': self.sort_order
         }
 
+    def to_json(self) -> Dict[str, Any]:
+        """
+        Convert the request parameters to a JSON string.
+
+        Returns:
+            Dict[str, Any]: The parameters as a JSON string
+        """
+        return json.dumps(
+            {
+                'query': self.query,
+                'max_results': self.num_results,
+                'sort_strategy': self.sort_strategy.value,
+                'sort_order': self.sort_order.value
+            },
+            ensure_ascii=False)
+
 
 class ArxivSearchResult(SearchResult):
     """ArXiv search result implementation."""
@@ -77,7 +94,7 @@ class ArxivSearchResult(SearchResult):
 
         if not self.response:
             print(
-                '***Warning: No search results found. This can happen because '
+                '***Warning: No search results found. This may happen because '
                 'Arxiv\'s search functionality relies on precise metadata matching (e.g., title, '
                 'author, abstract keywords) rather than the full-text indexing and complex '
                 'ranking algorithms used by search engines like Google, or the semantic search '
