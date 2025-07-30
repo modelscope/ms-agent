@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/3af76dcd-b229-4597-835f-51617371ebad" alt="Doc Research Logo" width="320" height="320">
+  <img src="https://github.com/user-attachments/assets/3af76dcd-b229-4597-835f-51617371ebad" alt="Doc Research Logo" width="350" height="350">
 </div>
 
 
@@ -34,7 +34,7 @@
 ### 本地运行Gradio应用
 
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/4c1cea67-bef1-4dc1-86f1-8ad299d3b656" alt="本地运行" width="700">
+  <img src="https://github.com/user-attachments/assets/4c1cea67-bef1-4dc1-86f1-8ad299d3b656" alt="本地运行" width="800">
   <p><em>本地运行的Gradio界面展示</em></p>
 </div>
 
@@ -100,6 +100,47 @@ temp_workspace/user_xxx_1753706367955/
     └── report.md
 ```
 
+
+## 案例
+
+**1. 单文档研究报告**
+
+* User Prompt: `深入分析和总结下列文档`  (默认) <br>
+* URLs Input:  `https://modelscope.cn/models/ms-agent/ms_agent_resources/resolve/master/numina_dataset.pdf` <br>
+
+* 研究报告：
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/d6af658c-d67d-499d-9241-bfeb43496e4a" alt="numina_dataset Report" width="800">
+  <p><em>案例：numina_dataset Report</em></p>
+</div>
+
+<br>
+
+**2. 多文档研究报告**
+
+* User Prompt: `Qwen3跟Qwen2.5对比，有哪些优化？` <br>
+* URLs Input:  (分别输入Qwen3和Qwen2.5的技术报告链接)
+```
+https://arxiv.org/abs/2505.09388
+https://arxiv.org/abs/2412.15115
+```
+
+* 研究报告：
+
+<img src="https://github.com/user-attachments/assets/4a44b2ab-c3c9-49cd-bec2-cd05664cb086"
+     width="800"
+     alt="Image"
+     style="height: auto;"
+/>
+
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/bba1bebd-20db-4297-864b-32ea5bb06a3c" alt="Qwen3 vs Qwen2.5 Report" width="700">
+  <p><em>案例：Qwen3 vs Qwen2.5 Report</em></p>
+</div>
+
+<br>
+
+
 ## 并发控制说明
 
 ### 并发限制
@@ -128,39 +169,3 @@ temp_workspace/user_xxx_1753706367955/
 - 确保网络连接正常以访问外部URLs
 - 在高并发场景下，建议适当增加服务器资源配置
 - 长时间运行的任务可能会被超时机制清理
-
-
-## 案例
-
-**1. 单文档研究报告**
-
-User Prompt: `深入分析和总结下列文档`  (默认) <br>
-URLs Input:  `https://modelscope.cn/models/ms-agent/ms_agent_resources/resolve/master/numina_dataset.pdf` <br>
-
-
-<div align="center">
-  <img src="https://github.com/user-attachments/assets/d6af658c-d67d-499d-9241-bfeb43496e4a" alt="numina_dataset Report" width="700">
-  <p><em>案例：numina_dataset Report</em></p>
-</div>
-
-<br>
-
-**2. 多文档研究报告**
-
-User Prompt: `Qwen3跟Qwen2.5对比，有哪些优化？` <br>
-URLs Input:  (分别输入Qwen3和Qwen2.5的技术报告链接)
-```
-https://arxiv.org/abs/2505.09388
-https://arxiv.org/abs/2412.15115
-```
-
-研究报告：
-<img width="2630" height="1758" alt="Image" src="https://github.com/user-attachments/assets/4a44b2ab-c3c9-49cd-bec2-cd05664cb086" />
-
-
-<div align="center">
-  <img src="https://github.com/user-attachments/assets/bba1bebd-20db-4297-864b-32ea5bb06a3c" alt="Qwen3 vs Qwen2.5 Report" width="700">
-  <p><em>案例：Qwen3 vs Qwen2.5 Report</em></p>
-</div>
-
-<br>
