@@ -48,9 +48,14 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 
 ## 🎉 News
 
-* 🔥July 18, 2025: Release MS-Agent v1.0.0, improve the experience of Agent chat with MCP, and update the readme for [Agentic Insight](projects/deep_research/README.md).
+* 🚀July 30, 2025: Release MS-Agent v1.1.0, which includes the following updates:
+  - 🔥 Support [Doc Research](projects/doc_research/README.md), demo: [DocResearchStudio](https://modelscope.cn/studios/ms-agent/DocResearch)
+  - Add `General Web Search Engine` for Agentic Insight (DeepResearch)
+  - Add `Max Continuous Runs` for Agent chat with MCP.
 
-* 🔥July 16, 2025: Release MS-Agent v1.0.0rc0, which includes the following updates:
+* 🚀July 18, 2025: Release MS-Agent v1.0.0, improve the experience of Agent chat with MCP, and update the readme for [Agentic Insight](projects/deep_research/README.md).
+
+* 🚀July 16, 2025: Release MS-Agent v1.0.0rc0, which includes the following updates:
   - Support for Agent chat with MCP (Model Context Protocol)
   - Support for Deep Research (Agentic Insight), refer to: [Report_Demo](projects/deep_research/examples/task_20250617a/report.md), [Script_Demo](projects/deep_research/run.py)
   - Support for [MCP-Playground](https://modelscope.cn/mcp/playground)
@@ -204,6 +209,36 @@ So, how are external electric fields typically simulated in theoretical calculat
 
 For more details, please refer to [Deep Research](projects/deep_research/README.md).
 
+<br>
+
+### Doc Research
+
+This project provides a framework for **Doc Research**, enabling agents to autonomously explore and execute complex tasks related to document analysis and research.
+
+#### Features
+&nbsp;&nbsp;&nbsp;&nbsp;🔍 Document Deep Research: Supports in-depth analysis and summarization of documents <br>
+&nbsp;&nbsp;&nbsp;&nbsp;📝 Multiple Input Types: Supports uploading multiple files and URLs <br>
+&nbsp;&nbsp;&nbsp;&nbsp;📊 Multimodal Reports: Generates rich Markdown reports with texts, tables and images <br>
+&nbsp;&nbsp;&nbsp;&nbsp;⚙️ Flexible Deployment: Supports both local execution and deployment on [ModelScope Studio](https://modelscope.cn/studios) <br>
+
+
+#### Demo
+
+**1. ModelScope Studio**
+[DocResearchStudio](https://modelscope.cn/studios/ms-agent/DocResearch)
+
+**2. Local Gradio Application**
+
+* Research Report
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/4c1cea67-bef1-4dc1-86f1-8ad299d3b656" alt="LocalGradioApplication" width="750">
+  <p><em>Demo: LocalGradioApplication</em></p>
+</div>
+
+
+For more details, refer to [Doc Research](projects/doc_research/README.md),
+
+<br>
 
 ## License
 
