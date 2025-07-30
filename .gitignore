@@ -154,3 +154,5 @@ ast_index_file.py
 .neo4j.lock
 neo4j.lock
 /temp/
+
+/temp_workspace

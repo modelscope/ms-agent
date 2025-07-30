@@ -3,24 +3,16 @@
 
   # Doc Research Workflow
 
-  这是一个基于Gradio的文档研究工作流应用，支持文件上传和URL输入的智能研究分析，输出图文并茂的多模态研究报告。
+  这是一个基于Gradio的文档研究工作流应用，支持对PDF文档和网页的深度研究，输出图文并茂的多模态研究报告。
 </div>
 
 
 ## 功能特性
 
-- 📝 **用户提示输入**：支持中英文输入研究问题或任务描述
-- 📁 **文件上传功能**：支持多文件上传，默认支持PDF格式
-- 🔗 **URLs输入功能**：支持多个URL输入，每行一个
-- 🚀 **一键运行**：点击按钮即可开始研究工作流
-- 📊 **结果显示**：实时显示执行结果和工作目录
-- 🗂️ **临时工作目录**：每次运行创建新的工作目录
-- 🌐 **多语言支持**：支持中文和英文界面
-- 👥 **多用户并发**：支持多用户同时使用，默认最大并发数为8
-- 🔒 **用户隔离**：每个用户拥有独立的工作空间和会话数据
-- ⏱️ **任务超时控制**：自动清理超时任务，默认超时时间15分钟
-- 📈 **实时状态监控**：显示系统并发状态和用户任务状态
-- ⚙️ **灵活部署**：支持本地和魔搭创空间运行模式切换
+- 🔍 **文档深度研究**：支持文档的深度分析和总结
+- 📝 **多种输入类型**：支持多文件上传和URLs输入
+- 📊 **多模态报告**：支持Markdown格式的图文报告输出
+- ⚙️ **灵活部署**：支持本地运行和魔搭创空间运行模式
 
 
 ## 演示
@@ -38,35 +30,42 @@
 
 ## 安装和运行
 
-1. 安装依赖：
+### 1. 安装依赖
 ```bash
-git clone https://github.com/modelscope/ms-agent.git
+conda create -n doc_research python=3.11
+conda activate doc_research
 
-cd ms-agent/projects/doc_research
-pip install -r requirements.txt
+# 版本要求：ms-agent>=1.1.0
+pip install ms-agent[research]
 ```
 
-2. 配置环境变量：
+### 2. 配置环境变量
 ```bash
-cp .env.example .env
-# 编辑 .env 文件，填入你的API配置
+export OPENAI_API_KEY=sk-xxx        # 替换为您的API密钥
+export OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+export OPENAI_MODEL_ID=qwen-plus-2025-07-14
 ```
 
-3. 运行应用：
+### 3. 运行应用
+
+快速启动：
 ```bash
-python app.py
+ms-agent app --doc_research
 ```
 
-4. 打开浏览器访问：http://localhost:7860
+带参数启动：
+```bash
 
-## 环境变量配置
+ms-agent app --doc_research \
+    --server_name 0.0.0.0 \
+    --server_port 7860 \
+    --share
+```
+参数说明：
+> `server_name`: (str), gradio server name, default: `0.0.0.0`  <br>
+> `server_port`: (int), gradio server port, default: `7860`  <br>
+> `share`: (store_true action), whether to share the app publicly. <br>
 
-- `OPENAI_API_KEY`: OpenAI API密钥
-- `OPENAI_BASE_URL`: OpenAI API基础URL
-- `OPENAI_MODEL_ID`: 使用的模型ID
-- `GRADIO_DEFAULT_CONCURRENCY_LIMIT`: Gradio默认并发限制（可选，默认：8）
-- `TASK_TIMEOUT`: 任务超时时间，单位秒（可选，默认：1200，即20分钟）
-- `LOCAL_MODE`: 本地模式开关（可选，默认：true）
 
 ## 使用说明
 
@@ -74,7 +73,8 @@ python app.py
 2. **文件上传**：选择需要分析的文件（支持多选）
 3. **URLs输入**：输入相关的网页链接，每行一个URL
 4. **开始研究**：点击运行按钮开始执行工作流
-5. **查看结果**：在右侧区域查看执行结果和工作目录路径
+5. **查看结果**：在右侧区域查看执行结果和研究报告（可全屏）
+
 
 ## 工作目录结构
 
@@ -90,13 +90,12 @@ temp_workspace/user_xxx_1753706367955/
 ## 并发控制说明
 
 ### 并发限制
-- 系统默认支持最大8个用户同时执行研究任务
+- 系统默认支持最大10个用户同时执行研究任务
 - 可通过环境变量 `GRADIO_DEFAULT_CONCURRENCY_LIMIT` 调整并发数
 - 超出并发限制的用户会收到系统繁忙提示
 
 ### 任务管理
-- 每个用户同时只能执行一个研究任务
-- 任务超时时间默认为20分钟，可通过 `TASK_TIMEOUT` 调整
+- 任务超时时间默认为20分钟，可通过环境变量 `TASK_TIMEOUT` 调整
 - 超时任务会被自动清理，释放系统资源
 
 ### 状态监控
@@ -116,3 +115,6 @@ temp_workspace/user_xxx_1753706367955/
 - 确保网络连接正常以访问外部URLs
 - 在高并发场景下，建议适当增加服务器资源配置
 - 长时间运行的任务可能会被超时机制清理
+
+
+## 案例

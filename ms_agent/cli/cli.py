@@ -1,5 +1,6 @@
 import argparse
 
+from ms_agent.cli.app import AppCMD
 from ms_agent.cli.run import RunCMD
 
 
@@ -12,6 +13,7 @@ def run_cmd():
         help='ModelScope-agent commands helpers')
 
     RunCMD.define_args(subparsers)
+    AppCMD.define_args(subparsers)
 
     args = parser.parse_args()
 

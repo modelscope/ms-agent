@@ -10,7 +10,7 @@ import threading
 import time
 import uuid
 from datetime import datetime
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import gradio as gr
 import json
@@ -103,7 +103,7 @@ IMAGE_SERVER_PORT = 52682
 IMAGE_SERVER_URL = f'http://localhost:{IMAGE_SERVER_PORT}'
 
 # 并发控制配置
-GRADIO_DEFAULT_CONCURRENCY_LIMIT = int(os.environ.get('GRADIO_DEFAULT_CONCURRENCY_LIMIT', '8'))
+GRADIO_DEFAULT_CONCURRENCY_LIMIT = int(os.environ.get('GRADIO_DEFAULT_CONCURRENCY_LIMIT', '10'))
 TASK_TIMEOUT = int(os.environ.get('TASK_TIMEOUT', '1200'))  # 20分钟超时
 
 
@@ -2502,18 +2502,30 @@ def create_interface():
     return demo
 
 
-if __name__ == '__main__':
+def launch_server(
+        server_name: Optional[str] = '0.0.0.0',
+        server_port: Optional[int] = 7860,
+        share: Optional[bool] = False,
+        debug: Optional[bool] = False,
+        show_error: Optional[bool] = False,
+        gradio_default_concurrency_limit: Optional[int] = GRADIO_DEFAULT_CONCURRENCY_LIMIT,
+) -> None:
+
     # 创建界面
     demo = create_interface()
 
     # 配置Gradio队列并发控制
-    demo.queue(default_concurrency_limit=GRADIO_DEFAULT_CONCURRENCY_LIMIT)
+    demo.queue(default_concurrency_limit=gradio_default_concurrency_limit)
 
     # 启动应用
     demo.launch(
-        server_name='0.0.0.0',
-        server_port=7860,
-        share=False,
-        debug=True,
-        show_error=True
+        server_name=server_name,
+        server_port=server_port,
+        share=share,
+        debug=debug,
+        show_error=show_error,
     )
+
+
+if __name__ == '__main__':
+    launch_server()
