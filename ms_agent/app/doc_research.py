@@ -19,7 +19,7 @@ from ms_agent.llm.openai import OpenAIChat
 from ms_agent.workflow.research_workflow import ResearchWorkflow
 
 
-class ResearchWorkflowExtend:
+class ResearchWorkflowApp:
     def __init__(self, client, workdir: str):
         self.client = client
         self.workdir = workdir
@@ -1021,7 +1021,7 @@ def run_research_workflow_internal(
             progress_callback(0.15, '创建研究工作流...')
 
         # 创建研究工作流
-        research_workflow = ResearchWorkflowExtend(
+        research_workflow = ResearchWorkflowApp(
             client=chat_client,
             workdir=task_workdir,
         )
