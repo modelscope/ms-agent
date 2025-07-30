@@ -16,6 +16,8 @@
 </div>
 
 
+<br>
+
 ## 功能特性
 
 - 🔍 **文档深度研究**：支持文档的深度分析和总结
@@ -23,6 +25,8 @@
 - 📊 **多模态报告**：支持Markdown格式的图文报告输出
 - ⚙️ **灵活部署**：支持本地运行和魔搭创空间运行模式
 
+
+<br>
 
 ## 演示
 
@@ -38,6 +42,8 @@
   <p><em>本地运行的Gradio界面展示</em></p>
 </div>
 
+
+<br>
 
 ## 安装和运行
 
@@ -80,6 +86,8 @@ ms-agent app --doc_research \
 > `share`: (store_true action), whether to share the app publicly. <br>
 
 
+<br>
+
 ## 使用说明
 
 1. **用户提示**：在文本框中输入您的研究目标或问题
@@ -88,6 +96,8 @@ ms-agent app --doc_research \
 4. **开始研究**：点击运行按钮开始执行工作流
 5. **查看结果**：在右侧区域查看执行结果和研究报告（可全屏）
 
+
+<br>
 
 ## 工作目录结构
 
@@ -100,6 +110,7 @@ temp_workspace/user_xxx_1753706367955/
     └── report.md
 ```
 
+<br>
 
 ## 案例
 
@@ -109,10 +120,7 @@ temp_workspace/user_xxx_1753706367955/
 * URLs Input:  `https://modelscope.cn/models/ms-agent/ms_agent_resources/resolve/master/numina_dataset.pdf` <br>
 
 * 研究报告：
-<div align="center">
-  <img src="https://github.com/user-attachments/assets/d6af658c-d67d-499d-9241-bfeb43496e4a" alt="numina_dataset Report" width="800">
-  <p><em>案例：numina_dataset Report</em></p>
-</div>
+<https://github.com/user-attachments/assets/d6af658c-d67d-499d-9241-bfeb43496e4a>
 
 <br>
 
@@ -133,10 +141,7 @@ https://arxiv.org/abs/2412.15115
      style="height: auto;"
 />
 
-<div align="center">
-  <img src="https://github.com/user-attachments/assets/bba1bebd-20db-4297-864b-32ea5bb06a3c" alt="Qwen3 vs Qwen2.5 Report" width="700">
-  <p><em>案例：Qwen3 vs Qwen2.5 Report</em></p>
-</div>
+<https://github.com/user-attachments/assets/bba1bebd-20db-4297-864b-32ea5bb06a3c>
 
 <br>
 
@@ -161,6 +166,9 @@ https://arxiv.org/abs/2412.15115
 - 每个用户拥有独立的工作目录和会话数据
 - 本地模式下使用时间戳区分不同会话
 - 远程模式下基于用户ID进行隔离
+
+
+<br>
 
 ## 注意事项
 
