@@ -1922,7 +1922,7 @@ def create_interface():
             <h1>🔬 文档深度研究</h1>
             <h2>Doc Research Workflow</h2>
             <p class="description">Your Daily Paper Copilot - URLs or Files IN, Multimodal Report OUT</p>
-            <p class="powered-by">Powered by <a href="https://github.com/modelscope/ms-agent" target="_blank" rel="noopener noreferrer">MS-Agent</a></p>
+            <p class="powered-by">Powered by <a href="https://github.com/modelscope/ms-agent" target="_blank" rel="noopener noreferrer">MS-Agent</a> | <a href="https://github.com/modelscope/ms-agent/blob/main/projects/doc_research/README.md" target="_blank" rel="noopener noreferrer">Readme</a> </p>
         </div>
         """)
 
