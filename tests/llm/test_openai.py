@@ -92,6 +92,7 @@ class OpenaiLLM(unittest.TestCase):
         res = llm.generate(
             messages=self.messages,
             tools=None,
+            max_continue_runs=1,
             stream=True,
             extra_body={'enable_thinking': True})
         for chunk in res:

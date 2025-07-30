@@ -30,17 +30,18 @@ class OpenAI(LLM):
         'role', 'content', 'tool_calls', 'partial', 'prefix', 'tool_call_id'
     }
 
-    def __init__(self,
-                 config: DictConfig,
-                 base_url: Optional[str] = None,
-                 api_key: Optional[str] = None,
-                 max_continue_runs: Optional[int] = None):
+    def __init__(
+        self,
+        config: DictConfig,
+        base_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+    ):
         super().__init__(config)
         assert_package_exist('openai')
         import openai
         self.model: str = config.llm.model
-        self.max_continue_runs = max_continue_runs or getattr(
-            config.llm, 'max_continue_runs', None) or MAX_CONTINUE_RUNS
+        self.max_continue_runs = getattr(config.llm, 'max_continue_runs',
+                                         None) or MAX_CONTINUE_RUNS
         base_url = base_url or config.llm.openai_base_url
         api_key = api_key or config.llm.openai_api_key
 
@@ -81,6 +82,7 @@ class OpenAI(LLM):
     def generate(self,
                  messages: List[Message],
                  tools: Optional[List[Tool]] = None,
+                 max_continue_runs: Optional[int] = None,
                  **kwargs) -> Message | Generator[Message, None, None]:
         """Generates a response based on the given conversation history and optional tools.
 
@@ -104,13 +106,14 @@ class OpenAI(LLM):
 
         # Complex task may produce long response
         # Call continue_generate to keep generating if the finish_reason is `length`
+        max_continue_runs = max_continue_runs or self.max_continue_runs
         if stream:
             return self._stream_continue_generate(messages, completion, tools,
-                                                  self.max_continue_runs - 1,
+                                                  max_continue_runs - 1,
                                                   **args)
         else:
             return self._continue_generate(messages, completion, tools,
-                                           self.max_continue_runs - 1, **args)
+                                           max_continue_runs - 1, **args)
 
     def _call_llm(self,
                   messages: List[Message],
