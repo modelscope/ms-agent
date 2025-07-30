@@ -1,9 +1,18 @@
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/3af76dcd-b229-4597-835f-51617371ebad" alt="Doc Research Logo" width="300" height="300">
+  <img src="https://github.com/user-attachments/assets/3af76dcd-b229-4597-835f-51617371ebad" alt="Doc Research Logo" width="320" height="320">
+</div>
 
-  # Doc Research Workflow
 
-  这是一个基于Gradio的文档研究工作流应用，支持对PDF文档和网页的深度研究，输出图文并茂的多模态研究报告。
+<div class="main-header">
+    <h1>🔬 Doc Research - 文档深度研究</h1>
+    <p class="description">
+        <span style="color: #00ADB5;
+                    font-weight: 600;
+                    font-size: 1.2rem;
+                    font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;">
+            Your Daily Paper Copilot - URLs or Files In, Multimodal Report Out
+        </span>
+    </p>
 </div>
 
 
@@ -18,7 +27,9 @@
 ## 演示
 
 ### ModelScope创空间
-参考链接： [DocResearchStudio](https://modelscope.cn/studios/ms-agent/DocResearch/summary)
+参考链接： [DocResearchStudio](https://modelscope.cn/studios/ms-agent/DocResearch)
+
+
 
 ### 本地运行Gradio应用
 
@@ -44,6 +55,8 @@ pip install ms-agent[research]
 export OPENAI_API_KEY=sk-xxx        # 替换为您的API密钥
 export OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 export OPENAI_MODEL_ID=qwen-plus-2025-07-14
+
+# 对于阿里云百炼用户，可参考： `https://bailian.console.aliyun.com`
 ```
 
 ### 3. 运行应用
@@ -118,3 +131,36 @@ temp_workspace/user_xxx_1753706367955/
 
 
 ## 案例
+
+**1. 单文档研究报告**
+
+User Prompt: `深入分析和总结下列文档`  (默认) <br>
+URLs Input:  `https://modelscope.cn/models/ms-agent/ms_agent_resources/resolve/master/numina_dataset.pdf` <br>
+
+
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/d6af658c-d67d-499d-9241-bfeb43496e4a" alt="numina_dataset Report" width="700">
+  <p><em>案例：numina_dataset Report</em></p>
+</div>
+
+<br>
+
+**2. 多文档研究报告**
+
+User Prompt: `Qwen3跟Qwen2.5对比，有哪些优化？` <br>
+URLs Input:  (分别输入Qwen3和Qwen2.5的技术报告链接)
+```
+https://arxiv.org/abs/2505.09388
+https://arxiv.org/abs/2412.15115
+```
+
+研究报告：
+<img width="2630" height="1758" alt="Image" src="https://github.com/user-attachments/assets/4a44b2ab-c3c9-49cd-bec2-cd05664cb086" />
+
+
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/bba1bebd-20db-4297-864b-32ea5bb06a3c" alt="Qwen3 vs Qwen2.5 Report" width="700">
+  <p><em>案例：Qwen3 vs Qwen2.5 Report</em></p>
+</div>
+
+<br>
