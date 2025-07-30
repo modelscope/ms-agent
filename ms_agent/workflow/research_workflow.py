@@ -14,7 +14,6 @@ from ms_agent.tools.exa.schema import dump_batch_search_results
 from ms_agent.tools.search.search_base import SearchRequest, SearchResult
 from ms_agent.tools.search.search_request import get_search_request_generator
 from ms_agent.utils.logger import get_logger
-from ms_agent.utils.thread_util import thread_executor
 from ms_agent.utils.utils import remove_resource_info, text_hash
 from ms_agent.workflow.principle import MECEPrinciple, Principle
 
@@ -209,7 +208,7 @@ class ResearchWorkflow:
 
         self._dump_todo_file()
 
-    def search(self, search_requests: List[SearchRequest]) -> str:
+    def search(self, search_request: SearchRequest) -> str:
 
         if self._reuse:
             # Load existing search results if they exist
@@ -224,7 +223,6 @@ class ResearchWorkflow:
                 )
 
         # Perform search using the provided search request
-        @thread_executor()
         def search_single_request(search_request: SearchRequest):
             return self._search_engine.search(search_request=search_request)
 
@@ -234,7 +232,7 @@ class ResearchWorkflow:
 
             return single_res
 
-        search_results: List[SearchResult] = search_single_request(search_requests)
+        search_results: List[SearchResult] = [search_single_request(search_request)]
         search_results = [
             filter_search_res(single_res) for single_res in search_results
         ]
@@ -352,7 +350,7 @@ class ResearchWorkflow:
                 search_request_d = search_request_d[0]
 
             search_request = search_request_generator.create_request(search_request_d)
-            search_res_file: str = self.search(search_requests=[search_request])
+            search_res_file: str = self.search(search_request=search_request)
 
             search_results: List[Dict[str, Any]] = SearchResult.load_from_disk(file_path=search_res_file)
             if not search_results:
