@@ -100,6 +100,9 @@ ms-agent app --doc_research \
 > `server_port`: (int), gradio 服务端口, 默认: `7860`  <br>
 > `share`: (store_true action), 是否对外分享，默认关闭.  <br>
 
+* 备注：
+  > 本地运行时，默认访问地址为 `http://0.0.0.0:7860/` ，需关闭VPN才能访问  <br>
+
 
 <br>
 

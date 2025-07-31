@@ -155,4 +155,5 @@ ast_index_file.py
 neo4j.lock
 /temp/
 
-/temp_workspace
+**/temp_workspace/
+ms_agent/app/temp_workspace/

@@ -98,6 +98,11 @@ ms-agent app --doc_research \
 > `server_port`: (int), gradio server port, default: `7860`  <br>
 > `share`: (store_true action), whether to share the app publicly. <br>
 
+* Notes
+> When running locally, the default address is http://0.0.0.0:7860/. You need to disable your VPN to access it.
+
+
+<br>
 
 ## Usage Instructions
 
