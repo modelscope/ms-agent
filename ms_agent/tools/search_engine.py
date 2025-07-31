@@ -31,6 +31,11 @@ def load_base_config(file_path: str) -> Dict[str, Any]:
     import yaml
     with open(file_path, 'r') as file:
         config = yaml.safe_load(file)
+
+    # Load environment variables from .env file if it exists
+    if not load_dotenv(os.path.join(os.getcwd(), '.env')):
+        Env.load_env()
+
     return process_dict(config)
 
 
@@ -69,10 +74,6 @@ def replace_env_vars(value: str) -> str:
     """
     if not isinstance(value, str):
         return value
-
-    # Load environment variables from .env file if it exists
-    if not load_dotenv(os.path.join(os.getcwd(), '.env')):
-        Env.load_env()
 
     if value.startswith('$'):
         env_var = value[1:]
