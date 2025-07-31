@@ -3,6 +3,7 @@ import os
 
 from exa_py import Exa
 from ms_agent.tools.exa.schema import ExaSearchRequest, ExaSearchResult
+from ms_agent.tools.search.search_base import SearchEngineType
 
 
 class ExaSearch:
@@ -13,6 +14,7 @@ class ExaSearch:
         assert api_key, 'EXA_API_KEY must be set either as an argument or as an environment variable'
 
         self.client = Exa(api_key=api_key)
+        self.engine_type = SearchEngineType.EXA
 
     def search(self, search_request: ExaSearchRequest) -> ExaSearchResult:
         """

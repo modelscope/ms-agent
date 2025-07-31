@@ -1,13 +1,14 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 
 from ms_agent.llm.openai import OpenAIChat
-from ms_agent.tools.exa import ExaSearch
+from ms_agent.tools.search.search_base import SearchEngine
+from ms_agent.tools.search_engine import get_web_search_tool
 from ms_agent.workflow.principle import MECEPrinciple
 from ms_agent.workflow.research_workflow import ResearchWorkflow
 
 
 def run_workflow(user_prompt: str, task_dir: str, reuse: bool,
-                 chat_client: OpenAIChat, search_engine: ExaSearch):
+                 chat_client: OpenAIChat, search_engine: SearchEngine):
 
     research_workflow = ResearchWorkflow(
         client=chat_client,
@@ -35,12 +36,12 @@ if __name__ == '__main__':
 
     # Get web-search engine client
     # For the ExaSearch, you can get your API key from https://exa.ai
-    exa_search = ExaSearch(api_key='xxx-xxx')
+    search_engine = get_web_search_tool()
 
     run_workflow(
         user_prompt=query,
         task_dir=task_workdir,
         reuse=reuse,
         chat_client=chat_client,
-        search_engine=exa_search,
+        search_engine=search_engine,
     )
