@@ -16,21 +16,41 @@ import gradio as gr
 import json
 import markdown
 from ms_agent.llm.openai import OpenAIChat
+from ms_agent.utils.logger import get_logger
 from ms_agent.workflow.research_workflow import ResearchWorkflow
+
+logger = get_logger()
+
+
+"""
+This module provides a Gradio application for running a research workflow with file and URL inputs.
+
+It includes functionalities for:
+- Initializing the research workflow application
+- Processing user inputs (files and URLs)
+- Managing user status and task concurrency
+- Converting markdown content with images to HTML or base64 format
+- Reading and processing markdown reports
+- Listing resource files in the working directory
+"""
 
 
 class ResearchWorkflowApp:
+    """
+    Research Workflow Application, this class initializes the research workflow with the necessary model downloads.
+    """
     def __init__(self, client, workdir: str):
+        from modelscope import snapshot_download
+        from modelscope.hub.utils.utils import get_cache_dir
+
         self.client = client
         self.workdir = workdir
 
-        # TODO: download easyocr model first, for temp use
-        target_dir: str = '~/.EasyOCR/model'
+        target_dir: str = os.path.join(get_cache_dir(), 'models/EasyOCR')
         if not os.path.exists(os.path.join(os.path.expanduser(target_dir), 'craft_mlt_25k.pth')):
-            from modelscope import snapshot_download
 
             os.makedirs(os.path.expanduser(target_dir), exist_ok=True)
-            # 下载模型到指定目录
+            # Download model to specified directory
             snapshot_download(
                 model_id='ms-agent/craft_mlt_25k',
                 local_dir=os.path.expanduser(target_dir),
@@ -39,8 +59,8 @@ class ResearchWorkflowApp:
                 model_id='ms-agent/latin_g2',
                 local_dir=os.path.expanduser(target_dir),
             )
-            print(f'EasyOCR模型已下载到: {os.path.expanduser(target_dir)}')
-            # unzip craft_mlt_25k.zip, latin_g2.zip
+            logger.info(f'EasyOCR model downloaded to: {os.path.expanduser(target_dir)}')
+            # Unzip craft_mlt_25k.zip, latin_g2.zip
             import zipfile
             zip_path_craft = os.path.join(os.path.expanduser(target_dir), 'craft_mlt_25k.zip')
             zip_path_latin = os.path.join(os.path.expanduser(target_dir), 'latin_g2.zip')
@@ -51,7 +71,7 @@ class ResearchWorkflowApp:
                 with zipfile.ZipFile(zip_path_latin, 'r') as zip_ref_latin:
                     zip_ref_latin.extractall(os.path.expanduser(target_dir))
 
-            print(f'EasyOCR模型已解压到: {os.path.expanduser(target_dir)}')
+            logger.info(f'EasyOCR model extracted to: {os.path.expanduser(target_dir)}')
 
         self._workflow = ResearchWorkflow(
             client=self.client,
@@ -60,7 +80,7 @@ class ResearchWorkflowApp:
         )
 
     def run(self, user_prompt: str, urls_or_files: List[str]) -> str:
-        # 检查输入文件/URLs是否为空
+        # Check if input files/URLs are empty
         if not urls_or_files:
             return """
 ❌ 输入错误：未提供任何文件或URLs
@@ -77,7 +97,7 @@ class ResearchWorkflowApp:
             urls_or_files=urls_or_files,
         )
 
-        # 返回执行情况统计
+        # Return execution statistics
         result = f"""
 研究工作流执行完成！
 
@@ -93,28 +113,25 @@ class ResearchWorkflowApp:
             else:
                 result += f'{i}. 文件: {os.path.basename(item)}\n'
 
-        result += '\n✅ 研究分析已完成，结果已保存到工作目录中。'
+        result += '\n✅ 研究分析已完成，结果已保存到工作目录中。 请查看研究报告。'
         return result
 
 
-# 全局变量
+# Global variables
 BASE_WORKDIR = 'temp_workspace'
-IMAGE_SERVER_PORT = 52682
-IMAGE_SERVER_URL = f'http://localhost:{IMAGE_SERVER_PORT}'
 
-# 并发控制配置
+# Concurrency control configuration
 GRADIO_DEFAULT_CONCURRENCY_LIMIT = int(os.environ.get('GRADIO_DEFAULT_CONCURRENCY_LIMIT', '10'))
-TASK_TIMEOUT = int(os.environ.get('TASK_TIMEOUT', '1200'))  # 20分钟超时
 
 
-# 简化的用户状态管理器
+# Simplified user status manager
 class UserStatusManager:
     def __init__(self):
         self.active_users = {}  # {user_id: {'start_time': time, 'status': status}}
         self.lock = threading.Lock()
 
     def get_user_status(self, user_id: str) -> dict:
-        """获取用户任务状态"""
+        """Get user task status"""
         with self.lock:
             if user_id in self.active_users:
                 user_info = self.active_users[user_id]
@@ -127,23 +144,23 @@ class UserStatusManager:
             return {'status': 'idle', 'elapsed_time': 0, 'is_active': False}
 
     def start_user_task(self, user_id: str):
-        """标记用户任务开始"""
+        """Mark user task start"""
         with self.lock:
             self.active_users[user_id] = {
                 'start_time': time.time(),
                 'status': 'running'
             }
-            print(f'用户任务开始 - 用户: {user_id[:8]}***, 当前活跃用户数: {len(self.active_users)}')
+            logger.info(f'User task started - User: {user_id[:8]}***, Current active users: {len(self.active_users)}')
 
     def finish_user_task(self, user_id: str):
-        """标记用户任务完成"""
+        """Mark user task completion"""
         with self.lock:
             if user_id in self.active_users:
                 del self.active_users[user_id]
-                print(f'用户任务完成 - 用户: {user_id[:8]}***, 剩余活跃用户数: {len(self.active_users)}')
+                logger.info(f'User task completed - User: {user_id[:8]}***, Remaining active users: {len(self.active_users)}')
 
     def get_system_status(self) -> dict:
-        """获取系统状态"""
+        """Get system status"""
         with self.lock:
             active_count = len(self.active_users)
         return {
@@ -160,21 +177,21 @@ class UserStatusManager:
         }
 
     def force_cleanup_user(self, user_id: str) -> bool:
-        """强制清理用户任务"""
+        """Force cleanup user task"""
         with self.lock:
             if user_id in self.active_users:
                 del self.active_users[user_id]
-                print(f'强制清理用户任务 - 用户: {user_id[:8]}***')
+                logger.info(f'Force cleanup user task - User: {user_id[:8]}***')
                 return True
             return False
 
 
-# 创建全局用户状态管理器实例
+# Create global user status manager instance
 user_status_manager = UserStatusManager()
 
 
 def get_user_id_from_request(request: gr.Request) -> str:
-    """从请求头获取用户ID"""
+    """Get user ID from request headers"""
     if request and hasattr(request, 'headers'):
         user_id = request.headers.get('x-modelscope-router-id', '')
         return user_id.strip() if user_id else ''
@@ -182,15 +199,15 @@ def get_user_id_from_request(request: gr.Request) -> str:
 
 
 def check_user_auth(request: gr.Request) -> Tuple[bool, str]:
-    """检查用户认证状态"""
+    """Check user authentication status"""
     user_id = get_user_id_from_request(request)
     if not user_id:
-        return False, '请登录后使用'
+        return False, '请登录后使用 | Please log in to use this feature.'
     return True, user_id
 
 
 def create_user_workdir(user_id: str) -> str:
-    """为用户创建专属工作目录"""
+    """Create dedicated working directory for user"""
     user_base_dir = os.path.join(BASE_WORKDIR, f'user_{user_id}')
     if not os.path.exists(user_base_dir):
         os.makedirs(user_base_dir)
@@ -198,7 +215,7 @@ def create_user_workdir(user_id: str) -> str:
 
 
 def create_task_workdir(user_id: str) -> str:
-    """创建新的任务工作目录"""
+    """Create new task working directory"""
     user_base_dir = create_user_workdir(user_id)
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -209,7 +226,7 @@ def create_task_workdir(user_id: str) -> str:
 
 
 def process_urls_text(urls_text: str) -> List[str]:
-    """处理URL文本输入，按换行分割"""
+    """Process URL text input, split by newlines"""
     if not urls_text.strip():
         return []
 
@@ -222,12 +239,12 @@ def process_urls_text(urls_text: str) -> List[str]:
 
 
 def process_files(files) -> List[str]:
-    """处理上传的文件"""
+    """Process uploaded files"""
     if not files:
         return []
 
     file_paths = []
-    # 确保files是列表格式
+    # Ensure files is in list format
     if not isinstance(files, list):
         files = [files] if files else []
 
@@ -242,111 +259,39 @@ def process_files(files) -> List[str]:
 
 
 def check_port_available(port: int) -> bool:
-    """检查端口是否可用"""
+    """Check if port is available"""
     import socket
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(1)
             result = s.connect_ex(('localhost', port))
-            return result != 0  # 0表示连接成功，端口被占用
+            return result != 0  # 0 means connection successful, port is occupied
     except Exception:
         return True
 
 
-def check_image_server_running(port: int = IMAGE_SERVER_PORT) -> bool:
-    """检查图片服务器是否正在运行"""
-    import requests
-    try:
-        response = requests.get(f'http://localhost:{port}', timeout=2)
-        return response.status_code in [200, 404]  # 404也表示服务器在运行
-    except Exception:
-        return False
-
-
 class ReusableTCPServer(socketserver.TCPServer):
-    """支持地址重用的TCP服务器"""
+    """TCP server that supports address reuse"""
     allow_reuse_address = True
 
 
-def create_static_image_server(workdir: str = BASE_WORKDIR, port: int = IMAGE_SERVER_PORT) -> str:
-    """创建静态图片服务器"""
-    import threading
-    import http.server
-    import socketserver
-    from urllib.parse import quote
-
-    class ImageHandler(http.server.SimpleHTTPRequestHandler):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, directory=workdir, **kwargs)
-
-        def end_headers(self):
-            # 添加CORS头部以允许跨域访问
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.send_header('Access-Control-Allow-Methods', 'GET')
-            self.send_header('Access-Control-Allow-Headers', '*')
-            super().end_headers()
-
-        def log_message(self, format, *args):
-            # 静默日志输出
-            pass
-
-    try:
-        httpd = ReusableTCPServer(('', port), ImageHandler)
-        # 在后台线程中启动服务器，设置为非守护进程以保持长期运行
-        server_thread = threading.Thread(target=httpd.serve_forever, daemon=False)
-        server_thread.start()
-        print(f'图片服务器已启动在端口 {port}，服务目录: {workdir}')
-        return f'http://localhost:{port}'
-    except Exception as e:
-        print(f'无法启动图片服务器: {e}')
-        return None
-
-
-def ensure_image_server_running(workdir: str = BASE_WORKDIR) -> str:
-    """确保图片服务器正在运行"""
-    # 首先检查服务器是否已经在运行
-    if check_image_server_running(IMAGE_SERVER_PORT):
-        print(f'图片服务器已在端口 {IMAGE_SERVER_PORT} 运行')
-        return IMAGE_SERVER_URL
-
-    # 如果服务器未运行，尝试创建新的服务器
-    print(f'端口 {IMAGE_SERVER_PORT} 上没有检测到图片服务器，正在创建...')
-    server_url = create_static_image_server(workdir, IMAGE_SERVER_PORT)
-
-    if server_url:
-        # 等待服务器启动
-        import time
-        time.sleep(1)
-
-        # 验证服务器是否成功启动
-        if check_image_server_running(IMAGE_SERVER_PORT):
-            print(f'图片服务器成功启动在 {server_url}')
-            return server_url
-        else:
-            print('图片服务器启动失败')
-            return None
-    else:
-        print('无法创建图片服务器')
-        return None
-
-
 def convert_markdown_images_to_base64(markdown_content: str, workdir: str) -> str:
-    """将markdown中的相对路径图片转换为base64格式（适用于在线环境）"""
+    """Convert relative path images in markdown to base64 format (for online environments)"""
 
     def replace_image(match):
         alt_text = match.group(1)
         image_path = match.group(2)
 
-        # 处理相对路径
+        # Handle relative paths
         if not os.path.isabs(image_path):
             full_path = os.path.join(workdir, image_path)
         else:
             full_path = image_path
 
-        # 检查文件是否存在
+        # Check if file exists
         if os.path.exists(full_path):
             try:
-                # 获取文件扩展名来确定MIME类型
+                # Get file extension to determine MIME type
                 ext = os.path.splitext(full_path)[1].lower()
                 mime_types = {
                     '.png': 'image/png',
@@ -359,9 +304,9 @@ def convert_markdown_images_to_base64(markdown_content: str, workdir: str) -> st
                 }
                 mime_type = mime_types.get(ext, 'image/png')
 
-                # 检查文件大小，避免过大的图片
+                # Check file size to avoid oversized images
                 file_size = os.path.getsize(full_path)
-                max_size = 5 * 1024 * 1024  # 5MB限制
+                max_size = 5 * 1024 * 1024  # 5MB limit
 
                 if file_size > max_size:
                     return f"""
@@ -373,17 +318,17 @@ def convert_markdown_images_to_base64(markdown_content: str, workdir: str) -> st
 ---
 """
 
-                # 读取图片文件并转换为base64
+                # Read image file and convert to base64
                 with open(full_path, 'rb') as img_file:
                     img_data = img_file.read()
                     base64_data = base64.b64encode(img_data).decode('utf-8')
 
-                # 创建data URL
+                # Create data URL
                 data_url = f'data:{mime_type};base64,{base64_data}'
                 return f'![{alt_text}]({data_url})'
 
             except Exception as e:
-                print(f'无法处理图片 {full_path}: {e}')
+                logger.info(f'Unable to process image {full_path}: {e}')
                 return f"""
 **❌ 图片处理失败: {alt_text or os.path.basename(image_path)}**
 - 📁 路径: `{image_path}`
@@ -394,70 +339,28 @@ def convert_markdown_images_to_base64(markdown_content: str, workdir: str) -> st
         else:
             return f'**❌ 图片文件不存在: {alt_text or image_path}**\n\n'
 
-    # 匹配markdown图片语法: ![alt](path)
-    pattern = r'!\[([^\]]*)\]\(([^)]+)\)'
-    return re.sub(pattern, replace_image, markdown_content)
-
-
-def convert_markdown_images_to_urls(markdown_content: str, workdir: str, server_url: str = None) -> str:
-    """将markdown中的相对路径图片转换为可访问的URL（本地环境使用）"""
-
-    # 如果没有提供服务器URL，确保图片服务器运行
-    if server_url is None:
-        server_url = ensure_image_server_running(BASE_WORKDIR)
-        if server_url is None:
-            # 如果无法确保服务器运行，回退到base64方式
-            return convert_markdown_images_to_base64(markdown_content, workdir)
-
-    def replace_image(match):
-        alt_text = match.group(1)
-        image_path = match.group(2)
-
-        # 处理相对路径
-        if not os.path.isabs(image_path):
-            full_path = os.path.join(workdir, image_path)
-            # 计算相对于BASE_WORKDIR的路径
-            rel_path = os.path.relpath(full_path, BASE_WORKDIR)
-        else:
-            full_path = image_path
-            rel_path = os.path.relpath(full_path, BASE_WORKDIR)
-
-        # 检查文件是否存在
-        if os.path.exists(full_path):
-            try:
-                # 构建可访问的URL
-                from urllib.parse import quote
-                url_path = quote(rel_path.replace('\\', '/'))
-                image_url = f'{server_url}/{url_path}'
-                return f'![{alt_text}]({image_url})'
-            except Exception as e:
-                print(f'无法处理图片路径 {full_path}: {e}')
-                return f'![{alt_text}]({image_path}) <!-- 图片路径处理失败 -->'
-        else:
-            return f'![{alt_text}]({image_path}) <!-- 图片文件不存在: {full_path} -->'
-
-    # 匹配markdown图片语法: ![alt](path)
+    # Match markdown image syntax: ![alt](path)
     pattern = r'!\[([^\]]*)\]\(([^)]+)\)'
     return re.sub(pattern, replace_image, markdown_content)
 
 
 def convert_markdown_images_to_file_info(markdown_content: str, workdir: str) -> str:
-    """将markdown中的图片转换为文件信息显示（回退方案）"""
+    """Convert images in markdown to file info display (fallback solution)"""
 
     def replace_image(match):
         alt_text = match.group(1)
         image_path = match.group(2)
 
-        # 处理相对路径
+        # Handle relative paths
         if not os.path.isabs(image_path):
             full_path = os.path.join(workdir, image_path)
         else:
             full_path = image_path
 
-        # 检查文件是否存在
+        # Check if file exists
         if os.path.exists(full_path):
             try:
-                # 获取文件信息
+                # Get file information
                 file_size = os.path.getsize(full_path)
                 file_size_mb = file_size / (1024 * 1024)
                 ext = os.path.splitext(full_path)[1].lower()
@@ -472,22 +375,22 @@ def convert_markdown_images_to_file_info(markdown_content: str, workdir: str) ->
 ---
 """
             except Exception as e:
-                print(f'无法读取图片信息 {full_path}: {e}')
+                logger.info(f'Unable to read image info {full_path}: {e}')
                 return f'**❌ 图片加载失败: {alt_text or image_path}**\n\n'
         else:
             return f'**❌ 图片文件不存在: {alt_text or image_path}**\n\n'
 
-    # 匹配markdown图片语法: ![alt](path)
+    # Match markdown image syntax: ![alt](path)
     pattern = r'!\[([^\]]*)\]\(([^)]+)\)'
     return re.sub(pattern, replace_image, markdown_content)
 
 
 def convert_markdown_to_html(markdown_content: str) -> str:
-    """将markdown转换为HTML，使用KaTeX处理LaTeX公式"""
+    """Convert markdown to HTML, using KaTeX to process LaTeX formulas"""
     try:
         import re
 
-        # 保护LaTeX公式，避免被markdown处理器误处理
+        # Protect LaTeX formulas to avoid misprocessing by markdown processor
         latex_placeholders = {}
         placeholder_counter = 0
 
@@ -498,22 +401,22 @@ def convert_markdown_to_html(markdown_content: str) -> str:
             placeholder_counter += 1
             return placeholder
 
-        # 保护各种LaTeX公式格式
+        # Protect various LaTeX formula formats
         protected_content = markdown_content
 
-        # 保护 $$...$$（块级公式）
+        # Protect $$...$$ (block-level formulas)
         protected_content = re.sub(r'\$\$([^$]+?)\$\$', protect_latex, protected_content, flags=re.DOTALL)
 
-        # 保护 $...$ （行内公式）
+        # Protect $...$ (inline formulas)
         protected_content = re.sub(r'(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)', protect_latex, protected_content)
 
-        # 保护 \[...\]（块级公式）
+        # Protect \[...\] (block-level formulas)
         protected_content = re.sub(r'\\\[([^\\]+?)\\\]', protect_latex, protected_content, flags=re.DOTALL)
 
-        # 保护 \(...\)（行内公式）
+        # Protect \(...\) (inline formulas)
         protected_content = re.sub(r'\\\(([^\\]+?)\\\)', protect_latex, protected_content, flags=re.DOTALL)
 
-        # 配置markdown扩展
+        # Configure markdown extensions
         extensions = [
             'markdown.extensions.extra',
             'markdown.extensions.codehilite',
@@ -523,7 +426,7 @@ def convert_markdown_to_html(markdown_content: str) -> str:
             'markdown.extensions.nl2br'
         ]
 
-        # 配置扩展参数
+        # Configure extension parameters
         extension_configs = {
             'markdown.extensions.codehilite': {
                 'css_class': 'highlight',
@@ -534,63 +437,63 @@ def convert_markdown_to_html(markdown_content: str) -> str:
             }
         }
 
-        # 创建markdown实例
+        # Create markdown instance
         md = markdown.Markdown(
             extensions=extensions,
             extension_configs=extension_configs
         )
 
-        # 转换为HTML
+        # Convert to HTML
         html_content = md.convert(protected_content)
 
-        # 恢复LaTeX公式
+        # Restore LaTeX formulas
         for placeholder, latex_formula in latex_placeholders.items():
             html_content = html_content.replace(placeholder, latex_formula)
 
-        # 生成唯一的容器ID，确保每次渲染都有独立的KaTeX处理
+        # Generate unique container ID to ensure independent KaTeX processing for each render
         container_id = f'katex-content-{int(time.time() * 1000000)}'
 
-        # 使用KaTeX渲染LaTeX公式
+        # Use KaTeX to render LaTeX formulas
         styled_html = f"""
         <div class="markdown-html-content" id="{container_id}">
             <!-- KaTeX CSS -->
             <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" integrity="sha384-n8MVd4RsNIU0tAv4ct0nTaAbDJwPJzDEaqSD1odI+WdtXRGWt2kTvGFasHpSy3SV" crossorigin="anonymous">
 
-            <!-- 内容区域 -->
+            <!-- Content area -->
             <div class="content-area">
                 {html_content}
             </div>
 
-            <!-- KaTeX JavaScript和auto-render扩展 -->
+            <!-- KaTeX JavaScript and auto-render extension -->
             <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" integrity="sha384-XjKyOOlGwcjNTAIQHIpVOOVA+CuTF5UvLqGSXPM6njWx5iNxN7jyVjNOq8Ks4pxy" crossorigin="anonymous"></script>
             <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" integrity="sha384-+VBxd3r6XgURycqtZ117nYw44OOcIax56Z4dCRWbxyPt0Koah1uHoK0o4+/RRE05" crossorigin="anonymous"></script>
 
-            <!-- KaTeX渲染脚本 -->
+            <!-- KaTeX rendering script -->
             <script type="text/javascript">
                 (function() {{
                     const containerId = '{container_id}';
                     const container = document.getElementById(containerId);
 
                     if (!container) {{
-                        console.warn('KaTeX容器未找到:', containerId);
+                        console.warn('KaTeX container not found:', containerId);
                         return;
                     }}
 
-                    // 等待KaTeX加载完成后渲染
+                    // Wait for KaTeX to load before rendering
                     function renderKaTeX() {{
                         if (typeof renderMathInElement !== 'undefined') {{
-                            console.log('开始KaTeX渲染 - 容器:', containerId);
+                            console.log('Starting KaTeX rendering - Container:', containerId);
 
                             try {{
                                 renderMathInElement(container, {{
-                                    // 配置分隔符
+                                    // Configure delimiters
                                     delimiters: [
                                         {{left: '$$', right: '$$', display: true}},
                                         {{left: '$', right: '$', display: false}},
                                         {{left: '\\\\[', right: '\\\\]', display: true}},
                                         {{left: '\\\\(', right: '\\\\)', display: false}}
                                     ],
-                                    // 其他配置选项
+                                    // Other configuration options
                                     throwOnError: false,
                                     errorColor: '#cc0000',
                                     strict: false,
@@ -604,13 +507,13 @@ def convert_markdown_to_html(markdown_content: str) -> str:
                                     }}
                                 }});
 
-                                console.log('KaTeX渲染完成 - 容器:', containerId);
+                                console.log('KaTeX rendering completed - Container:', containerId);
 
-                                // 统计渲染的公式数量
+                                // Count rendered formulas
                                 const mathElements = container.querySelectorAll('.katex');
-                                console.log('发现并处理了', mathElements.length, '个数学公式');
+                                console.log('Found and processed', mathElements.length, 'mathematical formulas');
 
-                                // 应用样式修正
+                                // Apply style corrections
                                 mathElements.forEach(el => {{
                                     const isDisplay = el.classList.contains('katex-display');
                                     if (isDisplay) {{
@@ -623,17 +526,17 @@ def convert_markdown_to_html(markdown_content: str) -> str:
                                 }});
 
                             }} catch (error) {{
-                                console.error('KaTeX渲染错误:', error);
+                                console.error('KaTeX rendering error:', error);
                             }}
                         }} else {{
-                            console.warn('KaTeX auto-render未加载，等待重试...');
+                            console.warn('KaTeX auto-render not loaded, waiting for retry...');
                             setTimeout(renderKaTeX, 200);
                         }}
                     }}
 
-                    // 使用延迟确保Gradio完全渲染完成
+                    // Use delay to ensure Gradio is fully rendered
                     setTimeout(() => {{
-                        console.log('开始加载KaTeX...');
+                        console.log('Starting to load KaTeX...');
                         renderKaTeX();
                     }}, 300);
                 }})();
@@ -649,7 +552,7 @@ def convert_markdown_to_html(markdown_content: str) -> str:
                     padding: 20px;
                 }}
 
-                /* KaTeX公式样式优化 */
+                /* KaTeX formula style optimization */
                 #{container_id} .katex {{
                     font-size: 1.1em !important;
                     color: inherit !important;
@@ -662,20 +565,20 @@ def convert_markdown_to_html(markdown_content: str) -> str:
                     display: block !important;
                 }}
 
-                /* 行内公式样式 */
+                /* Inline formula styles */
                 #{container_id} .katex:not(.katex-display) {{
                     display: inline-block !important;
                     margin: 0 0.1em !important;
                     vertical-align: baseline !important;
                 }}
 
-                /* 公式溢出处理 */
+                /* Formula overflow handling */
                 #{container_id} .katex .katex-html {{
                     max-width: 100% !important;
                     overflow-x: auto !important;
                 }}
 
-                /* 确保LaTeX公式在Gradio中正确显示 */
+                /* Ensure LaTeX formulas display correctly in Gradio */
                 #{container_id} .katex {{
                     line-height: normal !important;
                 }}
@@ -820,7 +723,7 @@ def convert_markdown_to_html(markdown_content: str) -> str:
                     margin: 1rem 0;
                 }}
 
-                /* 深色主题适配 */
+                /* Dark theme adaptation */
                 @media (prefers-color-scheme: dark) {{
                     #{container_id} {{
                         color: #ecf0f1;
@@ -875,7 +778,7 @@ def convert_markdown_to_html(markdown_content: str) -> str:
                     }}
                 }}
 
-                /* 响应式设计 */
+                /* Responsive design */
                 @media (max-width: 768px) {{
                     #{container_id} {{
                         padding: 15px;
@@ -902,7 +805,7 @@ def convert_markdown_to_html(markdown_content: str) -> str:
                         padding: 0.5rem;
                     }}
 
-                    /* 移动端KaTeX优化 */
+                    /* Mobile KaTeX optimization */
                     #{container_id} .katex {{
                         font-size: 1em !important;
                     }}
@@ -914,8 +817,8 @@ def convert_markdown_to_html(markdown_content: str) -> str:
         return styled_html
 
     except Exception as e:
-        print(f'Markdown转HTML失败: {e}')
-        # 如果转换失败，返回原始markdown内容包装在pre标签中
+        logger.info(f'Markdown to HTML conversion failed: {e}')
+        # If conversion fails, return original markdown content wrapped in pre tags
         return f"""
         <div class="markdown-fallback">
             <h3>⚠️ Markdown渲染失败，显示原始内容</h3>
@@ -925,7 +828,7 @@ def convert_markdown_to_html(markdown_content: str) -> str:
 
 
 def read_markdown_report(workdir: str) -> Tuple[str, str, str]:
-    """读取并处理markdown报告，返回markdown和html两种格式"""
+    """Read and process markdown report, return both markdown and html formats"""
     report_path = os.path.join(workdir, 'report.md')
 
     if not os.path.exists(report_path):
@@ -935,20 +838,20 @@ def read_markdown_report(workdir: str) -> Tuple[str, str, str]:
         with open(report_path, 'r', encoding='utf-8') as f:
             markdown_content = f.read()
 
-        # 统一使用base64方式处理图片
+        # Uniformly use base64 method to process images
         try:
             processed_markdown = convert_markdown_images_to_base64(markdown_content, workdir)
         except Exception as e:
-            print(f'base64转换失败，使用文件信息显示: {e}')
+            logger.info(f'Base64 conversion failed, using file info display: {e}')
             processed_markdown = convert_markdown_images_to_file_info(markdown_content, workdir)
 
-        # 检查是否为非local_mode，如果是则转换为HTML
+        # Check if non-local_mode, if so convert to HTML
         local_mode = os.environ.get('LOCAL_MODE', 'true').lower() == 'true'
         if not local_mode:
             try:
                 processed_html = convert_markdown_to_html(processed_markdown)
             except Exception as e:
-                print(f'HTML转换失败，使用markdown显示: {e}')
+                logger.info(f'HTML conversion failed, using markdown display: {e}')
                 processed_html = processed_markdown
         else:
             processed_html = processed_markdown
@@ -959,7 +862,7 @@ def read_markdown_report(workdir: str) -> Tuple[str, str, str]:
 
 
 def list_resources_files(workdir: str) -> str:
-    """列出resources文件夹中的文件"""
+    """List files in resources folder"""
     resources_path = os.path.join(workdir, 'resources')
 
     if not os.path.exists(resources_path):
@@ -987,22 +890,22 @@ def run_research_workflow_internal(
         user_id: str,
         progress_callback=None
 ) -> Tuple[str, str, str, str, str]:
-    """内部研究工作流执行函数"""
+    """Internal research workflow execution function"""
     try:
         if progress_callback:
             progress_callback(0.02, '验证输入参数...')
 
-        # 处理文件和URLs
+        # Process files and URLs
         file_paths = process_files(uploaded_files)
         urls = process_urls_text(urls_text)
 
-        # 合并文件路径和URLs
+        # Merge file paths and URLs
         urls_or_files = file_paths + urls
 
         if progress_callback:
             progress_callback(0.05, '初始化工作环境...')
 
-        # 创建新的工作目录
+        # Create new working directory
         task_workdir = create_task_workdir(user_id)
 
         user_prompt = user_prompt.strip() or '请深入分析和总结下列文档：'
@@ -1010,7 +913,7 @@ def run_research_workflow_internal(
         if progress_callback:
             progress_callback(0.10, '初始化AI客户端...')
 
-        # 初始化聊天客户端
+        # Initialize chat client
         chat_client = OpenAIChat(
             api_key=os.environ.get('OPENAI_API_KEY'),
             base_url=os.environ.get('OPENAI_BASE_URL'),
@@ -1020,7 +923,7 @@ def run_research_workflow_internal(
         if progress_callback:
             progress_callback(0.15, '创建研究工作流...')
 
-        # 创建研究工作流
+        # Create research workflow
         research_workflow = ResearchWorkflowApp(
             client=chat_client,
             workdir=task_workdir,
@@ -1029,7 +932,7 @@ def run_research_workflow_internal(
         if progress_callback:
             progress_callback(0.20, '开始执行研究工作流...')
 
-        # 运行工作流 - 这一步占大部分进度
+        # Run workflow - this step takes most of the progress
         result = research_workflow.run(
             user_prompt=user_prompt,
             urls_or_files=urls_or_files,
@@ -1038,13 +941,13 @@ def run_research_workflow_internal(
         if progress_callback:
             progress_callback(0.90, '处理研究报告...')
 
-        # 读取markdown报告
+        # Read markdown report
         markdown_report, html_report, report_error = read_markdown_report(task_workdir)
 
         if progress_callback:
             progress_callback(0.95, '整理资源文件...')
 
-        # 列出资源文件
+        # List resource files
         resources_info = list_resources_files(task_workdir)
 
         if progress_callback:
@@ -1064,35 +967,35 @@ def run_research_workflow(
         request: gr.Request,
         progress=gr.Progress()
 ) -> Tuple[str, str, str, str, str]:
-    """运行研究工作流（使用Gradio内置队列控制）"""
+    """Run research workflow (using Gradio built-in queue control)"""
     try:
-        # 检查LOCAL_MODE环境变量，默认为true
+        # Check LOCAL_MODE environment variable, default is true
         local_mode = os.environ.get('LOCAL_MODE', 'true').lower() == 'true'
 
         if not local_mode:
-            # 检查用户认证
+            # Check user authentication
             is_authenticated, user_id_or_error = check_user_auth(request)
             if not is_authenticated:
                 return f'❌ 认证失败：{user_id_or_error}', '', '', '', ''
 
             user_id = user_id_or_error
         else:
-            # 本地模式，使用默认用户ID加上时间戳避免冲突
+            # Local mode, use default user ID with timestamp to avoid conflicts
             user_id = f'local_user_{int(time.time() * 1000)}'
 
         progress(0.01, desc='开始执行任务...')
 
-        # 标记用户任务开始
+        # Mark user task start
         user_status_manager.start_user_task(user_id)
 
-        # 创建进度回调函数
+        # Create progress callback function
         def progress_callback(value, desc):
-            # 将内部进度映射到0.05-0.95范围
+            # Map internal progress to 0.05-0.95 range
             mapped_progress = 0.05 + (value * 0.9)
             progress(mapped_progress, desc=desc)
 
         try:
-            # 直接执行任务，由Gradio队列控制并发
+            # Execute task directly, controlled by Gradio queue for concurrency
             result = run_research_workflow_internal(
                 user_prompt,
                 uploaded_files,
@@ -1105,11 +1008,11 @@ def run_research_workflow(
             return result
 
         except Exception as e:
-            print(f'任务执行异常 - 用户: {user_id[:8]}***, 错误: {str(e)}')
+            logger.info(f'Task execution exception - User: {user_id[:8]}***, Error: {str(e)}')
             error_msg = f'❌ 任务执行失败：{str(e)}'
             return error_msg, '', '', '', ''
         finally:
-            # 确保清理用户状态
+            # Ensure user status cleanup
             user_status_manager.finish_user_task(user_id)
 
     except Exception as e:
@@ -1118,20 +1021,20 @@ def run_research_workflow(
 
 
 def clear_workspace(request: gr.Request):
-    """清理工作空间"""
+    """Clear workspace"""
     try:
-        # 检查LOCAL_MODE环境变量，默认为true
+        # Check LOCAL_MODE environment variable, default is true
         local_mode = os.environ.get('LOCAL_MODE', 'true').lower() == 'true'
 
         if not local_mode:
-            # 检查用户认证
+            # Check user authentication
             is_authenticated, user_id_or_error = check_user_auth(request)
             if not is_authenticated:
                 return f'❌ 认证失败：{user_id_or_error}', '', ''
 
             user_id = user_id_or_error
         else:
-            # 本地模式，使用默认用户ID
+            # Local mode, use default user ID
             user_id = 'local_user'
 
         user_workdir = create_user_workdir(user_id)
@@ -1144,33 +1047,33 @@ def clear_workspace(request: gr.Request):
 
 
 def get_session_file_path(user_id: str) -> str:
-    """获取用户专属的会话文件路径"""
+    """Get user-specific session file path"""
     user_workdir = create_user_workdir(user_id)
     return os.path.join(user_workdir, 'session_data.json')
 
 
 def save_session_data(data, user_id: str):
-    """保存会话数据到文件"""
+    """Save session data to file"""
     try:
         session_file = get_session_file_path(user_id)
         os.makedirs(os.path.dirname(session_file), exist_ok=True)
         with open(session_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        print(f'保存会话数据失败: {e}')
+        logger.info(f'Failed to save session data: {e}')
 
 
 def load_session_data(user_id: str):
-    """从文件加载会话数据"""
+    """Load session data from file"""
     try:
         session_file = get_session_file_path(user_id)
         if os.path.exists(session_file):
             with open(session_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
     except Exception as e:
-        print(f'加载会话数据失败: {e}')
+        logger.info(f'Failed to load session data: {e}')
 
-    # 返回默认数据
+    # Return default data
     return {
         'workdir': '',
         'result': '',
@@ -1188,11 +1091,11 @@ def get_user_status_html(request: gr.Request) -> str:
 
 
 def get_system_status_html() -> str:
-    """获取系统状态HTML"""
+    """Get system status HTML"""
     local_mode = os.environ.get('LOCAL_MODE', 'true').lower() == 'true'
 
     if local_mode:
-        return ''  # 本地模式不显示系统状态信息
+        return ''  # Local mode doesn't display system status info
 
     system_status = user_status_manager.get_system_status()
 
@@ -1213,20 +1116,20 @@ def get_system_status_html() -> str:
     return status_html
 
 
-# 创建Gradio界面
+# Create Gradio interface
 def create_interface():
     with gr.Blocks(
             title='研究工作流应用 | Research Workflow App',
             theme=gr.themes.Soft(),
             css="""
-        /* 响应式容器设置 */
+        /* Responsive container settings */
         .gradio-container {
             max-width: none !important;
             width: 100% !important;
             padding: 0 1rem !important;
         }
 
-        /* 非local_mode HTML报告滚动样式 */
+        /* Non-local_mode HTML report scrolling styles */
         .scrollable-html-report {
             height: 750px !important;
             overflow-y: auto !important;
@@ -1236,19 +1139,19 @@ def create_interface():
             background: var(--background-fill-primary) !important;
         }
 
-        /* HTML报告内容区域样式 */
+        /* HTML report content area styles */
         #html-report {
             height: 750px !important;
             overflow-y: auto !important;
         }
 
-        /* 全屏模式下的HTML报告滚动 */
+        /* HTML report scrolling in fullscreen mode */
         #fullscreen-html {
             height: calc(100vh - 1.2rem) !important;
             overflow-y: auto !important;
         }
 
-        /* HTML报告滚动条美化 */
+        /* HTML report scrollbar beautification */
         .scrollable-html-report::-webkit-scrollbar,
         #html-report::-webkit-scrollbar,
         #fullscreen-html::-webkit-scrollbar {
@@ -1275,14 +1178,14 @@ def create_interface():
             background: var(--color-accent) !important;
         }
 
-        /* 确保HTML内容在容器内正确显示 */
+        /* Ensure HTML content displays correctly within container */
         .scrollable-html-report .markdown-html-content {
             max-width: 100% !important;
             margin: 0 !important;
             padding: 0 !important;
         }
 
-        /* 响应式适配 */
+        /* Responsive adaptation */
         @media (max-width: 768px) {
             .scrollable-html-report,
             #html-report {
@@ -1361,7 +1264,7 @@ def create_interface():
             }
         }
 
-        /* 全屏模态框样式 */
+        /* Fullscreen modal styles */
         #fullscreen-modal {
             position: fixed !important;
             top: 0 !important;
@@ -1429,7 +1332,7 @@ def create_interface():
             background: var(--button-secondary-background-fill-hover) !important;
         }
 
-        /* 全屏模式标题样式 */
+        /* Fullscreen mode title styles */
         #fullscreen-modal h3 {
             color: var(--body-text-color) !important;
             margin: 0 !important;
@@ -1439,7 +1342,7 @@ def create_interface():
             padding: 0 !important;
         }
 
-        /* 全屏模式标题行样式 */
+        /* Fullscreen mode title row styles */
         #fullscreen-modal .gr-row {
             margin-bottom: 0.15rem !important;
             align-items: center !important;
@@ -1447,7 +1350,7 @@ def create_interface():
             min-height: auto !important;
         }
 
-        /* 全屏模式下的markdown样式优化 */
+        /* Fullscreen mode markdown style optimization */
         #fullscreen-markdown .gr-markdown {
             font-size: 1.1rem !important;
             line-height: 1.7 !important;
@@ -1599,7 +1502,7 @@ def create_interface():
             margin: 2rem 0 !important;
         }
 
-        /* 全屏模式滚动条样式 */
+        /* Fullscreen mode scrollbar styles */
         #fullscreen-markdown::-webkit-scrollbar {
             width: 12px !important;
         }
@@ -1618,7 +1521,7 @@ def create_interface():
             background: var(--color-accent) !important;
         }
 
-        /* 深色主题特殊适配 */
+        /* Dark theme special adaptation */
         @media (prefers-color-scheme: dark) {
             #fullscreen-modal {
                 background: var(--background-fill-primary) !important;
@@ -1637,7 +1540,7 @@ def create_interface():
             box-shadow: 0 4px 6px rgba(255, 255, 255, 0.1) !important;
         }
 
-        /* 大屏幕适配 */
+        /* Large screen adaptation */
         @media (min-width: 1400px) {
             .gradio-container {
                 max-width: 1600px !important;
@@ -1653,7 +1556,7 @@ def create_interface():
             }
         }
 
-        /* 主标题样式 */
+        /* Main title styles */
         .main-header {
             text-align: center;
             margin-bottom: 2rem;
@@ -1671,7 +1574,7 @@ def create_interface():
             color: #6b7280;
         }
 
-        /* 描述文本样式 */
+        /* Description text styles */
         .description {
             font-size: clamp(1rem, 1.8vw, 1.2rem);
             color: #6b7280;
@@ -1680,7 +1583,7 @@ def create_interface():
             line-height: 1.5;
         }
 
-        /* Powered by 样式 */
+        /* Powered by styles */
         .powered-by {
             font-size: clamp(0.85rem, 1.2vw, 1rem);
             color: #9ca3af;
@@ -1700,7 +1603,7 @@ def create_interface():
             text-decoration: underline;
         }
 
-        /* 深色主题适配 */
+        /* Dark theme adaptation */
         @media (prefers-color-scheme: dark) {
             .description {
                 color: #9ca3af;
@@ -1737,7 +1640,7 @@ def create_interface():
             color: #67e8f9;
         }
 
-        /* 区域标题 */
+        /* Section headers */
         .section-header {
             color: #2563eb;
             font-weight: 600;
@@ -1745,7 +1648,7 @@ def create_interface():
             font-size: clamp(1rem, 1.8vw, 1.3rem);
         }
 
-        /* 状态指示器 */
+        /* Status indicators */
         .status-indicator {
             padding: 0.75rem 1rem;
             border-radius: 0.5rem;
@@ -1766,12 +1669,12 @@ def create_interface():
             border: 1px solid #bfdbfe;
         }
 
-        /* 输入组件优化 */
+        /* Input component optimization */
         .gr-textbox, .gr-file {
             font-size: clamp(0.85rem, 1.1vw, 1rem) !important;
         }
 
-        /* 按钮样式优化 */
+        /* Button style optimization */
         .gr-button {
             font-size: clamp(0.9rem, 1.2vw, 1.1rem) !important;
             padding: 0.75rem 1.5rem !important;
@@ -1779,18 +1682,18 @@ def create_interface():
             font-weight: 500 !important;
         }
 
-        /* Tab标签优化 */
+        /* Tab label optimization */
         .gr-tab-nav {
             font-size: clamp(0.85rem, 1.1vw, 1rem) !important;
         }
 
-        /* 输出区域优化 */
+        /* Output area optimization */
         .gr-markdown {
             font-size: clamp(0.85rem, 1vw, 1rem) !important;
             line-height: 1.6 !important;
         }
 
-        /* 使用说明区域 */
+        /* Instructions area */
         .instructions {
             margin-top: 2rem;
             padding: 1.5rem;
@@ -1830,7 +1733,7 @@ def create_interface():
             font-weight: 600;
         }
 
-        /* 深色主题适配 */
+        /* Dark theme adaptation */
         @media (prefers-color-scheme: dark) {
             .instructions {
                 background-color: rgba(255, 255, 255, 0.05);
@@ -1846,7 +1749,7 @@ def create_interface():
             }
         }
 
-        /* Gradio 深色主题适配 */
+        /* Gradio dark theme adaptation */
         .dark .instructions {
             background-color: rgba(255, 255, 255, 0.05);
             border-color: rgba(255, 255, 255, 0.1);
@@ -1860,7 +1763,7 @@ def create_interface():
             color: rgba(255, 255, 255, 0.9) !important;
         }
 
-        /* 响应式列布局 */
+        /* Responsive column layout */
         @media (max-width: 768px) {
             .gr-row {
                 flex-direction: column !important;
@@ -1872,7 +1775,7 @@ def create_interface():
             }
         }
 
-        /* 大屏幕下的列宽优化 */
+        /* Column width optimization for large screens */
         @media (min-width: 1400px) {
             .input-column {
                 min-width: 500px !important;
@@ -1883,7 +1786,7 @@ def create_interface():
             }
         }
 
-        /* 滚动条美化 */
+        /* Scrollbar beautification */
         .gr-textbox textarea::-webkit-scrollbar,
         .gr-markdown::-webkit-scrollbar {
             width: 8px;
@@ -1908,7 +1811,7 @@ def create_interface():
         """
     ) as demo:
 
-        # 状态管理 - 用于保持数据持久性
+        # State management - for maintaining data persistence
         current_workdir = gr.State('')
         current_result = gr.State('')
         current_markdown = gr.State('')
@@ -2138,15 +2041,15 @@ def create_interface():
         </div>
         """)
 
-        # 页面加载时的初始化函数
+        # Page initialization function on load
         def initialize_page(request: gr.Request):
-            """页面加载时初始化用户状态和会话数据"""
+            """Initialize user status and session data when page loads"""
             local_mode = os.environ.get('LOCAL_MODE', 'true').lower() == 'true'
 
-            # 获取用户状态HTML
+            # Get user status HTML
             user_status_html = get_user_status_html(request)
 
-            # 确定用户ID
+            # Determine user ID
             if local_mode:
                 user_id = 'local_user'
             else:
@@ -2154,20 +2057,20 @@ def create_interface():
                 if not is_authenticated:
                     return (
                         user_status_html,
-                        '', '', '', '', '', '',  # 界面显示 (6个)
-                        '', '', '', '', '', '',  # 状态保存 (6个)
-                        '', '',  # 输入状态保存 (2个)
-                        """<div class="status-indicator status-info">📊 会话状态: 游客模式（请登录后使用）</div>""",  # 会话状态
-                        get_system_status_html()  # 系统状态
+                        '', '', '', '', '', '',  # Interface display (6 items)
+                        '', '', '', '', '', '',  # State saving (6 items)
+                        '', '',  # Input state saving (2 items)
+                        """<div class="status-indicator status-info">📊 会话状态: 游客模式（请登录后使用）</div>""",  # Session status
+                        get_system_status_html()  # System status
                     )
                 user_id = user_id_or_error
 
-            # 加载会话数据
+            # Load session data
             session_data = load_session_data(user_id)
 
-            # 生成会话状态HTML
+            # Generate session status HTML
             if local_mode:
-                session_status_html = ''  # 本地模式不显示会话状态
+                session_status_html = ''  # Local mode doesn't display session status
             else:
                 session_status_html = f"""
                 <div class="status-indicator status-info">
@@ -2197,12 +2100,12 @@ def create_interface():
                 session_data.get('user_prompt', ''),
                 session_data.get('urls_text', ''),
                 session_status_html,
-                get_system_status_html()  # 系统状态
+                get_system_status_html()  # System status
             )
 
-        # 全屏功能函数
+        # Fullscreen functionality functions
         def toggle_fullscreen(markdown_content, html_content):
-            """切换全屏显示"""
+            """Toggle fullscreen display"""
             local_mode = os.environ.get('LOCAL_MODE', 'true').lower() == 'true'
             if local_mode:
                 return gr.update(visible=True), markdown_content, ''
@@ -2210,10 +2113,10 @@ def create_interface():
                 return gr.update(visible=True), '', html_content
 
         def close_fullscreen():
-            """关闭全屏显示"""
+            """Close fullscreen display"""
             return gr.update(visible=False), '', ''
 
-        # 保存状态的包装函数
+        # State-saving wrapper function
         def run_research_workflow_with_state(
                 user_prompt_val, uploaded_files_val, urls_text_val,
                 current_workdir_val, current_result_val, current_markdown_val, current_html_val, current_resources_val,
@@ -2226,7 +2129,7 @@ def create_interface():
 
             local_mode = os.environ.get('LOCAL_MODE', 'true').lower() == 'true'
 
-            # 确定用户ID
+            # Determine user ID
             if local_mode:
                 user_id = 'local_user'
             else:
@@ -2247,7 +2150,7 @@ def create_interface():
                     )
                 user_id = user_id_or_error
 
-            # 保存会话数据
+            # Save session data
             session_data = {
                 'workdir': workdir,
                 'result': result,
@@ -2260,9 +2163,9 @@ def create_interface():
             }
             save_session_data(session_data, user_id)
 
-            # 更新会话状态指示器
+            # Update session status indicator
             if local_mode:
-                status_html = ''  # 本地模式不显示会话状态
+                status_html = ''  # Local mode doesn't display session status
             else:
                 status_html = f"""
                 <div class="status-indicator status-success">
@@ -2271,20 +2174,20 @@ def create_interface():
                 """
 
             return (
-                result, workdir, markdown, html, resources,  # 输出显示
-                workdir, result, markdown, html, resources,  # 状态保存
-                user_prompt_val, urls_text_val,  # 输入状态保存
-                status_html,  # 状态指示器
-                get_system_status_html(),  # 系统状态
-                get_user_status_html(request)  # 用户状态
+                result, workdir, markdown, html, resources,  # Output display
+                workdir, result, markdown, html, resources,  # State saving
+                user_prompt_val, urls_text_val,  # Input state saving
+                status_html,  # Status indicator
+                get_system_status_html(),  # System status
+                get_user_status_html(request)  # User status
             )
 
-        # 恢复状态函数
+        # Restore state function
         def restore_latest_results(workdir, result, markdown, html, resources, user_prompt_state, urls_text_state,
                                    request: gr.Request):
             local_mode = os.environ.get('LOCAL_MODE', 'true').lower() == 'true'
 
-            # 确定用户ID
+            # Determine user ID
             if local_mode:
                 user_id = 'local_user'
             else:
@@ -2298,12 +2201,12 @@ def create_interface():
                     return result, workdir, markdown, html, resources, user_prompt_state, urls_text_state, status_html, get_system_status_html()
                 user_id = user_id_or_error
 
-            # 重新加载会话数据
+            # Reload session data
             session_data = load_session_data(user_id)
 
-            # 更新状态指示器
+            # Update status indicator
             if local_mode:
-                status_html = ''  # 本地模式不显示状态
+                status_html = ''  # Local mode doesn't display status
             else:
                 status_html = f"""
                 <div class="status-indicator status-success">
@@ -2327,11 +2230,11 @@ def create_interface():
                 get_system_status_html()
             )
 
-        # 清理函数
+        # Cleanup function
         def clear_all_inputs_and_state(request: gr.Request):
             local_mode = os.environ.get('LOCAL_MODE', 'true').lower() == 'true'
 
-            # 确定用户ID
+            # Determine user ID
             if local_mode:
                 user_id = 'local_user'
             else:
@@ -2346,19 +2249,19 @@ def create_interface():
                         request)
                 user_id = user_id_or_error
 
-            # 强制清理用户任务
+            # Force cleanup user task
             user_status_manager.force_cleanup_user(user_id)
 
-            # 清理会话数据文件
+            # Cleanup session data file
             try:
                 session_file = get_session_file_path(user_id)
                 if os.path.exists(session_file):
                     os.remove(session_file)
             except Exception as e:
-                print(f'清理会话文件失败: {e}')
+                logger.info(f'Failed to cleanup session file: {e}')
 
             if local_mode:
-                status_html = ''  # 本地模式不显示状态
+                status_html = ''  # Local mode doesn't display status
             else:
                 status_html = """
                 <div class="status-indicator status-info">
@@ -2369,7 +2272,7 @@ def create_interface():
             return '', None, '', '', '', '', '', '', '', '', '', '', '', '', '', status_html, get_system_status_html(), get_user_status_html(
                 request)
 
-        # 清理工作空间并保持状态
+        # Clear workspace and keep state
         def clear_workspace_keep_state(current_workdir_val, current_result_val, current_markdown_val, current_html_val,
                                        current_resources_val, request: gr.Request):
             clear_result, clear_markdown, clear_resources = clear_workspace(request)
@@ -2377,7 +2280,7 @@ def create_interface():
             local_mode = os.environ.get('LOCAL_MODE', 'true').lower() == 'true'
 
             if local_mode:
-                status_html = ''  # 本地模式不显示状态
+                status_html = ''  # Local mode doesn't display status
             else:
                 status_html = """
                 <div class="status-indicator status-success">
@@ -2387,11 +2290,11 @@ def create_interface():
 
             return clear_result, clear_markdown, clear_resources, current_workdir_val, current_result_val, current_markdown_val, current_html_val, current_resources_val, status_html, get_system_status_html()
 
-        # 刷新系统状态函数
+        # Refresh system status function
         def refresh_system_status():
             return get_system_status_html()
 
-        # 页面加载时初始化
+        # Initialize on page load
         demo.load(
             fn=initialize_page,
             outputs=[
@@ -2404,19 +2307,19 @@ def create_interface():
             ]
         )
 
-        # 定期刷新状态显示
+        # Periodic status display refresh
         def periodic_status_update(request: gr.Request):
-            """定期更新状态显示"""
+            """Periodically update status display"""
             return get_user_status_html(request), get_system_status_html()
 
-        # 使用定时器组件实现定期状态更新
-        status_timer = gr.Timer(10)  # 每10秒触发一次
+        # Use timer component to implement periodic status updates
+        status_timer = gr.Timer(10)  # Trigger every 10 seconds
         status_timer.tick(
             fn=periodic_status_update,
             outputs=[user_status, system_status]
         )
 
-        # 全屏功能事件绑定
+        # Fullscreen functionality event binding
         fullscreen_btn.click(
             fn=toggle_fullscreen,
             inputs=[current_markdown, current_html],
@@ -2428,7 +2331,7 @@ def create_interface():
             outputs=[fullscreen_modal, fullscreen_markdown, fullscreen_html]
         )
 
-        # 事件绑定
+        # Event binding
         run_btn.click(
             fn=run_research_workflow_with_state,
             inputs=[
@@ -2445,7 +2348,7 @@ def create_interface():
             show_progress=True
         )
 
-        # 恢复最近结果
+        # Restore recent results
         restore_btn.click(
             fn=restore_latest_results,
             inputs=[current_workdir, current_result, current_markdown, current_html, current_resources,
@@ -2454,7 +2357,7 @@ def create_interface():
                      resources_output, user_prompt, urls_text, session_status, system_status]
         )
 
-        # 刷新系统状态
+        # Refresh system status
         refresh_status_btn.click(
             fn=refresh_system_status,
             outputs=[system_status]
@@ -2476,7 +2379,7 @@ def create_interface():
             ]
         )
 
-        # 示例数据
+        # Example data
         gr.Examples(
             examples=[
                 [
@@ -2511,13 +2414,13 @@ def launch_server(
         gradio_default_concurrency_limit: Optional[int] = GRADIO_DEFAULT_CONCURRENCY_LIMIT,
 ) -> None:
 
-    # 创建界面
+    # Create interface
     demo = create_interface()
 
-    # 配置Gradio队列并发控制
+    # Configure Gradio queue concurrency control
     demo.queue(default_concurrency_limit=gradio_default_concurrency_limit)
 
-    # 启动应用
+    # Launch application
     demo.launch(
         server_name=server_name,
         server_port=server_port,

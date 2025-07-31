@@ -168,9 +168,6 @@ https://arxiv.org/abs/2412.15115
 - Concurrency limit can be adjusted via environment variable `GRADIO_DEFAULT_CONCURRENCY_LIMIT`
 - Users exceeding the concurrency limit will receive a system busy message
 
-### Task Management
-- Task timeout is set to 20 minutes by default, adjustable via environment variable `TASK_TIMEOUT`
-- Timeout tasks will be automatically cleaned up to free system resources
 
 ### Status Monitoring
 - Real-time display of system concurrency status: active tasks / maximum concurrency
@@ -190,6 +187,5 @@ https://arxiv.org/abs/2412.15115
 - Regularly clean the workspace to free up storage space
 - Ensure normal network connection to access external URLs
 - In high concurrency scenarios, it is recommended to appropriately increase server resource configuration
-- Long-running tasks may be cleaned up by the timeout mechanism
 
 <br>
