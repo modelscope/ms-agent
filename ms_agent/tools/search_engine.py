@@ -1,6 +1,7 @@
 import os
 from typing import Any, Dict
 
+from ms_agent.config.env import Env
 from ms_agent.tools.exa import ExaSearch
 from ms_agent.tools.search.arxiv import ArxivSearch
 from ms_agent.tools.search.search_base import SearchEngineType
@@ -67,6 +68,8 @@ def replace_env_vars(value: str) -> str:
     """
     if not isinstance(value, str):
         return value
+
+    Env.load_env()
 
     if value.startswith('$'):
         env_var = value[1:]

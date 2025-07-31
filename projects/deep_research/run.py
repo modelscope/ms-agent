@@ -24,7 +24,7 @@ def run_workflow(user_prompt: str, task_dir: str, reuse: bool,
 if __name__ == '__main__':
 
     query: str = 'Survey of the AI Agent within the recent 3 month, including the latest research papers, open-source projects, and industry applications.'  # noqa
-    task_workdir: str = '/path/to/your_task_dir'
+    task_workdir: str = '/path/to/your_workdir'  # Specify your task work directory here
     reuse: bool = False
 
     # Get chat client OpenAI compatible api

@@ -1,4 +1,5 @@
-#Search Engine, Supported values: EXA, SERPAPI, ARXIV
+## Search Engine, Supported values: EXA, SERPAPI, ARXIV ##
+
 #SEARCH_ENGINE:
 #  engine: exa
 #  exa_api_key: $EXA_API_KEY
