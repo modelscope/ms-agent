@@ -85,7 +85,7 @@ class ArxivSearchRequestGenerator(SearchRequestGenerator):
             f'\n现在，基于以上所有原则和范例，为用户的原始输入"{self.user_prompt}"生成最终的搜索请求。'
             f'\n1. 将你构建的、最优的英文查询语句填入query参数。'
             f'\n2. num_results参数的值必须在1到25之间，请选择一个适合问题复杂程度的值，比如10。'
-            f'\n3. 必须严格按照以下JSON格式模板返回结果: {self.get_args_template()}')
+            f'\n3. 必须符合以下arguments格式: {self.get_args_template()}')
 
     def create_request(self,
                        search_request_d: Dict[str, Any]) -> ArxivSearchRequest:
