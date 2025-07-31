@@ -60,7 +60,7 @@ pip install -r requirements/research.txt
 
 1. If you're using Exa or SerpApi, make sure your .env file includes the following configuration settings:
 ```bash
-cp .env.example ../../.env
+cp .env.example .env
 
 # Then, edit the `.env` file to include your API keys:
 EXA_API_KEY=xxx
