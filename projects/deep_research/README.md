@@ -58,11 +58,15 @@ pip install -r requirements/research.txt
 
 #### Environment Setting
 
-1. If you’re using Exa or SerpApi, make sure your .env file includes the following configuration settings:
+1. If you're using Exa or SerpApi, make sure your .env file includes the following configuration settings:
 ```bash
-EXA_API_KEY="xxx"
-SERPAPI_API_KEY="xxx"
+cp .env.example .env
+
+# Then, edit the `.env` file to include your API keys:
+EXA_API_KEY=xxx
+SERPAPI_API_KEY=xxx
 ```
+
 2. Configure the search engine in conf.yaml, using free arxiv search by default:
 ```yaml
 SEARCH_ENGINE:
