@@ -26,7 +26,7 @@ class RunCMD(CLICommand):
 
     @staticmethod
     def define_args(parsers: argparse.ArgumentParser):
-        """ define args for download command.
+        """ define args for run command.
         """
         parser: argparse.ArgumentParser = parsers.add_parser(RunCMD.name)
         parser.add_argument(

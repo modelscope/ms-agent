@@ -48,9 +48,14 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 
 ## 🎉 News
 
-* 🔥July 18, 2025: Release MS-Agent v1.0.0, improve the experience of Agent chat with MCP, and update the readme for [Agentic Insight](projects/deep_research/README.md).
+* 🚀July 31, 2025: Release MS-Agent v1.1.0, which includes the following updates:
+  - 🔥 Support [Doc Research](projects/doc_research/README.md), demo: [DocResearchStudio](https://modelscope.cn/studios/ms-agent/DocResearch)
+  - Add `General Web Search Engine` for Agentic Insight (DeepResearch)
+  - Add `Max Continuous Runs` for Agent chat with MCP.
 
-* 🔥July 16, 2025: Release MS-Agent v1.0.0rc0, which includes the following updates:
+* 🚀July 18, 2025: Release MS-Agent v1.0.0, improve the experience of Agent chat with MCP, and update the readme for [Agentic Insight](projects/deep_research/README.md).
+
+* 🚀July 16, 2025: Release MS-Agent v1.0.0rc0, which includes the following updates:
   - Support for Agent chat with MCP (Model Context Protocol)
   - Support for Deep Research (Agentic Insight), refer to: [Report_Demo](projects/deep_research/examples/task_20250617a/report.md), [Script_Demo](projects/deep_research/run.py)
   - Support for [MCP-Playground](https://modelscope.cn/mcp/playground)
@@ -97,7 +102,7 @@ pip install ms-agent
 ### Install from source
 
 ```shell
-git clone git@github.com:modelscope/ms-agent.git
+git clone https://github.com/modelscope/ms-agent.git
 
 cd ms-agent
 pip install -e .
@@ -204,6 +209,39 @@ So, how are external electric fields typically simulated in theoretical calculat
 
 For more details, please refer to [Deep Research](projects/deep_research/README.md).
 
+<br>
+
+### Doc Research
+
+This project provides a framework for **Doc Research**, enabling agents to autonomously explore and execute complex tasks related to document analysis and research.
+
+#### Features
+
+  - 🔍 **Deep Document Research** - Support deep analysis and summarization of documents
+  - 📝 **Multiple Input Types** - Support multi-file uploads and URL inputs
+  - 📊 **Multimodal Reports** - Support text and image reports in Markdown format
+  - 🚀 **High Efficiency** - Leverage powerful LLMs for fast and accurate research, leveraging key information extraction techniques to further optimize token usage
+  - ⚙️ **Flexible Deployment** - Support local run and [ModelScope Studio](https://modelscope.cn/studios)
+  - 💰 **Free Model Inference** - Free LLM API inference calls for ModelScope users, refer to [ModelScope API-Inference](https://modelscope.cn/docs/model-service/API-Inference/intro)
+
+
+#### Demo
+
+**1. ModelScope Studio**
+[DocResearchStudio](https://modelscope.cn/studios/ms-agent/DocResearch)
+
+**2. Local Gradio Application**
+
+* Research Report for [Numina Math](http://faculty.bicmr.pku.edu.cn/~dongbin/Publications/numina_dataset.pdf)
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/4c1cea67-bef1-4dc1-86f1-8ad299d3b656" alt="LocalGradioApplication" width="750">
+  <p><em>Demo: Numina Math Research Report</em></p>
+</div>
+
+
+For more details, refer to [Doc Research](projects/doc_research/README.md),
+
+<br>
 
 ## License
 
