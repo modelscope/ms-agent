@@ -21,10 +21,12 @@
 
 ## 功能特性
 
-- 🔍 **文档深度研究**：支持文档的深度分析和总结
-- 📝 **多种输入类型**：支持多文件上传和URLs输入
-- 📊 **多模态报告**：支持Markdown格式的图文报告输出
-- ⚙️ **灵活部署**：支持本地运行和魔搭创空间运行模式
+- 🔍 **文档深度研究** - 支持文档的深度分析和总结
+- 📝 **多种输入类型** - 支持多文件上传和URLs输入
+- 📊 **多模态报告** - 支持Markdown格式的图文报告输出
+- 🚀 **精准高效** - 利用强大的LLM进行快速准确的研究，采用关键信息抽取技术进一步优化了token使用
+- ⚙️ **灵活部署** - 支持本地运行和魔搭创空间运行模式
+- 💰 **免费模型推理** - 魔搭ModelScope用户可免费调用LLM API推理，参考 [ModelScope API-Inference](https://modelscope.cn/docs/model-service/API-Inference/intro)
 
 
 <br>
@@ -58,22 +60,34 @@ pip install ms-agent[research]
 ```
 
 ### 2. 配置环境变量
-```bash
-export OPENAI_API_KEY=sk-xxx        # 替换为您的API密钥
-export OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-export OPENAI_MODEL_ID=qwen-plus-2025-07-14
 
-# 对于阿里云百炼用户，可参考： `https://bailian.console.aliyun.com`
+**免费模型推理服务** - 魔搭ModelScope用户每天可免费调用一定数量的模型API推理服务，具体详情参考 [ModelScope API-Inference](https://modelscope.cn/docs/model-service/API-Inference/intro)
+
+
+```bash
+export OPENAI_API_KEY=xxx-xxx
+export OPENAI_BASE_URL=https://api-inference.modelscope.cn/v1/
+export OPENAI_MODEL_ID=Qwen/Qwen3-235B-A22B-Instruct-2507
+
 ```
+* `OPENAI_API_KEY`: (str), API key, 替换 `xxx-xxx`，或使用魔搭ModelScope提供的API key，参考 [ModelScopeAccessToken](https://modelscope.cn/my/myaccesstoken) <br>
+* `OPENAI_BASE_URL`: (str), base url, 或使用`ModelScope API-Inference`：`https://api-inference.modelscope.cn/v1/`  <br>
+* `OPENAI_MODEL_ID`: (str), model id or name, 推荐使用`Qwen/Qwen3-235B-A22B-Instruct-2507`执行复杂研究任务  <br>
+
 
 ### 3. 运行应用
 
-快速启动：
+**快速启动：**
 ```bash
+# Command line
 ms-agent app --doc_research
+
+# Python script
+cd ms-agent/app
+python doc_research.py
 ```
 
-带参数启动：
+**带参数启动：**
 ```bash
 
 ms-agent app --doc_research \
@@ -81,10 +95,10 @@ ms-agent app --doc_research \
     --server_port 7860 \
     --share
 ```
-参数说明：
-> `server_name`: (str), gradio server name, default: `0.0.0.0`  <br>
-> `server_port`: (int), gradio server port, default: `7860`  <br>
-> `share`: (store_true action), whether to share the app publicly. <br>
+* 参数说明：
+> `server_name`: (str), gradio 服务名/地址, 默认: `0.0.0.0`  <br>
+> `server_port`: (int), gradio 服务端口, 默认: `7860`  <br>
+> `share`: (store_true action), 是否对外分享，默认关闭.  <br>
 
 
 <br>

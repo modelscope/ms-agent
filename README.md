@@ -216,10 +216,13 @@ For more details, please refer to [Deep Research](projects/deep_research/README.
 This project provides a framework for **Doc Research**, enabling agents to autonomously explore and execute complex tasks related to document analysis and research.
 
 #### Features
-&nbsp;&nbsp;&nbsp;&nbsp;🔍 **Document Deep Research** - Supports in-depth analysis and summarization of documents <br>
-&nbsp;&nbsp;&nbsp;&nbsp;📝 **Multiple Input Types** - Supports uploading multiple files and URLs <br>
-&nbsp;&nbsp;&nbsp;&nbsp;📊 **Multimodal Reports** - Generates rich Markdown reports with texts, tables and images <br>
-&nbsp;&nbsp;&nbsp;&nbsp;⚙️ **Flexible Deployment** - Supports both local execution and deployment on [ModelScope Studio](https://modelscope.cn/studios) <br>
+
+  - 🔍 **Deep Document Research** - Support deep analysis and summarization of documents
+  - 📝 **Multiple Input Types** - Support multi-file uploads and URL inputs
+  - 📊 **Multimodal Reports** - Support text and image reports in Markdown format
+  - 🚀 **High Efficiency** - Leverage powerful LLMs for fast and accurate research, leveraging key information extraction techniques to further optimize token usage
+  - ⚙️ **Flexible Deployment** - Support local run and [ModelScope Studio](https://modelscope.cn/studios)
+  - 💰 **Free Model Inference** - Free LLM API inference calls for ModelScope users, refer to [ModelScope API-Inference](https://modelscope.cn/docs/model-service/API-Inference/intro)
 
 
 #### Demo

@@ -21,10 +21,12 @@
 
 ## Features
 
-  - 🔍 **Deep Document Research**: Support deep analysis and summarization of documents
-  - 📝 **Multiple Input Types**: Support multi-file uploads and URL inputs
-  - 📊 **Multimodal Reports**: Support text and image reports in Markdown format
-  - ⚙️ **Flexible Deployment**: Support local run and [ModelScope Studio](https://modelscope.cn/studios)
+  - 🔍 **Deep Document Research** - Support deep analysis and summarization of documents
+  - 📝 **Multiple Input Types** - Support multi-file uploads and URL inputs
+  - 📊 **Multimodal Reports** - Support text and image reports in Markdown format
+  - 🚀 **High Efficiency** - Leverage powerful LLMs for fast and accurate research, leveraging key information extraction techniques to further optimize token usage
+  - ⚙️ **Flexible Deployment** - Support local run and [ModelScope Studio](https://modelscope.cn/studios)
+  - 💰 **Free Model Inference** - Free LLM API inference calls for ModelScope users, refer to [ModelScope API-Inference](https://modelscope.cn/docs/model-service/API-Inference/intro)
 
 
 <br>
@@ -58,30 +60,40 @@ pip install ms-agent[research]
 ```
 
 ### 2. Configure Environment Variables
-```bash
-export OPENAI_API_KEY=sk-xxx        # Replace with your API key
-export OPENAI_BASE_URL=[https://dashscope.aliyuncs.com/compatible-mode/v1](https://dashscope.aliyuncs.com/compatible-mode/v1)
-export OPENAI_MODEL_ID=qwen-plus-2025-07-14
 
-# For Alibaba Cloud Bailian users, refer to: `https://bailian.console.aliyun.com`
+**Free API Inference Calls** - Every registered ModelScope user receives a set number of free API inference calls daily, refer to [ModelScope API-Inference](https://modelscope.cn/docs/model-service/API-Inference/intro) for details.
+
+```bash
+export OPENAI_API_KEY=xxx-xxx
+export OPENAI_BASE_URL=https://api-inference.modelscope.cn/v1/
+export OPENAI_MODEL_ID=Qwen/Qwen3-235B-A22B-Instruct-2507
+
 ```
+* `OPENAI_API_KEY`: (str), your API key, replace `xxx-xxx` with your actual key. Alternatively, you can use ModelScope API key, refer to [ModelScopeAccessToken](https://modelscope.cn/my/myaccesstoken) <br>
+* `OPENAI_BASE_URL`: (str), the base URL for API requests, `https://api-inference.modelscope.cn/v1/` for ModelScope API-Inference <br>
+* `OPENAI_MODEL_ID`: (str), the model ID for inference, `Qwen/Qwen3-235B-A22B-Instruct-2507` can be recommended for document research tasks. <br>
+
 
 ### 3. Run Application
 
-Easy Start:
+**Quick start:**
 ```bash
+# Command line
 ms-agent app --doc_research
+
+# Python script
+cd ms-agent/app
+python doc_research.py
 ```
 
-Start with Parameters:
+**Start with Parameters:**
 ```bash
 ms-agent app --doc_research \
     --server_name 0.0.0.0 \
     --server_port 7860 \
     --share
-
 ```
-Parameter Description:
+* Parameter Description:
 > `server_name`: (str), gradio server name, default: `0.0.0.0`  <br>
 > `server_port`: (int), gradio server port, default: `7860`  <br>
 > `share`: (store_true action), whether to share the app publicly. <br>
