@@ -7,8 +7,8 @@ from ms_agent.tools.search.search_base import SearchEngineType
 from ms_agent.tools.search.serpapi import SerpApiSearch
 
 
-def get_search_config():
-    config = load_base_config('conf.yaml')
+def get_search_config(config_file: str):
+    config = load_base_config(config_file)
     search_config = config.get('SEARCH_ENGINE', {})
     return search_config
 
@@ -75,14 +75,14 @@ def replace_env_vars(value: str) -> str:
     return value
 
 
-def get_web_search_tool():
+def get_web_search_tool(config_file: str):
     """
     Get the web search tool based on the configuration.
 
     Returns:
         SearchEngine: An instance of the SearchEngine class configured with the API key.
     """
-    search_config = get_search_config()
+    search_config = get_search_config(config_file=config_file)
 
     if search_config.get('engine', '') == SearchEngineType.EXA.value:
         return ExaSearch(
