@@ -96,6 +96,7 @@ celerybeat-schedule
 # Environments
 projects/deep_research/.env
 .venv
+.env
 env/
 venv/
 ENV/
