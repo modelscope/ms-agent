@@ -126,10 +126,9 @@ class MCPClient(ToolBase):
                     from mcp.client.streamable_http import streamablehttp_client
                 except ImportError:
                     raise ImportError(
-                        'Could not import streamablehttp_client. ',
-                        'To use streamable http connections, please upgrade the required dependency with: ',
-                        "'pip install -U mcp'",
-                    ) from None
+                        'Could not import streamablehttp_client. '
+                        'To use streamable http connections, please upgrade to the latest version of mcp with: '
+                        "'pip install -U mcp'") from None
                 httpx_client_factory = kwargs.get('httpx_client_factory')
                 other_kwargs = {}
                 if httpx_client_factory is not None:
@@ -138,30 +137,27 @@ class MCPClient(ToolBase):
                     streamablehttp_client(
                         url,
                         headers=kwargs.get('headers'),
-                        timeout=kwargs.get('timeout', DEFAULT_HTTP_TIMEOUT),
+                        timeout=kwargs.get('timeout',
+                                           DEFAULT_STREAMABLE_HTTP_TIMEOUT),
                         sse_read_timeout=kwargs.get(
                             'sse_read_timeout',
                             DEFAULT_STREAMABLE_HTTP_SSE_READ_TIMEOUT),
                         **other_kwargs))
                 read, write, _ = streamable_transport
-                session_kwargs = session_kwargs or {}
-                session = await self.exit_stack.enter_async_context(
-                    ClientSession(read, write, **session_kwargs))
+
             elif transport == 'websocket':
                 try:
                     from mcp.client.websocket import websocket_client
                 except ImportError:
                     raise ImportError(
-                        'Could not import websocket_client. ',
-                        'To use Websocket connections, please install the required dependency with: ',
-                        "'pip install mcp[ws]' or 'pip install websockets'",
+                        'Could not import websocket_client. '
+                        'To use Websocket connections, please install the required dependency with: '
+                        "'pip install mcp[ws]' or 'pip install websockets'"
                     ) from None
                 websocket_transport = await self.exit_stack.enter_async_context(
                     websocket_client(url))
                 read, write = websocket_transport
-                session_kwargs = session_kwargs or {}
-                session = await self.exit_stack.enter_async_context(
-                    ClientSession(read, write, **session_kwargs))
+
             else:
                 sse_transport = await self.exit_stack.enter_async_context(
                     sse_client(
@@ -170,12 +166,11 @@ class MCPClient(ToolBase):
                         kwargs.get('sse_read_timeout',
                                    DEFAULT_SSE_READ_TIMEOUT)))
                 read, write = sse_transport
-                session_kwargs = session_kwargs or {}
-                session = await self.exit_stack.enter_async_context(
-                    ClientSession(read, write, **session_kwargs))
 
-            # List available tools
-            self.print_tools(server_name, await session.list_tools())
+            session_kwargs = session_kwargs or {}
+            session = await self.exit_stack.enter_async_context(
+                ClientSession(read, write, **session_kwargs))
+
         elif command:
             # transport: 'stdio'
             args = kwargs.get('args')
@@ -195,14 +190,14 @@ class MCPClient(ToolBase):
                 stdio_client(server_params))
             session = await self.exit_stack.enter_async_context(
                 ClientSession(stdio, write))
-            await session.initialize()
-
-            # Store session
-            self.sessions[server_name] = session
-            self.print_tools(server_name, await session.list_tools())
         else:
             raise ValueError(
                 "'url' or 'command' parameter is required for connection")
+
+        await session.initialize()
+        # Store session
+        self.sessions[server_name] = session
+        self.print_tools(server_name, await session.list_tools())
         return server_name
 
     async def connect(self):
