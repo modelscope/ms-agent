@@ -1,12 +1,18 @@
 # flake8: noqa
+import time
+from functools import partial
 from pathlib import Path
+from typing import Dict, Iterator
 
 from bs4 import Tag
+from docling.datamodel.document import (ConversionResult,
+                                        _DocumentConversionInput)
+from docling.datamodel.settings import settings
+from docling.utils.utils import chunkify
 from docling_core.types import DoclingDocument
 from docling_core.types.doc import DocItemLabel, ImageRef
 from ms_agent.utils.logger import get_logger
-from ms_agent.utils.utils import (load_image_from_uri_to_pil,
-                                  load_image_from_url_to_pil, validate_url)
+from ms_agent.utils.utils import extract_image
 
 logger = get_logger()
 
@@ -25,16 +31,11 @@ def html_handle_figure(self, element: Tag, doc: DoclingDocument) -> None:
     else:
         img_url = None
 
-    if img_url:
-        if img_url.startswith('data:'):
-            img_pil = load_image_from_uri_to_pil(img_url)
-        else:
-            if not img_url.startswith('http'):
-                img_url = validate_url(img_url=img_url, backend=self)
-            img_pil = load_image_from_url_to_pil(
-                img_url) if img_url.startswith('http') else None
-    else:
-        img_pil = None
+    # extract image from url or data URI
+    img_pil: 'Image.Image' = extract_image(
+        img_url=img_url,
+        backend=self,
+        base_url=self.current_url if hasattr(self, 'current_url') else None)
 
     dpi: int = int(img_pil.info.get('dpi', (96, 96))[0]) if img_pil else 96
     img_ref: ImageRef = None
@@ -82,15 +83,11 @@ def html_handle_image(self, element: Tag, doc: DoclingDocument) -> None:
     # Get the image from element
     img_url: str = element.attrs.get('src', None)
 
-    if img_url:
-        if img_url.startswith('data:'):
-            img_pil = load_image_from_uri_to_pil(img_url)
-        else:
-            if not img_url.startswith('http'):
-                img_url = validate_url(img_url=img_url, backend=self)
-            img_pil = load_image_from_url_to_pil(img_url)
-    else:
-        img_pil = None
+    # extract image from url or data URI
+    img_pil: 'Image.Image' = extract_image(
+        img_url=img_url,
+        backend=self,
+        base_url=self.current_url if hasattr(self, 'current_url') else None)
 
     dpi: int = int(img_pil.info.get('dpi', (96, 96))[0]) if img_pil else 96
 
@@ -170,3 +167,50 @@ def patch_easyocr_models():
         'url'] = 'https://modelscope.cn/models/ms-agent/kannada_g2/resolve/master/kannada_g2.zip'
     recognition_models['gen2']['cyrillic_g2'][
         'url'] = 'https://modelscope.cn/models/ms-agent/cyrillic_g2/resolve/master/cyrillic_g2.zip'
+
+
+def convert_ms(self, conv_input: _DocumentConversionInput,
+               raises_on_error: bool) -> Iterator[ConversionResult]:
+    """
+    Patch the `docling.document_converter.DocumentConverter._convert` method for image parsing.
+    """
+    start_time = time.monotonic()
+
+    def _add_custom_attributes(doc: DoclingDocument, target: str,
+                               attributes_dict: Dict) -> DoclingDocument:
+        """
+        Add custom attributes to the target object.
+        """
+        for key, value in attributes_dict.items():
+            target_obj = getattr(doc, target) if target is not None else doc
+            if not hasattr(target_obj, key):
+                setattr(target_obj, key, value)
+            else:
+                raise ValueError(
+                    f"Attribute '{key}' already exists in the document.")
+        return doc
+
+    for input_batch in chunkify(
+            conv_input.docs(self.format_to_options),
+            settings.perf.doc_batch_size,  # pass format_options
+    ):
+        # parallel processing only within input_batch
+        # with ThreadPoolExecutor(
+        #    max_workers=settings.perf.doc_batch_concurrency
+        # ) as pool:
+        #   yield from pool.map(self.process_document, input_batch)
+        # Note: PDF backends are not thread-safe, thread pool usage was disabled.
+
+        for item in map(
+                partial(
+                    self._process_document, raises_on_error=raises_on_error),
+                map(
+                    lambda doc: _add_custom_attributes(
+                        doc, '_backend', {'current_url': self.current_url}),
+                    input_batch)):
+            elapsed = time.monotonic() - start_time
+            start_time = time.monotonic()
+            logger.info(
+                f'Finished converting document {item.input.file.name} in {elapsed:.2f} sec.'
+            )
+            yield item
