@@ -116,6 +116,7 @@ class MCPClient(ToolBase):
 
     async def connect_to_server(self, server_name: str, **kwargs):
         logger.info(f'connect to {server_name}')
+        # transport: stdio, sse, streamable_http, websocket
         transport = kwargs.get('transport') or kwargs.get('type')
         command = kwargs.get('command')
         url = kwargs.get('url')
