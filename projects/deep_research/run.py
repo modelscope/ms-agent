@@ -38,7 +38,9 @@ if __name__ == '__main__':
         api_key='xxx-xxx',
         base_url='https://api-inference.modelscope.cn/v1/',
         model='Qwen/Qwen3-235B-A22B-Instruct-2507',
-    )
+        generation_config={'extra_body': {
+            'enable_thinking': False
+        }})
 
     # Get web-search engine client
     # For the ExaSearch, you can get your API key from https://exa.ai
