@@ -417,7 +417,7 @@ class ResearchWorkflow:
         if self._verbose:
             logger.info(f'\n\nStart summarizing with messages: {messages_sum}')
 
-        aggregated_chunks = self._chat(messages=messages_sum, temperature=0.3)
+        aggregated_chunks = self._chat(messages=messages_sum, temperature=0.2, **self._client._kwargs.get('generation_config', {}))
         resp_content: str = aggregated_chunks.get('content', '')
         resp_content = resp_content.lstrip('```markdown\n').rstrip('```')
         logger.info(f'\n\nSummary Content:\n{resp_content}')
