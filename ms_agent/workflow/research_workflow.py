@@ -3,7 +3,6 @@
 import copy
 import os
 import re
-from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
 
 import json
@@ -236,6 +235,8 @@ class ResearchWorkflow:
         search_results = [
             filter_search_res(single_res) for single_res in search_results
         ]
+
+        # TODO: Implement a more robust way to handle multiple search results
         dump_batch_search_results(results=search_results, file_path=self.workdir_structure['search'])
 
         return self.workdir_structure['search']
@@ -244,25 +245,35 @@ class ResearchWorkflow:
     def parse_json_from_content(text_content: str) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
         """
         Parses the given text content to extract JSON format data.
+        It can parse JSON embedded within triple backticks (```json...```)
+        or stand-alone JSON text.
 
         Args:
             text_content (str): The text content containing JSON format data.
 
         Returns:
-            list: A dict or list of dictionaries representing the target data.
+            list: A dict or list of dictionaries representing the parsed JSON data.
         """
+        # Try to find JSON embedded in ```json...```
         pattern = r'```json(.*?)```'
-
         matches = re.findall(pattern, text_content, re.DOTALL)
 
-        if len(matches) == 0:
+        json_string = ''
+        if matches:
+            # If matches are found, use the first one
+            json_string = matches[0].strip()
+        else:
+            # If no ```json...``` block is found, assume the entire content is JSON
+            json_string = text_content.strip()
+
+        if not json_string:
             return []
 
         try:
-            items = json.loads(matches[0].strip())
+            items = json.loads(json_string)
             return items
         except json.JSONDecodeError as e:
-            raise ValueError(f'parse_py_todo: JSON decoding error: {e}') from e
+            raise ValueError(f'Failed to parse JSON content. Error: {e}')
 
     def _dump_todo_file(self):
 

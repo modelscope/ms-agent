@@ -2,6 +2,7 @@
 import asyncio
 import os
 from contextlib import AsyncExitStack
+from datetime import timedelta
 from typing import Any, Dict, List, Literal, Optional
 
 from mcp import ClientSession, ListToolsResult, StdioServerParameters
@@ -24,6 +25,9 @@ DEFAULT_ENCODING_ERROR_HANDLER: EncodingErrorHandler = 'strict'
 DEFAULT_HTTP_TIMEOUT = 5
 DEFAULT_SSE_READ_TIMEOUT = 60 * 5
 TOOL_CALL_TIMEOUT = os.getenv('TOOL_CALL_TIMEOUT', 15)
+
+DEFAULT_STREAMABLE_HTTP_TIMEOUT = timedelta(seconds=30)
+DEFAULT_STREAMABLE_HTTP_SSE_READ_TIMEOUT = timedelta(seconds=60 * 5)
 
 
 class MCPClient(ToolBase):
@@ -112,26 +116,62 @@ class MCPClient(ToolBase):
 
     async def connect_to_server(self, server_name: str, **kwargs):
         logger.info(f'connect to {server_name}')
+        # transport: stdio, sse, streamable_http, websocket
+        transport = kwargs.get('transport') or kwargs.get('type')
         command = kwargs.get('command')
         url = kwargs.get('url')
         session_kwargs = kwargs.get('session_kwargs')
         if url:
-            # transport: 'sse'
-            sse_transport = await self.exit_stack.enter_async_context(
-                sse_client(
-                    url, kwargs.get('headers'),
-                    kwargs.get('timeout', DEFAULT_HTTP_TIMEOUT),
-                    kwargs.get('sse_read_timeout', DEFAULT_SSE_READ_TIMEOUT)))
-            read, write = sse_transport
+            if transport == 'streamable_http':
+                try:
+                    from mcp.client.streamable_http import streamablehttp_client
+                except ImportError:
+                    raise ImportError(
+                        'Could not import streamablehttp_client. '
+                        'To use streamable http connections, please upgrade to the latest version of mcp with: '
+                        "'pip install -U mcp'") from None
+                httpx_client_factory = kwargs.get('httpx_client_factory')
+                other_kwargs = {}
+                if httpx_client_factory is not None:
+                    other_kwargs['httpx_client_factory'] = httpx_client_factory
+                streamable_transport = await self.exit_stack.enter_async_context(
+                    streamablehttp_client(
+                        url,
+                        headers=kwargs.get('headers'),
+                        timeout=kwargs.get('timeout',
+                                           DEFAULT_STREAMABLE_HTTP_TIMEOUT),
+                        sse_read_timeout=kwargs.get(
+                            'sse_read_timeout',
+                            DEFAULT_STREAMABLE_HTTP_SSE_READ_TIMEOUT),
+                        **other_kwargs))
+                read, write, _ = streamable_transport
+
+            elif transport == 'websocket':
+                try:
+                    from mcp.client.websocket import websocket_client
+                except ImportError:
+                    raise ImportError(
+                        'Could not import websocket_client. '
+                        'To use Websocket connections, please install the required dependency with: '
+                        "'pip install mcp[ws]' or 'pip install websockets'"
+                    ) from None
+                websocket_transport = await self.exit_stack.enter_async_context(
+                    websocket_client(url))
+                read, write = websocket_transport
+
+            else:
+                sse_transport = await self.exit_stack.enter_async_context(
+                    sse_client(
+                        url, kwargs.get('headers'),
+                        kwargs.get('timeout', DEFAULT_HTTP_TIMEOUT),
+                        kwargs.get('sse_read_timeout',
+                                   DEFAULT_SSE_READ_TIMEOUT)))
+                read, write = sse_transport
+
             session_kwargs = session_kwargs or {}
             session = await self.exit_stack.enter_async_context(
                 ClientSession(read, write, **session_kwargs))
 
-            await session.initialize()
-            # Store session
-            self.sessions[server_name] = session
-            # List available tools
-            self.print_tools(server_name, await session.list_tools())
         elif command:
             # transport: 'stdio'
             args = kwargs.get('args')
@@ -151,14 +191,14 @@ class MCPClient(ToolBase):
                 stdio_client(server_params))
             session = await self.exit_stack.enter_async_context(
                 ClientSession(stdio, write))
-            await session.initialize()
-
-            # Store session
-            self.sessions[server_name] = session
-            self.print_tools(server_name, await session.list_tools())
         else:
             raise ValueError(
                 "'url' or 'command' parameter is required for connection")
+
+        await session.initialize()
+        # Store session
+        self.sessions[server_name] = session
+        self.print_tools(server_name, await session.list_tools())
         return server_name
 
     async def connect(self):

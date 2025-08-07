@@ -10,7 +10,7 @@ import json
 from ms_agent.callbacks import Callback, callbacks_mapping
 from ms_agent.llm.llm import LLM
 from ms_agent.llm.utils import Message, Tool
-from ms_agent.rag.base import Rag
+from ms_agent.rag.base import RAG
 from ms_agent.rag.utils import rag_mapping
 from ms_agent.tools import ToolManager
 from ms_agent.utils import async_retry
@@ -62,7 +62,7 @@ class LLMAgent(Agent):
         self.tool_manager: Optional[ToolManager] = None
         self.memory_tools: List[Memory] = []
         self.planer: Optional[Planer] = None
-        self.rag: Optional[Rag] = None
+        self.rag: Optional[RAG] = None
         self.llm: Optional[LLM] = None
         self.runtime: Optional[Runtime] = None
         self.max_chat_round: int = 0
@@ -220,7 +220,7 @@ class LLMAgent(Agent):
             Message(role='user', content=inputs or query),
         ]
         if self.rag is not None:
-            messages = await self.rag.run(messages)
+            messages = await self.rag.query(messages[1].content)
         return messages
 
     async def _prepare_memory(self):
@@ -251,7 +251,7 @@ class LLMAgent(Agent):
                 assert rag.name in rag_mapping, (
                     f'{rag.name} not in rag_mapping, '
                     f'which supports: {list(rag_mapping.keys())}')
-                self.rag: Rag = rag_mapping(rag.name)(self.config)
+                self.rag: RAG = rag_mapping(rag.name)(self.config)
 
     async def _refine_memory(self, messages: List[Message]) -> List[Message]:
         """
@@ -509,6 +509,7 @@ class LLMAgent(Agent):
 
             await self._loop_callback('on_task_end', messages)
             await self._cleanup_tools()
+            yield messages
         except Exception as e:
             if hasattr(self.config, 'help'):
                 logger.error(

@@ -1,2 +1,6 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
-rag_mapping = {}
+from .llama_index_rag import LlamaIndexRAG
+
+rag_mapping = {
+    'LlamaIndexRAG': LlamaIndexRAG,
+}

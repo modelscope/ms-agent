@@ -50,7 +50,7 @@ class OpenAI(LLM):
             base_url=base_url,
         )
         self.args: Dict = OmegaConf.to_container(
-            getattr(config, 'generation_config', {}))
+            getattr(config, 'generation_config', DictConfig({})))
 
     def format_tools(self,
                      tools: Optional[List[Tool]] = None

@@ -243,6 +243,10 @@ For more details, refer to [Doc Research](projects/doc_research/README.md),
 
 <br>
 
+### Interesting works
+
+1. A news collection agent [ms-agent/newspaper](https://www.modelscope.cn/models/ms-agent/newspaper/summary)
+
 ## License
 
 This project is licensed under the [Apache License (Version 2.0)](https://github.com/modelscope/modelscope/blob/master/LICENSE).

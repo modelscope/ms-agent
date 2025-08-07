@@ -63,9 +63,13 @@ class FileSystemTool(ToolBase):
                             'path': {
                                 'type': 'string',
                                 'description': 'The relative path of the file',
-                            }
+                            },
+                            'content': {
+                                'type': 'string',
+                                'description': 'The content of the file',
+                            },
                         },
-                        'required': ['path'],
+                        'required': ['path', 'content'],
                         'additionalProperties': False
                     }),
                 Tool(
@@ -112,7 +116,7 @@ class FileSystemTool(ToolBase):
 
     async def call_tool(self, server_name: str, *, tool_name: str,
                         tool_args: dict) -> str:
-        return await self.read_file(tool_args['path'])
+        return await getattr(self, tool_name)(**tool_args)
 
     async def create_directory(self, path: Optional[str] = None) -> str:
         """Create a directory

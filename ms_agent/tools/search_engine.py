@@ -1,6 +1,8 @@
 import os
 from typing import Any, Dict
 
+from dotenv import load_dotenv
+from ms_agent.config.env import Env
 from ms_agent.tools.exa import ExaSearch
 from ms_agent.tools.search.arxiv import ArxivSearch
 from ms_agent.tools.search.search_base import SearchEngineType
@@ -29,6 +31,11 @@ def load_base_config(file_path: str) -> Dict[str, Any]:
     import yaml
     with open(file_path, 'r') as file:
         config = yaml.safe_load(file)
+
+    # Load environment variables from .env file if it exists
+    if not load_dotenv(os.path.join(os.getcwd(), '.env')):
+        Env.load_env()
+
     return process_dict(config)
 
 

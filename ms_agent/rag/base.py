@@ -1,24 +1,20 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from typing import Any, List
 
-from ms_agent.llm import Message
 
-
-class Rag:
+class RAG(ABC):
     """The base class for rags"""
 
     def __init__(self, config):
         self.config = config
 
     @abstractmethod
-    async def add_document(self, url: str, content: str, **metadata) -> bool:
+    async def add_documents(self, documents: List[str]) -> bool:
         """Add document to Rag
 
         Args:
-            url(`str`): The url of the document
-            content(`str`): The content of the document
-            **metadata: Metadata information
+            documents(`List[str]`): The content of the document
 
         Returns:
             success or not
@@ -26,12 +22,23 @@ class Rag:
         pass
 
     @abstractmethod
-    async def search_documents(self,
-                               query: str,
-                               limit: int = 5,
-                               score_threshold: float = 0.7,
-                               **filters) -> List[Any]:
-        """Search documents in Rag
+    async def query(self, query: str) -> str:
+        """Search documents
+
+        Args:
+            query(`str`): The query to search for
+        Returns:
+            The query result
+        """
+        pass
+
+    @abstractmethod
+    async def retrieve(self,
+                       query: str,
+                       limit: int = 5,
+                       score_threshold: float = 0.7,
+                       **filters) -> List[Any]:
+        """Retrieve documents
 
         Args:
             query(`str`): The query to search for
@@ -42,20 +49,4 @@ class Rag:
         Returns:
             List of documents
         """
-        pass
-
-    @abstractmethod
-    async def delete_document(self, url: str) -> bool:
-        """Delete document from Rag
-
-        Args:
-            url(`str`): The url of the document
-
-        Returns:
-            bool: True if the document was successfully deleted
-        """
-        pass
-
-    @abstractmethod
-    async def run(self, inputs: List[Message]) -> List[Message]:
         pass
