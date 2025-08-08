@@ -2393,7 +2393,7 @@ def create_interface():
                     'https://arxiv.org/abs/2505.09388\nhttps://arxiv.org/abs/2412.15115'
                 ],
                 [
-                    'Analyze and summarize the following documents, you must use English to answer.',
+                    'Analyze and summarize the following documents. You must use English to answer.',
                     None,
                     'https://arxiv.org/abs/1706.03762'
                 ]

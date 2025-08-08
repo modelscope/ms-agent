@@ -25,7 +25,7 @@
   - 📝 **Multiple Input Types** - Support multi-file uploads and URL inputs
   - 📊 **Multimodal Reports** - Support text and image reports in Markdown format
   - 🚀 **High Efficiency** - Leverage powerful LLMs for fast and accurate research, leveraging key information extraction techniques to further optimize token usage
-  - ⚙️ **Flexible Deployment** - Support local run and [ModelScope Studio](https://modelscope.cn/studios), support both CPU and GPU environments.
+  - ⚙️ **Flexible Deployment** - Support local run and [ModelScope Studio](https://modelscope.cn/studios) on both CPU and GPU environments.
   - 💰 **Free Model Inference** - Free LLM API inference calls for ModelScope users, refer to [ModelScope API-Inference](https://modelscope.cn/docs/model-service/API-Inference/intro)
 
 
