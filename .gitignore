@@ -94,8 +94,9 @@ celerybeat-schedule
 *.sage.py
 
 # Environments
-.env
+projects/deep_research/.env
 .venv
+.env
 env/
 venv/
 ENV/
@@ -154,3 +155,6 @@ ast_index_file.py
 .neo4j.lock
 neo4j.lock
 /temp/
+
+**/temp_workspace/
+ms_agent/app/temp_workspace/

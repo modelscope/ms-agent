@@ -9,6 +9,7 @@ from typing import List, Optional
 
 import json
 import requests
+import yaml
 from omegaconf import DictConfig, OmegaConf
 
 from .logger import get_logger
@@ -330,10 +331,10 @@ def load_image_from_url_to_pil(url: str) -> 'Image.Image':
         img = Image.open(image_bytes)
         return img
     except requests.exceptions.RequestException as e:
-        logger.error(f'Error fetching image from URL: {e}')
+        logger.error(f'Error fetching image from URL for url_to_pil: {e}')
         return None
     except IOError as e:
-        logger.error(f'Error opening image with PIL: {e}')
+        logger.error(f'Error opening image with PIL for url_to_pil: {e}')
         return None
 
 
@@ -358,16 +359,17 @@ def load_image_from_uri_to_pil(uri: str) -> 'Image.Image':
         img = Image.open(BytesIO(raw))
         return img
     except ValueError as e:
-        logger.error(f'Error parsing URI format: {e}')
+        logger.error(f'Error parsing URI format for uri_to_pil: {e}')
         return None
     except base64.binascii.Error as e:
-        logger.error(f'Error decoding base64 data: {e}')
+        logger.error(f'Error decoding base64 data for uri_to_pil: {e}')
         return None
     except IOError as e:
-        logger.error(f'Error opening image with PIL: {e}')
+        logger.error(f'Error opening image with PIL for uri_to_pil: {e}')
         return None
     except Exception as e:
-        logger.error(f'Unexpected error loading image from URI: {e}')
+        logger.error(
+            f'Unexpected error loading image from URI for uri_to_pil: {e}')
         return None
 
 
@@ -424,3 +426,55 @@ def validate_url(
 
     # No valid base URL found
     return img_url
+
+
+def get_default_config():
+    """
+    Load and return the default configuration from 'ms_agent/agent/agent.yaml'.
+
+    Uses module-relative path resolution to ensure stable file location handling.
+    Reads the YAML configuration file using PyYAML's safe_load method to prevent
+    arbitrary code execution.
+
+    Returns:
+        dict: A dictionary containing the configuration data from the YAML file.
+
+    Raises:
+        FileNotFoundError: If the configuration file does not exist at the resolved path.
+        yaml.YAMLError: If there is a syntax error in the YAML file.
+
+    Example:
+        >>> config = get_default_config()
+        >>> print(config["llm"]["model"])
+        Qwen/Qwen3-235B-A22B
+    """
+    # Construct path relative to current module's directory
+    config_path = os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__),  # ms_agent/utils/
+            '..',  # ↑ up to ms_agent/
+            'agent',  # → agent/
+            'agent.yaml'))
+    with open(config_path, 'r', encoding='utf-8') as file:
+        return yaml.safe_load(file)
+
+
+def normalize_url_or_file(url_or_file: str):
+    """
+    Normalizes url or file path.
+
+    Args:
+        url_or_file: The url or file to normalize.
+        For arxiv, it can be in the form of:
+            - https://arxiv.org/abs/...
+            - https://arxiv.org/html/...
+
+    Returns:
+        str: The normalized url or file path.
+    """
+    if url_or_file.startswith('https://arxiv.org/abs/'):
+        url_or_file = url_or_file.replace('arxiv.org/abs', 'arxiv.org/pdf')
+    elif url_or_file.startswith('https://arxiv.org/html/'):
+        url_or_file = url_or_file.replace('arxiv.org/html', 'arxiv.org/pdf')
+
+    return url_or_file

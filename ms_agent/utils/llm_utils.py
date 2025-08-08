@@ -2,7 +2,7 @@
 import asyncio
 import functools
 import time
-from typing import Callable, Tuple, Type, TypeVar, Union
+from typing import Any, AsyncGenerator, Callable, Tuple, Type, TypeVar, Union
 
 from .logger import get_logger
 
@@ -58,7 +58,7 @@ def async_retry(max_attempts: int = 3,
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
 
         @functools.wraps(func)
-        async def wrapper(*args, **kwargs) -> T:
+        async def wrapper(*args, **kwargs) -> AsyncGenerator[T, Any]:
             current_delay = delay
             last_exception = None
 

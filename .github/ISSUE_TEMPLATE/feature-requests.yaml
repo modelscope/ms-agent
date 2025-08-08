@@ -3,7 +3,8 @@ description: Suggest an idea for MS-Agent project
 title: "[<Agent component: framework|tool|llm|etc...>] "
 labels: [enhancement]
 assignees:
-  - zzhangpurdue
+  - wangxingjun778
+  - tastelikefeet
   - suluyana
 
 body:
@@ -12,20 +13,6 @@ body:
       value: |
         Thank you for finding the time to propose a new feature!
         We really appreciate the community efforts to improve MS-Agent.
-
-  - type: checkboxes
-    id: searched
-    attributes:
-      label: Initial Checks
-      description: |
-        Just a few checks to make sure you need to create a feature request.
-
-        _Sorry to sound so draconian 👿; but every second spent replying to issues is time not spent improving MS-Agent 🙇._
-      options:
-        - label: I have searched Google & GitHub for similar requests and couldn't find anything
-          required: true
-        - label: I have read and followed [the docs & demos](https://github.com/modelscope/ms-agent/tree/main/demo) and still think this feature is missing
-          required: true
 
   - type: textarea
     attributes:
@@ -36,8 +23,6 @@ body:
     attributes:
       label: Use case
       description: >
-        Describe the use case of your feature request. It will help us understand and
-        prioritize the feature request.
+        Describe what you're trying to achieve with this feature request. This helps us understand and prioritize it.
       placeholder: >
-        Rather than telling us how you might implement this feature, try to take a
-        step back and describe what you are trying to achieve.
+        Tell us what you're trying to do or solve.

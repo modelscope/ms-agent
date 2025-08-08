@@ -4,13 +4,13 @@ import inspect
 import os.path
 import sys
 from copy import deepcopy
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
 
 import json
 from ms_agent.callbacks import Callback, callbacks_mapping
 from ms_agent.llm.llm import LLM
 from ms_agent.llm.utils import Message, Tool
-from ms_agent.rag.base import Rag
+from ms_agent.rag.base import RAG
 from ms_agent.rag.utils import rag_mapping
 from ms_agent.tools import ToolManager
 from ms_agent.utils import async_retry
@@ -62,7 +62,7 @@ class LLMAgent(Agent):
         self.tool_manager: Optional[ToolManager] = None
         self.memory_tools: List[Memory] = []
         self.planer: Optional[Planer] = None
-        self.rag: Optional[Rag] = None
+        self.rag: Optional[RAG] = None
         self.llm: Optional[LLM] = None
         self.runtime: Optional[Runtime] = None
         self.max_chat_round: int = 0
@@ -92,6 +92,7 @@ class LLMAgent(Agent):
         Returns:
             Dict[str, Any]: Merged configuration including file-based overrides.
         """
+        mcp_config = mcp_config or {}
         if self.mcp_server_file is not None and os.path.isfile(
                 self.mcp_server_file):
             with open(self.mcp_server_file, 'r') as f:
@@ -219,7 +220,7 @@ class LLMAgent(Agent):
             Message(role='user', content=inputs or query),
         ]
         if self.rag is not None:
-            messages = await self.rag.run(messages)
+            messages = await self.rag.query(messages[1].content)
         return messages
 
     async def _prepare_memory(self):
@@ -250,7 +251,7 @@ class LLMAgent(Agent):
                 assert rag.name in rag_mapping, (
                     f'{rag.name} not in rag_mapping, '
                     f'which supports: {list(rag_mapping.keys())}')
-                self.rag: Rag = rag_mapping(rag.name)(self.config)
+                self.rag: RAG = rag_mapping(rag.name)(self.config)
 
     async def _refine_memory(self, messages: List[Message]) -> List[Message]:
         """
@@ -309,8 +310,9 @@ class LLMAgent(Agent):
                 logger.info(f'[{tag}] {_line}')
 
     @async_retry(max_attempts=2, delay=1.0)
-    async def _step(self, messages: List[Message],
-                    tag: str) -> List[Message]:  # type: ignore
+    async def _step(
+            self, messages: List[Message],
+            tag: str) -> AsyncGenerator[List[Message], Any]:  # type: ignore
         """
         Execute a single step in the agent's interaction loop.
 
@@ -347,6 +349,7 @@ class LLMAgent(Agent):
             self._log_output('[assistant]:', tag=tag)
             _content = ''
             is_first = True
+            _response_message = None
             for _response_message in self._handle_stream_message(
                     messages, tools=tools):
                 if is_first:
@@ -364,6 +367,7 @@ class LLMAgent(Agent):
             if _response_message.content:
                 self._log_output('[assistant]:', tag=tag)
                 self._log_output(_response_message.content, tag=tag)
+        assert _response_message is not None, 'No response message generated from LLM.'
         if _response_message.tool_calls:
             self._log_output('[tool_calling]:', tag=tag)
             for tool_call in _response_message.tool_calls:
@@ -447,7 +451,8 @@ class LLMAgent(Agent):
             config=config,
             messages=messages)
 
-    async def _run(self, messages: Union[List[Message], str], **kwargs):
+    async def _run(self, messages: Union[List[Message], str],
+                   **kwargs) -> AsyncGenerator[Any, Any]:
         """Run the agent, mainly contains a llm calling and tool calling loop.
 
         Args:
@@ -485,8 +490,7 @@ class LLMAgent(Agent):
                     self._log_output('[' + message.role + ']:', tag=self.tag)
                     self._log_output(message.content, tag=self.tag)
             while not self.runtime.should_stop:
-                yield_step = self._step(messages, self.tag)
-                async for messages in yield_step:
+                async for messages in self._step(messages, self.tag):
                     yield messages
                 self.runtime.round += 1
                 # +1 means the next round the assistant may give a conclusion
@@ -505,6 +509,7 @@ class LLMAgent(Agent):
 
             await self._loop_callback('on_task_end', messages)
             await self._cleanup_tools()
+            yield messages
         except Exception as e:
             if hasattr(self.config, 'help'):
                 logger.error(
@@ -512,18 +517,17 @@ class LLMAgent(Agent):
                 )
             raise e
 
-    async def run(self, messages: Union[List[Message], str],
-                  **kwargs) -> List[Message]:
+    async def run(
+            self, messages: Union[List[Message], str], **kwargs
+    ) -> Union[List[Message], AsyncGenerator[List[Message], Any]]:
         stream = kwargs.get('stream', False)
         if stream:
             OmegaConf.update(
                 self.config, 'generation_config.stream', True, merge=True)
 
-        if stream:
-
             async def stream_generator():
-                async for chunk in self._run(messages=messages, **kwargs):
-                    yield chunk
+                async for _chunk in self._run(messages=messages, **kwargs):
+                    yield _chunk
 
             return stream_generator()
         else:

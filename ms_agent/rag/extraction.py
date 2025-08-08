@@ -9,6 +9,9 @@ from docling_core.types.doc import DocItem, DocItemLabel
 from ms_agent.rag.schema import KeyInformation
 from ms_agent.tools.docling.chunker import HybridDocumentChunker
 from ms_agent.tools.docling.doc_loader import DocLoader
+from ms_agent.utils.logger import get_logger
+
+logger = get_logger()
 
 
 class KeyInformationExtraction(ABC):
@@ -29,17 +32,25 @@ class KeyInformationExtraction(ABC):
 
 class HierarchicalKeyInformationExtraction(KeyInformationExtraction):
 
-    def __init__(self, urls_or_files: list[str]):
+    def __init__(self, urls_or_files: list[str], verbose: bool = False):
         super().__init__()
 
+        self._verbose = verbose
+
+        if self._verbose:
+            logger.info(f'Got {len(urls_or_files)} urls or files, start loading documents ...')
         doc_loader = DocLoader()
         self.docs: List[DoclingDocument] = doc_loader.load(
             urls_or_files=urls_or_files)
         self.all_ref_items: Dict[str, DocItem] = doc_loader.map_item_by_ref(
             self.docs)
+        if self._verbose:
+            logger.info(f'Loaded {len(self.docs)} documents with {len(self.all_ref_items)} reference items.')
 
         self.chunker = HybridDocumentChunker()
         self.chunks: List[BaseChunk] = list(self.chunker.chunk(docs=self.docs))
+        if self._verbose:
+            logger.info(f'Chunked {len(self.chunks)} chunks from the documents.')
 
     @staticmethod
     def _replace_resource_placeholders(text: str, resources: List[Dict[str, str]], placeholder: str = '<!-- image -->') -> str:
@@ -103,7 +114,7 @@ class HierarchicalKeyInformationExtraction(KeyInformationExtraction):
         final_res: List[KeyInformation] = []
 
         key_chunks: List[BaseChunk] = self.process_pictures_tables()
-        print(f'Found {len(key_chunks)} key chunks with pictures and tables.')
+        logger.info(f'Found {len(key_chunks)} key chunks with pictures and tables.')
 
         # TODO: TBD ...
         heading_chunks: List[BaseChunk] = self.process_headings()

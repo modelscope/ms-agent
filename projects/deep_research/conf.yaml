@@ -1,0 +1,13 @@
+## Search Engine, Supported values: EXA, SERPAPI, ARXIV ##
+
+#SEARCH_ENGINE:
+#  engine: exa
+#  exa_api_key: $EXA_API_KEY
+
+#SEARCH_ENGINE:
+#  engine: serpapi
+#  serpapi_api_key: $SERPAPI_API_KEY
+#  provider: google
+
+SEARCH_ENGINE:
+  engine: arxiv

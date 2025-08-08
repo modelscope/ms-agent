@@ -1,8 +1,13 @@
-docling
-docling-core
+arxiv
+docling<=2.38.1
+docling-core<=2.38.2
 exa-py
+google-search-results
+gradio>=5.0.0
 json5
 mcp
 modelscope
 openai
 Pillow
+python-dotenv
+requests
