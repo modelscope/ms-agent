@@ -101,7 +101,7 @@ ms-agent app --doc_research \
 > `share`: (store_true action), 是否对外分享，默认关闭.  <br>
 
 * 备注：
-  > 本地运行时，默认访问地址为 `http://0.0.0.0:7860/` ，需关闭VPN才能访问  <br>
+  > 本地运行时，默认访问地址为 `http://0.0.0.0:7860/` ，如无法访问，可尝试关闭VPN  <br>
 
 
 <br>

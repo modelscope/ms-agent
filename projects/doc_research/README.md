@@ -99,7 +99,7 @@ ms-agent app --doc_research \
 > `share`: (store_true action), whether to share the app publicly. <br>
 
 * Notes
-> When running locally, the default address is http://0.0.0.0:7860/. You need to disable your VPN to access it.
+> When running locally, the default address is http://0.0.0.0:7860/. If the page can't be accessed, try disabling proxy.
 
 
 <br>
