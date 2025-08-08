@@ -2393,9 +2393,9 @@ def create_interface():
                     'https://arxiv.org/abs/2505.09388\nhttps://arxiv.org/abs/2412.15115'
                 ],
                 [
-                    'Analyze and summarize the following documents in English',
+                    'Analyze and summarize the following documents, you must use English to answer.',
                     None,
-                    'https://arxiv.org/abs/2505.09388'
+                    'https://arxiv.org/abs/1706.03762'
                 ]
             ],
             inputs=[user_prompt, uploaded_files, urls_text],

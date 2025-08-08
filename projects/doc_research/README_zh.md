@@ -25,7 +25,7 @@
 - 📝 **多种输入类型** - 支持多文件上传和URLs输入
 - 📊 **多模态报告** - 支持Markdown格式的图文报告输出
 - 🚀 **精准高效** - 利用强大的LLM进行快速准确的研究，采用关键信息抽取技术进一步优化了token使用
-- ⚙️ **灵活部署** - 支持本地运行和魔搭创空间运行模式
+- ⚙️ **灵活部署** - 支持本地运行和魔搭创空间运行模式，支持CPU和GPU环境
 - 💰 **免费模型推理** - 魔搭ModelScope用户可免费调用LLM API推理，参考 [ModelScope API-Inference](https://modelscope.cn/docs/model-service/API-Inference/intro)
 
 
