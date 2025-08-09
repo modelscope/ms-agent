@@ -15,7 +15,7 @@ from docling.models.table_structure_model import TableStructureModel
 from docling_core.types import DoclingDocument
 from docling_core.types.doc import DocItem
 from ms_agent.tools.docling.doc_postprocess import PostProcess
-from ms_agent.tools.docling.patches import (download_models_ms,
+from ms_agent.tools.docling.patches import (convert_ms, download_models_ms,
                                             download_models_pic_classifier_ms,
                                             html_handle_figure,
                                             html_handle_image,
@@ -211,6 +211,7 @@ class DocLoader:
 
         return doc
 
+    @patch(DocumentConverter, '_convert', convert_ms)
     @patch(LayoutModel, 'download_models', download_models_ms)
     @patch(TableStructureModel, 'download_models', download_models_ms)
     @patch(DocumentPictureClassifier, 'download_models',
@@ -230,10 +231,16 @@ class DocLoader:
         # TODO: Support progress bar for document loading (with pather)
         results: Iterator[ConversionResult] = self._converter.convert_all(
             source=urls_or_files, )
+        iter_urls_or_files = iter(urls_or_files)
 
         final_results = []
         while True:
             try:
+                # Record the current URL for parsing images
+                setattr(self._converter, 'current_url',
+                        next(iter_urls_or_files))
+                assert self._converter.current_url is not None, 'Current URL should not be None'
+
                 res: ConversionResult = next(results)
                 if res is None or res.document is None:
                     continue
