@@ -95,7 +95,11 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 ### Install from PyPI
 
 ```shell
+# For the basic functionalities
 pip install ms-agent
+
+# For the deep research functionalities
+pip install ms-agent['research']
 ```
 
 
