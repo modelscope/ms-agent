@@ -38,15 +38,16 @@ class ToolManager:
         # Used temporarily during async initialization; the actual client is managed in self.servers
         self.mcp_client = mcp_client
         self.mcp_config = mcp_config
+        self._managed_client = mcp_client is None
 
     def register_tool(self, tool: ToolBase):
         self.extra_tools.append(tool)
 
     async def connect(self):
         if self.mcp_client and isinstance(self.mcp_client, MCPClient):
-            self.servers = await self.mcp_client.add_mcp_config(self.mcp_config
-                                                                )
-            self.mcp_config = self.servers.mcp_confg
+            self.servers = self.mcp_client
+            await self.servers.add_mcp_config(self.mcp_config)
+            self.mcp_config = self.servers.mcp_config
         else:
             self.servers = MCPClient(self.mcp_config, self.config)
             await self.servers.connect()
@@ -55,6 +56,8 @@ class ToolManager:
         await self.reindex_tool()
 
     async def cleanup(self):
+        if self._managed_client and self.servers:
+            await self.servers.cleanup()
         self.servers = None
         for tool in self.extra_tools:
             await tool.cleanup()

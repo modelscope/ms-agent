@@ -50,12 +50,15 @@ class MCPClient(ToolBase):
         super().__init__(config)
         self.sessions: Dict[str, ClientSession] = {}
         self.exit_stack = AsyncExitStack()
-        self.mcp_config: Dict[str, Dict[str, Any]] = dict()
+        self.mcp_config: Dict[str, Dict[str, Any]] = {'mcpServers': {}}
         if config is not None:
-            self.mcp_config = Config.convert_mcp_servers_to_json(config)
+            config_from_file = Config.convert_mcp_servers_to_json(config)
+            self.mcp_config['mcpServers'].update(
+                config_from_file.get('mcpServers', {}))
         self._exclude_functions = {}
         if mcp_config is not None:
-            self.mcp_config.update(mcp_config)
+            self.mcp_config['mcpServers'].update(
+                mcp_config.get('mcpServers', {}))
 
     async def call_tool(self, server_name: str, tool_name: str,
                         tool_args: dict):
@@ -247,8 +250,9 @@ class MCPClient(ToolBase):
     async def add_mcp_config(self, mcp_config: Dict[str, Dict[str, Any]]):
         if mcp_config is None:
             return
-        new_mcp_config = mcp_config['mcpServers']
-        servers = self.mcp_config['mcpServers']
+        new_mcp_config = mcp_config.get('mcpServers', {})
+        servers = self.mcp_config.setdefault('mcpServers', {})
+        self.mcp_config['mcpServers'].update(new_mcp_config)
         envs = Env.load_env()
         for name, server in new_mcp_config.items():
             if name in servers and servers[name] == server:
