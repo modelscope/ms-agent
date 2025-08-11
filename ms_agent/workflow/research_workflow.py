@@ -425,7 +425,7 @@ class ResearchWorkflow:
 
         # Replace resource name with actual relative path
         replace_pattern = r'!\[[^\]]*\]\(<resource_info>(.*?)</resource_info>\)'
-        re.sub(replace_pattern, r'<resource_info>\1</resource_info>', resp_content)
+        resp_content = re.sub(replace_pattern, r'<resource_info>\1</resource_info>', resp_content)
         for item_name, item_relative_path in resource_map.items():
             resp_content = resp_content.replace(
                 f'src="<resource_info>{item_name}</resource_info>"',
