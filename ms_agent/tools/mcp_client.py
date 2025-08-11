@@ -3,7 +3,9 @@ import asyncio
 import os
 from contextlib import AsyncExitStack
 from datetime import timedelta
-from typing import Any, Dict, List, Literal, Optional
+from os import environb
+from types import TracebackType
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from mcp import ClientSession, ListToolsResult, StdioServerParameters
 from mcp.client.sse import sse_client
@@ -13,7 +15,7 @@ from ms_agent.config.env import Env
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
+from omegaconf import DictConfig, ListConfig
 
 logger = get_logger()
 
@@ -41,13 +43,15 @@ class MCPClient(ToolBase):
     """
 
     def __init__(self,
-                 config: DictConfig,
-                 mcp_config: Optional[Dict[str, Any]] = None):
+                 mcp_config: Optional[Dict[str, Any]] = None,
+                 config: Union[DictConfig, ListConfig, None] = None,
+                 ):
         super().__init__(config)
         self.sessions: Dict[str, ClientSession] = {}
         self.exit_stack = AsyncExitStack()
-        self.mcp_config: Dict[str, Dict[
-            str, Any]] = Config.convert_mcp_servers_to_json(config)
+        self.mcp_config: Dict[str, Dict[str, Any]] = dict()
+        if config is not None:
+            self.mcp_config = Config.convert_mcp_servers_to_json(config)
         self._exclude_functions = {}
         if mcp_config is not None:
             self.mcp_config.update(mcp_config)
@@ -216,6 +220,43 @@ class MCPClient(ToolBase):
             await self.connect_to_server(
                 server_name=name, env=env_dict, **server)
 
+    async def add_mcp_config(self, mcp_config: Dict[str, Dict[str, Any]]):
+        if mcp_config is None:
+            return
+        new_mcp_config = mcp_config['mcpServers']
+        servers = self.mcp_config["mcpServers"]
+        envs = Env.load_env()
+        for name, server in new_mcp_config.items():
+            if name in servers and servers[name] == server:
+                continue
+            else:
+                servers[name] = server
+                env_dict = server.pop('env', {})
+                env_dict = {
+                    key: value if value else envs.get(key, '')
+                    for key, value in env_dict.items()
+                }
+                if 'exclude' in server:
+                    self._exclude_functions[name] = server.pop('exclude')
+                await self.connect_to_server(
+                    server_name=name, env=env_dict, **server)
+
     async def cleanup(self):
         """Clean up resources"""
+        await self.exit_stack.aclose()
+
+    async def __aenter__(self) -> 'MCPClient':
+        try:
+            await self.connect()
+            return self
+        except Exception:
+            await self.exit_stack.aclose()
+            raise
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         await self.exit_stack.aclose()

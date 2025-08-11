@@ -5,6 +5,8 @@ from copy import copy
 from typing import Any, Dict, List, Optional
 
 import json
+from types import TracebackType
+
 from ms_agent.llm.utils import Tool, ToolCall
 from ms_agent.tools.base import ToolBase
 from ms_agent.tools.filesystem_tool import FileSystemTool
@@ -20,9 +22,9 @@ class ToolManager:
 
     TOOL_SPLITER = '---'
 
-    def __init__(self, config, mcp_config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config, mcp_config: Optional[Dict[str, Any]] = None, mcp_client: Optional[MCPClient] = None):
         self.config = config
-        self.servers = MCPClient(config, mcp_config)
+
         self.extra_tools: List[ToolBase] = []
         self.has_split_task_tool = False
         if hasattr(config, 'tools') and hasattr(config.tools, 'split_task'):
@@ -31,17 +33,26 @@ class ToolManager:
             self.extra_tools.append(FileSystemTool(config))
         self._tool_index = {}
 
+        # Used temporarily during async initialization; the actual client is managed in self.servers
+        self.mcp_client = mcp_client
+        self.mcp_config = mcp_config
+
     def register_tool(self, tool: ToolBase):
         self.extra_tools.append(tool)
 
     async def connect(self):
-        await self.servers.connect()
+        if self.mcp_client and isinstance(self.mcp_client, MCPClient):
+            self.servers = await self.mcp_client.add_mcp_config(self.mcp_config)
+            self.mcp_config = self.servers.mcp_confg
+        else:
+            self.servers = MCPClient(self.config, self.mcp_config)
+            await self.servers.connect()
         for tool in self.extra_tools:
             await tool.connect()
         await self.reindex_tool()
 
     async def cleanup(self):
-        await self.servers.cleanup()
+        self.servers = None
         for tool in self.extra_tools:
             await tool.cleanup()
 
@@ -92,3 +103,15 @@ class ToolManager:
         tasks = [self.single_call_tool(tool) for tool in tool_list]
         result = await asyncio.gather(*tasks)
         return result
+
+    async def __aenter__(self) -> 'ToolManager':
+
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        pass
