@@ -108,6 +108,22 @@ class DocLoader:
         return f'{doc.origin.filename}@{doc.origin.binary_hash}@{item.self_ref}'
 
     @staticmethod
+    def get_caption_ref_key(doc: DoclingDocument, caption_ref: str) -> str:
+        if not caption_ref:
+            return caption_ref
+
+        try:
+            # TODO: Support more caption reference formats
+            ref_idx = getattr(caption_ref, 'cref', '').split('/')[-1]
+            ref_idx = int(ref_idx) if ref_idx else None
+            caption = f'{doc.texts[ref_idx].text}'
+            return caption
+        except Exception as e:
+            logger.warning(
+                f'Failed to get caption reference key for {caption_ref}: {e}')
+            return caption_ref
+
+    @staticmethod
     def map_item_by_ref(docs: List[DoclingDocument]) -> Dict[str, DocItem]:
         """
         Get all pictures and tables in the document and map them by their self_ref,
@@ -117,12 +133,28 @@ class DocLoader:
         # Deal with all pictures and tables
         for doc in docs:
             for pic_item in doc.pictures:
-                ref_item_d[
-                    f'{DocLoader.get_item_ref_key(doc, pic_item)}'] = pic_item
+                captions_ref = pic_item.captions if getattr(
+                    pic_item, 'captions', []) else []
+                captions = [
+                    DocLoader.get_caption_ref_key(doc, caption_ref)
+                    for caption_ref in captions_ref
+                ]
+                ref_item_d[f'{DocLoader.get_item_ref_key(doc, pic_item)}'] = {
+                    'item': pic_item,
+                    'captions': captions
+                }
 
             for tab_item in doc.tables:
-                ref_item_d[
-                    f'{DocLoader.get_item_ref_key(doc, tab_item)}'] = tab_item
+                captions_ref = tab_item.captions if getattr(
+                    tab_item, 'captions', []) else []
+                captions = [
+                    DocLoader.get_caption_ref_key(doc, caption_ref)
+                    for caption_ref in captions_ref
+                ]
+                ref_item_d[f'{DocLoader.get_item_ref_key(doc, tab_item)}'] = {
+                    'item': tab_item,
+                    'captions': captions
+                }
 
         return ref_item_d
 

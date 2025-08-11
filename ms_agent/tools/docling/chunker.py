@@ -1,4 +1,4 @@
-from typing import Iterable, Iterator, List
+from typing import Iterable, Iterator, List, Union
 
 from docling_core.transforms.chunker import BaseChunk, DocChunk
 from docling_core.transforms.chunker.hierarchical_chunker import (
@@ -104,6 +104,16 @@ class HybridDocumentChunker:
             chunk for chunk in chunks
             if any(it.label == label
                    for it in DocChunk.model_validate(chunk).meta.doc_items)
+        ]
+
+    @staticmethod
+    def find_all_chunks_with_labels(
+            chunks: List[BaseChunk],
+            labels: List[DocItemLabel]) -> List[BaseChunk]:
+        return [
+            chunk for chunk in chunks if any(
+                it.label in labels
+                for it in DocChunk.model_validate(chunk).meta.doc_items)
         ]
 
     def print_chunk(self, chunks: List[BaseChunk], chunk_pos: int) -> None:
