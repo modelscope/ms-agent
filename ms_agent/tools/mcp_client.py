@@ -26,7 +26,7 @@ DEFAULT_ENCODING_ERROR_HANDLER: EncodingErrorHandler = 'strict'
 
 DEFAULT_HTTP_TIMEOUT = 5
 DEFAULT_SSE_READ_TIMEOUT = 60 * 5
-TOOL_CALL_TIMEOUT = os.getenv('TOOL_CALL_TIMEOUT', 15)
+TOOL_CALL_TIMEOUT = os.getenv('TOOL_CALL_TIMEOUT', 30)
 
 DEFAULT_STREAMABLE_HTTP_TIMEOUT = timedelta(seconds=30)
 DEFAULT_STREAMABLE_HTTP_SSE_READ_TIMEOUT = timedelta(seconds=60 * 5)
@@ -42,10 +42,11 @@ class MCPClient(ToolBase):
         mcp_config(`Optional[Dict[str, Any]]`): Extra mcp servers in json format.
     """
 
-    def __init__(self,
-                 mcp_config: Optional[Dict[str, Any]] = None,
-                 config: Union[DictConfig, ListConfig, None] = None,
-                 ):
+    def __init__(
+        self,
+        mcp_config: Optional[Dict[str, Any]] = None,
+        config: Union[DictConfig, ListConfig, None] = None,
+    ):
         super().__init__(config)
         self.sessions: Dict[str, ClientSession] = {}
         self.exit_stack = AsyncExitStack()
@@ -83,24 +84,37 @@ class MCPClient(ToolBase):
 
     async def get_tools(self) -> Dict:
         tools = {}
+        error = dict()
         for key, session in self.sessions.items():
-            tools[key] = []
-            response = await session.list_tools()
-            _session_tools = response.tools
-            exclude = []
-            if key in self._exclude_functions:
-                exclude = self._exclude_functions[key]
-            _session_tools = [
-                t for t in _session_tools if t.name not in exclude
-            ]
-            _session_tools = [
-                Tool(
-                    tool_name=t.name,
-                    server_name=key,
-                    description=t.description,
-                    parameters=t.inputSchema) for t in _session_tools
-            ]
-            tools[key].extend(_session_tools)
+            try:
+                tools[key] = []
+                response = await asyncio.wait_for(
+                    session.list_tools(), timeout=TOOL_CALL_TIMEOUT)
+                _session_tools = response.tools
+                exclude = []
+                if key in self._exclude_functions:
+                    exclude = self._exclude_functions[key]
+                _session_tools = [
+                    t for t in _session_tools if t.name not in exclude
+                ]
+                _session_tools = [
+                    Tool(
+                        tool_name=t.name,
+                        server_name=key,
+                        description=t.description,
+                        parameters=t.inputSchema) for t in _session_tools
+                ]
+                tools[key].extend(_session_tools)
+            except asyncio.TimeoutError:
+                error[key] = 'timeout'
+            except BaseException as exc:
+                error[key] = exc
+        if error:
+            error_messages = '; '.join(f'`{srv}`: {msg}'
+                                       for srv, msg in error.items())
+            raise ConnectionError(
+                f'get MCP tool failed for: {error_messages}. Please check MCP servers and retry.'
+            )
         return tools
 
     @staticmethod
@@ -234,7 +248,7 @@ class MCPClient(ToolBase):
         if mcp_config is None:
             return
         new_mcp_config = mcp_config['mcpServers']
-        servers = self.mcp_config["mcpServers"]
+        servers = self.mcp_config['mcpServers']
         envs = Env.load_env()
         for name, server in new_mcp_config.items():
             if name in servers and servers[name] == server:
