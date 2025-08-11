@@ -220,7 +220,7 @@ class MCPClient(ToolBase):
             except BaseException as exc:
                 error[name] = str(exc)
         if error:
-            error_messages = '; '.join(f'{srv}: {msg}'
+            error_messages = '; '.join(f'`{srv}`: {msg}'
                                        for srv, msg in error.items())
             raise ConnectionError(
                 f'MCP connections failed for: {error_messages}. Please check mcp configurations and retry.'
