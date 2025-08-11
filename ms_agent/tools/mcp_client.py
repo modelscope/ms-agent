@@ -252,7 +252,6 @@ class MCPClient(ToolBase):
             return
         new_mcp_config = mcp_config.get('mcpServers', {})
         servers = self.mcp_config.setdefault('mcpServers', {})
-        self.mcp_config['mcpServers'].update(new_mcp_config)
         envs = Env.load_env()
         for name, server in new_mcp_config.items():
             if name in servers and servers[name] == server:
@@ -268,6 +267,7 @@ class MCPClient(ToolBase):
                     self._exclude_functions[name] = server.pop('exclude')
                 await self.connect_to_server(
                     server_name=name, env=env_dict, **server)
+        self.mcp_config['mcpServers'].update(new_mcp_config)
 
     async def cleanup(self):
         """Clean up resources"""
