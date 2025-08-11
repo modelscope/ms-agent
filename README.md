@@ -95,7 +95,11 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 ### Install from PyPI
 
 ```shell
+# For the basic functionalities
 pip install ms-agent
+
+# For the deep research functionalities
+pip install 'ms-agent[research]'
 ```
 
 
@@ -242,6 +246,10 @@ This project provides a framework for **Doc Research**, enabling agents to auton
 For more details, refer to [Doc Research](projects/doc_research/README.md),
 
 <br>
+
+### Interesting works
+
+1. A news collection agent [ms-agent/newspaper](https://www.modelscope.cn/models/ms-agent/newspaper/summary)
 
 ## License
 

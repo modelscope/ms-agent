@@ -509,6 +509,7 @@ class LLMAgent(Agent):
 
             await self._loop_callback('on_task_end', messages)
             await self._cleanup_tools()
+            yield messages
         except Exception as e:
             if hasattr(self.config, 'help'):
                 logger.error(
