@@ -53,8 +53,8 @@ To set up the Agentic Insight framework, follow these steps:
 git clone https://github.com/modelscope/ms-agent.git
 pip install -r requirements/research.txt
 
-# PyPI
-pip install ms-agent[research]
+# From PyPI (>=v1.1.0)
+pip install 'ms-agent[research]'
 ```
 
 ### 🚀 Quickstart

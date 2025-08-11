@@ -56,7 +56,7 @@ conda create -n doc_research python=3.11
 conda activate doc_research
 
 # Version requirement: ms-agent>=1.1.0
-pip install ms-agent[research]
+pip install 'ms-agent[research]'
 ```
 
 ### 2. Configure Environment Variables

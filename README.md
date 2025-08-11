@@ -99,7 +99,7 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 pip install ms-agent
 
 # For the deep research functionalities
-pip install ms-agent['research']
+pip install 'ms-agent[research]'
 ```
 
 
