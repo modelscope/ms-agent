@@ -2,11 +2,10 @@
 import asyncio
 import os
 from copy import copy
+from types import TracebackType
 from typing import Any, Dict, List, Optional
 
 import json
-from types import TracebackType
-
 from ms_agent.llm.utils import Tool, ToolCall
 from ms_agent.tools.base import ToolBase
 from ms_agent.tools.filesystem_tool import FileSystemTool
@@ -22,7 +21,10 @@ class ToolManager:
 
     TOOL_SPLITER = '---'
 
-    def __init__(self, config, mcp_config: Optional[Dict[str, Any]] = None, mcp_client: Optional[MCPClient] = None):
+    def __init__(self,
+                 config,
+                 mcp_config: Optional[Dict[str, Any]] = None,
+                 mcp_client: Optional[MCPClient] = None):
         self.config = config
 
         self.extra_tools: List[ToolBase] = []
@@ -42,10 +44,11 @@ class ToolManager:
 
     async def connect(self):
         if self.mcp_client and isinstance(self.mcp_client, MCPClient):
-            self.servers = await self.mcp_client.add_mcp_config(self.mcp_config)
+            self.servers = await self.mcp_client.add_mcp_config(self.mcp_config
+                                                                )
             self.mcp_config = self.servers.mcp_confg
         else:
-            self.servers = MCPClient(self.config, self.mcp_config)
+            self.servers = MCPClient(self.mcp_config, self.config)
             await self.servers.connect()
         for tool in self.extra_tools:
             await tool.connect()
