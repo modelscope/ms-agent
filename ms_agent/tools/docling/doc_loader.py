@@ -109,6 +109,9 @@ class DocLoader:
 
     @staticmethod
     def get_caption_ref_key(doc: DoclingDocument, caption_ref: str) -> str:
+        """
+        Get the caption text for a given caption reference in the document.
+        """
         if not caption_ref:
             return caption_ref
 
