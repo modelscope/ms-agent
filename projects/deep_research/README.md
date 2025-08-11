@@ -47,11 +47,14 @@ So, how are external electric fields typically simulated in theoretical calculat
 
 To set up the Agentic Insight framework, follow these steps:
 
-* Install from source code
+* Installation
 ```bash
+# From source code
 git clone https://github.com/modelscope/ms-agent.git
-
 pip install -r requirements/research.txt
+
+# From PyPI (>=v1.1.0)
+pip install 'ms-agent[research]'
 ```
 
 ### 🚀 Quickstart

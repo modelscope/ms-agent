@@ -70,12 +70,12 @@ class MCPClient(ToolBase):
         if response.isError:
             sep = '\n\n'
             if all(isinstance(item, str) for item in response.content):
-                return f'execute error: {sep.join(response.content)}'
+                return f'execute tool call error: [{server_name}]{tool_name}, {sep.join(response.content)}'
             else:
                 item_list = []
                 for item in response.content:
                     item_list.append(item.text)
-                return f'execute error: {sep.join(item_list)}'
+                return f'execute tool call error: [{server_name}]{tool_name}, {sep.join(item_list)}'
         for content in response.content:
             if content.type == 'text':
                 texts.append(content.text)
@@ -209,16 +209,26 @@ class MCPClient(ToolBase):
         assert self.mcp_config, 'MCP config is required'
         envs = Env.load_env()
         mcp_config = self.mcp_config['mcpServers']
+        error = dict()
         for name, server in mcp_config.items():
-            env_dict = server.pop('env', {})
-            env_dict = {
-                key: value if value else envs.get(key, '')
-                for key, value in env_dict.items()
-            }
-            if 'exclude' in server:
-                self._exclude_functions[name] = server.pop('exclude')
-            await self.connect_to_server(
-                server_name=name, env=env_dict, **server)
+            try:
+                env_dict = server.pop('env', {})
+                env_dict = {
+                    key: value if value else envs.get(key, '')
+                    for key, value in env_dict.items()
+                }
+                if 'exclude' in server:
+                    self._exclude_functions[name] = server.pop('exclude')
+                await self.connect_to_server(
+                    server_name=name, env=env_dict, **server)
+            except BaseException as exc:
+                error[name] = str(exc)
+        if error:
+            error_messages = '; '.join(f'`{srv}`: {msg}'
+                                       for srv, msg in error.items())
+            raise ConnectionError(
+                f'MCP connections failed for: {error_messages}. Please check mcp configurations and retry.'
+            )
 
     async def add_mcp_config(self, mcp_config: Dict[str, Dict[str, Any]]):
         if mcp_config is None:

@@ -25,7 +25,7 @@
   - 📝 **Multiple Input Types** - Support multi-file uploads and URL inputs
   - 📊 **Multimodal Reports** - Support text and image reports in Markdown format
   - 🚀 **High Efficiency** - Leverage powerful LLMs for fast and accurate research, leveraging key information extraction techniques to further optimize token usage
-  - ⚙️ **Flexible Deployment** - Support local run and [ModelScope Studio](https://modelscope.cn/studios)
+  - ⚙️ **Flexible Deployment** - Support local run and [ModelScope Studio](https://modelscope.cn/studios) on both CPU and GPU environments.
   - 💰 **Free Model Inference** - Free LLM API inference calls for ModelScope users, refer to [ModelScope API-Inference](https://modelscope.cn/docs/model-service/API-Inference/intro)
 
 
@@ -56,7 +56,7 @@ conda create -n doc_research python=3.11
 conda activate doc_research
 
 # Version requirement: ms-agent>=1.1.0
-pip install ms-agent[research]
+pip install 'ms-agent[research]'
 ```
 
 ### 2. Configure Environment Variables
@@ -99,7 +99,7 @@ ms-agent app --doc_research \
 > `share`: (store_true action), whether to share the app publicly. <br>
 
 * Notes
-> When running locally, the default address is http://0.0.0.0:7860/. You need to disable your VPN to access it.
+> When running locally, the default address is http://0.0.0.0:7860/. If the page can't be accessed, try disabling proxy.
 
 
 <br>
