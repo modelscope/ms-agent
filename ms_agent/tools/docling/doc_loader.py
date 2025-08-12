@@ -162,23 +162,62 @@ class DocLoader:
                         logger.warning(
                             f'URL returned error status {response.status_code}: {_url}'
                         )
-                    return None
+                        return None
                 return url
             except requests.RequestException as e2:
                 logger.warning(f'Failed to access URL {_url}: {e2}')
+                return None
+
+        def check_file_valid(file: tuple[int, str]) -> tuple[int, str] | None:
+            """
+            Check if the file exists and is accessible.
+            """
+            idx, _file = file
+
+            if not os.path.exists(_file):
+                logger.warning(f'File does not exist: {_file}')
+                return None
+
+            try:
+                if os.path.getsize(_file) > DocLoader.MAX_FILE_SIZE:
+                    logger.warning(
+                        f'File size exceeds limit ({DocLoader.MAX_FILE_SIZE} bytes): {_file}'
+                    )
+                    return None
+
+                if _file.endswith('.txt'):
+                    try:
+                        from ms_agent.utils.utils import txt_to_html
+                        _file = txt_to_html(_file)
+                    except Exception as e:
+                        logger.warning(
+                            f'Failed to convert text file {_file} to HTML: {e}'
+                        )
+                        return None
+                return (idx, _file)
+            except PermissionError as e:
+                logger.warning(
+                    f'Permission denied when accessing file {_file}: {e}')
+                return None
+            except OSError as e:
+                logger.warning(f'OS error when processing file {_file}: {e}')
+                return None
+            except Exception as e:
+                logger.warning(
+                    f'Unexpected error when processing file {_file}: {e}')
                 return None
 
         # Normalize URLs
         url_or_files = [
             normalize_url_or_file(url_or_file) for url_or_file in url_or_files
         ]
-
-        # Step1: Remove urls or files that cannot be processed
         http_urls = [(i, url) for i, url in enumerate(url_or_files)
                      if url and url.startswith('http')]
         file_paths = [(i, file) for i, file in enumerate(url_or_files)
                       if file and not file.startswith('http')]
         preprocessed = []
+
+        # Step1: Remove urls that cannot be processed
         with ThreadPoolExecutor() as executor:
             futures = [
                 executor.submit(check_url_valid, url) for url in http_urls
@@ -189,7 +228,14 @@ class DocLoader:
                     preprocessed.append(result)
 
         # Step2: Add file paths that are valid
-        preprocessed.extend(file_paths)
+        with ThreadPoolExecutor() as executor:
+            futures = [
+                executor.submit(check_file_valid, file) for file in file_paths
+            ]
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    preprocessed.append(result)
 
         # Restore the original order of URLs or files
         preprocessed = sorted(preprocessed, key=lambda x: x[0])

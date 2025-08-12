@@ -335,7 +335,10 @@ class ResearchWorkflow:
 
         if urls_or_files:
             # If urls_or_files is provided, then disable search and use the provided resources directly
-            prepared_resources = urls_or_files
+            special_resources: List[str] = [file for file in urls_or_files if file.endswith('.txt')]
+            prepared_resources: List[str] = [
+                file for file in urls_or_files if file not in special_resources
+            ]
         else:
             engine_type = getattr(self._search_engine, 'engine_type', None)
             try:
@@ -374,6 +377,16 @@ class ResearchWorkflow:
 
         extractor = HierarchicalKeyInformationExtraction(urls_or_files=prepared_resources, verbose=self._verbose)
         key_info_list: List[KeyInformation] = extractor.extract()
+
+        if special_resources and all(file.endswith('.txt') for file in special_resources):
+            logger.warning(
+                'Some resources are text files, using the text content as key information instead.'
+            )
+            for file in special_resources:
+                with open(file, 'r', encoding='utf-8') as f:
+                    text_content = f.read()
+                    key_info_list.append(
+                        KeyInformation(text=text_content, resources=[]))
 
         if self._verbose:
             logger.info(f'Extracted key information items: {len(key_info_list)}')

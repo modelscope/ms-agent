@@ -478,3 +478,48 @@ def normalize_url_or_file(url_or_file: str):
         url_or_file = url_or_file.replace('arxiv.org/html', 'arxiv.org/pdf')
 
     return url_or_file
+
+
+def txt_to_html(txt_path: str, html_path: Optional[str] = None) -> str:
+    """
+    Converts a plain text file to an HTML file, preserving formatting and special characters.
+
+    Args:
+        txt_path (str): The path to the input txt file.
+        html_path (Optional[str]): The path where the output HTML file will be saved.
+                               If not provided, the HTML file will be saved with the same name as the text file
+                               but with a .html extension.
+
+    Returns:
+        str: The path to the generated HTML file.
+    """
+    if html_path is None:
+        html_path = os.path.splitext(txt_path)[0] + '.html'
+
+    with open(txt_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    import html
+    escaped_content = html.escape(content, quote=True)
+    html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>{os.path.basename(txt_path)}</title>
+    <style>
+        pre {{
+            white-space: pre-wrap;  /* preserve formatting but allow line wrapping */
+            overflow-wrap: break-word;  /* allow long words to break */
+        }}
+    </style>
+</head>
+<body>
+    <pre>{escaped_content}</pre>
+</body>
+</html>
+"""
+
+    with open(html_path, 'w', encoding='utf-8') as f:
+        f.write(html_content)
+
+    return html_path
