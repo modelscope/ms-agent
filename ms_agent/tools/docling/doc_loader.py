@@ -7,7 +7,9 @@ from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.document import ConversionResult
 from docling.datamodel.pipeline_options import PdfPipelineOptions
-from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.document_converter import (DocumentConverter, PdfFormatOption,
+                                        PowerpointFormatOption,
+                                        WordFormatOption)
 from docling.models.document_picture_classifier import \
     DocumentPictureClassifier
 from docling.models.layout_model import LayoutModel
@@ -15,6 +17,8 @@ from docling.models.table_structure_model import TableStructureModel
 from docling_core.types import DoclingDocument
 from docling_core.types.doc import DocItem
 from ms_agent.tools.docling.doc_postprocess import PostProcess
+from ms_agent.tools.docling.enrich_pipeline import (DocPipelineOptions,
+                                                    EnrichDocPipeline)
 from ms_agent.tools.docling.patches import (download_models_ms,
                                             download_models_pic_classifier_ms,
                                             html_handle_figure,
@@ -55,10 +59,30 @@ class DocLoader:
         pdf_pipeline_options.images_scale = 2.0
         pdf_pipeline_options.accelerator_options = accelerator_options  # type: ignore
 
+        word_pipeline_options = DocPipelineOptions()
+        word_pipeline_options.do_picture_classification = True
+        word_pipeline_options.do_code_enrichment = False
+        word_pipeline_options.do_formula_enrichment = False
+        word_pipeline_options.accelerator_options = accelerator_options  # type: ignore
+
+        ppt_pipeline_options = DocPipelineOptions()
+        ppt_pipeline_options.do_picture_classification = True
+        ppt_pipeline_options.do_code_enrichment = False
+        ppt_pipeline_options.do_formula_enrichment = False
+        ppt_pipeline_options.accelerator_options = accelerator_options  # type: ignore
+
         self._converter = DocumentConverter(
             format_options={
                 InputFormat.PDF:
-                PdfFormatOption(pipeline_options=pdf_pipeline_options)
+                PdfFormatOption(pipeline_options=pdf_pipeline_options),
+                InputFormat.DOCX:
+                WordFormatOption(
+                    pipeline_cls=EnrichDocPipeline,
+                    pipeline_options=word_pipeline_options),
+                InputFormat.PPTX:
+                PowerpointFormatOption(
+                    pipeline_cls=EnrichDocPipeline,
+                    pipeline_options=ppt_pipeline_options)
             })
 
     @staticmethod
