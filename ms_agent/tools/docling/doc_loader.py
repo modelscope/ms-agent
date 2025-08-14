@@ -117,11 +117,14 @@ class DocLoader:
 
         try:
             # TODO: Support more caption reference formats
-            ref_idx = getattr(caption_ref, 'cref', '').split('/')[-1]
-            ref_idx = int(ref_idx) if ref_idx else None
+            ref_idx_str = getattr(caption_ref, 'cref', '').split('/')[-1]
+            if not ref_idx_str:
+                return ''
+
+            ref_idx = int(ref_idx_str)
             caption = f'{doc.texts[ref_idx].text}'
             return caption
-        except Exception as e:
+        except (AttributeError, ValueError, IndexError, TypeError) as e:
             logger.warning(
                 f'Failed to get caption reference key for {caption_ref}: {e}')
             return caption_ref
