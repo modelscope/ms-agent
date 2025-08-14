@@ -25,7 +25,7 @@
 - 📝 **多种输入类型** - 支持多文件上传和URLs输入
 - 📊 **多模态报告** - 支持Markdown格式的图文报告输出
 - 🚀 **精准高效** - 利用强大的LLM进行快速准确的研究，采用关键信息抽取技术进一步优化了token使用
-- ⚙️ **灵活部署** - 支持本地运行和魔搭创空间运行模式
+- ⚙️ **灵活部署** - 支持本地运行和魔搭创空间运行模式，兼容CPU和GPU环境
 - 💰 **免费模型推理** - 魔搭ModelScope用户可免费调用LLM API推理，参考 [ModelScope API-Inference](https://modelscope.cn/docs/model-service/API-Inference/intro)
 
 
@@ -56,7 +56,7 @@ conda create -n doc_research python=3.11
 conda activate doc_research
 
 # 版本要求：ms-agent>=1.1.0
-pip install ms-agent[research]
+pip install 'ms-agent[research]'
 ```
 
 ### 2. 配置环境变量
@@ -101,7 +101,7 @@ ms-agent app --doc_research \
 > `share`: (store_true action), 是否对外分享，默认关闭.  <br>
 
 * 备注：
-  > 本地运行时，默认访问地址为 `http://0.0.0.0:7860/` ，需关闭VPN才能访问  <br>
+  > 本地运行时，默认访问地址为 `http://0.0.0.0:7860/` ，如无法访问，可尝试关闭VPN  <br>
 
 
 <br>
