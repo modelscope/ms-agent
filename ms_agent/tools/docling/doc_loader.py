@@ -59,17 +59,11 @@ class DocLoader:
         pdf_pipeline_options.images_scale = 2.0
         pdf_pipeline_options.accelerator_options = accelerator_options  # type: ignore
 
-        word_pipeline_options = DocPipelineOptions()
-        word_pipeline_options.do_picture_classification = True
-        word_pipeline_options.do_code_enrichment = False
-        word_pipeline_options.do_formula_enrichment = False
-        word_pipeline_options.accelerator_options = accelerator_options  # type: ignore
-
-        ppt_pipeline_options = DocPipelineOptions()
-        ppt_pipeline_options.do_picture_classification = True
-        ppt_pipeline_options.do_code_enrichment = False
-        ppt_pipeline_options.do_formula_enrichment = False
-        ppt_pipeline_options.accelerator_options = accelerator_options  # type: ignore
+        doc_pipeline_options = DocPipelineOptions()
+        doc_pipeline_options.do_picture_classification = True
+        doc_pipeline_options.do_code_enrichment = False
+        doc_pipeline_options.do_formula_enrichment = False
+        doc_pipeline_options.accelerator_options = accelerator_options  # type: ignore
 
         self._converter = DocumentConverter(
             format_options={
@@ -78,11 +72,11 @@ class DocLoader:
                 InputFormat.DOCX:
                 WordFormatOption(
                     pipeline_cls=EnrichDocPipeline,
-                    pipeline_options=word_pipeline_options),
+                    pipeline_options=doc_pipeline_options),
                 InputFormat.PPTX:
                 PowerpointFormatOption(
                     pipeline_cls=EnrichDocPipeline,
-                    pipeline_options=ppt_pipeline_options)
+                    pipeline_options=doc_pipeline_options)
             })
 
     @staticmethod

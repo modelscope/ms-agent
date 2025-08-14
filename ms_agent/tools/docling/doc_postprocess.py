@@ -6,6 +6,7 @@ from docling_core.types import DoclingDocument
 class PostProcess:
 
     MIN_PICTURE_SIZE = 200.0 * 200.0  # Minimum size for pictures in pixels
+    FILTERED_IMAGE_LABELS = {'qr_code', 'logo', 'icon'}
 
     def __init__(self):
         ...
@@ -27,9 +28,7 @@ class PostProcess:
                                       'predicted_classes', None)
                 pic_class = pic_classes[
                     0].class_name if pic_classes else None  # Get the first predicted class if available
-                if pic_class is not None and pic_class.lower() in [
-                        'qr_code', 'logo', 'icon'
-                ]:
+                if pic_class is not None and pic_class.lower() in PostProcess.FILTERED_IMAGE_LABELS:  # yapf: disable
                     pic_item.image = None
 
         return doc
