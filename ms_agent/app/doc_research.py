@@ -918,6 +918,7 @@ def run_research_workflow_internal(
             api_key=os.environ.get('OPENAI_API_KEY'),
             base_url=os.environ.get('OPENAI_BASE_URL'),
             model=os.environ.get('OPENAI_MODEL_ID'),
+            generation_config={'extra_body': {'enable_thinking': True}}
         )
 
         if progress_callback:
