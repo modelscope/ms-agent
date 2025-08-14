@@ -22,7 +22,7 @@ from ms_agent.tools.docling.patches import (download_models_ms,
                                             patch_easyocr_models)
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.patcher import patch
-from ms_agent.utils.utils import normalize_url_or_file
+from ms_agent.utils.utils import normalize_url_or_file, txt_to_html
 
 logger = get_logger()
 
@@ -187,7 +187,6 @@ class DocLoader:
 
                 if _file.endswith('.txt'):
                     try:
-                        from ms_agent.utils.utils import txt_to_html
                         _file = txt_to_html(_file)
                     except Exception as e:
                         logger.warning(

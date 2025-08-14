@@ -1,6 +1,7 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import base64
 import hashlib
+import html
 import importlib
 import os.path
 import re
@@ -499,7 +500,6 @@ def txt_to_html(txt_path: str, html_path: Optional[str] = None) -> str:
     with open(txt_path, 'r', encoding='utf-8') as f:
         content = f.read()
 
-    import html
     escaped_content = html.escape(content, quote=True)
     html_content = f"""<!DOCTYPE html>
 <html>
