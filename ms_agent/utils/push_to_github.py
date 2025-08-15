@@ -1,15 +1,11 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 from abc import ABC, abstractmethod
-import os
 import json
 import base64
 import mimetypes
 from pathlib import Path
-from getpass import getpass
 from typing import Optional, List
-
 import requests
-import time
 
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.utils import get_files_from_dir
@@ -28,8 +24,7 @@ class PushToHub(ABC):
     @abstractmethod
     def push(self, *args, **kwargs):
         """Push files to the remote hub."""
-        ...
-
+        raise NotImplementedError("Subclasses must implement the push method.")
 
 
 class PushToGitHub(PushToHub):
@@ -182,8 +177,10 @@ class PushToGitHub(PushToHub):
         logger.info("Processing files...")
         repo_base_path = Path(path_in_repo or "")
 
-        for file_path in files_to_upload:
-            full_path = work_dir / file_path
+        for full_path in files_to_upload:
+
+            file_relative_path: str = str(full_path.relative_to(work_dir)).replace("\\", "/")
+
             mime_type, _ = mimetypes.guess_type(full_path)
             is_binary = not (mime_type and mime_type.startswith('text/')) if mime_type else False
 
@@ -207,14 +204,14 @@ class PushToGitHub(PushToHub):
             response = self.session.post(blob_url, data=json.dumps(blob_payload))
             response.raise_for_status()
 
-            remote_path = repo_base_path / file_path
+            remote_path = repo_base_path / file_relative_path
             remote_path_str = str(remote_path).replace("\\", "/")
 
             blobs.append({
                 "path": remote_path_str,
                 "mode": "100644", "type": "blob", "sha": response.json()['sha']
             })
-            logger.info(f"  - Local: '{file_path}'  ->  Remote: '{remote_path_str}'")
+            logger.info(f"  - Local: '{str(full_path)}'  ->  Remote: '{remote_path_str}'")
 
         # 3. Create a tree object
         tree_url = f"{self.GITHUB_API_URL}/repos/{self.user_name}/{self.repo_name}/git/trees"
@@ -249,6 +246,21 @@ class PushToGitHub(PushToHub):
              path_in_repo: Optional[str] = None,
              branch: Optional[str] = "main",
              **kwargs) -> None:
+        """
+        Push files from a local directory to the GitHub repository.
+
+        Args:
+            target_dir (str): The local directory containing files to upload.
+            exclude (Optional[List[str]]):
+                List of regex patterns to exclude files from upload. Defaults to hidden files, logs, and __pycache__.
+            path_in_repo (Optional[str]):
+                The relative path in the repository where files should be stored.
+                Defaults to the root of the repository.
+            branch (Optional[str]): The branch to push changes to. Defaults to "main".
+
+        Raises:
+            RuntimeError: If there is an issue with the GitHub API or if the branch does not exist.
+        """
 
         # Get available files without hidden files, logs and __pycache__
         if exclude is None:
@@ -265,29 +277,5 @@ class PushToGitHub(PushToHub):
             path_in_repo=path_in_repo,
             branch=branch,
         )
+
         logger.info(f"✅ Successfully pushed files to '{self.user_name}/{self.repo_name}' on branch '{branch}'.")
-
-
-if __name__ == "__main__":
-    # Example usage
-    user_name = input("GitHub Username: ")
-    repo_name = input("Repository Name: ")
-    token = getpass("GitHub Personal Access Token: ")
-    visibility = input("Repository Visibility (public/private): ") or "public"
-    description = input("Repository Description (optional): ") or None
-    target_dir = input("Directory to upload: ")
-    path_in_repo = input("Path in repository (optional): ") or None
-    branch = input("Branch to push to (default 'main'): ") or "main"
-
-    pusher = PushToGitHub(
-        user_name=user_name,
-        repo_name=repo_name,
-        token=token,
-        visibility=visibility,
-        description=description
-    )
-    pusher.push(
-        target_dir=target_dir,
-        path_in_repo=path_in_repo,
-        branch=branch
-    )
