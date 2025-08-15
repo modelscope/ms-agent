@@ -3,7 +3,9 @@ import asyncio
 import os
 from contextlib import AsyncExitStack
 from datetime import timedelta
-from typing import Any, Dict, List, Literal, Optional
+from os import environb
+from types import TracebackType
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from mcp import ClientSession, ListToolsResult, StdioServerParameters
 from mcp.client.sse import sse_client
@@ -13,7 +15,7 @@ from ms_agent.config.env import Env
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
+from omegaconf import DictConfig, ListConfig
 
 logger = get_logger()
 
@@ -24,7 +26,7 @@ DEFAULT_ENCODING_ERROR_HANDLER: EncodingErrorHandler = 'strict'
 
 DEFAULT_HTTP_TIMEOUT = 5
 DEFAULT_SSE_READ_TIMEOUT = 60 * 5
-TOOL_CALL_TIMEOUT = os.getenv('TOOL_CALL_TIMEOUT', 15)
+TOOL_CALL_TIMEOUT = os.getenv('TOOL_CALL_TIMEOUT', 30)
 
 DEFAULT_STREAMABLE_HTTP_TIMEOUT = timedelta(seconds=30)
 DEFAULT_STREAMABLE_HTTP_SSE_READ_TIMEOUT = timedelta(seconds=60 * 5)
@@ -40,17 +42,23 @@ class MCPClient(ToolBase):
         mcp_config(`Optional[Dict[str, Any]]`): Extra mcp servers in json format.
     """
 
-    def __init__(self,
-                 config: DictConfig,
-                 mcp_config: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        mcp_config: Optional[Dict[str, Any]] = None,
+        config: Union[DictConfig, ListConfig, None] = None,
+    ):
         super().__init__(config)
         self.sessions: Dict[str, ClientSession] = {}
         self.exit_stack = AsyncExitStack()
-        self.mcp_config: Dict[str, Dict[
-            str, Any]] = Config.convert_mcp_servers_to_json(config)
+        self.mcp_config: Dict[str, Dict[str, Any]] = {'mcpServers': {}}
+        if config is not None:
+            config_from_file = Config.convert_mcp_servers_to_json(config)
+            self.mcp_config['mcpServers'].update(
+                config_from_file.get('mcpServers', {}))
         self._exclude_functions = {}
         if mcp_config is not None:
-            self.mcp_config.update(mcp_config)
+            self.mcp_config['mcpServers'].update(
+                mcp_config.get('mcpServers', {}))
 
     async def call_tool(self, server_name: str, tool_name: str,
                         tool_args: dict):
@@ -79,24 +87,37 @@ class MCPClient(ToolBase):
 
     async def get_tools(self) -> Dict:
         tools = {}
+        error = dict()
         for key, session in self.sessions.items():
-            tools[key] = []
-            response = await session.list_tools()
-            _session_tools = response.tools
-            exclude = []
-            if key in self._exclude_functions:
-                exclude = self._exclude_functions[key]
-            _session_tools = [
-                t for t in _session_tools if t.name not in exclude
-            ]
-            _session_tools = [
-                Tool(
-                    tool_name=t.name,
-                    server_name=key,
-                    description=t.description,
-                    parameters=t.inputSchema) for t in _session_tools
-            ]
-            tools[key].extend(_session_tools)
+            try:
+                tools[key] = []
+                response = await asyncio.wait_for(
+                    session.list_tools(), timeout=TOOL_CALL_TIMEOUT)
+                _session_tools = response.tools
+                exclude = []
+                if key in self._exclude_functions:
+                    exclude = self._exclude_functions[key]
+                _session_tools = [
+                    t for t in _session_tools if t.name not in exclude
+                ]
+                _session_tools = [
+                    Tool(
+                        tool_name=t.name,
+                        server_name=key,
+                        description=t.description,
+                        parameters=t.inputSchema) for t in _session_tools
+                ]
+                tools[key].extend(_session_tools)
+            except asyncio.TimeoutError:
+                error[key] = 'timeout'
+            except BaseException as exc:
+                error[key] = exc
+        if error:
+            error_messages = '; '.join(f'`{srv}`: {msg}'
+                                       for srv, msg in error.items())
+            raise ConnectionError(
+                f'get MCP tool failed for: {error_messages}. Please check MCP servers and retry.'
+            )
         return tools
 
     @staticmethod
@@ -226,6 +247,44 @@ class MCPClient(ToolBase):
                 f'MCP connections failed for: {error_messages}. Please check mcp configurations and retry.'
             )
 
+    async def add_mcp_config(self, mcp_config: Dict[str, Dict[str, Any]]):
+        if mcp_config is None:
+            return
+        new_mcp_config = mcp_config.get('mcpServers', {})
+        servers = self.mcp_config.setdefault('mcpServers', {})
+        envs = Env.load_env()
+        for name, server in new_mcp_config.items():
+            if name in servers and servers[name] == server:
+                continue
+            else:
+                servers[name] = server
+                env_dict = server.pop('env', {})
+                env_dict = {
+                    key: value if value else envs.get(key, '')
+                    for key, value in env_dict.items()
+                }
+                if 'exclude' in server:
+                    self._exclude_functions[name] = server.pop('exclude')
+                await self.connect_to_server(
+                    server_name=name, env=env_dict, **server)
+        self.mcp_config['mcpServers'].update(new_mcp_config)
+
     async def cleanup(self):
         """Clean up resources"""
+        await self.exit_stack.aclose()
+
+    async def __aenter__(self) -> 'MCPClient':
+        try:
+            await self.connect()
+            return self
+        except Exception:
+            await self.exit_stack.aclose()
+            raise
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         await self.exit_stack.aclose()
