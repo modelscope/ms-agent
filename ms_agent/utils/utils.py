@@ -1,11 +1,13 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import base64
+import glob
 import hashlib
 import html
 import importlib
 import os.path
 import re
 from io import BytesIO
+from pathlib import Path
 from typing import List, Optional
 
 import json
@@ -523,3 +525,52 @@ def txt_to_html(txt_path: str, html_path: Optional[str] = None) -> str:
         f.write(html_content)
 
     return html_path
+
+
+def get_files_from_dir(target_dir: str, exclude: Optional[List[str]] = None) -> List[Path]:
+    """
+    Get all files in the target directory recursively, excluding files that match any of the given regex patterns.
+
+    Args:
+        target_dir (str): The directory to search for files.
+        exclude (Optional[List[str]]): A list of regex patterns to exclude files. If None, no files are excluded.
+
+    Returns:
+        List[Path]: A list of Path objects representing the files to be processed.
+
+    Example:
+        >>> files = get_files_from_dir('/path/to/dir')
+        >>> files = get_files_from_dir('/path/to/dir', exclude=['.*\.tmp$', '.*\.log$'])
+        >>> files = get_files_from_dir('/path/to/dir', exclude=[
+                r'(^|/)\..*',      # hidden files and directories
+                r'\.log$',         # log files
+                r'~$',             # temporary directories
+                r'__pycache__/',   # Python cache directory
+            ])
+    """
+    if exclude is None:
+        exclude = []
+    exclude_patterns = [re.compile(pattern) for pattern in exclude]
+
+    pattern = os.path.join(target_dir, "**", "*")
+    all_files = glob.glob(pattern, recursive=True)
+    files = [Path(f) for f in all_files if os.path.isfile(f)]
+
+    if not exclude_patterns:
+        return files
+
+    # Filter files based on exclusion patterns
+    file_list: List[Path] = []
+    for file_path in files:
+        relative_path = str(file_path.relative_to(target_dir))
+
+        should_exclude = False
+        for pattern in exclude_patterns:
+            if pattern.search(relative_path):
+                should_exclude = True
+                break
+
+        if not should_exclude:
+            file_list.append(file_path)
+
+    return file_list
