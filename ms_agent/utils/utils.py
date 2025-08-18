@@ -527,13 +527,13 @@ def txt_to_html(txt_path: str, html_path: Optional[str] = None) -> str:
     return html_path
 
 
-def get_files_from_dir(target_dir: str,
+def get_files_from_dir(folder_path: str,
                        exclude: Optional[List[str]] = None) -> List[Path]:
     """
     Get all files in the target directory recursively, excluding files that match any of the given regex patterns.
 
     Args:
-        target_dir (str): The directory to search for files.
+        folder_path (str): The directory to search for files.
         exclude (Optional[List[str]]): A list of regex patterns to exclude files. If None, no files are excluded.
 
     Returns:
@@ -546,7 +546,7 @@ def get_files_from_dir(target_dir: str,
         exclude = []
     exclude_patterns = [re.compile(pattern) for pattern in exclude]
 
-    pattern = os.path.join(target_dir, '**', '*')
+    pattern = os.path.join(folder_path, '**', '*')
     all_files = glob.glob(pattern, recursive=True)
     files = [Path(f) for f in all_files if os.path.isfile(f)]
 
@@ -554,17 +554,11 @@ def get_files_from_dir(target_dir: str,
         return files
 
     # Filter files based on exclusion patterns
-    file_list: List[Path] = []
-    for file_path in files:
-        relative_path = str(file_path.relative_to(target_dir))
-
-        should_exclude = False
-        for pattern in exclude_patterns:
-            if pattern.search(relative_path):
-                should_exclude = True
-                break
-
-        if not should_exclude:
-            file_list.append(file_path)
+    file_list = [
+        file_path for file_path in files if not any(
+            pattern.search(
+                str(file_path.relative_to(folder_path)).replace('\\', '/'))
+            for pattern in exclude_patterns)
+    ]
 
     return file_list

@@ -63,7 +63,7 @@ class PushToGitHub(PushToHub):
             ...     visibility="public",
             ...     description="My awesome repository"
             ... )
-            >>> pusher.push(target_dir="/path/to/your_dir", branch="main", commit_message="Initial commit")
+            >>> pusher.push(folder_path="/path/to/your_dir", branch="main", commit_message="Initial commit")
         """
         super().__init__()
 
@@ -102,7 +102,7 @@ class PushToGitHub(PushToHub):
         if user_data_resp.status_code != 200 or user_data_resp.json(
         )['login'] != self.user_name:
             raise RuntimeError(
-                '❌ Authentication failed! Please check your username and Personal Access Token.'
+                'Authentication failed! Please check your username and Personal Access Token.'
             )
 
     def _create_github_repo(
@@ -145,7 +145,7 @@ class PushToGitHub(PushToHub):
         response = self.session.post(url, data=json.dumps(payload))
         if response.status_code == 201:
             logger.info(
-                f"✅ Successfully created and initialized repository: {response.json()['html_url']}"
+                f"Successfully created and initialized repository: {response.json()['html_url']}"
             )
             return response.json()
         elif response.status_code == 422:
@@ -153,7 +153,7 @@ class PushToGitHub(PushToHub):
                                                 [{}])[0].get('message', '')
             if 'name already exists' in error_message:
                 logger.info(
-                    f"⚠️ Repository '{repo_name}' already exists. Will attempt to upload files to it."
+                    f"Repository '{repo_name}' already exists. Will attempt to upload files to it."
                 )
                 return None
             else:
@@ -163,7 +163,7 @@ class PushToGitHub(PushToHub):
         else:
             logger.error(response.json())
             raise RuntimeError(
-                f'❌ Failed to create repository: {response.status_code}')
+                f'Failed to create repository: {response.status_code}')
 
     def _upload_files(self,
                       files_to_upload: List[Path],
@@ -199,8 +199,7 @@ class PushToGitHub(PushToHub):
         base_tree_sha = commit_response.json()['tree']['sha']
 
         logger.info(
-            f"✅ Found '{branch}' branch, latest commit: {latest_commit_sha[:7]}"
-        )
+            f"Found '{branch}' branch, latest commit: {latest_commit_sha[:7]}")
 
         # 2. Create a blob for each file
         blobs = []
@@ -270,18 +269,17 @@ class PushToGitHub(PushToHub):
             commit_url, data=json.dumps(commit_payload))
         response.raise_for_status()
         new_commit_sha = response.json()['sha']
-        logger.info(f'✅ Commit created: {new_commit_sha[:7]}')
+        logger.info(f'Commit created: {new_commit_sha[:7]}')
 
         # 5. Update the branch reference
         ref_payload = {'sha': new_commit_sha}
         response = self.session.patch(ref_url, data=json.dumps(ref_payload))
         response.raise_for_status()
 
-        logger.info(
-            f"✅ Branch '{branch}' successfully points to the new commit")
+        logger.info(f"Branch '{branch}' successfully points to the new commit")
 
     def push(self,
-             target_dir: str,
+             folder_path: str,
              exclude: Optional[List[str]] = None,
              path_in_repo: Optional[str] = None,
              branch: Optional[str] = 'main',
@@ -291,7 +289,7 @@ class PushToGitHub(PushToHub):
         Push files from a local directory to the GitHub repository.
 
         Args:
-            target_dir (str): The local directory containing files to upload.
+            folder_path (str): The local directory containing files to upload.
             exclude (Optional[List[str]]):
                 List of regex patterns to exclude files from upload. Defaults to hidden files, logs, and __pycache__.
             path_in_repo (Optional[str]):
@@ -308,7 +306,7 @@ class PushToGitHub(PushToHub):
         # Get available files without hidden files, logs and __pycache__
         if exclude is None:
             exclude = [r'(^|/)\..*', r'\.log$', r'~$', r'__pycache__/']
-        files = get_files_from_dir(target_dir=target_dir, exclude=exclude)
+        files = get_files_from_dir(folder_path=folder_path, exclude=exclude)
 
         if not files:
             logger.warning('No files to upload, pushing skipped.')
@@ -316,12 +314,13 @@ class PushToGitHub(PushToHub):
 
         self._upload_files(
             files_to_upload=files,
-            work_dir=Path(target_dir),
+            work_dir=Path(folder_path),
             path_in_repo=path_in_repo,
             branch=branch,
             commit_message=commit_message,
         )
 
         logger.info(
-            f"✅ Successfully pushed files to '{self.user_name}/{self.repo_name}' on branch '{branch}'."
+            f'Successfully pushed files to '
+            f"https://github.com/{self.user_name}/{self.repo_name}/tree/{branch}/{path_in_repo or ''}"
         )
