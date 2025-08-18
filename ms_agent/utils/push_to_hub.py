@@ -142,7 +142,7 @@ class PushToGitHub(PushToHub):
             'private': visibility == 'private',
             'auto_init': True
         }
-        response = self.session.post(url, data=json.dumps(payload))
+        response = self.session.post(url, json=payload)
         if response.status_code == 201:
             logger.info(
                 f"Successfully created and initialized repository: {response.json()['html_url']}"
