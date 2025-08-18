@@ -43,16 +43,27 @@ class PushToGitHub(PushToHub):
         Args:
             user_name (str): GitHub username.
             repo_name (str): Name of the repository to create or use.
+                If the repository already exists, it will be used for pushing files.
             token (str): GitHub personal access token with repo permissions.
                 Access token can be generated from GitHub settings under Developer settings -> Personal access tokens.
                 Refer to `https://github.com/settings/tokens` for details.
             visibility (str, optional): Visibility of the repository, either "public" or "private".
-                Defaults to "public".
+                Defaults to "public". It's available for creating the repository.
             description (str, optional): Description of the repository. Defaults to a generic message.
 
         Raises:
             ValueError: If the token is empty.
             RuntimeError: If there is an issue with the GitHub API.
+
+        Examples:
+            >>> pusher = PushToGitHub(
+            ...     user_name="your_username",
+            ...     repo_name="your_repo_name",
+            ...     token="your_personal_access_token",
+            ...     visibility="public",
+            ...     description="My awesome repository"
+            ... )
+            >>> pusher.push(target_dir="/path/to/your_dir", branch="main", commit_message="Initial commit")
         """
         super().__init__()
 
@@ -143,7 +154,9 @@ class PushToGitHub(PushToHub):
                       files_to_upload: List[Path],
                       work_dir: Path,
                       path_in_repo: Optional[str] = None,
-                      branch: Optional[str] = "main") -> None:
+                      branch: Optional[str] = "main",
+                      commit_message: Optional[str] = None
+                      ) -> None:
         """
         Upload multiple files to a GitHub repository in a single commit.
 
@@ -153,6 +166,7 @@ class PushToGitHub(PushToHub):
             path_in_repo (Optional[str]): The relative path in the repository where files should be stored.
                 Defaults to the root of the repository.
             branch (Optional[str]): The branch to push changes to. Defaults to "main".
+            commit_message (Optional[str]): The commit message for the upload. Defaults to a generic message.
 
         Raises:
             RuntimeError: If there is an issue with the GitHub API or if the branch does not exist.
@@ -224,7 +238,7 @@ class PushToGitHub(PushToHub):
         # 4. Create a commit
         commit_url = f"{self.GITHUB_API_URL}/repos/{self.user_name}/{self.repo_name}/git/commits"
         commit_payload = {
-            "message": f"feat: Upload report to '{path_in_repo or '/'}'",
+            "message": commit_message or f"Upload files to '{path_in_repo or '/'}'",
             "tree": tree_sha,
             "parents": [latest_commit_sha]
         }
@@ -245,6 +259,7 @@ class PushToGitHub(PushToHub):
              exclude: Optional[List[str]] = None,
              path_in_repo: Optional[str] = None,
              branch: Optional[str] = "main",
+             commit_message: Optional[str] = None,
              **kwargs) -> None:
         """
         Push files from a local directory to the GitHub repository.
@@ -257,6 +272,8 @@ class PushToGitHub(PushToHub):
                 The relative path in the repository where files should be stored.
                 Defaults to the root of the repository.
             branch (Optional[str]): The branch to push changes to. Defaults to "main".
+            commit_message (Optional[str]):
+                The commit message for the upload. Defaults to a generic message.
 
         Raises:
             RuntimeError: If there is an issue with the GitHub API or if the branch does not exist.
@@ -276,6 +293,7 @@ class PushToGitHub(PushToHub):
             work_dir=Path(target_dir),
             path_in_repo=path_in_repo,
             branch=branch,
+            commit_message=commit_message,
         )
 
         logger.info(f"✅ Successfully pushed files to '{self.user_name}/{self.repo_name}' on branch '{branch}'.")
