@@ -527,7 +527,8 @@ def txt_to_html(txt_path: str, html_path: Optional[str] = None) -> str:
     return html_path
 
 
-def get_files_from_dir(target_dir: str, exclude: Optional[List[str]] = None) -> List[Path]:
+def get_files_from_dir(target_dir: str,
+                       exclude: Optional[List[str]] = None) -> List[Path]:
     """
     Get all files in the target directory recursively, excluding files that match any of the given regex patterns.
 
@@ -540,19 +541,12 @@ def get_files_from_dir(target_dir: str, exclude: Optional[List[str]] = None) -> 
 
     Example:
         >>> files = get_files_from_dir('/path/to/dir')
-        >>> files = get_files_from_dir('/path/to/dir', exclude=['.*\.tmp$', '.*\.log$'])
-        >>> files = get_files_from_dir('/path/to/dir', exclude=[
-                r'(^|/)\..*',      # hidden files and directories
-                r'\.log$',         # log files
-                r'~$',             # temporary directories
-                r'__pycache__/',   # Python cache directory
-            ])
     """
     if exclude is None:
         exclude = []
     exclude_patterns = [re.compile(pattern) for pattern in exclude]
 
-    pattern = os.path.join(target_dir, "**", "*")
+    pattern = os.path.join(target_dir, '**', '*')
     all_files = glob.glob(pattern, recursive=True)
     files = [Path(f) for f in all_files if os.path.isfile(f)]
 
