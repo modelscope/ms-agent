@@ -155,7 +155,7 @@ class EvalCallback(Callback):
         else:
             all_local_files = await self.file_system.list_files()
             feedback = (
-                f'Feedback from {"human" if human_feedback else "compling"}: {query}\n'
+                f'Feedback from {"human:" if human_feedback else "compling"}: {query}\n'
                 f'The files on the local system of this project: {all_local_files}\n'
                 f'Now please analyze and fix this issue:\n')
         messages.append(Message(role='user', content=feedback))

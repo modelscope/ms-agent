@@ -35,7 +35,7 @@ class CodingCallback(Callback):
             tasks = json.loads(tasks)
         for task in tasks:
             task['_system'] = task['system']
-            task['system'] = f"""{task["system"]}
+            task['system'] = f"""{task['system']}
 
 The PRD of this project:
 

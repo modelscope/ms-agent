@@ -5,6 +5,7 @@ from contextlib import AsyncExitStack
 from datetime import timedelta
 from typing import Any, Dict, List, Literal, Optional
 
+from aiohttp.hdrs import CONNECTION
 from mcp import ClientSession, ListToolsResult, StdioServerParameters
 from mcp.client.sse import sse_client
 from mcp.client.stdio import stdio_client
@@ -24,7 +25,7 @@ DEFAULT_ENCODING_ERROR_HANDLER: EncodingErrorHandler = 'strict'
 
 DEFAULT_HTTP_TIMEOUT = 5
 DEFAULT_SSE_READ_TIMEOUT = 60 * 5
-TOOL_CALL_TIMEOUT = os.getenv('TOOL_CALL_TIMEOUT', 15)
+CONNECTION_TIMEOUT = os.getenv('CONNECTION_TIMEOUT', 60)
 
 DEFAULT_STREAMABLE_HTTP_TIMEOUT = timedelta(seconds=30)
 DEFAULT_STREAMABLE_HTTP_SSE_READ_TIMEOUT = timedelta(seconds=60 * 5)
@@ -54,13 +55,7 @@ class MCPClient(ToolBase):
 
     async def call_tool(self, server_name: str, tool_name: str,
                         tool_args: dict):
-        try:
-            response = await asyncio.wait_for(
-                self.sessions[server_name].call_tool(tool_name, tool_args),
-                timeout=TOOL_CALL_TIMEOUT)
-        except asyncio.TimeoutError:
-            # TODO: How to get the information printed by the tool before hanging to return to the model?
-            return f'execute tool call timeout: [{server_name}]{tool_name}, args: {tool_args}'
+        response = self.sessions[server_name].call_tool(tool_name, tool_args)
 
         texts = []
         if response.isError:
@@ -81,7 +76,15 @@ class MCPClient(ToolBase):
         tools = {}
         for key, session in self.sessions.items():
             tools[key] = []
-            response = await session.list_tools()
+            try:
+                response = await session.list_tools()
+            except Exception as e:
+                new_msg = f'MCP `{key}` list tool failed: {str(e)}'
+                from mcp.shared.exceptions import McpError
+                if isinstance(e, McpError):
+                    e.message = new_msg
+                    raise e
+                raise type(e)(new_msg) from e
             _session_tools = response.tools
             exclude = []
             if key in self._exclude_functions:
@@ -114,7 +117,8 @@ class MCPClient(ToolBase):
             logger.info(f'\nConnected to server "{server_name}" '
                         f'with tools: \n{sep.join(tools)}.')
 
-    async def connect_to_server(self, server_name: str, **kwargs):
+    async def connect_to_server(self, server_name: str, timeout: int,
+                                **kwargs):
         logger.info(f'connect to {server_name}')
         # transport: stdio, sse, streamable_http, websocket
         transport = kwargs.get('transport') or kwargs.get('type')
@@ -169,8 +173,14 @@ class MCPClient(ToolBase):
                 read, write = sse_transport
 
             session_kwargs = session_kwargs or {}
+            timeout = max(
+                session_kwargs.pop('read_timeout_seconds', timeout), 1)
             session = await self.exit_stack.enter_async_context(
-                ClientSession(read, write, **session_kwargs))
+                ClientSession(
+                    read,
+                    write,
+                    read_timeout_seconds=timedelta(seconds=timeout),
+                    **session_kwargs))
 
         elif command:
             # transport: 'stdio'
@@ -201,11 +211,10 @@ class MCPClient(ToolBase):
         self.print_tools(server_name, await session.list_tools())
         return server_name
 
-    async def connect(self):
+    async def connect(self, timeout: int = CONNECTION_TIMEOUT):
         assert self.mcp_config, 'MCP config is required'
         envs = Env.load_env()
         mcp_config = self.mcp_config['mcpServers']
-        error = dict()
         for name, server in mcp_config.items():
             try:
                 env_dict = server.pop('env', {})
@@ -215,16 +224,16 @@ class MCPClient(ToolBase):
                 }
                 if 'exclude' in server:
                     self._exclude_functions[name] = server.pop('exclude')
+                timeout = server.pop('timeout', timeout)
                 await self.connect_to_server(
-                    server_name=name, env=env_dict, **server)
-            except BaseException as exc:
-                error[name] = str(exc)
-        if error:
-            error_messages = '; '.join(f'`{srv}`: {msg}'
-                                       for srv, msg in error.items())
-            raise ConnectionError(
-                f'MCP connections failed for: {error_messages}. Please check mcp configurations and retry.'
-            )
+                    server_name=name, env=env_dict, timeout=timeout, **server)
+            except Exception as e:
+                from mcp.shared.exceptions import McpError
+                new_msg = f'Connect {name} failed: {str(e)}'
+                if isinstance(e, McpError):
+                    e.message = new_msg
+                    raise e
+                raise type(e)(new_msg) from e
 
     async def cleanup(self):
         """Clean up resources"""
