@@ -13,7 +13,7 @@ from ms_agent.config import Config
 from ms_agent.config.env import Env
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
-from ms_agent.utils import get_logger
+from ms_agent.utils import enhance_error, get_logger
 from omegaconf import DictConfig
 
 logger = get_logger()
@@ -227,12 +227,18 @@ class MCPClient(ToolBase):
                 timeout = server.pop('timeout', timeout)
                 await self.connect_to_server(
                     server_name=name, env=env_dict, timeout=timeout, **server)
-            except BaseException as e:
-                new_msg = f'Connect `{name}` failed, details: {str(e)}'
-                if isinstance(e, McpError):
-                    e.error.message = new_msg
-                    raise type(e)(e.error)
-                raise type(e)(new_msg) from e
+            except Exception as e:
+                new_eg = enhance_error(e, f'Connect `{name}` failed, details:')
+                raise new_eg from e
+                # new_msg = f'Connect `{name}` failed, details: {str(e)}'
+                # if isinstance(e, McpError):
+                #     e.error.message = new_msg
+                #     raise type(e)(e.error)
+                # if isinstance(e, HTTPStatusError):
+                #     raise type(e)(new_msg, request=e.request, response=e.response)
+                #
+                # print(e.exceptions)
+                # raise type(e)(new_msg)
 
     async def cleanup(self):
         """Clean up resources"""

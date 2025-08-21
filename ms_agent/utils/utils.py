@@ -4,6 +4,7 @@ import hashlib
 import importlib
 import os.path
 import re
+import sys
 from io import BytesIO
 from typing import List, Optional
 
@@ -15,6 +16,49 @@ from omegaconf import DictConfig, OmegaConf
 from .logger import get_logger
 
 logger = get_logger()
+
+# 动态判断是否支持 ExceptionGroup
+if sys.version_info >= (3, 11):
+    from builtins import ExceptionGroup as BuiltInExceptionGroup
+else:
+    # 模拟一个占位类，用于类型检查兼容
+    class BuiltInExceptionGroup(BaseException):
+
+        def __init__(self, message, exceptions):
+            self.message = message
+            self.exceptions = exceptions
+            self.args = (message, )
+
+        def __str__(self):
+            return f'{self.message}: {self.exceptions}'
+
+        def __repr__(self):
+            return f'ExceptionGroup({self.message!r}, {self.exceptions!r})'
+
+
+def enhance_error(e, prefix: str = ''):
+    # 获取原异常类型
+    exc_type = type(e)
+
+    # 特殊处理 ExceptionGroup
+    if exc_type.__name__ == 'ExceptionGroup':
+        # 递归增强每个子异常
+        new_msg = f'{prefix}: {e}'
+        new_exceptions = [enhance_error(exc, prefix) for exc in e.exceptions]
+        # 注意：ExceptionGroup 需要 list of exceptions
+        new_exc = BuiltInExceptionGroup(new_msg, new_exceptions)
+        return new_exc
+
+    # 其他异常：尝试构造，但只用 args[0]（消息部分）
+    try:
+        # 大多数异常支持 exc("new message")
+        new_exc = exc_type(f'{prefix}: {e}')
+        new_exc.__cause__ = e.__cause__
+        new_exc.__context__ = e.__context__
+        return new_exc
+    except Exception:
+        # 构造失败，回退到通用异常
+        return RuntimeError(f'{prefix}: {e}')
 
 
 def assert_package_exist(package, message: Optional[str] = None):
