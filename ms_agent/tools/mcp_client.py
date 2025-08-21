@@ -80,10 +80,10 @@ class MCPClient(ToolBase):
             try:
                 response = await session.list_tools()
             except Exception as e:
-                new_msg = f'MCP `{key}` list tool failed: {str(e)}'
+                new_msg = f'MCP `{key}` list tool failed, details: {str(e)}'
                 if isinstance(e, McpError):
-                    e.message = new_msg
-                    raise e
+                    e.error.message = new_msg
+                    raise type(e)(e.error)
                 raise type(e)(new_msg) from e
             _session_tools = response.tools
             exclude = []
@@ -227,11 +227,11 @@ class MCPClient(ToolBase):
                 timeout = server.pop('timeout', timeout)
                 await self.connect_to_server(
                     server_name=name, env=env_dict, timeout=timeout, **server)
-            except Exception as e:
-                new_msg = f'Connect {name} failed: {str(e)}'
+            except BaseException as e:
+                new_msg = f'Connect `{name}` failed, details: {str(e)}'
                 if isinstance(e, McpError):
-                    e.message = new_msg
-                    raise e
+                    e.error.message = new_msg
+                    raise type(e)(e.error)
                 raise type(e)(new_msg) from e
 
     async def cleanup(self):
