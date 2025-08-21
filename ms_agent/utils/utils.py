@@ -17,11 +17,10 @@ from .logger import get_logger
 
 logger = get_logger()
 
-# 动态判断是否支持 ExceptionGroup
 if sys.version_info >= (3, 11):
     from builtins import ExceptionGroup as BuiltInExceptionGroup
 else:
-    # 模拟一个占位类，用于类型检查兼容
+    # Define a placeholder class for type-checking compatibility
     class BuiltInExceptionGroup(BaseException):
 
         def __init__(self, message, exceptions):
@@ -37,27 +36,27 @@ else:
 
 
 def enhance_error(e, prefix: str = ''):
-    # 获取原异常类型
+    # Get the original exception type
     exc_type = type(e)
 
-    # 特殊处理 ExceptionGroup
+    # Special handling for ExceptionGroup
     if exc_type.__name__ == 'ExceptionGroup':
-        # 递归增强每个子异常
+        # Recursively enhance each sub-exception
         new_msg = f'{prefix}: {e}'
         new_exceptions = [enhance_error(exc, prefix) for exc in e.exceptions]
-        # 注意：ExceptionGroup 需要 list of exceptions
+        # Note: ExceptionGroup requires a list of exceptions
         new_exc = BuiltInExceptionGroup(new_msg, new_exceptions)
         return new_exc
 
-    # 其他异常：尝试构造，但只用 args[0]（消息部分）
+    # For other exceptions: attempt to construct a new one, using only args[0] (the message part)
     try:
-        # 大多数异常支持 exc("new message")
+        # Most exception types support exc("new message")
         new_exc = exc_type(f'{prefix}: {e}')
         new_exc.__cause__ = e.__cause__
         new_exc.__context__ = e.__context__
         return new_exc
     except Exception:
-        # 构造失败，回退到通用异常
+        # Construction failed; fall back to a generic exception
         return RuntimeError(f'{prefix}: {e}')
 
 

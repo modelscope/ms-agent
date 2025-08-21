@@ -8,7 +8,6 @@ from typing import Any, Dict, Literal, Optional
 from mcp import ClientSession, ListToolsResult, StdioServerParameters
 from mcp.client.sse import sse_client
 from mcp.client.stdio import stdio_client
-from mcp.shared.exceptions import McpError
 from ms_agent.config import Config
 from ms_agent.config.env import Env
 from ms_agent.llm.utils import Tool
@@ -80,7 +79,8 @@ class MCPClient(ToolBase):
             try:
                 response = await session.list_tools()
             except Exception as e:
-                new_eg = enhance_error(e, f'MCP `{key}` list tool failed, details: ')
+                new_eg = enhance_error(
+                    e, f'MCP `{key}` list tool failed, details: ')
                 raise new_eg from e
             _session_tools = response.tools
             exclude = []
