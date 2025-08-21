@@ -3,12 +3,12 @@ import asyncio
 import os
 from contextlib import AsyncExitStack
 from datetime import timedelta
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, Literal, Optional
 
-from aiohttp.hdrs import CONNECTION
 from mcp import ClientSession, ListToolsResult, StdioServerParameters
 from mcp.client.sse import sse_client
 from mcp.client.stdio import stdio_client
+from mcp.shared.exceptions import McpError
 from ms_agent.config import Config
 from ms_agent.config.env import Env
 from ms_agent.llm.utils import Tool
@@ -55,7 +55,8 @@ class MCPClient(ToolBase):
 
     async def call_tool(self, server_name: str, tool_name: str,
                         tool_args: dict):
-        response = self.sessions[server_name].call_tool(tool_name, tool_args)
+        response = await self.sessions[server_name].call_tool(
+            tool_name, tool_args)
 
         texts = []
         if response.isError:
@@ -80,7 +81,6 @@ class MCPClient(ToolBase):
                 response = await session.list_tools()
             except Exception as e:
                 new_msg = f'MCP `{key}` list tool failed: {str(e)}'
-                from mcp.shared.exceptions import McpError
                 if isinstance(e, McpError):
                     e.message = new_msg
                     raise e
@@ -228,7 +228,6 @@ class MCPClient(ToolBase):
                 await self.connect_to_server(
                     server_name=name, env=env_dict, timeout=timeout, **server)
             except Exception as e:
-                from mcp.shared.exceptions import McpError
                 new_msg = f'Connect {name} failed: {str(e)}'
                 if isinstance(e, McpError):
                     e.message = new_msg
