@@ -80,11 +80,8 @@ class MCPClient(ToolBase):
             try:
                 response = await session.list_tools()
             except Exception as e:
-                new_msg = f'MCP `{key}` list tool failed, details: {str(e)}'
-                if isinstance(e, McpError):
-                    e.error.message = new_msg
-                    raise type(e)(e.error)
-                raise type(e)(new_msg) from e
+                new_eg = enhance_error(e, f'MCP `{key}` list tool failed, details: ')
+                raise new_eg from e
             _session_tools = response.tools
             exclude = []
             if key in self._exclude_functions:
@@ -230,15 +227,6 @@ class MCPClient(ToolBase):
             except Exception as e:
                 new_eg = enhance_error(e, f'Connect `{name}` failed, details:')
                 raise new_eg from e
-                # new_msg = f'Connect `{name}` failed, details: {str(e)}'
-                # if isinstance(e, McpError):
-                #     e.error.message = new_msg
-                #     raise type(e)(e.error)
-                # if isinstance(e, HTTPStatusError):
-                #     raise type(e)(new_msg, request=e.request, response=e.response)
-                #
-                # print(e.exceptions)
-                # raise type(e)(new_msg)
 
     async def cleanup(self):
         """Clean up resources"""
