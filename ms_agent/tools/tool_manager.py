@@ -12,6 +12,7 @@ from ms_agent.tools.mcp_client import MCPClient
 from ms_agent.tools.split_task import SplitTask
 
 MAX_TOOL_NAME_LEN = int(os.getenv('MAX_TOOL_NAME_LEN', 64))
+TOOL_CALL_TIMEOUT = os.getenv('TOOL_CALL_TIMEOUT', 30)
 
 
 class ToolManager:
@@ -81,12 +82,18 @@ class ToolManager:
                 tool_args = json.loads(tool_args)
             assert tool_name in self._tool_index, f'Tool name {tool_name} not found'
             tool_ins, server_name, _ = self._tool_index[tool_name]
-            return await tool_ins.call_tool(
-                server_name,
-                tool_name=tool_name.split(self.TOOL_SPLITER)[1],
-                tool_args=tool_args)
+            response = await asyncio.wait_for(
+                tool_ins.call_tool(
+                    server_name,
+                    tool_name=tool_name.split(self.TOOL_SPLITER)[1],
+                    tool_args=tool_args),
+                timeout=TOOL_CALL_TIMEOUT)
+            return response
+        except asyncio.TimeoutError:
+            # TODO: How to get the information printed by the tool before hanging to return to the model?
+            return f'Execute tool call timeout: {tool_info}'
         except Exception as e:
-            return f'Tool calling failed: {str(e)}'
+            return f'Tool calling failed: {tool_info}, details: {str(e)}'
 
     async def parallel_call_tool(self, tool_list: List[ToolCall]):
         tasks = [self.single_call_tool(tool) for tool in tool_list]

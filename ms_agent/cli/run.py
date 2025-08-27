@@ -32,9 +32,9 @@ class RunCMD(CLICommand):
         parser.add_argument(
             '--query',
             required=False,
-            nargs='+',
+            type=str,
             help=
-            'The query or prompt to send to the LLM. Multiple words can be provided as a single query string.'
+            'The query or prompt to send to the LLM. If not set, will enter an interactive mode.'
         )
         parser.add_argument(
             '--config',
@@ -113,7 +113,15 @@ class RunCMD(CLICommand):
                 mcp_server_file=self.args.mcp_server_file,
                 load_cache=self.args.load_cache,
                 task=self.args.query)
+
         query = self.args.query
+        input_msg: str = "Please input instruction or 'Ctrl+C' to exit:"
         if not query:
-            query = input('>>>')
-        asyncio.run(engine.run(' '.join(query)))
+            print(input_msg, flush=True)
+            while True:
+                query = input('>>> ').strip()
+                if query:
+                    break
+                print(input_msg, flush=True)
+
+        asyncio.run(engine.run(query))

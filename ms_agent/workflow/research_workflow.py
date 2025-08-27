@@ -335,7 +335,10 @@ class ResearchWorkflow:
 
         if urls_or_files:
             # If urls_or_files is provided, then disable search and use the provided resources directly
-            prepared_resources = urls_or_files
+            special_resources: List[str] = [file for file in urls_or_files if file.endswith('.txt')]
+            prepared_resources: List[str] = [
+                file for file in urls_or_files if file not in special_resources
+            ]
         else:
             engine_type = getattr(self._search_engine, 'engine_type', None)
             try:
@@ -375,13 +378,24 @@ class ResearchWorkflow:
         extractor = HierarchicalKeyInformationExtraction(urls_or_files=prepared_resources, verbose=self._verbose)
         key_info_list: List[KeyInformation] = extractor.extract()
 
+        if special_resources and all(file.endswith('.txt') for file in special_resources):
+            logger.warning(
+                'Some resources are text files, using the text content as key information instead.'
+            )
+            for file in special_resources:
+                with open(file, 'r', encoding='utf-8') as f:
+                    text_content = f.read()
+                    key_info_list.append(
+                        KeyInformation(text=text_content, resources=[]))
+
         if self._verbose:
             logger.info(f'Extracted key information items: {len(key_info_list)}')
 
         # Dump pictures/table to resources directory
         resource_map: Dict[
             str, str] = {}  # item_name -> item_relative_path, e.g. {'2506.02718v1.pdf@2728311679401389578@#/pictures/0': 'resources/d5a93ca4.png'}
-        for item_name, doc_item in extractor.all_ref_items.items():
+        for item_name, dict_item in extractor.all_ref_items.items():
+            doc_item = dict_item.get('item', None)
             if hasattr(doc_item, 'image') and doc_item.image:
                 # Get the item extension from mimetype such as `image/png`
                 item_ext: str = doc_item.image.mimetype.split('/')[-1]
@@ -417,12 +431,14 @@ class ResearchWorkflow:
         if self._verbose:
             logger.info(f'\n\nStart summarizing with messages: {messages_sum}')
 
-        aggregated_chunks = self._chat(messages=messages_sum, temperature=0.3)
+        aggregated_chunks = self._chat(messages=messages_sum, temperature=0.3, **self._client._kwargs.get('generation_config', {}))
         resp_content: str = aggregated_chunks.get('content', '')
         resp_content = resp_content.lstrip('```markdown\n').rstrip('```')
         logger.info(f'\n\nSummary Content:\n{resp_content}')
 
         # Replace resource name with actual relative path
+        replace_pattern = r'!\[[^\]]*\]\(<resource_info>(.*?)</resource_info>\)'
+        resp_content = re.sub(replace_pattern, r'<resource_info>\1</resource_info>', resp_content)
         for item_name, item_relative_path in resource_map.items():
             resp_content = resp_content.replace(
                 f'src="<resource_info>{item_name}</resource_info>"',

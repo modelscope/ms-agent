@@ -22,10 +22,10 @@
 ## 功能特性
 
 - 🔍 **文档深度研究** - 支持文档的深度分析和总结
-- 📝 **多种输入类型** - 支持多文件上传和URLs输入
+- 📝 **多种输入类型** - 支持多文件上传和URLs输入（文件格式包含PDF、TXT、PPT、DOCX等）
 - 📊 **多模态报告** - 支持Markdown格式的图文报告输出
 - 🚀 **精准高效** - 利用强大的LLM进行快速准确的研究，采用关键信息抽取技术进一步优化了token使用
-- ⚙️ **灵活部署** - 支持本地运行和魔搭创空间运行模式，兼容CPU和GPU环境
+- ⚙️ **灵活部署** - 支持本地运行和魔搭创空间运行模式（CPU-Only），同时也兼容GPU环境
 - 💰 **免费模型推理** - 魔搭ModelScope用户可免费调用LLM API推理，参考 [ModelScope API-Inference](https://modelscope.cn/docs/model-service/API-Inference/intro)
 
 
@@ -79,10 +79,10 @@ export OPENAI_MODEL_ID=Qwen/Qwen3-235B-A22B-Instruct-2507
 
 **快速启动：**
 ```bash
-# Command line
+# 使用命令行的方式启动Gradio服务
 ms-agent app --doc_research
 
-# Python script
+# 使用Python脚本启动Gradio服务
 cd ms-agent/app
 python doc_research.py
 ```

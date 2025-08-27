@@ -22,7 +22,7 @@
 ## Features
 
   - 🔍 **Deep Document Research** - Support deep analysis and summarization of documents
-  - 📝 **Multiple Input Types** - Support multi-file uploads and URL inputs
+  - 📝 **Multiple Input Types** - Support multi-file uploads and URL inputs, including PDF, TXT, PPT, DOCX, etc.
   - 📊 **Multimodal Reports** - Support text and image reports in Markdown format
   - 🚀 **High Efficiency** - Leverage powerful LLMs for fast and accurate research, leveraging key information extraction techniques to further optimize token usage
   - ⚙️ **Flexible Deployment** - Support local run and [ModelScope Studio](https://modelscope.cn/studios) on both CPU and GPU environments.
@@ -78,10 +78,10 @@ export OPENAI_MODEL_ID=Qwen/Qwen3-235B-A22B-Instruct-2507
 
 **Quick start:**
 ```bash
-# Command line
+# Use ms-agent CLI to run the app
 ms-agent app --doc_research
 
-# Python script
+# Use Python script to run the app
 cd ms-agent/app
 python doc_research.py
 ```

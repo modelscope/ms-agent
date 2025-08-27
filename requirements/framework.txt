@@ -1,7 +1,9 @@
 dotenv
 json5
+markdown
 mcp
 modelscope
 numpy
 omegaconf
 openai
+pillow

@@ -1,10 +1,16 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import base64
+import glob
 import hashlib
+import html
 import importlib
+import importlib.util
 import os.path
 import re
+import subprocess
+import sys
 from io import BytesIO
+from pathlib import Path
 from typing import List, Optional
 
 import json
@@ -15,6 +21,48 @@ from omegaconf import DictConfig, OmegaConf
 from .logger import get_logger
 
 logger = get_logger()
+
+if sys.version_info >= (3, 11):
+    from builtins import ExceptionGroup as BuiltInExceptionGroup
+else:
+    # Define a placeholder class for type-checking compatibility
+    class BuiltInExceptionGroup(BaseException):
+
+        def __init__(self, message, exceptions):
+            self.message = message
+            self.exceptions = exceptions
+            self.args = (message, )
+
+        def __str__(self):
+            return f'{self.message}: {self.exceptions}'
+
+        def __repr__(self):
+            return f'ExceptionGroup({self.message!r}, {self.exceptions!r})'
+
+
+def enhance_error(e, prefix: str = ''):
+    # Get the original exception type
+    exc_type = type(e)
+
+    # Special handling for ExceptionGroup
+    if exc_type.__name__ == 'ExceptionGroup':
+        # Recursively enhance each sub-exception
+        new_msg = f'{prefix}: {e}'
+        new_exceptions = [enhance_error(exc, prefix) for exc in e.exceptions]
+        # Note: ExceptionGroup requires a list of exceptions
+        new_exc = BuiltInExceptionGroup(new_msg, new_exceptions)
+        return new_exc
+
+    # For other exceptions: attempt to construct a new one, using only args[0] (the message part)
+    try:
+        # Most exception types support exc("new message")
+        new_exc = exc_type(f'{prefix}: {e}')
+        new_exc.__cause__ = e.__cause__
+        new_exc.__context__ = e.__context__
+        return new_exc
+    except Exception:
+        # Construction failed; fall back to a generic exception
+        return RuntimeError(f'{prefix}: {e}')
 
 
 def assert_package_exist(package, message: Optional[str] = None):
@@ -478,3 +526,120 @@ def normalize_url_or_file(url_or_file: str):
         url_or_file = url_or_file.replace('arxiv.org/html', 'arxiv.org/pdf')
 
     return url_or_file
+
+
+def txt_to_html(txt_path: str, html_path: Optional[str] = None) -> str:
+    """
+    Converts a plain text file to an HTML file, preserving formatting and special characters.
+
+    Args:
+        txt_path (str): The path to the input txt file.
+        html_path (Optional[str]): The path where the output HTML file will be saved.
+                               If not provided, the HTML file will be saved with the same name as the text file
+                               but with a .html extension.
+
+    Returns:
+        str: The path to the generated HTML file.
+    """
+    if html_path is None:
+        html_path = os.path.splitext(txt_path)[0] + '.html'
+
+    with open(txt_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    escaped_content = html.escape(content, quote=True)
+    html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>{os.path.basename(txt_path)}</title>
+    <style>
+        pre {{
+            white-space: pre-wrap;  /* preserve formatting but allow line wrapping */
+            overflow-wrap: break-word;  /* allow long words to break */
+        }}
+    </style>
+</head>
+<body>
+    <pre>{escaped_content}</pre>
+</body>
+</html>
+"""
+
+    with open(html_path, 'w', encoding='utf-8') as f:
+        f.write(html_content)
+
+    return html_path
+
+
+def get_files_from_dir(folder_path: str,
+                       exclude: Optional[List[str]] = None) -> List[Path]:
+    """
+    Get all files in the target directory recursively, excluding files that match any of the given regex patterns.
+
+    Args:
+        folder_path (str): The directory to search for files.
+        exclude (Optional[List[str]]): A list of regex patterns to exclude files. If None, no files are excluded.
+
+    Returns:
+        List[Path]: A list of Path objects representing the files to be processed.
+
+    Example:
+        >>> files = get_files_from_dir('/path/to/dir')
+    """
+    if exclude is None:
+        exclude = []
+    exclude_patterns = [re.compile(pattern) for pattern in exclude]
+
+    pattern = os.path.join(folder_path, '**', '*')
+    all_files = glob.glob(pattern, recursive=True)
+    files = [Path(f) for f in all_files if os.path.isfile(f)]
+
+    if not exclude_patterns:
+        return files
+
+    # Filter files based on exclusion patterns
+    file_list = [
+        file_path for file_path in files if not any(
+            pattern.search(
+                str(file_path.relative_to(folder_path)).replace('\\', '/'))
+            for pattern in exclude_patterns)
+    ]
+
+    return file_list
+
+
+def is_package_installed(package_or_import_name: str) -> bool:
+    """
+    Checks if a package is installed by attempting to import it.
+
+    Args:
+    package_or_import_name: The name of the package or import as a string.
+
+    Returns:
+        True if the package is installed and can be imported, False otherwise.
+    """
+    return importlib.util.find_spec(package_or_import_name) is not None
+
+
+def install_package(package_name: str, import_name: Optional[str] = None):
+    """
+    Check and install a package using pip.
+
+    Note: The `package_name` may not be the same as the `import_name`.
+
+    Args:
+        package_name (str): The name of the package to install (for pip install).
+        import_name (str, optional): The name used to import the package.
+                                    If None, uses package_name. Defaults to None.
+    """
+    # Use package_name as import_name if not provided
+    if import_name is None:
+        import_name = package_name
+
+    if not is_package_installed(import_name):
+        subprocess.check_call(
+            [sys.executable, '-m', 'pip', 'install', package_name])
+        logger.info(f'Package {package_name} installed successfully.')
+    else:
+        logger.info(f'Package {import_name} is already installed.')
