@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/modelscope-ms-agent-badge.png)](https://mseep.ai/app/modelscope-ms-agent)
+
 <h1> MS-Agent: Lightweight Framework for Empowering Agents with Autonomous Exploration</h1>
 
 <p align="center">
