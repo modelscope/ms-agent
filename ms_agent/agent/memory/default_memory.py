@@ -20,9 +20,10 @@ class DefaultMemory(Memory):
                  conversation_id: Optional[str] = None,
                  persist: bool = False,
                  path: str = None,
-                 history_mode: Literal['add', 'overwrite'] = 'overwrite',
+                 history_mode: Literal['add', 'overwrite'] = 'add',
                  current_memory_cache_position: int = 0):
         super().__init__(config)
+        cache_messages = [message.to_dict() for message in cache_messages] if cache_messages else []
         self.cache_messages = cache_messages
         self.conversation_id: Optional[str] = conversation_id or getattr(
             config.memory, 'conversation_id', None)
@@ -33,7 +34,8 @@ class DefaultMemory(Memory):
         self.embedder: Optional[str] = getattr(config.memory, 'embedder', None)
         self.is_retrieve: Optional[bool] = getattr(config.memory,
                                                    'is_retrieve', None)
-        self.path: Optional[str] = path or getattr(config.memory, 'path', None)
+        self.path: Optional[str] = path or getattr(config.memory, 'path', None) or getattr(self.config, 'output_dir', 'output')
+        print(f'path: {self.path}')
         self.history_mode = history_mode or getattr(config.memory,
                                                     'history_mode', None)
         self.current_memory_cache_position = current_memory_cache_position
@@ -70,7 +72,7 @@ class DefaultMemory(Memory):
             filtered = []
             indices = []  # 每个 filtered 消息对应的原始索引
             for idx, msg in enumerate(msgs):
-                if ignore_role and msg.get('role') in ignore_role:
+                if ignore_role and getattr(msg, 'role') in ignore_role:
                     continue
                 filtered.append(msg)
                 indices.append(idx)
@@ -92,12 +94,11 @@ class DefaultMemory(Memory):
             is_common = True
 
             # 比较其他字段（除了忽略的字段）
-            all_keys = set(current_cache_msg.keys()).union(
-                set(current_msg.keys()))
+            all_keys = ['role', 'content', 'reasoning_content', 'tool_calls']
             for key in all_keys:
                 if key in ignore_fields:
                     continue
-                if current_cache_msg.get(key) != current_msg.get(key):
+                if getattr(current_cache_msg, key, '') != getattr(current_msg, key, ''):
                     is_common = False
                     break
 
@@ -121,60 +122,51 @@ class DefaultMemory(Memory):
         self.memory.delete_all(user_id=self.conversation_id)
         self.memory.add(common_prefix_messages, user_id=self.conversation_id)
 
-    def run(self, messages, ignore_role=None, ignore_fields=None):
-        print(
-            f'ahahahah?1 : {self.memory.get_all(user_id=self.conversation_id)}'
-        )
-        if not self.cache_messages:
-            self.cache_messages = messages
-        common_prefix_messages, messages_idx, cache_message_idx\
+    def add(self, messages: List[Message]) -> None:
+        messages_dict = []
+        for message in messages:
+            if isinstance(message, Message):
+                messages_dict.append(message.to_dict())
+            else:
+                messages_dict.append(message)
+        self.memory.add(messages_dict, user_id=self.conversation_id)
+        self.cache_messages.extend(messages_dict)
+        res = self.memory.get_all(user_id=self.conversation_id)
+        logger.info(f'Add memory done, current memory infos: {"; ".join([item["memory"] for item in res["results"]])}')
+
+    def search(self, query: str) -> str:
+        relevant_memories = self.memory.search(
+            query, user_id=self.conversation_id, limit=3)
+        memories_str = '\n'.join(f"- {entry['memory']}"
+                                 for entry in relevant_memories['results'])
+        return memories_str
+
+    async def run(self, messages, ignore_role=None, ignore_fields=None):
+        if not self.is_retrieve or not self._should_update_memory(messages):
+            return messages
+        common_prefix_messages, messages_idx, cache_message_idx \
             = self._find_messages_common_prefix(messages,
                                                 ignore_role=ignore_role,
                                                 ignore_fields=ignore_fields)
-        print(
-            f'ahahahah?2 : {self.memory.get_all(user_id=self.conversation_id)}'
-        )
-        if not self.is_retrieve or not self._should_update_memory(messages):
-            return messages
-        print(
-            f'ahahahah?3 : {self.memory.get_all(user_id=self.conversation_id)}'
-        )
-        if self.history_mode == 'add':
-            print(
-                f'ahahahah?4 : {self.memory.get_all(user_id=self.conversation_id)}'
-            )
-            self.memory.add(messages, user_id=self.conversation_id)
-            res = self.memory.get_all(user_id=self.conversation_id)
-            print(f'res: {res}')
-        else:
-            print(
-                f'ahahahah?5 : {self.memory.get_all(user_id=self.conversation_id)}'
-            )
+        if self.history_mode == 'overwrite':
             if cache_message_idx < len(self.cache_messages):
                 self.rollback(common_prefix_messages, cache_message_idx)
-            self.cache_messages = messages
-            print(f'messages: {messages}')
-            self.memory.add(
-                messages[messages_idx:], user_id=self.conversation_id)
-            res = self.memory.get_all(user_id=self.conversation_id)
-            print(f'res: {res}')
-        print(f'messages[-1]["content"]: {messages[-1]["content"]}')
-        relevant_memories = self.memory.search(
-            messages[-1]['content'], user_id=self.conversation_id, limit=3)
-        memories_str = '\n'.join(f"- {entry['memory']}"
-                                 for entry in relevant_memories['results'])
-        print(f'memories_str: {memories_str}')
+            self.add(messages[max(messages_idx, 0):])
+        else:
+            self.add(messages)
+
+        query = getattr(messages[-1], 'content')
+        memories_str = self.search(query)
         # 将memory对应的messages段删除，并添加相关的memory_str信息
-        if messages[0].get('role') == 'system':
-            system_prompt = messages[0][
-                'content'] + f'\nUser Memories: {memories_str}'
+        if getattr(messages[0], 'role') == 'system':
+            system_prompt = getattr(messages[0],
+                                'content') + f'\nUser Memories: {memories_str}'
         else:
             system_prompt = f'\nYou are a helpful assistant. Answer the question based on query and memories.\nUser Memories: {memories_str}'
         new_messages = [{
             'role': 'system',
             'content': system_prompt
         }] + messages[messages_idx:]
-
         return new_messages
 
     def _init_memory(self) -> Mem0Memory | None:
@@ -232,11 +224,11 @@ class DefaultMemory(Memory):
             'embedder':
             embedder
         }
-        #logger.info(f'Memory config: {mem0_config}')
+        logger.info(f'Memory config: {mem0_config}')
         memory = Mem0Memory.from_config(mem0_config)
-        memory.add(self.cache_messages, user_id=self.conversation_id)
-        res = memory.get_all(user_id=self.conversation_id)
-        print(f'res: {res}')
+        if self.cache_messages:
+            memory.add(self.cache_messages, user_id=self.conversation_id)
+        print('current memory:', memory.get_all(user_id=self.conversation_id))
         return memory
 
 
@@ -250,7 +242,6 @@ async def main():
             'compress': True,
             'is_retrieve': True,
             'history_mode': 'add',
-            # "embedding_model": "text-embedding-v4",
             'llm': {
                 'provider': 'openai',
                 'model': 'qwen3-235b-a22b-instruct-2507',
@@ -267,24 +258,17 @@ async def main():
                     'model': 'text-embedding-v4',
                 }
             }
-            # "vector_store": {
-            #     "provider": "qdrant",
-            #     "config": {
-            #         "path": "/Users/luyan/workspace/mem0/storage",
-            #         "on_disk": False
-            #     }
-            # }
         }
     }
     with open('openai_format_test_case1.json', 'r') as f:
         data = json.load(f)
     config = OmegaConf.create(cfg)
     memory = DefaultMemory(
-        config, path='./output', cache_messages=data, history_mode='add')
-    res = memory.run(messages=[{
+        config, path='./output', cache_messages=None, history_mode='add')
+    res = await memory.run(messages=[Message({
         'role': 'user',
         'content': '使用bun会对新项目的影响大吗，有哪些新特性'
-    }])
+    })])
     print(res)
 
 

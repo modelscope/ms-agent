@@ -230,12 +230,15 @@ class LLMAgent(Agent):
         config, runtime, cache_messages = self._read_history(
             messages, **kwargs)
         if hasattr(self.config, 'memory'):
-            for _memory in (self.config.memory or []):
-                assert _memory.name in memory_mapping, (
-                    f'{_memory.name} not in memory_mapping, '
-                    f'which supports: {list(memory_mapping.keys())}')
-                self.memory_tools.append(memory_mapping[_memory.name](
-                    self.config, cache_messages, conversation_id=self.task))
+            memory_type = getattr(self.config.memory, 'name', 'default_memory')
+            assert memory_type in memory_mapping, (
+                f'{memory_type} not in memory_mapping, '
+                f'which supports: {list(memory_mapping.keys())}')
+
+            self.memory_tools.append(memory_mapping[memory_type](
+                self.config,
+                cache_messages if isinstance(cache_messages, list) else None,
+                conversation_id=self.task))
         return config, runtime, messages
 
     async def _prepare_planer(self):
