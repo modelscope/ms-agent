@@ -163,10 +163,7 @@ class DefaultMemory(Memory):
                                 'content') + f'\nUser Memories: {memories_str}'
         else:
             system_prompt = f'\nYou are a helpful assistant. Answer the question based on query and memories.\nUser Memories: {memories_str}'
-        new_messages = [{
-            'role': 'system',
-            'content': system_prompt
-        }] + messages[messages_idx:]
+        new_messages = [Message(role='system', content=system_prompt)] + messages[messages_idx:]
         return new_messages
 
     def _init_memory(self) -> Mem0Memory | None:
@@ -228,7 +225,6 @@ class DefaultMemory(Memory):
         memory = Mem0Memory.from_config(mem0_config)
         if self.cache_messages:
             memory.add(self.cache_messages, user_id=self.conversation_id)
-        print('current memory:', memory.get_all(user_id=self.conversation_id))
         return memory
 
 

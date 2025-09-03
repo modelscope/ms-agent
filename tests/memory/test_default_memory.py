@@ -66,7 +66,7 @@ class TestDefaultMemory(unittest.TestCase):
         config['local_dir'] = current_dir
         config['llm']['modelscope_api_key'] = os.getenv('MODELSCOPE_API_KEY')
         async def main():
-            agent = LLMAgent(config=OmegaConf.create(config))
+            agent = LLMAgent(config=OmegaConf.create(config), task='default_id')
             res = await agent.run('使用bun会对新项目的影响大吗，有哪些新特性')
             print(res)
 
