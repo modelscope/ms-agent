@@ -223,15 +223,23 @@ class LLMAgent(Agent):
             messages = await self.rag.query(messages[1].content)
         return messages
 
-    async def _prepare_memory(self):
+    async def _prepare_memory(self,
+                              messages: Optional[List[Message]] = None,
+                              **kwargs):
         """Load and initialize memory components from the config."""
+        config, runtime, cache_messages = self._read_history(
+            messages, **kwargs)
         if hasattr(self.config, 'memory'):
-            for _memory in (self.config.memory or []):
-                assert _memory.name in memory_mapping, (
-                    f'{_memory.name} not in memory_mapping, '
-                    f'which supports: {list(memory_mapping.keys())}')
-                self.memory_tools.append(memory_mapping[_memory.name](
-                    self.config))
+            memory_type = getattr(self.config.memory, 'name', 'default_memory')
+            assert memory_type in memory_mapping, (
+                f'{memory_type} not in memory_mapping, '
+                f'which supports: {list(memory_mapping.keys())}')
+
+            self.memory_tools.append(memory_mapping[memory_type](
+                self.config,
+                cache_messages if isinstance(cache_messages, list) else None,
+                conversation_id=self.task))
+        return config, runtime, messages
 
     async def _prepare_planer(self):
         """Load and initialize the planer component from the config."""
@@ -469,13 +477,11 @@ class LLMAgent(Agent):
             self._prepare_llm()
             self._prepare_runtime()
             await self._prepare_tools()
-            await self._prepare_memory()
             await self._prepare_planer()
             await self._prepare_rag()
-            self.runtime.tag = self.tag
-
-            self.config, self.runtime, messages = self._read_history(
+            self.config, self.runtime, messages = await self._prepare_memory(
                 messages, **kwargs)
+            self.runtime.tag = self.tag
 
             if self.runtime.round == 0:
                 # 0 means no history
