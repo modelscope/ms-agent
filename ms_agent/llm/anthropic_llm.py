@@ -4,15 +4,11 @@ from typing import Any, Dict, Generator, Iterator, List, Optional, Union
 import json5
 from ms_agent.llm import LLM
 from ms_agent.llm.utils import Message, Tool, ToolCall
-from ms_agent.utils import (MAX_CONTINUE_RUNS, assert_package_exist,
-                            get_logger, retry)
+from ms_agent.utils import assert_package_exist, get_logger, retry
 from omegaconf import DictConfig, OmegaConf
 
 
 class Anthropic(LLM):
-    input_msg = {
-        'role', 'content', 'tool_calls', 'partial', 'prefix', 'tool_call_id'
-    }
 
     def __init__(
         self,
@@ -25,8 +21,6 @@ class Anthropic(LLM):
         import anthropic
 
         self.model: str = config.llm.model
-        self.max_continue_runs = getattr(config.llm, 'max_continue_runs',
-                                         None) or MAX_CONTINUE_RUNS
 
         base_url = base_url or config.llm.get('anthropic_base_url')
         api_key = api_key or config.llm.get('anthropic_api_key')
@@ -253,8 +247,7 @@ if __name__ == '__main__':
         'llm': {
             'model': 'Qwen/Qwen2.5-VL-72B-Instruct',
             'anthropic_api_key': os.getenv('MODELSCOPE_API_KEY'),
-            'anthropic_base_url': 'https://api-inference.modelscope.cn',
-            'max_continue_runs': 3,
+            'anthropic_base_url': 'https://api-inference.modelscope.cn'
         },
         'generation_config': {
             'stream': True,
