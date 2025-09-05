@@ -89,7 +89,8 @@ class OpenaiLLM(unittest.TestCase):
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_tool_stream(self):
         llm = Anthropic(self.conf)
-        res = llm.generate(messages=self.tool_messages, tools=self.tools, stream=True)
+        res = llm.generate(
+            messages=self.tool_messages, tools=self.tools, stream=True)
         for chunk in res:
             print(chunk)
         assert (len(chunk.tool_calls))
@@ -104,19 +105,20 @@ class OpenaiLLM(unittest.TestCase):
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_agent_multi_round(self):
         import asyncio
+
         async def main():
             mcp_config = {
-                "mcpServers": {
-                    "fetch": {
-                        "type": "sse",
-                        "url": os.getenv("MCP_SERVER_FETCH_URL"),
+                'mcpServers': {
+                    'fetch': {
+                        'type': 'sse',
+                        'url': os.getenv('MCP_SERVER_FETCH_URL'),
                     }
                 }
             }
             agent = LLMAgent(config=self.conf, mcp_config=mcp_config)
             res = await agent.run('访问www.baidu.com')
             print(res)
-            assert('robots.txt' in res[-1].content)
+            assert ('robots.txt' in res[-1].content)
 
         asyncio.run(main())
 
@@ -124,12 +126,13 @@ class OpenaiLLM(unittest.TestCase):
     def test_stream_agent_multi_round(self):
         import asyncio
         from copy import deepcopy
+
         async def main():
             mcp_config = {
-                "mcpServers": {
-                    "fetch": {
-                        "type": "sse",
-                        "url": os.getenv("MCP_SERVER_FETCH_URL"),
+                'mcpServers': {
+                    'fetch': {
+                        'type': 'sse',
+                        'url': os.getenv('MCP_SERVER_FETCH_URL'),
                     }
                 }
             }
@@ -138,7 +141,7 @@ class OpenaiLLM(unittest.TestCase):
             agent = LLMAgent(config=self.conf, mcp_config=mcp_config)
             res = await agent.run('访问www.baidu.com')
             print('res:', res)
-            assert('robots.txt' in res[-1].content)
+            assert ('robots.txt' in res[-1].content)
 
         asyncio.run(main())
 
