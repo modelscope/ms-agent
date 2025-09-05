@@ -43,7 +43,7 @@ class Agent:
                  trust_remote_code: bool = False):
         if config_dir_or_id is not None:
             self.config: DictConfig = Config.from_task(config_dir_or_id, env)
-        elif config is not None:
+        elif config is not None and isinstance(config, DictConfig):
             self.config: DictConfig = config
         else:
             self.config: DictConfig = Config.from_task(DEFAULT_YAML)
@@ -52,7 +52,7 @@ class Agent:
             self.tag = getattr(config, 'tag', None) or self.DEFAULT_TAG
         else:
             self.tag = tag
-        self.config.tag = self.tag
+        setattr(self.config, 'tag', self.tag)
         self.trust_remote_code = trust_remote_code
         self.config.trust_remote_code = trust_remote_code
         self.handler: Optional[ConfigLifecycleHandler] = None

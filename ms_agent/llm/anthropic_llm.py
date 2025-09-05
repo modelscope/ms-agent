@@ -104,12 +104,19 @@ class Anthropic(LLM):
 
         formatted_messages = self._format_input_message(messages)
         formatted_messages = [m for m in formatted_messages if m['content']]
+
+        system = None
+        if formatted_messages[0]['role'] == 'system':
+            system = formatted_messages[0]['content']
+            formatted_messages = formatted_messages[1:]
         params = {
             'model': self.model,
             'messages': formatted_messages,
             'max_tokens': kwargs.pop('max_tokens', 1024),
         }
 
+        if system:
+            params['system'] = system
         if tools:
             params['tools'] = tools
         params.update(kwargs)
