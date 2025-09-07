@@ -1,9 +1,9 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import os
 from copy import deepcopy
+from functools import partial, wraps
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple
 
-from langchain.chains.question_answering.map_reduce_prompt import messages
-from mem0 import Memory as Mem0Memory
 from ms_agent.agent.memory import Memory
 from ms_agent.llm.utils import Message
 from ms_agent.utils.logger import logger
@@ -18,26 +18,31 @@ class DefaultMemory(Memory):
                  config: DictConfig,
                  cache_messages: Optional[List[Message]] = None,
                  conversation_id: Optional[str] = None,
-                 persist: bool = False,
+                 persist: bool = True,
                  path: str = None,
                  history_mode: Literal['add', 'overwrite'] = 'add',
                  current_memory_cache_position: int = 0):
         super().__init__(config)
-        cache_messages = [message.to_dict() for message in cache_messages] if cache_messages else []
+        cache_messages = [message.to_dict() for message in cache_messages
+                          ] if cache_messages else []
         self.cache_messages = cache_messages
         self.conversation_id: Optional[str] = conversation_id or getattr(
             config.memory, 'conversation_id', None)
         self.persist: Optional[bool] = persist or getattr(
-            config.memory, 'persist', None)
+            config.memory, 'persist', True)
         self.compress: Optional[bool] = getattr(config.memory, 'compress',
-                                                None)
-        self.embedder: Optional[str] = getattr(config.memory, 'embedder', None)
+                                                True)
         self.is_retrieve: Optional[bool] = getattr(config.memory,
-                                                   'is_retrieve', None)
-        self.path: Optional[str] = path or getattr(config.memory, 'path', None) or getattr(self.config, 'output_dir', 'output')
-        print(f'path: {self.path}')
+                                                   'is_retrieve', True)
+        self.path: Optional[str] = path or getattr(
+            config.memory, 'path', None) or getattr(self.config, 'output_dir',
+                                                    'output')
         self.history_mode = history_mode or getattr(config.memory,
-                                                    'history_mode', None)
+                                                    'history_mode')
+        self.ignore_role: List[str] = getattr(config.memory, 'ignore_role',
+                                              ['tool', 'system'])
+        self.ignore_fields: List[str] = getattr(config.memory, 'ignore_fields',
+                                                ['reasoning_content'])
         self.current_memory_cache_position = current_memory_cache_position
         self.memory = self._init_memory()
 
@@ -98,7 +103,8 @@ class DefaultMemory(Memory):
             for key in all_keys:
                 if key in ignore_fields:
                     continue
-                if getattr(current_cache_msg, key, '') != getattr(current_msg, key, ''):
+                if getattr(current_cache_msg, key, '') != getattr(
+                        current_msg, key, ''):
                     is_common = False
                     break
 
@@ -132,7 +138,9 @@ class DefaultMemory(Memory):
         self.memory.add(messages_dict, user_id=self.conversation_id)
         self.cache_messages.extend(messages_dict)
         res = self.memory.get_all(user_id=self.conversation_id)
-        logger.info(f'Add memory done, current memory infos: {"; ".join([item["memory"] for item in res["results"]])}')
+        logger.info(
+            f'Add memory done, current memory infos: {"; ".join([item["memory"] for item in res["results"]])}'
+        )
 
     def search(self, query: str) -> str:
         relevant_memories = self.memory.search(
@@ -144,6 +152,7 @@ class DefaultMemory(Memory):
     async def run(self, messages, ignore_role=None, ignore_fields=None):
         if not self.is_retrieve or not self._should_update_memory(messages):
             return messages
+
         common_prefix_messages, messages_idx, cache_message_idx \
             = self._find_messages_common_prefix(messages,
                                                 ignore_role=ignore_role,
@@ -159,21 +168,56 @@ class DefaultMemory(Memory):
         memories_str = self.search(query)
         # 将memory对应的messages段删除，并添加相关的memory_str信息
         if getattr(messages[0], 'role') == 'system':
-            system_prompt = getattr(messages[0],
-                                'content') + f'\nUser Memories: {memories_str}'
+            system_prompt = getattr(
+                messages[0], 'content') + f'\nUser Memories: {memories_str}'
         else:
             system_prompt = f'\nYou are a helpful assistant. Answer the question based on query and memories.\nUser Memories: {memories_str}'
-        new_messages = [Message(role='system', content=system_prompt)] + messages[messages_idx:]
+        new_messages = [Message(role='system', content=system_prompt)
+                        ] + messages[messages_idx:]
         return new_messages
 
-    def _init_memory(self) -> Mem0Memory | None:
+    def _init_memory(self):
+        from mem0.memory import utils as mem0_utils
+        parse_messages_origin = mem0_utils.parse_messages
+
+        @wraps(parse_messages_origin)
+        def patched_parse_messages(messages, ignore_role):
+            print('hello!')
+            response = ''
+            for msg in messages:
+                if 'system' not in ignore_role and msg['role'] == 'system':
+                    response += f"system: {msg['content']}\n"
+                if msg['role'] == 'user':
+                    response += f"user: {msg['content']}\n"
+                if msg['role'] == 'assistant' and msg['content'] is not None:
+                    response += f"assistant: {msg['content']}\n"
+                if 'tool' not in ignore_role and msg['role'] == 'tool':
+                    response += f"tool: {msg['content']}\n"
+            return response
+
+        patched_func = partial(
+            patched_parse_messages,
+            ignore_role=self.ignore_role,
+        )
+
+        mem0_utils.parse_messages = patched_func
+
+        from mem0 import Memory as Mem0Memory
+
         if not self.is_retrieve:
             return
 
-        if self.embedder is None:
-            # TODO: set default
-            raise ValueError('embedder must be set when is_retrieve=True.')
-        embedder = self.embedder
+        embedder: Optional[str] = getattr(
+            self.config.memory, 'embedder',
+            OmegaConf.create({
+                'provider': 'openai',
+                'config': {
+                    'api_key': os.getenv('DASHSCOPE_API_KEY'),
+                    'openai_base_url':
+                    'https://dashscope.aliyuncs.com/compatible-mode/v1',
+                    'model': 'text-embedding-v4',
+                }
+            }))
 
         llm = {}
         if self.compress:
@@ -187,12 +231,12 @@ class DefaultMemory(Memory):
             else:
                 llm_config = self.config.llm
                 model = llm_config.model
-                provider = llm_config.service
-                openai_base_url = getattr(llm_config, f'{provider}_base_url',
+                service = llm_config.service
+                openai_base_url = getattr(llm_config, f'{service}_base_url',
                                           None)
-                openai_api_key = getattr(llm_config, f'{provider}_api_key',
+                openai_api_key = getattr(llm_config, f'{service}_api_key',
                                          None)
-
+                provider = 'openai'
             llm = {
                 'provider': provider,
                 'config': {
@@ -261,10 +305,12 @@ async def main():
     config = OmegaConf.create(cfg)
     memory = DefaultMemory(
         config, path='./output', cache_messages=None, history_mode='add')
-    res = await memory.run(messages=[Message({
-        'role': 'user',
-        'content': '使用bun会对新项目的影响大吗，有哪些新特性'
-    })])
+    res = await memory.run(messages=[
+        Message({
+            'role': 'user',
+            'content': '使用bun会对新项目的影响大吗，有哪些新特性'
+        })
+    ])
     print(res)
 
 
