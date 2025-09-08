@@ -16,7 +16,7 @@ class TestDefaultMemory(unittest.TestCase):
 
     def setUp(self) -> None:
         self.tool_history = [
-            Message(role='user', content='帮我找到北京市朝阳区最炫酷的运动公园'),
+            Message(role='user', content='帮我找到北京市朝阳区最炫酷的运动公园。我标记一下，下次去。'),
             Message(
                 role='assistant',
                 content=
@@ -59,10 +59,7 @@ class TestDefaultMemory(unittest.TestCase):
 
         async def main():
             random_id = str(uuid.uuid4())
-            default_memory = OmegaConf.create(
-                {'memory': {
-                    'name': 'default_memory'
-                }})
+            default_memory = OmegaConf.create({'memory': {}})
             agent1 = LLMAgent(config=default_memory, task=random_id)
             agent1.config.callbacks.remove('input_callback')  # noqa
             await agent1.run('我是素食主义者，我每天早上喝咖啡')
