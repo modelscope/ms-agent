@@ -47,6 +47,7 @@ class DefaultMemory(Memory):
         self.memory = self._init_memory()
 
     def _should_update_memory(self, messages: List[Message]) -> bool:
+        # TODO: Avoid unnecessary frequent updates and reduce the number of update operations
         return True
 
     def _find_messages_common_prefix(
@@ -56,15 +57,15 @@ class DefaultMemory(Memory):
         ignore_fields: Optional[Set[str]] = {'reasoning_content'},
     ) -> Tuple[List[Dict], int, int]:
         """
-        比对 messages 和缓存messages的差异，并提取最长公共前缀。
+        Compare the differences between messages and cached messages, and extract the longest common prefix.
 
         Args:
-            messages: 本次 List[Dict]，符合 OpenAI API 格式
-            ignore_role: 是否忽略 role="system"、或者role="tool" 的message
-            ignore_fields: 可选，要忽略比较的字段名集合，如 {"reasoning_content"}
+            messages: Current list of message dictionaries in OpenAI API format.
+            ignore_role: Whether to ignore messages with role="system" or role="tool".
+            ignore_fields: Optional set of field names to exclude from comparison, e.g., {"reasoning_content"}.
 
         Returns:
-            最长公共前缀（List[Dict]）
+            The longest common prefix as a list of dictionaries.
         """
         if not messages or not isinstance(messages, list):
             return [], -1, -1
@@ -72,10 +73,11 @@ class DefaultMemory(Memory):
         if ignore_fields is None:
             ignore_fields = set()
 
-        # 预处理：根据 ignore_role 过滤消息
+        # Preprocessing: filter messages based on ignore_role
         def _ignore_role(msgs):
             filtered = []
-            indices = []  # 每个 filtered 消息对应的原始索引
+            indices = [
+            ]  # The original index corresponding to each filtered message
             for idx, msg in enumerate(msgs):
                 if ignore_role and getattr(msg, 'role') in ignore_role:
                     continue
@@ -87,7 +89,7 @@ class DefaultMemory(Memory):
         filtered_cache_messages, cache_indices = _ignore_role(
             self.cache_messages)
 
-        # 找最短长度，避免越界
+        # Find the shortest length to avoid out-of-bounds access
         min_length = min(
             len(msgs) for msgs in [filtered_messages, filtered_cache_messages])
         common_prefix = []
@@ -98,7 +100,7 @@ class DefaultMemory(Memory):
             current_msg = filtered_messages[idx]
             is_common = True
 
-            # 比较其他字段（除了忽略的字段）
+            # Compare other fields except the ignored ones
             all_keys = ['role', 'content', 'reasoning_content', 'tool_calls']
             for key in all_keys:
                 if key in ignore_fields:
@@ -111,7 +113,7 @@ class DefaultMemory(Memory):
             if not is_common:
                 break
 
-            # 添加当前消息的深拷贝到结果中（保留原始结构）
+            # Add a deep copy of the current message to the result (preserve original structure)
             common_prefix.append(deepcopy(current_msg))
 
         if len(common_prefix) == 0:
@@ -120,11 +122,11 @@ class DefaultMemory(Memory):
         return common_prefix, indices[idx], cache_indices[idx]
 
     def rollback(self, common_prefix_messages, cache_message_idx):
-        # 支持retry机制，将memory回退到 self.cache_messages的第idx 条message
+        # Support retry mechanism: roll back memory to the idx-th message in self.cache_messages
         if self.history_mode == 'add':
-            # 只有覆盖更新模式才支持回退；回退涉及删除
+            # Only overwrite update mode supports rollback; rollback involves deletion
             return
-        # TODO: 真正的回退
+        # TODO: Implement actual rollback logic
         self.memory.delete_all(user_id=self.conversation_id)
         self.memory.add(common_prefix_messages, user_id=self.conversation_id)
 
@@ -166,23 +168,23 @@ class DefaultMemory(Memory):
 
         query = getattr(messages[-1], 'content')
         memories_str = self.search(query)
-        # 将memory对应的messages段删除，并添加相关的memory_str信息
+        # Remove the messages section corresponding to memory, and add the related memory_str information
         if getattr(messages[0], 'role') == 'system':
             system_prompt = getattr(
                 messages[0], 'content') + f'\nUser Memories: {memories_str}'
         else:
-            system_prompt = f'\nYou are a helpful assistant. Answer the question based on query and memories.\nUser Memories: {memories_str}'
+            system_prompt = f'\nYou are a helpful assistant. Answer the question based on query and memories.\n' \
+                            f'User Memories: {memories_str}'
         new_messages = [Message(role='system', content=system_prompt)
                         ] + messages[messages_idx:]
         return new_messages
 
     def _init_memory(self):
-        from mem0.memory import utils as mem0_utils
-        parse_messages_origin = mem0_utils.parse_messages
+        import mem0
+        parse_messages_origin = mem0.memory.main.parse_messages
 
         @wraps(parse_messages_origin)
         def patched_parse_messages(messages, ignore_role):
-            print('hello!')
             response = ''
             for msg in messages:
                 if 'system' not in ignore_role and msg['role'] == 'system':
@@ -200,9 +202,7 @@ class DefaultMemory(Memory):
             ignore_role=self.ignore_role,
         )
 
-        mem0_utils.parse_messages = patched_func
-
-        from mem0 import Memory as Mem0Memory
+        mem0.memory.main.parse_messages = patched_func
 
         if not self.is_retrieve:
             return
@@ -247,73 +247,22 @@ class DefaultMemory(Memory):
             }
 
         mem0_config = {
-            'is_infer':
-            self.compress,
-            'llm':
-            llm,
-            'custom_fact_extraction_prompt':
-            getattr(self.config.memory, 'fact_retrieval_prompt',
-                    FACT_RETRIEVAL_PROMPT),
+            'is_infer': self.compress,
+            'llm': llm,
             'vector_store': {
                 'provider': 'qdrant',
                 'config': {
                     'path': self.path,
-                    # "on_disk": self.persist
-                    'on_disk': True
+                    'on_disk': self.persist
                 }
             },
-            'embedder':
-            embedder
+            'embedder': embedder
         }
         logger.info(f'Memory config: {mem0_config}')
-        memory = Mem0Memory.from_config(mem0_config)
+        # Prompt content is too long, default logging reduces readability
+        mem0_config['custom_fact_extraction_prompt'] = getattr(
+            self.config.memory, 'fact_retrieval_prompt', FACT_RETRIEVAL_PROMPT)
+        memory = mem0.Memory.from_config(mem0_config)
         if self.cache_messages:
             memory.add(self.cache_messages, user_id=self.conversation_id)
         return memory
-
-
-async def main():
-    import os
-    import json
-    cfg = {
-        'memory': {
-            'conversation_id': 'default_id',
-            'persist': True,
-            'compress': True,
-            'is_retrieve': True,
-            'history_mode': 'add',
-            'llm': {
-                'provider': 'openai',
-                'model': 'qwen3-235b-a22b-instruct-2507',
-                'openai_base_url':
-                'https://dashscope.aliyuncs.com/compatible-mode/v1',
-                'api_key': os.getenv('DASHSCOPE_API_KEY'),
-            },
-            'embedder': {
-                'provider': 'openai',
-                'config': {
-                    'api_key': os.getenv('DASHSCOPE_API_KEY'),
-                    'openai_base_url':
-                    'https://dashscope.aliyuncs.com/compatible-mode/v1',
-                    'model': 'text-embedding-v4',
-                }
-            }
-        }
-    }
-    with open('openai_format_test_case1.json', 'r') as f:
-        data = json.load(f)
-    config = OmegaConf.create(cfg)
-    memory = DefaultMemory(
-        config, path='./output', cache_messages=None, history_mode='add')
-    res = await memory.run(messages=[
-        Message({
-            'role': 'user',
-            'content': '使用bun会对新项目的影响大吗，有哪些新特性'
-        })
-    ])
-    print(res)
-
-
-if __name__ == '__main__':
-    import asyncio
-    asyncio.run(main())
