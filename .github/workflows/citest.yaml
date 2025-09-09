@@ -30,7 +30,7 @@ concurrency:
 jobs:
   unittest:
     # The type of runner that the job will run on
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 60
     environment: testci
     steps:
