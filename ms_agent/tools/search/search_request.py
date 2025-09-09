@@ -49,14 +49,16 @@ class ExaSearchRequestGenerator(SearchRequestGenerator):
 class SerpApiSearchRequestGenerator(SearchRequestGenerator):
 
     def get_args_template(self) -> str:
-        return '{"query": "xxx", "num_results": 20, "location": null}'
+        return '```json{"query": "xxx", "num_results": 20, "location": null}```'
 
     def get_rewrite_prompt(self) -> str:
-        return (f'生成search request，具体要求为： '
-                f'\n1. 必须符合以下arguments格式：{self.get_args_template()}'
-                f'\n2. 其中，query参数的值直接使用用户原始输入，即：{self.user_prompt}'
-                f'\n3. 参数需要符合搜索引擎的要求，num_results需要根据实际问题的复杂程度来估算，最大25，最小1；'
-                f'\n4. location参数用于指定搜索位置，如"Austin,Texas"，如不需要特定位置可设为null')
+        return (
+            f'生成search request，具体要求为： '
+            f'\n1. 必须符合以下arguments格式：{self.get_args_template()}'
+            f'\n2. 其中，query参数的值通过分析用户原始输入中的有效问题部分生成，即{self.user_prompt}，要求为精简的Google风格关键词查询，'
+            f'例如，用户输入"请帮我查找2023年发表的关于大语言模型在医疗领域应用的最新研究"，则query参数的值应为"large language model medical applications 2023"；'
+            f'\n3. 参数需要符合搜索引擎的要求，num_results需要根据实际问题的复杂程度来估算，最大25，最小1；'
+            f'\n4. location参数用于指定搜索位置，如"Austin,Texas"，如不需要特定位置可设为null')
 
     def create_request(
             self, search_request_d: Dict[str, Any]) -> SerpApiSearchRequest:
