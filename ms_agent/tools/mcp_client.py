@@ -123,8 +123,8 @@ class MCPClient(ToolBase):
         url = kwargs.get('url')
         session_kwargs = kwargs.get('session_kwargs')
         if url:
-            if 'streamable' in transport.lower() and 'http' in transport.lower(
-            ):
+            if transport and 'streamable' in transport.lower(
+            ) and 'http' in transport.lower():
                 try:
                     from mcp.client.streamable_http import streamablehttp_client
                 except ImportError:
@@ -148,7 +148,7 @@ class MCPClient(ToolBase):
                         **other_kwargs))
                 read, write, _ = streamable_transport
 
-            elif transport.lower() == 'websocket':
+            elif transport and transport.lower() == 'websocket':
                 try:
                     from mcp.client.websocket import websocket_client
                 except ImportError:
