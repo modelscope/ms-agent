@@ -82,8 +82,8 @@ class ExaSearchRequestGenerator(SearchRequestGenerator):
                         },
                         'num_results': {
                             'type': 'integer',
-                            'description': 'The number of results to return (1-25). '
-                                           'Choose a value appropriate to the query complexity (e.g., 10)',
+                            'description': 'The number of results to return (1-10). '
+                                           'Choose a value appropriate to the query complexity (e.g., 5)',
                         },
                         'start_published_date': {
                             'type': 'string',
@@ -146,8 +146,8 @@ class SerpApiSearchRequestGenerator(SearchRequestGenerator):
                         },
                         'num_results': {
                             'type': 'integer',
-                            'description': 'The number of results to return (1-25). '
-                                           'Choose a value appropriate to the query complexity (e.g., 10)',
+                            'description': 'The number of results to return (1-10). '
+                                           'Choose a value appropriate to the query complexity (e.g., 5)',
                         },
                         'location': {
                             'type': 'string',
@@ -205,8 +205,8 @@ class ArxivSearchRequestGenerator(SearchRequestGenerator):
                         },
                         'num_results': {
                             'type': 'integer',
-                            'description': 'The number of results to return (1-25). '
-                                           'Choose a value appropriate to the query complexity (e.g., 10)',
+                            'description': 'The number of results to return (1-10). '
+                                           'Choose a value appropriate to the query complexity (e.g., 5)',
                         },
                         'sort_strategy': {
                             'type': 'string',

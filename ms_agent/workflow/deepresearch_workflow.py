@@ -3,6 +3,7 @@ import asyncio
 import copy
 import os
 import re
+from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import click
@@ -43,7 +44,6 @@ class DeepResearchWorkflow(ResearchWorkflow):
                          verbose, **kwargs)
 
         # Additional initialization for DeepResearchWorkflow can be added here
-        import datetime
         self.default_system = (
             f'You are an expert researcher. Today is {datetime.now().isoformat()}. '
             f'Follow these instructions when responding:'
@@ -63,6 +63,84 @@ class DeepResearchWorkflow(ResearchWorkflow):
         )
         self._kwargs = kwargs
 
+    @staticmethod
+    def _construct_workdir_structure(workdir: str) -> Dict[str, str]:
+        """
+        Construct the directory structure for the workflow outputs.
+
+        your_workdir/
+            ├── todo_list.md
+            ├── search/
+                └── search_1.json
+                └── search_2.json
+                └── search_3.json
+            ├── resources/
+                └── abc123.png
+                └── xyz456.txt
+                └── efg789.pdf
+            ├── report.md
+        """
+        # TODO: tbd ...
+        if not workdir:
+            workdir = './outputs/workflow/default'
+            logger.warning(f'Using default workdir: {workdir}')
+
+        todo_list_md: str = os.path.join(workdir, 'todo_list.md')
+        todo_list_json: str = os.path.join(workdir, 'todo_list.json')
+
+        search_dir: str = os.path.join(workdir, 'search')
+        resources_dir: str = os.path.join(workdir, ResearchWorkflow.RESOURCES)
+        report_path: str = os.path.join(workdir, 'report.md')
+        os.makedirs(workdir, exist_ok=True)
+        os.makedirs(resources_dir, exist_ok=True)
+        os.makedirs(search_dir, exist_ok=True)
+
+        return {
+            'todo_list_md': todo_list_md,
+            'todo_list_json': todo_list_json,
+            'search': search_dir,
+            'resources_dir': resources_dir,
+            'report_md': report_path,
+        }
+
+    def search(self, search_request: SearchRequest, save_path: str = None) -> Union[str, List[str]]:
+
+        if self._reuse:
+            # Load existing search results if they exist
+            if os.path.exists(self.workdir_structure['search']) and os.listdir(self.workdir_structure['search']):
+                logger.info(
+                    f"Loaded existing search results from {self.workdir_structure['search']}"
+                )
+                return [os.path.join(self.workdir_structure['search'], f)
+                        for f in os.listdir(self.workdir_structure['search'])]
+            else:
+                logger.warning(
+                    f"Warning: Search results file not found for `reuse` mode: {self.workdir_structure['search']}"
+                )
+
+        # Perform search using the provided search request
+        def search_single_request(search_request: SearchRequest):
+            return self._search_engine.search(search_request=search_request)
+
+        def filter_search_res(single_res: SearchResult):
+
+            # TODO: Implement filtering logic
+
+            return single_res
+
+        search_results: List[SearchResult] = [search_single_request(search_request)]
+        search_results = [
+            filter_search_res(single_res) for single_res in search_results
+        ]
+
+        # TODO: Implement a more robust way to handle multiple search results
+        dump_batch_search_results(
+            results=search_results,
+            file_path=save_path if save_path else os.path.join(self.workdir_structure['search'], 'search.json')
+        )
+
+        return save_path if save_path else os.path.join(self.workdir_structure['search'], 'search.json')
+
     def generate_feedback(self,
                           query: str = '',
                           num_questions: int = 3) -> List[str]:
@@ -73,36 +151,41 @@ class DeepResearchWorkflow(ResearchWorkflow):
             f'questions, but feel free to return less if the original query is clear: '
             f'<query>{query}</query>')
         json_schema = {
-            'type': 'object',
-            'properties': {
-                'questions': {
-                    'type': 'array',
-                    'items': {
-                        'type': 'string'
-                    },
-                    'description': f'Follow up questions to clarify the research direction, '
-                                   f'max of {num_questions}',
-                    'minItems': 1,
-                    'maxItems': num_questions
-                }
-            },
-            'required': ['questions']
+            'name': 'follow_up_questions',
+            'strict': True,
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'questions': {
+                        'type': 'array',
+                        'items': {
+                            'type': 'string'
+                        },
+                        'description': f'Follow up questions to clarify the research direction, '
+                                       f'max of {num_questions}',
+                        'minItems': 1,
+                        'maxItems': num_questions
+                    }
+                },
+                'required': ['questions']
+            }
         }
-        # enhanced_prompt = f'{user_prompt}\n\nPlease respond with valid JSON that matches this schema: {schema}'
+        enhanced_prompt = f'{user_prompt}\n\nPlease respond with valid JSON that matches this schema:\n{json_schema}'
 
         response = self._chat(
             messages=[
                 {'role': 'system', 'content': self.default_system},
-                {'role': 'user', 'content': user_prompt}
+                {'role': 'user', 'content': enhanced_prompt}
             ],
-            response_format={
-                'type': 'json_schema',
-                'json_schema': json_schema
-            },
-            temperature=0.0,
+            # response_format={
+            #     'type': 'json_schema',
+            #     'json_schema': json_schema
+            # },
             stream=False)
         question_prompt = response.get('content', '')
         follow_up_questions = ResearchWorkflow.parse_json_from_content(question_prompt)
+        # TODO: More robust way to handle the response
+        follow_up_questions = follow_up_questions.get('follow_up_questions', []) or follow_up_questions
 
         return follow_up_questions.get('questions', '')
 
@@ -132,13 +215,19 @@ class DeepResearchWorkflow(ResearchWorkflow):
             )
 
         rewrite_prompt = (
-            f'Given the following prompt from the user, generate a list of search queries '
-            f'to research the topic. Return a maximum of {num_queries} queries, but feel '
-            f'free to return less if the original prompt is clear. Make sure each query '
+            f'Given the following prompt from the user, generate a list of search requests '
+            f'to research the topic. Return a maximum of {num_queries} requests, but feel '
+            f'free to return less if the original prompt is clear. Make sure query in each request '
             f'is unique and not similar to each other: <prompt>{query}</prompt>{learnings_prompt}'
-            # f"\n\nPlease respond with valid JSON that matches this schema: {schema}"
+            # f'\n\nPlease respond with valid JSON that matches provided schema:\n{json_schema}'
         )
-        response = self._chat(
+
+        search_client = OpenAIChat(
+            api_key=os.getenv('OPENAI_API_KEY'),
+            base_url='https://dashscope.aliyuncs.com/compatible-mode/v1',
+            model='gemini-2.5-flash',
+        )
+        response = search_client.chat(
             messages=[
                 {'role': 'system', 'content': self.default_system},
                 {'role': 'user', 'content': rewrite_prompt}
@@ -152,14 +241,11 @@ class DeepResearchWorkflow(ResearchWorkflow):
         search_requests_json = response.get('content', '')
         search_requests_data = ResearchWorkflow.parse_json_from_content(
             search_requests_json)
-        if not search_requests_data:
-            logger.warning('Warning: No search requests generated from the prompt, using default query.')
-            search_requests = [search_request_generator.create_request({
-                'query': query,
-                'num_results': 20,
-                'research_goal': 'General research on the topic'
-            })]
-        else:
+
+        if search_requests_data:
+            if isinstance(search_requests_data, dict):
+                search_requests_data: List[Dict[str, Any]] = search_requests_data.get(
+                    'search_requests', []) or search_requests_data
             search_requests = [
                 search_request_generator.create_request(search_request)
                 for search_request in search_requests_data
@@ -167,6 +253,13 @@ class DeepResearchWorkflow(ResearchWorkflow):
             logger.info(
                 f'Generated {len(search_requests)} search requests based on the query: {query}'
             )
+        else:
+            logger.warning('Warning: No search requests generated from the prompt, using default query.')
+            search_requests = [search_request_generator.create_request({
+                'query': query,
+                'num_results': 20,
+                'research_goal': 'General research on the topic'
+            })]
 
         return search_requests
 
@@ -174,9 +267,13 @@ class DeepResearchWorkflow(ResearchWorkflow):
         self, search_query: SearchRequest
     ) -> Tuple[List[str], Dict[str, str], List[str]]:
         """Perform search with extraction."""
-        search_res_file: str = self.search(search_request=search_query)
+        save_path: str = os.path.join(
+            self.workdir_structure['search'],
+            f'search_{text_hash(search_query.query)}.json')
+        search_res_file: str = self.search(search_request=search_query, save_path=save_path)
         search_results: List[Dict[str, Any]] = SearchResult.load_from_disk(
             file_path=search_res_file)
+
         if not search_results:
             logger.warning('Warning: No search results found.')
         prepared_resources = [
@@ -233,21 +330,25 @@ class DeepResearchWorkflow(ResearchWorkflow):
             return LearningsResponse(learnings=[], follow_up_questions=[])
 
         json_schema = {
-            'type': 'object',
-            'properties': {
-                'learnings': {
-                    'type': 'array',
-                    'items': {'type': 'string'},
-                    'description': f'List of learnings, max of {num_learnings}'
+            'name': 'learnings_extraction',
+            'strict': True,
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'learnings': {
+                        'type': 'array',
+                        'items': {'type': 'string'},
+                        'description': f'List of learnings, max of {num_learnings}'
+                    },
+                    'follow_up_questions': {
+                        'type': 'array',
+                        'items': {'type': 'string'},
+                        'description': f'List of follow-up questions, '
+                                       f'max of {num_follow_up_questions}'
+                    }
                 },
-                'follow_up_questions': {
-                    'type': 'array',
-                    'items': {'type': 'string'},
-                    'description': f'List of follow-up questions, '
-                                   f'max of {num_follow_up_questions}'
-                }
-            },
-            'required': ['learnings', 'follow_up_questions']
+                'required': ['learnings', 'follow_up_questions']
+            }
         }
 
         if isinstance(search_results, List) and search_results:
@@ -268,6 +369,7 @@ class DeepResearchWorkflow(ResearchWorkflow):
             f'entities like people, places, companies, products, things, etc in the '
             f'learnings, as well as any exact metrics, numbers, or dates. The learnings '
             f'will be used to research the topic further.\n\n<contents>{contents_text}</contents>'
+            f'\n\nPlease respond with valid JSON that matches provided schema:\n{json_schema}'
         )
 
         response = self._chat(
@@ -275,14 +377,17 @@ class DeepResearchWorkflow(ResearchWorkflow):
                 {'role': 'system', 'content': self.default_system},
                 {'role': 'user', 'content': user_prompt}
             ],
-            response_format={
-                'type': 'json_schema',
-                'json_schema': json_schema
-            },
+            # response_format={
+            #     'type': 'json_schema',
+            #     'json_schema': json_schema
+            # },
             stream=False)
 
         response_data = ResearchWorkflow.parse_json_from_content(
             response.get('content', ''))
+        # TODO: More robust way to handle the response
+        response_data = response_data.get('learnings_extraction', {}) or response_data
+
         learnings = response_data.get('learnings', [])[:num_learnings]
         follow_up_questions = response_data.get('follow_up_questions',
                                                 [])[:num_follow_up_questions]
@@ -335,7 +440,7 @@ class DeepResearchWorkflow(ResearchWorkflow):
 
                 # Create next query from follow-up questions
                 next_query = (
-                    f"Previous research goal: {search_request._kwargs.get('research_goal', '')}\n"
+                    f"Previous research goal: {getattr(search_request, 'research_goal', '')}\n"
                     f"Follow-up research directions: {', '.join(processed_results.follow_up_questions)}"
                 ).strip()
 
@@ -404,7 +509,7 @@ class DeepResearchWorkflow(ResearchWorkflow):
             total_queries=0,
             completed_queries=0)
 
-        search_queries = self.generate_search_queries(
+        search_queries = await self.generate_search_queries(
             query=query, learnings=learnings, num_queries=breadth)
 
         report_progress({
@@ -456,14 +561,18 @@ class DeepResearchWorkflow(ResearchWorkflow):
     async def write_final_report(self, prompt: str, learnings: List[str],
                                  visited_urls: List[str]) -> str:
         json_schema = {
-            'type': 'object',
-            'properties': {
-                'report_markdown': {
-                    'type': 'string',
-                    'description': 'Final report on the topic in Markdown'
-                }
-            },
-            'required': ['report_markdown']
+            'name': 'report_markdown',
+            'strict': True,
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'report': {
+                        'type': 'string',
+                        'description': 'Final report on the topic in Markdown'
+                    }
+                },
+                'required': ['report']
+            }
         }
 
         learnings_text = '\n'.join(
@@ -474,22 +583,25 @@ class DeepResearchWorkflow(ResearchWorkflow):
             f'aim for 3 or more pages, include ALL the learnings from research:\n\n'
             f'<prompt>{prompt}</prompt>\n\n'
             f'Here are all the learnings from previous research:\n\n'
-            f'<learnings>\n{learnings_text}\n</learnings>')
+            f'<learnings>\n{learnings_text}\n</learnings>'
+            f'\n\nPlease respond with valid JSON that matches provided schema:\n{json_schema}')
 
         response = self._chat(
             messages=[
                 {'role': 'system', 'content': self.default_system},
                 {'role': 'user', 'content': user_prompt}
             ],
-            response_format={
-                'type': 'json_schema',
-                'json_schema': json_schema
-            },
+            # response_format={
+            #     'type': 'json_schema',
+            #     'json_schema': json_schema
+            # },
             stream=False)
 
         response_data = ResearchWorkflow.parse_json_from_content(
             response.get('content', ''))
-        report = response_data.get('report_markdown', '')
+        # TODO: More robust way to handle the response
+        response_data = response_data.get('report_markdown', {}) or response_data
+        report = response_data.get('report', '')
 
         # Append sources section
         sources_section = f"\n\n## Sources\n\n{chr(10).join([f'- {url}' for url in visited_urls])}"
@@ -497,6 +609,21 @@ class DeepResearchWorkflow(ResearchWorkflow):
 
     async def write_final_answer(self, prompt: str,
                                  learnings: List[str]) -> str:
+        json_schema = {
+            'name': 'exact_answer',
+            'strict': True,
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'answer': {
+                        'type': 'string',
+                        'description': 'The final answer, short and concise'
+                    }
+                },
+                'required': ['exact_answer']
+            }
+        }
+
         learnings_text = '\n'.join(
             [f'<learning>\n{learning}\n</learning>' for learning in learnings])
 
@@ -510,17 +637,26 @@ class DeepResearchWorkflow(ResearchWorkflow):
             f'<prompt>{prompt}</prompt>\n\n'
             f'Here are all the learnings from research on the topic that you can use '
             f'to help answer the prompt:\n\n'
-            f'<learnings>\n{learnings_text}\n</learnings>')
+            f'<learnings>\n{learnings_text}\n</learnings>'
+            f'\n\nPlease respond with valid JSON that matches provided schema:\n{json_schema}')
 
         response = self._chat(
             messages=[
                 {'role': 'system', 'content': self.default_system},
                 {'role': 'user', 'content': user_prompt}
             ],
+            # response_format={
+            #     'type': 'json_schema',
+            #     'json_schema': json_schema
+            # },
             stream=False
         )
+        response_data = ResearchWorkflow.parse_json_from_content(
+            response.get('content', ''))
+        # TODO: More robust way to handle the response
+        response_data = response_data.get('exact_answer', {}) or response_data
 
-        return response.get('exact_answer', '')
+        return response_data.get('answer', '')
 
     async def run(self,
                   user_prompt: str,
@@ -528,6 +664,10 @@ class DeepResearchWorkflow(ResearchWorkflow):
                   depth: int = 2,
                   is_report: bool = False,
                   **kwargs) -> None:
+
+        is_multimodal = kwargs.get('enable_multimodal', False)
+        if is_multimodal:
+            raise ValueError('Multimodal is not supported yet.')
 
         if not user_prompt:
             initial_query = Prompt.ask(
@@ -551,7 +691,7 @@ class DeepResearchWorkflow(ResearchWorkflow):
 
         try:
             follow_up_questions: List[str] = self.generate_feedback(
-                initial_query=initial_query)
+                query=initial_query)
             if follow_up_questions:
                 # TODO: Slit qa into n times.
                 logger.info('Follow-up questions:\n'
@@ -574,7 +714,7 @@ class DeepResearchWorkflow(ResearchWorkflow):
             # Perform research with progress tracking
             with ProgressTracker() as tracker:
                 try:
-                    result = self.deep_research(
+                    result = await self.deep_research(
                         query=combined_query,
                         breadth=breadth,
                         depth=depth,
@@ -583,7 +723,7 @@ class DeepResearchWorkflow(ResearchWorkflow):
                     logger.error(f'Error during research: {e}')
                     return
         else:
-            self.deep_research(
+            result = await self.deep_research(
                 query=combined_query, breadth=breadth, depth=depth)
 
         # Display results
