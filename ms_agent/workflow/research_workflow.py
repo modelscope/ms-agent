@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Union
 import json
 from ms_agent.llm.openai import OpenAIChat
 from ms_agent.rag.extraction import HierarchicalKeyInformationExtraction
+from ms_agent.rag.optimized_extraction import extract_key_information
 from ms_agent.rag.schema import KeyInformation
 from ms_agent.tools.exa.schema import dump_batch_search_results
 from ms_agent.tools.search.search_base import SearchRequest, SearchResult
@@ -379,8 +380,28 @@ class ResearchWorkflow:
         if self._verbose:
             logger.info(f'Prepared resources: {prepared_resources}')
 
-        extractor = HierarchicalKeyInformationExtraction(urls_or_files=prepared_resources, verbose=self._verbose)
-        key_info_list: List[KeyInformation] = extractor.extract()
+        # Extraction with optional Ray acceleration
+        use_ray_extraction = os.environ.get('RAG_EXTRACT_USE_RAY', '0') in ('1', 'true', 'True') or kwargs.get('use_ray', False)
+
+        key_info_list = None
+        if use_ray_extraction:
+            try:
+                key_info_list, actor_resource_map = extract_key_information(
+                    urls_or_files=prepared_resources,
+                    use_ray=True,
+                    verbose=self._verbose,
+                    ray_num_workers=int(os.environ.get('RAG_EXTRACT_RAY_NUM_WORKERS', '0')) or None,
+                    ray_cpus_per_task=float(os.environ.get('RAG_EXTRACT_RAY_CPUS_PER_TASK', '1')),
+                )
+                extractor = None
+            except Exception as e:
+                logger.warning(f'Ray extraction failed, falling back to sequential extraction: {e}')
+                key_info_list = None
+
+        # Use sequential extraction if Ray is disabled or failed
+        if key_info_list is None:
+            extractor = HierarchicalKeyInformationExtraction(urls_or_files=prepared_resources, verbose=self._verbose)
+            key_info_list = extractor.extract()
 
         if len(special_resources) > 0 and all(file.endswith('.txt') for file in special_resources):
             logger.warning(
@@ -398,7 +419,8 @@ class ResearchWorkflow:
         # Dump pictures/table to resources directory
         resource_map: Dict[
             str, str] = {}  # item_name -> item_relative_path, e.g. {'2506.02718v1.pdf@2728311679401389578@#/pictures/0': 'resources/d5a93ca4.png'}
-        for item_name, dict_item in extractor.all_ref_items.items():
+        all_ref_items = actor_resource_map if extractor is None else extractor.all_ref_items
+        for item_name, dict_item in all_ref_items.items():
             doc_item = dict_item.get('item', None)
             if hasattr(doc_item, 'image') and doc_item.image:
                 # Get the item extension from mimetype such as `image/png`
