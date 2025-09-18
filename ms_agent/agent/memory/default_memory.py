@@ -216,7 +216,8 @@ class DefaultMemory(Memory):
         self.max_msg_id = max(self.max_msg_id, msg_id)
         res = self.memory.get_all(user_id=self.conversation_id)  # sorted
         res = [(item['id'], item['memory']) for item in res['results']]
-        logger.info(f'Add memory success. All memory info:')
+        if len(res):
+            logger.info(f'Add memory success. All memory info:')
         for item in res:
             logger.info(item[1])
         valids = []
