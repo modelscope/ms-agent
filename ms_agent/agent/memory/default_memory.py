@@ -1,9 +1,12 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import hashlib
 import os
 from copy import deepcopy
 from functools import partial, wraps
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple
 
+import json
+import json5
 from ms_agent.agent.memory import Memory
 from ms_agent.llm.utils import Message
 from ms_agent.utils.logger import logger
@@ -11,21 +14,69 @@ from ms_agent.utils.prompts import FACT_RETRIEVAL_PROMPT
 from omegaconf import DictConfig, OmegaConf
 
 
+class MemoryMapping:
+    memory_id: str = None
+    memory: str = None
+    valid: bool = None
+    enable_idxs: List[int] = []
+    disable_idx: int = -1
+
+    def __init__(self, memory_id: str, value: str, enable_idxs: int
+                 or List[int]):
+        self.memory_id = memory_id
+        self.value = value
+        self.valid = True
+        if isinstance(enable_idxs, int):
+            enable_idxs = [enable_idxs]
+        self.enable_idxs = enable_idxs
+
+    def udpate_idxs(self, enable_idxs: int or List[int]):
+        if isinstance(enable_idxs, int):
+            enable_idxs = [enable_idxs]
+        self.enable_idxs.extend(enable_idxs)
+
+    def disable(self, disable_idx: int):
+        self.valid = False
+        self.disable_idx = disable_idx
+
+    def try_enable(self, expired_disable_idx: int):
+        if expired_disable_idx == self.disable_idx:
+            self.valid = True
+            self.disable_idx = -1
+
+    def get(self):
+        return self.value
+
+    def to_dict(self) -> Dict:
+        return {
+            'memory_id': self.memory_id,
+            'value': self.value,
+            'valid': self.valid,
+            'enable_idxs': self.enable_idxs.copy(),  # 返回副本防止外部修改
+            'disable_idx': self.disable_idx
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict) -> 'MemoryMapping':
+        instance = cls(
+            memory_id=data['memory_id'],
+            value=data['value'],
+            enable_idxs=data['enable_idxs'])
+        instance.valid = data['valid']
+        instance.disable_idx = data.get('disable_idx', -1)  # 兼容旧数据
+        return instance
+
+
 class DefaultMemory(Memory):
     """The memory refine tool"""
 
     def __init__(self,
                  config: DictConfig,
-                 cache_messages: Optional[List[Message]] = None,
                  conversation_id: Optional[str] = None,
                  persist: bool = True,
                  path: str = None,
-                 history_mode: Literal['add', 'overwrite'] = 'add',
-                 current_memory_cache_position: int = 0):
+                 history_mode: Literal['add', 'overwrite'] = None):
         super().__init__(config)
-        cache_messages = [message.to_dict() for message in cache_messages
-                          ] if cache_messages else []
-        self.cache_messages = cache_messages
         self.conversation_id: Optional[str] = conversation_id or getattr(
             config.memory, 'conversation_id', None)
         self.persist: Optional[bool] = persist or getattr(
@@ -38,99 +89,122 @@ class DefaultMemory(Memory):
             config.memory, 'path', None) or getattr(self.config, 'output_dir',
                                                     'output')
         self.history_mode = history_mode or getattr(config.memory,
-                                                    'history_mode')
+                                                    'history_mode', 'add')
         self.ignore_role: List[str] = getattr(config.memory, 'ignore_role',
                                               ['tool', 'system'])
         self.ignore_fields: List[str] = getattr(config.memory, 'ignore_fields',
                                                 ['reasoning_content'])
-        self.current_memory_cache_position = current_memory_cache_position
-        self.memory = self._init_memory()
+        self.memory = self._init_memory_obj()
+        self.init_cache_messages()
 
-    def _should_update_memory(self, messages: List[Message]) -> bool:
-        # TODO: Avoid unnecessary frequent updates and reduce the number of update operations
-        return True
+    def init_cache_messages(self):
+        self.load_cache()
+        if len(self.cache_messages) and not len(self.memory_snapshot):
+            new_blocks = self._split_into_blocks(self.cache_messages)
+            for messages in new_blocks:
+                self.max_msg_id += 1
+                self.add(messages, msg_id=self.max_msg_id)
 
-    def _find_messages_common_prefix(
-        self,
-        messages: List[Dict],
-        ignore_role: Optional[Set[str]] = {'system'},
-        ignore_fields: Optional[Set[str]] = {'reasoning_content'},
-    ) -> Tuple[List[Dict], int, int]:
+    def save_cache(self):
         """
-        Compare the differences between messages and cached messages, and extract the longest common prefix.
-
-        Args:
-            messages: Current list of message dictionaries in OpenAI API format.
-            ignore_role: Whether to ignore messages with role="system" or role="tool".
-            ignore_fields: Optional set of field names to exclude from comparison, e.g., {"reasoning_content"}.
-
-        Returns:
-            The longest common prefix as a list of dictionaries.
+        将 self.max_msg_id, self.cache_messages, self.memory_snapshot
+        保存到 self.path/cache_messages.json
         """
-        if not messages or not isinstance(messages, list):
-            return [], -1, -1
+        cache_file = os.path.join(self.path, 'cache_messages.json')
 
-        if ignore_fields is None:
-            ignore_fields = set()
+        # 确保目录存在
+        os.makedirs(self.path, exist_ok=True)
 
-        # Preprocessing: filter messages based on ignore_role
-        def _ignore_role(msgs):
-            filtered = []
-            indices = [
-            ]  # The original index corresponding to each filtered message
-            for idx, msg in enumerate(msgs):
-                if ignore_role and getattr(msg, 'role') in ignore_role:
-                    continue
-                filtered.append(msg)
-                indices.append(idx)
-            return filtered, indices
+        data = {
+            'max_msg_id': self.max_msg_id,
+            'cache_messages': {
+                str(k): ([msg.to_dict() for msg in msg_list], _hash)
+                for k, (msg_list, _hash) in self.cache_messages.items()
+            },
+            'memory_snapshot': [mm.to_dict() for mm in self.memory_snapshot]
+        }
 
-        filtered_messages, indices = _ignore_role(messages)
-        filtered_cache_messages, cache_indices = _ignore_role(
-            self.cache_messages)
+        with open(cache_file, 'w', encoding='utf-8') as f:
+            json5.dump(data, f, indent=2, ensure_ascii=False)
 
-        # Find the shortest length to avoid out-of-bounds access
-        min_length = min(
-            len(msgs) for msgs in [filtered_messages, filtered_cache_messages])
-        common_prefix = []
+    def load_cache(self):
+        """
+        从 self.path/cache_messages.json 加载数据到
+        self.max_msg_id, self.cache_messages, self.memory_snapshot
+        """
+        cache_file = os.path.join(self.path, 'cache_messages.json')
+
+        if not os.path.exists(cache_file):
+            # 如果文件不存在，初始化默认值并返回
+            self.max_msg_id = -1
+            self.cache_messages = {}
+            self.memory_snapshot = []
+            return
+
+        try:
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                data = json5.load(f)
+
+            self.max_msg_id = data.get('max_msg_id', -1)
+
+            # 解析 cache_messages
+            cache_messages = {}
+            raw_cache_msgs = data.get('cache_messages', {})
+            for k, (msg_list, timestamp) in raw_cache_msgs.items():
+                msg_objs = [Message(**msg_dict) for msg_dict in msg_list]
+                cache_messages[int(k)] = (msg_objs, timestamp)
+            self.cache_messages = cache_messages
+
+            # 解析 memory_snapshot
+            self.memory_snapshot = [
+                MemoryMapping.from_dict(d)
+                for d in data.get('memory_snapshot', [])
+            ]
+
+        except (json.JSONDecodeError, KeyError, Exception) as e:
+            logger.warning(f'Failed to load cache: {e}')
+            # 出错时回退到默认状态
+            self.max_msg_id = -1
+            self.cache_messages = {}
+            self.memory_snapshot = []
+
+    def delete_single(self, msg_id: int):
+        messages_to_delete = self.cache_messages.get(msg_id, None)
+        if messages_to_delete is None:
+            return
+        self.cache_messages.pop(msg_id, None)
+        if msg_id == self.max_msg_id:
+            self.max_msg_id = max(self.cache_messages.keys())
 
         idx = 0
-        for idx in range(min_length):
-            current_cache_msg = filtered_cache_messages[idx]
-            current_msg = filtered_messages[idx]
-            is_common = True
+        while idx < len(self.memory_snapshot):
 
-            # Compare other fields except the ignored ones
-            all_keys = ['role', 'content', 'reasoning_content', 'tool_calls']
-            for key in all_keys:
-                if key in ignore_fields:
-                    continue
-                if getattr(current_cache_msg, key, '') != getattr(
-                        current_msg, key, ''):
-                    is_common = False
-                    break
+            enable_ids = self.memory_snapshot[idx].enable_idxs
+            disable_id = self.memory_snapshot[idx].disable_idx
+            if msg_id == disable_id:
+                self.memory_snapshot[idx].try_enable(msg_id)
+                self.memory._create_memory(
+                    data=self.memory_snapshot[idx].value,
+                    existing_embeddings={},
+                    metadata={'user_id': self.conversation_id})
+            if msg_id in enable_ids:
+                if len(enable_ids) > 1:
+                    self.memory_snapshot[idx].enable_idxs.remove(msg_id)
+                else:
+                    self.memory.delete(self.memory_snapshot[idx].memory_id)
+                    self.memory_snapshot.pop(idx)
+                    idx -= 1  # pop后下一条成为当前idx
 
-            if not is_common:
-                break
+            idx += 1
+        res = self.memory.get_all(user_id=self.conversation_id)  # sorted
+        res = [(item['id'], item['memory']) for item in res['results']]
+        logger.info(f'Roll back success. All memory info:')
+        for item in res:
+            logger.info(item[1])
 
-            # Add a deep copy of the current message to the result (preserve original structure)
-            common_prefix.append(deepcopy(current_msg))
+    def add(self, messages: List[Message], msg_id: int) -> None:
+        self.cache_messages[msg_id] = messages, self._hash_block(messages)
 
-        if len(common_prefix) == 0:
-            return [], -1, -1
-
-        return common_prefix, indices[idx], cache_indices[idx]
-
-    def rollback(self, common_prefix_messages, cache_message_idx):
-        # Support retry mechanism: roll back memory to the idx-th message in self.cache_messages
-        if self.history_mode == 'add':
-            # Only overwrite update mode supports rollback; rollback involves deletion
-            return
-        # TODO: Implement actual rollback logic
-        self.memory.delete_all(user_id=self.conversation_id)
-        self.memory.add(common_prefix_messages, user_id=self.conversation_id)
-
-    def add(self, messages: List[Message]) -> None:
         messages_dict = []
         for message in messages:
             if isinstance(message, Message):
@@ -138,11 +212,34 @@ class DefaultMemory(Memory):
             else:
                 messages_dict.append(message)
         self.memory.add(messages_dict, user_id=self.conversation_id)
-        self.cache_messages.extend(messages_dict)
-        res = self.memory.get_all(user_id=self.conversation_id)
-        logger.info(
-            f'Add memory done, current memory infos: {"; ".join([item["memory"] for item in res["results"]])}'
-        )
+
+        self.max_msg_id = max(self.max_msg_id, msg_id)
+        res = self.memory.get_all(user_id=self.conversation_id)  # sorted
+        res = [(item['id'], item['memory']) for item in res['results']]
+        logger.info(f'Add memory success. All memory info:')
+        for item in res:
+            logger.info(item[1])
+        valids = []
+        unmatched = []
+        for id, memory in res:
+            matched = False
+            for item in self.memory_snapshot:
+                if id == item.memory_id:
+                    if item.value == memory and item.valid:
+                        matched = True
+                        valids.append(id)
+                        break
+                    else:
+                        if item.valid:
+                            item.disable(msg_id)
+            if not matched:
+                unmatched.append((id, memory))
+        for item in self.memory_snapshot:
+            if item.memory_id not in valids:
+                item.disable(msg_id)
+        for (id, memory) in unmatched:
+            m = MemoryMapping(memory_id=id, value=memory, enable_idxs=msg_id)
+            self.memory_snapshot.append(m)
 
     def search(self, query: str) -> str:
         relevant_memories = self.memory.search(
@@ -151,20 +248,115 @@ class DefaultMemory(Memory):
                                  for entry in relevant_memories['results'])
         return memories_str
 
+    def _split_into_blocks(self,
+                           messages: List[Message]) -> List[List[Message]]:
+        """
+        Split messages into blocks where each block starts with a 'user' message
+        and includes all following non-user messages until the next 'user' (exclusive).
+
+        The very first messages before the first 'user' (e.g., system) are attached to the first user block.
+        If no user message exists, all messages go into one block.
+        """
+        if not messages:
+            return []
+
+        blocks: List[List[Message]] = []
+        current_block: List[Message] = []
+
+        # Handle leading non-user messages (like system)
+        have_user = False
+        for msg in messages:
+            if msg.role != 'user':
+                current_block.append(msg)
+            else:
+                if have_user:
+                    blocks.append(current_block)
+                    current_block = [msg]
+                else:
+                    current_block.append(msg)
+                    have_user = True
+
+        # Append the last block
+        if current_block:
+            blocks.append(current_block)
+
+        return blocks
+
+    def _hash_block(self, block: List[Message]) -> str:
+        """Compute sha256 hash of a message block for comparison"""
+        data = [message.to_dict() for message in block]
+        allow_role = ['user', 'system', 'assistant', 'tool']
+        allow_role = [
+            role for role in allow_role if role not in self.ignore_role
+        ]
+        allow_fields = ['reasoning_content', 'content', 'tool_calls', 'role']
+        allow_fields = [
+            field for field in allow_fields if field not in self.ignore_fields
+        ]
+
+        data = [{
+            field: value
+            for field, value in msg.items() if field in allow_fields
+        } for msg in data if msg['role'] in allow_role]
+
+        block_data = json5.dumps(data)
+        return hashlib.sha256(block_data.encode('utf-8')).hexdigest()
+
+    def _analyze_messages(
+            self,
+            messages: List[Message]) -> Tuple[List[List[Message]], List[int]]:
+        """
+        Analyze incoming messages against cache.
+
+        Returns:
+            should_add_messages: blocks to add (not in cache or hash changed)
+            should_delete: list of msg_id to delete (in cache but not in new blocks)
+        """
+        new_blocks = self._split_into_blocks(messages)
+        self.cache_messages = dict(sorted(self.cache_messages.items()))
+
+        cache_messages = [(key, value)
+                          for key, value in self.cache_messages.items()]
+        first_unmatched_idx = -1
+        for idx in range(len(new_blocks)):
+            block_hash = self._hash_block(new_blocks[idx])
+            if idx < len(cache_messages) - 1 and str(block_hash) == str(
+                    cache_messages[idx][1][1]):
+                continue
+            first_unmatched_idx = idx
+            break
+        should_delete = [
+            item[0] for item in cache_messages[first_unmatched_idx:]
+        ] if first_unmatched_idx != -1 else []
+        should_add_messages = new_blocks[first_unmatched_idx:]
+
+        return should_add_messages, should_delete
+
+    def _get_user_message(self, block: List[Message]) -> Optional[Message]:
+        """Helper: get the user message from a block, if exists"""
+        for msg in block:
+            if msg.role == 'user':
+                return msg
+        return None
+
+    def _should_update_memory(self, messages: List[Message]) -> bool:
+        # TODO: Avoid unnecessary frequent updates and reduce the number of update operations
+        return True
+
     async def run(self, messages, ignore_role=None, ignore_fields=None):
         if not self.is_retrieve or not self._should_update_memory(messages):
             return messages
+        should_add_messages, should_delete = self._analyze_messages(messages)
 
-        common_prefix_messages, messages_idx, cache_message_idx \
-            = self._find_messages_common_prefix(messages,
-                                                ignore_role=ignore_role,
-                                                ignore_fields=ignore_fields)
-        if self.history_mode == 'overwrite':
-            if cache_message_idx < len(self.cache_messages):
-                self.rollback(common_prefix_messages, cache_message_idx)
-            self.add(messages[max(messages_idx, 0):])
-        else:
-            self.add(messages)
+        if should_delete:
+            if self.history_mode == 'overwrite':
+                for msg_id in should_delete:
+                    self.delete_single(msg_id=msg_id)
+        if should_add_messages:
+            for messages in should_add_messages:
+                self.max_msg_id += 1
+                self.add(messages, msg_id=self.max_msg_id)
+        self.save_cache()
 
         query = getattr(messages[-1], 'content')
         memories_str = self.search(query)
@@ -175,11 +367,13 @@ class DefaultMemory(Memory):
         else:
             system_prompt = f'\nYou are a helpful assistant. Answer the question based on query and memories.\n' \
                             f'User Memories: {memories_str}'
+        diff_idx = len(messages) - sum(
+            [len(block) for block in should_add_messages])
         new_messages = [Message(role='system', content=system_prompt)
-                        ] + messages[messages_idx:]
+                        ] + messages[diff_idx:]
         return new_messages
 
-    def _init_memory(self):
+    def _init_memory_obj(self):
         import mem0
         parse_messages_origin = mem0.memory.main.parse_messages
 
@@ -263,6 +457,4 @@ class DefaultMemory(Memory):
         mem0_config['custom_fact_extraction_prompt'] = getattr(
             self.config.memory, 'fact_retrieval_prompt', FACT_RETRIEVAL_PROMPT)
         memory = mem0.Memory.from_config(mem0_config)
-        if self.cache_messages:
-            memory.add(self.cache_messages, user_id=self.conversation_id)
         return memory

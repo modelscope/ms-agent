@@ -236,10 +236,11 @@ class LLMAgent(Agent):
                 f'which supports: {list(memory_mapping.keys())}')
 
             self.memory_tools.append(memory_mapping[memory_type](
-                self.config,
-                cache_messages if isinstance(cache_messages, list) else None,
-                conversation_id=self.task))
-        return config, runtime, messages
+                self.config, conversation_id=self.task))
+
+            if messages != cache_messages:
+                runtime.should_stop = False
+        return config, runtime, cache_messages
 
     async def _prepare_planer(self):
         """Load and initialize the planer component from the config."""
@@ -317,7 +318,7 @@ class LLMAgent(Agent):
             for _line in line.split('\\n'):
                 logger.info(f'[{tag}] {_line}')
 
-    @async_retry(max_attempts=2, delay=1.0)
+    #@async_retry(max_attempts=2, delay=1.0)
     async def _step(
             self, messages: List[Message],
             tag: str) -> AsyncGenerator[List[Message], Any]:  # type: ignore

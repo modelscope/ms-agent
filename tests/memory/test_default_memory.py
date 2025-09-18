@@ -16,7 +16,7 @@ class TestDefaultMemory(unittest.TestCase):
 
     def setUp(self) -> None:
         self.tool_history = [
-            Message(role='user', content='帮我找到北京市朝阳区最炫酷的运动公园。我标记一下，下次去。'),
+            Message(role='user', content='帮我找到北京市朝阳区最炫酷的运动公园。记着该地点，下次去。'),
             Message(
                 role='assistant',
                 content=
@@ -64,7 +64,7 @@ class TestDefaultMemory(unittest.TestCase):
             agent1.config.callbacks.remove('input_callback')  # noqa
             await agent1.run('我是素食主义者，我每天早上喝咖啡')
             del agent1
-
+            print('========== 数据准备结束，开始测试 ===========')
             agent2 = LLMAgent(config=default_memory, task=random_id)
             agent2.config.callbacks.remove('input_callback')  # noqa
             res = await agent2.run('请帮我准备明天的三餐食谱')
@@ -85,7 +85,7 @@ class TestDefaultMemory(unittest.TestCase):
             agent1.config.callbacks.remove('input_callback')  # noqa
             await agent1.run(self.tool_history)
             del agent1
-
+            print('========== 数据准备结束，开始测试 ===========')
             agent2 = LLMAgent(config=OmegaConf.create(config), task=random_id)
             agent2.config.callbacks.remove('input_callback')  # noqa
             res = await agent2.run('北京市朝阳区最炫酷的运动公园的地点')
@@ -96,8 +96,61 @@ class TestDefaultMemory(unittest.TestCase):
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_overwrite_with_tool(self):
-        # Retry starting from an intermediate node
-        pass
+        import uuid
+        import asyncio
+
+        async def main():
+            tool_history1 = self.tool_history[:-1] + [
+                Message(role='user', content='你说的这家运动公园已经停业了。'),
+                Message(
+                    role='assistant',
+                    content=
+                    '用户指出“量子跃动·朝阳未来运动穹顶”已停业。今天是2045年5月7日，需要重新搜索当前仍在运营的最炫酷运动公园。我将调用awesome_map-search工具，增加“2045年在营”等时间相关关键词，确保结果准确且时效性强。',
+                    tool_calls=[
+                        ToolCall(
+                            id='call_xyz2045NewPark',
+                            type='function',
+                            tool_name='awesome_map-search',
+                            arguments=
+                            '{"query": "北京市朝阳区 最炫酷 运动公园 科技感 潮流 打卡圣地 2045年在营", "max_results": 1, "result_type": "detailed", "include_features": true}'
+                        )
+                    ]),
+                Message(
+                    role='tool',
+                    content=
+                    '[{"park_name": "星核动力·朝阳元宇宙运动矩阵", "address": "北京市朝阳区奥体南路99号", "features": ["全息投影跑道，每一步触发星际粒子 trail", "意念控制攀岩墙，脑波越专注吸附力越强", "重力可调训练舱，模拟火星/月球/深海环境", "AI虚拟教练‘Neo’支持跨次元形象定制", "夜间悬浮滑板池，地面磁力驱动实现无轮滑行"], "special_events": ["每日黄昏举行‘意识觉醒跑’：用脑机接口同步节奏，集体生成光影风暴"], "tips": ["需提前预约神经适配测试", "禁止情绪剧烈波动，否则系统会启动冷静模式播放白噪音", "建议穿导电运动服提升交互体验"], "rating": 9.8, "opening_hours": "5:30 - 24:00", "admission": "免费（脑纹注册入场）"}]'
+                ),
+                Message(
+                    role='assistant',
+                    content=
+                    '2045年最新的最炫酷的运动公园是：星核动力·朝阳元宇宙运动矩阵。位于北京市朝阳区奥体南路99号，融合脑机接口、全息投影与重力调控技术，打造沉浸式未来运动体验。现已开放预约，支持脑纹注册免费入场。'
+                ),
+                Message(role='user', content='好的，谢谢。'),
+            ]
+            tool_history2 = self.tool_history[:-1] + [
+                Message(role='user', content='北京市朝阳区最炫酷的运动公园的地点?')
+            ]
+            random_id = str(uuid.uuid4())
+            config = OmegaConf.create({
+                'memory': {
+                    'ignore_role': ['system'],
+                    'history_mode': 'overwrite'
+                },
+                'output_dir': f'output/{random_id}'
+            })
+            agent1 = LLMAgent(config=OmegaConf.create(config), task=random_id)
+            agent1.config.callbacks.remove('input_callback')  # noqa
+            await agent1.run(tool_history1)
+            del agent1
+            print('========== 数据准备结束，开始测试 ===========')
+            agent2 = LLMAgent(config=OmegaConf.create(config), task=random_id)
+            agent2.config.callbacks.remove('input_callback')  # noqa
+            res = await agent2.run(tool_history2)
+            print(res)
+            assert ('酒仙桥路8888号' in res[-1].content
+                    and '奥体南路' not in res[-1].content)
+
+        asyncio.run(main())
 
 
 if __name__ == '__main__':
