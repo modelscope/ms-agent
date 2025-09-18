@@ -318,7 +318,7 @@ class LLMAgent(Agent):
             for _line in line.split('\\n'):
                 logger.info(f'[{tag}] {_line}')
 
-    #@async_retry(max_attempts=2, delay=1.0)
+    @async_retry(max_attempts=2, delay=1.0)
     async def _step(
             self, messages: List[Message],
             tag: str) -> AsyncGenerator[List[Message], Any]:  # type: ignore

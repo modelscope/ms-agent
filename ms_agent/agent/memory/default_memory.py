@@ -52,7 +52,8 @@ class MemoryMapping:
             'memory_id': self.memory_id,
             'value': self.value,
             'valid': self.valid,
-            'enable_idxs': self.enable_idxs.copy(),  # 返回副本防止外部修改
+            'enable_idxs': self.enable_idxs.copy(
+            ),  # Return a copy to prevent external modification
             'disable_idx': self.disable_idx
         }
 
@@ -63,7 +64,8 @@ class MemoryMapping:
             value=data['value'],
             enable_idxs=data['enable_idxs'])
         instance.valid = data['valid']
-        instance.disable_idx = data.get('disable_idx', -1)  # 兼容旧数据
+        instance.disable_idx = data.get('disable_idx',
+                                        -1)  # Compatible with old data
         return instance
 
 
@@ -107,12 +109,11 @@ class DefaultMemory(Memory):
 
     def save_cache(self):
         """
-        将 self.max_msg_id, self.cache_messages, self.memory_snapshot
-        保存到 self.path/cache_messages.json
+        Save self.max_msg_id, self.cache_messages, and self.memory_snapshot to self.path/cache_messages.json
         """
         cache_file = os.path.join(self.path, 'cache_messages.json')
 
-        # 确保目录存在
+        # Ensure the directory exists
         os.makedirs(self.path, exist_ok=True)
 
         data = {
@@ -129,13 +130,12 @@ class DefaultMemory(Memory):
 
     def load_cache(self):
         """
-        从 self.path/cache_messages.json 加载数据到
-        self.max_msg_id, self.cache_messages, self.memory_snapshot
+        Load data from self.path/cache_messages.json into self.max_msg_id, self.cache_messages, and self.memory_snapshot
         """
         cache_file = os.path.join(self.path, 'cache_messages.json')
 
         if not os.path.exists(cache_file):
-            # 如果文件不存在，初始化默认值并返回
+            # If the file does not exist, initialize default values and return.
             self.max_msg_id = -1
             self.cache_messages = {}
             self.memory_snapshot = []
@@ -147,7 +147,7 @@ class DefaultMemory(Memory):
 
             self.max_msg_id = data.get('max_msg_id', -1)
 
-            # 解析 cache_messages
+            # Parse cache_messages
             cache_messages = {}
             raw_cache_msgs = data.get('cache_messages', {})
             for k, (msg_list, timestamp) in raw_cache_msgs.items():
@@ -155,7 +155,7 @@ class DefaultMemory(Memory):
                 cache_messages[int(k)] = (msg_objs, timestamp)
             self.cache_messages = cache_messages
 
-            # 解析 memory_snapshot
+            # Parse memory_snapshot
             self.memory_snapshot = [
                 MemoryMapping.from_dict(d)
                 for d in data.get('memory_snapshot', [])
@@ -163,7 +163,7 @@ class DefaultMemory(Memory):
 
         except (json.JSONDecodeError, KeyError, Exception) as e:
             logger.warning(f'Failed to load cache: {e}')
-            # 出错时回退到默认状态
+            # Fall back to default state when an error occurs
             self.max_msg_id = -1
             self.cache_messages = {}
             self.memory_snapshot = []
@@ -193,14 +193,9 @@ class DefaultMemory(Memory):
                 else:
                     self.memory.delete(self.memory_snapshot[idx].memory_id)
                     self.memory_snapshot.pop(idx)
-                    idx -= 1  # pop后下一条成为当前idx
+                    idx -= 1  # After pop, the next item becomes the current idx
 
             idx += 1
-        res = self.memory.get_all(user_id=self.conversation_id)  # sorted
-        res = [(item['id'], item['memory']) for item in res['results']]
-        logger.info(f'Roll back success. All memory info:')
-        for item in res:
-            logger.info(item[1])
 
     def add(self, messages: List[Message], msg_id: int) -> None:
         self.cache_messages[msg_id] = messages, self._hash_block(messages)
@@ -217,7 +212,7 @@ class DefaultMemory(Memory):
         res = self.memory.get_all(user_id=self.conversation_id)  # sorted
         res = [(item['id'], item['memory']) for item in res['results']]
         if len(res):
-            logger.info(f'Add memory success. All memory info:')
+            logger.info('Add memory success. All memory info:')
         for item in res:
             logger.info(item[1])
         valids = []
@@ -353,6 +348,12 @@ class DefaultMemory(Memory):
             if self.history_mode == 'overwrite':
                 for msg_id in should_delete:
                     self.delete_single(msg_id=msg_id)
+                res = self.memory.get_all(
+                    user_id=self.conversation_id)  # sorted
+                res = [(item['id'], item['memory']) for item in res['results']]
+                logger.info('Roll back success. All memory info:')
+                for item in res:
+                    logger.info(item[1])
         if should_add_messages:
             for messages in should_add_messages:
                 self.max_msg_id += 1
