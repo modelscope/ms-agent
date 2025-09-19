@@ -1,6 +1,5 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import asyncio
-from math import log
 from typing import List, Optional, Dict, Any
 from omegaconf import DictConfig
 
@@ -227,11 +226,9 @@ class Mem0Memory(Memory):
             mem0_messages = []
             for message in messages:
                 if hasattr(message, 'role') and hasattr(message, 'content'):
-                    # mem0_messages.append({
                     msg_dict = {
                         'role': message.role,
                         'content': message.content
-                    # })
                     }
 
                     # Add tool_calls if present (for assistant messages)
