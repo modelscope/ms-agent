@@ -50,7 +50,10 @@ class SearchResponse(Generic[T]):
 class SearchRequest(ABC):
     """Abstract base class for search requests."""
 
-    def __init__(self, query: str, num_results: Optional[int] = 10):
+    def __init__(self,
+                 query: str,
+                 num_results: Optional[int] = 10,
+                 **kwargs: Any):
         """
         Initialize SearchRequest with search parameters.
 
@@ -60,6 +63,7 @@ class SearchRequest(ABC):
         """
         self.query = query
         self.num_results = num_results
+        self._kwargs = kwargs
 
     @abstractmethod
     def to_dict(self) -> Dict[str, Any]:

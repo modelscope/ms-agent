@@ -39,6 +39,10 @@ class ResearchWorkflow:
         self._search_engine = search_engine
         self._reuse = reuse
         self._verbose = verbose
+        self._use_ray_extraction = (
+            kwargs.pop('use_ray_extraction', False)
+            or str(os.environ.get('RAG_EXTRACT_USE_RAY', '0')).lower() in ('1', 'true', 'True')
+        )
 
         self._todo_d: Dict[str, Any] = {
             'markdown': None,
@@ -379,12 +383,9 @@ class ResearchWorkflow:
         if self._verbose:
             logger.info(f'Prepared resources: {prepared_resources}')
 
-        # Extraction with optional Ray acceleration
-        use_ray_extraction = os.environ.get('RAG_EXTRACT_USE_RAY', '0') in ('1', 'true', 'True') or kwargs.get('use_ray', False)
-
         key_info_list, all_ref_items = extract_key_information(
             urls_or_files=prepared_resources,
-            use_ray=use_ray_extraction,
+            use_ray=self._use_ray_extraction,
             verbose=self._verbose,
             ray_num_workers=int(os.environ.get('RAG_EXTRACT_RAY_NUM_WORKERS', '0')) or None,
             ray_cpus_per_task=float(os.environ.get('RAG_EXTRACT_RAY_CPUS_PER_TASK', '1')),

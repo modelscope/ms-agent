@@ -14,7 +14,8 @@ class SerpApiSearchRequest(SearchRequest):
     def __init__(self,
                  query: str,
                  num_results: Optional[int] = 25,
-                 location: Optional[str] = None):
+                 location: Optional[str] = None,
+                 **kwargs: Any):
         """
         Initialize SerpApiSearchRequest with search parameters.
 
@@ -23,7 +24,7 @@ class SerpApiSearchRequest(SearchRequest):
             num_results: Number of results to return, default is 25
             location: Search location, e.g., 'Austin,Texas'
         """
-        super().__init__(query=query, num_results=num_results)
+        super().__init__(query=query, num_results=num_results, **kwargs)
         self.location = location
 
     def to_dict(self) -> Dict[str, Any]:
