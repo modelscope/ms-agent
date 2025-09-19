@@ -30,23 +30,10 @@ concurrency:
 jobs:
   unittest:
     # The type of runner that the job will run on
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 60
     environment: testci
     steps:
-    - uses: actions/checkout@v3
-
-#    - name: Cache Python dependencies
-#      uses: actions/cache@v3
-#      id: cache
-#      with:
-#        path: ~/.cache/pip
-#        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-
-    - name: Set up Python 3.10.14
-      uses: actions/setup-python@v3
-      with:
-        python-version: "3.10.14"
 
     # Add a step to check if it's a fork and set an environment variable
     - name: Check if PR is from a fork
