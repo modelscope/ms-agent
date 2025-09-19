@@ -13,9 +13,13 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     ray = None  # type: ignore
     _RAY_AVAILABLE = False
+    logger.warning(
+        'Ray is not available. Install it for faster information extraction:\n'
+        '    pip install \"ray[default]\"\n'
+        'Program will run without acceleration.')
 
 
-class OptimizedKeyInformationExtraction:
+class InformationExtractionManager:
     """
     Optimized key information extraction with optional Ray acceleration.
     """
@@ -51,6 +55,9 @@ class OptimizedKeyInformationExtraction:
                     f'Ray extraction failed, falling back to sequential: {e}')
 
         # Use sequential extraction if Ray is disabled or failed
+        if not _RAY_AVAILABLE:
+            logger.warning(
+                'Ray is not available, falling back to sequential extraction.')
         return self._extract_sequential(urls_or_files)
 
     def _extract_sequential(
@@ -157,7 +164,7 @@ def extract_key_information(
     Returns:
         Tuple of (key_info_list, resource_map)
     """
-    extractor = OptimizedKeyInformationExtraction(
+    extractor = InformationExtractionManager(
         verbose=verbose,
         use_ray=use_ray,
         ray_num_workers=ray_num_workers,
