@@ -25,7 +25,7 @@ class CodingCallback(Callback):
 
     async def on_tool_call(self, runtime: Runtime, messages: List[Message]):
         if not messages[-1].tool_calls or messages[-1].tool_calls[0][
-                'tool_name'] != 'split_to_sub_task':
+                'tool_name'] != 'split_task---split_to_sub_task':
             return
         assert messages[0].role == 'system'
         arguments = messages[-1].tool_calls[0]['arguments']
@@ -58,10 +58,16 @@ you may read other files if necessary, like config files or package files to enh
 
 3. Output your code with this format:
 
-```js:js/index.js
-... code ...
+```type: filename
+text
 ```
-The `js/index.js` will be used to saving.
+
+for example:
+```javascript: frontend/index.js
+your code here
+```
+
+The `frontend/index.js` will be used to saving. Therefore, you must generate it strictly in this format.
 
 4. Do not let your code silent crash, make the logs shown in the running terminal, later the compiling process can feedback these issues to you.
 
@@ -116,7 +122,7 @@ Now Begin:
 
     async def after_tool_call(self, runtime: Runtime, messages: List[Message]):
         if not messages[-2].tool_calls or messages[-2].tool_calls[0][
-                'tool_name'] != 'split_to_sub_task':
+                'tool_name'] != 'split_task---split_to_sub_task':
             return
         assert messages[0].role == 'system'
         arguments = messages[-2].tool_calls[0]['arguments']

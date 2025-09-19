@@ -34,7 +34,7 @@ prompt:
 
     3. Find the root cause of the problem and fix it
        * If the error information is vague, you can choose not to fix it immediately but add more logging at key code locations. After your process ends, the compilation will run again, and you can continue fixing in the next round
-       * If the problem is related to frontend-backend interfaces, you should suspect whether the HTTP protocol is correctly aligned, whether ports are correct and non-conflicting, and whether the backend implementation is correct
+       * If the problem is related to frontend-backend interfaces, you should suspect whether the HTTP protocol is correctly aligned and whether ports are correct and non-conflicting
        * If the problem is related to page layout, besides checking if CSS files are correct, you should consider whether dependency paths in files like package.json are correct
        * Pay attention to all arguments and imports related to the error line, and whether there are related issues in the files, fix them also
        * Do a minimum change in case that the normal code is damaged, if you are doing a break change, change related files also
@@ -42,18 +42,24 @@ prompt:
 
     4. Express your thinking in concise and clear language. When you fix files, you should use the following format:
 
-    ```js:js/index.js
-    ... code ...
+    ```type: filename
+    text
     ```
-    `js/index.js` will be used as the filename. If you are fixing a file, you need to:
+
+    for example:
+    ```javascript: frontend/index.js
+    your code here
+    ```
+
+    `javascript: frontend/index.js` will be used as the filename. If you are fixing a file, you need to:
       * Read the target file
       * Follow the original data structures and file imports, do not break it(you may read more files depends on)
       * Then output the complete fixed code of the file.
 
     If you only output code snippets to demonstrate your conclusions, you can use standard code blocks:
 
-    ```js
-    ... code ...
+    ```javascript
+    your code here
     ```
 
     5. You do not have to analyze the fixed code, a new compling will be automatically processed after your fixing.
