@@ -10,7 +10,7 @@ import json5
 from ms_agent.agent.memory import Memory
 from ms_agent.llm.utils import Message
 from ms_agent.utils.logger import logger
-from ms_agent.utils.prompts import FACT_RETRIEVAL_PROMPT
+from ms_agent.utils.prompts import get_fact_retrieval_prompt
 from omegaconf import DictConfig, OmegaConf
 
 
@@ -457,6 +457,6 @@ class DefaultMemory(Memory):
         logger.info(f'Memory config: {mem0_config}')
         # Prompt content is too long, default logging reduces readability
         mem0_config['custom_fact_extraction_prompt'] = getattr(
-            self.config.memory, 'fact_retrieval_prompt', FACT_RETRIEVAL_PROMPT)
+            self.config.memory, 'fact_retrieval_prompt', get_fact_retrieval_prompt())
         memory = mem0.Memory.from_config(mem0_config)
         return memory
