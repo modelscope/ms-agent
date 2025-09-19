@@ -1,8 +1,10 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import asyncio
 
 from ms_agent.llm.openai import OpenAIChat
 from ms_agent.tools.search.search_base import SearchEngine
 from ms_agent.tools.search_engine import get_web_search_tool
+from ms_agent.workflow.deepresearch_workflow import DeepResearchWorkflow
 from ms_agent.workflow.principle import MECEPrinciple
 from ms_agent.workflow.research_workflow import ResearchWorkflow
 
@@ -19,6 +21,32 @@ def run_workflow(user_prompt: str, task_dir: str, reuse: bool,
     )
 
     research_workflow.run(user_prompt=user_prompt)
+
+
+def run_deep_workflow(user_prompt: str,
+                      task_dir: str,
+                      reuse: bool,
+                      chat_client: OpenAIChat,
+                      search_engine: SearchEngine,
+                      breadth: int = 4,
+                      depth: int = 2,
+                      is_report: bool = True,
+                      show_progress: bool = False):
+    research_workflow = DeepResearchWorkflow(
+        client=chat_client,
+        search_engine=search_engine,
+        workdir=task_dir,
+        reuse=reuse,
+        use_ray_extraction=True,
+        enable_multimodal=True)
+
+    asyncio.run(
+        research_workflow.run(
+            user_prompt=user_prompt,
+            breadth=breadth,
+            depth=depth,
+            is_report=is_report,
+            show_progress=show_progress))
 
 
 if __name__ == '__main__':

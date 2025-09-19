@@ -15,7 +15,7 @@ except Exception:  # pragma: no cover - optional dependency
     _RAY_AVAILABLE = False
 
 
-class OptimizedKeyInformationExtraction:
+class InformationExtractionManager:
     """
     Optimized key information extraction with optional Ray acceleration.
     """
@@ -157,7 +157,7 @@ def extract_key_information(
     Returns:
         Tuple of (key_info_list, resource_map)
     """
-    extractor = OptimizedKeyInformationExtraction(
+    extractor = InformationExtractionManager(
         verbose=verbose,
         use_ray=use_ray,
         ray_num_workers=ray_num_workers,

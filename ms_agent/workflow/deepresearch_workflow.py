@@ -3,14 +3,13 @@ import asyncio
 import copy
 import os
 import re
+import threading
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import click
-import json
 from ms_agent.llm.openai import OpenAIChat
-from ms_agent.rag.extraction import HierarchicalKeyInformationExtraction
-from ms_agent.rag.schema import KeyInformation
+from ms_agent.rag.extraction_manager import extract_key_information
 from ms_agent.tools.exa.schema import dump_batch_search_results
 from ms_agent.tools.search.search_base import SearchRequest, SearchResult
 from ms_agent.tools.search.search_request import get_search_request_generator
@@ -24,6 +23,42 @@ from ms_agent.workflow.research_workflow import ResearchWorkflow
 from rich.prompt import Confirm, Prompt
 
 logger = get_logger()
+
+
+class ProgressManager:
+    """Thread-safe progress manager for deep research workflow."""
+
+    def __init__(self, initial_progress: ResearchProgress,
+                 callback: Optional[Callable[[ResearchProgress], None]] = None):
+        self.progress = initial_progress
+        self.callback = callback
+        self.lock = threading.Lock()
+
+    def update(self, **updates):
+        """Thread-safe progress update."""
+        with self.lock:
+            for key, value in updates.items():
+                if hasattr(self.progress, key):
+                    setattr(self.progress, key, value)
+            if self.callback:
+                # Create a copy to avoid race conditions
+                progress_copy = ResearchProgress(**self.progress.model_dump())
+                self.callback(progress_copy)
+
+    def increment_completed_queries(self, current_query: Optional[str] = None):
+        """Thread-safe atomic increment of completed queries."""
+        with self.lock:
+            self.progress.completed_queries += 1
+            if current_query:
+                self.progress.current_query = current_query
+            if self.callback:
+                progress_copy = ResearchProgress(**self.progress.model_dump())
+                self.callback(progress_copy)
+
+    def get_current(self) -> ResearchProgress:
+        """Get current progress state safely."""
+        with self.lock:
+            return ResearchProgress(**self.progress.model_dump())
 
 
 class DeepResearchWorkflow(ResearchWorkflow):
@@ -61,6 +96,11 @@ class DeepResearchWorkflow(ResearchWorkflow):
             f'- Consider new technologies and contrarian ideas, not just the conventional wisdom.'
             f'You may use high levels of speculation or prediction, just flag it for me.'
         )
+        self._use_ray_extraction = (
+            kwargs.pop('use_ray_extraction', False)
+            or str(os.environ.get('RAG_EXTRACT_USE_RAY', '0')).lower() in ('1', 'true', 'True')
+        )
+        self._enable_multimodal = kwargs.pop('enable_multimodal', False)
         self._kwargs = kwargs
 
     @staticmethod
@@ -177,10 +217,6 @@ class DeepResearchWorkflow(ResearchWorkflow):
                 {'role': 'system', 'content': self.default_system},
                 {'role': 'user', 'content': enhanced_prompt}
             ],
-            # response_format={
-            #     'type': 'json_schema',
-            #     'json_schema': json_schema
-            # },
             stream=False)
         question_prompt = response.get('content', '')
         follow_up_questions = ResearchWorkflow.parse_json_from_content(question_prompt)
@@ -201,8 +237,9 @@ class DeepResearchWorkflow(ResearchWorkflow):
                 engine_type=getattr(self._search_engine, 'engine_type', None),
                 user_prompt=query)
         except Exception as e:
-            raise ValueError(
-                f'Error creating search request generator: {e}') from e
+            logger.error(
+                f'Error creating search request generator: {e}')
+            return []
 
         json_schema = search_request_generator.get_json_schema(
             num_queries=num_queries)
@@ -224,7 +261,7 @@ class DeepResearchWorkflow(ResearchWorkflow):
 
         search_client = OpenAIChat(
             api_key=os.getenv('OPENAI_API_KEY'),
-            base_url='https://dashscope.aliyuncs.com/compatible-mode/v1',
+            base_url=os.getenv('OPENAI_BASE_URL'),
             model='gemini-2.5-flash',
         )
         response = search_client.chat(
@@ -251,7 +288,7 @@ class DeepResearchWorkflow(ResearchWorkflow):
                 for search_request in search_requests_data
             ][:num_queries]
             logger.info(
-                f'Generated {len(search_requests)} search requests based on the query: {query}'
+                f'Generated {len(search_requests)} search requests based on the query:\n{query}'
             )
         else:
             logger.warning('Warning: No search requests generated from the prompt, using default query.')
@@ -280,15 +317,19 @@ class DeepResearchWorkflow(ResearchWorkflow):
             res_d['url'] for res_d in search_results[0]['results']
         ]
 
-        extractor = HierarchicalKeyInformationExtraction(
-            urls_or_files=prepared_resources, verbose=self._verbose)
-        key_info_list: List[KeyInformation] = extractor.extract()
+        key_info_list, all_ref_items = extract_key_information(
+            urls_or_files=prepared_resources,
+            use_ray=self._use_ray_extraction,
+            verbose=self._verbose,
+            ray_num_workers=int(os.environ.get('RAG_EXTRACT_RAY_NUM_WORKERS', '0')) or None,
+            ray_cpus_per_task=float(os.environ.get('RAG_EXTRACT_RAY_CPUS_PER_TASK', '1')),
+        )
 
         context: List[str] = [
             key_info.text for key_info in key_info_list if key_info.text
         ]
         resource_map: Dict[str, str] = {}
-        for item_name, dict_item in extractor.all_ref_items.items():
+        for item_name, dict_item in all_ref_items.items():
             doc_item = dict_item.get('item', None)
             if hasattr(doc_item, 'image') and doc_item.image:
                 # Get the item extension from mimetype such as `image/png`
@@ -307,8 +348,7 @@ class DeepResearchWorkflow(ResearchWorkflow):
             self,
             query: str,
             search_results: List[str],
-            resource_map: Dict[str, str],
-            num_learnings: int = 3,
+            num_learnings: int = 20,
             num_follow_up_questions: int = 3) -> LearningsResponse:
         """Process search results and extract learnings.
 
@@ -325,7 +365,7 @@ class DeepResearchWorkflow(ResearchWorkflow):
         # TODO: Process image and table in the search results
 
         if not search_results:
-            logger.warning(
+            logger.info(
                 f'No content found and extracted for query: {query}')
             return LearningsResponse(learnings=[], follow_up_questions=[])
 
@@ -351,7 +391,7 @@ class DeepResearchWorkflow(ResearchWorkflow):
             }
         }
 
-        if isinstance(search_results, List) and search_results:
+        if isinstance(search_results, List):
             contents_text = '\n'.join([
                 f'<content>\n{content}\n</content>'
                 for content in search_results
@@ -359,16 +399,68 @@ class DeepResearchWorkflow(ResearchWorkflow):
         else:
             contents_text = ''
 
+        multimodal_prompt = (
+            '- The <contents> may include images and tables. '
+            'Images are represented as placeholders within <resource_info>xxx</resource_info>. '
+            'Tables may exist either in the form of images or as extracted text. '
+            'It is required to preserve important images and tables as much as possible. '
+            'Note that a figure caption may immediately follow a <resource_info>xxx</resource_info> placeholder, '
+            'or it may appear in another part of the document. '
+            'Images can be directly appended after the corresponding learning, using the format of '
+            '"\nfigure title: <resource_info>xxx</resource_info>\n". '
+            'Tables can also be directly appended after the corresponding learning. '
+            'Tables should be represented as the table title followed by a well-organized data table. '
+            'Sometimes tables may also appear as images, in which case they can be represented '
+            'similarly to images. '
+            'Examples:\n'
+            '1. The MARL-ODDA framework models each origin-destination (OD) pair as an agent in a DEC-POMDP setup, '
+            'where agents optimize routing decisions using local observations that include static features '
+            '(e.g., free-flow travel time, route identifiers) and dynamic features '
+            '(e.g., marginal travel time, volume-to-capacity ratio). This approach reduces agent count by '
+            'orders of magnitude compared to traveler-level agents, enabling scalability on networks like '
+            'SiouxFalls and Anaheim.\n'
+            'Related figures:\n'
+            '- Figure 1. Network topology of SiouxFalls: <resource_info>aaaa</resource_info>\n'
+            '- Figure 2. Convergence of training episodes: <resource_info>bbbb</resource_info>\n'
+            'Related tables:\n'
+            '- Table 1. Summary of static OD features: either <resource_info>cccc</resource_info> '
+            'or a text-based table in Markdown format\n'
+            '- Table 2. Comparison of routing performance across methods: either <resource_info>dddd</resource_info> '
+            'or a text-based table in Markdown format\n\n'
+            '2. The proposed CNN-based defect detection system achieves over 95% accuracy in classifying '
+            'common surface defects such as cracks, scratches, and corrosion. Performance is benchmarked '
+            'against traditional SVM and Random Forest baselines.\n'
+            'Related figures:\n'
+            '- Figure 5. Sample defect images from dataset: <resource_info>eeee</resource_info>\n'
+            '- Figure 6. Confusion matrix of CNN classifier: <resource_info>ffff</resource_info>\n'
+            'Related tables:\n'
+            '- Table 3. Accuracy comparison of models: either <resource_info>gggg</resource_info> '
+            'or a text-based table in Markdown format\n\n'
+        )
         user_prompt = (
-            f'Given the following contents from a search for the query '
-            f'<query>{query}</query>, generate a list of learnings from the contents. '
-            f'Return a maximum of {num_learnings} learnings, but feel free to return '
-            f'less if the contents are clear. Make sure each learning is unique and not '
-            f'similar to each other. The learnings should be concise and to the point, '
-            f'as detailed and information dense as possible. Make sure to include any '
-            f'entities like people, places, companies, products, things, etc in the '
-            f'learnings, as well as any exact metrics, numbers, or dates. The learnings '
-            f'will be used to research the topic further.\n\n<contents>{contents_text}</contents>'
+            f'You are given a user search query and the raw text contents returned for that query. '
+            f'Your task is to generate a list of learnings and some follow-up questions based on them.'
+            f'\n\n<query>{query}</query>\n<contents>{contents_text}</contents>.\n\n'
+            f'Instructions (follow strictly):\n'
+            f'1. Requirements for learnings:\n'
+            f'- Return a maximum of {num_learnings} learnings, but feel free to return '
+            f'less if the contents are clear.\n'
+            f'- Make sure each learning is unique and not similar to each other.\n'
+            f'- The learnings should be concise and to the point, as detailed and '
+            f'information dense as possible.\n'
+            f'- Make sure to include any entities like people, places, companies, products, '
+            f'things, etc in the learnings, as well as any exact metrics, numbers, or dates.\n'
+            f'{multimodal_prompt if self._enable_multimodal else ""}'
+            f'- The learnings will be used to research the topic further.\n'
+            f'- Do NOT repeat the query verbatim as a learning. '
+            f'Do NOT invent facts not present in <contents>.\n'
+            f'2. Requirements for follow-up questions:\n'
+            f'- Return a maximum of {num_follow_up_questions} follow-up questions that are '
+            f'actionable for further web search, but feel free to return less if the contents are clear. '
+            f'If nothing needs to be searched further, return an empty array.\n'
+            f'- Make sure each follow-up question is unique and not similar to each other.\n'
+            f'- The follow-up questions will be used to search further to get more information.'
+            f'- Do NOT repeat the query verbatim as a follow-up question.'
             f'\n\nPlease respond with valid JSON that matches provided schema:\n{json_schema}'
         )
 
@@ -377,10 +469,6 @@ class DeepResearchWorkflow(ResearchWorkflow):
                 {'role': 'system', 'content': self.default_system},
                 {'role': 'user', 'content': user_prompt}
             ],
-            # response_format={
-            #     'type': 'json_schema',
-            #     'json_schema': json_schema
-            # },
             stream=False)
 
         response_data = ResearchWorkflow.parse_json_from_content(
@@ -392,7 +480,7 @@ class DeepResearchWorkflow(ResearchWorkflow):
         follow_up_questions = response_data.get('follow_up_questions',
                                                 [])[:num_follow_up_questions]
 
-        logger.info(f'Created {len(learnings)} learnings: {learnings}')
+        logger.info(f'Created {len(follow_up_questions)} follow-up questions:\n{follow_up_questions}')
 
         return LearningsResponse(
             learnings=learnings, follow_up_questions=follow_up_questions)
@@ -404,12 +492,13 @@ class DeepResearchWorkflow(ResearchWorkflow):
         depth: int,
         learnings: Optional[List[str]] = None,
         visited_urls: Optional[List[str]] = None,
-        report_progress: Optional[Callable[[ResearchProgress], None]] = None
+        resource_map: Optional[Dict[str, str]] = None,
+        progress_manager: Optional[ProgressManager] = None
     ) -> ResearchResult:
         """Process a single search query."""
         try:
             # Perform search and extraction
-            search_result, resource_map, new_urls = await self._search_with_extraction(
+            search_result, new_resource_map, new_urls = await self._search_with_extraction(
                 search_request)
 
             # Process results
@@ -419,61 +508,64 @@ class DeepResearchWorkflow(ResearchWorkflow):
             processed_results = await self.process_search_results(
                 query=search_request.query,
                 search_results=search_result,
-                resource_map=resource_map,
+                num_learnings=20,  # TODO: Make it configurable
                 num_follow_up_questions=new_breadth)
 
             all_learnings = learnings + processed_results.learnings
             all_urls = visited_urls + new_urls
+            all_resource_map = resource_map.copy()
+            if resource_map:
+                all_resource_map.update(new_resource_map)
+            else:
+                all_resource_map = new_resource_map
 
             # Continue deeper if needed
-            if new_depth > 0:
+            if new_depth > 0 and len(processed_results.follow_up_questions) > 0:
                 logger.info(
-                    f'Researching deeper, breadth: {new_breadth}, depth: {new_depth}'
+                    f'Researching deeper, breadth: {new_breadth}, '
+                    f'depth: {progress_manager.get_current().current_depth + 1}'
                 )
-
-                report_progress({
-                    'current_depth': new_depth,
-                    'current_breadth': new_breadth,
-                    'completed_queries': 1,  # This is incremental
-                    'current_query': search_request.query
-                })
+                # Use atomic increment to avoid race conditions
+                if progress_manager is not None:
+                    progress_manager.increment_completed_queries(search_request.query)
 
                 # Create next query from follow-up questions
                 next_query = (
-                    f"Previous research goal: {getattr(search_request, 'research_goal', '')}\n"
-                    f"Follow-up research directions: {', '.join(processed_results.follow_up_questions)}"
+                    f'Previous Query: {search_request.query}\n'
+                    f'Previous research goal: {getattr(search_request, "research_goal", "")}\n'
+                    f'Follow-up research directions: {", ".join(processed_results.follow_up_questions)}'
                 ).strip()
 
-                return await self.deep_research(
+                # Continue with deeper research, passing through the progress manager
+                deeper_result = await self.deep_research(
                     query=next_query,
                     breadth=new_breadth,
                     depth=new_depth,
                     learnings=all_learnings,
                     visited_urls=all_urls,
-                    on_progress=None  # Don't pass progress to avoid duplication
+                    resource_map=all_resource_map,
+                    _progress_manager=progress_manager  # Pass through the same progress manager
                 )
+                return deeper_result
             else:
-                report_progress({
-                    'current_depth': 0,
-                    'completed_queries': 1,
-                    'current_query': search_request.query
-                })
                 return ResearchResult(
-                    learnings=all_learnings, visited_urls=all_urls)
+                    learnings=all_learnings, visited_urls=all_urls, resource_map=all_resource_map)
 
         except Exception as e:
             logger.error(
                 f"Error processing query '{search_request.query}': {e}")
-            return ResearchResult(learnings=[], visited_urls=[])
+            return ResearchResult(learnings=[], visited_urls=[], resource_map={})
 
     async def deep_research(
         self,
         query: str,
-        breadth: int,
-        depth: int,
+        breadth: int = 4,
+        depth: int = 2,
         learnings: Optional[List[str]] = None,
         visited_urls: Optional[List[str]] = None,
-        on_progress: Optional[Callable[[ResearchProgress], None]] = None
+        resource_map: Optional[Dict[str, str]] = None,
+        on_progress: Optional[Callable[[ResearchProgress], None]] = None,
+        _progress_manager: Optional[ProgressManager] = None
     ) -> ResearchResult:
         """Perform deep research on a query.
 
@@ -483,52 +575,71 @@ class DeepResearchWorkflow(ResearchWorkflow):
             depth: Maximum research depth
             learnings: Previous learnings to build upon
             visited_urls: Previously visited URLs
+            resource_map: Previously visited resources map(images and tables)
             on_progress: Optional progress callback
+            _progress_manager: Internal progress manager for recursive calls
 
         Returns:
             Research results with learnings and visited URLs
         """
 
-        def report_progress(update: dict) -> None:
-            """Update progress and call callback if provided."""
-            for key, value in update.items():
-                setattr(progress, key, value)
-            if on_progress:
-                on_progress(progress)
-
         if learnings is None:
             learnings = []
         if visited_urls is None:
             visited_urls = []
+        if resource_map is None:
+            resource_map = {}
 
-        progress = ResearchProgress(
-            current_depth=depth,
-            total_depth=depth,
-            current_breadth=breadth,
-            total_breadth=breadth,
-            total_queries=0,
-            completed_queries=0)
+        # Initialize progress manager only at the top level and only if progress tracking is needed
+        if _progress_manager is None:
+            if on_progress is not None:
+                initial_progress = ResearchProgress(
+                    current_depth=0,
+                    total_depth=depth,
+                    current_breadth=breadth,
+                    total_breadth=breadth,
+                    total_queries=0,
+                    completed_queries=0
+                )
+                progress_manager = ProgressManager(initial_progress, on_progress)
+            else:
+                progress_manager = None
+        else:
+            progress_manager = _progress_manager
 
         search_queries = await self.generate_search_queries(
             query=query, learnings=learnings, num_queries=breadth)
 
-        report_progress({
-            'total_queries': len(search_queries),
-            'current_query': search_queries[0].query if search_queries else None
-        })
+        # Update initial progress if progress tracking is enabled
+        if progress_manager is not None:
+            current_progress = progress_manager.get_current()
+            # Add current level queries to total (for recursive calls)
+            new_total_queries = current_progress.total_queries + len(search_queries)
+            progress_manager.update(
+                total_queries=new_total_queries,
+                current_query=search_queries[0].query if search_queries else '',
+                current_depth=current_progress.total_depth - depth + 1
+            )
 
         # Process search queries concurrently
         tasks = []
         for search_query in search_queries:
-            task = self._process_single_query(search_query, breadth, depth,
-                                              learnings, visited_urls,
-                                              report_progress)
+            task = self._process_single_query(
+                search_query,
+                breadth=breadth,
+                depth=depth,
+                learnings=learnings,
+                visited_urls=visited_urls,
+                resource_map=resource_map,
+                progress_manager=progress_manager
+            )
             tasks.append(task)
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Aggregate results
         all_learnings = learnings.copy()
         all_urls = visited_urls.copy()
+        all_resource_map = resource_map.copy()
 
         for result in results:
             if isinstance(result, Exception):
@@ -538,6 +649,7 @@ class DeepResearchWorkflow(ResearchWorkflow):
             if isinstance(result, ResearchResult):
                 all_learnings.extend(result.learnings)
                 all_urls.extend(result.visited_urls)
+                all_resource_map.update(result.resource_map)
 
         # TODO: Use a small agent take over?
         # Remove duplicates while preserving order
@@ -556,10 +668,15 @@ class DeepResearchWorkflow(ResearchWorkflow):
                 seen_urls.add(url)
 
         return ResearchResult(
-            learnings=unique_learnings, visited_urls=unique_urls)
+            learnings=unique_learnings,
+            visited_urls=unique_urls,
+            resource_map=all_resource_map
+        )
 
-    async def write_final_report(self, prompt: str, learnings: List[str],
-                                 visited_urls: List[str]) -> str:
+    async def write_final_report(self, prompt: str,
+                                 learnings: List[str],
+                                 visited_urls: List[str],
+                                 resource_map: Dict[str, str]) -> str:
         json_schema = {
             'name': 'report_markdown',
             'strict': True,
@@ -575,6 +692,14 @@ class DeepResearchWorkflow(ResearchWorkflow):
             }
         }
 
+        multimodal_prompt = (
+            'The <learnings> may include images and tables. '
+            'Images are represented as placeholders within <resource_info>xxx</resource_info>. '
+            'It is required to preserve important images and tables as much as possible, '
+            'maintain their correct order (Figure 1, Figure 2, Table 1, Table 2, etc.), '
+            'and to maintain the positional relationship between the '
+            'images or tables and their surrounding context.\n'
+        )
         learnings_text = '\n'.join(
             [f'<learning>\n{learning}\n</learning>' for learning in learnings])
         user_prompt = (
@@ -584,24 +709,60 @@ class DeepResearchWorkflow(ResearchWorkflow):
             f'<prompt>{prompt}</prompt>\n\n'
             f'Here are all the learnings from previous research:\n\n'
             f'<learnings>\n{learnings_text}\n</learnings>'
-            f'\n\nPlease respond with valid JSON that matches provided schema:\n{json_schema}')
+            f'\n\nPlease respond with valid JSON that matches provided schema:\n{json_schema}\n'
+            f'Please respond in the language of the <prompt>. '
+            f'{multimodal_prompt if self._enable_multimodal else ""}'
+        )
 
         response = self._chat(
             messages=[
                 {'role': 'system', 'content': self.default_system},
                 {'role': 'user', 'content': user_prompt}
             ],
-            # response_format={
-            #     'type': 'json_schema',
-            #     'json_schema': json_schema
-            # },
             stream=False)
 
-        response_data = ResearchWorkflow.parse_json_from_content(
-            response.get('content', ''))
+        try:
+            response_data = ResearchWorkflow.parse_json_from_content(
+                response.get('content', ''))
+        except Exception as e:
+            logger.error(f'Error parsing JSON from response: {e}')
+            # try to fix the response
+            fix_prompt = (
+                f'The response is not valid JSON. Please fix it. '
+                f'You can only return the fixed JSON, no other text. '
+                f'The response is: {response.get("content", "")}'
+            )
+            response = self._chat(
+                messages=[
+                    {'role': 'system', 'content': 'You are a helpful assistant.'},
+                    {'role': 'user', 'content': fix_prompt}
+                ],
+                stream=False)
+            try:
+                response_data = ResearchWorkflow.parse_json_from_content(
+                    response.get('content', ''))
+            except Exception as e:
+                logger.error(f'Error parsing JSON from fixed response: {e}')
+                return response.get('content', '')
+
         # TODO: More robust way to handle the response
         response_data = response_data.get('report_markdown', {}) or response_data
         report = response_data.get('report', '')
+
+        if self._enable_multimodal:
+            replace_pattern = r'!\[[^\]]*\]\(<resource_info>(.*?)</resource_info>\)'
+            report = re.sub(replace_pattern, r'<resource_info>\1</resource_info>', report)
+            for item_name, item_relative_path in resource_map.items():
+                report = report.replace(
+                    f'src="<resource_info>{item_name}</resource_info>"',
+                    f'src="{item_relative_path}"',
+                    1
+                ).replace(
+                    f'<resource_info>{item_name}</resource_info>',
+                    f'![{os.path.basename(item_relative_path)}]({item_relative_path})<br>',
+                    1
+                )
+            report = remove_resource_info(report)
 
         # Append sources section
         sources_section = f"\n\n## Sources\n\n{chr(10).join([f'- {url}' for url in visited_urls])}"
@@ -620,13 +781,12 @@ class DeepResearchWorkflow(ResearchWorkflow):
                         'description': 'The final answer, short and concise'
                     }
                 },
-                'required': ['exact_answer']
+                'required': ['answer']
             }
         }
 
         learnings_text = '\n'.join(
             [f'<learning>\n{learning}\n</learning>' for learning in learnings])
-
         user_prompt = (
             f'Given the following prompt from the user, write a final answer on the '
             f'topic using the learnings from research. Follow the format specified in '
@@ -638,23 +798,29 @@ class DeepResearchWorkflow(ResearchWorkflow):
             f'Here are all the learnings from research on the topic that you can use '
             f'to help answer the prompt:\n\n'
             f'<learnings>\n{learnings_text}\n</learnings>'
-            f'\n\nPlease respond with valid JSON that matches provided schema:\n{json_schema}')
+            f'\n\nPlease respond with valid JSON that matches provided schema:\n{json_schema}\n'
+            f'Please respond in the language of the prompt.')
 
         response = self._chat(
             messages=[
                 {'role': 'system', 'content': self.default_system},
                 {'role': 'user', 'content': user_prompt}
             ],
-            # response_format={
-            #     'type': 'json_schema',
-            #     'json_schema': json_schema
-            # },
             stream=False
         )
-        response_data = ResearchWorkflow.parse_json_from_content(
-            response.get('content', ''))
+
+        try:
+            response_data = ResearchWorkflow.parse_json_from_content(
+                response.get('content', ''))
+        except Exception as e:
+            logger.error(f'Error parsing JSON from response: {e}')
+            return response.get('content', '')
+
         # TODO: More robust way to handle the response
         response_data = response_data.get('exact_answer', {}) or response_data
+
+        if self._enable_multimodal:
+            logger.warning('Multimodal is not supported for short answer.')
 
         return response_data.get('answer', '')
 
@@ -663,11 +829,8 @@ class DeepResearchWorkflow(ResearchWorkflow):
                   breadth: int = 4,
                   depth: int = 2,
                   is_report: bool = False,
+                  show_progress: bool = False,
                   **kwargs) -> None:
-
-        is_multimodal = kwargs.get('enable_multimodal', False)
-        if is_multimodal:
-            raise ValueError('Multimodal is not supported yet.')
 
         if not user_prompt:
             initial_query = Prompt.ask(
@@ -691,15 +854,14 @@ class DeepResearchWorkflow(ResearchWorkflow):
 
         try:
             follow_up_questions: List[str] = self.generate_feedback(
-                query=initial_query)
+                query=initial_query, num_questions=3)
             if follow_up_questions:
-                # TODO: Slit qa into n times.
                 logger.info('Follow-up questions:\n'
                             + '\n'.join(follow_up_questions))
                 answer = input('Please enter you answer: ')
                 questions_text = '\n'.join(follow_up_questions)
                 combined_query = (
-                    f'Initial Query:\n{user_prompt}\n'
+                    f'Initial Query:\n{initial_query}\n'
                     f'Follow-up Questions:\n{questions_text}\n'
                     f'User\'s Answers:\n{answer}')
         except Exception as e:
@@ -708,8 +870,6 @@ class DeepResearchWorkflow(ResearchWorkflow):
                 + f'Error: {e}')
             combined_query = initial_query
 
-        logger.info('\nStarting deep research...')
-        show_progress = kwargs.get('show_progress', False)
         if show_progress:
             # Perform research with progress tracking
             with ProgressTracker() as tracker:
@@ -720,29 +880,32 @@ class DeepResearchWorkflow(ResearchWorkflow):
                         depth=depth,
                         on_progress=tracker.update_progress)
                 except Exception as e:
-                    logger.error(f'Error during research: {e}')
+                    logger.error(f'Error during deep research: {e}')
                     return
         else:
             result = await self.deep_research(
                 query=combined_query, breadth=breadth, depth=depth)
 
         # Display results
-        logger.info('\nResearch Complete!')
+        logger.info('Research Complete!')
         logger.info(f'Learnings ({len(result.learnings)}):')
-        for i, learning in enumerate(result.learnings, 1):
-            logger.info(f'{i}. {learning}')
+        if self._verbose:
+            for i, learning in enumerate(result.learnings, 1):
+                logger.info(f'{i}. {learning}')
         logger.info(f'\nVisited URLs ({len(result.visited_urls)})')
-        for url in result.visited_urls:
-            logger.info(f'- {url}')
+        if self._verbose:
+            for url in result.visited_urls:
+                logger.info(f'- {url}')
 
-        logger.info('\nWriting final output...')
+        logger.info('Writing final output...')
         try:
             if is_report:
                 # Generate and save report
                 report = await self.write_final_report(
                     prompt=combined_query,
                     learnings=result.learnings,
-                    visited_urls=result.visited_urls)
+                    visited_urls=result.visited_urls,
+                    resource_map=result.resource_map)
 
                 if self._verbose:
                     logger.info(f'\n\nFinal Report Content:\n{report}')

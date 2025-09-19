@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 from rich.console import Console
@@ -24,6 +24,7 @@ class ResearchResult(BaseModel):
 
     learnings: List[str] = Field(default_factory=list)
     visited_urls: List[str] = Field(default_factory=list)
+    resource_map: Dict[str, str] = Field(default_factory=dict)
 
 
 class ResearchRequest(BaseModel):
