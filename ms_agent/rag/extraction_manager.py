@@ -13,6 +13,10 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     ray = None  # type: ignore
     _RAY_AVAILABLE = False
+    logger.warning(
+        'Ray is not available. Install it for faster information extraction:\n'
+        '    pip install \"ray[default]\"\n'
+        'Program will run without acceleration.')
 
 
 class InformationExtractionManager:
@@ -51,6 +55,9 @@ class InformationExtractionManager:
                     f'Ray extraction failed, falling back to sequential: {e}')
 
         # Use sequential extraction if Ray is disabled or failed
+        if not _RAY_AVAILABLE:
+            logger.warning(
+                'Ray is not available, falling back to sequential extraction.')
         return self._extract_sequential(urls_or_files)
 
     def _extract_sequential(
@@ -94,7 +101,7 @@ class InformationExtractionManager:
         for exraction_actor in actors:
             futures.append(exraction_actor.process_partition.remote())
 
-        results: List[Tuple[List[Dict[str, Any]],
+        results: List[Tuple[List[KeyInformation],
                             Dict[str, str]]] = ray.get(futures)
 
         # Merge results
@@ -102,11 +109,7 @@ class InformationExtractionManager:
         merged_resource_map: Dict[str, str] = {}
 
         for infos, res_map in results:
-            for item in infos:
-                merged_infos.append(
-                    KeyInformation(
-                        text=getattr(item, 'text', ''),
-                        resources=getattr(item, 'resources', [])))
+            merged_infos.extend(infos)
             merged_resource_map.update(res_map)
 
         return merged_infos, merged_resource_map
@@ -125,7 +128,7 @@ if _RAY_AVAILABLE:
                 urls_or_files=self._urls_or_files, verbose=verbose)
 
         def process_partition(
-                self) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
+                self) -> Tuple[List[KeyInformation], Dict[str, str]]:
             """Process a partition of URLs/files and return extracted information."""
             try:
                 key_info_list_partition = self.extractor.extract()
