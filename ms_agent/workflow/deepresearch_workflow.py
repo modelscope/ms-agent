@@ -307,7 +307,9 @@ class DeepResearchWorkflow(ResearchWorkflow):
         save_path: str = os.path.join(
             self.workdir_structure['search'],
             f'search_{text_hash(search_query.query)}.json')
-        search_res_file: str = self.search(search_request=search_query, save_path=save_path)
+        search_res_file: str = await asyncio.to_thread(
+            self.search, search_request=search_query, save_path=save_path
+        )
         search_results: List[Dict[str, Any]] = SearchResult.load_from_disk(
             file_path=search_res_file)
 
