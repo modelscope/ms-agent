@@ -65,6 +65,19 @@ class Mem0Memory(Memory):
         self._lock = asyncio.Lock()  # Add lock for thread safety in shared usage
         self._initialize_memory()
 
+    def patched_parse_messages(self, messages: List[Message]) -> List[Message]:
+        response = ''
+        for msg in messages:
+            if msg['role'] == 'system':
+                response += f"system: {msg['content']}\n"
+            if msg['role'] == 'user':
+                response += f"user: {msg['content']}\n"
+            if msg['role'] == 'assistant' and msg['content'] is not None:
+                response += f"assistant: {msg['content']}\n"
+            if msg['role'] == 'tool':
+                response += f"tool: {msg['content']}\n"
+        return response
+
     def set_global_config(self, global_config: DictConfig):
         """Set the global configuration to access LLM settings."""
         self.global_config = global_config
@@ -78,6 +91,10 @@ class Mem0Memory(Memory):
             from mem0 import Memory as Mem0MemoryClient
             from mem0.configs.base import MemoryConfig
 
+            # Monkey patch Mem0's parse_messages function to handle tool messages
+            import mem0.memory.main
+
+            mem0.memory.main.parse_messages = self.patched_parse_messages
             embedding_model = 'text-embedding-3-small'
             summary_model = 'gpt-5-2025-08-07'
 

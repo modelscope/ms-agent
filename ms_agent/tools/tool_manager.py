@@ -12,7 +12,7 @@ from ms_agent.tools.mcp_client import MCPClient
 from ms_agent.tools.split_task import SplitTask
 
 MAX_TOOL_NAME_LEN = int(os.getenv('MAX_TOOL_NAME_LEN', 64))
-TOOL_CALL_TIMEOUT = os.getenv('TOOL_CALL_TIMEOUT', 30)
+TOOL_CALL_TIMEOUT = int(os.getenv('TOOL_CALL_TIMEOUT', 30))
 
 
 class ToolManager:
