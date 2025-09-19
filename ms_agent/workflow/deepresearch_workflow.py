@@ -1,6 +1,5 @@
 # yapf: disable
 import asyncio
-import copy
 import os
 import re
 import threading
@@ -146,17 +145,10 @@ class DeepResearchWorkflow(ResearchWorkflow):
     def search(self, search_request: SearchRequest, save_path: str = None) -> Union[str, List[str]]:
 
         if self._reuse:
-            # Load existing search results if they exist
-            if os.path.exists(self.workdir_structure['search']) and os.listdir(self.workdir_structure['search']):
-                logger.info(
-                    f"Loaded existing search results from {self.workdir_structure['search']}"
-                )
-                return [os.path.join(self.workdir_structure['search'], f)
-                        for f in os.listdir(self.workdir_structure['search'])]
-            else:
-                logger.warning(
-                    f"Warning: Search results file not found for `reuse` mode: {self.workdir_structure['search']}"
-                )
+            raise ValueError(
+                'Reuse mode is not supported for deep research workflow.'
+                'Please set reuse to False to start a new research.'
+            )
 
         # Perform search using the provided search request
         def search_single_request(search_request: SearchRequest):
@@ -405,17 +397,18 @@ class DeepResearchWorkflow(ResearchWorkflow):
             '- The <contents> may include images and tables. '
             'Images are represented as placeholders within <resource_info>xxx</resource_info>. '
             'Tables may exist either in the form of images or as extracted text. '
-            'It is required to preserve important images and tables as much as possible. '
+            'It is required to preserve as many important images and tables as possible - '
+            'do not omit them unless absolutely necessary.'
             'Note that a figure caption may immediately follow a <resource_info>xxx</resource_info> placeholder, '
             'or it may appear in another part of the document. '
-            'Images can be directly appended after the corresponding learning, using the format of '
-            '"\nfigure title: <resource_info>xxx</resource_info>\n". '
-            'Tables can also be directly appended after the corresponding learning. '
-            'Tables should be represented as the table title followed by a well-organized data table. '
-            'Sometimes tables may also appear as images, in which case they can be represented '
-            'similarly to images. '
-            'Examples:\n'
-            '1. The MARL-ODDA framework models each origin-destination (OD) pair as an agent in a DEC-POMDP setup, '
+            'Figures and tables must be grouped and listed after the corresponding learning '
+            'under "Related figures:" and "Related tables:" sections, '
+            'strictly following the example format below. '
+            'The entire learning with figures and tables MUST be a single plain-text string '
+            '(e.g., as the value of a JSON string field elsewhere). '
+            'Do not start with { or [. Do not include any top-level braces or brackets.\n'
+            'Example:\n'
+            'The MARL-ODDA framework models each origin-destination (OD) pair as an agent in a DEC-POMDP setup, '
             'where agents optimize routing decisions using local observations that include static features '
             '(e.g., free-flow travel time, route identifiers) and dynamic features '
             '(e.g., marginal travel time, volume-to-capacity ratio). This approach reduces agent count by '
@@ -428,15 +421,6 @@ class DeepResearchWorkflow(ResearchWorkflow):
             '- Table 1. Summary of static OD features: either <resource_info>cccc</resource_info> '
             'or a text-based table in Markdown format\n'
             '- Table 2. Comparison of routing performance across methods: either <resource_info>dddd</resource_info> '
-            'or a text-based table in Markdown format\n\n'
-            '2. The proposed CNN-based defect detection system achieves over 95% accuracy in classifying '
-            'common surface defects such as cracks, scratches, and corrosion. Performance is benchmarked '
-            'against traditional SVM and Random Forest baselines.\n'
-            'Related figures:\n'
-            '- Figure 5. Sample defect images from dataset: <resource_info>eeee</resource_info>\n'
-            '- Figure 6. Confusion matrix of CNN classifier: <resource_info>ffff</resource_info>\n'
-            'Related tables:\n'
-            '- Table 3. Accuracy comparison of models: either <resource_info>gggg</resource_info> '
             'or a text-based table in Markdown format\n\n'
         )
         user_prompt = (
@@ -473,10 +457,15 @@ class DeepResearchWorkflow(ResearchWorkflow):
             ],
             stream=False)
 
-        response_data = ResearchWorkflow.parse_json_from_content(
-            response.get('content', ''))
-        # TODO: More robust way to handle the response
-        response_data = response_data.get('learnings_extraction', {}) or response_data
+        try:
+            response_data = ResearchWorkflow.parse_json_from_content(
+                response.get('content', ''))
+            # TODO: More robust way to handle the response
+            response_data = response_data.get('learnings_extraction', {}) or response_data
+        except Exception as e:
+            logger.error(f'Error parsing JSON response: {e}')
+            logger.error(f'Raw response content: {response.get("content", "")}')
+            return LearningsResponse(learnings=[], follow_up_questions=[])
 
         learnings = response_data.get('learnings', [])[:num_learnings]
         follow_up_questions = response_data.get('follow_up_questions',
@@ -700,13 +689,21 @@ class DeepResearchWorkflow(ResearchWorkflow):
             'It is required to preserve important images and tables as much as possible, '
             'maintain their correct order (Figure 1, Figure 2, Table 1, Table 2, etc.), '
             'and to maintain the positional relationship between the '
-            'images or tables and their surrounding context.\n'
+            'images or tables and their surrounding context. '
+            'Please make sure to add right captions/titles to the figures and tables.'
+            'Please do not represent figure and table captions/titles in the following form, '
+            'as this prevents proper rendering in Markdown: '
+            '\"<!-- Table 1: compute achieves lower error than a handcrafted semantic operator '
+            'program written in Palimpzest. -->\", '
+            '\"<!-- Figure 1: An example query from the Kramabench dataset which a handcrafted '
+            'semantic operator program struggles to perform well on. -->\"'
         )
         learnings_text = '\n'.join(
             [f'<learning>\n{learning}\n</learning>' for learning in learnings])
         user_prompt = (
             f'Given the following prompt from the user, write a final report on the '
-            f'topic using the learnings from research. Make it as detailed as possible, '
+            f'topic using the learnings from research. Please be sure not to use the first person.'
+            f'Make it as detailed as possible, '
             f'aim for 3 or more pages, include ALL the learnings from research:\n\n'
             f'<prompt>{prompt}</prompt>\n\n'
             f'Here are all the learnings from previous research:\n\n'
