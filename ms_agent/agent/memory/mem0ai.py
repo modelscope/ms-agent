@@ -5,7 +5,7 @@ from omegaconf import DictConfig
 
 from .base import Memory
 from ms_agent.llm.utils import Message
-from ms_agent.utils import get_logger
+from ms_agent.utils import get_logger, get_fact_retrieval_prompt
 
 logger = get_logger()
 
@@ -90,11 +90,14 @@ class Mem0Memory(Memory):
         try:
             from mem0 import Memory as Mem0MemoryClient
             from mem0.configs.base import MemoryConfig
+            import mem0.memory.main
+            import mem0.memory.utils
 
             # Monkey patch Mem0's parse_messages function to handle tool messages
-            import mem0.memory.main
-
             mem0.memory.main.parse_messages = self.patched_parse_messages
+            # Also update the imported reference in utils module
+            mem0.memory.utils.FACT_RETRIEVAL_PROMPT = get_fact_retrieval_prompt()
+            
             embedding_model = 'text-embedding-3-small'
             summary_model = 'gpt-5-2025-08-07'
 

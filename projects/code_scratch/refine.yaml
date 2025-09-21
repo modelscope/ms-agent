@@ -1,17 +1,19 @@
 llm:
   service: openai
-  model: claude-3-7-sonnet-20250219
+  model: claude-sonnet-4-20250514
   openai_api_key:
   openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+
 
 generation_config:
   top_p: 0.6
   temperature: 0.2
   top_k: 20
   stream: true
+  max_tokens: 32000
   extra_body:
     dashscope_extend_params:
-      provider: idealab
+      provider: b
     enable_thinking: false
 
 
@@ -79,6 +81,8 @@ tools:
       - list_files
 
 max_chat_round: 100
+
+tool_call_timeout: 30000
 
 output_dir: output
 

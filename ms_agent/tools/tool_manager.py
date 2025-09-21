@@ -30,6 +30,8 @@ class ToolManager:
             self.extra_tools.append(SplitTask(config))
         if hasattr(config, 'tools') and hasattr(config.tools, 'file_system'):
             self.extra_tools.append(FileSystemTool(config))
+        self.tool_call_timeout = getattr(config, 'tool_call_timeout',
+                                         TOOL_CALL_TIMEOUT)
         self._tool_index = {}
 
     def register_tool(self, tool: ToolBase):
@@ -87,7 +89,7 @@ class ToolManager:
                     server_name,
                     tool_name=tool_name.split(self.TOOL_SPLITER)[1],
                     tool_args=tool_args),
-                timeout=TOOL_CALL_TIMEOUT)
+                timeout=self.tool_call_timeout)
             return response
         except asyncio.TimeoutError:
             # TODO: How to get the information printed by the tool before hanging to return to the model?
