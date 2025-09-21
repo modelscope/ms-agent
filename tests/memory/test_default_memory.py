@@ -1,13 +1,9 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
-import math
-import os
 import unittest
 
-import json
 from ms_agent.agent import LLMAgent
-from ms_agent.agent.memory.default_memory import DefaultMemory
 from ms_agent.llm.utils import Message, ToolCall
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import OmegaConf
 
 from modelscope.utils.test_utils import test_level
 
@@ -64,16 +60,17 @@ class TestDefaultMemory(unittest.TestCase):
         async def main():
             random_id = str(uuid.uuid4())
             default_memory = OmegaConf.create({
-                'memory': {},
-                'output_dir':
-                f'output/{random_id}'
+                'memory': [{
+                    'path': f'output/{random_id}',
+                    'user_id': random_id
+                }],
             })
-            agent1 = LLMAgent(config=default_memory, task=random_id)
+            agent1 = LLMAgent(config=default_memory)
             agent1.config.callbacks.remove('input_callback')  # noqa
             await agent1.run('我是素食主义者，我每天早上喝咖啡')
             del agent1
             print('========== 数据准备结束，开始测试 ===========')
-            agent2 = LLMAgent(config=default_memory, task=random_id)
+            agent2 = LLMAgent(config=default_memory)
             agent2.config.callbacks.remove('input_callback')  # noqa
             res = await agent2.run('请帮我准备明天的三餐食谱')
             print(res)
@@ -89,19 +86,21 @@ class TestDefaultMemory(unittest.TestCase):
         async def main():
             random_id = str(uuid.uuid4())
             config = OmegaConf.create({
-                'memory': {
-                    'ignore_role': ['system']
-                },
-                'output_dir': f'output/{random_id}'
+                'memory': [{
+                    'ignore_role': ['system'],
+                    'user_id': random_id,
+                    'path': f'output/{random_id}'
+                }]
             })
-            agent1 = LLMAgent(config=OmegaConf.create(config), task=random_id)
+            agent1 = LLMAgent(config=OmegaConf.create(config))
             agent1.config.callbacks.remove('input_callback')  # noqa
             await agent1.run(self.tool_history)
             del agent1
             print('========== 数据准备结束，开始测试 ===========')
-            agent2 = LLMAgent(config=OmegaConf.create(config), task=random_id)
+            agent2 = LLMAgent(config=OmegaConf.create(config))
             agent2.config.callbacks.remove('input_callback')  # noqa
             res = await agent2.run('北京市朝阳区最炫酷的运动公园的地点')
+            del agent2
             print(res)
             assert ('酒仙桥路8888号' in res[-1].content)
 
@@ -150,21 +149,23 @@ class TestDefaultMemory(unittest.TestCase):
                 Message(role='user', content='北京市朝阳区最炫酷的运动公园的地点?')
             ]
             random_id = str(uuid.uuid4())
-            config = OmegaConf.create({
+            config = OmegaConf.create([{
                 'memory': {
                     'ignore_role': ['system'],
-                    'history_mode': 'overwrite'
-                },
-                'output_dir': f'output/{random_id}'
-            })
-            agent1 = LLMAgent(config=OmegaConf.create(config), task=random_id)
+                    'history_mode': 'overwrite',
+                    'path': f'output/{random_id}',
+                    'user_id': random_id,
+                }
+            }])
+            agent1 = LLMAgent(config=OmegaConf.create(config))
             agent1.config.callbacks.remove('input_callback')  # noqa
             await agent1.run(tool_history1)
             del agent1
             print('========== 数据准备结束，开始测试 ===========')
-            agent2 = LLMAgent(config=OmegaConf.create(config), task=random_id)
+            agent2 = LLMAgent(config=OmegaConf.create(config))
             agent2.config.callbacks.remove('input_callback')  # noqa
             res = await agent2.run(tool_history2)
+            del agent2
             print(res)
             assert ('酒仙桥路8888号' in res[-1].content
                     and '奥体南路' not in res[-1].content)

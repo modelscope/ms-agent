@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Literal, Optional, Set, Tuple
 
 import json
 import json5
-from ms_agent.agent.memory import Memory
+from ms_agent.memory import Memory
 from ms_agent.llm.utils import Message
 from ms_agent.utils.logger import logger
 from ms_agent.utils.prompts import get_fact_retrieval_prompt
@@ -72,30 +72,16 @@ class MemoryMapping:
 class DefaultMemory(Memory):
     """The memory refine tool"""
 
-    def __init__(self,
-                 config: DictConfig,
-                 conversation_id: Optional[str] = None,
-                 persist: bool = True,
-                 path: str = None,
-                 history_mode: Literal['add', 'overwrite'] = None):
+    def __init__(self, config: DictConfig):
         super().__init__(config)
-        self.conversation_id: Optional[str] = conversation_id or getattr(
-            config.memory, 'conversation_id', None)
-        self.persist: Optional[bool] = persist or getattr(
-            config.memory, 'persist', True)
-        self.compress: Optional[bool] = getattr(config.memory, 'compress',
-                                                True)
-        self.is_retrieve: Optional[bool] = getattr(config.memory,
-                                                   'is_retrieve', True)
-        self.path: Optional[str] = path or getattr(
-            config.memory, 'path', None) or getattr(self.config, 'output_dir',
-                                                    'output')
-        self.history_mode = history_mode or getattr(config.memory,
-                                                    'history_mode', 'add')
-        self.ignore_role: List[str] = getattr(config.memory, 'ignore_role',
-                                              ['tool', 'system'])
-        self.ignore_fields: List[str] = getattr(config.memory, 'ignore_fields',
-                                                ['reasoning_content'])
+        self.user_id: Optional[str] = getattr(self.config, 'user_id', None)
+        self.persist: Optional[bool] = getattr(config, 'persist', True)
+        self.compress: Optional[bool] = getattr(config, 'compress', True)
+        self.is_retrieve: Optional[bool] = getattr(config, 'is_retrieve', True)
+        self.path: Optional[str] = getattr(self.config, 'path', 'output')
+        self.history_mode = getattr(config, 'history_mode', 'add')
+        self.ignore_role: List[str] = getattr(config, 'ignore_role', ['tool', 'system'])
+        self.ignore_fields: List[str] = getattr(config, 'ignore_fields', ['reasoning_content'])
         self.memory = self._init_memory_obj()
         self.init_cache_messages()
 
@@ -186,7 +172,7 @@ class DefaultMemory(Memory):
                 self.memory._create_memory(
                     data=self.memory_snapshot[idx].value,
                     existing_embeddings={},
-                    metadata={'user_id': self.conversation_id})
+                    metadata={'user_id': self.user_id})
             if msg_id in enable_ids:
                 if len(enable_ids) > 1:
                     self.memory_snapshot[idx].enable_idxs.remove(msg_id)
@@ -206,10 +192,10 @@ class DefaultMemory(Memory):
                 messages_dict.append(message.to_dict())
             else:
                 messages_dict.append(message)
-        self.memory.add(messages_dict, user_id=self.conversation_id)
+        self.memory.add(messages_dict, user_id=self.user_id)
 
         self.max_msg_id = max(self.max_msg_id, msg_id)
-        res = self.memory.get_all(user_id=self.conversation_id)  # sorted
+        res = self.memory.get_all(user_id=self.user_id)  # sorted
         res = [(item['id'], item['memory']) for item in res['results']]
         if len(res):
             logger.info('Add memory success. All memory info:')
@@ -239,7 +225,7 @@ class DefaultMemory(Memory):
 
     def search(self, query: str) -> str:
         relevant_memories = self.memory.search(
-            query, user_id=self.conversation_id, limit=3)
+            query, user_id=self.user_id, limit=3)
         memories_str = '\n'.join(f"- {entry['memory']}"
                                  for entry in relevant_memories['results'])
         return memories_str
@@ -349,7 +335,7 @@ class DefaultMemory(Memory):
                 for msg_id in should_delete:
                     self.delete_single(msg_id=msg_id)
                 res = self.memory.get_all(
-                    user_id=self.conversation_id)  # sorted
+                    user_id=self.user_id)  # sorted
                 res = [(item['id'], item['memory']) for item in res['results']]
                 logger.info('Roll back success. All memory info:')
                 for item in res:
@@ -404,7 +390,7 @@ class DefaultMemory(Memory):
             return
 
         embedder: Optional[str] = getattr(
-            self.config.memory, 'embedder',
+            self.config, 'embedder',
             OmegaConf.create({
                 'provider': 'openai',
                 'config': {
@@ -417,22 +403,12 @@ class DefaultMemory(Memory):
 
         llm = {}
         if self.compress:
-            llm_config = getattr(self.config.memory, 'llm', None)
-            if llm_config is not None:
-                # follow mem0 config
-                model = llm_config.get('model')
-                provider = llm_config.get('provider', 'openai')
-                openai_base_url = llm_config.get('openai_base_url', None)
-                openai_api_key = llm_config.get('api_key', None)
-            else:
-                llm_config = self.config.llm
-                model = llm_config.model
-                service = llm_config.service
-                openai_base_url = getattr(llm_config, f'{service}_base_url',
-                                          None)
-                openai_api_key = getattr(llm_config, f'{service}_api_key',
-                                         None)
-                provider = 'openai'
+            llm_config = getattr(self.config, 'llm', None)
+            # follow mem0 config
+            model = llm_config.get('model')
+            provider = llm_config.get('provider', 'openai')
+            openai_base_url = llm_config.get('openai_base_url', None)
+            openai_api_key = llm_config.get('openai_api_key', None)
             llm = {
                 'provider': provider,
                 'config': {
@@ -457,6 +433,6 @@ class DefaultMemory(Memory):
         logger.info(f'Memory config: {mem0_config}')
         # Prompt content is too long, default logging reduces readability
         mem0_config['custom_fact_extraction_prompt'] = getattr(
-            self.config.memory, 'fact_retrieval_prompt', get_fact_retrieval_prompt())
+            self.config, 'fact_retrieval_prompt', get_fact_retrieval_prompt())
         memory = mem0.Memory.from_config(mem0_config)
         return memory
