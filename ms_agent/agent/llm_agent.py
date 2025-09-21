@@ -503,9 +503,10 @@ class LLMAgent(Agent):
             await self._prepare_memory()
             await self._prepare_planer()
             await self._prepare_rag()
-            config, runtime, cache_messages = self._read_history(
-                messages, **kwargs)
             self.runtime.tag = self.tag
+
+            self.config, self.runtime, messages = self._read_history(
+                messages, **kwargs)
 
             if self.runtime.round == 0:
                 # 0 means no history

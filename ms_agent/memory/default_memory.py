@@ -7,8 +7,8 @@ from typing import Any, Dict, List, Literal, Optional, Set, Tuple
 
 import json
 import json5
-from ms_agent.memory import Memory
 from ms_agent.llm.utils import Message
+from ms_agent.memory import Memory
 from ms_agent.utils.logger import logger
 from ms_agent.utils.prompts import get_fact_retrieval_prompt
 from omegaconf import DictConfig, OmegaConf
@@ -80,8 +80,10 @@ class DefaultMemory(Memory):
         self.is_retrieve: Optional[bool] = getattr(config, 'is_retrieve', True)
         self.path: Optional[str] = getattr(self.config, 'path', 'output')
         self.history_mode = getattr(config, 'history_mode', 'add')
-        self.ignore_role: List[str] = getattr(config, 'ignore_role', ['tool', 'system'])
-        self.ignore_fields: List[str] = getattr(config, 'ignore_fields', ['reasoning_content'])
+        self.ignore_role: List[str] = getattr(config, 'ignore_role',
+                                              ['tool', 'system'])
+        self.ignore_fields: List[str] = getattr(config, 'ignore_fields',
+                                                ['reasoning_content'])
         self.memory = self._init_memory_obj()
         self.init_cache_messages()
 
@@ -334,8 +336,7 @@ class DefaultMemory(Memory):
             if self.history_mode == 'overwrite':
                 for msg_id in should_delete:
                     self.delete_single(msg_id=msg_id)
-                res = self.memory.get_all(
-                    user_id=self.user_id)  # sorted
+                res = self.memory.get_all(user_id=self.user_id)  # sorted
                 res = [(item['id'], item['memory']) for item in res['results']]
                 logger.info('Roll back success. All memory info:')
                 for item in res:
@@ -349,7 +350,8 @@ class DefaultMemory(Memory):
         query = getattr(messages[-1], 'content')
         memories_str = self.search(query)
         # Remove the messages section corresponding to memory, and add the related memory_str information
-        remain_idx = len(messages) - sum([len(block) for block in should_add_messages])
+        remain_idx = len(messages) - sum(
+            [len(block) for block in should_add_messages])
         if getattr(messages[0], 'role') == 'system':
             system_prompt = getattr(
                 messages[0], 'content') + f'\nUser Memories: {memories_str}'
