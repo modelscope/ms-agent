@@ -12,40 +12,58 @@ class TestDefaultMemory(unittest.TestCase):
 
     def setUp(self) -> None:
         self.tool_history = [
-            Message(role='user', content='帮我找到北京市朝阳区最炫酷的运动公园。记着该地点，下次去。'),
+            Message(
+                role='user',
+                content=
+                'Help me find the coolest sports park in Chaoyang District, Beijing. Remember this location for next'
+                'time.'),
             Message(
                 role='assistant',
                 content=
-                '\n用户希望找到北京市朝阳区最炫酷的运动公园，关键词是‘炫酷’，说明用户追求的不仅是功能性，更看重科技感、设计感、互动体验'
-                '和潮流元素。因此，我需要搜索具备未来感、融合高科技、潮流文化或创新设施的运动场所。\n\n为了解决这个问题，我将采取以下步'
-                '骤：\n1. 使用awesome_map-search工具搜索北京市朝阳区的运动公园，重点关注‘炫酷’‘科技感’‘潮流’等关键词\n2. 筛选出最'
-                '具特色、评价最高、视觉冲击力强的公园\n3. 提供运动公园名称。\n\n现在我将调用awesome_map-search工具进行搜索，该工具'
-                '专为地理+趣味性信息检索设计，支持语义化查询，尤其擅长发现‘宝藏地点’。\n',
+                '\nThe user wants to find the coolest sports park in Chaoyang District, Beijing. The keyword "cool" '
+                'suggests they are not just looking for functionality, but also value high-tech design, interactive '
+                'experiences, and trendy elements. Therefore, I need to search for venues that have a futuristic feel, '
+                'integrate advanced technology, youth culture, or innovative facilities.\n\nTo solve this, I will take '
+                'the following steps:\n'
+                '1. Use the awesome_map-search tool to search for sports parks in Chaoyang District, Beijing, focusing '
+                'on keywords like "cool", "high-tech", "trendy", etc.\n'
+                '2. Filter out the most distinctive, highly-rated parks with strong visual impact\n'
+                '3. Provide the name of the sports park.\n\nNow I will call the awesome_map-search tool. This tool is '
+                'designed specifically for geo + fun information retrieval, '
+                'supports semantic queries, and excels at discovering "hidden gem" locations.',
                 tool_calls=[
                     ToolCall(
                         id='call_xyz789CoolPark',
                         type='function',
                         tool_name='awesome_map-search',
                         arguments=
-                        '{"query": "北京市朝阳区 最炫酷 运动公园 科技感 潮流 打卡圣地", "max_results": 1, "result_type":'
+                        '{"query": "Beijing Chaoyang District coolest sports park high-tech trendy must-visit spot", '
+                        '"max_results": 1, "result_type":'
                         '"detailed", "include_features": true}')
                 ]),
             Message(
                 role='tool',
                 content=
-                '[{"park_name": "量子跃动·朝阳未来运动穹顶", "address": "北京市朝阳区酒仙桥路8888号", "features": ["反重力悬'
-                '浮跑道，采用磁悬浮缓震技术，跑步如在月球上跳跃", "AR极限攀岩墙，支持末日火山、星际迷宫等虚拟场景", "DJ动感骑行舱，踩'
-                '得越快音乐越炸，实时生成能量波形图", "AI教练机器人\'铁燃\'，可定制训练计划并用东北话激励用户", "夜光太极湖与漂浮瑜伽'
-                '平台，湖水含环保夜光藻类，夜晚泛蓝光"], "special_events": ["每周五晚举办炫酷运动会：激光躲避球、荧光舞步跑、机器人'
-                '拔河"], "tips": ["需完成3道运动谜题解锁入场", "禁止穿拖鞋跑步，否则AI会播放《凉凉》", "建议携带充电宝，拍照太频繁易'
-                '没电"], "rating": 9.9, "opening_hours": "6:00 - 23:00", "admission": "免费"}]'
+                '[{"park_name": "Quantum Leap · Chaoyang Future Sports Dome", "address": "No. 8888 Jiuxianqiao Road, '
+                'Chaoyang District, Beijing", "features": ["Anti-gravity floating track using magnetic levitation '
+                'cushioning tech — running feels like jumping on the moon", "AR extreme climbing wall supporting '
+                'virtual scenes such as volcanic apocalypse and interstellar maze", "DJ-powered cycling pods: the '
+                'faster you pedal, the more intense the music, with real-time energy waveform visualization", '
+                '"AI coach robot \'Tie Ran\', which creates custom workout plans and motivates users in Northeastern '
+                'Chinese dialect", "Glow-in-the-dark Tai Chi lake with floating yoga platforms; water contains '
+                'eco-friendly bioluminescent algae glowing blue at night"], "special_events": ["Cool Sports Event '
+                'every Friday night: laser dodgeball, glow-in-the-dark dance run, robot tug-of-war"], "tips": ["Must '
+                'solve 3 fitness puzzles to unlock entry", "Bring a power bank — taking photos too frequently drains '
+                'battery quickly"], "rating": 9.9, "opening_hours": "6:00 - 23:00", "admission": "Free"}]'
             ),
             Message(
                 role='assistant',
                 content=
-                '\n用户希望找到北京市朝阳区最炫酷的运动公园。我已经通过awesome_map-search工具获取了相关信息。\n\n## 🌟 北京市朝阳区最炫酷运动公园揭晓：「量子跃动·朝阳未来运动穹顶」'
+                '\nThe user wanted to find the coolest sports park in Chaoyang District, Beijing. I have retrieved '
+                'relevant information via the awesome_map-search tool.\n\n## 🌟 The Coolest Sports Park in Chaoyang '
+                'District, Beijing Revealed: 「Quantum Leap · Chaoyang Future Sports Dome」'
             ),
-            Message(role='user', content='好的，拜拜')
+            Message(role='user', content='Alright, bye!')
         ]
 
     def tearDown(self):
@@ -63,18 +81,24 @@ class TestDefaultMemory(unittest.TestCase):
                 'memory': [{
                     'path': f'output/{random_id}',
                     'user_id': random_id
-                }],
+                }]
             })
             agent1 = LLMAgent(config=default_memory)
             agent1.config.callbacks.remove('input_callback')  # noqa
-            await agent1.run('我是素食主义者，我每天早上喝咖啡')
+            await agent1.run(
+                'I am a vegetarian and I drink coffee every morning.')
             del agent1
-            print('========== 数据准备结束，开始测试 ===========')
+            print(
+                '========== Data preparation completed, starting test ==========='
+            )
             agent2 = LLMAgent(config=default_memory)
             agent2.config.callbacks.remove('input_callback')  # noqa
-            res = await agent2.run('请帮我准备明天的三餐食谱')
+            res = await agent2.run(
+                'Please help me plan tomorrow’s three meals.')
             print(res)
-            assert ('素' in res[-1].content and '咖啡' in res[-1].content)
+            assert ('vegetarian' in res[-1].content.lower()
+                    or 'vegan' in res[-1].content.lower()
+                    ) and 'coffee' in res[-1].content.lower()
 
         asyncio.run(main())
 
@@ -95,13 +119,19 @@ class TestDefaultMemory(unittest.TestCase):
             agent1 = LLMAgent(config=OmegaConf.create(config))
             agent1.config.callbacks.remove('input_callback')  # noqa
             await agent1.run(self.tool_history)
+            agent1.memory_tools[0].memory.vector_store.client.close()
             del agent1
-            print('========== 数据准备结束，开始测试 ===========')
+            print(
+                '========== Data preparation completed, starting test ==========='
+            )
             agent2 = LLMAgent(config=OmegaConf.create(config))
             agent2.config.callbacks.remove('input_callback')  # noqa
-            res = await agent2.run('北京市朝阳区最炫酷的运动公园的地点')
+            res = await agent2.run(
+                'What is the location of the coolest sports park in Chaoyang District, Beijing?'
+            )
             print(res)
-            assert ('酒仙桥路8888号' in res[-1].content)
+            assert 'Jiuxianqiao Road 8888' in res[
+                -1].content or 'No. 8888 Jiuxianqiao Road' in res[-1].content
 
         asyncio.run(main())
 
@@ -112,40 +142,60 @@ class TestDefaultMemory(unittest.TestCase):
 
         async def main():
             tool_history1 = self.tool_history[:-1] + [
-                Message(role='user', content='你说的这家运动公园已经停业了。'),
+                Message(
+                    role='user',
+                    content=
+                    'The sports park you mentioned has already closed down.'),
                 Message(
                     role='assistant',
                     content=
-                    '用户指出“量子跃动·朝阳未来运动穹顶”已停业。今天是2045年5月7日，需要重新搜索当前仍在运营的最炫酷运动公园。我将调用'
-                    'awesome_map-search工具，增加“2045年在营”等时间相关关键词，确保结果准确且时效性强。',
+                    'The user mentioned that "Quantum Leap · Chaoyang Future Sports Dome" has shut down. Today is '
+                    'May 7, 2045. I need to search again for the currently operating coolest sports park. I will use '
+                    'the awesome_map-search tool with updated time-sensitive keywords such as "open in 2045" to ensure '
+                    'accuracy and timeliness.',
                     tool_calls=[
                         ToolCall(
                             id='call_xyz2045NewPark',
                             type='function',
                             tool_name='awesome_map-search',
                             arguments=
-                            '{"query": "北京市朝阳区 最炫酷 运动公园 科技感 潮流 打卡圣地 2045年在营", "max_results": 1, '
-                            '"result_type": "detailed", "include_features": true}'
+                            '{"query": "Beijing Chaoyang District coolest sports park high-tech trendy must-visit spot '
+                            'open in 2045", "max_results": 1, "result_type": "detailed", "include_features": true}'
                         )
                     ]),
                 Message(
                     role='tool',
                     content=
-                    '[{"park_name": "星核动力·朝阳元宇宙运动矩阵", "address": "北京市朝阳区奥体南路99号", "features": ["全息投影'
-                    '跑道，每一步触发星际粒子 trail", "意念控制攀岩墙，脑波越专注吸附力越强", "重力可调训练舱，模拟火星/月球/深海环境",'
-                    '"AI虚拟教练‘Neo’支持跨次元形象定制", "夜间悬浮滑板池，地面磁力驱动实现无轮滑行"], "special_events": ["每日黄昏'
-                    '举行‘意识觉醒跑’：用脑机接口同步节奏，集体生成光影风暴"], "tips": ["需提前预约神经适配测试", "禁止情绪剧烈波动，否'
-                    '则系统会启动冷静模式播放白噪音", "建议穿导电运动服提升交互体验"], "rating": 9.8, "opening_hours": "5:30 - 2'
-                    '4:00", "admission": "免费（脑纹注册入场）"}]'),
+                    '[{"park_name": "Stellar Core Dynamics · Chaoyang Metaverse Sports Matrix", '
+                    '"address": "No. 99 Aoti South Road, Chaoyang District, Beijing", '
+                    '"features": ["Holographic projection tracks that trigger stardust trails with each step", '
+                    '"Mind-controlled climbing wall — stronger focus increases adhesion", '
+                    '"Gravity-adjustable training pods simulating Mars, Moon, or deep-sea environments", '
+                    '"AI virtual coach \'Neo\' with customizable cross-dimensional avatars", '
+                    '"Nighttime hoverboard pool using magnetic ground propulsion for wheel-free gliding"], '
+                    '"special_events": ["Daily twilight \'Consciousness Awakening Run\': synchronized rhythm via '
+                    'brain-computer interface, generating collective lightstorm"], '
+                    '"tips": ["Neural compatibility test required in advance", '
+                    '"Avoid extreme emotional fluctuations, otherwise system activates calming white noise mode", '
+                    '"Wearing conductive sportswear recommended for better interaction"], "rating": 9.8, '
+                    '"opening_hours": "5:30 - 24:00", "admission": "Free (entry via brainprint registration)"}]'
+                ),
                 Message(
                     role='assistant',
                     content=
-                    '2045年最新的最炫酷的运动公园是：星核动力·朝阳元宇宙运动矩阵。位于北京市朝阳区奥体南路99号，融合脑机接口、全息投影与'
-                    '重力调控技术，打造沉浸式未来运动体验。现已开放预约，支持脑纹注册免费入场。'),
-                Message(role='user', content='好的，谢谢。'),
+                    'The latest and coolest sports park in 2045 is: Stellar Core Dynamics · Chaoyang Metaverse Sports '
+                    'Matrix. Located at No. 99 Aoti South Road, Chaoyang District, Beijing, it integrates '
+                    'brain-computer interfaces, holographic projections, and gravity control technology to deliver an '
+                    'immersive futuristic fitness experience. Now open for reservations, free entry via brainprint '
+                    'registration.'),
+                Message(role='user', content='Got it, thanks.'),
             ]
             tool_history2 = self.tool_history[:-1] + [
-                Message(role='user', content='北京市朝阳区最炫酷的运动公园的地点?')
+                Message(
+                    role='user',
+                    content=
+                    'What is the location of the coolest sports park in Chaoyang District, Beijing?'
+                )
             ]
             random_id = str(uuid.uuid4())
             config = OmegaConf.create([{
@@ -160,13 +210,17 @@ class TestDefaultMemory(unittest.TestCase):
             agent1.config.callbacks.remove('input_callback')  # noqa
             await agent1.run(tool_history1)
             del agent1
-            print('========== 数据准备结束，开始测试 ===========')
+            print(
+                '========== Data preparation completed, starting test ==========='
+            )
             agent2 = LLMAgent(config=OmegaConf.create(config))
             agent2.config.callbacks.remove('input_callback')  # noqa
             res = await agent2.run(tool_history2)
             print(res)
-            assert ('酒仙桥路8888号' in res[-1].content
-                    and '奥体南路' not in res[-1].content)
+            # Assert old info remains due to overwrite mode, new info not persisted
+            assert ('Jiuxianqiao Road 8888' in res[-1].content
+                    or 'No. 8888 Jiuxianqiao Road' in res[-1].content
+                    ) and 'Aoti South Road' not in res[-1].content
 
         asyncio.run(main())
 
