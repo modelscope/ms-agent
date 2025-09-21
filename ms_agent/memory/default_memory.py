@@ -349,16 +349,18 @@ class DefaultMemory(Memory):
         query = getattr(messages[-1], 'content')
         memories_str = self.search(query)
         # Remove the messages section corresponding to memory, and add the related memory_str information
+        remain_idx = len(messages) - sum([len(block) for block in should_add_messages])
         if getattr(messages[0], 'role') == 'system':
             system_prompt = getattr(
                 messages[0], 'content') + f'\nUser Memories: {memories_str}'
+            if remain_idx < 1:
+                remain_idx = 1
         else:
             system_prompt = f'\nYou are a helpful assistant. Answer the question based on query and memories.\n' \
                             f'User Memories: {memories_str}'
-        diff_idx = len(messages) - sum(
-            [len(block) for block in should_add_messages])
+
         new_messages = [Message(role='system', content=system_prompt)
-                        ] + messages[diff_idx:]
+                        ] + messages[remain_idx:]
         return new_messages
 
     def _init_memory_obj(self):

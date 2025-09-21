@@ -100,7 +100,6 @@ class TestDefaultMemory(unittest.TestCase):
             agent2 = LLMAgent(config=OmegaConf.create(config))
             agent2.config.callbacks.remove('input_callback')  # noqa
             res = await agent2.run('北京市朝阳区最炫酷的运动公园的地点')
-            del agent2
             print(res)
             assert ('酒仙桥路8888号' in res[-1].content)
 
@@ -165,7 +164,6 @@ class TestDefaultMemory(unittest.TestCase):
             agent2 = LLMAgent(config=OmegaConf.create(config))
             agent2.config.callbacks.remove('input_callback')  # noqa
             res = await agent2.run(tool_history2)
-            del agent2
             print(res)
             assert ('酒仙桥路8888号' in res[-1].content
                     and '奥体南路' not in res[-1].content)
