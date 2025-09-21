@@ -446,7 +446,7 @@ class LLMAgent(Agent):
             messages (List[Message]): Current message history to save.
         """
         query = messages[1].content
-        if not query or not self.task or self.task == 'subtask':
+        if not query:
             return
 
         if self.memory_tools:
@@ -459,6 +459,8 @@ class LLMAgent(Agent):
             for memory_tool in self.memory_tools:
                 memory_tool._add_memories_from_conversation(messages, user_id)
 
+        if not self.task or self.task == 'subtask':
+            return
         config: DictConfig = deepcopy(self.config)  # noqa
         config.runtime = self.runtime.to_dict()
         save_history(

@@ -4,6 +4,7 @@ llm:
   openai_api_key:
   openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 
+
 generation_config:
   top_p: 0.6
   temperature: 0.2
@@ -39,7 +40,6 @@ prompt:
     3. Additional instructions:
       * Present all information in a concise yet comprehensive manner
       * Additional remind the tasks the IP and port for communication between components according to the PRD
-    4. If any subtask fails, you should retry, if all code files are done, you job is done
 
     Now Begin:
 
