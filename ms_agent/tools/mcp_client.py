@@ -82,7 +82,6 @@ class MCPClient(ToolBase):
 
     async def get_tools(self) -> Dict:
         tools = {}
-        error = dict()
         for key, session in self.sessions.items():
             tools[key] = []
             try:
@@ -123,7 +122,9 @@ class MCPClient(ToolBase):
             logger.info(f'\nConnected to server "{server_name}" '
                         f'with tools: \n{sep.join(tools)}.')
 
-    async def connect_to_server(self, server_name: str, timeout: int,
+    async def connect_to_server(self,
+                                server_name: str,
+                                timeout: int = CONNECTION_TIMEOUT,
                                 **kwargs):
         logger.info(f'connect to {server_name}')
         # transport: stdio, sse, streamable_http, websocket
