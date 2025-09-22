@@ -12,6 +12,7 @@ from ms_agent.callbacks import Callback, callbacks_mapping
 from ms_agent.llm.llm import LLM
 from ms_agent.llm.utils import Message, Tool
 from ms_agent.memory import Memory, memory_mapping
+from ms_agent.memory.mem0ai import Mem0Memory
 from ms_agent.rag.base import RAG
 from ms_agent.rag.utils import rag_mapping
 from ms_agent.tools import ToolManager
@@ -267,15 +268,14 @@ class LLMAgent(Agent):
                     llm_config_obj = OmegaConf.create(config_dict)
                     setattr(_memory, 'llm', llm_config_obj)
 
-                self.memory_tools.append(memory_mapping[memory_type](_memory))
-                if _memory.name == 'mem0':
+                if memory_type == 'mem0':
                     from ms_agent.memory.mem0ai import SharedMemoryManager
                     shared_memory = SharedMemoryManager.get_shared_memory(
                         _memory)
                     self.memory_tools.append(shared_memory)
                 else:
                     self.memory_tools.append(
-                        memory_mapping[_memory.name](_memory))
+                        memory_mapping[memory_type](_memory))
 
     async def _prepare_planer(self):
         """Load and initialize the planer component from the config."""
@@ -497,7 +497,9 @@ class LLMAgent(Agent):
                         user_id = memory_config.user_id
                         break
             for memory_tool in self.memory_tools:
-                memory_tool._add_memories_from_conversation(messages, user_id)
+                if isinstance(memory_tool, Mem0Memory):
+                    memory_tool._add_memories_from_conversation(
+                        messages, user_id)
 
         if not self.task or self.task == 'subtask':
             return
@@ -520,8 +522,9 @@ class LLMAgent(Agent):
         if self.memory_tools:
             agent_id = self.tag
             for memory_tool in self.memory_tools:
-                memory_tool._add_memories_from_procedural(
-                    messages, 'subagent', agent_id, 'procedural_memory')
+                if isinstance(memory_tool, Mem0Memory):
+                    memory_tool._add_memories_from_procedural(
+                        messages, 'subagent', agent_id, 'procedural_memory')
         return
 
     async def _run(self, messages: Union[List[Message], str],

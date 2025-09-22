@@ -3,7 +3,7 @@ import asyncio
 from typing import Any, Dict, List, Optional
 
 from ms_agent.llm.utils import Message
-from ms_agent.utils import get_fact_retrieval_prompt, get_logger
+from ms_agent.utils import get_code_fact_retrieval_prompt, get_logger
 from omegaconf import DictConfig
 
 from .base import Memory
@@ -104,7 +104,7 @@ class Mem0Memory(Memory):
             # Monkey patch Mem0's parse_messages function to handle tool messages
             mem0.memory.main.parse_messages = self.patched_parse_messages
             # Also update the imported reference in utils module
-            mem0.memory.utils.FACT_RETRIEVAL_PROMPT = get_fact_retrieval_prompt(
+            mem0.memory.utils.FACT_RETRIEVAL_PROMPT = get_code_fact_retrieval_prompt(
             )
 
             embedding_model = 'text-embedding-3-small'
