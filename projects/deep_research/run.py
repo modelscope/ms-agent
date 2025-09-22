@@ -25,7 +25,6 @@ def run_workflow(user_prompt: str, task_dir: str, reuse: bool,
 
 def run_deep_workflow(user_prompt: str,
                       task_dir: str,
-                      reuse: bool,
                       chat_client: OpenAIChat,
                       search_engine: SearchEngine,
                       breadth: int = 4,
@@ -36,7 +35,6 @@ def run_deep_workflow(user_prompt: str,
         client=chat_client,
         search_engine=search_engine,
         workdir=task_dir,
-        reuse=reuse,
         use_ray_extraction=True,
         enable_multimodal=True)
 
