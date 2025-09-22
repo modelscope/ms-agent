@@ -156,7 +156,7 @@ mcp = {
   "mcpServers": {
     "fetch": {
       "type": "streamable_http",
-      "url": "https://mcp.api-inference.modelscope.net/{your_mcp_url}/mcp"
+      "url": "https://mcp.api-inference.modelscope.net/{your_mcp_uuid}/mcp"
     }
   }
 }
