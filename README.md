@@ -177,8 +177,11 @@ Replace the url in `mcp["mcpServers"]["fetch"]` with your own MCP server endpoin
 <details><summary>Memory</summary>
 
 We are excited to announce Memory support in version {version}! 🎉
+
 Below is a simple example to get you started. For more comprehensive test cases, please refer to the [test_case](tests/memory/test_default_memory.py).
+
 Before running the agent, ensure that you have set your ModelScope API key for LLM invocation.
+
 ⚠️ Note: As of now, ModelScope API-Inference does not yet provide an embedding interface (coming soon). Therefore, we rely on external API providers for embeddings. By default, this implementation uses DashScope. Make sure to configure your DASHSCOPE_API_KEY before running the examples.
 
 ```bash
@@ -191,7 +194,8 @@ You can obtain or generate your API keys at:
 * [modelscope_api_key](https://modelscope.cn/my/myaccesstoken)
 * [dashscope_api_key](https://bailian.console.aliyun.com/?spm=5176.29619931.J__Z58Z6CX7MY__Ll8p1ZOR.1.4bf0521cWpNGPY&tab=api#/api/?type=model&url=2712195).
 
-Example Usage
+**Example Usage**
+
 This example demonstrates how the agent remembers user preferences across sessions using persistent memory:
 
 ```python
