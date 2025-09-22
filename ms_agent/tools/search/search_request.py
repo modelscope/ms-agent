@@ -1,3 +1,5 @@
+# flake8: noqa
+# yapf: disable
 from datetime import datetime
 from typing import Any, Dict
 
@@ -10,10 +12,16 @@ from ms_agent.tools.search.serpapi.schema import SerpApiSearchRequest
 class SearchRequestGenerator:
     """Base class for search request generators"""
 
-    def __init__(self, user_prompt: str):
+    def __init__(self, user_prompt: str, **kwargs: Any):
         self.user_prompt = user_prompt
+        self._kwargs = kwargs
 
     def get_args_template(self) -> str:
+        raise NotImplementedError
+
+    def get_json_schema(self,
+                        num_queries: int,
+                        is_strict: bool = True) -> Dict[str, Any]:
         raise NotImplementedError
 
     def get_rewrite_prompt(self) -> str:
@@ -31,6 +39,72 @@ class ExaSearchRequestGenerator(SearchRequestGenerator):
             '{"query": "xxx", "num_results": 20, '
             '"start_published_date": "2025-01-01", "end_published_date": "2025-05-30"}'
         )
+
+    def get_json_schema(self,
+                        num_queries: int,
+                        is_strict: bool = True) -> Dict[str, Any]:
+        return {
+            'name': 'search_requests',
+            'strict': is_strict,
+            'schema': {
+                'type': 'array',
+                'items': {
+                    'type': 'object',
+                    'properties': {
+                        'query': {
+                            'type': 'string',
+                            'description':  (
+                                'Write a **Google-style keyword query** optimized for Exa\'s keyword search. '
+                                'Prefer precise boolean/keyword operators over natural language. Follow these rules:\n'
+                                '1) Use exact-match quotes for key phrases (e.g., \"contrastive learning\").\n'
+                                '2) Combine terms with AND/OR and exclude noise with -term (e.g., LLM AND retrieval -advertisement).\n'
+                                '3) Use site: or domain scoping for authority (e.g., site:nature.com, site:arxiv.org).\n'
+                                '4) Narrow intent with intitle:, inurl:, filetype:pdf when helpful.\n'
+                                '5) Add topical disambiguators (year, acronym expansion) to reduce ambiguity.\n'
+                                '6) Keep it concise and deterministic; avoid chatty prose. '
+                                '7) If the research goal clearly needs semantic recall (synonyms/long queries), you MAY '
+                                'append a short natural-language tail AFTER the keyword core.\n\n'
+                                'Examples:\n'
+                                '- \"retrieval augmented generation\" AND evaluation site:arxiv.org\n'
+                                '- intitle:\"toolformer\" OR intitle:\"function calling\" -marketing\n'
+                                '- graph neural networks AND (molecular OR materials) filetype:pdf\n'
+                                '- site:docs.exa.ai search API start_published_date\n\n'
+                                'Notes: Exa supports both keyword and neural search; this schema **prefers keyword**. '
+                                'Respect any provided date filters.')
+                        },
+                        'type': {
+                            'type': 'string',
+                            'enum': ['keyword', 'neural'],
+                            'description': (
+                                'Search mode hint. Default is "keyword" (Google-style lexical match). '
+                                'Use "neural" only if semantic recall is essential (e.g., long, fuzzy queries). '
+                                'Do NOT use "fast" by default.')
+                        },
+                        'num_results': {
+                            'type': 'integer',
+                            'description': 'The number of results to return (1-25). '
+                                           'Choose a value appropriate to the query complexity (e.g., 10)',
+                        },
+                        'start_published_date': {
+                            'type': 'string',
+                            'description': 'ISO date (YYYY-MM-DD). Only return results '
+                                           'published on/after this date.',
+                        },
+                        'end_published_date': {
+                            'type': 'string',
+                            'description': 'ISO date (YYYY-MM-DD). Only return results '
+                                           'published on/before this date.',
+                        },
+                        'research_goal': {
+                            'type': 'string',
+                            'description': 'The goal of the research and additional research directions'
+                        }
+                    },
+                    'required': ['query', 'num_results', 'research_goal']
+                },
+                'description': f'List of Exa-style queries, max of {num_queries}'
+            }
+        }
 
     def get_rewrite_prompt(self) -> str:
         return (
@@ -51,12 +125,53 @@ class SerpApiSearchRequestGenerator(SearchRequestGenerator):
     def get_args_template(self) -> str:
         return '{"query": "xxx", "num_results": 20, "location": null}'
 
+    def get_json_schema(self,
+                        num_queries: int,
+                        is_strict: bool = True) -> Dict[str, Any]:
+        return {
+            'name': 'search_requests',
+            'strict': is_strict,
+            'schema': {
+                'type': 'array',
+                'items': {
+                    'type': 'object',
+                    'properties': {
+                        'query': {
+                            'type': 'string',
+                            'description': (
+                                'Google-style search query. Use operators as needed: '
+                                'quotes for exact phrases ("..."), OR, "-" to exclude terms, '
+                                'site:, filetype:, intitle:, inurl:, and parentheses for grouping. '
+                                'Date limits supported via before:YYYY-MM-DD and after:YYYY-MM-DD. ')
+                        },
+                        'num_results': {
+                            'type': 'integer',
+                            'description': 'The number of results to return (1-25). '
+                                           'Choose a value appropriate to the query complexity (e.g., 10)',
+                        },
+                        'location': {
+                            'type': 'string',
+                            'description': 'The location to search for the query, default is null',
+                        },
+                        'research_goal': {
+                            'type': 'string',
+                            'description': 'The goal of the research and additional research directions'
+                        }
+                    },
+                    'required': ['query', 'num_results', 'research_goal']
+                },
+                'description': f'List of SERP queries, max of {num_queries}'
+            }
+        }
+
     def get_rewrite_prompt(self) -> str:
-        return (f'生成search request，具体要求为： '
-                f'\n1. 必须符合以下arguments格式：{self.get_args_template()}'
-                f'\n2. 其中，query参数的值直接使用用户原始输入，即：{self.user_prompt}'
-                f'\n3. 参数需要符合搜索引擎的要求，num_results需要根据实际问题的复杂程度来估算，最大25，最小1；'
-                f'\n4. location参数用于指定搜索位置，如"Austin,Texas"，如不需要特定位置可设为null')
+        return (
+            f'生成search request，具体要求为： '
+            f'\n1. 必须符合以下arguments格式：{self.get_args_template()}'
+            f'\n2. 其中，query参数的值通过分析用户原始输入中的有效问题部分生成，即{self.user_prompt}，要求为精简的Google风格关键词查询，'
+            f'例如，用户输入"请帮我查找2023年发表的关于大语言模型在医疗领域应用的最新研究"，则query参数的值应为"large language model medical applications 2023"；'
+            f'\n3. 参数需要符合搜索引擎的要求，num_results需要根据实际问题的复杂程度来估算，最大25，最小1；'
+            f'\n4. location参数用于指定搜索位置，如"Austin,Texas"，如不需要特定位置可设为null')
 
     def create_request(
             self, search_request_d: Dict[str, Any]) -> SerpApiSearchRequest:
@@ -67,6 +182,51 @@ class ArxivSearchRequestGenerator(SearchRequestGenerator):
 
     def get_args_template(self) -> str:
         return '{"query": "xxx", "num_results": 20}'
+
+    def get_json_schema(self,
+                        num_queries: int,
+                        is_strict: bool = True) -> Dict[str, Any]:
+        return {
+            'name': 'search_requests',
+            'strict': is_strict,
+            'schema': {
+                'type': 'array',
+                'items': {
+                    'type': 'object',
+                    'properties': {
+                        'query': {
+                            'type': 'string',
+                            'description': (
+                                'An English arXiv advanced search string: core scholarly concepts from the user\'s natural-language '
+                                'input have been translated into standard English terms; use field prefixes (all:, ti:, au:, abs:) '
+                                'and Boolean operators AND/OR/ANDNOT appropriately; wrap multi-word terms in double quotes to form '
+                                'exact phrases; keep the query concise, executable, and precise to maximize relevant recall while '
+                                'minimizing noise. Example: all:("large language model" AND retrieval) ANDNOT ti:survey')
+                        },
+                        'num_results': {
+                            'type': 'integer',
+                            'description': 'The number of results to return (1-25). '
+                                           'Choose a value appropriate to the query complexity (e.g., 10)',
+                        },
+                        'sort_strategy': {
+                            'type': 'string',
+                            'description': 'The sort strategy to use for the query, '
+                                           'chose from "relevance", "lastUpdatedDate", "submittedDate"',
+                        },
+                        'sort_order': {
+                            'type': 'string',
+                            'description': 'The sort order to use for the query, chose from "descending" or "ascending"',
+                        },
+                        'research_goal': {
+                            'type': 'string',
+                            'description': 'The goal of the research and additional research directions'
+                        }
+                    },
+                    'required': ['query', 'num_results', 'research_goal']
+                },
+                'description': f'List of ArXiv-style queries, max of {num_queries}'
+            }
+        }
 
     def get_rewrite_prompt(self) -> str:
         return (

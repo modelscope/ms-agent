@@ -52,7 +52,7 @@ class Agent:
             self.tag = getattr(config, 'tag', None) or self.DEFAULT_TAG
         else:
             self.tag = tag
-        self.config.tag = self.tag
+        setattr(self.config, 'tag', self.tag)
         self.trust_remote_code = trust_remote_code
         self.config.trust_remote_code = trust_remote_code
         self.handler: Optional[ConfigLifecycleHandler] = None
