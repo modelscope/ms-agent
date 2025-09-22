@@ -9,8 +9,8 @@ import json
 import json5
 from ms_agent.llm.utils import Message
 from ms_agent.memory import Memory
+from ms_agent.utils import get_fact_retrieval_prompt
 from ms_agent.utils.logger import logger
-from ms_agent.utils.prompts import get_fact_retrieval_prompt
 from omegaconf import DictConfig, OmegaConf
 
 
