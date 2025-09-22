@@ -47,6 +47,9 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 
 
 ## 🎉 News
+* 🚀Sep 22, 2025: Release MS-Agent v1.3.0, which includes the following updates:
+  - 🔥 Support [Code Scratch](projects/code_scratch/README.md)
+
 * 🚀Aug 28, 2025: Release MS-Agent v1.2.0, which includes the following updates:
   - DocResearch now supports pushing to `ModelScope`、`HuggingFace`、`GitHub` for easy sharing of research reports. Refer to [Doc Research](projects/doc_research/README.md) for more details.
   - DocResearch now supports exporting the Markdown report to `HTML`、`PDF`、`PPTX` and `DOCX` formats, refer to [Doc Research](projects/doc_research/README.md) for more details.
@@ -248,6 +251,39 @@ This project provides a framework for **Doc Research**, enabling agents to auton
 
 
 For more details, refer to [Doc Research](projects/doc_research/README.md),
+
+<br>
+
+### Code Scratch
+
+This project provides a framework for **Code Scratch**, enabling agents to autonomously generate code projects.
+
+#### Features
+
+  - 🎯 **Complex Code Generation** - Support for complex code generation tasks, especially React frontend and Node.js backend
+  - 🔧 **Customizable Workflows** - Enable users to freely develop their own code generation workflows tailored to specific scenarios
+  - 🏗️ **Three-Phase Architecture** - Design & Coding Phase followed by Refine Phase for robust code generation and error fixing
+  - 📁 **Intelligent File Grouping** - Automatically groups related code files to minimize dependencies and reduce bugs
+  - 🔄 **Auto Compilation & Fixing** - Automatic npm compilation with intelligent error analysis and iterative fixing
+
+#### Demo
+
+**AI Workspace Homepage**
+
+Generate a complete ai workspace homepage with the following command:
+
+```shell
+PYTHONPATH=. openai_api_key=your-api-key openai_base_url=your-api-url python ms_agent/cli/cli.py run --config projects/code_scratch --query 'Build a comprehensive AI workspace homepage' --trust_remote_code true
+```
+
+The generated code will be output to the `output` folder in the current directory.
+
+**Architecture Workflow:**
+- **Design Phase**: Analyze requirements → Generate PRD & module design → Create implementation tasks
+- **Coding Phase**: Execute coding tasks in intelligent file groups → Generate complete code structure
+- **Refine Phase**: Auto-compilation → Error analysis → Iterative bug fixing → Human evaluation loop
+
+For more details, refer to [Code Scratch](projects/code_scratch/README.md).
 
 <br>
 
