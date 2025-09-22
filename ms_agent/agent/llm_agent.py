@@ -237,11 +237,12 @@ class LLMAgent(Agent):
                     f'which supports: {list(memory_mapping.keys())}')
                 if _memory.name == 'mem0':
                     from .memory.mem0ai import SharedMemoryManager
-                    shared_memory = SharedMemoryManager.get_shared_memory(_memory)
+                    shared_memory = SharedMemoryManager.get_shared_memory(
+                        _memory)
                     self.memory_tools.append(shared_memory)
                 else:
-                    self.memory_tools.append(memory_mapping[_memory.name](
-                        _memory))
+                    self.memory_tools.append(
+                        memory_mapping[_memory.name](_memory))
 
     async def _prepare_planer(self):
         """Load and initialize the planer component from the config."""
@@ -458,7 +459,8 @@ class LLMAgent(Agent):
             user_id = None
             if hasattr(self.config, 'memory') and self.config.memory:
                 for memory_config in self.config.memory:
-                    if hasattr(memory_config, 'user_id') and memory_config.user_id:
+                    if hasattr(memory_config,
+                               'user_id') and memory_config.user_id:
                         user_id = memory_config.user_id
                         break
             for memory_tool in self.memory_tools:
@@ -473,7 +475,7 @@ class LLMAgent(Agent):
             task=self.task,
             config=config,
             messages=messages)
-    
+
     def _save_memory(self, messages: List[Message], **kwargs):
         """
         Save memories to disk for future resuming.
@@ -485,7 +487,8 @@ class LLMAgent(Agent):
         if self.memory_tools:
             agent_id = self.tag
             for memory_tool in self.memory_tools:
-                memory_tool._add_memories_from_procedural(messages, "subagent", agent_id, "procedural_memory")
+                memory_tool._add_memories_from_procedural(
+                    messages, 'subagent', agent_id, 'procedural_memory')
         return
 
     async def _run(self, messages: Union[List[Message], str],

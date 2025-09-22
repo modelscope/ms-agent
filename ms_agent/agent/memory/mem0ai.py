@@ -1,13 +1,15 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import asyncio
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
+
+from ms_agent.llm.utils import Message
+from ms_agent.utils import get_fact_retrieval_prompt, get_logger
 from omegaconf import DictConfig
 
 from .base import Memory
-from ms_agent.llm.utils import Message
-from ms_agent.utils import get_logger, get_fact_retrieval_prompt
 
 logger = get_logger()
+
 
 class SharedMemoryManager:
     """Manager for shared memory instances across different agents."""
@@ -18,16 +20,18 @@ class SharedMemoryManager:
         """Get or create a shared memory instance based on configuration."""
         # Create a unique key based on memory configuration
         user_id = getattr(config, 'user_id', 'default_user')
-        embedding_model = getattr(config, 'embedding_model', 'text-embedding-v4')
+        embedding_model = getattr(config, 'embedding_model',
+                                  'text-embedding-v4')
         summary_model = getattr(config, 'summary_model', 'gpt-5-2025-08-07')
 
-        key = f"{user_id}_{embedding_model}_{summary_model}"
+        key = f'{user_id}_{embedding_model}_{summary_model}'
 
         if key not in cls._instances:
-            logger.info(f"Creating new shared memory instance for key: {key}")
+            logger.info(f'Creating new shared memory instance for key: {key}')
             cls._instances[key] = Mem0Memory(config)
         else:
-            logger.info(f"Reusing existing shared memory instance for key: {key}")
+            logger.info(
+                f'Reusing existing shared memory instance for key: {key}')
 
         return cls._instances[key]
 
@@ -36,18 +40,21 @@ class SharedMemoryManager:
         """Clear shared memory instances. If config is provided, clear specific instance."""
         if config is None:
             cls._instances.clear()
-            logger.info("Cleared all shared memory instances")
+            logger.info('Cleared all shared memory instances')
         else:
             user_id = getattr(config, 'user_id', 'default_user')
-            embedding_model = getattr(config, 'embedding_model', 'text-embedding-v4')
-            summary_model = getattr(config, 'summary_model', 'gpt-5-2025-08-07')
-            key = f"{user_id}_{embedding_model}_{summary_model}"
+            embedding_model = getattr(config, 'embedding_model',
+                                      'text-embedding-v4')
+            summary_model = getattr(config, 'summary_model',
+                                    'gpt-5-2025-08-07')
+            key = f'{user_id}_{embedding_model}_{summary_model}'
 
             if key in cls._instances:
                 del cls._instances[key]
-                logger.info(f"Cleared shared memory instance for key: {key}")
+                logger.info(f'Cleared shared memory instance for key: {key}')
             else:
-                logger.warning(f"No shared memory instance found for key: {key}")
+                logger.warning(
+                    f'No shared memory instance found for key: {key}')
 
 
 class Mem0Memory(Memory):
@@ -62,7 +69,8 @@ class Mem0Memory(Memory):
         self.config = config
         self.memory = None
         self.global_config = None
-        self._lock = asyncio.Lock()  # Add lock for thread safety in shared usage
+        self._lock = asyncio.Lock(
+        )  # Add lock for thread safety in shared usage
         self._initialize_memory()
 
     def patched_parse_messages(self, messages: List[Message]) -> List[Message]:
@@ -96,16 +104,19 @@ class Mem0Memory(Memory):
             # Monkey patch Mem0's parse_messages function to handle tool messages
             mem0.memory.main.parse_messages = self.patched_parse_messages
             # Also update the imported reference in utils module
-            mem0.memory.utils.FACT_RETRIEVAL_PROMPT = get_fact_retrieval_prompt()
-            
+            mem0.memory.utils.FACT_RETRIEVAL_PROMPT = get_fact_retrieval_prompt(
+            )
+
             embedding_model = 'text-embedding-3-small'
             summary_model = 'gpt-5-2025-08-07'
 
             # Check if embedding model and summray model is specified in memory config
-            if hasattr(self.config, 'embedding_model') and self.config.embedding_model:
+            if hasattr(self.config,
+                       'embedding_model') and self.config.embedding_model:
                 embedding_model = self.config.embedding_model
 
-            if hasattr(self.config, 'summary_model') and self.config.summary_model:
+            if hasattr(self.config,
+                       'summary_model') and self.config.summary_model:
                 summary_model = self.config.summary_model
 
             # Configure Mem0 with API key and models
@@ -126,14 +137,17 @@ class Mem0Memory(Memory):
 
             config = MemoryConfig(**memory_config)
             self.memory = Mem0MemoryClient(config=config)
-            logger.info(f"Mem0 memory initialized with embedding model: {embedding_model}, summary model: {summary_model}")
-            logger.info("Mem0 memory initialized successfully")
+            logger.info(
+                f'Mem0 memory initialized with embedding model: {embedding_model}, summary model: {summary_model}'
+            )
+            logger.info('Mem0 memory initialized successfully')
 
         except ImportError as e:
-            logger.error(f"Failed to import mem0: {e}. Please install mem0ai package.")
+            logger.error(
+                f'Failed to import mem0: {e}. Please install mem0ai package.')
             raise
         except Exception as e:
-            logger.error(f"Failed to initialize Mem0 memory: {e}")
+            logger.error(f'Failed to initialize Mem0 memory: {e}')
             # Don't raise here, just log and continue without memory
             self.memory = None
 
@@ -148,12 +162,13 @@ class Mem0Memory(Memory):
         """
         async with self._lock:  # Protect concurrent access to shared memory
             if not self.memory:
-                logger.warning("Mem0 memory not initialized")
+                logger.warning('Mem0 memory not initialized')
                 return messages
 
             try:
                 # Get user_id and agent_id from config or use default
-                user_id = getattr(self.config, 'user_id', None) or 'default_user'
+                user_id = getattr(self.config, 'user_id',
+                                  None) or 'default_user'
 
                 # Get the latest user message for searching memories
                 latest_message = self._get_latest_user_message(messages)
@@ -161,61 +176,76 @@ class Mem0Memory(Memory):
                     return messages
 
                 # Search for relevant memories
-                conversation_search_limit = getattr(self.config, 'conversation_search_limit', None) or 3
-                procedural_search_limit = getattr(self.config, 'procedural_search_limit', None) or 3
+                conversation_search_limit = getattr(
+                    self.config, 'conversation_search_limit', None) or 3
+                procedural_search_limit = getattr(
+                    self.config, 'procedural_search_limit', None) or 3
 
                 try:
                     conversation_memories = self.memory.search(
                         query=latest_message,
                         user_id=user_id,
-                        limit=conversation_search_limit
-                    )
+                        limit=conversation_search_limit)
 
                     procedural_memories = self.memory.search(
                         query=latest_message,
-                        user_id="subagent",
-                        limit=procedural_search_limit
-                    )
+                        user_id='subagent',
+                        limit=procedural_search_limit)
                     relevant_memories = {'results': []}
-                    if conversation_memories and isinstance(conversation_memories, dict) and 'results' in conversation_memories:
-                        relevant_memories['results'].extend(conversation_memories['results'])
-                    if procedural_memories and isinstance(procedural_memories, dict) and 'results' in procedural_memories:
-                        relevant_memories['results'].extend(procedural_memories['results'])
+                    if conversation_memories and isinstance(
+                            conversation_memories,
+                            dict) and 'results' in conversation_memories:
+                        relevant_memories['results'].extend(
+                            conversation_memories['results'])
+                    if procedural_memories and isinstance(
+                            procedural_memories,
+                            dict) and 'results' in procedural_memories:
+                        relevant_memories['results'].extend(
+                            procedural_memories['results'])
 
-                    logger.info(f"Relevant memories: {relevant_memories}")
+                    logger.info(f'Relevant memories: {relevant_memories}')
 
                     # Extract memories from results
                     memories = []
                     if relevant_memories and 'results' in relevant_memories:
-                        memories = [entry['memory'] for entry in relevant_memories['results'] if 'memory' in entry]
+                        memories = [
+                            entry['memory']
+                            for entry in relevant_memories['results']
+                            if 'memory' in entry
+                        ]
                 except Exception as search_error:
-                    logger.warning(f"Failed to search memories: {search_error}")
+                    logger.warning(
+                        f'Failed to search memories: {search_error}')
                     memories = []
 
                 # If we have relevant memories, add them to the system message
                 if memories:
-                    messages = self._inject_memories_into_messages(messages, memories)
+                    messages = self._inject_memories_into_messages(
+                        messages, memories)
 
                 return messages
 
             except Exception as e:
-                logger.error(f"Error processing messages with Mem0: {e}")
+                logger.error(f'Error processing messages with Mem0: {e}')
                 return messages
 
-    def _get_latest_user_message(self, messages: List[Message]) -> Optional[str]:
+    def _get_latest_user_message(self,
+                                 messages: List[Message]) -> Optional[str]:
         """Get the latest user message content."""
         for message in reversed(messages):
             if message.role == 'user' and hasattr(message, 'content'):
                 return message.content
         return None
 
-    def _inject_memories_into_messages(self, messages: List[Message], memories: List[str]) -> List[Message]:
+    def _inject_memories_into_messages(self, messages: List[Message],
+                                       memories: List[str]) -> List[Message]:
         """Inject relevant memories into the system message."""
         if not memories:
             return messages
 
         # Format memories for injection
-        memory_text = "User Memories:\n" + "\n".join(f"- {memory}" for memory in memories)
+        memory_text = 'User Memories:\n' + '\n'.join(f'- {memory}'
+                                                     for memory in memories)
 
         # Find system message
         system_message = None
@@ -226,8 +256,9 @@ class Mem0Memory(Memory):
 
         if system_message and hasattr(system_message, 'content'):
             # Append memories to existing system message
-            system_message.content = system_message.content.split("\n\nUser Memories:\n")[0]
-            system_message.content += f"\n\n{memory_text}"
+            system_message.content = system_message.content.split(
+                '\n\nUser Memories:\n')[0]
+            system_message.content += f'\n\n{memory_text}'
         else:
             # Create new system message with memories
             from ms_agent.llm.utils import Message
@@ -235,8 +266,10 @@ class Mem0Memory(Memory):
             messages.insert(0, new_system_message)
 
         return messages
-    
-    def _add_memories_from_procedural(self, messages: List[Message], user_id: str, agent_id: str, memory_type: str):
+
+    def _add_memories_from_procedural(self, messages: List[Message],
+                                      user_id: str, agent_id: str,
+                                      memory_type: str):
         """Add new memories from the conversation."""
         if not self.memory:
             return
@@ -257,30 +290,42 @@ class Mem0Memory(Memory):
                         openai_tool_calls = []
                         for tool_call in message.tool_calls:
                             openai_tool_call = {
-                                'id': tool_call.get('id', f'call_{len(openai_tool_calls)}'),
-                                'type': tool_call.get('type', 'function'),
+                                'id':
+                                tool_call.get(
+                                    'id', f'call_{len(openai_tool_calls)}'),
+                                'type':
+                                tool_call.get('type', 'function'),
                                 'function': {
                                     'name': tool_call.get('tool_name', ''),
-                                    'arguments': tool_call.get('arguments', '{}')
+                                    'arguments':
+                                    tool_call.get('arguments', '{}')
                                 }
                             }
                             openai_tool_calls.append(openai_tool_call)
                         msg_dict['tool_calls'] = openai_tool_calls
 
                     # Add tool_call_id if present (for tool messages)
-                    if hasattr(message, 'tool_call_id') and message.tool_call_id:
+                    if hasattr(message,
+                               'tool_call_id') and message.tool_call_id:
                         msg_dict['tool_call_id'] = message.tool_call_id
 
                     mem0_messages.append(msg_dict)
             if mem0_messages:  # Only add if we have messages to add
                 # Add memories
-                self.memory.add(mem0_messages, user_id=user_id, agent_id=agent_id, memory_type=memory_type)
-                logger.debug(f"Added memories for agent id {agent_id}, memory type {memory_type}")
+                self.memory.add(
+                    mem0_messages,
+                    user_id=user_id,
+                    agent_id=agent_id,
+                    memory_type=memory_type)
+                logger.debug(
+                    f'Added memories for agent id {agent_id}, memory type {memory_type}'
+                )
         except Exception as e:
-            logger.error(f"Error adding memories: {e}")
+            logger.error(f'Error adding memories: {e}')
             # Don't re-raise, just log the error
 
-    def _add_memories_from_conversation(self, messages: List[Message], user_id: str):
+    def _add_memories_from_conversation(self, messages: List[Message],
+                                        user_id: str):
         """Add new memories from the conversation."""
         if not self.memory:
             return
@@ -296,7 +341,7 @@ class Mem0Memory(Memory):
             if mem0_messages:  # Only add if we have messages to add
                 # Add memories
                 self.memory.add(mem0_messages, user_id=user_id)
-                logger.debug(f"Added memories for user id {user_id}")
+                logger.debug(f'Added memories for user id {user_id}')
         except Exception as e:
-            logger.error(f"Error adding memories: {e}")
+            logger.error(f'Error adding memories: {e}')
             # Don't re-raise, just log the error
