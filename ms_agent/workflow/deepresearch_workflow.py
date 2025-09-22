@@ -16,8 +16,7 @@ from ms_agent.utils.logger import get_logger
 from ms_agent.utils.utils import remove_resource_info, text_hash
 from ms_agent.workflow.principle import MECEPrinciple, Principle
 from ms_agent.workflow.research import (LearningsResponse, ProgressTracker,
-                                        ResearchProgress, ResearchRequest,
-                                        ResearchResponse, ResearchResult)
+                                        ResearchProgress, ResearchResult)
 from ms_agent.workflow.research_workflow import ResearchWorkflow
 from rich.prompt import Confirm, Prompt
 
