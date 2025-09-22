@@ -1,9 +1,7 @@
-chromadb
 dotenv
 json5
 markdown
 mcp
-mem0ai
 modelscope
 numpy
 omegaconf
