@@ -17,7 +17,7 @@ import json
 import markdown
 from ms_agent.llm.openai import OpenAIChat
 from ms_agent.utils.logger import get_logger
-from ms_agent.workflow.research_workflow import ResearchWorkflow
+from ms_agent.workflow.deep_research.research_workflow import ResearchWorkflow
 
 logger = get_logger()
 

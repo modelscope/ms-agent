@@ -14,10 +14,12 @@ from ms_agent.tools.search.search_base import SearchRequest, SearchResult
 from ms_agent.tools.search.search_request import get_search_request_generator
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.utils import remove_resource_info, text_hash
-from ms_agent.workflow.principle import MECEPrinciple, Principle
-from ms_agent.workflow.research import (LearningsResponse, ProgressTracker,
-                                        ResearchProgress, ResearchResult)
-from ms_agent.workflow.research_workflow import ResearchWorkflow
+from ms_agent.workflow.deep_research.principle import MECEPrinciple, Principle
+from ms_agent.workflow.deep_research.research_utils import (LearningsResponse,
+                                                            ProgressTracker,
+                                                            ResearchProgress,
+                                                            ResearchResult)
+from ms_agent.workflow.deep_research.research_workflow import ResearchWorkflow
 from rich.prompt import Confirm, Prompt
 
 logger = get_logger()
@@ -59,7 +61,7 @@ class ProgressManager:
             return ResearchProgress(**self.progress.model_dump())
 
 
-class DeepResearchWorkflow(ResearchWorkflow):
+class ResearchWorkflowBeta(ResearchWorkflow):
     """
     Overview
     -------
@@ -106,7 +108,7 @@ class DeepResearchWorkflow(ResearchWorkflow):
         super().__init__(client, principle, search_engine, workdir, reuse,
                          verbose, **kwargs)
 
-        # Additional initialization for DeepResearchWorkflow can be added here
+        # Additional initialization for ResearchWorkflowBeta can be added here
         self.default_system = (
             f'You are an expert researcher. Today is {datetime.now().isoformat()}. '
             f'Follow these instructions when responding:'
@@ -124,8 +126,8 @@ class DeepResearchWorkflow(ResearchWorkflow):
             f'- Consider new technologies and contrarian ideas, not just the conventional wisdom.'
             f'You may use high levels of speculation or prediction, just flag it for me.'
         )
-        self._use_ray_extraction = (
-            kwargs.pop('use_ray_extraction', False)
+        self._use_ray = (
+            kwargs.pop('use_ray', False)
             or str(os.environ.get('RAG_EXTRACT_USE_RAY', '0')).lower() in ('1', 'true', 'True')
         )
         self._enable_multimodal = kwargs.pop('enable_multimodal', False)
@@ -343,7 +345,7 @@ class DeepResearchWorkflow(ResearchWorkflow):
 
         key_info_list, all_ref_items = extract_key_information(
             urls_or_files=prepared_resources,
-            use_ray=self._use_ray_extraction,
+            use_ray=self._use_ray,
             verbose=self._verbose,
             ray_num_workers=int(os.environ.get('RAG_EXTRACT_RAY_NUM_WORKERS', '0')) or None,
             ray_cpus_per_task=float(os.environ.get('RAG_EXTRACT_RAY_CPUS_PER_TASK', '1')),

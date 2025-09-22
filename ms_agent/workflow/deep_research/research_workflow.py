@@ -14,7 +14,7 @@ from ms_agent.tools.search.search_base import SearchRequest, SearchResult
 from ms_agent.tools.search.search_request import get_search_request_generator
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.utils import remove_resource_info, text_hash
-from ms_agent.workflow.principle import MECEPrinciple, Principle
+from ms_agent.workflow.deep_research.principle import MECEPrinciple, Principle
 
 logger = get_logger()
 
@@ -39,8 +39,8 @@ class ResearchWorkflow:
         self._search_engine = search_engine
         self._reuse = reuse
         self._verbose = verbose
-        self._use_ray_extraction = (
-            kwargs.pop('use_ray_extraction', False)
+        self._use_ray = (
+            kwargs.pop('use_ray', False)
             or str(os.environ.get('RAG_EXTRACT_USE_RAY', '0')).lower() in ('1', 'true', 'True')
         )
 
@@ -385,7 +385,7 @@ class ResearchWorkflow:
 
         key_info_list, all_ref_items = extract_key_information(
             urls_or_files=prepared_resources,
-            use_ray=self._use_ray_extraction,
+            use_ray=self._use_ray,
             verbose=self._verbose,
             ray_num_workers=int(os.environ.get('RAG_EXTRACT_RAY_NUM_WORKERS', '0')) or None,
             ray_cpus_per_task=float(os.environ.get('RAG_EXTRACT_RAY_CPUS_PER_TASK', '1')),

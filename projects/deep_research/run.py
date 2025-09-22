@@ -4,13 +4,28 @@ import asyncio
 from ms_agent.llm.openai import OpenAIChat
 from ms_agent.tools.search.search_base import SearchEngine
 from ms_agent.tools.search_engine import get_web_search_tool
-from ms_agent.workflow.deepresearch_workflow import DeepResearchWorkflow
-from ms_agent.workflow.principle import MECEPrinciple
-from ms_agent.workflow.research_workflow import ResearchWorkflow
+from ms_agent.workflow.deep_research.principle import MECEPrinciple
+from ms_agent.workflow.deep_research.research_workflow import ResearchWorkflow
+from ms_agent.workflow.deep_research.research_workflow_beta import \
+    ResearchWorkflowBeta
 
 
 def run_workflow(user_prompt: str, task_dir: str, reuse: bool,
                  chat_client: OpenAIChat, search_engine: SearchEngine):
+    """
+    Run the deep research workflow, which follows a lightweight and efficient pipeline:
+    1. Receive a user prompt and generate search queries.
+    2. Search the web, extract hierarchical key information, and preserve multimodal content.
+    3. Generate a report summarizing the research results.
+
+    Args:
+        user_prompt: The user prompt.
+        task_dir: The task directory where the research results will be saved.
+        chat_client: The chat client.
+        search_engine: The search engine.
+        reuse: Whether to reuse the previous research results.
+        use_ray: Whether to use Ray for document parsing/extraction.
+    """
 
     research_workflow = ResearchWorkflow(
         client=chat_client,
@@ -18,6 +33,7 @@ def run_workflow(user_prompt: str, task_dir: str, reuse: bool,
         search_engine=search_engine,
         workdir=task_dir,
         reuse=reuse,
+        use_ray=False,
     )
 
     research_workflow.run(user_prompt=user_prompt)
@@ -31,11 +47,35 @@ def run_deep_workflow(user_prompt: str,
                       depth: int = 2,
                       is_report: bool = True,
                       show_progress: bool = False):
-    research_workflow = DeepResearchWorkflow(
+    """
+    Run the expandable deep research workflow (beta version).
+    This version is more flexible and scalable than the original deep research workflow.
+    It follows a recursive pipeline:
+    1. Receive a user prompt and generate questions to clarify the research direction.
+    2. Generate search queries and research goals based on the questions and previous research results.
+    3. Search the web, extract the information, and preserve multimodal content.
+    4. Generate follow-up questions and dense learnings based on the extracted information.
+    5. Repeat the process until the research depth is reached or the follow-up questions are empty.
+    6. Generate a multimodal report or a summary of the research results.
+
+    Args:
+        user_prompt: The user prompt.
+        task_dir: The task directory where the research results will be saved.
+        chat_client: The chat client.
+        search_engine: The search engine.
+        breadth: The number of search queries to generate per depth level.
+        In order to avoid the explosion of the search space, we divide the
+        breadth by 2 for each depth level.
+        depth: The maximum research depth.
+        is_report: Whether to generate a report.
+        show_progress: Whether to show the progress.
+    """
+
+    research_workflow = ResearchWorkflowBeta(
         client=chat_client,
         search_engine=search_engine,
         workdir=task_dir,
-        use_ray_extraction=True,
+        use_ray=False,
         enable_multimodal=True)
 
     asyncio.run(

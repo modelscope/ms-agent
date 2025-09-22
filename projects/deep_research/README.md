@@ -84,8 +84,8 @@ SEARCH_ENGINE:
 from ms_agent.llm.openai import OpenAIChat
 from ms_agent.tools.search.search_base import SearchEngine
 from ms_agent.tools.search_engine import get_web_search_tool
-from ms_agent.workflow.principle import MECEPrinciple
-from ms_agent.workflow.research_workflow import ResearchWorkflow
+from ms_agent.workflow.deep_research.principle import MECEPrinciple
+from ms_agent.workflow.deep_research.research_workflow import ResearchWorkflow
 
 
 def run_workflow(user_prompt: str, task_dir: str, reuse: bool,
@@ -97,6 +97,7 @@ def run_workflow(user_prompt: str, task_dir: str, reuse: bool,
         search_engine=search_engine,
         workdir=task_dir,
         reuse=reuse,
+        use_ray=False,
     )
 
     research_workflow.run(user_prompt=user_prompt)
@@ -140,9 +141,10 @@ if __name__ == '__main__':
 
 ```python
 import asyncio
+
 from ms_agent.llm.openai import OpenAIChat
 from ms_agent.tools.search_engine import get_web_search_tool
-from ms_agent.workflow.deep_research_workflow import DeepResearchWorkflow
+from ms_agent.workflow.deep_research.research_workflow_beta import ResearchWorkflowBeta
 
 
 def run_deep_workflow(user_prompt: str,
@@ -153,11 +155,11 @@ def run_deep_workflow(user_prompt: str,
                       depth: int = 2,
                       is_report: bool = True,
                       show_progress: bool = False):
-    research_workflow = DeepResearchWorkflow(
+    research_workflow = ResearchWorkflowBeta(
         client=chat_client,
         search_engine=search_engine,
         workdir=task_dir,
-        use_ray_extraction=True,
+        use_ray=False,
         enable_multimodal=True)
 
     asyncio.run(
