@@ -131,7 +131,7 @@ pip install -e .
 
 ## Quickstart
 
-### Using MCP
+### Agent chat
 This project supports interaction with models via the MCP (Model Context Protocol). Below is a complete example showing
 how to configure and run an LLMAgent with MCP support.
 
@@ -150,12 +150,12 @@ import asyncio
 
 # Configure MCP server
 mcp = {
-    "mcpServers": {
-        "fetch": {
-            "type": "sse",
-            "url": "https://{your_mcp_url}.api-inference.modelscope.net/sse"
-        }
+  "mcpServers": {
+    "fetch": {
+      "type": "streamable_http",
+      "url": "https://mcp.api-inference.modelscope.net/{your_mcp_url}/mcp"
     }
+  }
 }
 
 async def main():
@@ -174,6 +174,57 @@ if __name__ == '__main__':
 For example: https://modelscope.cn/mcp/servers/@modelcontextprotocol/fetch.
 Replace the url in `mcp["mcpServers"]["fetch"]` with your own MCP server endpoint.
 
+<details><summary>Memory</summary>
+
+We are excited to announce Memory support in version {version}! 🎉
+Below is a simple example to get you started. For more comprehensive test cases, please refer to the [test_case](tests/memory/test_default_memory.py).
+Before running the agent, ensure that you have set your ModelScope API key for LLM invocation.
+⚠️ Note: As of now, ModelScope API-Inference does not yet provide an embedding interface (coming soon). Therefore, we rely on external API providers for embeddings. By default, this implementation uses DashScope. Make sure to configure your DASHSCOPE_API_KEY before running the examples.
+
+```bash
+export MODELSCOPE_API_KEY={your_modelscope_api_key}
+export DASHSCOPE_API_KEY={your_dashscope_api_key}
+```
+
+You can obtain or generate your API keys at:
+
+* [modelscope_api_key](https://modelscope.cn/my/myaccesstoken)
+* [dashscope_api_key](https://bailian.console.aliyun.com/?spm=5176.29619931.J__Z58Z6CX7MY__Ll8p1ZOR.1.4bf0521cWpNGPY&tab=api#/api/?type=model&url=2712195).
+
+Example Usage
+This example demonstrates how the agent remembers user preferences across sessions using persistent memory:
+
+```python
+import uuid
+import asyncio
+from omegaconf import OmegaConf
+from ms_agent.agent import LLMAgent
+
+async def main():
+    random_id = str(uuid.uuid4())
+    default_memory = OmegaConf.create({
+        'memory': [{
+            'path': f'output/{random_id}',
+            'user_id': 'awesome_me'
+        }]
+    })
+    agent1 = LLMAgent(config=default_memory)
+    agent1.config.callbacks.remove('input_callback')  # Disable interactive input for direct output
+
+    await agent1.run('I am a vegetarian and I drink coffee every morning.')
+    del agent1
+    print('========== Data preparation completed, starting test ===========')
+    agent2 = LLMAgent(config=default_memory)
+    agent2.config.callbacks.remove('input_callback')  # Disable interactive input for direct output
+
+    res = await agent2.run('Please help me plan tomorrow’s three meals.')
+    print(res)
+    assert ('vegan' in res[-1].content.lower()) and 'coffee' in res[-1].content.lower()
+
+asyncio.run(main())
+```
+
+</details>
 
 ### Agentic Insight
 
