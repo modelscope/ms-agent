@@ -49,6 +49,10 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 ## 🎉 News
 * 🚀Sep 22, 2025: Release MS-Agent v1.3.0, which includes the following updates:
   - 🔥 Support [Code Scratch](projects/code_scratch/README.md)
+  - Support `Memory` for building agents with long-term and short-term memory
+  - Enhance the DeepResearch workflow
+  - Support RAY for accelerating document information extraction
+  - Support Anthropic API format for LLMs
 
 * 🚀Aug 28, 2025: Release MS-Agent v1.2.0, which includes the following updates:
   - DocResearch now supports pushing to `ModelScope`、`HuggingFace`、`GitHub` for easy sharing of research reports. Refer to [Doc Research](projects/doc_research/README.md) for more details.
