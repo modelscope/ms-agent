@@ -62,8 +62,38 @@ class ProgressManager:
 
 class DeepResearchWorkflow(ResearchWorkflow):
     """
-    Deep Research Workflow for advanced research tasks.
-    Inherits from ResearchWorkflow and can be extended with more features.
+    Overview
+    -------
+    A deep-research workflow that orchestrates recursive web search, structured
+    extraction, and final answer/report generation.
+
+    Key Features
+    ------------
+    1) Deep search:
+       - Recursive search architecture with auto-generated follow-up questions.
+       - Tunable search breadth (queries per level) and depth (recursion levels).
+
+    2) Query rewriting:
+       - LLM-driven reformulation from the research goal.
+       - Produces search requests that target heterogeneous engines (e.g., keyword,
+         semantic, fielded/boolean) with engine-aware schemas.
+
+    3) Interaction:
+      - Optional human-feedback loop to clarify user intent.
+      - Supports selecting the output mode (concise direct answer vs. Markdown report).
+
+    4) Context hygiene:
+       - Intermediate steps search, extract, and summarize into dense “learnings”
+         to pass state cleanly between stages and avoid context drift/noise.
+
+    5) Multimodal report generation:
+       - Uses docling to extract figure/table nodes.
+       - Preserves contextual linkage and captions; inserts figures/tables into the
+         report while keeping ordering and references coherent.
+
+    6) Efficiency:
+       - Asynchronous workflow.
+       - Ray-based acceleration for document parsing/extraction.
     """
 
     def __init__(self,
@@ -176,6 +206,7 @@ class DeepResearchWorkflow(ResearchWorkflow):
     def generate_feedback(self,
                           query: str = '',
                           num_questions: int = 3) -> List[str]:
+        """Generate follow-up questions for the query to clarify the research direction."""
 
         user_prompt = (
             f'Given the following query from the user, ask some follow up questions '
