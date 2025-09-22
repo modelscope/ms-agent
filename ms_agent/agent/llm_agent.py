@@ -3,6 +3,7 @@ import importlib
 import inspect
 import os.path
 import sys
+import uuid
 from copy import deepcopy
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
 
@@ -177,6 +178,10 @@ class LLMAgent(Agent):
                 content=tool_call_result,
                 tool_call_id=tool_call_query['id'],
                 name=tool_call_query['tool_name'])
+            if _new_message.tool_call_id is None:
+                # sometimes tool call id is None, add a random one
+                _new_message.tool_call_id = str(uuid.uuid4())[:8]
+                tool_call_query['id'] = _new_message.tool_call_id
             messages.append(_new_message)
             self._log_output(_new_message.content, self.tag)
         return messages
@@ -231,8 +236,14 @@ class LLMAgent(Agent):
                 assert _memory.name in memory_mapping, (
                     f'{_memory.name} not in memory_mapping, '
                     f'which supports: {list(memory_mapping.keys())}')
-                self.memory_tools.append(memory_mapping[_memory.name](
-                    self.config))
+                if _memory.name == 'mem0':
+                    from .memory.mem0ai import SharedMemoryManager
+                    shared_memory = SharedMemoryManager.get_shared_memory(
+                        _memory)
+                    self.memory_tools.append(shared_memory)
+                else:
+                    self.memory_tools.append(
+                        memory_mapping[_memory.name](_memory))
 
     async def _prepare_planer(self):
         """Load and initialize the planer component from the config."""
@@ -442,7 +453,21 @@ class LLMAgent(Agent):
             messages (List[Message]): Current message history to save.
         """
         query = messages[1].content
-        if not query or not self.task or self.task == 'subtask':
+        if not query:
+            return
+
+        if self.memory_tools:
+            user_id = None
+            if hasattr(self.config, 'memory') and self.config.memory:
+                for memory_config in self.config.memory:
+                    if hasattr(memory_config,
+                               'user_id') and memory_config.user_id:
+                        user_id = memory_config.user_id
+                        break
+            for memory_tool in self.memory_tools:
+                memory_tool._add_memories_from_conversation(messages, user_id)
+
+        if not self.task or self.task == 'subtask':
             return
         config: DictConfig = deepcopy(self.config)  # noqa
         config.runtime = self.runtime.to_dict()
@@ -451,6 +476,21 @@ class LLMAgent(Agent):
             task=self.task,
             config=config,
             messages=messages)
+
+    def _save_memory(self, messages: List[Message], **kwargs):
+        """
+        Save memories to disk for future resuming.
+
+        Args:
+            messages (List[Message]): Current message history to save.
+        """
+
+        if self.memory_tools:
+            agent_id = self.tag
+            for memory_tool in self.memory_tools:
+                memory_tool._add_memories_from_procedural(
+                    messages, 'subagent', agent_id, 'procedural_memory')
+        return
 
     async def _run(self, messages: Union[List[Message], str],
                    **kwargs) -> AsyncGenerator[Any, Any]:
@@ -507,6 +547,9 @@ class LLMAgent(Agent):
                     yield messages
                 # save history
                 self._save_history(messages, **kwargs)
+
+            # save memory
+            self._save_memory(messages, **kwargs)
 
             await self._loop_callback('on_task_end', messages)
             await self._cleanup_tools()

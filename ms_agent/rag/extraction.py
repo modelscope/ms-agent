@@ -1,7 +1,7 @@
 # flake8: noqa
 # yapf: disable
 from abc import ABC, abstractmethod
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from docling_core.transforms.chunker import BaseChunk
 from docling_core.types import DoclingDocument
@@ -42,7 +42,7 @@ class HierarchicalKeyInformationExtraction(KeyInformationExtraction):
         doc_loader = DocLoader()
         self.docs: List[DoclingDocument] = doc_loader.load(
             urls_or_files=urls_or_files)
-        self.all_ref_items: Dict[str, DocItem] = doc_loader.map_item_by_ref(
+        self.all_ref_items: Dict[str, Dict[str, Any]] = doc_loader.map_item_by_ref(
             self.docs)
         if self._verbose:
             logger.info(f'Loaded {len(self.docs)} documents with {len(self.all_ref_items)} reference items.')
@@ -69,10 +69,11 @@ class HierarchicalKeyInformationExtraction(KeyInformationExtraction):
 
         # Get the list of resource ids to replace
         replace_values = [res['id'] for res in resources]
+        captions = [res['caption'] for res in resources]
 
         # Replace each placeholder in the text with the corresponding resource id
-        for value in replace_values:
-            text = text.replace(placeholder, f'<resource_info>{value}</resource_info>', 1)
+        for value, caption in zip(replace_values, captions):
+            text = text.replace(placeholder, f'<resource_info>{value}</resource_info>' + caption, 1)
 
         return text
 
@@ -82,15 +83,20 @@ class HierarchicalKeyInformationExtraction(KeyInformationExtraction):
         """
         target_chunks = []
 
-        # Deal with all pictures
-        target_chunks.extend(
-            HybridDocumentChunker.find_all_chunks_with_label(
-                chunks=self.chunks, label=DocItemLabel.PICTURE))
+        # # Deal with all pictures
+        # target_chunks.extend(
+        #     HybridDocumentChunker.find_all_chunks_with_label(
+        #         chunks=self.chunks, label=DocItemLabel.PICTURE))
 
-        # Deal with all tables
+        # # Deal with all tables
+        # target_chunks.extend(
+        #     HybridDocumentChunker.find_all_chunks_with_label(
+        #         chunks=self.chunks, label=DocItemLabel.TABLE))
+
+        # Deal with both pictures and tables to keep the original order
         target_chunks.extend(
-            HybridDocumentChunker.find_all_chunks_with_label(
-                chunks=self.chunks, label=DocItemLabel.TABLE))
+            HybridDocumentChunker.find_all_chunks_with_labels(
+                chunks=self.chunks, labels=[DocItemLabel.PICTURE, DocItemLabel.TABLE]))
 
         return target_chunks
 
@@ -129,7 +135,8 @@ class HierarchicalKeyInformationExtraction(KeyInformationExtraction):
                     if item_ref_key in self.all_ref_items:
                         resources.append({
                             'id': item_ref_key,
-                            'content': self.all_ref_items[item_ref_key]
+                            'content': self.all_ref_items[item_ref_key]['item'],
+                            'caption': self.all_ref_items[item_ref_key]['captions'][0] if self.all_ref_items[item_ref_key]['captions'] else ''
                         })
 
             if len(resources) == 0:

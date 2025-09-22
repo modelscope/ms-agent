@@ -5,14 +5,13 @@ from typing import Any, Dict, Generator, Iterable, List, Optional
 
 from ms_agent.llm import LLM
 from ms_agent.llm.utils import Message, Tool, ToolCall
-from ms_agent.utils import assert_package_exist, get_logger, retry
+from ms_agent.utils import (MAX_CONTINUE_RUNS, assert_package_exist,
+                            get_logger, retry)
 from omegaconf import DictConfig, OmegaConf
 from openai.types.chat.chat_completion_message_tool_call import (
     ChatCompletionMessageToolCall, Function)
 
 logger = get_logger()
-
-MAX_CONTINUE_RUNS = 3
 
 
 class OpenAI(LLM):
@@ -167,9 +166,15 @@ class OpenAI(LLM):
                         message.tool_calls[0]['id'] = message_chunk.tool_calls[
                             0]['id']
                     if message_chunk.tool_calls[0]['arguments']:
-                        message.tool_calls[0][
-                            'arguments'] += message_chunk.tool_calls[0][
-                                'arguments']
+                        if message.tool_calls[0]['arguments']:
+                            message.tool_calls[0][
+                                'arguments'] += message_chunk.tool_calls[0][
+                                    'arguments']
+                        else:
+                            # message.tool_calls[0]['arguments'] may be None
+                            message.tool_calls[0][
+                                'arguments'] = message_chunk.tool_calls[0][
+                                    'arguments']
                     if message_chunk.tool_calls[0]['tool_name']:
                         message.tool_calls[0][
                             'tool_name'] = message_chunk.tool_calls[0][

@@ -18,7 +18,8 @@ class ArxivSearchRequest(SearchRequest):
                  query: str = None,
                  num_results: Optional[int] = 10,
                  sort_strategy: SortCriterion = SortCriterion.Relevance,
-                 sort_order: SortOrder = SortOrder.Descending):
+                 sort_order: SortOrder = SortOrder.Descending,
+                 **kwargs: Any):
         """
         Initialize ArxivSearchRequest with search parameters.
 
@@ -28,7 +29,7 @@ class ArxivSearchRequest(SearchRequest):
             sort_strategy: The strategy to sort results, default is relevance
             sort_order: The order of sorting, default is descending
         """
-        super().__init__(query=query, num_results=num_results)
+        super().__init__(query=query, num_results=num_results, **kwargs)
         self.sort_strategy = sort_strategy
         self.sort_order = sort_order
 

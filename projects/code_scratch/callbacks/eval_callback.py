@@ -140,8 +140,6 @@ class EvalCallback(Callback):
         self.omit_intermediate_messages(messages)
         query = self.get_compile_feedback('frontend').strip()
         if not query:
-            query = self.get_compile_feedback('backend').strip()
-        if not query:
             human_feedback = True
             query = self.get_human_feedback().strip()
         else:
@@ -166,7 +164,7 @@ class EvalCallback(Callback):
             messages[-1].content, target_filename='design.txt')
         if len(design) > 0:
             front, design = messages[-1].content.split(
-                '```text:design.txt', maxsplit=1)
+                '```text: design.txt', maxsplit=1)
             design, end = design.rsplit('```', 1)
             design = design.strip()
             if design:
