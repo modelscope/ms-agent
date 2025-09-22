@@ -24,8 +24,9 @@ class CodingCallback(Callback):
         await self.file_system.connect()
 
     async def on_tool_call(self, runtime: Runtime, messages: List[Message]):
-        if not messages[-1].tool_calls or messages[-1].tool_calls[0][
-                'tool_name'] != 'split_to_sub_task':
+        # tool name is not 'split_to_sub_task', ut is 'SplitTask---split_to_sub_task'
+        if not messages[-1].tool_calls or 'split_to_sub_task' not in messages[
+                -1].tool_calls[0]['tool_name']:
             return
         assert messages[0].role == 'system'
         arguments = messages[-1].tool_calls[0]['arguments']
@@ -115,8 +116,8 @@ Now Begin:
         messages[-1].tool_calls[0]['arguments'] = json.dumps({'tasks': tasks})
 
     async def after_tool_call(self, runtime: Runtime, messages: List[Message]):
-        if not messages[-2].tool_calls or messages[-2].tool_calls[0][
-                'tool_name'] != 'split_to_sub_task':
+        if not messages[-2].tool_calls or 'split_to_sub_task' not in messages[
+                -2].tool_calls[0]['tool_name']:
             return
         assert messages[0].role == 'system'
         arguments = messages[-2].tool_calls[0]['arguments']

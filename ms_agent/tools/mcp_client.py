@@ -123,7 +123,38 @@ class MCPClient(ToolBase):
         url = kwargs.get('url')
         session_kwargs = kwargs.get('session_kwargs')
         if url:
-            if transport == 'streamable_http':
+            if transport and transport.lower() == 'sse':
+                logger.info(
+                    '`transport` or `type` is configured as "sse", using sse transport.'
+                )
+                sse_transport = await self.exit_stack.enter_async_context(
+                    sse_client(
+                        url, kwargs.get('headers'),
+                        kwargs.get('timeout', DEFAULT_HTTP_TIMEOUT),
+                        kwargs.get('sse_read_timeout',
+                                   DEFAULT_SSE_READ_TIMEOUT)))
+                read, write = sse_transport
+
+            elif transport and transport.lower() == 'websocket':
+                logger.info(
+                    '`transport` or `type` is configured as "websocket", using websocket transport.'
+                )
+                try:
+                    from mcp.client.websocket import websocket_client
+                except ImportError:
+                    raise ImportError(
+                        'Could not import websocket_client. '
+                        'To use Websocket connections, please install the required dependency with: '
+                        "'pip install mcp[ws]' or 'pip install websockets'"
+                    ) from None
+                websocket_transport = await self.exit_stack.enter_async_context(
+                    websocket_client(url))
+                read, write = websocket_transport
+
+            else:
+                logger.info(
+                    'Using streamable_http transport. To configure a different transport such as sse, please'
+                    'set the `type` or `transport` variable to "sse".')
                 try:
                     from mcp.client.streamable_http import streamablehttp_client
                 except ImportError:
@@ -146,28 +177,6 @@ class MCPClient(ToolBase):
                             DEFAULT_STREAMABLE_HTTP_SSE_READ_TIMEOUT),
                         **other_kwargs))
                 read, write, _ = streamable_transport
-
-            elif transport == 'websocket':
-                try:
-                    from mcp.client.websocket import websocket_client
-                except ImportError:
-                    raise ImportError(
-                        'Could not import websocket_client. '
-                        'To use Websocket connections, please install the required dependency with: '
-                        "'pip install mcp[ws]' or 'pip install websockets'"
-                    ) from None
-                websocket_transport = await self.exit_stack.enter_async_context(
-                    websocket_client(url))
-                read, write = websocket_transport
-
-            else:
-                sse_transport = await self.exit_stack.enter_async_context(
-                    sse_client(
-                        url, kwargs.get('headers'),
-                        kwargs.get('timeout', DEFAULT_HTTP_TIMEOUT),
-                        kwargs.get('sse_read_timeout',
-                                   DEFAULT_SSE_READ_TIMEOUT)))
-                read, write = sse_transport
 
             session_kwargs = session_kwargs or {}
             timeout = max(

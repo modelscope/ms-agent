@@ -167,9 +167,15 @@ class OpenAI(LLM):
                         message.tool_calls[0]['id'] = message_chunk.tool_calls[
                             0]['id']
                     if message_chunk.tool_calls[0]['arguments']:
-                        message.tool_calls[0][
-                            'arguments'] += message_chunk.tool_calls[0][
-                                'arguments']
+                        if message.tool_calls[0]['arguments']:
+                            message.tool_calls[0][
+                                'arguments'] += message_chunk.tool_calls[0][
+                                    'arguments']
+                        else:
+                            # message.tool_calls[0]['arguments'] may be None
+                            message.tool_calls[0][
+                                'arguments'] = message_chunk.tool_calls[0][
+                                    'arguments']
                     if message_chunk.tool_calls[0]['tool_name']:
                         message.tool_calls[0][
                             'tool_name'] = message_chunk.tool_calls[0][

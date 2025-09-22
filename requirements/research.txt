@@ -5,6 +5,7 @@ exa-py
 google-search-results
 gradio>=5.0.0
 json5
+markdown
 mcp
 modelscope
 openai

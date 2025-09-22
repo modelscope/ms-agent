@@ -395,7 +395,7 @@ class PushToModelScope(PushToHub):
                     content = """<span style="color: darkgreen; font-weight: bold; font-family: monospace;
                     ">Powered by [MS-Agent](https://github.com/modelscope/ms-agent) |
                     [DocResearch](https://github.com/modelscope/ms-agent/blob/main/projects/doc_research/README.md)
-                    </span> <br>""" + content
+                    </span>""" + '\n\n' + content
 
             pattern = r'!\[(.*?)\]\((resources/.*?)\)'
             replacement = rf'![\1]({path_in_repo_url}\2)'
@@ -472,6 +472,9 @@ class PushToModelScope(PushToHub):
                 ignore_patterns=exclude,
                 revision='master',
             )
+            target_url: str = f'{self.endpoint}/{repo_type}s/{repo_id}/files'
+            logger.info(
+                f'Successfully pushed files to ModelScope: {target_url}')
         except Exception as e:
             logger.error(f'Failed to push files to ModelScope: {e}')
         finally:

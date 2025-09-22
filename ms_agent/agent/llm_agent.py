@@ -3,6 +3,7 @@ import importlib
 import inspect
 import os.path
 import sys
+import uuid
 from copy import deepcopy
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
 
@@ -176,6 +177,10 @@ class LLMAgent(Agent):
                 content=tool_call_result,
                 tool_call_id=tool_call_query['id'],
                 name=tool_call_query['tool_name'])
+            if _new_message.tool_call_id is None:
+                # sometimes tool call id is None, add a random one
+                _new_message.tool_call_id = str(uuid.uuid4())[:8]
+                tool_call_query['id'] = _new_message.tool_call_id
             messages.append(_new_message)
             self._log_output(_new_message.content, self.tag)
         return messages

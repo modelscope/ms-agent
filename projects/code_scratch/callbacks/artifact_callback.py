@@ -23,6 +23,13 @@ class ArtifactCallback(Callback):
     async def on_task_begin(self, runtime: Runtime, messages: List[Message]):
         await self.file_system.connect()
 
+    async def on_generate_response(self, runtime: Runtime,
+                                   messages: List[Message]):
+        for message in messages:
+            if message.role == 'assistant' and message.tool_calls and not message.content:
+                # Claude seems does not allow empty content
+                message.content = 'I should do a tool calling to continue:\n'
+
     async def after_generate_response(self, runtime: Runtime,
                                       messages: List[Message]):
         if messages[-1].tool_calls or messages[-1].role == 'tool':
