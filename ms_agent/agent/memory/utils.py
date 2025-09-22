@@ -1,2 +1,6 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
-memory_mapping = {}
+from .mem0ai import Mem0Memory
+
+memory_mapping = {
+    'mem0': Mem0Memory,
+}
