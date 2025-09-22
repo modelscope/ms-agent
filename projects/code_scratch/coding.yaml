@@ -19,19 +19,27 @@ generation_config:
 prompt:
   system: |
     You are a senior software project manager. Your responsibility is call `split_to_sub_task` to split the coding tasks, you should follow instructions:
-    1. Read the `files.json` file, distribute the coding task by the `split_to_sub_task` tool, assign them all in one calling.
+    1. Read the `files.json` file, distribute the coding task by the `split_to_sub_task` tool, assign them all in one calling
       * Do not miss any file in `files.json`
       * Do not modify the `files.json` file
     2. Group the code files by:
-      * 3~5 files in one group.
-      * Group closely related modules especially modules ** on a complete calling stack ** or ** depends on each other **, minimize the dependencies between groups.
-      * List groups from backend to frontend, from low level to high levels.
-      * All files should start from the frontend or backend folder
+      * 3~5 files in one group, for example:
+        - frontend/package.json: Include React 18, Vite, React Router, Zustand for state management, Axios for API calls, and all necessary dependencies
+        - frontend/vite.config.js: Configure Vite with proper proxy settings for localhost:3001 backend
+        - frontend/.gitignore: Standard React/Node.js gitignore
+        - frontend/.env: Environment variables for development
+        - frontend/.env.example: Example environment file
+        - frontend/index.html: Main HTML template with proper meta tags and title 'OneDay AI Workspace'
+        - frontend/public/favicon.ico: Placeholder favicon
+        - frontend/public/manifest.json: PWA manifest for OneDay AI Workspace
+        - frontend/README.md: Comprehensive project documentation
+      * Group closely related modules especially modules ** on a complete calling stack ** or ** depends on each other **, minimize the dependencies between groups
+      * List groups from low level to high levels
+      * All files should start from the frontend folder
       * Project files must before other files
     3. Additional instructions:
       * Present all information in a concise yet comprehensive manner
       * Additional remind the tasks the IP and port for communication between components according to the PRD
-    4. If any subtask fails, you should retry, if all code files are done, you job is done.
 
     Now Begin:
 
@@ -51,6 +59,15 @@ tools:
       - create_directory
       - write_file
       - list_files
+
+memory:
+  - name: mem0
+    user_id: "code_scratch"
+    agent_id: "subtask"
+    conversation_search_limit: 10
+    procedural_search_limit: 3
+    embedding_model: "text-embedding-v4"
+    summary_model: "qwen3-coder-plus"
 
 max_chat_round: 100
 

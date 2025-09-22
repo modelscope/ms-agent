@@ -59,10 +59,16 @@ you may read other files if necessary, like config files or package files to enh
 
 3. Output your code with this format:
 
-```js:js/index.js
-... code ...
+```type: filename
+text
 ```
-The `js/index.js` will be used to saving.
+
+for example:
+```javascript: frontend/index.js
+your code here
+```
+
+The `frontend/index.js` will be used to saving. Therefore, you must generate it strictly in this format.
 
 4. Do not let your code silent crash, make the logs shown in the running terminal, later the compiling process can feedback these issues to you.
 
