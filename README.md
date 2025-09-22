@@ -176,15 +176,16 @@ Replace the url in `mcp["mcpServers"]["fetch"]` with your own MCP server endpoin
 
 <details><summary>Memory</summary>
 
-We are excited to announce Memory support in version {version}! 🎉
+We support memory by using [mem0](https://github.com/mem0ai/mem0) in version v1.3.0! 🎉
 
 Below is a simple example to get you started. For more comprehensive test cases, please refer to the [test_case](tests/memory/test_default_memory.py).
 
-Before running the agent, ensure that you have set your ModelScope API key for LLM invocation.
+Before running the agent, ensure that you have set your ModelScope API key for LLM.
 
-⚠️ Note: As of now, ModelScope API-Inference does not yet provide an embedding interface (coming soon). Therefore, we rely on external API providers for embeddings. By default, this implementation uses DashScope. Make sure to configure your DASHSCOPE_API_KEY before running the examples.
+⚠️ Note: As of now, ModelScope API-Inference does not yet provide an embedding interface (coming soon). Therefore, we rely on external API providers for embeddings. By default, this implementation uses DashScope. Make sure to set your DASHSCOPE_API_KEY before running the examples.
 
 ```bash
+pip install mem0ai
 export MODELSCOPE_API_KEY={your_modelscope_api_key}
 export DASHSCOPE_API_KEY={your_dashscope_api_key}
 ```
