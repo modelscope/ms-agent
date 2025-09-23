@@ -126,10 +126,6 @@ class ResearchWorkflowBeta(ResearchWorkflow):
             f'- Consider new technologies and contrarian ideas, not just the conventional wisdom.'
             f'You may use high levels of speculation or prediction, just flag it for me.'
         )
-        self._use_ray = (
-            kwargs.pop('use_ray', False)
-            or str(os.environ.get('RAG_EXTRACT_USE_RAY', '0')).lower() in ('1', 'true', 'True')
-        )
         self._enable_multimodal = kwargs.pop('enable_multimodal', False)
         self._kwargs = kwargs
 

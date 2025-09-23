@@ -43,6 +43,13 @@ class ResearchWorkflow:
             kwargs.pop('use_ray', False)
             or str(os.environ.get('RAG_EXTRACT_USE_RAY', '0')).lower() in ('1', 'true', 'True')
         )
+        if not self._use_ray:
+            logger.warning(
+                'Ray is not available, so document parsing may be slow.\n'
+                'Installing Ray to speed up document parsing is recommended:\n'
+                '    pip install "ray[default]"\n'
+                'The program will run without acceleration.'
+            )
 
         self._todo_d: Dict[str, Any] = {
             'markdown': None,
