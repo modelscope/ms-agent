@@ -10,8 +10,12 @@ from ms_agent.workflow.deep_research.research_workflow_beta import \
     ResearchWorkflowBeta
 
 
-def run_workflow(user_prompt: str, task_dir: str, reuse: bool,
-                 chat_client: OpenAIChat, search_engine: SearchEngine):
+def run_workflow(user_prompt: str,
+                 task_dir: str,
+                 chat_client: OpenAIChat,
+                 search_engine: SearchEngine,
+                 reuse: bool,
+                 use_ray: bool = False):
     """
     Run the deep research workflow, which follows a lightweight and efficient pipeline:
     1. Receive a user prompt and generate search queries.
@@ -33,7 +37,7 @@ def run_workflow(user_prompt: str, task_dir: str, reuse: bool,
         search_engine=search_engine,
         workdir=task_dir,
         reuse=reuse,
-        use_ray=False,
+        use_ray=use_ray,
     )
 
     research_workflow.run(user_prompt=user_prompt)
@@ -46,7 +50,8 @@ def run_deep_workflow(user_prompt: str,
                       breadth: int = 4,
                       depth: int = 2,
                       is_report: bool = True,
-                      show_progress: bool = False):
+                      show_progress: bool = True,
+                      use_ray: bool = False):
     """
     Run the expandable deep research workflow (beta version).
     This version is more flexible and scalable than the original deep research workflow.
@@ -64,18 +69,19 @@ def run_deep_workflow(user_prompt: str,
         chat_client: The chat client.
         search_engine: The search engine.
         breadth: The number of search queries to generate per depth level.
-        In order to avoid the explosion of the search space, we divide the
-        breadth by 2 for each depth level.
+        In order to avoid the explosion of the search space,
+        we divide the breadth by 2 for each depth level.
         depth: The maximum research depth.
         is_report: Whether to generate a report.
         show_progress: Whether to show the progress.
+        use_ray: Whether to use Ray for document parsing/extraction.
     """
 
     research_workflow = ResearchWorkflowBeta(
         client=chat_client,
         search_engine=search_engine,
         workdir=task_dir,
-        use_ray=False,
+        use_ray=use_ray,
         enable_multimodal=True)
 
     asyncio.run(
@@ -113,10 +119,14 @@ if __name__ == '__main__':
     # Please specify your config file path, the default is `conf.yaml` in the current directory.
     search_engine = get_web_search_tool(config_file='conf.yaml')
 
+    # Enable Ray with `use_ray=True` to speed up document parsing.
+    # It uses multiple CPU cores for faster processing,
+    # but also increases CPU usage and may cause temporary stutter on your machine.
     run_workflow(
         user_prompt=query,
         task_dir=task_workdir,
         reuse=reuse,
         chat_client=chat_client,
         search_engine=search_engine,
+        use_ray=False,
     )

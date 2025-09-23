@@ -29,6 +29,10 @@ def load_base_config(file_path: str) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: The loaded configuration as a dictionary.
     """
+    # Load environment variables from .env file if it exists
+    if not load_dotenv(os.path.join(os.getcwd(), '.env')):
+        Env.load_env()
+
     if not os.path.exists(file_path):
         logger.warning(
             f'Config file {file_path} does not exist. Using default config (ArxivSearch).'
@@ -38,10 +42,6 @@ def load_base_config(file_path: str) -> Dict[str, Any]:
     import yaml
     with open(file_path, 'r') as file:
         config = yaml.safe_load(file)
-
-    # Load environment variables from .env file if it exists
-    if not load_dotenv(os.path.join(os.getcwd(), '.env')):
-        Env.load_env()
 
     return process_dict(config)
 

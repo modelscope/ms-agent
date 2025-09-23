@@ -62,16 +62,25 @@ pip install 'ms-agent[research]'
 
 #### Environment Setting
 
-1. If you're using Exa or SerpApi, make sure your .env file includes the following configuration settings:
+By default, the system uses free **arXiv search** (no API key required).  Optionally, you can switch to **Exa** or **SerpApi** for broader web search.
+
+1. Copy and edit your `.env` file:
 ```bash
 cp .env.example .env
 
-# Then, edit the `.env` file to include your API keys:
-EXA_API_KEY=xxx
-SERPAPI_API_KEY=xxx
+# Then, edit `.env` to include the API key for the search engine you choose:
+# If using Exa (register at https://exa.ai, free quota available):
+EXA_API_KEY=your_exa_api_key
+# If using SerpApi (register at https://serpapi.com, free quota available):
+SERPAPI_API_KEY=your_serpapi_api_key
+
+# If you are using DeepResearch variant (ResearchWorkflowBeta), **search-query rewriting** is pinned to a stable model (e.g., **gemini-2.5-flash**) for reliability.
+# An OpenAI-compatible base URL (`OPENAI_BASE_URL`) and API key (`OPENAI_API_KEY`) are required. To switch models, replace the pinned name in `ResearchWorkflowBeta.generate_search_queries` with any model served by your configured endpoint.
+OPENAI_API_KEY=your_api_key
+OPENAI_BASE_URL=https://your-openai-compatible-endpoint/v1
 ```
 
-2. Configure the search engine in conf.yaml, using free arxiv search by default:
+2. Configure the search engine in conf.yaml:
 ```yaml
 SEARCH_ENGINE:
     engine: exa
@@ -88,8 +97,26 @@ from ms_agent.workflow.deep_research.principle import MECEPrinciple
 from ms_agent.workflow.deep_research.research_workflow import ResearchWorkflow
 
 
-def run_workflow(user_prompt: str, task_dir: str, reuse: bool,
-                 chat_client: OpenAIChat, search_engine: SearchEngine):
+def run_workflow(user_prompt: str,
+                 task_dir: str,
+                 chat_client: OpenAIChat,
+                 search_engine: SearchEngine,
+                 reuse: bool,
+                 use_ray: bool = False):
+    """
+    Run the deep research workflow, which follows a lightweight and efficient pipeline:
+    1. Receive a user prompt and generate search queries.
+    2. Search the web, extract hierarchical key information, and preserve multimodal content.
+    3. Generate a report summarizing the research results.
+
+    Args:
+        user_prompt: The user prompt.
+        task_dir: The task directory where the research results will be saved.
+        chat_client: The chat client.
+        search_engine: The search engine.
+        reuse: Whether to reuse the previous research results.
+        use_ray: Whether to use Ray for document parsing/extraction.
+    """
 
     research_workflow = ResearchWorkflow(
         client=chat_client,
@@ -97,7 +124,7 @@ def run_workflow(user_prompt: str, task_dir: str, reuse: bool,
         search_engine=search_engine,
         workdir=task_dir,
         reuse=reuse,
-        use_ray=False,
+        use_ray=use_ray,
     )
 
     research_workflow.run(user_prompt=user_prompt)
@@ -123,18 +150,20 @@ if __name__ == '__main__':
     )
 
     # Get web-search engine client
-    # For the ExaSearch, you can get your API key from https://exa.ai
     # Please specify your config file path, the default is `conf.yaml` in the current directory.
     search_engine = get_web_search_tool(config_file='conf.yaml')
 
+    # Enable Ray with `use_ray=True` to speed up document parsing.
+    # It uses multiple CPU cores for faster processing,
+    # but also increases CPU usage and may cause temporary stutter on your machine.
     run_workflow(
         user_prompt=query,
         task_dir=task_workdir,
         reuse=reuse,
         chat_client=chat_client,
         search_engine=search_engine,
+        use_ray=False,
     )
-
 ```
 
 #### Python Example (DeepResearch variant)
@@ -155,12 +184,38 @@ def run_deep_workflow(user_prompt: str,
                       breadth: int = 4,
                       depth: int = 2,
                       is_report: bool = True,
-                      show_progress: bool = False):
+                      show_progress: bool = True,
+                      use_ray: bool = False):
+    """
+    Run the expandable deep research workflow (beta version).
+    This version is more flexible and scalable than the original deep research workflow.
+    It follows a recursive pipeline:
+    1. Receive a user prompt and generate questions to clarify the research direction.
+    2. Generate search queries and research goals based on the questions and previous research results.
+    3. Search the web, extract the information, and preserve multimodal content.
+    4. Generate follow-up questions and dense learnings based on the extracted information.
+    5. Repeat the process until the research depth is reached or the follow-up questions are empty.
+    6. Generate a multimodal report or a summary of the research results.
+
+    Args:
+        user_prompt: The user prompt.
+        task_dir: The task directory where the research results will be saved.
+        chat_client: The chat client.
+        search_engine: The search engine.
+        breadth: The number of search queries to generate per depth level.
+        In order to avoid the explosion of the search space,
+        we divide the breadth by 2 for each depth level.
+        depth: The maximum research depth.
+        is_report: Whether to generate a report.
+        show_progress: Whether to show the progress.
+        use_ray: Whether to use Ray for document parsing/extraction.
+    """
+
     research_workflow = ResearchWorkflowBeta(
         client=chat_client,
         search_engine=search_engine,
         workdir=task_dir,
-        use_ray=False,
+        use_ray=use_ray,
         enable_multimodal=True)
 
     asyncio.run(
@@ -193,14 +248,19 @@ if __name__ == "__main__":
         }})
 
     # Get web-search engine client
-    # For the ExaSearch, you can get your API key from https://exa.ai
     # Please specify your config file path, the default is `conf.yaml` in the current directory.
     search_engine = get_web_search_tool(config_file='conf.yaml')
 
+    # Enable Ray with `use_ray=True` to speed up document parsing.
+    # It uses multiple CPU cores for faster processing,
+    # but also increases CPU usage and may cause temporary stutter on your machine.
+    # Tip: combine use_ray=True with show_progress=True for a better experience.
     run_deep_workflow(
         user_prompt=query,
         task_dir=task_workdir,
         chat_client=chat_client,
         search_engine=search_engine,
+        show_progress=True,
+        use_ray=False,
     )
 ```
