@@ -143,6 +143,7 @@ if __name__ == '__main__':
 import asyncio
 
 from ms_agent.llm.openai import OpenAIChat
+from ms_agent.tools.search.search_base import SearchEngine
 from ms_agent.tools.search_engine import get_web_search_tool
 from ms_agent.workflow.deep_research.research_workflow_beta import ResearchWorkflowBeta
 
