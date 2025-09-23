@@ -891,6 +891,8 @@ class ResearchWorkflowBeta(ResearchWorkflow):
                     f'Initial Query:\n{initial_query}\n'
                     f'Follow-up Questions:\n{questions_text}\n'
                     f'User\'s Answers:\n{answer}')
+            else:
+                combined_query = initial_query
         except Exception as e:
             logger.info(
                 'Error generating follow-up questions, proceeding with initial query only...\n'
