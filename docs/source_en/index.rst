@@ -1,8 +1,8 @@
-.. swift documentation file,
+.. MS-Agent documentation file,
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Swift DOCUMENTATION
+MS-Agent DOCUMENTATION
 ========================
 
 .. toctree::

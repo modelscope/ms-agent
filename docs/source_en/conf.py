@@ -18,10 +18,10 @@ import sys
 sys.path.insert(0, os.path.abspath('../../'))
 # -- Project information -----------------------------------------------------
 
-project = 'swift'
+project = 'MS-Agent'
 copyright = '2022-2025, Alibaba ModelScope'
 author = 'ModelScope Authors'
-version_file = '../../swift/version.py'
+version_file = '../../ms_agent/version.py'
 html_theme = 'sphinx_rtd_theme'
 language = 'en'
 
