@@ -59,7 +59,7 @@ class RunCMD(CLICommand):
             'Load previous step histories from cache, this is useful when a query fails '
             'and retry')
         parser.add_argument(
-            '--mcp_server',
+            '--mcp_config',
             required=False,
             type=str,
             default=None,

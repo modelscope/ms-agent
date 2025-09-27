@@ -1,6 +1,9 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import asyncio
+import importlib
+import inspect
 import os
+import sys
 from copy import copy
 from types import TracebackType
 from typing import Any, Dict, List, Optional
@@ -11,6 +14,7 @@ from ms_agent.tools.base import ToolBase
 from ms_agent.tools.filesystem_tool import FileSystemTool
 from ms_agent.tools.mcp_client import MCPClient
 from ms_agent.tools.split_task import SplitTask
+from ms_agent.utils.constants import TOOL_PLUGIN_NAME
 
 MAX_TOOL_NAME_LEN = int(os.getenv('MAX_TOOL_NAME_LEN', 64))
 TOOL_CALL_TIMEOUT = int(os.getenv('TOOL_CALL_TIMEOUT', 30))
@@ -25,8 +29,10 @@ class ToolManager:
     def __init__(self,
                  config,
                  mcp_config: Optional[Dict[str, Any]] = None,
-                 mcp_client: Optional[MCPClient] = None):
+                 mcp_client: Optional[MCPClient] = None,
+                 **kwargs):
         self.config = config
+        self.trust_remote_code = kwargs.get('trust_remote_code', False)
 
         self.extra_tools: List[ToolBase] = []
         self.has_split_task_tool = False
@@ -36,6 +42,37 @@ class ToolManager:
             self.extra_tools.append(FileSystemTool(config))
         self.tool_call_timeout = getattr(config, 'tool_call_timeout',
                                          TOOL_CALL_TIMEOUT)
+        local_dir = self.config.local_dir if hasattr(self.config,
+                                                     'local_dir') else None
+        if hasattr(config, 'tools') and hasattr(config.tools, TOOL_PLUGIN_NAME):
+            plugins = getattr(config.tools, TOOL_PLUGIN_NAME)
+            for plugin in plugins:
+                subdir = os.path.dirname(plugin)
+                _plugin = os.path.basename(plugin)
+                assert local_dir is not None, 'Using external py files, but local_dir cannot be found.'
+                if subdir:
+                    subdir = os.path.join(local_dir, str(subdir))
+                if not self.trust_remote_code:
+                    raise AssertionError(
+                        '[External Code Found] Your config file contains external code, '
+                        'instantiate the code may be UNSAFE, if you trust the code, '
+                        'please pass `trust_remote_code=True` or `--trust_remote_code true`'
+                    )
+                if local_dir not in sys.path:
+                    sys.path.insert(0, local_dir)
+                if subdir and subdir not in sys.path:
+                    sys.path.insert(0, subdir)
+                plugin_file = importlib.import_module(_plugin)
+                module_classes = {
+                    name: cls
+                    for name, cls in inspect.getmembers(
+                        plugin_file, inspect.isclass)
+                }
+                for name, cls in module_classes.items():
+                    # Find cls which base class is `Callback`
+                    if issubclass(
+                            cls, ToolBase) and cls.__module__ == _plugin:
+                        self.register_tool(cls(self.config))
         self._tool_index = {}
 
         # Used temporarily during async initialization; the actual client is managed in self.servers

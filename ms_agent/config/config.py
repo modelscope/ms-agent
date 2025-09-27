@@ -11,6 +11,7 @@ from omegaconf.basecontainer import BaseContainer
 
 from modelscope import snapshot_download
 from .env import Env
+from ..utils.constants import TOOL_PLUGIN_NAME
 
 logger = get_logger()
 
@@ -172,6 +173,8 @@ class Config:
         servers = {'mcpServers': {}}
         if getattr(config, 'tools', None):
             for server, server_config in config.tools.items():
+                if server == TOOL_PLUGIN_NAME:
+                    continue
                 if getattr(server_config, 'mcp', True):
                     servers['mcpServers'][server] = deepcopy(server_config)
         return servers
