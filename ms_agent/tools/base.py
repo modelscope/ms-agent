@@ -1,6 +1,8 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 from abc import abstractmethod
-from typing import Any, Dict, List
+from typing import Any, Dict
+
+from omegaconf import DictConfig
 
 
 class ToolBase:
@@ -11,6 +13,13 @@ class ToolBase:
 
     def __init__(self, config):
         self.config = config
+        self.exclude_functions = []
+
+    def exclude_func(self, tool_config: DictConfig):
+        if tool_config is not None:
+            self.exclude_functions = getattr(tool_config, 'exclude', [])
+        else:
+            self.exclude_functions = []
 
     @abstractmethod
     async def connect(self) -> None:

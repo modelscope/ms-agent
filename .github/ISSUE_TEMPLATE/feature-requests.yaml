@@ -17,12 +17,4 @@ body:
   - type: textarea
     attributes:
       label: Description
-      description: A short description of your feature
-
-  - type: textarea
-    attributes:
-      label: Use case
-      description: >
-        Describe what you're trying to achieve with this feature request. This helps us understand and prioritize it.
-      placeholder: >
-        Tell us what you're trying to do or solve.
+      description: A description of your feature, meanwhile please attach any links/papers related to the feature.

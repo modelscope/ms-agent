@@ -8,9 +8,8 @@ on:
     paths-ignore:
       - "setup.*"
       - "requirements.txt"
-      - "output/**"
+      - "requirements/*"
       - "README.md"
-      - "README_CN.md"
       - ".github/workflows/lint.yaml"
       - ".github/workflows/publish.yaml"
 
@@ -18,8 +17,8 @@ on:
     paths-ignore:
       - "setup.*"
       - "requirements.txt"
+      - "requirements/*"
       - "README.md"
-      - "README_zh-CN.md"
       - ".github/workflows/lint.yaml"
       - ".github/workflows/publish.yaml"
 
