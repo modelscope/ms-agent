@@ -69,7 +69,7 @@ class ToolManager:
                         plugin_file, inspect.isclass)
                 }
                 for name, cls in module_classes.items():
-                    # Find cls which base class is `Callback`
+                    # Find cls which base class is `ToolBase`
                     if issubclass(
                             cls, ToolBase) and cls.__module__ == _plugin:
                         self.register_tool(cls(self.config))
