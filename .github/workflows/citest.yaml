@@ -50,6 +50,10 @@ jobs:
       if: steps.cache.outputs.cache-hit != 'true'
       run: pip install -r requirements/research.txt
 
+    - name: Install Code Dependencies
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: pip install -r requirements/code.txt
+
     - name: Run tests
       shell: bash
       run: bash .dev_scripts/dockerci.sh

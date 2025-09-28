@@ -1,7 +1,5 @@
 dotenv
 json5
-llama-index-core
-llama-index-embeddings-huggingface
 markdown
 mcp
 modelscope
