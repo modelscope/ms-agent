@@ -15,7 +15,7 @@ API_CALL_MAX_TOKEN = 50
 class OpenaiLLM(unittest.TestCase):
     conf: DictConfig = OmegaConf.create({
         'llm': {
-            'model': 'Qwen/Qwen2.5-VL-72B-Instruct',
+            'model': 'Qwen/Qwen3-Coder-480B-A35B-Instruct',
             'anthropic_api_key': os.getenv('MODELSCOPE_API_KEY'),
             'anthropic_base_url': 'https://api-inference.modelscope.cn',
             'service': 'anthropic'
@@ -80,6 +80,9 @@ class OpenaiLLM(unittest.TestCase):
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_call_stream(self):
+        import time
+        time.sleep(
+            10)  # Avoid triggering the rate limiting of the ModelScope API
         llm = Anthropic(self.conf)
         res = llm.generate(messages=self.messages, tools=None, stream=True)
         for chunk in res:
@@ -88,6 +91,9 @@ class OpenaiLLM(unittest.TestCase):
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_tool_stream(self):
+        import time
+        time.sleep(
+            5)  # Avoid triggering the rate limiting of the ModelScope API
         llm = Anthropic(self.conf)
         res = llm.generate(
             messages=self.tool_messages, tools=self.tools, stream=True)
