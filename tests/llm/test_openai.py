@@ -73,6 +73,7 @@ class OpenaiLLM(unittest.TestCase):
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_call_no_stream(self):
+        print(f'MY_VAR: {os.getenv("MY_VAR")}')
         llm = OpenAI(self.conf)
         res = llm.generate(messages=self.messages, tools=None)
         print(res)
@@ -80,6 +81,7 @@ class OpenaiLLM(unittest.TestCase):
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_call_stream(self):
+        print(f'MY_VAR: {os.getenv("MY_VAR")}')
         llm = OpenAI(self.conf)
         res = llm.generate(messages=self.messages, tools=None, stream=True)
         for chunk in res:
@@ -88,6 +90,7 @@ class OpenaiLLM(unittest.TestCase):
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_call_thinking(self):
+        print(f'MY_VAR: {os.getenv("MY_VAR")}')
         llm = OpenAI(self.conf)
         res = llm.generate(
             messages=self.messages,
