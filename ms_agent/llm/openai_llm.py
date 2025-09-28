@@ -43,7 +43,7 @@ class OpenAI(LLM):
                                          None) or MAX_CONTINUE_RUNS
         base_url = base_url or config.llm.openai_base_url
         api_key = api_key or config.llm.openai_api_key
-
+        print(f'base_url: {base_url}')
         self.client = openai.OpenAI(
             api_key=api_key,
             base_url=base_url,
