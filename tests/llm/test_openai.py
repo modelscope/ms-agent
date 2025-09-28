@@ -88,7 +88,6 @@ class OpenaiLLM(unittest.TestCase):
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_call_thinking(self):
-        print(f'MY_VAR: {os.getenv("MY_VAR")}')
         llm = OpenAI(self.conf)
         res = llm.generate(
             messages=self.messages,
