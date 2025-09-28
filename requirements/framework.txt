@@ -7,3 +7,5 @@ numpy
 omegaconf
 openai
 pillow
+llama-index-core
+llama-index-embeddings-huggingface
