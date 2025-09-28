@@ -36,11 +36,6 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Check file exists
-      run: |
-        ls -la
-        ls -la requirements/
-
     # Add a step to check if it's a fork and set an environment variable
     - name: Check if PR is from a fork
       run: echo "IS_FORKED_PR=${{ github.event.pull_request.head.repo.fork }}" >> $GITHUB_ENV
