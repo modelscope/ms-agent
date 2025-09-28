@@ -116,6 +116,7 @@ class OpenaiLLM(unittest.TestCase):
                 }
             }
             agent = LLMAgent(config=self.conf, mcp_config=mcp_config)
+            agent.config.callbacks.remove('input_callback')  # noqa
             res = await agent.run('访问www.baidu.com')
             print(res)
             assert ('robots.txt' in res[-1].content)
@@ -139,6 +140,7 @@ class OpenaiLLM(unittest.TestCase):
             conf2 = deepcopy(self.conf)
             conf2.generation_config.stream = True
             agent = LLMAgent(config=self.conf, mcp_config=mcp_config)
+            agent.config.callbacks.remove('input_callback')  # noqa
             res = await agent.run('访问www.baidu.com')
             print('res:', res)
             assert ('robots.txt' in res[-1].content)
