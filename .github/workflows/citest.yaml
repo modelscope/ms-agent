@@ -34,6 +34,12 @@ jobs:
     timeout-minutes: 60
     environment: testci
     steps:
+    - name: List all env vars
+      run: |
+          echo "=== All environment variables ==="
+          env
+          echo "=== Check specific var ==="
+          echo "MY_VAR: '$MY_VAR'"
 
     # Add a step to check if it's a fork and set an environment variable
     - name: Check if PR is from a fork
