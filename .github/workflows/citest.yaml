@@ -44,7 +44,7 @@ jobs:
         echo "=== Resolving github.com ==="
         getent hosts github.com
         echo "=== Curl Test ==="
-        curl -v --max-time 15 https://dashscope.aliyuncs.com
+        curl -v --max-time 15 https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
         echo "=== Ping Test ==="
         ping -c 3 8.8.8.8 || true
       shell: bash
