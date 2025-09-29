@@ -85,14 +85,3 @@ class Callback:
             None.
         """
         pass
-
-    async def on_split_task(self, config: DictConfig):
-        """Called when a subtask begins, this will be called once for each subtask.
-
-        Args:
-            config: The config for the subtask, prompt.system and prompt.query is valid, you can modify it in-place.
-
-        Returns:
-            None.
-        """
-        pass

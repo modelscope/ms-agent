@@ -85,7 +85,7 @@ class CodeAgent(Agent):
         }
         for name, cls in module_classes.items():
             if cls.__bases__[0] is Code and cls.__module__ == code_file:
-                instance = cls(self.config)
+                instance = cls(self.config, self.tag)
                 messages = await instance.run(inputs, **kwargs)
                 return messages
         return inputs

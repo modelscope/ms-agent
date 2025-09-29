@@ -8,8 +8,9 @@ from ms_agent.llm import Message
 class Code:
     """A code class can be executed in a `CodeAgent` in a workflow"""
 
-    def __init__(self, config=None):
+    def __init__(self, config=None, tag=None):
         self.config = config
+        self.tag = tag
 
     @abstractmethod
     async def run(self, inputs: Union[str, List[Message]],

@@ -5,6 +5,10 @@ from ms_agent.cli.run import RunCMD
 
 
 def run_cmd():
+    """This is the entrance of the all the cli commands.
+
+    This cmd imports all other sub commands, for example, `run` and `app`.
+    """
     parser = argparse.ArgumentParser(
         'ModelScope-agent Command Line tool',
         usage='ms-agent <command> [<args>]')
