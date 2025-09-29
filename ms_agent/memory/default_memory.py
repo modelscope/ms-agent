@@ -90,10 +90,9 @@ class DefaultMemory(Memory):
     def init_cache_messages(self):
         self.load_cache()
         if len(self.cache_messages) and not len(self.memory_snapshot):
-            new_blocks = self._split_into_blocks(self.cache_messages)
-            for messages in new_blocks:
+            for id, messages in self.cache_messages.items():
                 self.max_msg_id += 1
-                self.add(messages, msg_id=self.max_msg_id)
+                self.add(messages, msg_id=id)
 
     def save_cache(self):
         """
