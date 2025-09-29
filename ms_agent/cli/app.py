@@ -29,7 +29,7 @@ class AppCMD(CLICommand):
         group.add_argument(
             '--app_type',
             type=str,
-            required=True,
+            default='doc_research',
             help='The app type, supported values: `doc_research`')
 
         parser.add_argument(

@@ -3,12 +3,13 @@ import argparse
 import asyncio
 import os
 
-from .base import CLICommand
 from ms_agent.agent.llm_agent import LLMAgent
 from ms_agent.config import Config
 from ms_agent.utils import strtobool
-from ms_agent.workflow.chain_workflow import ChainWorkflow
 from ms_agent.utils.constants import AGENT_CONFIG_FILE
+from ms_agent.workflow.chain_workflow import ChainWorkflow
+
+from .base import CLICommand
 
 
 def subparser_func(args):
@@ -45,16 +46,15 @@ class RunCMD(CLICommand):
             required=False,
             type=str,
             default='false',
-            help=
-            'Trust the code belongs to the config file, default False'
-        )
+            help='Trust the code belongs to the config file, default False')
         parser.add_argument(
             '--load_cache',
             required=False,
             type=str,
             default='false',
             help=
-            'Load previous step histories from cache, this is useful when a query fails and retry')
+            'Load previous step histories from cache, this is useful when a query fails and retry'
+        )
         parser.add_argument(
             '--mcp_config',
             required=False,

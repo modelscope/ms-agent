@@ -189,8 +189,11 @@ class LLMAgent(Agent):
 
     async def _prepare_tools(self):
         """Initialize and connect the tool manager."""
-        self.tool_manager = ToolManager(self.config, self.mcp_config,
-                                        self.mcp_client, trust_remote_code=self.trust_remote_code)
+        self.tool_manager = ToolManager(
+            self.config,
+            self.mcp_config,
+            self.mcp_client,
+            trust_remote_code=self.trust_remote_code)
         await self.tool_manager.connect()
 
     async def _cleanup_tools(self):

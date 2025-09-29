@@ -44,7 +44,8 @@ class ToolManager:
                                          TOOL_CALL_TIMEOUT)
         local_dir = self.config.local_dir if hasattr(self.config,
                                                      'local_dir') else None
-        if hasattr(config, 'tools') and hasattr(config.tools, TOOL_PLUGIN_NAME):
+        if hasattr(config, 'tools') and hasattr(config.tools,
+                                                TOOL_PLUGIN_NAME):
             plugins = getattr(config.tools, TOOL_PLUGIN_NAME)
             for plugin in plugins:
                 subdir = os.path.dirname(plugin)
@@ -70,8 +71,7 @@ class ToolManager:
                 }
                 for name, cls in module_classes.items():
                     # Find cls which base class is `ToolBase`
-                    if issubclass(
-                            cls, ToolBase) and cls.__module__ == _plugin:
+                    if issubclass(cls, ToolBase) and cls.__module__ == _plugin:
                         self.register_tool(cls(self.config))
         self._tool_index = {}
 

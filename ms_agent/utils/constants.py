@@ -1,4 +1,3 @@
-
 # The default output dir
 DEFAULT_OUTPUT_DIR = './output'
 

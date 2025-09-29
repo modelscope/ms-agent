@@ -10,8 +10,8 @@ from omegaconf import DictConfig, ListConfig, OmegaConf
 from omegaconf.basecontainer import BaseContainer
 
 from modelscope import snapshot_download
-from .env import Env
 from ..utils.constants import TOOL_PLUGIN_NAME
+from .env import Env
 
 logger = get_logger()
 
