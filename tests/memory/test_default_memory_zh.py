@@ -50,7 +50,7 @@ class TestDefaultMemory(unittest.TestCase):
 
     def tearDown(self):
         import shutil
-        shutil.rmtree('output', ignore_errors=True)
+        shutil.rmtree('output_zh', ignore_errors=True)
 
     @unittest.skipUnless(test_level() >= 2, 'skip test in current test level')
     def test_default_memory(self):
@@ -61,7 +61,7 @@ class TestDefaultMemory(unittest.TestCase):
             random_id = str(uuid.uuid4())
             default_memory = OmegaConf.create({
                 'memory': [{
-                    'path': f'output/{random_id}',
+                    'path': f'output_zh/{random_id}',
                     'user_id': random_id
                 }],
             })
@@ -92,7 +92,7 @@ class TestDefaultMemory(unittest.TestCase):
                 'memory': [{
                     'ignore_role': ['system'],
                     'user_id': random_id,
-                    'path': f'output/{random_id}'
+                    'path': f'output_zh/{random_id}'
                 }]
             })
             agent1 = LLMAgent(config=OmegaConf.create(config))
@@ -158,7 +158,7 @@ class TestDefaultMemory(unittest.TestCase):
                 'memory': {
                     'ignore_role': ['system'],
                     'history_mode': 'overwrite',
-                    'path': f'output/{random_id}',
+                    'path': f'output_zh/{random_id}',
                     'user_id': random_id,
                 }
             }])
