@@ -129,7 +129,7 @@ class OpenaiLLM(unittest.TestCase):
 
         asyncio.run(main())
 
-    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    @unittest.skipUnless(test_level() >= 1, 'skip test in current test level')
     def test_stream_agent_multi_round(self):
         import asyncio
         from copy import deepcopy
