@@ -70,6 +70,14 @@ class OpenaiLLM(unittest.TestCase):
                 'required': ['dir_name']
             })
     ]
+    mcp_config = {
+        'mcpServers': {
+            'fetch': {
+                'type': 'sse',
+                'url': os.getenv('MCP_SERVER_FETCH_URL'),
+            }
+        }
+    }
 
     def setUp(self):
         import asyncio
@@ -121,15 +129,7 @@ class OpenaiLLM(unittest.TestCase):
         import asyncio
 
         async def main():
-            mcp_config = {
-                'mcpServers': {
-                    'fetch': {
-                        'type': 'sse',
-                        'url': os.getenv('MCP_SERVER_FETCH_URL'),
-                    }
-                }
-            }
-            agent = LLMAgent(config=self.conf, mcp_config=mcp_config)
+            agent = LLMAgent(config=self.conf, mcp_config=self.mcp_config)
             agent.config.callbacks.remove('input_callback')  # noqa
             res = await agent.run('访问www.baidu.com')
             print(res)
@@ -143,17 +143,9 @@ class OpenaiLLM(unittest.TestCase):
         from copy import deepcopy
 
         async def main():
-            mcp_config = {
-                'mcpServers': {
-                    'fetch': {
-                        'type': 'sse',
-                        'url': os.getenv('MCP_SERVER_FETCH_URL'),
-                    }
-                }
-            }
             conf2 = deepcopy(self.conf)
             conf2.generation_config.stream = True
-            agent = LLMAgent(config=self.conf, mcp_config=mcp_config)
+            agent = LLMAgent(config=self.conf, mcp_config=self.mcp_config)
             agent.config.callbacks.remove('input_callback')  # noqa
             res = await agent.run('访问www.baidu.com')
             print('res:', res)
