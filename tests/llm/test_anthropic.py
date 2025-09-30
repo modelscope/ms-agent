@@ -71,6 +71,20 @@ class OpenaiLLM(unittest.TestCase):
             })
     ]
 
+    def setUp(self):
+        import asyncio
+        from ms_agent.tools.mcp_client import MCPClient
+
+        # warmup mcp server for test
+        async def main():
+            mcp_client = MCPClient(self.mcp_config)
+            await mcp_client.connect()
+            mcps = await mcp_client.get_tools()
+            assert ('fetch' in mcps)
+            await mcp_client.cleanup()
+
+        asyncio.run(main())
+
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_call_no_stream(self):
         llm = Anthropic(self.conf)

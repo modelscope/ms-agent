@@ -80,11 +80,8 @@ class TestDefaultMemory(unittest.TestCase):
 
     @unittest.skipUnless(test_level() >= 2, 'skip test in current test level')
     def test_agent_tool(self):
-        import time
         import uuid
         import asyncio
-        time.sleep(
-            10)  # Avoid triggering the rate limiting of the ModelScope API
 
         async def main():
             random_id = str(uuid.uuid4())
@@ -110,11 +107,8 @@ class TestDefaultMemory(unittest.TestCase):
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_overwrite_with_tool(self):
-        import time
         import uuid
         import asyncio
-        time.sleep(
-            5)  # Avoid triggering the rate limiting of the ModelScope API
 
         async def main():
             tool_history1 = self.tool_history[:-1] + [
