@@ -158,8 +158,7 @@ class EvalCallback(Callback):
                 f'Now please analyze and fix this issue:\n')
         messages.append(Message(role='user', content=feedback))
 
-    async def after_generate_response(self, runtime: Runtime,
-                                      messages: List[Message]):
+    async def on_tool_call(self, runtime: Runtime, messages: List[Message]):
         design, _ = extract_code_blocks(
             messages[-1].content, target_filename='design.txt')
         if len(design) > 0:

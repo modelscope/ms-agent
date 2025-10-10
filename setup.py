@@ -129,9 +129,10 @@ if __name__ == '__main__':
     all_requires = []
     extra_requires['research'], _ = parse_requirements(
         'requirements/research.txt')
-
+    extra_requires['code'], _ = parse_requirements('requirements/code.txt')
     all_requires.extend(install_requires)
     all_requires.extend(extra_requires['research'])
+    all_requires.extend(extra_requires['code'])
     extra_requires['all'] = all_requires
 
     setup(

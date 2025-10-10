@@ -5,7 +5,7 @@ from typing import Optional
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
+from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR
 
 logger = get_logger()
 
@@ -18,15 +18,8 @@ class FileSystemTool(ToolBase):
 
     def __init__(self, config):
         super(FileSystemTool, self).__init__(config)
-        tools = getattr(config, 'tools', DictConfig({}))
-        file_system_config = getattr(tools, 'file_system', None)
-        if file_system_config is not None:
-            self._exclude_functions = getattr(file_system_config, 'exclude',
-                                              [])
-        else:
-            self._exclude_functions = []
-        self.output_dir = getattr(config, 'output_dir', 'output')
-        self.call_history = set()
+        self.exclude_func(getattr(config.tools, 'file_system', None))
+        self.output_dir = getattr(config, 'output_dir', DEFAULT_OUTPUT_DIR)
 
     async def connect(self):
         logger.warning_once(
@@ -110,7 +103,7 @@ class FileSystemTool(ToolBase):
         return {
             'file_system': [
                 t for t in tools['file_system']
-                if t['tool_name'] not in self._exclude_functions
+                if t['tool_name'] not in self.exclude_functions
             ]
         }
 
@@ -170,8 +163,6 @@ class FileSystemTool(ToolBase):
         Returns:
             The file content or error message.
         """
-        key = self.config.tag + '-' + path
-        self.call_history.add(key)
         try:
             with open(os.path.join(self.output_dir, path), 'r') as f:
                 return f.read()

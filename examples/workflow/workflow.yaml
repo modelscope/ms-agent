@@ -1,0 +1,25 @@
+step1:
+  next:
+    - step2
+  agent_config: step1.yaml
+  agent:
+    name: LLMAgent
+    kwargs:
+      tag: step1
+
+
+step2:
+  next:
+    - step3
+  agent:
+    name: CodeAgent
+    kwargs:
+      code_file: custom_code
+      tag: step2
+
+
+step3:
+  agent:
+    name: LLMAgent
+    kwargs:
+      tag: step3

@@ -1,0 +1,15 @@
+llm:
+  service: modelscope
+  model: Qwen/Qwen3-VL-235B-A22B-Instruct
+  modelscope_api_key:
+  modelscope_base_url: https://api-inference.modelscope.cn/v1
+
+
+generation_config:
+  top_p: 0.7
+  temperature: 0.3
+  top_k: 50
+  stream: true
+
+prompt:
+  query: Introduce yourself

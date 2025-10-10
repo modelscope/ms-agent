@@ -119,7 +119,6 @@ class TestDefaultMemory(unittest.TestCase):
             agent1 = LLMAgent(config=OmegaConf.create(config))
             agent1.config.callbacks.remove('input_callback')  # noqa
             await agent1.run(self.tool_history)
-            agent1.memory_tools[0].memory.vector_store.client.close()
             del agent1
             print(
                 '========== Data preparation completed, starting test ==========='
@@ -198,16 +197,17 @@ class TestDefaultMemory(unittest.TestCase):
                 )
             ]
             random_id = str(uuid.uuid4())
-            config = OmegaConf.create([{
-                'memory': {
+            config = OmegaConf.create({
+                'memory': [{
                     'ignore_role': ['system'],
                     'history_mode': 'overwrite',
                     'path': f'output/{random_id}',
                     'user_id': random_id,
-                }
-            }])
+                }]
+            })
             agent1 = LLMAgent(config=OmegaConf.create(config))
-            agent1.config.callbacks.remove('input_callback')  # noqa
+            if hasattr(agent1.config, 'callbacks'):
+                agent1.config.callbacks.remove('input_callback')  # noqa
             await agent1.run(tool_history1)
             del agent1
             print(

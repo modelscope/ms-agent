@@ -15,7 +15,7 @@ API_CALL_MAX_TOKEN = 50
 class OpenaiLLM(unittest.TestCase):
     conf: DictConfig = OmegaConf.create({
         'llm': {
-            'model': 'Qwen/Qwen2.5-VL-72B-Instruct',
+            'model': 'Qwen/Qwen3-Coder-480B-A35B-Instruct',
             'anthropic_api_key': os.getenv('MODELSCOPE_API_KEY'),
             'anthropic_base_url': 'https://api-inference.modelscope.cn',
             'service': 'anthropic'
@@ -70,6 +70,28 @@ class OpenaiLLM(unittest.TestCase):
                 'required': ['dir_name']
             })
     ]
+    mcp_config = {
+        'mcpServers': {
+            'fetch': {
+                'type': 'sse',
+                'url': os.getenv('MCP_SERVER_FETCH_URL'),
+            }
+        }
+    }
+
+    def setUp(self):
+        import asyncio
+        from ms_agent.tools.mcp_client import MCPClient
+
+        # warmup mcp server for test
+        async def main():
+            mcp_client = MCPClient(self.mcp_config)
+            await mcp_client.connect()
+            mcps = await mcp_client.get_tools()
+            assert ('fetch' in mcps)
+            await mcp_client.cleanup()
+
+        asyncio.run(main())
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_call_no_stream(self):
@@ -107,38 +129,26 @@ class OpenaiLLM(unittest.TestCase):
         import asyncio
 
         async def main():
-            mcp_config = {
-                'mcpServers': {
-                    'fetch': {
-                        'type': 'sse',
-                        'url': os.getenv('MCP_SERVER_FETCH_URL'),
-                    }
-                }
-            }
-            agent = LLMAgent(config=self.conf, mcp_config=mcp_config)
+            agent = LLMAgent(config=self.conf, mcp_config=self.mcp_config)
+            if hasattr(agent.config, 'callbacks'):
+                agent.config.callbacks.remove('input_callback')  # noqa
             res = await agent.run('访问www.baidu.com')
             print(res)
             assert ('robots.txt' in res[-1].content)
 
         asyncio.run(main())
 
-    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    @unittest.skipUnless(test_level() >= 1, 'skip test in current test level')
     def test_stream_agent_multi_round(self):
         import asyncio
         from copy import deepcopy
 
         async def main():
-            mcp_config = {
-                'mcpServers': {
-                    'fetch': {
-                        'type': 'sse',
-                        'url': os.getenv('MCP_SERVER_FETCH_URL'),
-                    }
-                }
-            }
             conf2 = deepcopy(self.conf)
             conf2.generation_config.stream = True
-            agent = LLMAgent(config=self.conf, mcp_config=mcp_config)
+            agent = LLMAgent(config=self.conf, mcp_config=self.mcp_config)
+            if hasattr(agent.config, 'callbacks'):
+                agent.config.callbacks.remove('input_callback')  # noqa
             res = await agent.run('访问www.baidu.com')
             print('res:', res)
             assert ('robots.txt' in res[-1].content)

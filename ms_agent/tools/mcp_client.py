@@ -26,7 +26,7 @@ DEFAULT_ENCODING_ERROR_HANDLER: EncodingErrorHandler = 'strict'
 
 DEFAULT_HTTP_TIMEOUT = 5
 DEFAULT_SSE_READ_TIMEOUT = 60 * 5
-CONNECTION_TIMEOUT = os.getenv('CONNECTION_TIMEOUT', 60)
+CONNECTION_TIMEOUT = os.getenv('CONNECTION_TIMEOUT', 120)
 
 DEFAULT_STREAMABLE_HTTP_TIMEOUT = timedelta(seconds=30)
 DEFAULT_STREAMABLE_HTTP_SSE_READ_TIMEOUT = timedelta(seconds=60 * 5)
@@ -55,7 +55,7 @@ class MCPClient(ToolBase):
             config_from_file = Config.convert_mcp_servers_to_json(config)
             self.mcp_config['mcpServers'].update(
                 config_from_file.get('mcpServers', {}))
-        self._exclude_functions = {}
+        self.exclude_functions = {}
         if mcp_config is not None:
             self.mcp_config['mcpServers'].update(
                 mcp_config.get('mcpServers', {}))
@@ -92,8 +92,8 @@ class MCPClient(ToolBase):
                 raise new_eg from e
             _session_tools = response.tools
             exclude = []
-            if key in self._exclude_functions:
-                exclude = self._exclude_functions[key]
+            if key in self.exclude_functions:
+                exclude = self.exclude_functions[key]
             _session_tools = [
                 t for t in _session_tools if t.name not in exclude
             ]
@@ -239,7 +239,7 @@ class MCPClient(ToolBase):
                     for key, value in env_dict.items()
                 }
                 if 'exclude' in server:
-                    self._exclude_functions[name] = server.pop('exclude')
+                    self.exclude_functions[name] = server.pop('exclude')
                 timeout = server.pop('timeout', timeout)
                 await self.connect_to_server(
                     server_name=name, env=env_dict, timeout=timeout, **server)
@@ -264,7 +264,7 @@ class MCPClient(ToolBase):
                     for key, value in env_dict.items()
                 }
                 if 'exclude' in server:
-                    self._exclude_functions[name] = server.pop('exclude')
+                    self.exclude_functions[name] = server.pop('exclude')
                 await self.connect_to_server(
                     server_name=name, env=env_dict, **server)
         self.mcp_config['mcpServers'].update(new_mcp_config)

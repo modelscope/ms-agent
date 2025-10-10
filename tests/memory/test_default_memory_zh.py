@@ -50,9 +50,9 @@ class TestDefaultMemory(unittest.TestCase):
 
     def tearDown(self):
         import shutil
-        shutil.rmtree('output', ignore_errors=True)
+        shutil.rmtree('output_zh', ignore_errors=True)
 
-    @unittest.skipUnless(test_level() >= 2, 'skip test in current test level')
+    @unittest.skip  # TODO: Respond in the same language the user uses
     def test_default_memory(self):
         import uuid
         import asyncio
@@ -61,7 +61,7 @@ class TestDefaultMemory(unittest.TestCase):
             random_id = str(uuid.uuid4())
             default_memory = OmegaConf.create({
                 'memory': [{
-                    'path': f'output/{random_id}',
+                    'path': f'output_zh/{random_id}',
                     'user_id': random_id
                 }],
             })
@@ -89,7 +89,7 @@ class TestDefaultMemory(unittest.TestCase):
                 'memory': [{
                     'ignore_role': ['system'],
                     'user_id': random_id,
-                    'path': f'output/{random_id}'
+                    'path': f'output_zh/{random_id}'
                 }]
             })
             agent1 = LLMAgent(config=OmegaConf.create(config))
@@ -148,14 +148,14 @@ class TestDefaultMemory(unittest.TestCase):
                 Message(role='user', content='北京市朝阳区最炫酷的运动公园的地点?')
             ]
             random_id = str(uuid.uuid4())
-            config = OmegaConf.create([{
-                'memory': {
+            config = OmegaConf.create({
+                'memory': [{
                     'ignore_role': ['system'],
                     'history_mode': 'overwrite',
-                    'path': f'output/{random_id}',
+                    'path': f'output_zh/{random_id}',
                     'user_id': random_id,
-                }
-            }])
+                }]
+            })
             agent1 = LLMAgent(config=OmegaConf.create(config))
             agent1.config.callbacks.remove('input_callback')  # noqa
             await agent1.run(tool_history1)

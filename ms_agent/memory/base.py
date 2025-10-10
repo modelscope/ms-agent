@@ -1,11 +1,11 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from typing import List
 
 from ms_agent.llm.utils import Message
 
 
-class Memory:
+class Memory(ABC):
     """The memory refine tool"""
 
     def __init__(self, config):
