@@ -7,14 +7,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import json
 from ms_agent.llm.openai import OpenAIChat
-from ms_agent.rag.extraction_manager import extract_key_information
-from ms_agent.rag.schema import KeyInformation
-from ms_agent.tools.exa.schema import dump_batch_search_results
-from ms_agent.tools.search.search_base import SearchRequest, SearchResult
-from ms_agent.tools.search.search_request import get_search_request_generator
-from ms_agent.utils.logger import get_logger
-from ms_agent.utils.utils import remove_resource_info, text_hash
-from ms_agent.workflow.deep_research.principle import MECEPrinciple, Principle
+from ms_agent.utils import get_logger
 
 logger = get_logger()
 
@@ -25,15 +18,20 @@ class ResearchWorkflow:
     """
     RESOURCES = 'resources'
 
+    WORKFLOW_NAME = 'ResearchWorkflow'
+
     def __init__(
             self,
             client: OpenAIChat,
-            principle: Principle = MECEPrinciple(),
+            principle: Optional['Principle'] = None,
             search_engine=None,
             workdir: str = None,
             reuse: bool = False,
             verbose: bool = False,
             **kwargs):
+        from ms_agent.workflow.deep_research.principle import MECEPrinciple
+        if principle is None:
+            principle = MECEPrinciple()
         self._client = client
         self._principle = principle
         self._search_engine = search_engine
@@ -221,8 +219,9 @@ class ResearchWorkflow:
 
         self._dump_todo_file()
 
-    def search(self, search_request: SearchRequest) -> str:
-
+    def search(self, search_request: 'SearchRequest') -> str:
+        from ms_agent.tools.exa.schema import dump_batch_search_results
+        from ms_agent.tools.search.search_base import SearchRequest, SearchResult
         if self._reuse:
             # Load existing search results if they exist
             if os.path.exists(self.workdir_structure['search']):
@@ -346,7 +345,11 @@ class ResearchWorkflow:
             user_prompt: str,
             urls_or_files: Optional[List[str]] = None,
             **kwargs) -> None:
-
+        from ms_agent.rag.extraction_manager import extract_key_information
+        from ms_agent.rag.schema import KeyInformation
+        from ms_agent.tools.search.search_base import SearchResult
+        from ms_agent.tools.search.search_request import get_search_request_generator
+        from ms_agent.utils.utils import remove_resource_info, text_hash
         special_resources: List = []
         if urls_or_files:
             # If urls_or_files is provided, then disable search and use the provided resources directly

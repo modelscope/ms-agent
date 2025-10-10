@@ -104,11 +104,8 @@ class TestDefaultMemory(unittest.TestCase):
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_agent_tool(self):
-        import time
         import uuid
         import asyncio
-        time.sleep(
-            10)  # Avoid triggering the rate limiting of the ModelScope API
 
         async def main():
             random_id = str(uuid.uuid4())
@@ -122,7 +119,6 @@ class TestDefaultMemory(unittest.TestCase):
             agent1 = LLMAgent(config=OmegaConf.create(config))
             agent1.config.callbacks.remove('input_callback')  # noqa
             await agent1.run(self.tool_history)
-            agent1.memory_tools[0].memory.vector_store.client.close()
             del agent1
             print(
                 '========== Data preparation completed, starting test ==========='
@@ -140,11 +136,8 @@ class TestDefaultMemory(unittest.TestCase):
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_overwrite_with_tool(self):
-        import time
         import uuid
         import asyncio
-        time.sleep(
-            5)  # Avoid triggering the rate limiting of the ModelScope API
 
         async def main():
             tool_history1 = self.tool_history[:-1] + [
@@ -204,16 +197,17 @@ class TestDefaultMemory(unittest.TestCase):
                 )
             ]
             random_id = str(uuid.uuid4())
-            config = OmegaConf.create([{
-                'memory': {
+            config = OmegaConf.create({
+                'memory': [{
                     'ignore_role': ['system'],
                     'history_mode': 'overwrite',
                     'path': f'output/{random_id}',
                     'user_id': random_id,
-                }
-            }])
+                }]
+            })
             agent1 = LLMAgent(config=OmegaConf.create(config))
-            agent1.config.callbacks.remove('input_callback')  # noqa
+            if hasattr(agent1.config, 'callbacks'):
+                agent1.config.callbacks.remove('input_callback')  # noqa
             await agent1.run(tool_history1)
             del agent1
             print(

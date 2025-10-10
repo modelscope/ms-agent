@@ -9,7 +9,7 @@ MS-Agent DOCUMENTATION
    :maxdepth: 2
    :caption: Get Started
 
-   GetStarted/MS-Agent安装.md
+   GetStarted/安装.md
    GetStarted/快速开始.md
 
 .. toctree::

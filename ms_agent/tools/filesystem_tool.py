@@ -6,7 +6,6 @@ from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils import get_logger
 from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR
-from omegaconf import DictConfig
 
 logger = get_logger()
 
@@ -21,7 +20,6 @@ class FileSystemTool(ToolBase):
         super(FileSystemTool, self).__init__(config)
         self.exclude_func(getattr(config.tools, 'file_system', None))
         self.output_dir = getattr(config, 'output_dir', DEFAULT_OUTPUT_DIR)
-        self.call_history = set()
 
     async def connect(self):
         logger.warning_once(
@@ -165,8 +163,6 @@ class FileSystemTool(ToolBase):
         Returns:
             The file content or error message.
         """
-        key = self.config.tag + '-' + path
-        self.call_history.add(key)
         try:
             with open(os.path.join(self.output_dir, path), 'r') as f:
                 return f.read()

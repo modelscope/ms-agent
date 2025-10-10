@@ -70,6 +70,28 @@ class OpenaiLLM(unittest.TestCase):
                 'required': ['dir_name']
             })
     ]
+    mcp_config = {
+        'mcpServers': {
+            'fetch': {
+                'type': 'sse',
+                'url': os.getenv('MCP_SERVER_FETCH_URL'),
+            }
+        }
+    }
+
+    def setUp(self):
+        import asyncio
+        from ms_agent.tools.mcp_client import MCPClient
+
+        # warmup mcp server for test
+        async def main():
+            mcp_client = MCPClient(self.mcp_config)
+            await mcp_client.connect()
+            mcps = await mcp_client.get_tools()
+            assert ('fetch' in mcps)
+            await mcp_client.cleanup()
+
+        asyncio.run(main())
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_call_no_stream(self):
@@ -80,9 +102,6 @@ class OpenaiLLM(unittest.TestCase):
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_call_stream(self):
-        import time
-        time.sleep(
-            10)  # Avoid triggering the rate limiting of the ModelScope API
         llm = Anthropic(self.conf)
         res = llm.generate(messages=self.messages, tools=None, stream=True)
         for chunk in res:
@@ -91,9 +110,6 @@ class OpenaiLLM(unittest.TestCase):
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_tool_stream(self):
-        import time
-        time.sleep(
-            5)  # Avoid triggering the rate limiting of the ModelScope API
         llm = Anthropic(self.conf)
         res = llm.generate(
             messages=self.tool_messages, tools=self.tools, stream=True)
@@ -113,16 +129,9 @@ class OpenaiLLM(unittest.TestCase):
         import asyncio
 
         async def main():
-            mcp_config = {
-                'mcpServers': {
-                    'fetch': {
-                        'type': 'sse',
-                        'url': os.getenv('MCP_SERVER_FETCH_URL'),
-                    }
-                }
-            }
-            agent = LLMAgent(config=self.conf, mcp_config=mcp_config)
-            agent.config.callbacks.remove('input_callback')  # noqa
+            agent = LLMAgent(config=self.conf, mcp_config=self.mcp_config)
+            if hasattr(agent.config, 'callbacks'):
+                agent.config.callbacks.remove('input_callback')  # noqa
             res = await agent.run('访问www.baidu.com')
             print(res)
             assert ('robots.txt' in res[-1].content)
@@ -135,18 +144,11 @@ class OpenaiLLM(unittest.TestCase):
         from copy import deepcopy
 
         async def main():
-            mcp_config = {
-                'mcpServers': {
-                    'fetch': {
-                        'type': 'sse',
-                        'url': os.getenv('MCP_SERVER_FETCH_URL'),
-                    }
-                }
-            }
             conf2 = deepcopy(self.conf)
             conf2.generation_config.stream = True
-            agent = LLMAgent(config=self.conf, mcp_config=mcp_config)
-            agent.config.callbacks.remove('input_callback')  # noqa
+            agent = LLMAgent(config=self.conf, mcp_config=self.mcp_config)
+            if hasattr(agent.config, 'callbacks'):
+                agent.config.callbacks.remove('input_callback')  # noqa
             res = await agent.run('访问www.baidu.com')
             print('res:', res)
             assert ('robots.txt' in res[-1].content)

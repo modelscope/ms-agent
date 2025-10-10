@@ -7,7 +7,7 @@
 <p>
 
 <p align="center">
-<a href="https://modelscope.cn/mcp/playground">MCP Playground</a> ｜ <a href="https://arxiv.org/abs/2309.00986">Paper</a> | <a href="https://ms-agent.readthedocs.io/zh-cn/latest">Docs</a>
+<a href="https://modelscope.cn/mcp/playground">MCP Playground</a> ｜ <a href="https://arxiv.org/abs/2309.00986">Paper</a> | <a href="https://ms-agent-en.readthedocs.io/en/latest">Docs</a>
 <br>
 </p>
 
@@ -152,10 +152,11 @@ export MODELSCOPE_API_KEY={your_modelscope_api_key}
 You can find or generate your API key at https://modelscope.cn/my/myaccesstoken.
 
 ```python
-from ms_agent import LLMAgent
 import asyncio
 
-# Configure MCP server
+from ms_agent import LLMAgent
+
+# Configure MCP servers
 mcp = {
   "mcpServers": {
     "fetch": {
@@ -166,13 +167,12 @@ mcp = {
 }
 
 async def main():
-    # Initialize the agent with MCP configuration
-    llm_agent = LLMAgent(mcp_config=mcp)
-    # Run a task
-    await llm_agent.run('Briefly introduce modelscope.cn')
+    # Use json to configure MCP
+    llm_agent = LLMAgent(mcp_config=mcp)   # Run task
+    await llm_agent.run('Introduce modelscope.cn')
 
 if __name__ == '__main__':
-    # Launch the async main function
+    # Start
     asyncio.run(main())
 ```
 ----
@@ -210,7 +210,8 @@ This example demonstrates how the agent remembers user preferences across sessio
 import uuid
 import asyncio
 from omegaconf import OmegaConf
-from ms_agent.agent import LLMAgent
+from ms_agent.agent.loader import AgentLoader
+
 
 async def main():
     random_id = str(uuid.uuid4())
@@ -220,18 +221,18 @@ async def main():
             'user_id': 'awesome_me'
         }]
     })
-    agent1 = LLMAgent(config=default_memory)
+    agent1 = AgentLoader.build(config_dir_or_id='ms-agent/simple_agent', config=default_memory)
     agent1.config.callbacks.remove('input_callback')  # Disable interactive input for direct output
 
     await agent1.run('I am a vegetarian and I drink coffee every morning.')
     del agent1
     print('========== Data preparation completed, starting test ===========')
-    agent2 = LLMAgent(config=default_memory)
+    agent2 = AgentLoader.build(config_dir_or_id='ms-agent/simple_agent', config=default_memory)
     agent2.config.callbacks.remove('input_callback')  # Disable interactive input for direct output
 
     res = await agent2.run('Please help me plan tomorrow’s three meals.')
     print(res)
-    assert ('vegan' in res[-1].content.lower()) and 'coffee' in res[-1].content.lower()
+    assert 'vegan' in res[-1].content.lower() and 'coffee' in res[-1].content.lower()
 
 asyncio.run(main())
 ```
@@ -303,11 +304,10 @@ This project provides a framework for **Doc Research**, enabling agents to auton
 
 **2. Local Gradio Application**
 
-* Research Report for [UniME: Breaking the Modality Barrier: Universal Embedding Learning
-with Multimodal LLMs](https://arxiv.org/pdf/2504.17432)
+* Research Report for [UniME: Breaking the Modality Barrier: Universal Embedding Learning with Multimodal LLMs](https://arxiv.org/pdf/2504.17432)
 <div align="center">
   <img src="https://github.com/user-attachments/assets/3f85ba08-6366-49b7-b551-cbe50edf6218" alt="LocalGradioApplication" width="750">
-  <p><em>Demo: UniME Research Report</em></p>
+  <p><em>Demo：UniME Research Report</em></p>
 </div>
 
 

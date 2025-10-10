@@ -19,7 +19,8 @@ def run_cmd():
     RunCMD.define_args(subparsers)
     AppCMD.define_args(subparsers)
 
-    args = parser.parse_args()
+    # unknown args will be handled in config.py
+    args, _ = parser.parse_known_args()
 
     if not hasattr(args, 'func'):
         parser.print_help()

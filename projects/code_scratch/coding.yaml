@@ -1,11 +1,10 @@
 llm:
   service: openai
-  model: claude-sonnet-4-20250514
+  model: claude-sonnet-4-5-20250929
   openai_api_key:
   openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 
 generation_config:
-  top_p: 0.6
   temperature: 0.2
   top_k: 20
   stream: true

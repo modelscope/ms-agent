@@ -3,11 +3,9 @@ import argparse
 import asyncio
 import os
 
-from ms_agent.agent.llm_agent import LLMAgent
 from ms_agent.config import Config
 from ms_agent.utils import strtobool
 from ms_agent.utils.constants import AGENT_CONFIG_FILE
-from ms_agent.workflow.chain_workflow import ChainWorkflow
 
 from .base import CLICommand
 
@@ -89,37 +87,24 @@ class RunCMD(CLICommand):
         elif not os.path.exists(self.args.config):
             from modelscope import snapshot_download
             self.args.config = snapshot_download(self.args.config)
-        self.args.trust_remote_code: bool = strtobool(
+        self.args.trust_remote_code = strtobool(
             self.args.trust_remote_code)  # noqa
         self.args.load_cache = strtobool(self.args.load_cache)
 
         config = Config.from_task(self.args.config)
 
         if Config.is_workflow(config):
-            engine = ChainWorkflow(
+            from ms_agent.workflow.loader import WorkflowLoader
+            engine = WorkflowLoader.build(
+                config_dir_or_id=self.args.config,
                 config=config,
-                trust_remote_code=self.args.trust_remote_code,
-                load_cache=self.args.load_cache,
-                mcp_server=self.args.mcp_config,
                 mcp_server_file=self.args.mcp_server_file,
-                task=self.args.query)
+                trust_remote_code=self.args.trust_remote_code)
         else:
-            engine = LLMAgent(
+            from ms_agent.agent.loader import AgentLoader
+            engine = AgentLoader.build(
+                config_dir_or_id=self.args.config,
                 config=config,
-                trust_remote_code=self.args.trust_remote_code,
-                mcp_server=self.args.mcp_config,
                 mcp_server_file=self.args.mcp_server_file,
-                load_cache=self.args.load_cache,
-                task=self.args.query)
-
-        query = self.args.query
-        input_msg: str = "Please input instruction or 'Ctrl+C' to exit:"
-        if not query:
-            print(input_msg, flush=True)
-            while True:
-                query = input('>>> ').strip()
-                if query:
-                    break
-                print(input_msg, flush=True)
-
-        asyncio.run(engine.run(query))
+                trust_remote_code=self.args.trust_remote_code)
+        asyncio.run(engine.run(self.args.query))

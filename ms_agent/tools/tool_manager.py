@@ -63,6 +63,8 @@ class ToolManager:
                     sys.path.insert(0, local_dir)
                 if subdir and subdir not in sys.path:
                     sys.path.insert(0, subdir)
+                if _plugin.endswith('.py'):
+                    _plugin = _plugin[:-3]
                 plugin_file = importlib.import_module(_plugin)
                 module_classes = {
                     name: cls
@@ -78,6 +80,7 @@ class ToolManager:
         # Used temporarily during async initialization; the actual client is managed in self.servers
         self.mcp_client = mcp_client
         self.mcp_config = mcp_config
+        self.servers = None
         self._managed_client = mcp_client is None
 
     def register_tool(self, tool: ToolBase):
@@ -97,10 +100,16 @@ class ToolManager:
 
     async def cleanup(self):
         if self._managed_client and self.servers:
-            await self.servers.cleanup()
+            try:
+                await self.servers.cleanup()
+            except Exception:  # noqa
+                pass
         self.servers = None
         for tool in self.extra_tools:
-            await tool.cleanup()
+            try:
+                await tool.cleanup()
+            except Exception:  # noqa
+                pass
 
     async def reindex_tool(self):
 
@@ -135,7 +144,10 @@ class ToolManager:
             tool_name = tool_info['tool_name']
             tool_args = tool_info['arguments']
             while isinstance(tool_args, str):
-                tool_args = json.loads(tool_args)
+                try:
+                    tool_args = json.loads(tool_args)
+                except json.decoder.JSONDecodeError:
+                    return f'The input {tool_args} is not a valid JSON, fix your arguments and try again'
             assert tool_name in self._tool_index, f'Tool name {tool_name} not found'
             tool_ins, server_name, _ = self._tool_index[tool_name]
             response = await asyncio.wait_for(

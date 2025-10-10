@@ -30,8 +30,7 @@ class ArtifactCallback(Callback):
                 # Claude seems does not allow empty content
                 message.content = 'I should do a tool calling to continue:\n'
 
-    async def after_generate_response(self, runtime: Runtime,
-                                      messages: List[Message]):
+    async def on_tool_call(self, runtime: Runtime, messages: List[Message]):
         if messages[-1].tool_calls or messages[-1].role == 'tool':
             return
         await self.file_system.create_directory()
