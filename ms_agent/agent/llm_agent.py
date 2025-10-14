@@ -14,7 +14,7 @@ from ms_agent.callbacks import Callback, callbacks_mapping
 from ms_agent.llm.llm import LLM
 from ms_agent.llm.utils import Message
 from ms_agent.memory import Memory, memory_mapping
-from ms_agent.memory.mem0ai import Mem0Memory
+from ms_agent.memory.mem0ai import Mem0Memory, SharedMemoryManager
 from ms_agent.rag.base import RAG
 from ms_agent.rag.utils import rag_mapping
 from ms_agent.tools import ToolManager
@@ -22,6 +22,7 @@ from ms_agent.utils import async_retry, read_history, save_history
 from ms_agent.utils.constants import (DEFAULT_OUTPUT_DIR, DEFAULT_TAG,
                                       DEFAULT_USER)
 from ms_agent.utils.logger import logger
+
 from omegaconf import DictConfig, OmegaConf
 
 from ..config.config import Config, ConfigLifecycleHandler
@@ -342,21 +343,20 @@ class LLMAgent(Agent):
                     service = self.config.llm.service
                     config_dict = {
                         'model':
-                        self.config.llm.model,
+                        _memory.summary_model,
                         'provider':
                         'openai',
                         'openai_base_url':
                         getattr(self.config.llm, f'{service}_base_url', None),
                         'openai_api_key':
                         getattr(self.config.llm, f'{service}_api_key', None),
+                        'max_tokens':
+                        _memory.max_tokens,
                     }
                     llm_config_obj = OmegaConf.create(config_dict)
                     setattr(_memory, 'llm', llm_config_obj)
-
                 if memory_type == 'mem0':
-                    from ms_agent.memory.mem0ai import SharedMemoryManager
-                    shared_memory = SharedMemoryManager.get_shared_memory(
-                        _memory)
+                    shared_memory = SharedMemoryManager.get_shared_memory(_memory)
                     self.memory_tools.append(shared_memory)
                 else:
                     self.memory_tools.append(
@@ -638,7 +638,7 @@ class LLMAgent(Agent):
                 async for messages in self.step(messages):
                     yield messages
                 self.runtime.round += 1
-                # save history
+                # save memory and history
                 self.save_memory(messages)
                 self.save_history(messages)
 
