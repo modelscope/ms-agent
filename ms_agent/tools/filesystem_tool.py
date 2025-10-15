@@ -73,11 +73,13 @@ class FileSystemTool(ToolBase):
                         'type': 'object',
                         'properties': {
                             'paths': {
-                                'type': 'array',
+                                'type':
+                                'array',
                                 'items': {
                                     'type': 'string'
                                 },
-                                'description': 'List of relative file path(s) to read',
+                                'description':
+                                'List of relative file path(s) to read',
                             }
                         },
                         'required': ['paths'],

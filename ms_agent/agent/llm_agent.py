@@ -22,7 +22,6 @@ from ms_agent.utils import async_retry, read_history, save_history
 from ms_agent.utils.constants import (DEFAULT_OUTPUT_DIR, DEFAULT_TAG,
                                       DEFAULT_USER)
 from ms_agent.utils.logger import logger
-
 from omegaconf import DictConfig, OmegaConf
 
 from ..config.config import Config, ConfigLifecycleHandler
@@ -356,7 +355,8 @@ class LLMAgent(Agent):
                     llm_config_obj = OmegaConf.create(config_dict)
                     setattr(_memory, 'llm', llm_config_obj)
                 if memory_type == 'mem0':
-                    shared_memory = SharedMemoryManager.get_shared_memory(_memory)
+                    shared_memory = SharedMemoryManager.get_shared_memory(
+                        _memory)
                     self.memory_tools.append(shared_memory)
                 else:
                     self.memory_tools.append(
