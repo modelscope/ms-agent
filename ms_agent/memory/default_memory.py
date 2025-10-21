@@ -83,7 +83,6 @@ class DefaultMemory(Memory):
                                               'default_user')
         self.agent_id: Optional[str] = getattr(self.config, 'agent_id', None)
         self.run_id: Optional[str] = getattr(self.config, 'run_id', None)
-        self.on_disk: Optional[bool] = getattr(config, 'on_disk', True)
         self.compress: Optional[bool] = getattr(config, 'compress', True)
         self.is_retrieve: Optional[bool] = getattr(config, 'is_retrieve', True)
         self.path: Optional[str] = getattr(self.config, 'path', 'output')
@@ -94,7 +93,6 @@ class DefaultMemory(Memory):
                                                 ['reasoning_content'])
         self.search_limit: int = getattr(config, 'search_limit',
                                          DEFAULT_SEARCH_LIMIT)
-        self.vector_store: str = getattr(config, 'vector_store', 'qdrant')
         # Add lock for thread safety in shared usage
         self._lock = asyncio.Lock()
         self.memory = self._init_memory_obj()
@@ -610,16 +608,29 @@ class DefaultMemory(Memory):
                 }
             }
 
+        vector_store_service = getattr(
+            self.config.vector_store, 'service', 'qdrant') if hasattr(
+                self.config, 'vector_store') else 'qdrant'
+        on_disk = getattr(
+            self.config.vector_store, 'on_disk', True) if hasattr(
+                self.config, 'vector_store') else True
+        path = getattr(self.config.vector_store, 'path', self.path) if hasattr(
+            self.config, 'vector_store') else self.path
+        db_name = getattr(
+            self.config.vector_store, 'db_name', None) if hasattr(
+                self.config, 'vector_store') else None
         vector_store = {
-            'provider': self.vector_store,
+            'provider': vector_store_service,
             'config': {
-                'path': self.path,
-                'on_disk': self.on_disk,
-                'collection_name': self.path,
+                'path': path,
+                'on_disk': on_disk,
+                'collection_name': path,
             }
         }
         if isinstance(embedding_dims, int):
             vector_store['config']['embedding_model_dims'] = embedding_dims
+        if db_name is not None:
+            vector_store['config']['db_name'] = db_name
 
         mem0_config = {
             'is_infer': self.compress,

@@ -1,7 +1,6 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import unittest
 
-from ms_agent.agent import LLMAgent
 from ms_agent.agent.loader import AgentLoader
 from ms_agent.llm.utils import Message, ToolCall
 from omegaconf import OmegaConf
