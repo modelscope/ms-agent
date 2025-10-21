@@ -8,6 +8,7 @@ json5
 markdown
 mcp
 modelscope
+ms-enclave
 openai
 Pillow
 python-dotenv
