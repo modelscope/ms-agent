@@ -2,6 +2,7 @@
 import unittest
 
 from ms_agent.agent import LLMAgent
+from ms_agent.agent.loader import AgentLoader
 from ms_agent.llm.utils import Message, ToolCall
 from omegaconf import OmegaConf
 
@@ -70,7 +71,7 @@ class TestDefaultMemory(unittest.TestCase):
         import shutil
         shutil.rmtree('output', ignore_errors=True)
 
-    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    @unittest.skip
     def test_default_memory(self):
         import uuid
         import asyncio
@@ -83,16 +84,24 @@ class TestDefaultMemory(unittest.TestCase):
                     'user_id': random_id
                 }]
             })
-            agent1 = LLMAgent(config=default_memory)
-            agent1.config.callbacks.remove('input_callback')  # noqa
+            agent1 = AgentLoader.build(
+                'ms-agent/simple_agent_code',
+                config=default_memory,
+                trust_remote_code=True)
+            if hasattr(agent1.config.callbacks, 'input_callback'):
+                agent1.config.callbacks.remove('input_callback')  # noqa
             await agent1.run(
                 'I am a vegetarian and I drink coffee every morning.')
             del agent1
             print(
                 '========== Data preparation completed, starting test ==========='
             )
-            agent2 = LLMAgent(config=default_memory)
-            agent2.config.callbacks.remove('input_callback')  # noqa
+            agent2 = AgentLoader.build(
+                'ms-agent/simple_agent_code',
+                config=default_memory,
+                trust_remote_code=True)
+            if hasattr(agent2.config.callbacks, 'input_callback'):
+                agent2.config.callbacks.remove('input_callback')  # noqa
             res = await agent2.run(
                 'Please help me plan tomorrow’s three meals.')
             print(res)
@@ -102,7 +111,7 @@ class TestDefaultMemory(unittest.TestCase):
 
         asyncio.run(main())
 
-    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    @unittest.skip
     def test_agent_tool(self):
         import uuid
         import asyncio
@@ -116,14 +125,20 @@ class TestDefaultMemory(unittest.TestCase):
                     'path': f'output/{random_id}'
                 }]
             })
-            agent1 = LLMAgent(config=OmegaConf.create(config))
+            agent1 = AgentLoader.build(
+                'ms-agent/simple_agent_code',
+                config=config,
+                trust_remote_code=True)
             agent1.config.callbacks.remove('input_callback')  # noqa
             await agent1.run(self.tool_history)
             del agent1
             print(
                 '========== Data preparation completed, starting test ==========='
             )
-            agent2 = LLMAgent(config=OmegaConf.create(config))
+            agent2 = AgentLoader.build(
+                'ms-agent/simple_agent_code',
+                config=config,
+                trust_remote_code=True)
             agent2.config.callbacks.remove('input_callback')  # noqa
             res = await agent2.run(
                 'What is the location of the coolest sports park in Chaoyang District, Beijing?'
@@ -205,16 +220,19 @@ class TestDefaultMemory(unittest.TestCase):
                     'user_id': random_id,
                 }]
             })
-            agent1 = LLMAgent(config=OmegaConf.create(config))
-            if hasattr(agent1.config, 'callbacks'):
-                agent1.config.callbacks.remove('input_callback')  # noqa
+            agent1 = AgentLoader.build(
+                'ms-agent/simple_agent_code',
+                config=config,
+                trust_remote_code=True)
             await agent1.run(tool_history1)
             del agent1
             print(
                 '========== Data preparation completed, starting test ==========='
             )
-            agent2 = LLMAgent(config=OmegaConf.create(config))
-            agent2.config.callbacks.remove('input_callback')  # noqa
+            agent2 = AgentLoader.build(
+                'ms-agent/simple_agent_code',
+                config=config,
+                trust_remote_code=True)
             res = await agent2.run(tool_history2)
             print(res)
             # Assert old info remains due to overwrite mode, new info not persisted

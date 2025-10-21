@@ -5,6 +5,7 @@ import json5
 from ms_agent.llm import LLM
 from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.utils import assert_package_exist, get_logger, retry
+from ms_agent.utils.constants import get_service_config
 from omegaconf import DictConfig, OmegaConf
 
 
@@ -22,7 +23,8 @@ class Anthropic(LLM):
 
         self.model: str = config.llm.model
 
-        base_url = base_url or config.llm.get('anthropic_base_url')
+        base_url = base_url or config.llm.get(
+            'anthropic_base_url') or get_service_config('anthropic').base_url
         api_key = api_key or config.llm.get('anthropic_api_key')
 
         if not api_key:

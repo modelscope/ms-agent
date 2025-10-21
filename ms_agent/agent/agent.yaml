@@ -5,8 +5,7 @@ llm:
   modelscope_base_url: https://api-inference.modelscope.cn/v1
 
 generation_config:
-  top_p: 0.6
-  temperature: 0.2
+  temperature: 0.3
   top_k: 20
   stream: true
   extra_body:

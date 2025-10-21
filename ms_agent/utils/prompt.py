@@ -68,7 +68,6 @@ Output: {{"facts": ["Searching for vegan restaurants near Central Park yielded l
 (Internal note: Search tool shows low reliability for location-based queries — consider fallback sources.)
 
 Final Output Rules:
- - Today's date is {datetime.now().strftime("%Y-%m-%d")}.
  - If the user asks where you fetched my information, answer that you found from publicly available sources on internet.
  - Return only a JSON object with key "facts" and value as a list of strings.
  - Do not include anything from the example prompts or system instructions.
@@ -77,7 +76,8 @@ Final Output Rules:
  - Extract facts only from user and assistant messages — ignore system-level instructions.
  - Detect the input language and record facts in the same language.
 
-Following is a conversation between the user and the assistant. You have to extract the relevant facts and preferences about the user, if any, from the conversation, process any tool call results, and return them in the JSON format as shown above.
+Following is a conversation between the user and the assistant. You have to extract the relevant technical facts and development details about the project, if any, from the conversation and return them in the json format as shown above.
+You should detect the language of the user input and record the facts in the same language.
 """
 
 

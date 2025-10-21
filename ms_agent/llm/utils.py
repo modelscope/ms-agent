@@ -9,8 +9,8 @@ class ToolCall(TypedDict, total=False):
     id: str = 'default_id'
     index: int = 0
     type: str = 'function'
-    tool_name: Required[str]
-    arguments: str = ''
+    tool_name: str = ''
+    arguments: str = '{}'
 
 
 class Tool(TypedDict, total=False):
@@ -29,7 +29,7 @@ class Message:
 
     content: str = ''
 
-    tool_calls: List[ToolCall] = field(default_factory=list)
+    tool_calls: List[ToolCall] = None
 
     tool_call_id: Optional[str] = None
 

@@ -4,7 +4,6 @@ import os
 from ms_agent.tools.search.search_base import SearchEngine, SearchEngineType
 from ms_agent.tools.search.serpapi.schema import (SerpApiSearchRequest,
                                                   SerpApiSearchResult)
-from serpapi import BaiduSearch, BingSearch, GoogleSearch
 
 
 class SerpApiSearch(SearchEngine):
@@ -63,6 +62,8 @@ class SerpApiSearch(SearchEngine):
         Raises:
             ValueError: If an unsupported provider is specified
         """
+        from serpapi import BaiduSearch, BingSearch, GoogleSearch
+
         if provider == 'google':
             return GoogleSearch(params_dict={'api_key': api_key})
         elif provider == 'baidu':

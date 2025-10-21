@@ -14,7 +14,6 @@ from ms_agent.callbacks import Callback, callbacks_mapping
 from ms_agent.llm.llm import LLM
 from ms_agent.llm.utils import Message
 from ms_agent.memory import Memory, memory_mapping
-from ms_agent.memory.mem0ai import Mem0Memory
 from ms_agent.rag.base import RAG
 from ms_agent.rag.utils import rag_mapping
 from ms_agent.tools import ToolManager
@@ -23,6 +22,7 @@ from ms_agent.utils.constants import (DEFAULT_OUTPUT_DIR, DEFAULT_TAG,
                                       DEFAULT_USER)
 from ms_agent.utils.logger import logger
 from omegaconf import DictConfig, OmegaConf
+from pydantic import ConfigDict
 
 from ..config.config import Config, ConfigLifecycleHandler
 from .base import Agent
@@ -325,14 +325,18 @@ class LLMAgent(Agent):
         """Initialize and append memory tool instances based on the configuration provided in the global config.
 
         Raises:
-            AssertionError: If a specified memory type in the config does not exist in memory_mapping.
+        AssertionError: If a specified memory type in the config does not exist in memory_mapping.
         """
         self.config: DictConfig
         if hasattr(self.config, 'memory'):
+            from ms_agent.memory.memory_manager import SharedMemoryManager
             for _memory in (self.config.memory or []):
-                memory_type = getattr(_memory, 'name', 'default_memory')
-                assert memory_type in memory_mapping, (
-                    f'{memory_type} not in memory_mapping, '
+                mem_instance_type = getattr(_memory, 'name', None)
+                if mem_instance_type is None:
+                    mem_instance_type = 'default_memory'
+                    setattr(_memory, 'name', 'default_memory')
+                assert mem_instance_type in memory_mapping, (
+                    f'{mem_instance_type} not in memory_mapping, '
                     f'which supports: {list(memory_mapping.keys())}')
 
                 # Use LLM config if no special configuration is specified
@@ -342,8 +346,8 @@ class LLMAgent(Agent):
                     config_dict = {
                         'model':
                         self.config.llm.model,
-                        'provider':
-                        'openai',
+                        'service':
+                        service,
                         'openai_base_url':
                         getattr(self.config.llm, f'{service}_base_url', None),
                         'openai_api_key':
@@ -352,14 +356,8 @@ class LLMAgent(Agent):
                     llm_config_obj = OmegaConf.create(config_dict)
                     setattr(_memory, 'llm', llm_config_obj)
 
-                if memory_type == 'mem0':
-                    from ms_agent.memory.mem0ai import SharedMemoryManager
-                    shared_memory = SharedMemoryManager.get_shared_memory(
-                        _memory)
-                    self.memory_tools.append(shared_memory)
-                else:
-                    self.memory_tools.append(
-                        memory_mapping[memory_type](_memory))
+                shared_memory = SharedMemoryManager.get_shared_memory(_memory)
+                self.memory_tools.append(shared_memory)
 
     async def prepare_rag(self):
         """Load and initialize the RAG component from the config."""
@@ -421,8 +419,8 @@ class LLMAgent(Agent):
 
     @async_retry(max_attempts=2, delay=1.0)
     async def step(
-            self, messages: List[Message],
-            tag: str) -> AsyncGenerator[List[Message], Any]:  # type: ignore
+        self, messages: List[Message]
+    ) -> AsyncGenerator[List[Message], Any]:  # type: ignore
         """
         Execute a single step in the agent's interaction loop.
 
@@ -441,7 +439,6 @@ class LLMAgent(Agent):
 
         Args:
             messages (List[Message]): Current message history.
-            tag (str): Identifier for logging purposes.
 
         Returns:
             List[Message]: Updated message history after this step.
@@ -524,16 +521,56 @@ class LLMAgent(Agent):
                 runtime = self.runtime
             return config, runtime, _messages
         else:
-            return self.config, self.runtime, messages
+            return self.config, self.runtime, messages  # noqa
 
-    def get_user_id(self, default_user_id=DEFAULT_USER) -> Optional[str]:
-        user_id = default_user_id
+    async def add_memory_on_step_end(self, messages: List[Message], **kwargs):
         if hasattr(self.config, 'memory') and self.config.memory:
-            for memory_config in self.config.memory:
-                if hasattr(memory_config, 'user_id') and memory_config.user_id:
-                    user_id = memory_config.user_id
-                    break
-        return user_id
+            tools_num = len(
+                self.memory_tools
+            ) if self.memory_tools else 0  # Check index bounds before access to avoid IndexError
+            if hasattr(self.config, 'memory') and self.config.memory:
+                for idx, memory_config in enumerate(self.config.memory):
+                    user_id = getattr(
+                        getattr(memory_config, 'add_after_step',
+                                memory_config), 'user_id', None)
+                    agent_id = getattr(memory_config.add_after_step,
+                                       'agent_id', None) if hasattr(
+                                           memory_config,
+                                           'add_after_step') else None
+                    memory_type = getattr(memory_config.add_after_step,
+                                          'memory_type', None) if hasattr(
+                                              memory_config,
+                                              'add_after_step') else None
+                    if idx < tools_num:
+                        await self.memory_tools[idx].add(
+                            messages,
+                            user_id=user_id,
+                            agent_id=agent_id,
+                            memory_type=memory_type)
+
+    async def add_memory_on_task_end(self, messages: List[Message], **kwargs):
+        if hasattr(self.config, 'memory') and self.config.memory:
+            tools_num = len(
+                self.memory_tools
+            ) if self.memory_tools else 0  # Check index bounds before access to avoid IndexError
+            for idx, memory_config in enumerate(self.config.memory):
+                user_id = getattr(
+                    getattr(memory_config, 'add_after_task', memory_config),
+                    'user_id', None)
+                agent_id = getattr(memory_config.add_after_task, 'agent_id',
+                                   self.tag) if hasattr(
+                                       memory_config,
+                                       'add_after_task') else self.tag
+                memory_type = getattr(
+                    memory_config.add_after_task, 'memory_type',
+                    None) if hasattr(memory_config, 'add_after_task') else None
+
+                if idx < tools_num:
+                    await self.memory_tools[idx].add(
+                        messages,
+                        user_id=user_id,
+                        agent_id=agent_id,
+                        memory_type=memory_type)
 
     def save_history(self, messages: List[Message], **kwargs):
         """
@@ -555,26 +592,6 @@ class LLMAgent(Agent):
         save_history(
             self.output_dir, task=self.tag, config=config, messages=messages)
 
-    def save_memory(self, messages: List[Message]):
-        """
-        Save memories to disk for future resuming.
-
-        Args:
-            messages (List[Message]): Current message history to save.
-        """
-        if self.memory_tools:
-            if self.runtime.should_stop:
-                for memory_tool in self.memory_tools:
-                    if isinstance(memory_tool, Mem0Memory):
-                        memory_tool.add_memories_from_procedural(
-                            messages, self.get_user_id(), self.tag,
-                            'procedural_memory')
-            else:
-                for memory_tool in self.memory_tools:
-                    if isinstance(memory_tool, Mem0Memory):
-                        memory_tool.add_memories_from_conversation(
-                            messages, self.get_user_id())
-
     async def run_loop(self, messages: Union[List[Message], str],
                        **kwargs) -> AsyncGenerator[Any, Any]:
         """Run the agent, mainly contains a llm calling and tool calling loop.
@@ -582,6 +599,8 @@ class LLMAgent(Agent):
         Args:
             messages (Union[List[Message], str]): Input data for the agent. Can be a raw string prompt,
                                                or a list of previous interaction messages.
+            **kwargs: Additional runtime arguments.
+
         Returns:
             List[Message]: A list of message objects representing the agent's response or interaction history.
         """
@@ -612,11 +631,11 @@ class LLMAgent(Agent):
                     self.log_output('[' + message.role + ']:')
                     self.log_output(message.content)
             while not self.runtime.should_stop:
-                async for messages in self.step(messages, self.tag):
+                async for messages in self.step(messages):
                     yield messages
                 self.runtime.round += 1
                 # save history
-                self.save_memory(messages)
+                await self.add_memory_on_step_end(messages, **kwargs)
                 self.save_history(messages)
 
                 # +1 means the next round the assistant may give a conclusion
@@ -632,7 +651,7 @@ class LLMAgent(Agent):
                     yield messages
 
             # save memory
-            self.save_memory(messages)
+            await self.add_memory_on_task_end(messages, **kwargs)
 
             await self.on_task_end(messages)
             await self.cleanup_tools()

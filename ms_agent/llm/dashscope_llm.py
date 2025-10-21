@@ -3,6 +3,7 @@ from typing import List
 
 from ms_agent.llm.openai_llm import OpenAI
 from ms_agent.llm.utils import Message, Tool
+from ms_agent.utils.constants import get_service_config
 from omegaconf import DictConfig
 
 
@@ -11,7 +12,8 @@ class DashScope(OpenAI):
     def __init__(self, config: DictConfig):
         super().__init__(
             config,
-            base_url=config.llm.dashscope_base_url,
+            base_url=config.llm.modelscope_base_url
+            or get_service_config('dashscope').base_url,
             api_key=config.llm.dashscope_api_key)
 
     def _call_llm_for_continue_gen(self,

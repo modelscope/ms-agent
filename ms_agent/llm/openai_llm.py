@@ -7,6 +7,7 @@ from ms_agent.llm import LLM
 from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.utils import (MAX_CONTINUE_RUNS, assert_package_exist,
                             get_logger, retry)
+from ms_agent.utils.constants import get_service_config
 from omegaconf import DictConfig, OmegaConf
 from openai.types.chat.chat_completion_message_tool_call import (
     ChatCompletionMessageToolCall, Function)
@@ -41,7 +42,8 @@ class OpenAI(LLM):
         self.model: str = config.llm.model
         self.max_continue_runs = getattr(config.llm, 'max_continue_runs',
                                          None) or MAX_CONTINUE_RUNS
-        base_url = base_url or config.llm.openai_base_url
+        base_url = base_url or config.llm.openai_base_url or get_service_config(
+            'openai').base_url
         api_key = api_key or config.llm.openai_api_key
 
         self.client = openai.OpenAI(
