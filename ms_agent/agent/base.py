@@ -1,8 +1,10 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import os
 from abc import ABC, abstractmethod
-from typing import Any, AsyncGenerator, List, Optional, Union
+from typing import Any, AsyncGenerator, List, Union
 
 from ms_agent.llm import Message
+from ms_agent.utils.constants import DEFAULT_RETRY_COUNT
 from omegaconf import DictConfig
 
 
@@ -12,6 +14,8 @@ class Agent(ABC):
     Args:
         config (DictConfig): Pre-loaded configuration object.
     """
+
+    retry_count = int(os.environ.get('AGENT_RETRY_COUNT', DEFAULT_RETRY_COUNT))
 
     def __init__(self,
                  config: DictConfig,
@@ -35,6 +39,8 @@ class Agent(ABC):
         self.config = config
         self.tag = tag
         self.trust_remote_code = trust_remote_code
+        self.config.tag = tag
+        self.config.trust_remote_code = trust_remote_code
 
     @abstractmethod
     async def run(

@@ -15,7 +15,7 @@ API_CALL_MAX_TOKEN = 50
 class OpenaiLLM(unittest.TestCase):
     conf: DictConfig = OmegaConf.create({
         'llm': {
-            'model': 'Qwen/Qwen3-Coder-480B-A35B-Instruct',
+            'model': 'Qwen/Qwen3-Coder-30B-A3B-Instruct',
             'anthropic_api_key': os.getenv('MODELSCOPE_API_KEY'),
             'anthropic_base_url': 'https://api-inference.modelscope.cn',
             'service': 'anthropic'

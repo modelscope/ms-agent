@@ -1,14 +1,18 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import os
 from abc import abstractmethod
 from typing import Any, Dict, List, Optional
 
 from ms_agent.config import Config
 from omegaconf import DictConfig
 
+from ..utils.constants import DEFAULT_RETRY_COUNT
 from .utils import Message, Tool
 
 
 class LLM:
+
+    retry_count = int(os.environ.get('LLM_RETRY_COUNT', DEFAULT_RETRY_COUNT))
 
     def __init__(self, config: DictConfig):
         """Initialize the model.

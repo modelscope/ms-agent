@@ -15,7 +15,10 @@ from ms_agent.tools.code.code_executor import CodeExecutionTool
 from ms_agent.tools.filesystem_tool import FileSystemTool
 from ms_agent.tools.mcp_client import MCPClient
 from ms_agent.tools.split_task import SplitTask
+from ms_agent.utils import get_logger
 from ms_agent.utils.constants import TOOL_PLUGIN_NAME
+
+logger = get_logger()
 
 MAX_TOOL_NAME_LEN = int(os.getenv('MAX_TOOL_NAME_LEN', 64))
 TOOL_CALL_TIMEOUT = int(os.getenv('TOOL_CALL_TIMEOUT', 30))
@@ -143,13 +146,16 @@ class ToolManager:
         return [value[2] for value in self._tool_index.values()]
 
     async def single_call_tool(self, tool_info: ToolCall):
+        brief_info = json.dumps(tool_info, ensure_ascii=False)
+        if len(brief_info) > 1024:
+            brief_info = brief_info[:1024] + '...'
         try:
             tool_name = tool_info['tool_name']
             tool_args = tool_info['arguments']
             while isinstance(tool_args, str):
                 try:
                     tool_args = json.loads(tool_args)
-                except json.decoder.JSONDecodeError:
+                except Exception:  # noqa
                     return f'The input {tool_args} is not a valid JSON, fix your arguments and try again'
             assert tool_name in self._tool_index, f'Tool name {tool_name} not found'
             tool_ins, server_name, _ = self._tool_index[tool_name]
@@ -161,10 +167,14 @@ class ToolManager:
                 timeout=self.tool_call_timeout)
             return response
         except asyncio.TimeoutError:
+            import traceback
+            logger.warning(traceback.format_exc())
             # TODO: How to get the information printed by the tool before hanging to return to the model?
-            return f'Execute tool call timeout: {tool_info}'
+            return f'Execute tool call timeout: {brief_info}'
         except Exception as e:
-            return f'Tool calling failed: {tool_info}, details: {str(e)}'
+            import traceback
+            logger.warning(traceback.format_exc())
+            return f'Tool calling failed: {brief_info}, details: {str(e)}'
 
     async def parallel_call_tool(self, tool_list: List[ToolCall]):
         tasks = [self.single_call_tool(tool) for tool in tool_list]

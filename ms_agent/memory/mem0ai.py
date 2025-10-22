@@ -132,6 +132,9 @@ class Mem0Memory(Memory):
                         'api_key':
                         getattr(self.config, 'embedder_api_key',
                                 self.config.llm.openai_api_key),
+                        'max_tokens':
+                        getattr(self.config, 'max_tokens',
+                                self.config.llm.max_tokens),
                     }
                 },
                 'llm': {

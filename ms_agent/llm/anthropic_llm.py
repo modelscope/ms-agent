@@ -4,7 +4,7 @@ from typing import Any, Dict, Generator, Iterator, List, Optional, Union
 import json5
 from ms_agent.llm import LLM
 from ms_agent.llm.utils import Message, Tool, ToolCall
-from ms_agent.utils import assert_package_exist, get_logger, retry
+from ms_agent.utils import assert_package_exist, retry
 from omegaconf import DictConfig, OmegaConf
 
 
@@ -126,7 +126,7 @@ class Anthropic(LLM):
         else:
             return self.client.messages.create(**params)
 
-    @retry(max_attempts=3, delay=1.0)
+    @retry(max_attempts=LLM.retry_count, delay=1.0)
     def generate(self,
                  messages: List[Message],
                  tools: Optional[List[Tool]] = None,

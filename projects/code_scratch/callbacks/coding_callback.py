@@ -133,6 +133,7 @@ Now Begin:
         if isinstance(tasks, str):
             tasks = json.loads(tasks)
         for task in tasks:
-            task['system'] = task['_system']
-            task.pop('_system')
+            if '_system' in task:
+                task['system'] = task['_system']
+                task.pop('_system')
         messages[-2].tool_calls[0]['arguments'] = json.dumps({'tasks': tasks})
