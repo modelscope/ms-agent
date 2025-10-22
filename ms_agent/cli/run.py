@@ -99,6 +99,7 @@ class RunCMD(CLICommand):
                 config_dir_or_id=self.args.config,
                 config=config,
                 mcp_server_file=self.args.mcp_server_file,
+                load_cache=self.args.load_cache,
                 trust_remote_code=self.args.trust_remote_code)
         else:
             from ms_agent.agent.loader import AgentLoader
@@ -106,5 +107,6 @@ class RunCMD(CLICommand):
                 config_dir_or_id=self.args.config,
                 config=config,
                 mcp_server_file=self.args.mcp_server_file,
+                load_cache=self.args.load_cache,
                 trust_remote_code=self.args.trust_remote_code)
         asyncio.run(engine.run(self.args.query))

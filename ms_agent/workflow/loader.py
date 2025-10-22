@@ -24,7 +24,6 @@ class WorkflowLoader:
                 wf_config = config
 
         from ms_agent.workflow.chain_workflow import ChainWorkflow
-        from ms_agent.workflow.deep_research.research_workflow import ResearchWorkflow
         wf_type = ChainWorkflow.WORKFLOW_NAME.lower()
         wf_type = getattr(wf_config, 'type', '').lower() or wf_type
 
@@ -33,9 +32,10 @@ class WorkflowLoader:
                 config_dir_or_id=config_dir_or_id,
                 config=wf_config,
                 env=env,
+                mcp_server_file=kwargs.get('mcp_server_file'),
+                load_cache=kwargs.get('load_cache', False),
                 trust_remote_code=trust_remote_code)
-        elif wf_type == ResearchWorkflow.WORKFLOW_NAME.lower():
-
+        elif wf_type == 'ResearchWorkflow'.lower():
             # TODO
             raise NotImplementedError()
         else:

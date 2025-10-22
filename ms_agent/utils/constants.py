@@ -25,6 +25,8 @@ DEFAULT_TAG = 'Agent-default'
 # The default id of user
 DEFAULT_USER = 'User-default'
 
+DEFAULT_RETRY_COUNT = 3
+
 
 @dataclass
 class ServiceConfig:

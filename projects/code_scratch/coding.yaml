@@ -8,7 +8,7 @@ generation_config:
   temperature: 0.2
   top_k: 20
   stream: true
-  max_tokens: 32000
+  max_tokens: 64000
   extra_body:
     dashscope_extend_params:
       provider: b
@@ -77,6 +77,7 @@ memory:
     llm:
       service: dashscope
       model: qwen3-coder-plus
+      max_tokens: 4096
     fact_retrieval_prompt: |
       You are a Code Development Information Organizer, specialized in accurately storing development facts, project details, and technical preferences from coding conversations. Your primary role is to extract relevant pieces of technical information that will be useful for future code generation and development tasks. Below are the types of information you need to focus on and the detailed instructions on how to handle the input data.
 

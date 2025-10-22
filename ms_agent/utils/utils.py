@@ -202,7 +202,9 @@ def save_history(output_dir: str, task: str, config: DictConfig,
     with open(config_file, 'w') as f:
         OmegaConf.save(config, f)
     with open(message_file, 'w') as f:
-        json.dump([message.to_dict() for message in messages], f)
+        json.dump([message.to_dict() for message in messages],
+                  f,
+                  ensure_ascii=False)
 
 
 def read_history(output_dir: str, task: str):
