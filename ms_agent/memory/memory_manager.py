@@ -3,10 +3,9 @@ import asyncio
 from typing import Any, Dict, List, Optional
 
 from ms_agent.llm.utils import Message
+from ms_agent.memory import Memory, memory_mapping
 from ms_agent.utils import get_code_fact_retrieval_prompt, get_logger
 from omegaconf import DictConfig
-
-from ms_agent.memory import Memory, memory_mapping
 
 logger = get_logger()
 
