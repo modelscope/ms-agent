@@ -1,6 +1,5 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import asyncio
-import logging
 import socket
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
@@ -9,6 +8,7 @@ import json
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.tools.code.sandbox_manager import SandboxManagerFactory
+from ms_agent.utils import get_logger
 from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR
 from ms_enclave.sandbox.manager import SandboxManager
 from ms_enclave.sandbox.model import (DockerNotebookConfig,
@@ -16,7 +16,7 @@ from ms_enclave.sandbox.model import (DockerNotebookConfig,
                                       SandboxStatus, SandboxType)
 from omegaconf import DictConfig
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 def check_port_available(port: int, host: str = '127.0.0.1') -> bool:

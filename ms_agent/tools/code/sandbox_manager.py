@@ -1,11 +1,11 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
-import logging
-from typing import Optional, Union
+from typing import Union
 
+from ms_agent.utils import get_logger
 from ms_enclave.sandbox.manager import HttpSandboxManager, LocalSandboxManager
 from omegaconf import DictConfig
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 class SandboxManagerFactory:
