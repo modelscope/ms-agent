@@ -73,7 +73,7 @@ SERVICE_MAPPING: Dict[str, ServiceConfig] = {
     'modelscope': ModelscopeConfig(),
     'dashscope': DashscopeConfig(),
     'deepseek': DeepseekConfig(),
-    'Anthropic': AnthropicConfig(),
+    'anthropic': AnthropicConfig(),
     'openai': OpenaiConfig(),
 }
 
