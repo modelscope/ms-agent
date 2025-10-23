@@ -639,7 +639,7 @@ class LLMAgent(Agent):
                     yield messages
                 self.runtime.round += 1
                 # save history
-                await self.add_memory_on_step_end(messages, **kwargs)
+                await self.add_memory(messages, **kwargs)
                 self.save_history(messages)
 
                 # +1 means the next round the assistant may give a conclusion
@@ -655,7 +655,7 @@ class LLMAgent(Agent):
                     yield messages
 
             # save memory
-            await self.add_memory_on_task_end(messages, **kwargs)
+            await self.add_memory(messages, **kwargs)
 
             await self.on_task_end(messages)
             await self.cleanup_tools()
