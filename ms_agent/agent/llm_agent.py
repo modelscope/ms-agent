@@ -13,7 +13,7 @@ from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback, callbacks_mapping
 from ms_agent.llm.llm import LLM
 from ms_agent.llm.utils import Message
-from ms_agent.memory import Memory, memory_mapping
+from ms_agent.memory import Memory, get_memory_meta_safe, memory_mapping
 from ms_agent.memory.memory_manager import SharedMemoryManager
 from ms_agent.rag.base import RAG
 from ms_agent.rag.utils import rag_mapping
@@ -544,68 +544,38 @@ class LLMAgent(Agent):
                     break
         return user_id
 
-    def _format_toolcall(self, messages: List[Message]) -> List[Message]:
-        messages = deepcopy(messages)
-        for message in messages:
-            # Prevent the arguments are not json
-            if message.tool_calls:
-                for tool_call in message.tool_calls:
-                    try:
-                        if tool_call['arguments']:
-                            json.loads(tool_call['arguments'])
-                    except Exception:
-                        tool_call['arguments'] = '{}'
-        return messages
+    def _get_step_memory_info(self, memory_config: DictConfig):
+        user_id, agent_id, run_id, memory_type = get_memory_meta_safe(
+            memory_config, 'add_after_step')
+        user_id = user_id or getattr(memory_config, 'user_id', None)
+        return user_id, agent_id, run_id, memory_type
 
-    async def add_memory_on_step_end(self, messages: List[Message], **kwargs):
-        messages = self._format_toolcall(messages)
-        if hasattr(self.config, 'memory') and self.config.memory:
-            tools_num = len(
-                self.memory_tools
-            ) if self.memory_tools else 0  # Check index bounds before access to avoid IndexError
-            if hasattr(self.config, 'memory') and self.config.memory:
-                for idx, memory_config in enumerate(self.config.memory):
-                    user_id = getattr(
-                        getattr(memory_config, 'add_after_step',
-                                memory_config), 'user_id', None)
-                    agent_id = getattr(memory_config.add_after_step,
-                                       'agent_id', None) if hasattr(
-                                           memory_config,
-                                           'add_after_step') else None
-                    memory_type = getattr(memory_config.add_after_step,
-                                          'memory_type', None) if hasattr(
-                                              memory_config,
-                                              'add_after_step') else None
-                    if idx < tools_num:
-                        await self.memory_tools[idx].add(
-                            messages,
-                            user_id=user_id,
-                            agent_id=agent_id,
-                            memory_type=memory_type)
+    def _get_run_memory_info(self, memory_config: DictConfig):
+        user_id, agent_id, run_id, memory_type = get_memory_meta_safe(
+            memory_config, 'add_after_task')
+        user_id = user_id or getattr(memory_config, 'user_id', None)
+        agent_id = agent_id or self.tag
+        memory_type = memory_type or 'procedural_memory'
+        return user_id, agent_id, run_id, memory_type
 
-    async def add_memory_on_task_end(self, messages: List[Message], **kwargs):
-        messages = self._format_toolcall(messages)
+    async def add_memory(self, messages: List[Message], **kwargs):
         if hasattr(self.config, 'memory') and self.config.memory:
             tools_num = len(
                 self.memory_tools
             ) if self.memory_tools else 0  # Check index bounds before access to avoid IndexError
             for idx, memory_config in enumerate(self.config.memory):
-                user_id = getattr(
-                    getattr(memory_config, 'add_after_task', memory_config),
-                    'user_id', None)
-                agent_id = getattr(memory_config.add_after_task, 'agent_id',
-                                   self.tag) if hasattr(
-                                       memory_config,
-                                       'add_after_task') else self.tag
-                memory_type = getattr(
-                    memory_config.add_after_task, 'memory_type',
-                    None) if hasattr(memory_config, 'add_after_task') else None
-
+                if self.runtime.should_stop:
+                    user_id, agent_id, run_id, memory_type = self._get_run_memory_info(
+                        memory_config)
+                else:
+                    user_id, agent_id, run_id, memory_type = self._get_step_memory_info(
+                        memory_config)
                 if idx < tools_num:
                     await self.memory_tools[idx].add(
                         messages,
                         user_id=user_id,
                         agent_id=agent_id,
+                        run_id=run_id,
                         memory_type=memory_type)
 
     def save_history(self, messages: List[Message], **kwargs):
