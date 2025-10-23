@@ -2,6 +2,7 @@
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional
 
+import json
 from typing_extensions import Literal, Required, TypedDict
 
 
@@ -29,7 +30,7 @@ class Message:
 
     content: str = ''
 
-    tool_calls: List[ToolCall] = None
+    tool_calls: List[ToolCall] = field(default_factory=list)
 
     tool_call_id: Optional[str] = None
 
@@ -52,3 +53,29 @@ class Message:
 
     def to_dict(self):
         return asdict(self)
+
+    def to_dict_clean(self):
+        raw_dict = asdict(self)
+        if raw_dict.get('tool_calls'):
+            for idx, tool_call in enumerate(raw_dict['tool_calls']):
+                try:
+                    if tool_call['arguments']:
+                        json.loads(tool_call['arguments'])
+                except Exception:
+                    tool_call['arguments'] = '{}'
+                raw_dict['tool_calls'][idx] = {
+                    'id': tool_call['id'],
+                    'index': tool_call['index'],
+                    'type': tool_call['type'],
+                    'function': {
+                        'name': tool_call['tool_name'],
+                        'arguments': tool_call['arguments'],
+                    }
+                }
+        required = ['content', 'role']
+        rm = ['completion_tokens', 'prompt_tokens', 'api_calls']
+        return {
+            key: value
+            for key, value in raw_dict.items()
+            if (value or key in required) and key not in rm
+        }

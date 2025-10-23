@@ -429,30 +429,13 @@ class OpenAI(LLM):
         for message in messages:
             if isinstance(message, Message):
                 message.content = message.content.strip()
-                message = message.to_dict()
-
-            if message.get('tool_calls'):
-                tool_calls = list()
-                for tool_call in message['tool_calls']:
-                    function_data: Function = {
-                        'name': tool_call['tool_name'],
-                        'arguments': tool_call['arguments']
-                    }
-                    tool_call: ChatCompletionMessageToolCall = {
-                        'id': tool_call['id'],
-                        'function': function_data,
-                        'type': tool_call['type'],
-                    }
-                    tool_calls.append(tool_call)
-                message['tool_calls'] = tool_calls
+                message = message.to_dict_clean()
 
             message = {
                 key: value.strip() if isinstance(value, str) else value
                 for key, value in message.items()
                 if key in self.input_msg and value
             }
-            if 'content' not in message:
-                message['content'] = ''
 
             openai_messages.append(message)
 

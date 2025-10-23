@@ -14,6 +14,7 @@ from ms_agent.callbacks import Callback, callbacks_mapping
 from ms_agent.llm.llm import LLM
 from ms_agent.llm.utils import Message
 from ms_agent.memory import Memory, memory_mapping
+from ms_agent.memory.memory_manager import SharedMemoryManager
 from ms_agent.rag.base import RAG
 from ms_agent.rag.utils import rag_mapping
 from ms_agent.tools import ToolManager
@@ -21,7 +22,6 @@ from ms_agent.utils import async_retry, read_history, save_history
 from ms_agent.utils.constants import (DEFAULT_OUTPUT_DIR, DEFAULT_TAG,
                                       DEFAULT_USER)
 from ms_agent.utils.logger import logger
-from ms_agent.memory.memory_manager import SharedMemoryManager
 from omegaconf import DictConfig, OmegaConf
 
 from ..config.config import Config, ConfigLifecycleHandler

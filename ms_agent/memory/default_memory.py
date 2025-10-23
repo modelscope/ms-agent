@@ -14,7 +14,6 @@ from ms_agent.utils import get_fact_retrieval_prompt
 from ms_agent.utils.constants import get_service_config
 from ms_agent.utils.logger import logger
 from omegaconf import DictConfig, OmegaConf
-from sympy.physics.units.systems.si import dimex
 
 DEFAULT_SEARCH_LIMIT = 3
 
@@ -209,7 +208,7 @@ class DefaultMemory(Memory):
         messages_dict = []
         for message in messages:
             if isinstance(message, Message):
-                messages_dict.append(message.to_dict())
+                messages_dict.append(message.to_dict_clean())
             else:
                 messages_dict.append(message)
         async with self._lock:
@@ -353,7 +352,7 @@ class DefaultMemory(Memory):
 
     def _hash_block(self, block: List[Message]) -> str:
         """Compute sha256 hash of a message block for comparison"""
-        data = [message.to_dict() for message in block]
+        data = [message.to_dict_clean() for message in block]
         allow_role = ['user', 'system', 'assistant', 'tool']
         allow_role = [
             role for role in allow_role if role not in self.ignore_roles
@@ -530,27 +529,7 @@ class DefaultMemory(Memory):
         def patched_capture_event(event_name,
                                   memory_instance,
                                   additional_data=None):
-            event_data = {
-                'collection':
-                memory_instance.collection_name,
-                'vector_size':
-                memory_instance.embedding_model.config.embedding_dims,
-                'history_store':
-                'sqlite',
-                'graph_store':
-                f'{memory_instance.graph.__class__.__module__}.{memory_instance.graph.__class__.__name__}'
-                if memory_instance.config.graph_store.config else None,
-                'vector_store':
-                f'{memory_instance.vector_store.__class__.__module__}.{memory_instance.vector_store.__class__.__name__}',  # noqa
-                'llm':
-                f'{memory_instance.llm.__class__.__module__}.{memory_instance.llm.__class__.__name__}',
-                'embedding_model':
-                f'{memory_instance.embedding_model.__class__.__module__}.{memory_instance.embedding_model.__class__.__name__}',  # noqa
-                'function':
-                f'{memory_instance.__class__.__module__}.{memory_instance.__class__.__name__}.{memory_instance.api_version}',  # noqa
-            }
-            if additional_data:
-                event_data.update(additional_data)
+            pass
 
         mem0.memory.main.parse_messages = partial(
             patched_parse_messages,
@@ -585,16 +564,11 @@ class DefaultMemory(Memory):
 
         llm = {}
         if self.compress:
-            service = getattr(self.config.llm,
-                              'service', 'dashscope') if hasattr(
-                                  self.config, 'llm') else 'dashscope'
-            llm_model = getattr(self.config.llm, 'model', None) if hasattr(
-                self.config, 'llm') else None
-            api_key = getattr(self.config.llm, 'openai_api_key',
-                              None) if hasattr(self.config, 'llm') else None
-            openai_base_url = getattr(self.config.llm,
-                                      'openai_base_url', None) if hasattr(
-                                          self.config, 'llm') else None
+            service = getattr(self.config.llm, 'service', 'dashscope')
+            llm_model = getattr(self.config.llm, 'model', None)
+            api_key = getattr(self.config.llm, 'openai_api_key', None)
+            openai_base_url = getattr(self.config.llm, 'openai_base_url', None)
+            max_tokens = getattr(self.config.llm, 'max_tokens', None)
 
             llm = {
                 'provider': 'openai',
@@ -607,6 +581,8 @@ class DefaultMemory(Memory):
                     openai_base_url or get_service_config(service).base_url,
                 }
             }
+            if max_tokens is not None:
+                llm['config']['max_tokens'] = max_tokens
 
         vector_store_service = getattr(
             self.config.vector_store, 'service', 'qdrant') if hasattr(

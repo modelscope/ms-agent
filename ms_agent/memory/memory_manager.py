@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from ms_agent.llm.utils import Message
 from ms_agent.memory import Memory, memory_mapping
-from ms_agent.utils import get_code_fact_retrieval_prompt, get_logger
+from ms_agent.utils import get_logger
 from omegaconf import DictConfig
 
 logger = get_logger()
