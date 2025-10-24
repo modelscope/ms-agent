@@ -1,9 +1,12 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import asyncio
 import hashlib
+import importlib
 import os
+import re
 from datetime import datetime
 from functools import partial, wraps
+from inspect import signature
 from typing import Any, Dict, List, Optional, Tuple
 
 import json
@@ -541,16 +544,12 @@ class DefaultMemory(Memory):
         if not self.is_retrieve:
             return
 
-        embedding_dims = None
-        if getattr(self.config, 'embedder', None) is not None:
-            service = getattr(self.config.embedder, 'service', 'dashscope')
-            emb_model = getattr(self.config.embedder, 'model',
-                                'text-embedding-v4')
-            embedding_dims = getattr(self.config.embedder, 'embedding_dims',
-                                     None)
-        else:
-            service = 'dashscope'
-            emb_model = 'text-embedding-v4'
+        # emb config
+        embedder_config = getattr(self.config, 'embedder',
+                                  OmegaConf.create({}))
+        service = getattr(embedder_config, 'service', 'dashscope')
+        emb_model = getattr(embedder_config, 'model', 'text-embedding-v4')
+        embedding_dims = getattr(embedder_config, 'embedding_dims', None)
 
         embedder = OmegaConf.create({
             'provider': 'openai',
@@ -562,6 +561,7 @@ class DefaultMemory(Memory):
             }
         })
 
+        # llm config
         llm = {}
         if self.compress:
             service = getattr(self.config.llm, 'service', 'dashscope')
@@ -584,29 +584,65 @@ class DefaultMemory(Memory):
             if max_tokens is not None:
                 llm['config']['max_tokens'] = max_tokens
 
-        vector_store_service = getattr(
-            self.config.vector_store, 'service', 'qdrant') if hasattr(
-                self.config, 'vector_store') else 'qdrant'
-        on_disk = getattr(
-            self.config.vector_store, 'on_disk', True) if hasattr(
-                self.config, 'vector_store') else True
-        path = getattr(self.config.vector_store, 'path', self.path) if hasattr(
-            self.config, 'vector_store') else self.path
-        db_name = getattr(
-            self.config.vector_store, 'db_name', None) if hasattr(
-                self.config, 'vector_store') else None
-        vector_store = {
-            'provider': vector_store_service,
-            'config': {
+        # vector_store config
+        def sanitize_database_name(ori_name: str,
+                                   default_name: str = 'default') -> str:
+            if not ori_name or not isinstance(ori_name, str):
+                return default_name
+            sanitized = re.sub(r'[^a-zA-Z0-9_]', '_', ori_name)
+            sanitized = re.sub(r'_+', '_', sanitized)
+            sanitized = sanitized.strip('_')
+            if not sanitized:
+                return default_name
+            if sanitized[0].isdigit():
+                sanitized = f'col_{sanitized}'
+            return sanitized
+
+        vector_store_config = getattr(self.config, 'vector_store',
+                                      OmegaConf.create({}))
+        vector_store_provider = getattr(vector_store_config, 'service',
+                                        'qdrant')
+        on_disk = getattr(vector_store_config, 'on_disk', True)
+        path = getattr(vector_store_config, 'path', self.path)
+        db_name = getattr(vector_store_config, 'db_name', None)
+        url = getattr(vector_store_config, 'url', None)
+        token = getattr(vector_store_config, 'token', None)
+        collection_name = getattr(vector_store_config, 'collection_name', path)
+
+        db_name = sanitize_database_name(db_name) if db_name else None
+        collection_name = sanitize_database_name(
+            collection_name) if collection_name else None
+
+        # check value
+        from mem0.memory.main import VectorStoreFactory
+        class_type = VectorStoreFactory.provider_to_class.get(
+            vector_store_provider)
+        if class_type:
+            module_path, class_name = class_type.rsplit('.', 1)
+            module = importlib.import_module(module_path)
+            vector_store_class = getattr(module, class_name)
+            parameters = signature(vector_store_class.__init__).parameters
+
+            config_raw = {
                 'path': path,
                 'on_disk': on_disk,
-                'collection_name': path,
+                'collection_name': collection_name,
+                'url': url,
+                'token': token,
+                'db_name': db_name,
+                'embedding_model_dims': embedding_dims
             }
-        }
-        if isinstance(embedding_dims, int):
-            vector_store['config']['embedding_model_dims'] = embedding_dims
-        if db_name is not None:
-            vector_store['config']['db_name'] = db_name
+            config_format = {
+                key: value
+                for key, value in config_raw.items()
+                if value and key in parameters
+            }
+            vector_store = {
+                'provider': vector_store_provider,
+                'config': config_format
+            }
+        else:
+            vector_store = {}
 
         mem0_config = {
             'is_infer': self.compress,

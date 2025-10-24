@@ -212,10 +212,22 @@ class TestDefaultMemory(unittest.TestCase):
             ]
             random_id = str(uuid.uuid4())
             config = OmegaConf.create({
+                # 'memory': [{
+                #     'ignore_role': ['system'],
+                #     'history_mode': 'overwrite',
+                #     'path': f'output/{random_id}',
+                #     'user_id': random_id,
+                # }]
                 'memory': [{
                     'ignore_role': ['system'],
                     'history_mode': 'overwrite',
                     'path': f'output/{random_id}',
+                    'vector_store': {
+                        'service': 'milvus',
+                        'url': 'http://c-8fd6ad88d2ddfd58.milvus.aliyuncs.com',
+                        'token': 'root:Mcp-playground1',
+                        'db_name': 'test'
+                    },
                     'user_id': random_id,
                 }]
             })

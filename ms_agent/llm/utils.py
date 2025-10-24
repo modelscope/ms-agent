@@ -65,7 +65,6 @@ class Message:
                     tool_call['arguments'] = '{}'
                 raw_dict['tool_calls'][idx] = {
                     'id': tool_call['id'],
-                    'index': tool_call['index'],
                     'type': tool_call['type'],
                     'function': {
                         'name': tool_call['tool_name'],
