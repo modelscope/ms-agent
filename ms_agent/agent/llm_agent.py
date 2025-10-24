@@ -352,6 +352,8 @@ class LLMAgent(Agent):
                         getattr(self.config.llm, f'{service}_base_url', None),
                         'openai_api_key':
                         getattr(self.config.llm, f'{service}_api_key', None),
+                        'max_tokens':
+                        _memory.max_tokens,
                     }
                     llm_config_obj = OmegaConf.create(config_dict)
                     setattr(_memory, 'llm', llm_config_obj)
@@ -638,7 +640,7 @@ class LLMAgent(Agent):
                 async for messages in self.step(messages):
                     yield messages
                 self.runtime.round += 1
-                # save history
+                # save memory and history
                 await self.add_memory(messages, **kwargs)
                 self.save_history(messages)
 
