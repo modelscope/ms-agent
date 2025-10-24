@@ -339,7 +339,7 @@ class LLMAgent(Agent):
                     f'{mem_instance_type} not in memory_mapping, '
                     f'which supports: {list(memory_mapping.keys())}')
 
-                # Use LLM config if no special configuration is specified
+                # Use LLM config if no memory llm configuration is specified
                 llm_config = getattr(_memory, 'llm', None)
                 if llm_config is None:
                     service = self.config.llm.service
@@ -353,7 +353,8 @@ class LLMAgent(Agent):
                         'openai_api_key':
                         getattr(self.config.llm, f'{service}_api_key', None),
                         'max_tokens':
-                        _memory.max_tokens,
+                        getattr(self.config.generation_config, f'max_tokens',
+                                None),
                     }
                     llm_config_obj = OmegaConf.create(config_dict)
                     setattr(_memory, 'llm', llm_config_obj)
