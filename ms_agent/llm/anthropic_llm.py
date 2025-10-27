@@ -189,7 +189,7 @@ class Anthropic(LLM):
                                 index=len(current_message.tool_calls),
                                 type='function',
                                 tool_name=block.name,
-                                arguments=json5.dumps(block.input),
+                                arguments=block.input,
                             )
                             current_message.tool_calls.append(tool_call)
                             used_tool_call_ids.add(tool_call_id)
