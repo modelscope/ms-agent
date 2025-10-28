@@ -1,0 +1,15 @@
+generate_script:
+  description: Generate script for the video
+  agent_config: "step1_script_agent.yaml"
+  next:
+    - generate_assets
+
+generate_assets:
+  description: Generate assets from the script
+  agent_config: "step2_assets_agent.yaml"
+  next:
+    - synthesize_video
+
+synthesize_video:
+  description: Synthesize the video from the assets
+  agent_config: "step3_synthesis_agent.yaml"
