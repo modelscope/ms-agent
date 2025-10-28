@@ -9,7 +9,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from modelscope.utils.test_utils import test_level
 
-API_CALL_MAX_TOKEN = 50
+API_CALL_MAX_TOKEN = 500
 
 
 class OpenaiLLM(unittest.TestCase):
