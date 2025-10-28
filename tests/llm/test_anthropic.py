@@ -124,34 +124,23 @@ class OpenaiLLM(unittest.TestCase):
         print(res)
         assert (len(res.tool_calls))
 
-    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
-    def test_agent_multi_round(self):
-        import asyncio
-
-        async def main():
-            agent = LLMAgent(config=self.conf, mcp_config=self.mcp_config)
-            if hasattr(agent.config, 'callbacks'):
-                agent.config.callbacks.remove('input_callback')  # noqa
-            res = await agent.run('访问www.baidu.com')
-            print(res)
-            assert ('robots.txt' in res[-1].content)
-
-        asyncio.run(main())
-
     @unittest.skipUnless(test_level() >= 1, 'skip test in current test level')
-    def test_stream_agent_multi_round(self):
+    def test_stream_agent_multi_round_with_thinking(self):
         import asyncio
         from copy import deepcopy
 
         async def main():
             conf2 = deepcopy(self.conf)
-            conf2.generation_config.stream = True
+            conf2.llm.model = 'Qwen/Qwen3-235B-A22B'
+            conf2.generation_config.extra_body.enable_thinking = True
             agent = LLMAgent(config=conf2, mcp_config=self.mcp_config)
             if hasattr(agent.config, 'callbacks'):
                 agent.config.callbacks.remove('input_callback')  # noqa
-            res = await agent.run('访问www.baidu.com')
-            print('res:', res)
-            assert ('robots.txt' in res[-1].content)
+            res = await agent.run('访问www.baidu.com', stream=True)
+            async for chunk in res:
+                print('res: ', chunk)
+            assert ('robots.txt' in chunk[-1].content)
+            assert (chunk[-1].reasoning_content)
 
         asyncio.run(main())
 
