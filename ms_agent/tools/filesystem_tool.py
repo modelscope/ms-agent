@@ -68,16 +68,21 @@ class FileSystemTool(ToolBase):
                 Tool(
                     tool_name='read_file',
                     server_name='file_system',
-                    description='Read the content of a file',
+                    description='Read the content of file(s)',
                     parameters={
                         'type': 'object',
                         'properties': {
-                            'path': {
-                                'type': 'string',
-                                'description': 'The relative path of the file',
+                            'paths': {
+                                'type':
+                                'array',
+                                'items': {
+                                    'type': 'string'
+                                },
+                                'description':
+                                'List of relative file path(s) to read',
                             }
                         },
-                        'required': ['path'],
+                        'required': ['paths'],
                         'additionalProperties': False
                     }),
                 Tool(
@@ -154,20 +159,23 @@ class FileSystemTool(ToolBase):
         except Exception as e:
             return f'Write file <{path}> failed, error: ' + str(e)
 
-    async def read_file(self, path: str):
-        """Read the content of a file.
+    async def read_file(self, paths: list[str]):
+        """Read the content of file(s).
 
         Args:
-            path(`path`): The relative file path to read, a prefix dir will be automatically concatenated.
+            paths(`list[str]`): List of relative file path(s) to read, a prefix dir will be automatically concatenated.
 
         Returns:
-            The file content or error message.
+            Dictionary mapping file path(s) to their content or error messages.
         """
-        try:
-            with open(os.path.join(self.output_dir, path), 'r') as f:
-                return f.read()
-        except Exception as e:
-            return f'Read file <{path}> failed, error: ' + str(e)
+        results = {}
+        for path in paths:
+            try:
+                with open(os.path.join(self.output_dir, path), 'r') as f:
+                    results[path] = f.read()
+            except Exception as e:
+                results[path] = f'Read file <{path}> failed, error: ' + str(e)
+        return str(results)
 
     async def list_files(self, path: str = None):
         """List all files in a directory.

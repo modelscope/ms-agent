@@ -6,9 +6,13 @@ from .default_memory import DefaultMemory
 memory_mapping = {'default_memory': DefaultMemory}
 
 
-def get_memory_meta_safe(config: DictConfig, key: str):
-    trigger_config = getattr(config, key, OmegaConf.create({}))
-    user_id = getattr(trigger_config, 'user_id', None)
+def get_memory_meta_safe(config: DictConfig,
+                         key: str,
+                         default_user_id: str | None = None):
+    trigger_config = getattr(config, key, None)
+    if trigger_config is None:
+        return None, None, None, None
+    user_id = getattr(trigger_config, 'user_id', default_user_id)
     agent_id = getattr(trigger_config, 'agent_id',
                        None)  # task_end 默认用 self.tag
     run_id = getattr(trigger_config, 'run_id', None)

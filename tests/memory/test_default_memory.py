@@ -217,6 +217,7 @@ class TestDefaultMemory(unittest.TestCase):
                     'history_mode': 'overwrite',
                     'path': f'output/{random_id}',
                     'user_id': random_id,
+                    'add_after_task': {}
                 }]
             })
             agent1 = AgentLoader.build(

@@ -1,9 +1,13 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import asyncio
 import hashlib
+import importlib
 import os
+import re
+import traceback
 from datetime import datetime
 from functools import partial, wraps
+from inspect import signature
 from typing import Any, Dict, List, Optional, Tuple
 
 import json
@@ -164,7 +168,7 @@ class DefaultMemory(Memory):
             self.cache_messages = {}
             self.memory_snapshot = []
 
-    def delete_single(self, msg_id: int):
+    def _delete_single(self, msg_id: int):
         messages_to_delete = self.cache_messages.get(msg_id, None)
         if messages_to_delete is None:
             return
@@ -184,10 +188,13 @@ class DefaultMemory(Memory):
                     metadata['agent_id'] = self.agent_id
                 if self.run_id:
                     metadata['run_id'] = self.run_id
-                self.memory._create_memory(
-                    data=self.memory_snapshot[idx].value,
-                    existing_embeddings={},
-                    metadata=metadata)
+                try:
+                    self.memory._create_memory(
+                        data=self.memory_snapshot[idx].value,
+                        existing_embeddings={},
+                        metadata=metadata)
+                except Exception as e:
+                    logger.warning(f'Failed to recover memory: {e}')
             if msg_id in enable_ids:
                 if len(enable_ids) > 1:
                     self.memory_snapshot[idx].enable_idxs.remove(msg_id)
@@ -226,6 +233,7 @@ class DefaultMemory(Memory):
                     agent_id=agent_id or self.agent_id,
                     run_id=run_id or self.run_id,
                     memory_type=memory_type)
+                logger.info('Add memory success.')
             except Exception as e:
                 logger.warning(f'Failed to add memory: {e}')
 
@@ -236,7 +244,7 @@ class DefaultMemory(Memory):
                     run_id=run_id or self.run_id)  # sorted
                 res = [(item['id'], item['memory']) for item in res['results']]
                 if len(res):
-                    logger.info('Add memory success. All memory info:')
+                    logger.info('All memory info:')
                 for item in res:
                     logger.info(item[1])
                 valids = []
@@ -420,7 +428,7 @@ class DefaultMemory(Memory):
         if should_delete:
             if self.history_mode == 'overwrite':
                 for msg_id in should_delete:
-                    self.delete_single(msg_id=msg_id)
+                    self._delete_single(msg_id=msg_id)
                 res = self.memory.get_all(
                     user_id=user_id or self.user_id,
                     agent_id=agent_id or self.agent_id,
@@ -438,6 +446,47 @@ class DefaultMemory(Memory):
                     run_id=run_id,
                     memory_type=memory_type)
         self.save_cache()
+
+    def delete(self,
+               user_id: Optional[str] = None,
+               agent_id: Optional[str] = None,
+               run_id: Optional[str] = None,
+               memory_ids: Optional[List[str]] = None) -> Tuple[bool, str]:
+        failed = {}
+        if memory_ids is None:
+            try:
+                self.memory.delete_all(
+                    user_id=user_id, agent_id=agent_id, run_id=run_id)
+                return True, ''
+            except Exception as e:
+                return False, str(e) + '\n' + traceback.format_exc()
+        for memory_id in memory_ids:
+            try:
+                self.memory.delete(memory_id=memory_id)
+            except IndexError:
+                failed[
+                    memory_id] = 'This memory_id does not exist in the database.\n' + traceback.format_exc(
+                    )  # noqa
+            except Exception as e:
+                failed[memory_id] = str(e) + '\n' + traceback.format_exc()
+        if failed:
+            return False, json.dumps(failed)
+        else:
+            return True, ''
+
+    def get_all(self,
+                user_id: Optional[str] = None,
+                agent_id: Optional[str] = None,
+                run_id: Optional[str] = None):
+        try:
+            res = self.memory.get_all(
+                user_id=user_id or self.user_id,
+                agent_id=agent_id,
+                run_id=run_id)
+            print(res['results'])
+            return res['results']
+        except Exception:
+            return []
 
     def _get_latest_user_message(self,
                                  messages: List[Message]) -> Optional[str]:
@@ -541,16 +590,13 @@ class DefaultMemory(Memory):
         if not self.is_retrieve:
             return
 
-        embedding_dims = None
-        if getattr(self.config, 'embedder', None) is not None:
-            service = getattr(self.config.embedder, 'service', 'dashscope')
-            emb_model = getattr(self.config.embedder, 'model',
-                                'text-embedding-v4')
-            embedding_dims = getattr(self.config.embedder, 'embedding_dims',
-                                     None)
-        else:
-            service = 'dashscope'
-            emb_model = 'text-embedding-v4'
+        # emb config
+        embedder_config = getattr(self.config, 'embedder',
+                                  OmegaConf.create({}))
+        service = getattr(embedder_config, 'service', 'modelscope')
+        emb_model = getattr(embedder_config, 'model',
+                            'Qwen/Qwen3-Embedding-8B')
+        embedding_dims = getattr(embedder_config, 'embedding_dims', None)
 
         embedder = OmegaConf.create({
             'provider': 'openai',
@@ -562,58 +608,100 @@ class DefaultMemory(Memory):
             }
         })
 
-        llm = {}
+        # llm config
+        llm = None
         if self.compress:
-            service = getattr(self.config.llm, 'service', 'dashscope')
-            llm_model = getattr(self.config.llm, 'model', None)
-            api_key = getattr(self.config.llm, 'openai_api_key', None)
-            openai_base_url = getattr(self.config.llm, 'openai_base_url', None)
-            max_tokens = getattr(self.config.llm, 'max_tokens', None)
+            llm_config = getattr(self.config, 'llm', None)
+            if llm_config is not None:
+                service = getattr(llm_config, 'service', 'modelscope')
+                llm_model = getattr(llm_config, 'model',
+                                    'Qwen/Qwen3-Coder-30B-A3B-Instruct')
+                api_key = getattr(llm_config, 'openai_api_key', None)
+                openai_base_url = getattr(llm_config, 'openai_base_url', None)
+                max_tokens = getattr(llm_config, 'max_tokens', None)
 
-            llm = {
-                'provider': 'openai',
-                'config': {
-                    'model':
-                    llm_model,
-                    'api_key':
-                    api_key or os.getenv(f'{service.upper()}_API_KEY'),
-                    'openai_base_url':
-                    openai_base_url or get_service_config(service).base_url,
+                llm = {
+                    'provider': 'openai',
+                    'config': {
+                        'model':
+                        llm_model,
+                        'api_key':
+                        api_key or os.getenv(f'{service.upper()}_API_KEY'),
+                        'openai_base_url':
+                        openai_base_url
+                        or get_service_config(service).base_url,
+                    }
                 }
-            }
-            if max_tokens is not None:
-                llm['config']['max_tokens'] = max_tokens
+                if max_tokens is not None:
+                    llm['config']['max_tokens'] = max_tokens
 
-        vector_store_service = getattr(
-            self.config.vector_store, 'service', 'qdrant') if hasattr(
-                self.config, 'vector_store') else 'qdrant'
-        on_disk = getattr(
-            self.config.vector_store, 'on_disk', True) if hasattr(
-                self.config, 'vector_store') else True
-        path = getattr(self.config.vector_store, 'path', self.path) if hasattr(
-            self.config, 'vector_store') else self.path
-        db_name = getattr(
-            self.config.vector_store, 'db_name', None) if hasattr(
-                self.config, 'vector_store') else None
-        vector_store = {
-            'provider': vector_store_service,
-            'config': {
+        # vector_store config
+        def sanitize_database_name(ori_name: str,
+                                   default_name: str = 'default') -> str:
+            if not ori_name or not isinstance(ori_name, str):
+                return default_name
+            sanitized = re.sub(r'[^a-zA-Z0-9_]', '_', ori_name)
+            sanitized = re.sub(r'_+', '_', sanitized)
+            sanitized = sanitized.strip('_')
+            if not sanitized:
+                return default_name
+            if sanitized[0].isdigit():
+                sanitized = f'col_{sanitized}'
+            return sanitized
+
+        vector_store_config = getattr(self.config, 'vector_store',
+                                      OmegaConf.create({}))
+        vector_store_provider = getattr(vector_store_config, 'service',
+                                        'qdrant')
+        on_disk = getattr(vector_store_config, 'on_disk', True)
+        path = getattr(vector_store_config, 'path', self.path)
+        db_name = getattr(vector_store_config, 'db_name', None)
+        url = getattr(vector_store_config, 'url', None)
+        token = getattr(vector_store_config, 'token', None)
+        collection_name = getattr(vector_store_config, 'collection_name', path)
+
+        db_name = sanitize_database_name(db_name) if db_name else None
+        collection_name = sanitize_database_name(
+            collection_name) if collection_name else None
+
+        # check value
+        from mem0.memory.main import VectorStoreFactory
+        class_type = VectorStoreFactory.provider_to_class.get(
+            vector_store_provider)
+        if class_type:
+            module_path, class_name = class_type.rsplit('.', 1)
+            module = importlib.import_module(module_path)
+            vector_store_class = getattr(module, class_name)
+            parameters = signature(vector_store_class.__init__).parameters
+
+            config_raw = {
                 'path': path,
                 'on_disk': on_disk,
-                'collection_name': path,
+                'collection_name': collection_name,
+                'url': url,
+                'token': token,
+                'db_name': db_name,
+                'embedding_model_dims': embedding_dims
             }
-        }
-        if isinstance(embedding_dims, int):
-            vector_store['config']['embedding_model_dims'] = embedding_dims
-        if db_name is not None:
-            vector_store['config']['db_name'] = db_name
+            config_format = {
+                key: value
+                for key, value in config_raw.items()
+                if value and key in parameters
+            }
+            vector_store = {
+                'provider': vector_store_provider,
+                'config': config_format
+            }
+        else:
+            vector_store = {}
 
         mem0_config = {
             'is_infer': self.compress,
-            'llm': llm,
             'vector_store': vector_store,
             'embedder': embedder
         }
+        if llm:
+            mem0_config['llm'] = llm
         logger.info(f'Memory config: {mem0_config}')
         # Prompt content is too long, default logging reduces readability
         mem0_config['custom_fact_extraction_prompt'] = getattr(

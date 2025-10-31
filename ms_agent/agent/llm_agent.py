@@ -339,7 +339,7 @@ class LLMAgent(Agent):
                     f'{mem_instance_type} not in memory_mapping, '
                     f'which supports: {list(memory_mapping.keys())}')
 
-                # Use LLM config if no special configuration is specified
+                # Use LLM config if no memory llm configuration is specified
                 llm_config = getattr(_memory, 'llm', None)
                 if llm_config is None:
                     service = self.config.llm.service
@@ -352,6 +352,9 @@ class LLMAgent(Agent):
                         getattr(self.config.llm, f'{service}_base_url', None),
                         'openai_api_key':
                         getattr(self.config.llm, f'{service}_api_key', None),
+                        'max_tokens':
+                        getattr(self.config.generation_config, 'max_tokens',
+                                None),
                     }
                     llm_config_obj = OmegaConf.create(config_dict)
                     setattr(_memory, 'llm', llm_config_obj)
@@ -547,15 +550,23 @@ class LLMAgent(Agent):
     def _get_step_memory_info(self, memory_config: DictConfig):
         user_id, agent_id, run_id, memory_type = get_memory_meta_safe(
             memory_config, 'add_after_step')
+        if all(value is None
+               for value in [user_id, agent_id, run_id, memory_type]):
+            return None, None, None, None
         user_id = user_id or getattr(memory_config, 'user_id', None)
         return user_id, agent_id, run_id, memory_type
 
     def _get_run_memory_info(self, memory_config: DictConfig):
         user_id, agent_id, run_id, memory_type = get_memory_meta_safe(
-            memory_config, 'add_after_task')
+            memory_config,
+            'add_after_task',
+            default_user_id=getattr(memory_config, 'user_id', None))
+        if all(value is None
+               for value in [user_id, agent_id, run_id, memory_type]):
+            return None, None, None, None
         user_id = user_id or getattr(memory_config, 'user_id', None)
         agent_id = agent_id or self.tag
-        memory_type = memory_type or 'procedural_memory'
+        memory_type = memory_type or None
         return user_id, agent_id, run_id, memory_type
 
     async def add_memory(self, messages: List[Message], **kwargs):
@@ -571,12 +582,16 @@ class LLMAgent(Agent):
                     user_id, agent_id, run_id, memory_type = self._get_step_memory_info(
                         memory_config)
                 if idx < tools_num:
-                    await self.memory_tools[idx].add(
-                        messages,
-                        user_id=user_id,
-                        agent_id=agent_id,
-                        run_id=run_id,
-                        memory_type=memory_type)
+                    if all(value is None for value in
+                           [user_id, agent_id, run_id, memory_type]):
+                        pass
+                    else:
+                        await self.memory_tools[idx].add(
+                            messages,
+                            user_id=user_id,
+                            agent_id=agent_id,
+                            run_id=run_id,
+                            memory_type=memory_type)
 
     def save_history(self, messages: List[Message], **kwargs):
         """
@@ -638,7 +653,7 @@ class LLMAgent(Agent):
                 async for messages in self.step(messages):
                     yield messages
                 self.runtime.round += 1
-                # save history
+                # save memory and history
                 await self.add_memory(messages, **kwargs)
                 self.save_history(messages)
 

@@ -4,6 +4,7 @@ llm:
   openai_api_key:
   openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 
+
 generation_config:
   temperature: 0.2
   top_k: 20
