@@ -582,10 +582,8 @@ class LLMAgent(Agent):
                     user_id, agent_id, run_id, memory_type = self._get_step_memory_info(
                         memory_config)
                 if idx < tools_num:
-                    if all(value is None for value in
+                    if any(value is not None for value in
                            [user_id, agent_id, run_id, memory_type]):
-                        pass
-                    else:
                         await self.memory_tools[idx].add(
                             messages,
                             user_id=user_id,
