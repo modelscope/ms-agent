@@ -83,7 +83,9 @@ class RunCMD(CLICommand):
             type=str,
             choices=['auto', 'human'],
             default=None,
-            help='Animation mode for video_generate project: auto (default) or human.')
+            help=
+            'Animation mode for video_generate project: auto (default) or human.'
+        )
         parser.set_defaults(func=subparser_func)
 
     def execute(self):

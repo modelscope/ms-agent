@@ -1,6 +1,6 @@
-
-from typing import Dict, List, Optional
 from dataclasses import dataclass
+from typing import Dict, List, Optional
+
 
 @dataclass
 class FixContext:
@@ -11,18 +11,20 @@ class FixContext:
     complexity_level: str
     confidence_score: float
 
+
 class OptimizedManimPrompts:
     """优化的Manim提示词系统"""
-    
+
     def __init__(self):
         self.generation_templates = self._load_generation_templates()
         self.fix_templates = self._load_fix_templates()
         self.constraint_rules = self._load_constraint_rules()
-    
+
     def _load_generation_templates(self):
         """生成模板 - 前置约束，避免问题发生"""
         return {
-            "base_generation": """
+            'base_generation':
+            """
 你是专业的Manim动画代码生成专家。请生成符合以下严格规范的代码：
 
 ## 布局规范（必须遵循）
@@ -87,8 +89,8 @@ def show_concept_2(self):
 · 清晰的视觉层次
 · 完整的分段清理
 """,
-            
-            "fix_generation": """
+            'fix_generation':
+            """
 你是Manim代码修复专家。基于以下错误信息和约束，修复代码：
 
 ## 修复目标
@@ -127,11 +129,12 @@ def show_concept_2(self):
 请提供修复后的完整代码：
 """
         }
-    
+
     def _load_fix_templates(self) -> Dict[str, str]:
         """修复模板 - 循序渐进"""
         return {
-            "syntax_fix": """
+            'syntax_fix':
+            """
 专注语法修复：
 1. 修复Python语法错误
 2. 确保正确的缩进
@@ -139,8 +142,8 @@ def show_concept_2(self):
 4. 处理编码问题
 保持原有功能不变。
 """,
-            
-            "layout_fix": """
+            'layout_fix':
+            """
 专注布局修复：
 1. 重新组织元素布局
 2. 使用VGroup避免重叠
@@ -148,8 +151,8 @@ def show_concept_2(self):
 4. 确保在安全边界内
 保持原有动画效果。
 """,
-            
-            "visual_fix": """
+            'visual_fix':
+            """
 专注视觉优化：
 1. 优化动画流畅性
 2. 改善视觉层次
@@ -158,74 +161,60 @@ def show_concept_2(self):
 保持布局稳定。
 """
         }
-    
+
     def _load_constraint_rules(self) -> Dict[str, List[str]]:
         """约束规则库"""
         return {
-            "positioning": [
-                "使用to_edge()确保边界安全",
-                "用next_to()建立相对关系",
-                "VGroup统一管理相关元素",
-                "buff参数保证最小间距"
+            'positioning': [
+                '使用to_edge()确保边界安全', '用next_to()建立相对关系', 'VGroup统一管理相关元素',
+                'buff参数保证最小间距'
             ],
-            
-            "sizing": [
-                "title字体32-36，subtitle字体24-28",
-                "圆形radius≤2.0，矩形width≤8.0",
-                "文本行数限制在3行以内",
-                "复杂图形分解为简单元素"
+            'sizing': [
+                'title字体32-36，subtitle字体24-28', '圆形radius≤2.0，矩形width≤8.0',
+                '文本行数限制在3行以内', '复杂图形分解为简单元素'
             ],
-            
-            "animation": [
-                "Write()用于文字显示",
-                "Create()用于图形绘制", 
-                "Transform()用于元素变换",
-                "LaggedStart()用于序列动画"
+            'animation': [
+                'Write()用于文字显示', 'Create()用于图形绘制', 'Transform()用于元素变换',
+                'LaggedStart()用于序列动画'
             ],
-            
-            "cleanup": [
-                "每个概念段落后FadeOut清理",
-                "使用VGroup统一管理和清理",
-                "避免元素在场景中累积",
-                "保持画面清洁简约"
-            ]
+            'cleanup':
+            ['每个概念段落后FadeOut清理', '使用VGroup统一管理和清理', '避免元素在场景中累积', '保持画面清洁简约']
         }
-    
-    def generate_creation_prompt(self, content, content_type="educational"):
+
+    def generate_creation_prompt(self, content, content_type='educational'):
         """生成创建提示词"""
-        
-        return self.generation_templates["base_generation"].format(
-            content=content,
-            content_type=content_type
-        )
-    
+
+        return self.generation_templates['base_generation'].format(
+            content=content, content_type=content_type)
+
     def generate_fix_prompt(self, fix_context, original_code, error_info):
         """生成修复提示词"""
-        
+
         # 根据尝试次数选择修复策略
         if fix_context.attempt_count == 1:
-            specific_fixes = self.fix_templates["syntax_fix"]
+            specific_fixes = self.fix_templates['syntax_fix']
         elif fix_context.attempt_count == 2:
-            specific_fixes = self.fix_templates["layout_fix"]
+            specific_fixes = self.fix_templates['layout_fix']
         else:
-            specific_fixes = self.fix_templates["visual_fix"]
-        
+            specific_fixes = self.fix_templates['visual_fix']
+
         # 构建布局问题描述
-        layout_desc = "\n".join(f"- {issue}" for issue in fix_context.layout_issues) if fix_context.layout_issues else "无明显布局问题"
-        
-        return self.generation_templates["fix_generation"].format(
+        layout_desc = '\n'.join(f'- {issue}'
+                                for issue in fix_context.layout_issues
+                                ) if fix_context.layout_issues else '无明显布局问题'
+
+        return self.generation_templates['fix_generation'].format(
             error_info=error_info,
             layout_issues=layout_desc,
             attempt_count=fix_context.attempt_count,
-            specific_fixes=specific_fixes
-        )
-    
+            specific_fixes=specific_fixes)
+
     def get_feedback_prompt(self, code, issues):
         """生成反馈提示词"""
-        
+
         if not issues:
-            return "代码质量良好，无需修复。"
-        
+            return '代码质量良好，无需修复。'
+
         feedback = f"""
 ## 代码审查反馈
 
@@ -233,8 +222,8 @@ def show_concept_2(self):
 
 """
         for i, issue in enumerate(issues, 1):
-            feedback += f"{i}. {issue}\n"
-        
+            feedback += f'{i}. {issue}\n'
+
         feedback += """
 ## 修复建议
 
@@ -246,17 +235,16 @@ def show_concept_2(self):
 
 请基于以上反馈优化代码。
 """
-        
+
         return feedback
-    
-    def get_constraint_checklist(self, check_type="all"):
+
+    def get_constraint_checklist(self, check_type='all'):
         """获取约束检查清单"""
-        
-        if check_type == "all":
+
+        if check_type == 'all':
             checklist = []
             for category, rules in self.constraint_rules.items():
                 checklist.extend(rules)
             return checklist
-        
-        return self.constraint_rules.get(check_type, [])
 
+        return self.constraint_rules.get(check_type, [])
