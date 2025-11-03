@@ -42,15 +42,15 @@ class HybridDataSource(FinancialDataSource):
         code = code.upper().strip()
 
         # A-shares: sh.600000, sz.000001
-        if (re.match(r'^(SH|SZ|BJ)\.\d{6}$', code)) or code.startswith(('sh.', 'sz.', 'bj.')):  # yapf: disable
+        if (re.match(r'^(SH|SZ|BJ)\.\d{6}$', code)) or code.startswith(('SH.', 'SZ.', 'BJ.')):  # yapf: disable
             return 'a_share'
 
         # HK stocks: 00700, 09988 (4-5 digits)
-        if re.match(r'^\d{4,5}$', code) or code.startswith('hk.'):
+        if re.match(r'^\d{4,5}$', code) or code.startswith('HK.'):
             return 'hk_stock'
 
         # US stocks: AAPL, TSLA (letters only)
-        if re.match(r'^[A-Z]{1,5}$', code) or code.startswith('us.'):
+        if re.match(r'^[A-Z]{1,5}$', code) or code.startswith('US.'):
             return 'us_stock'
 
         logger.warning(f'Unknown market type for code: {code}')
@@ -77,7 +77,7 @@ class HybridDataSource(FinancialDataSource):
                 result = query_func(source)
                 if isinstance(result, pd.DataFrame) and not result.empty:
                     return result
-                if isinstance(result, dict) and not result:
+                if isinstance(result, dict) and result:
                     return result
             except Exception as e:
                 logger.warning(

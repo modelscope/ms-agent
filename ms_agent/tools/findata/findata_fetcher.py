@@ -1,9 +1,12 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import asyncio
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import json
+import numpy as np
+import pandas as pd
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.tools.findata.akshare_source import AKShareDataSource
@@ -16,6 +19,25 @@ from ms_agent.utils import get_logger
 from omegaconf import DictConfig
 
 logger = get_logger()
+
+
+class DateTimeEncoder(json.JSONEncoder):
+    """Custom JSON encoder for handling date/datetime/numpy types"""
+
+    def default(self, obj):
+        if isinstance(obj, (date, datetime)):
+            return obj.isoformat()
+        elif isinstance(obj, pd.Period):
+            return str(obj)
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif pd.isna(obj):
+            return None
+        return super().default(obj)
 
 
 class FinancialDataFetcher(ToolBase):
@@ -147,7 +169,8 @@ class FinancialDataFetcher(ToolBase):
         if metadata:
             response.update(metadata)
 
-        return json.dumps(response, ensure_ascii=False, indent=2)
+        return json.dumps(
+            response, ensure_ascii=False, indent=2, cls=DateTimeEncoder)
 
     def _create_error_response(self, error: Exception, operation: str,
                                params: Dict) -> str:
@@ -173,11 +196,17 @@ class FinancialDataFetcher(ToolBase):
             'parameters': params
         }
 
-        logger.error(
-            f"Operation '{operation}' failed: {error_type} - {error_msg}",
-            exc_info=True)
+        # Only log with traceback for unexpected errors
+        # For known data source errors, just log the message
+        if isinstance(error, (DataSourceError, NoDataFoundError)):
+            logger.warning(f'{operation}: {error_msg}')
+        else:
+            logger.error(
+                f"Operation '{operation}' failed: {error_type} - {error_msg}",
+                exc_info=True)
 
-        return json.dumps(response, ensure_ascii=False, indent=2)
+        return json.dumps(
+            response, ensure_ascii=False, indent=2, cls=DateTimeEncoder)
 
     async def get_tools(self) -> Dict[str, Any]:
         """Return tool definitions"""
@@ -467,7 +496,7 @@ class FinancialDataFetcher(ToolBase):
                     description=
                     ('Get macro data for a given range of dates'
                      'Supported data types: deposit_rate, loan_rate, required_reserve_ratio, money_supply_month, '
-                     'money_supply_year, shibor'),
+                     'money_supply_year'),
                     parameters={
                         'type': 'object',
                         'properties': {
@@ -490,7 +519,7 @@ class FinancialDataFetcher(ToolBase):
                                         'deposit_rate', 'loan_rate',
                                         'required_reserve_ratio',
                                         'money_supply_month',
-                                        'money_supply_year', 'shibor'
+                                        'money_supply_year'
                                     ]
                                 },
                             },
@@ -540,36 +569,7 @@ class FinancialDataFetcher(ToolBase):
         if self.data_source is None:
             await self.connect()
 
-        try:
-            return await getattr(self, tool_name)(**tool_args)
-        except NoDataFoundError as e:
-            logger.warning(f'No data found: {e}')
-            return json.dumps(
-                {
-                    'success': False,
-                    'error': f'Data not found: {str(e)}'
-                },
-                ensure_ascii=False,
-                indent=2)
-        except DataSourceError as e:
-            logger.error(f'Data source error: {e}')
-            return json.dumps(
-                {
-                    'success': False,
-                    'error': f'Data source error: {str(e)}'
-                },
-                ensure_ascii=False,
-                indent=2)
-        except Exception as e:
-            logger.error(
-                f'Tool execution error ({tool_name}): {e}', exc_info=True)
-            return json.dumps(
-                {
-                    'success': False,
-                    'error': f'Execution error: {str(e)}'
-                },
-                ensure_ascii=False,
-                indent=2)
+        return await getattr(self, tool_name)(**tool_args)
 
     async def get_historical_k_data(self,
                                     code: str,
@@ -758,7 +758,8 @@ class FinancialDataFetcher(ToolBase):
                 'Financial data saved to separate files. Showing sample rows for each data type.'
             }
 
-            return json.dumps(response, ensure_ascii=False, indent=2)
+            return json.dumps(
+                response, ensure_ascii=False, indent=2, cls=DateTimeEncoder)
 
         except Exception as e:
             return self._create_error_response(e, 'get_financial_data', params)
@@ -884,7 +885,7 @@ class FinancialDataFetcher(ToolBase):
         """Get macroeconomic data (BaoStock)."""
         data_types = data_types or [
             'deposit_rate', 'loan_rate', 'required_reserve_ratio',
-            'money_supply_month', 'money_supply_year', 'shibor'
+            'money_supply_month', 'money_supply_year'
         ]
         params = {
             'start_date': start_date,
@@ -933,7 +934,8 @@ class FinancialDataFetcher(ToolBase):
                 'Macro data saved to separate files. Showing sample rows for each data type.'
             }
 
-            return json.dumps(response, ensure_ascii=False, indent=2)
+            return json.dumps(
+                response, ensure_ascii=False, indent=2, cls=DateTimeEncoder)
 
         except Exception as e:
             return self._create_error_response(e, 'get_macro_data', params)

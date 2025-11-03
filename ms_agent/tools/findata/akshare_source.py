@@ -175,7 +175,6 @@ class AKShareDataSource(FinancialDataSource):
             return df
 
         except Exception as e:
-            logger.error(f'Error fetching K-data for {code}: {e}')
             raise DataSourceError(f'Failed to fetch K-data: {e}')
 
     def get_stock_basic_info(self, code: str) -> pd.DataFrame:
@@ -190,59 +189,67 @@ class AKShareDataSource(FinancialDataSource):
             else:
                 return self._get_a_share_basic_info(code)
 
+        except (NoDataFoundError, DataSourceError):
+            # Re-raise custom errors without wrapping
+            raise
         except Exception as e:
-            logger.error(f'Error fetching basic info for {code}: {e}')
+            # Only wrap unexpected errors
             raise DataSourceError(f'Failed to fetch basic info: {e}')
 
     def _get_hk_basic_info(self, code: str) -> pd.DataFrame:
         """Get HK stock basic information"""
         clean_code = self._convert_code(code, market='HK')
+        df_stock_info = pd.DataFrame()
+        df_business_info = pd.DataFrame()
+
+        # Try to fetch base info
         try:
             df_base_info = ak.stock_hk_spot_em()
             stock_info = df_base_info[df_base_info['代码'] == clean_code]
-            if stock_info.empty:
-                raise NoDataFoundError(f'No basic info found for {code}')
-
-            df_stock_info = pd.DataFrame({
-                'code': [code],
-                'code_name': [stock_info['名称'].iloc[0]],
-                'listingDate': [''],  # listing date might not be available
-                'outDate': [''],
-                'type': ['2'],  # type of stock
-                'status': ['1']
-            })
-
-            df_business_info = ak.stock_zyjs_ths(symbol=clean_code)
-            if df_business_info.empty or not df_business_info:
-                raise NoDataFoundError(f'No business info found for {code}')
-
-            df_business_info = df_business_info.rename(
-                columns={
-                    '公司名称': 'company name',
-                    '英文名称': 'english name',
-                    '注册地': 'place of incorporation',
-                    '注册地址': 'registered address',
-                    '公司成立日期': 'date of incorporation',
-                    '所属行业': 'industry',
-                    '董事长': 'chairman',
-                    '公司秘书': 'company secretary',
-                    '员工人数': 'number of employees',
-                    '办公地址': 'office address',
-                    '公司网址': 'website',
-                    'E-MAIL': 'email',
-                    '年结日': 'financial year end',
-                    '联系电话': 'contact number',
-                    '核数师': 'auditor',
-                    '传真': 'fax',
-                    '公司介绍': 'company description'
+            if not stock_info.empty:
+                df_stock_info = pd.DataFrame({
+                    'code': [code],
+                    'code_name': [stock_info['名称'].iloc[0]],
+                    'listingDate': [''],  # listing date might not be available
+                    'outDate': [''],
+                    'type': ['2'],  # type of stock
+                    'status': ['1']
                 })
+        except Exception:
+            logger.warning(f'Failed to fetch HK stock base info for {code}')
 
-            return pd.concat([df_stock_info, df_business_info], axis=1)
+        # Try to fetch business info
+        try:
+            df_business_info = ak.stock_zyjs_ths(symbol=clean_code)
+            if not df_business_info.empty:
+                df_business_info = df_business_info.rename(
+                    columns={
+                        '公司名称': 'company name',
+                        '英文名称': 'english name',
+                        '注册地': 'place of incorporation',
+                        '注册地址': 'registered address',
+                        '公司成立日期': 'date of incorporation',
+                        '所属行业': 'industry',
+                        '董事长': 'chairman',
+                        '公司秘书': 'company secretary',
+                        '员工人数': 'number of employees',
+                        '办公地址': 'office address',
+                        '公司网址': 'website',
+                        'E-MAIL': 'email',
+                        '年结日': 'financial year end',
+                        '联系电话': 'contact number',
+                        '核数师': 'auditor',
+                        '传真': 'fax',
+                        '公司介绍': 'company description'
+                    })
+        except Exception:
+            logger.warning(
+                f'Failed to fetch HK stock business info for {code}')
 
-        except Exception as e:
-            logger.error(f'Error fetching HK stock basic info for {code}: {e}')
-            raise DataSourceError(
-                f'Failed to fetch HK stock basic info for {code}: {e}')
+        if df_stock_info.empty and df_business_info.empty:
+            raise NoDataFoundError(f'No basic info found for {code}')
+
+        return pd.concat([df_stock_info, df_business_info], axis=1)
 
     def _get_us_basic_info(self, code: str) -> pd.DataFrame:
         """Get US stock basic information"""
@@ -268,7 +275,6 @@ class AKShareDataSource(FinancialDataSource):
             return result_df
 
         except Exception as e:
-            logger.error(f'Error fetching US stock basic info for {code}: {e}')
             raise DataSourceError(
                 f'Error fetching US stock basic info for {code}: {e}')
 
@@ -302,7 +308,7 @@ class AKShareDataSource(FinancialDataSource):
             })
 
             df_business_info = ak.stock_zyjs_ths(symbol=clean_code)
-            if df_business_info.empty or not df_business_info:
+            if df_business_info.empty:
                 raise NoDataFoundError(f'No business info found for {code}')
 
             df_business_info = df_business_info.rename(
@@ -319,7 +325,6 @@ class AKShareDataSource(FinancialDataSource):
                              ignore_index=True)
 
         except Exception as e:
-            logger.error(f'Error fetching A-share basic info for {code}: {e}')
             raise DataSourceError(
                 f'Error fetching A-share basic info for {code}: {e}')
 
@@ -481,7 +486,6 @@ class AKShareDataSource(FinancialDataSource):
                 logger.warning(
                     f'Failed to fetch financial_hk_analysis_indicator_em or financial_us_analysis_indicator_em: {e}'
                 )
-                ind_df = pd.DataFrame()
             result['financial_indicators'] = ind_df
 
         elif code.startswith(('sh.', 'sz.', 'bj.')):
@@ -501,6 +505,7 @@ class AKShareDataSource(FinancialDataSource):
 
             for data_type in data_types:
                 try:
+                    result[data_type] = pd.DataFrame()
                     if data_type in ('profit', 'operation', 'growth',
                                      'dupont'):
                         if ind_df.empty:
@@ -513,14 +518,14 @@ class AKShareDataSource(FinancialDataSource):
 
                     elif data_type == 'balance':
                         df = ak.stock_balance_sheet_by_report_em(
-                            symbol=clean_code)
+                            symbol=code.replace('.', '').upper())
                         row = _select_row_by_report(df)
                         if not row.empty:
                             result[data_type] = row
 
                     elif data_type == 'cash_flow':
                         df = ak.stock_cash_flow_sheet_by_report_em(
-                            symbol=clean_code)
+                            symbol=code.replace('.', '').upper())
                         row = _select_row_by_report(df)
                         if not row.empty:
                             result[data_type] = row
@@ -533,7 +538,7 @@ class AKShareDataSource(FinancialDataSource):
                     logger.warning(f'Failed to fetch {data_type} data: {e}')
                     continue
 
-        if not result:
+        if not result or all(df.empty for df in result.values()):
             raise NoDataFoundError(
                 f'No financial data found for {code} ({year}Q{quarter})')
 
@@ -579,7 +584,6 @@ class AKShareDataSource(FinancialDataSource):
             return df
 
         except Exception as e:
-            logger.error(f'Error fetching stock list: {e}')
             raise DataSourceError(f'Failed to fetch stock list: {e}')
 
     def get_trade_dates(self,
@@ -591,6 +595,10 @@ class AKShareDataSource(FinancialDataSource):
         try:
             df = ak.tool_trade_date_hist_sina()
 
+            # Ensure trade_date is string for comparison
+            if 'trade_date' in df.columns:
+                df['trade_date'] = df['trade_date'].astype(str)
+
             if start_date:
                 df = df[df['trade_date'] >= start_date]
             if end_date:
@@ -599,7 +607,6 @@ class AKShareDataSource(FinancialDataSource):
             return df
 
         except Exception as e:
-            logger.error(f'Error fetching trade dates: {e}')
             raise DataSourceError(f'Failed to fetch trade dates: {e}')
 
     def get_macro_data(
@@ -626,8 +633,8 @@ class AKShareDataSource(FinancialDataSource):
             try:
                 if data_type in ('deposit_rate', 'loan_rate'):
                     result[data_type] = ak.rate_interbank()
-                elif data_type in ('required_reserve_ratio', 'shibor'):
-                    logger.warning(
+                elif data_type in ('required_reserve_ratio'):
+                    raise DataSourceError(
                         'Required reserve ratio is not supported by AKShare')
                     continue
                 elif data_type == 'money_supply_year':
@@ -640,7 +647,8 @@ class AKShareDataSource(FinancialDataSource):
                     raise ValueError(f'Invalid data type: {data_type}')
 
             except Exception as e:
-                logger.error(f'Error fetching {data_type} data: {e}')
+                logger.warning(f'Failed to fetch {data_type} data: {e}')
+                result[data_type] = pd.DataFrame()
                 continue
 
         if not result:
@@ -654,15 +662,18 @@ class AKShareDataSource(FinancialDataSource):
             end_date: Optional[str] = None) -> pd.DataFrame:
         try:
             df = ak.macro_china_money_supply()  # from 2008-01 to now
-            df['月份'] = pd.to_datetime(df['月份'])
+            df['月份'] = pd.to_datetime(df['月份'].str.replace('月份',
+                                                           '').str.replace(
+                                                               '年', '-'))
+            df['月份'] = df['月份'].dt.to_period('M')
             if start_date:
-                df = df[df['月份'] >= pd.to_datetime(start_date)]
+                df = df[
+                    df['月份'] >= pd.to_datetime(start_date).strftime('%Y-%m')]
             if end_date:
-                df = df[df['月份'] <= pd.to_datetime(end_date)]
+                df = df[df['月份'] <= pd.to_datetime(end_date).strftime('%Y-%m')]
 
             return df.sort_values('月份').reset_index(drop=True)
         except Exception as e:
-            logger.error(f'Error fetching monthly money supply data: {e}')
             raise DataSourceError(
                 f'Error fetching monthly money supply data: {e}')
 
@@ -675,9 +686,8 @@ class AKShareDataSource(FinancialDataSource):
         month_df['年'] = month_df['月份'].dt.year
         last_in_year = (
             month_df.sort_values('月份').groupby(
-                '年份', as_index=False).tail(1).reset_index(drop=True))
+                '年', as_index=False).tail(1).reset_index(drop=True))
         cols = [
-            '年份',
             '货币和准货币(M2)-数量(亿元)',
             '货币和准货币(M2)-同比增长',
             '货币(M1)-数量(亿元)',
@@ -686,11 +696,11 @@ class AKShareDataSource(FinancialDataSource):
             '流通中的现金(M0)-同比增长',
         ]
         year_df = last_in_year[
-            ['年份'] + [c for c in cols if c in last_in_year.columns]]
+            ['年'] + [c for c in cols if c in last_in_year.columns]]
 
         if start_date:
-            year_df = year_df[year_df['年份'] >= pd.to_datetime(start_date).year]
+            year_df = year_df[year_df['年'] >= pd.to_datetime(start_date).year]
         if end_date:
-            year_df = year_df[year_df['年份'] <= pd.to_datetime(end_date).year]
+            year_df = year_df[year_df['年'] <= pd.to_datetime(end_date).year]
 
-        return year_df.sort_values('年份').reset_index(drop=True)
+        return year_df.sort_values('年').reset_index(drop=True)

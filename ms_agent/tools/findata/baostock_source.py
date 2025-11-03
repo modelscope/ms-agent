@@ -1,6 +1,7 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import threading
 from contextlib import contextmanager
+from copy import deepcopy
 from typing import Dict, List, Optional
 
 import baostock as bs
@@ -310,25 +311,42 @@ class BaoStockDataSource(FinancialDataSource):
         result = {}
         with baostock_session():
             for data_type in data_types:
+                parsed_extra_kwargs = {}
+                parsed_start_date = start_date
+                parsed_end_date = end_date
+
                 if data_type == 'deposit_rate':
                     query_func = bs.query_deposit_rate_data
+
                 elif data_type == 'loan_rate':
                     query_func = bs.query_loan_rate_data
+
                 elif data_type == 'required_reserve_ratio':
                     query_func = bs.query_required_reserve_ratio_data
                     if not extra_kwargs or not extra_kwargs.get('yearType'):
-                        extra_kwargs['yearType'] = '0'
+                        parsed_extra_kwargs['yearType'] = '0'
+                    else:
+                        parsed_extra_kwargs.update(extra_kwargs)
+
                 elif data_type == 'money_supply_month':
                     query_func = bs.query_money_supply_data_month
+                    parsed_start_date = pd.to_datetime(start_date).strftime(
+                        '%Y-%m')
+                    parsed_end_date = pd.to_datetime(end_date).strftime(
+                        '%Y-%m')
+
                 elif data_type == 'money_supply_year':
                     query_func = bs.query_money_supply_data_year
-                elif data_type == 'shibor':
-                    query_func = bs.query_shibor_data
+                    parsed_start_date = pd.to_datetime(start_date).strftime(
+                        '%Y')
+                    parsed_end_date = pd.to_datetime(end_date).strftime('%Y')
+
                 else:
                     raise ValueError(f'Invalid data type: {data_type}')
 
-                df = self._query_macro_data(query_func, data_type, start_date,
-                                            end_date, **extra_kwargs)
+                df = self._query_macro_data(query_func, data_type,
+                                            parsed_start_date, parsed_end_date,
+                                            **parsed_extra_kwargs)
                 result[data_type] = df
 
         if not result:
@@ -341,6 +359,11 @@ class BaoStockDataSource(FinancialDataSource):
         """Query macro data using provided function (assumes session is already active)"""
         logger.info(f'Fetching {data_type} for {start_date} to {end_date}')
 
-        rs = query_func(start_date=start_date, end_date=end_date, **kwargs)
-        return self._query_to_dataframe(
-            rs, f'{data_type} for {start_date} to {end_date}')
+        try:
+            rs = query_func(start_date=start_date, end_date=end_date, **kwargs)
+            return self._query_to_dataframe(
+                rs, f'{data_type} for {start_date} to {end_date}')
+
+        except Exception as e:
+            logger.warning(f'Failed to fetch {data_type} data: {e}')
+            return pd.DataFrame()
