@@ -121,4 +121,4 @@ class FinancialDataSource(ABC):
 
     def get_extra_tools(self) -> Dict[str, Any]:
         """Get extra tools for the data source"""
-        pass
+        return {}

@@ -857,7 +857,7 @@ class ResearchWorkflowBeta(ResearchWorkflow):
                   depth: int = 2,
                   is_report: bool = False,
                   show_progress: bool = False,
-                  **kwargs) -> None:
+                  **kwargs) -> Optional[str]:
 
         if not user_prompt:
             initial_query = Prompt.ask(
@@ -960,5 +960,8 @@ class ResearchWorkflowBeta(ResearchWorkflow):
                 logger.info(
                     f'Answer saved to {self.workdir_structure["report_md"]}')
 
+            return self.workdir_structure['report_md']
+
         except Exception as e:
             logger.error(f'Error generating final output: {e}')
+            return None

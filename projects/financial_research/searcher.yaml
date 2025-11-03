@@ -1,0 +1,34 @@
+llm:
+  # service: modelscope
+  # model: Qwen/Qwen3-235B-A22B-Instruct-2507
+  # modelscope_api_key:
+  # modelscope_base_url: https://api-inference.modelscope.cn/v1
+  service: openai
+  model: gpt-5-mini-2025-08-07
+  openai_api_key:
+  openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+
+
+generation_config:
+  stream: true
+
+
+tools:
+  search_engine:
+    config_file: temp/feat-deep/conf.yaml
+
+
+code_file: searcher
+
+
+max_chat_round: 20
+
+tool_call_timeout: 30000
+
+output_dir: ./output
+
+breadth: 2
+
+depth: 1
+
+is_report: true

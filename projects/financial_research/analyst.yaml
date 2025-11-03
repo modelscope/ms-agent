@@ -4,7 +4,7 @@ llm:
   # modelscope_api_key:
   # modelscope_base_url: https://api-inference.modelscope.cn/v1
   service: openai
-  model: gpt-5-2025-08-07
+  model: qwen3-coder-plus
   openai_api_key:
   openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 
@@ -174,10 +174,23 @@ tools:
       - file_operation
 
 
+callbacks:
+  - callbacks/analyst_callback
+
+
+memory:
+  - name: mem0
+    user_id: "financial_research"
+    agent_id: "analyst"
+    conversation_search_limit: 10
+    procedural_search_limit: 3
+    embedding_model: "text-embedding-v4"
+    summary_model: "qwen3-coder-plus"
+    max_tokens: 4096
+
+
 max_chat_round: 20
 
 tool_call_timeout: 30000
-
-code_file: analysis_agent
 
 output_dir: ./output
