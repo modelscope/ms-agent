@@ -1,5 +1,6 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import threading
+import time
 from contextlib import contextmanager
 from copy import deepcopy
 from typing import Dict, List, Optional
@@ -21,6 +22,28 @@ class BaoStockSessionManager:
     _session_lock = threading.Lock()
     _login_count = 0
     _is_logged_in = False
+    _idle_timeout = 300  # 5 minutes
+    _timer: Optional[threading.Timer] = None
+
+    def _schedule_logout(self):
+        if self._timer:
+            return
+        self._timer = threading.Timer(self._idle_timeout, self._force_logout)
+        self._timer.daemon = True
+        self._timer.start()
+
+    def _cancel_logout(self):
+        if self._timer:
+            self._timer.cancel()
+            self._timer = None
+
+    def _force_logout(self):
+        with self._session_lock:
+            if self._login_count == 0 and self._is_logged_in:
+                bs.logout()
+                self._is_logged_in = False
+                logger.debug('BaoStock session closed by idle-timeout')
+            self._timer = None
 
     def __new__(cls):
         if cls._instance is None:
@@ -42,6 +65,8 @@ class BaoStockSessionManager:
                 logger.debug('BaoStock session established')
             else:
                 self._login_count += 1
+                # Someone reused the session within idle timeout; cancel scheduled logout
+                self._cancel_logout()
                 logger.debug(
                     f'BaoStock session reused (count: {self._login_count})')
 
@@ -50,10 +75,8 @@ class BaoStockSessionManager:
         with self._session_lock:
             self._login_count -= 1
             if self._login_count <= 0:
-                bs.logout()
-                self._is_logged_in = False
                 self._login_count = 0
-                logger.debug('BaoStock session closed')
+                self._schedule_logout()
 
 
 @contextmanager

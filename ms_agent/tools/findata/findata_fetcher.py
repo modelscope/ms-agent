@@ -1,8 +1,10 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
+from functools import partial
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 import json
 import numpy as np
@@ -16,6 +18,7 @@ from ms_agent.tools.findata.data_source_base import (DataSourceError,
                                                      NoDataFoundError)
 from ms_agent.tools.findata.hybrid_source import HybridDataSource
 from ms_agent.utils import get_logger
+from ms_agent.utils.rate_limiter import AdaptiveRateLimiter, RateLimiter
 from omegaconf import DictConfig
 
 logger = get_logger()
@@ -66,6 +69,14 @@ class FinancialDataFetcher(ToolBase):
 
         self.data_source: Optional[FinancialDataSource] = None
         self.source_type = self._get_source_type(config)
+
+        # Initialize rate limiter
+        self.rate_limiter = self._create_rate_limiter(config)
+        self.thread_pool = ThreadPoolExecutor(
+            max_workers=self.rate_limiter.max_concurrent,
+            thread_name_prefix='financial_data_fetcher_',
+        )
+
         logger.info(
             f'Initializing FinancialDataFetcher with source: {self.source_type}'
         )
@@ -81,6 +92,99 @@ class FinancialDataFetcher(ToolBase):
                            'hybrid')
 
         return 'hybrid'
+
+    def _create_rate_limiter(
+        self, config: Optional[DictConfig]
+    ) -> Optional[Union[RateLimiter, AdaptiveRateLimiter]]:
+        """
+        Create rate limiter from config.
+
+        Config example in YAML:
+        ```yaml
+        tools:
+          financial_data_fetcher:
+            rate_limiter:
+              enabled: true
+              type: adaptive  # or 'basic'
+              # Basic RateLimiter parameters
+              max_requests_per_second: 2
+              min_request_interval: 0.5
+              max_concurrent: 3
+              # AdaptiveRateLimiter additional parameters
+              initial_requests_per_second: 2
+              min_requests_per_second: 1
+              max_requests_per_second: 5
+              backoff_factor: 0.5
+              recovery_factor: 1.2
+              error_threshold: 3
+              success_threshold: 10
+        ```
+        """
+        # Check if rate limiter is configured
+        if not (isinstance(config, DictConfig) and hasattr(config, 'tools')
+                and hasattr(config.tools, 'financial_data_fetcher')):
+            logger.info(
+                'No rate limiter configured, running without rate limiting')
+            return None
+
+        fetcher_config = config.tools.financial_data_fetcher
+        if not hasattr(fetcher_config, 'rate_limiter'):
+            logger.info(
+                'No rate limiter configured, running without rate limiting')
+            return None
+
+        rl_config = fetcher_config.rate_limiter
+
+        # Check if rate limiter is enabled
+        if not getattr(rl_config, 'enabled', False):
+            logger.info('Rate limiter disabled in config')
+            return None
+
+        limiter_type = getattr(rl_config, 'type', 'basic').lower()
+
+        if limiter_type == 'adaptive':
+            # Create AdaptiveRateLimiter
+            params = {
+                'initial_requests_per_second':
+                getattr(rl_config, 'initial_requests_per_second', 2),
+                'min_requests_per_second':
+                getattr(rl_config, 'min_requests_per_second', 1),
+                'max_requests_per_second':
+                getattr(rl_config, 'max_requests_per_second', 5),
+                'min_request_interval':
+                getattr(rl_config, 'min_request_interval', 0.5),
+                'max_concurrent':
+                getattr(rl_config, 'max_concurrent', 3),
+                'backoff_factor':
+                getattr(rl_config, 'backoff_factor', 0.5),
+                'recovery_factor':
+                getattr(rl_config, 'recovery_factor', 1.2),
+                'error_threshold':
+                getattr(rl_config, 'error_threshold', 3),
+                'success_threshold':
+                getattr(rl_config, 'success_threshold', 10),
+            }
+            logger.info(f'Creating AdaptiveRateLimiter with params: {params}')
+            return AdaptiveRateLimiter(**params)
+
+        elif limiter_type == 'basic':
+            # Create basic RateLimiter
+            params = {
+                'max_requests_per_second':
+                getattr(rl_config, 'max_requests_per_second', 2),
+                'min_request_interval':
+                getattr(rl_config, 'min_request_interval', 0.5),
+                'max_concurrent':
+                getattr(rl_config, 'max_concurrent', 3),
+            }
+            logger.info(f'Creating RateLimiter with params: {params}')
+            return RateLimiter(**params)
+
+        else:
+            logger.warning(
+                f'Unknown rate limiter type: {limiter_type}, running without rate limiting'
+            )
+            return None
 
     def _create_data_source(self) -> FinancialDataSource:
         """Create data source instance"""
@@ -109,6 +213,44 @@ class FinancialDataFetcher(ToolBase):
         """Clean up resources"""
         logger.info('Cleaning up FinancialDataFetcher resources')
         self.data_source = None
+
+    async def _execute_with_rate_limit(self, func, *args, **kwargs):
+        """
+        Execute a function with rate limiting if configured.
+
+        Args:
+            func: The function to execute ( can be sync or async)
+            *args: Positional arguments for the function
+            **kwargs: Keyword arguments for the function
+        """
+        if self.rate_limiter is None:
+            # No rate limiting, execute directly in thread pool
+            return await asyncio.to_thread(func, *args, **kwargs)
+
+        # Execute with rate limiting
+        try:
+            loop = asyncio.get_event_loop()
+            func_with_args = partial(func, *args, **kwargs)
+
+            async with self.rate_limiter:
+                result = await loop.run_in_executor(self.thread_pool,
+                                                    func_with_args)
+
+            # Record success if using adaptive rate limiter
+            if isinstance(self.rate_limiter, AdaptiveRateLimiter):
+                self.rate_limiter.record_success()
+
+            return result
+
+        except Exception as e:
+            if isinstance(self.rate_limiter, AdaptiveRateLimiter):
+                error_msg = str(e).lower()
+                is_rate_limit_error = any(keyword in error_msg for keyword in [
+                    'rate limit', 'too many requests', 'quota exceeded', '429'
+                ])
+                self.rate_limiter.record_error(is_rate_limit_error)
+
+            raise
 
     def _save_dataframe(self, df, filename: str) -> str:
         """
@@ -587,7 +729,7 @@ class FinancialDataFetcher(ToolBase):
         }
 
         try:
-            df = await asyncio.to_thread(
+            df = await self._execute_with_rate_limit(
                 self.data_source.get_historical_k_data,
                 code=code,
                 start_date=start_date,
@@ -620,7 +762,7 @@ class FinancialDataFetcher(ToolBase):
         params = {'code': code}
 
         try:
-            df = await asyncio.to_thread(
+            df = await self._execute_with_rate_limit(
                 self.data_source.get_stock_basic_info, code=code)
 
             # Generate filename
@@ -646,7 +788,7 @@ class FinancialDataFetcher(ToolBase):
         params = {'code': code, 'year': year, 'year_type': year_type}
 
         try:
-            df = await asyncio.to_thread(
+            df = await self._execute_with_rate_limit(
                 self.data_source.get_dividend_data,
                 code=code,
                 year=year,
@@ -673,7 +815,7 @@ class FinancialDataFetcher(ToolBase):
         params = {'code': code, 'start_date': start_date, 'end_date': end_date}
 
         try:
-            df = await asyncio.to_thread(
+            df = await self._execute_with_rate_limit(
                 self.data_source.get_adjust_factor_data,
                 code=code,
                 start_date=start_date,
@@ -714,7 +856,7 @@ class FinancialDataFetcher(ToolBase):
         }
 
         try:
-            result = await asyncio.to_thread(
+            result = await self._execute_with_rate_limit(
                 self.data_source.get_financial_data,
                 code=code,
                 year=year,
@@ -778,7 +920,7 @@ class FinancialDataFetcher(ToolBase):
         }
 
         try:
-            df = await asyncio.to_thread(
+            df = await self._execute_with_rate_limit(
                 self.data_source.get_report,
                 code=code,
                 start_date=start_date,
@@ -808,7 +950,7 @@ class FinancialDataFetcher(ToolBase):
         params = {'start_date': start_date, 'end_date': end_date}
 
         try:
-            df = await asyncio.to_thread(
+            df = await self._execute_with_rate_limit(
                 self.data_source.get_trade_dates,
                 start_date=start_date,
                 end_date=end_date)
@@ -831,7 +973,7 @@ class FinancialDataFetcher(ToolBase):
         params = {'code': code, 'date': date}
 
         try:
-            df = await asyncio.to_thread(
+            df = await self._execute_with_rate_limit(
                 self.data_source.get_stock_industry, code=code, date=date)
 
             # Generate filename
@@ -855,7 +997,7 @@ class FinancialDataFetcher(ToolBase):
         params = {'date': date, 'data_type': data_type}
 
         try:
-            df = await asyncio.to_thread(
+            df = await self._execute_with_rate_limit(
                 self.data_source.get_stock_list,
                 date=date,
                 data_type=data_type)
@@ -895,7 +1037,7 @@ class FinancialDataFetcher(ToolBase):
         }
 
         try:
-            result = await asyncio.to_thread(
+            result = await self._execute_with_rate_limit(
                 self.data_source.get_macro_data,
                 start_date=start_date,
                 end_date=end_date,

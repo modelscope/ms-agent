@@ -111,7 +111,7 @@ class HybridDataSource(FinancialDataSource):
 
     def get_dividend_data(self,
                           code: str,
-                          year: str,
+                          year: Optional[str] = None,
                           year_type: str = 'report') -> pd.DataFrame:
         """Get dividend data (BaoStock only)"""
         sources = self._get_source(code)

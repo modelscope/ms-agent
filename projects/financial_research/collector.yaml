@@ -107,6 +107,8 @@ prompt:
     - Avoid hardcoding tool details; instead, select tools dynamically based on the data needs.
     - Use the sandbox tool for minimal computations or temporary processing.
     - Repeat data collection and validation loops until results are satisfactory.
+    - IMPORTANT: Call at most 20 tools in parallel in each round to avoid API rate limiting.
+    - IMPORTANT: Do not ask the user for additional information; just start collecting the data directly.
     </Process_Notes>
 
 
@@ -131,6 +133,12 @@ tools:
   financial_data_fetcher:
     mcp: false
     source_type: hybrid
+    rate_limiter:
+      enabled: true  # Enable rate limiting
+      type: basic  # Type: 'adaptive' or 'basic'
+      max_requests_per_second: 1  # Maximum requests per second
+      min_request_interval: 1  # Minimum interval between requests (seconds)
+      max_concurrent: 1  # Maximum concurrent requests (reduced to work with thread semaphore)
   file_system:
     mcp: false
     exclude:
@@ -150,6 +158,6 @@ memory:
 
 max_chat_round: 20
 
-tool_call_timeout: 30000
+tool_call_timeout: 120
 
 output_dir: ./output
