@@ -1,10 +1,6 @@
 llm:
-  # service: modelscope
-  # model: Qwen/Qwen3-235B-A22B-Instruct-2507
-  # modelscope_api_key:
-  # modelscope_base_url: https://api-inference.modelscope.cn/v1
   service: openai
-  model: gpt-5-mini-2025-08-07
+  model: qwen3-coder-plus
   openai_api_key:
   openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 

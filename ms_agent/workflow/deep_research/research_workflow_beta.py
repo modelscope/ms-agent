@@ -237,7 +237,7 @@ class ResearchWorkflowBeta(ResearchWorkflow):
                 {'role': 'system', 'content': self.default_system},
                 {'role': 'user', 'content': enhanced_prompt}
             ],
-            stream=False)
+            stream=True)
         question_prompt = response.get('content', '')
         follow_up_questions = ResearchWorkflow.parse_json_from_content(question_prompt)
         # TODO: More robust way to handle the response
@@ -276,24 +276,24 @@ class ResearchWorkflowBeta(ResearchWorkflow):
             f'to research the topic. Return a maximum of {num_queries} requests, but feel '
             f'free to return less if the original prompt is clear. Make sure query in each request '
             f'is unique and not similar to each other: <prompt>{query}</prompt>{learnings_prompt}'
-            # f'\n\nPlease respond with valid JSON that matches provided schema:\n{json_schema}'
+            f'\n\nPlease respond with valid JSON that matches provided schema:\n{json_schema}'
         )
 
-        search_client = OpenAIChat(
-            api_key=os.getenv('OPENAI_API_KEY'),
-            base_url=os.getenv('OPENAI_BASE_URL'),
-            model='gemini-2.5-flash',
-        )
-        response = search_client.chat(
+        # search_client = OpenAIChat(
+        #     api_key=os.getenv('OPENAI_API_KEY'),
+        #     base_url=os.getenv('OPENAI_BASE_URL'),
+        #     model='gemini-2.5-flash',
+        # )
+        response = self._chat(
             messages=[
                 {'role': 'system', 'content': self.default_system},
                 {'role': 'user', 'content': rewrite_prompt}
             ],
-            response_format={
-                'type': 'json_schema',
-                'json_schema': json_schema
-            },
-            stream=False)
+            # response_format={
+            #     'type': 'json_schema',
+            #     'json_schema': json_schema
+            # },
+            stream=True)
 
         search_requests_json = response.get('content', '')
         search_requests_data = ResearchWorkflow.parse_json_from_content(
@@ -483,7 +483,7 @@ class ResearchWorkflowBeta(ResearchWorkflow):
                 {'role': 'system', 'content': self.default_system},
                 {'role': 'user', 'content': user_prompt}
             ],
-            stream=False)
+            stream=True)
 
         try:
             response_data = ResearchWorkflow.parse_json_from_content(
@@ -746,7 +746,7 @@ class ResearchWorkflowBeta(ResearchWorkflow):
                 {'role': 'system', 'content': self.default_system},
                 {'role': 'user', 'content': user_prompt}
             ],
-            stream=False)
+            stream=True)
 
         try:
             response_data = ResearchWorkflow.parse_json_from_content(
@@ -764,7 +764,7 @@ class ResearchWorkflowBeta(ResearchWorkflow):
                     {'role': 'system', 'content': 'You are a helpful assistant.'},
                     {'role': 'user', 'content': fix_prompt}
                 ],
-                stream=False)
+                stream=True)
             try:
                 response_data = ResearchWorkflow.parse_json_from_content(
                     response.get('content', ''))
@@ -833,7 +833,7 @@ class ResearchWorkflowBeta(ResearchWorkflow):
                 {'role': 'system', 'content': self.default_system},
                 {'role': 'user', 'content': user_prompt}
             ],
-            stream=False
+            stream=True
         )
 
         try:

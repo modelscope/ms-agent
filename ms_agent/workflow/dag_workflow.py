@@ -34,6 +34,8 @@ class DagWorkflow(Workflow):
                     self.graph[task_name].append(nxt)
                     indegree[nxt] += 1
 
+        self.nodes = set(list(self.graph.keys()) + list(indegree.keys()))
+
         # Find root tasks (indegree==0)
         self.roots = [
             t for t in tasks if 'next' in self.config[t] and indegree[t] == 0
@@ -96,5 +98,8 @@ class DagWorkflow(Workflow):
             outputs[task] = result
 
         # Return results of terminal nodes (no outgoing edges)
-        terminals = [t for t in self.config.keys() if t not in self.graph]
+        terminals = [
+            t for t in self.config.keys()
+            if t not in self.graph and t in self.nodes
+        ]
         return {t: outputs[t] for t in terminals}
