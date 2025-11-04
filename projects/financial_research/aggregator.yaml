@@ -71,15 +71,15 @@ tools:
       - create_directory
 
 
-# memory:
-#   - name: mem0
-#     user_id: "financial_research"
-#     agent_id: "aggregator"
-#     conversation_search_limit: 10
-#     procedural_search_limit: 3
-#     embedding_model: "text-embedding-v4"
-#     summary_model: "qwen3-coder-plus"
-#     max_tokens: 4096
+memory:
+  - name: mem0
+    user_id: "financial_research"
+    agent_id: "aggregator"
+    conversation_search_limit: 10
+    procedural_search_limit: 3
+    embedding_model: "text-embedding-v4"
+    summary_model: "qwen3-coder-plus"
+    max_tokens: 4096
 
 
 
