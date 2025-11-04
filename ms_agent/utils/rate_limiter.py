@@ -1,6 +1,5 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import asyncio
-import threading
 import time
 from collections import deque
 from typing import Callable
