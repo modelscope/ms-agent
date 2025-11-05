@@ -41,7 +41,7 @@ class DagWorkflow(Workflow):
             t for t in tasks if 'next' in self.config[t] and indegree[t] == 0
         ]
         if not self.roots:
-            raise ValueError('No root task found for BranchWorkflow')
+            raise ValueError('No root task found for DagWorkflow')
 
         # Precompute topological order (Kahn)
         q = deque(self.roots)

@@ -111,11 +111,13 @@ class FinancialDataSource(ABC):
         pass
 
     @abstractmethod
-    def get_macro_data(self,
-                       start_date: str,
-                       end_date: str,
-                       data_types: List[str] = [],
-                       extra_kwargs: dict = {}) -> Dict[str, pd.DataFrame]:
+    def get_macro_data(
+        self,
+        start_date: str,
+        end_date: str,
+        data_types: Optional[List[str]] = None,
+        extra_kwargs: Optional[Dict[str,
+                                    Any]] = None) -> Dict[str, pd.DataFrame]:
         """Get macroeconomic data for multiple categories in one call"""
         pass
 

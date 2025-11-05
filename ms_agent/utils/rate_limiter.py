@@ -34,7 +34,7 @@ class RateLimiter:
         self,
         max_requests_per_second: int = 2,
         min_request_interval: float = 0.5,
-        max_concurrent: int = 3,
+        max_concurrent: int = 1,
     ):
         self.max_requests_per_second = max_requests_per_second
         self.min_request_interval = min_request_interval

@@ -1,6 +1,6 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import re
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import akshare as ak
 import pandas as pd
@@ -320,9 +320,7 @@ class AKShareDataSource(FinancialDataSource):
                     '经营范围': 'business scope'
                 })
 
-            return pd.concat([result_df, df_business_info],
-                             axis=1,
-                             ignore_index=True)
+            return pd.concat([result_df, df_business_info], axis=1)
 
         except Exception as e:
             raise DataSourceError(
@@ -469,7 +467,9 @@ class AKShareDataSource(FinancialDataSource):
                         val = float(row_df.iloc[0]['PARENTNETPROFIT'])
                         den = float(row_df.iloc[0]['TOTALOPERATEREVE'])
                         out['XSJLL_calc'] = (val / den) if den else pd.NA
-                    except Exception:
+                    except Exception as e:
+                        logger.warning(
+                            f'Failed to calculate XSJLL_calc for {code}: {e}')
                         out['XSJLL_calc'] = pd.NA
 
             out.insert(0, 'code', code)
@@ -610,11 +610,12 @@ class AKShareDataSource(FinancialDataSource):
             raise DataSourceError(f'Failed to fetch trade dates: {e}')
 
     def get_macro_data(
-            self,
-            start_date: str,
-            end_date: str,
-            data_types: Optional[List[str]] = None,
-            extra_kwargs: Optional[dict] = None) -> Dict[str, pd.DataFrame]:
+        self,
+        start_date: str,
+        end_date: str,
+        data_types: Optional[List[str]] = None,
+        extra_kwargs: Optional[Dict[str,
+                                    Any]] = None) -> Dict[str, pd.DataFrame]:
         """Macroeconomic data."""
         if data_types is None:
             data_types = []
@@ -636,7 +637,6 @@ class AKShareDataSource(FinancialDataSource):
                 elif data_type in ('required_reserve_ratio'):
                     raise DataSourceError(
                         'Required reserve ratio is not supported by AKShare')
-                    continue
                 elif data_type == 'money_supply_year':
                     result[data_type] = self._get_money_supply_data_year(
                         start_date, end_date)

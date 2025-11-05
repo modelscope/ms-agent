@@ -72,8 +72,9 @@ class FinancialDataFetcher(ToolBase):
 
         # Initialize rate limiter
         self.rate_limiter = self._create_rate_limiter(config)
+        max_workers = self.rate_limiter.max_concurrent if self.rate_limiter else 1
         self.thread_pool = ThreadPoolExecutor(
-            max_workers=self.rate_limiter.max_concurrent,
+            max_workers=max_workers,
             thread_name_prefix='financial_data_fetcher_',
         )
 

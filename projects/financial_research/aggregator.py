@@ -34,8 +34,8 @@ class AggregatorAgent(LLMAgent):
 
         if isinstance(inputs, list):
             if isinstance(inputs[0], str):
-                refractory_inputs = [[Message(role='user', content=input)]
-                                     for input in inputs]
+                refractory_inputs = [[Message(role='user', content=item)]
+                                     for item in inputs]
             elif isinstance(inputs[0], Message):
                 refractory_inputs = [inputs]
             elif len(inputs) > 1 and isinstance(inputs[0], list):

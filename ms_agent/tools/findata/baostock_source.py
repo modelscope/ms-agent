@@ -3,7 +3,7 @@ import threading
 import time
 from contextlib import contextmanager
 from copy import deepcopy
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import baostock as bs
 import pandas as pd
@@ -317,11 +317,12 @@ class BaoStockDataSource(FinancialDataSource):
             return self._query_to_dataframe(rs, 'trade dates')
 
     def get_macro_data(
-            self,
-            start_date: str,
-            end_date: str,
-            data_types: Optional[List[str]] = None,
-            extra_kwargs: Optional[dict] = None) -> Dict[str, pd.DataFrame]:
+        self,
+        start_date: str,
+        end_date: str,
+        data_types: Optional[List[str]] = None,
+        extra_kwargs: Optional[Dict[str,
+                                    Any]] = None) -> Dict[str, pd.DataFrame]:
         """Fetch macroeconomic data"""
         if data_types is None:
             data_types = []
@@ -346,10 +347,10 @@ class BaoStockDataSource(FinancialDataSource):
 
                 elif data_type == 'required_reserve_ratio':
                     query_func = bs.query_required_reserve_ratio_data
-                    if not extra_kwargs or not extra_kwargs.get('yearType'):
-                        parsed_extra_kwargs['yearType'] = '0'
-                    else:
+                    if extra_kwargs:
                         parsed_extra_kwargs.update(extra_kwargs)
+                    if 'yearType' not in parsed_extra_kwargs:
+                        parsed_extra_kwargs['yearType'] = '0'
 
                 elif data_type == 'money_supply_month':
                     query_func = bs.query_money_supply_data_month
