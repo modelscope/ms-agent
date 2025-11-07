@@ -1,0 +1,47 @@
+# 文件名: .github/workflows/sync-upstream.yml
+#
+# 功能：自动同步上游仓库 (modelscope/ms-agent) 的更新到此 Fork 仓库
+
+name: 🔄 Sync Upstream
+
+on:
+  # 1. 允许手动触发
+  workflow_dispatch:
+  # 2. 定时触发：每天凌晨2点（UTC时间）自动检查一次
+  schedule:
+    - cron: '0 2 * * *'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    
+    # 限制：只在 Y-C-Fan/seu-ms-agent 仓库上运行此工作流
+    # 防止在其他人 fork 你的仓库时也运行这个
+    if: github.repository == 'Y-C-Fan/seu-ms-agent'
+
+    steps:
+      - name:  checkout
+        uses: actions/checkout@v4
+        with:
+          # 我们需要获取所有历史记录以便正确合并
+          fetch-depth: 0 
+          # 使用在 CI 中生成的特殊 token
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: ⚡ Sync Upstream Repo
+        uses: repo-sync/github-sync@v2
+        with:
+          # 上游仓库 (源头)
+          source_repo: 'https://github.com/modelscope/ms-agent.git'
+          source_branch: 'main'
+          
+          # 目标仓库 (你的 Fork)
+          destination_repo: 'https://github.com/Y-C-Fan/seu-ms-agent.git'
+          destination_branch: 'main'
+          
+          # 使用上面 checkout 步骤提供的 GITHUB_TOKEN
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          
+          # 合并策略：使用 'merge' (保留你的 commit 历史)
+          # 注意：如果上游有强制推送(force-push)，这里可能需要改为 'force'
+          sync_strategy: 'merge'
