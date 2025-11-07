@@ -30,7 +30,7 @@ For more details about `Agent Skills`, see: [Anthropic Agent Skills](https://doc
 
 - The Agent Skill Architecture
 
-<img src="../../resources/skill_architecture.png" alt="Skill-Architecture" style="width: 750px; display: block; margin: 0 auto;" />
+![Skill-Architecture](../../resources/skill_architecture.png)
 
 
 - Skill Directory Structure
@@ -51,7 +51,7 @@ skill-name/
 
 The `SKILL.md` file uses YAML front matter to define metadata, followed by markdown content for detailed instructions.
 
-<img src="../../resources/skill_md_file.png" alt="Skill-MD-File" style="width: 750px; display: block; margin: 0 auto;" />
+![Skill-MD-File](../../resources/skill_md_file.png)
 
 💡 Tips:
  - Fields in the front matter (YAML section) are mandatory, `name` and `description` are required.
@@ -65,10 +65,12 @@ The `SKILL.md` file uses YAML front matter to define metadata, followed by markd
 
 Additional files can be included in the `SKILL.md` to expand skill capabilities, such as:
 - Reference materials (e.g. `reference.md` and `forms.md`)
-<img src="../../resources/skill_additional_content.png" alt="Skill-Additional-Content" style="width: 750px; display: block; margin: 0 auto;" />
+
+![Skill-Additional-Content](../../resources/skill_additional_content.png)
 
 - Script materials
-<img src="../../resources/skill_additional_scripts.png" alt="Skill-Additional-Scripts" style="width: 750px; display: block; margin: 0 auto;" />
+
+![Skill-Additional-Scripts](../../resources/skill_additional_scripts.png)
 
 
 ### 4) Skills & Context
@@ -77,10 +79,9 @@ Additional files can be included in the `SKILL.md` to expand skill capabilities,
   - Skills can load additional context from files in the skill directory, token limitations are recommended.
   - Agents should prioritize loading essential context to ensure efficient execution.
 
-<img src="../../resources/skill_files_limitation.png" alt="Skill-Files-Limitation" style="width: 750px; display: block; margin: 0 auto;" />
+![Skill-Files-Limitation](../../resources/skill_files_limitation.png)
 
-<img src="../../resources/skill_context_window.png" alt="Skill-Context-Window" style="width: 750px; display: block; margin: 0 auto;" />
-
+![Skill-Context-Window](../../resources/skill_context_window.png)
 
 <br>
 
