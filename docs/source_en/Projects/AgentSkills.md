@@ -208,10 +208,7 @@ if __name__ == '__main__':
 
 **Result:**
 
-<div align="center">
-  <img src="https://github.com/user-attachments/assets/9d5d78bf-c2db-4280-b780-324eab74a41e" alt="FlowFieldParticles" width="750">
-  <p><em>Agent-Skills: Flow Field Particles</em></p>
-</div>
+![Flow Field Particles](../../resources/skill_algorithmic_art_result.gif)
 
 
 <br>
