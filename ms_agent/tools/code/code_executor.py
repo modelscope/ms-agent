@@ -283,7 +283,7 @@ class CodeExecutionTool(ToolBase):
                                     'Could not find available port for retry')
                                 raise RuntimeError(
                                     f'Port conflict and no available ports found: {e}'
-                                )
+                                ) from e
                         else:
                             # For non-notebook sandbox, just retry
                             logger.info(
@@ -299,11 +299,11 @@ class CodeExecutionTool(ToolBase):
                 f'Failed to create sandbox after {max_retries} attempts')
             raise RuntimeError(
                 f'Sandbox initialization failed after {max_retries} attempts: {last_error}'
-            )
+            ) from last_error
 
         except Exception as e:
             logger.error(f'Failed to initialize sandbox: {e}', exc_info=True)
-            raise RuntimeError(f'Sandbox initialization failed: {e}')
+            raise RuntimeError(f'Sandbox initialization failed: {e}') from e
 
     async def cleanup(self) -> None:
         """Clean up sandbox resources"""
@@ -820,7 +820,8 @@ class CodeExecutionTool(ToolBase):
                 logger.info('Sandbox is running and ready')
                 return
             elif info.status == SandboxStatus.ERROR:
-                error_msg = info.metadata.get('error', 'Unknown error')
+                error_msg = info.metadata.get(
+                    'error') or f'Unknown error: {info.metadata}'
                 raise RuntimeError(f'Sandbox failed to start: {error_msg}')
 
             if i % 5 == 0:
