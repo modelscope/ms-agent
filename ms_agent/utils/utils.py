@@ -645,3 +645,22 @@ def install_package(package_name: str, import_name: Optional[str] = None):
         logger.info(f'Package {package_name} installed successfully.')
     else:
         logger.info(f'Package {import_name} is already installed.')
+
+
+def extract_by_tag(text: str, tag: str) -> str:
+    """
+    Extract content enclosed by specific XML-like tags from the given text. e.g. <TAG> ...content... </TAG>
+
+    Args:
+        text (str): The input text containing the tags.
+        tag (str): The tag name to search for.
+
+    Returns:
+        str: The content found between the specified tags, or an empty string if not found.
+    """
+    pattern = fr'<{tag}>(.*?)</{tag}>'
+    match = re.search(pattern, text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    else:
+        return ''

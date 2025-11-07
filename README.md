@@ -7,24 +7,24 @@
 <p>
 
 <p align="center">
-<a href="https://modelscope.cn/mcp/playground">MCP Playground</a> ｜ <a href="https://arxiv.org/abs/2309.00986">Paper</a> | <a href="https://ms-agent-en.readthedocs.io/en/latest">Docs</a>
+<a href="https://modelscope.cn/mcp/playground">MCP Playground</a> | <a href="https://arxiv.org/abs/2309.00986">Paper</a> | <a href="https://ms-agent-en.readthedocs.io">Docs</a>
 <br>
 </p>
 
 <p align="center">
-<img src="https://img.shields.io/badge/python-%E2%89%A53.8-5be.svg">
-<a href='https://modelscope-agent.readthedocs.io/en/latest/?badge=latest'>
-    <img src='https://readthedocs.org/projects/modelscope-agent/badge/?version=latest' alt='Documentation Status' />
+<img src="https://img.shields.io/badge/python-%E2%89%A53.10-5be.svg">
+<a href='https://ms-agent-en.readthedocs.io/en/latest/'>
+    <img src='https://readthedocs.org/projects/ms-agent/badge/?version=latest' alt='Documentation Status' />
 </a>
-<a href="https://github.com/modelscope/modelscope-agent/actions?query=branch%3Amaster+workflow%3Acitest++"><img src="https://img.shields.io/github/actions/workflow/status/modelscope/modelscope-agent/citest.yaml?branch=master&logo=github&label=CI"></a>
-<a href="https://github.com/modelscope/modelscope-agent/blob/main/LICENSE"><img src="https://img.shields.io/github/license/modelscope/modelscope-agent"></a>
-<a href="https://github.com/modelscope/modelscope-agent/pulls"><img src="https://img.shields.io/badge/PR-welcome-55EB99.svg"></a>
-<a href="https://pypi.org/project/modelscope-agent/"><img src="https://badge.fury.io/py/modelscope-agent.svg"></a>
-<a href="https://pepy.tech/project/modelscope-agent"><img src="https://pepy.tech/badge/modelscope-agent"></a>
+<a href="https://github.com/modelscope/ms-agent/actions?query=branch%3Amaster+workflow%3Acitest++"><img src="https://img.shields.io/github/actions/workflow/status/modelscope/ms-agent/citest.yaml?branch=master&logo=github&label=CI"></a>
+<a href="https://github.com/modelscope/ms-agent/blob/main/LICENSE"><img src="https://img.shields.io/github/license/modelscope/ms-agent"></a>
+<a href="https://github.com/modelscope/ms-agent/pulls"><img src="https://img.shields.io/badge/PR-welcome-55EB99.svg"></a>
+<a href="https://pypi.org/project/ms-agent/"><img src="https://badge.fury.io/py/ms-agent.svg"></a>
+<a href="https://pepy.tech/project/ms-agent"><img src="https://static.pepy.tech/badge/ms-agent"></a>
 </p>
 
 <p align="center">
-<a href="https://trendshift.io/repositories/323" target="_blank"><img src="https://trendshift.io/api/badge/repositories/323" alt="modelscope%2Fmodelscope-agent | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+<a href="https://trendshift.io/repositories/323" target="_blank"><img src="https://trendshift.io/api/badge/repositories/323" alt="modelscope%2Fms-agent | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 </p>
 
 ## Introduction
@@ -47,26 +47,29 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 
 
 ## 🎉 News
-* 🚀Sep 22, 2025: Release MS-Agent v1.3.0, which includes the following updates:
+
+* 🚀 Oct 30, 2025: Release MS-Agent v1.4.0, which includes the following updates:
+  - 🔥 We present [**MS-Agent Skills**](projects/agent_skills/README.md), an **Implementation** of [Anthropic-Agent-Skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills) Protocol.
+* 🚀 Sep 22, 2025: Release MS-Agent v1.3.0, which includes the following updates:
   - 🔥 Support [Code Scratch](projects/code_scratch/README.md)
   - Support `Memory` for building agents with long-term and short-term memory
   - Enhance the DeepResearch workflow
   - Support RAY for accelerating document information extraction
   - Support Anthropic API format for LLMs
 
-* 🚀Aug 28, 2025: Release MS-Agent v1.2.0, which includes the following updates:
+* 🚀 Aug 28, 2025: Release MS-Agent v1.2.0, which includes the following updates:
   - DocResearch now supports pushing to `ModelScope`、`HuggingFace`、`GitHub` for easy sharing of research reports. Refer to [Doc Research](projects/doc_research/README.md) for more details.
   - DocResearch now supports exporting the Markdown report to `HTML`、`PDF`、`PPTX` and `DOCX` formats, refer to [Doc Research](projects/doc_research/README.md) for more details.
   - DocResearch now supports `TXT` file processing and file preprocessing, refer to [Doc Research](projects/doc_research/README.md) for more details.
 
-* 🚀July 31, 2025: Release MS-Agent v1.1.0, which includes the following updates:
+* 🚀 July 31, 2025: Release MS-Agent v1.1.0, which includes the following updates:
   - 🔥 Support [Doc Research](projects/doc_research/README.md), demo: [DocResearchStudio](https://modelscope.cn/studios/ms-agent/DocResearch)
   - Add `General Web Search Engine` for Agentic Insight (DeepResearch)
   - Add `Max Continuous Runs` for Agent chat with MCP.
 
-* 🚀July 18, 2025: Release MS-Agent v1.0.0, improve the experience of Agent chat with MCP, and update the readme for [Agentic Insight](projects/deep_research/README.md).
+* 🚀 July 18, 2025: Release MS-Agent v1.0.0, improve the experience of Agent chat with MCP, and update the readme for [Agentic Insight](projects/deep_research/README.md).
 
-* 🚀July 16, 2025: Release MS-Agent v1.0.0rc0, which includes the following updates:
+* 🚀 July 16, 2025: Release MS-Agent v1.0.0rc0, which includes the following updates:
   - Support for Agent chat with MCP (Model Context Protocol)
   - Support for Deep Research (Agentic Insight), refer to: [Report_Demo](projects/deep_research/examples/task_20250617a/report.md), [Script_Demo](projects/deep_research/run.py)
   - Support for [MCP-Playground](https://modelscope.cn/mcp/playground)
@@ -138,7 +141,7 @@ pip install -e .
 
 ## Quickstart
 
-### Agent chat
+### Agent Chat
 This project supports interaction with models via the MCP (Model Context Protocol). Below is a complete example showing
 how to configure and run an LLMAgent with MCP support.
 
@@ -239,6 +242,91 @@ asyncio.run(main())
 
 </details>
 
+
+### Agent Skills
+
+**MS-Agent Skills** is an **Implementation** of the [**Anthropic-Agent-Skills**](https://docs.claude.com/en/docs/agents-and-tools/agent-skills) protocol, enabling agents to autonomously explore and execute complex tasks by leveraging predefined or custom "skills".
+
+
+#### Key Features
+
+- 📜 **Standard Skill Protocol**: Fully compatible with the [Anthropic Skills](https://github.com/anthropics/skills) protocol
+- 🧠 **Heuristic Context Loading**: Loads only necessary context—such as `References`, `Resources`, and `Scripts` on demand
+- 🤖 **Autonomous Execution**: Agents autonomously analyze, plan, and decide which scripts and resources to execute based on skill definitions
+- 🔍 **Skill Management**: Supports batch loading of skills and can automatically retrieve and discover relevant skills based on user input
+- 🛡️ **Code Execution Environment**: Optional local direct code execution or secure sandboxed execution via [**ms-enclave**](https://github.com/modelscope/ms-enclave), with automatic dependency installation and environment isolation
+- 📁 **Multi-file Type Support**: Supports documentation, scripts, and resource files
+- 🧩 **Extensible Design**: The skill data structure is modularized, with implementations such as `SkillSchema` and `SkillContext` provided for easy extension and customization
+
+
+#### Quick Start
+
+> 💡 Note:
+> 1. Before running the following examples, ensure that you have set the `OPENAI_API_KEY` and `OPENAI_BASE_URL` environment variables to access the required model APIs.
+> 2. Agent Skills requires ms-agent >= 1.4.0
+
+
+**Installation**:
+
+```shell
+pip install ms-agent
+```
+
+**Usage**:
+
+> This example demonstrates how to configure and run an Agent Skill that generates generative art code based on p5.js flow fields.
+
+```python
+import os
+from ms_agent.agent import create_agent_skill
+
+
+def main():
+    """
+    Main function to create and run an agent with skills.
+    """
+    work_dir: str = 'temp_workspace'
+    skills_dir: str = '/path/to/skills'   # Refer to `https://github.com/modelscope/ms-agent/tree/main/projects/agent_skills/skills`
+    model_name: str = 'qwen-max-latest'
+
+    agent = create_agent_skill(
+        skills=skills_dir,
+        model=model_name,
+        api_key=os.getenv('OPENAI_API_KEY'),
+        base_url=os.getenv(
+            'OPENAI_BASE_URL',
+            'https://dashscope.aliyuncs.com/compatible-mode/v1'),
+        stream=True,
+        use_sandbox=True,  # Note: Make sure the `Docker Daemon` is running if use_sandbox=True
+        work_dir=work_dir,
+    )
+
+    user_query: str = 'Create generative art using p5.js with seeded randomness, flow fields, and particle systems, please fill in the details and provide the complete code based on the templates.'
+
+    response = agent.run(user_query)
+    print(f'\n\n** Agent skill results: {response}\n')
+
+
+if __name__ == '__main__':
+
+    main()
+```
+
+**Result**:
+
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/9d5d78bf-c2db-4280-b780-324eab74a41e" alt="FlowFieldParticles" width="750">
+  <p><em>Agent-Skills: Flow Field Particles</em></p>
+</div>
+
+
+#### References
+- **README**: [MS-Agent Skills](projects/agent_skills/README.md)
+- **Anthropic Agent Skills Official Docs**: [Anthropic-Agent-Skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills)
+- **Anthropic Skills GitHub Repo**: [Skills](https://github.com/anthropics/skills)
+
+
+
 ### Agentic Insight
 
 #### - Lightweight, Efficient, and Extensible Multi-modal Deep Research Framework
@@ -276,7 +364,9 @@ So, how are external electric fields typically simulated in theoretical calculat
 ```
 
 #### Report
+
 <https://github.com/user-attachments/assets/b1091dfc-9429-46ad-b7f8-7cbd1cf3209b>
+
 
 
 For more details, please refer to [Deep Research](projects/deep_research/README.md).
@@ -352,6 +442,17 @@ For more details, refer to [Code Scratch](projects/code_scratch/README.md).
 
 1. A news collection agent [ms-agent/newspaper](https://www.modelscope.cn/models/ms-agent/newspaper/summary)
 
+
+## Outlook
+
+We are committed to continuously improving and expanding the MS-Agent framework to push the boundaries of large models and AI agents. Our future roadmap includes:
+
+- [ ] **FinResearch** – A financial deep-research agent dedicated to in-depth analysis and research in the finance domain.
+- [ ] **Multimodal Agentic Search** – Supporting large-scale multimodal document retrieval and generation of search results combining text and images.
+- [ ] Enhanced **Agent Skills** – Providing a richer set of predefined skills and tools to expand agent capabilities and enabling multi-skill collaboration for complex task execution.
+- [ ] **Agent-Workstation** - An unified WebUI with one-click local deployment support with combining all agent capabilities of MS-Agent, such as AgentChat, MCP, AgentSkills, DeepResearch, DocResearch, CodeScratch, etc.
+
+
 ## License
 
 This project is licensed under the [Apache License (Version 2.0)](https://github.com/modelscope/modelscope/blob/master/LICENSE).
@@ -359,3 +460,11 @@ This project is licensed under the [Apache License (Version 2.0)](https://github
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=modelscope/modelscope-agent&type=Date)](https://star-history.com/#modelscope/modelscope-agent&Date)
+
+
+---
+
+<p align="center">
+  <em> ❤️ Thanks for visiting ✨ MS-Agent !</em><br><br>
+  <img src="https://visitor-badge.laobi.icu/badge?page_id=modelscope.ms-agent&style=for-the-badge&color=00d4ff" alt="Views">
+</p>
