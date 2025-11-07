@@ -1,0 +1,62 @@
+services:
+  ms-agent-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USERNAME: vscode
+        USER_UID: 1000
+        USER_GID: 1000
+
+    container_name: ms-agent-dev-container
+
+    # 工作目录
+    working_dir: /workspace
+
+    # 环境变量
+    environment:
+      - PYTHONPATH=/workspace
+      - PYTHONUNBUFFERED=1
+      - PYTHON_VERSION=3.11
+      - TZ=Asia/Shanghai
+
+    # 端口映射
+    ports:
+      - "8888:8888"  # Jupyter Notebook
+      - "8080:8080"  # Web服务
+      - "3000:3000"  # 其他应用
+
+    # 卷挂载
+    volumes:
+      - ../team-seu-ms-agent-private:/workspace:cached
+      - ms-agent-extensions:/home/vscode/.vscode-server/extensions
+      - ms-agent-bashhistory:/commandhistory
+
+    # 网络配置
+    networks:
+      - ms-agent-network
+
+    # 安全配置
+    security_opt:
+      - seccomp:unconfined
+
+    # 能力配置
+    cap_add:
+      - SYS_PTRACE
+
+    # 保持容器运行
+    tty: true
+    stdin_open: true
+
+    # 重启策略
+    restart: unless-stopped
+
+volumes:
+  ms-agent-extensions:
+    driver: local
+  ms-agent-bashhistory:
+    driver: local
+
+networks:
+  ms-agent-network:
+    driver: bridge

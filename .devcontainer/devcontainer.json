@@ -1,0 +1,105 @@
+{
+  "name": "MS-Agent开发环境",
+  "dockerFile": "Dockerfile",
+  // 自定义VS Code设置
+  "customizations": {
+    "vscode": {
+      // 推荐扩展
+      "extensions": [
+        "ms-python.python",
+        "ms-python.pylint",
+        "ms-python.black-formatter",
+        "ms-python.isort",
+        "ms-python.debugpy",
+        "ms-toolsai.jupyter",
+        "ms-azuretools.vscode-docker",
+        "GitHub.copilot",
+        "GitHub.copilot-chat",
+        "ms-vscode.vscode-json",
+        "redhat.vscode-yaml",
+        "gitlens.gitlens",
+        "ms-vscode.vscode-typescript-next",
+        "bradlc.vscode-tailwindcss",
+        "esbenp.prettier-vscode"
+      ],
+      // VS Code设置
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/bin/python3.11",
+        "python.linting.enabled": true,
+        "python.linting.pylintEnabled": true,
+        "python.formatting.provider": "black",
+        "python.formatting.blackArgs": [
+          "--line-length",
+          "88"
+        ],
+        "python.sortImports.args": [
+          "--profile",
+          "black"
+        ],
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+          "source.organizeImports": true,
+          "source.fixAll": true
+        },
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "typescript.preferences.importModuleSpecifier": "relative",
+        "yaml.schemas": {
+          "https://json.schemastore.org/github-workflow": ".github/workflows/*.{yml,yaml}"
+        },
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "git.enableSmartCommit": true,
+        "git.confirmSync": false,
+        "explorer.confirmDelete": false,
+        "workbench.colorTheme": "Default Dark+"
+      }
+    }
+  },
+  // 端口映射
+  "forwardPorts": [
+    8888,
+    8080,
+    3000,
+    7860,
+    5000
+  ],
+  // 保持容器运行
+  "postCreateCommand": "bash .devcontainer/setup-claude.sh && bash .devcontainer/setup-project-deps.sh && bash .devcontainer/setup-proxy.sh && bash .devcontainer/setup-git.sh",
+  // 挂载目录
+  "mounts": [
+    "source=${localWorkspaceFolder}/team-seu-ms-agent-private,target=/workspace,type=bind"
+  ],
+  // 环境变量
+  "remoteEnv": {
+    "PYTHONPATH": "/workspace",
+    "PYTHONUNBUFFERED": "1",
+    "PYTHON_VERSION": "3.11",
+    "NODE_PATH": "/usr/local/lib/node_modules",
+    "CLAUDE_API_KEY": "${localEnv:ANTHROPIC_API_KEY}",
+    "HTTP_PROXY": "${localEnv:HTTP_PROXY}",
+    "HTTPS_PROXY": "${localEnv:HTTPS_PROXY}",
+    "NO_PROXY": "${localEnv:NO_PROXY}",
+    "http_proxy": "${localEnv:http_proxy}",
+    "https_proxy": "${localEnv:https_proxy}",
+    "no_proxy": "${localEnv:no_proxy}",
+    "GIT_AUTHOR_NAME": "${localEnv:GIT_AUTHOR_NAME}",
+    "GIT_AUTHOR_EMAIL": "${localEnv:GIT_AUTHOR_EMAIL}",
+    "GIT_COMMITTER_NAME": "${localEnv:GIT_COMMITTER_NAME}",
+    "GIT_COMMITTER_EMAIL": "${localEnv:GIT_COMMITTER_EMAIL}",
+    "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}"
+  },
+  // 用户配置
+  "remoteUser": "vscode",
+  // 容器生命周期
+  "runArgs": [
+    "--cap-add=SYS_PTRACE",
+    "--security-opt",
+    "seccomp=unconfined",
+    "--hostname",
+    "ms-agent-dev",
+    "--add-host=host.docker.internal:host-gateway",
+    "--network=host"
+  ],
+  // 生命周期钩子
+  "postStartCommand": "echo '🚀 MS-Agent DevContainer 已准备就绪！' && node --version && python3.11 --version",
+  "postAttachCommand": "echo '💡 提示：使用 claude 命令启动 Claude Code'"
+}
