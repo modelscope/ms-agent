@@ -26,6 +26,7 @@ MS-Agent DOCUMENTATION
    :maxdepth: 2
    :caption: Projects
 
+   Projects/智能体技能.md
    Projects/深度研究.md
    Projects/代码生成.md
 

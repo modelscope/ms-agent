@@ -26,6 +26,7 @@ MS-Agent DOCUMENTATION
    :maxdepth: 2
    :caption: Projects
 
+   Projects/AgentSkills.md
    Projects/DeepResearch.md
    Projects/CodeScratch.md
 
