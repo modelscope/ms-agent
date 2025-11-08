@@ -28,7 +28,7 @@ services:
 
     # 卷挂载
     volumes:
-      - ../team-seu-ms-agent-private:/workspace:cached
+      - ..:/workspace:cached
       - ms-agent-extensions:/home/vscode/.vscode-server/extensions
       - ms-agent-bashhistory:/commandhistory
 

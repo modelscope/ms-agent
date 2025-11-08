@@ -64,10 +64,10 @@
   ],
   // 保持容器运行
   "postCreateCommand": "bash .devcontainer/setup-claude.sh && bash .devcontainer/setup-project-deps.sh && bash .devcontainer/setup-proxy.sh && bash .devcontainer/setup-git.sh",
-  // 挂载目录
-  "mounts": [
-    "source=${localWorkspaceFolder}/team-seu-ms-agent-private,target=/workspace,type=bind"
-  ],
+  // 挂载目录 (如需要私有目录,请先创建 team-seu-ms-agent-private 文件夹)
+  // "mounts": [
+  //   "source=${localWorkspaceFolder}/team-seu-ms-agent-private,target=/workspace,type=bind"
+  // ],
   // 环境变量
   "remoteEnv": {
     "PYTHONPATH": "/workspace",
