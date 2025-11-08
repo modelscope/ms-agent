@@ -11,7 +11,7 @@ import subprocess
 import sys
 from io import BytesIO
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import json
 import requests
@@ -202,7 +202,9 @@ def save_history(output_dir: str, task: str, config: DictConfig,
     with open(config_file, 'w') as f:
         OmegaConf.save(config, f)
     with open(message_file, 'w') as f:
-        json.dump([message.to_dict() for message in messages], f)
+        json.dump([message.to_dict() for message in messages],
+                  f,
+                  ensure_ascii=False)
 
 
 def read_history(output_dir: str, task: str):
@@ -572,13 +574,13 @@ def txt_to_html(txt_path: str, html_path: Optional[str] = None) -> str:
     return html_path
 
 
-def get_files_from_dir(folder_path: str,
+def get_files_from_dir(folder_path: Union[str, Path],
                        exclude: Optional[List[str]] = None) -> List[Path]:
     """
     Get all files in the target directory recursively, excluding files that match any of the given regex patterns.
 
     Args:
-        folder_path (str): The directory to search for files.
+        folder_path (Union[str, Path]): The directory to search for files.
         exclude (Optional[List[str]]): A list of regex patterns to exclude files. If None, no files are excluded.
 
     Returns:
@@ -587,11 +589,12 @@ def get_files_from_dir(folder_path: str,
     Example:
         >>> files = get_files_from_dir('/path/to/dir')
     """
+    folder_path = Path(folder_path)
     if exclude is None:
         exclude = []
     exclude_patterns = [re.compile(pattern) for pattern in exclude]
 
-    pattern = os.path.join(folder_path, '**', '*')
+    pattern = os.path.join(str(folder_path), '**', '*')
     all_files = glob.glob(pattern, recursive=True)
     files = [Path(f) for f in all_files if os.path.isfile(f)]
 
@@ -602,7 +605,8 @@ def get_files_from_dir(folder_path: str,
     file_list = [
         file_path for file_path in files if not any(
             pattern.search(
-                str(file_path.relative_to(folder_path)).replace('\\', '/'))
+                str(file_path.resolve().relative_to(
+                    folder_path.resolve())).replace('\\', '/'))
             for pattern in exclude_patterns)
     ]
 
@@ -622,7 +626,9 @@ def is_package_installed(package_or_import_name: str) -> bool:
     return importlib.util.find_spec(package_or_import_name) is not None
 
 
-def install_package(package_name: str, import_name: Optional[str] = None):
+def install_package(package_name: str,
+                    import_name: Optional[str] = None,
+                    extend_module: str = None):
     """
     Check and install a package using pip.
 
@@ -632,10 +638,14 @@ def install_package(package_name: str, import_name: Optional[str] = None):
         package_name (str): The name of the package to install (for pip install).
         import_name (str, optional): The name used to import the package.
                                     If None, uses package_name. Defaults to None.
+        extend_module (str, optional): The module to extend, e.g. `pip install modelscope[nlp]` when set to 'nlp'.
     """
     # Use package_name as import_name if not provided
     if import_name is None:
         import_name = package_name
+
+    if extend_module:
+        package_name = f'{package_name}[{extend_module}]'
 
     if not is_package_installed(import_name):
         subprocess.check_call(
@@ -643,3 +653,22 @@ def install_package(package_name: str, import_name: Optional[str] = None):
         logger.info(f'Package {package_name} installed successfully.')
     else:
         logger.info(f'Package {import_name} is already installed.')
+
+
+def extract_by_tag(text: str, tag: str) -> str:
+    """
+    Extract content enclosed by specific XML-like tags from the given text. e.g. <TAG> ...content... </TAG>
+
+    Args:
+        text (str): The input text containing the tags.
+        tag (str): The tag name to search for.
+
+    Returns:
+        str: The content found between the specified tags, or an empty string if not found.
+    """
+    pattern = fr'<{tag}>(.*?)</{tag}>'
+    match = re.search(pattern, text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    else:
+        return ''

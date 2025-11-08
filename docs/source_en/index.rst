@@ -14,15 +14,22 @@ MS-Agent DOCUMENTATION
 
 .. toctree::
    :maxdepth: 2
-   :caption: Instruction
+   :caption: Components
 
-   Instruction/Config.md
-   Instruction/LLMAgent.md
-   Instruction/Workflow.md
-   Instruction/SupportedModels.md
-   Instruction/Tools.md
-   Instruction/DeepResearch.md
-   Instruction/CodeScratch.md
+   Components/Config.md
+   Components/LLMAgent.md
+   Components/Workflow.md
+   Components/SupportedModels.md
+   Components/Tools.md
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Projects
+
+   Projects/AgentSkills.md
+   Projects/DeepResearch.md
+   Projects/CodeScratch.md
+
 
 Indices and tables
 ==================

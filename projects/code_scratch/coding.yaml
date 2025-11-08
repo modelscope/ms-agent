@@ -4,11 +4,12 @@ llm:
   openai_api_key:
   openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 
+
 generation_config:
   temperature: 0.2
   top_k: 20
   stream: true
-  max_tokens: 32000
+  max_tokens: 64000
   extra_body:
     dashscope_extend_params:
       provider: b
@@ -69,6 +70,7 @@ memory:
     procedural_search_limit: 3
     embedding_model: "text-embedding-v4"
     summary_model: "qwen3-coder-plus"
+    max_tokens: 4096
 
 max_chat_round: 100
 

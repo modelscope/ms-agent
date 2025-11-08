@@ -15,7 +15,7 @@ API_CALL_MAX_TOKEN = 50
 class OpenaiLLM(unittest.TestCase):
     conf: DictConfig = OmegaConf.create({
         'llm': {
-            'model': 'Qwen/Qwen3-Coder-480B-A35B-Instruct',
+            'model': 'Qwen/Qwen3-Coder-30B-A3B-Instruct',
             'anthropic_api_key': os.getenv('MODELSCOPE_API_KEY'),
             'anthropic_base_url': 'https://api-inference.modelscope.cn',
             'service': 'anthropic'
@@ -146,7 +146,7 @@ class OpenaiLLM(unittest.TestCase):
         async def main():
             conf2 = deepcopy(self.conf)
             conf2.generation_config.stream = True
-            agent = LLMAgent(config=self.conf, mcp_config=self.mcp_config)
+            agent = LLMAgent(config=conf2, mcp_config=self.mcp_config)
             if hasattr(agent.config, 'callbacks'):
                 agent.config.callbacks.remove('input_callback')  # noqa
             res = await agent.run('访问www.baidu.com')

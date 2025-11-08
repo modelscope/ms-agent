@@ -29,6 +29,8 @@ def retry(max_attempts: int = 3,
                 try:
                     return func(*args, **kwargs)
                 except exceptions as e:
+                    import traceback
+                    logger.warning(traceback.format_exc())
                     last_exception = e
                     if attempt < max_attempts:
                         logger.warning(
@@ -68,6 +70,8 @@ def async_retry(max_attempts: int = 3,
                         yield item
                     return
                 except exceptions as e:
+                    import traceback
+                    logger.warning(traceback.format_exc())
                     last_exception = e
                     if attempt < max_attempts:
                         logger.warning(

@@ -72,18 +72,27 @@ class SplitTask(ToolBase):
             agent = LLMAgent(
                 config=config,
                 trust_remote_code=trust_remote_code,
-                tag=f'{self.config.tag}-r{self.round}-{self.tag_prefix}{i}',
-                task='subtask')
+                tag=f'{config.tag}-r{self.round}-{self.tag_prefix}{i}',
+                load_cache=config.load_cache)
             sub_tasks.append(agent.run(query))
 
         result = []
-        for t in sub_tasks:
-            r = await t
+        for i, t in enumerate(sub_tasks):
+            try:
+                r = await t
+            except Exception as e:
+                r = f'Subtask{i} failed with error: {e}'
             result.append(r)
         # result = await asyncio.gather(*sub_tasks)
         res = []
         for messages in result:
-            res.append(messages[-1].content)
+            if isinstance(messages, list):
+                content = messages[-1].content
+                if len(content) > 2048:
+                    content = content[:2048]
+            else:
+                content = messages
+            res.append(content)
         self.round += 1
         result = ''
         for i in range(len(res)):

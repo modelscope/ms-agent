@@ -14,7 +14,7 @@ from ms_agent.callbacks import Callback, callbacks_mapping
 from ms_agent.llm.llm import LLM
 from ms_agent.llm.utils import Message
 from ms_agent.memory import Memory, memory_mapping
-from ms_agent.memory.mem0ai import Mem0Memory
+from ms_agent.memory.mem0ai import Mem0Memory, SharedMemoryManager
 from ms_agent.rag.base import RAG
 from ms_agent.rag.utils import rag_mapping
 from ms_agent.tools import ToolManager
@@ -73,6 +73,7 @@ class LLMAgent(Agent):
         self.runtime: Optional[Runtime] = None
         self.max_chat_round: int = 0
         self.load_cache = kwargs.get('load_cache', False)
+        self.config.load_cache = self.load_cache
         self.mcp_server_file = kwargs.get('mcp_server_file', None)
         self.mcp_config: Dict[str, Any] = self.parse_mcp_servers(
             kwargs.get('mcp_config', {}))
@@ -341,19 +342,19 @@ class LLMAgent(Agent):
                     service = self.config.llm.service
                     config_dict = {
                         'model':
-                        self.config.llm.model,
+                        _memory.summary_model,
                         'provider':
                         'openai',
                         'openai_base_url':
                         getattr(self.config.llm, f'{service}_base_url', None),
                         'openai_api_key':
                         getattr(self.config.llm, f'{service}_api_key', None),
+                        'max_tokens':
+                        _memory.max_tokens,
                     }
                     llm_config_obj = OmegaConf.create(config_dict)
                     setattr(_memory, 'llm', llm_config_obj)
-
                 if memory_type == 'mem0':
-                    from ms_agent.memory.mem0ai import SharedMemoryManager
                     shared_memory = SharedMemoryManager.get_shared_memory(
                         _memory)
                     self.memory_tools.append(shared_memory)
@@ -419,10 +420,10 @@ class LLMAgent(Agent):
                 -1].content and response_message.tool_calls:
             messages[-1].content = 'Let me do a tool calling.'
 
-    @async_retry(max_attempts=2, delay=1.0)
+    @async_retry(max_attempts=Agent.retry_count, delay=1.0)
     async def step(
-            self, messages: List[Message],
-            tag: str) -> AsyncGenerator[List[Message], Any]:  # type: ignore
+        self, messages: List[Message]
+    ) -> AsyncGenerator[List[Message], Any]:  # type: ignore
         """
         Execute a single step in the agent's interaction loop.
 
@@ -441,41 +442,48 @@ class LLMAgent(Agent):
 
         Args:
             messages (List[Message]): Current message history.
-            tag (str): Identifier for logging purposes.
 
         Returns:
             List[Message]: Updated message history after this step.
         """
         messages = deepcopy(messages)
-        messages = await self.condense_memory(messages)
-        await self.on_generate_response(messages)
-        tools = await self.tool_manager.get_tools()
+        if (not self.load_cache) or messages[-1].role != 'assistant':
+            messages = await self.condense_memory(messages)
+            await self.on_generate_response(messages)
+            tools = await self.tool_manager.get_tools()
 
-        if self.stream:
-            self.log_output('[assistant]:')
-            _content = ''
-            is_first = True
-            _response_message = None
-            for _response_message in self.llm.generate(messages, tools=tools):
-                if is_first:
-                    messages.append(_response_message)
-                    is_first = False
-                new_content = _response_message.content[len(_content):]
-                sys.stdout.write(new_content)
-                sys.stdout.flush()
-                _content = _response_message.content
-                messages[-1] = _response_message
-                yield messages
-            sys.stdout.write('\n')
-        else:
-            _response_message = self.llm.generate(messages, tools=tools)
-            if _response_message.content:
+            if self.stream:
                 self.log_output('[assistant]:')
-                self.log_output(_response_message.content)
+                _content = ''
+                is_first = True
+                _response_message = None
+                for _response_message in self.llm.generate(
+                        messages, tools=tools):
+                    if is_first:
+                        messages.append(_response_message)
+                        is_first = False
+                    new_content = _response_message.content[len(_content):]
+                    sys.stdout.write(new_content)
+                    sys.stdout.flush()
+                    _content = _response_message.content
+                    messages[-1] = _response_message
+                    yield messages
+                sys.stdout.write('\n')
+            else:
+                _response_message = self.llm.generate(messages, tools=tools)
+                if _response_message.content:
+                    self.log_output('[assistant]:')
+                    self.log_output(_response_message.content)
 
-        # Response generated
-        self.handle_new_response(messages, _response_message)
-        await self.on_tool_call(messages)
+            # Response generated
+            self.handle_new_response(messages, _response_message)
+            await self.on_tool_call(messages)
+        else:
+            # Set load_cache to `false` to avoid affect later operations
+            self.load_cache = False
+            # Meaning the latest message is `assistant`, this prevents a different response if there are sub-tasks.
+            _response_message = messages[-1]
+        self.save_history(messages)
 
         if _response_message.tool_calls:
             messages = await self.parallel_tool_call(messages)
@@ -522,6 +530,10 @@ class LLMAgent(Agent):
                 delattr(config, 'runtime')
             else:
                 runtime = self.runtime
+            if _messages[-1].role == 'tool':
+                # Ignore and redo the last tool response
+                # This is because it's the last calling, the unhandled error may be started from here
+                _messages = _messages[:-1]
             return config, runtime, _messages
         else:
             return self.config, self.runtime, messages
@@ -562,6 +574,17 @@ class LLMAgent(Agent):
         Args:
             messages (List[Message]): Current message history to save.
         """
+        messages = deepcopy(messages)
+        for message in messages:
+            # Prevent the arguments are not json
+            if message.tool_calls:
+                for tool_call in message.tool_calls:
+                    try:
+                        if tool_call['arguments']:
+                            json.loads(tool_call['arguments'])
+                    except Exception:
+                        tool_call['arguments'] = '{}'
+
         if self.memory_tools:
             if self.runtime.should_stop:
                 for memory_tool in self.memory_tools:
@@ -612,10 +635,10 @@ class LLMAgent(Agent):
                     self.log_output('[' + message.role + ']:')
                     self.log_output(message.content)
             while not self.runtime.should_stop:
-                async for messages in self.step(messages, self.tag):
+                async for messages in self.step(messages):
                     yield messages
                 self.runtime.round += 1
-                # save history
+                # save memory and history
                 self.save_memory(messages)
                 self.save_history(messages)
 
@@ -636,7 +659,10 @@ class LLMAgent(Agent):
 
             await self.on_task_end(messages)
             await self.cleanup_tools()
+            yield messages
         except Exception as e:
+            import traceback
+            logger.warning(traceback.format_exc())
             if hasattr(self.config, 'help'):
                 logger.error(
                     f'[{self.tag}] Runtime error, please follow the instructions:\n\n {self.config.help}'
