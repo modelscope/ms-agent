@@ -7,20 +7,20 @@
 <p>
 
 <p align="center">
-<a href="https://modelscope.cn/mcp/playground">MCP Playground</a> ｜ <a href="https://arxiv.org/abs/2309.00986">Paper</a> | <a href="https://ms-agent.readthedocs.io/zh-cn/latest">Docs</a>
+<a href="https://modelscope.cn/mcp/playground">MCP Playground</a> | <a href="https://arxiv.org/abs/2309.00986">Paper</a> | <a href="https://ms-agent-en.readthedocs.io">Documentation</a> | <a href="https://ms-agent.readthedocs.io/zh-cn">中文文档</a>
 <br>
 </p>
 
 <p align="center">
-<img src="https://img.shields.io/badge/python-%E2%89%A53.8-5be.svg">
-<a href='https://modelscope-agent.readthedocs.io/en/latest/?badge=latest'>
-    <img src='https://readthedocs.org/projects/modelscope-agent/badge/?version=latest' alt='Documentation Status' />
+<img src="https://img.shields.io/badge/python-%E2%89%A53.10-5be.svg">
+<a href='https://ms-agent-en.readthedocs.io/en/latest/'>
+    <img src='https://readthedocs.org/projects/ms-agent/badge/?version=latest' alt='Documentation Status' />
 </a>
-<a href="https://github.com/modelscope/modelscope-agent/actions?query=branch%3Amaster+workflow%3Acitest++"><img src="https://img.shields.io/github/actions/workflow/status/modelscope/modelscope-agent/citest.yaml?branch=master&logo=github&label=CI"></a>
-<a href="https://github.com/modelscope/modelscope-agent/blob/main/LICENSE"><img src="https://img.shields.io/github/license/modelscope/modelscope-agent"></a>
-<a href="https://github.com/modelscope/modelscope-agent/pulls"><img src="https://img.shields.io/badge/PR-welcome-55EB99.svg"></a>
-<a href="https://pypi.org/project/modelscope-agent/"><img src="https://badge.fury.io/py/modelscope-agent.svg"></a>
-<a href="https://pepy.tech/project/modelscope-agent"><img src="https://pepy.tech/badge/modelscope-agent"></a>
+<a href="https://github.com/modelscope/ms-agent/actions?query=branch%3Amaster+workflow%3Acitest++"><img src="https://img.shields.io/github/actions/workflow/status/modelscope/ms-agent/citest.yaml?branch=master&logo=github&label=CI"></a>
+<a href="https://github.com/modelscope/ms-agent/blob/main/LICENSE"><img src="https://img.shields.io/github/license/modelscope/ms-agent"></a>
+<a href="https://github.com/modelscope/ms-agent/pulls"><img src="https://img.shields.io/badge/PR-welcome-55EB99.svg"></a>
+<a href="https://pypi.org/project/ms-agent/"><img src="https://badge.fury.io/py/ms-agent.svg"></a>
+<a href="https://pepy.tech/project/ms-agent"><img src="https://static.pepy.tech/badge/ms-agent"></a>
 </p>
 
 <p align="center">
@@ -35,6 +35,7 @@ MS-Agent是一个轻量级框架，旨在为智能体提供自主探索能力。
 - **通用多智能体**：基于MCP的工具调用能力与智能体聊天。
 - **深度研究**：启用自主探索和复杂任务执行的高级能力。
 - **代码生成**：支持带有工件的代码生成任务。
+- **Agent Skills**：兼容Anthropic-Agent-Skills协议，实现智能体技能模块。
 - **轻量级且可扩展**：易于扩展和定制以适应各种应用。
 
 > 历史存档版本，请参考：https://github.com/modelscope/ms-agent/tree/0.8.0
@@ -44,25 +45,31 @@ MS-Agent是一个轻量级框架，旨在为智能体提供自主探索能力。
 |  <img src="asset/ms-agent.jpg" width="200" height="200">
 
 ## 🎉 新闻
-* 🚀2025年9月22日：发布MS-Agent v1.3.0，包含以下更新：
+
+* 🚀 2025.11.07：发布MS-Agent v1.4.0，包含以下更新：
+  - 🔥 新增 [**MS-Agent Skills**](projects/agent_skills/README.md), 基于 [**Anthropic-Agent-Skills**](https://docs.claude.com/en/docs/agents-and-tools/agent-skills) 协议实现.
+  - 🔥 新增 [中文文档](https://ms-agent.readthedocs.io/zh-cn)和[英文文档](https://ms-agent-en.readthedocs.io/en)
+  - 🔥 支持沙箱框架 [ms-enclave](https://github.com/modelscope/ms-enclave)
+
+* 🚀 2025.9.22：发布MS-Agent v1.3.0，包含以下更新：
   - 🔥 支持[Code Scratch](projects/code_scratch/README.md)
   - 支持`Memory`用于构建具有长期和短期记忆的智能体
   - 增强DeepResearch工作流
   - 支持RAY加速文档信息提取
   - 支持LLMs的Anthropic API格式
 
-* 🚀2025年8月28日：发布MS-Agent v1.2.0，包含以下更新：
+* 🚀 2025.8.28：发布MS-Agent v1.2.0，包含以下更新：
   - DocResearch现在支持推送到`ModelScope`、`HuggingFace`、`GitHub`以便于分享研究报告。详情请参考[Doc Research](projects/doc_research/README.md)。
   - DocResearch现在支持将Markdown报告导出为`HTML`、`PDF`、`PPTX`和`DOCX`格式，详情请参考[Doc Research](projects/doc_research/README.md)。
   - DocResearch现在支持`TXT`文件处理和文件预处理，详情请参考[Doc Research](projects/doc_research/README.md)。
 
-* 🚀2025年7月31日：发布MS-Agent v1.1.0，包含以下更新：
+* 🚀 2025.7.31：发布MS-Agent v1.1.0，包含以下更新：
 - 🔥 支持[文档研究](projects/doc_research/README.md)，演示：[DocResearchStudio](https://modelscope.cn/studios/ms-agent/DocResearch) - 为智能洞察（DeepResearch）添加`通用网络搜索引擎`
   - 为Agent与MCP聊天添加`最大连续运行次数`。
 
-* 🚀2025年7月18日：发布MS-Agent v1.0.0，改进Agent与MCP聊天的体验，并更新[智能洞察](projects/deep_research/README.md)的说明文档。
+* 🚀 2025.7.18：发布MS-Agent v1.0.0，改进Agent与MCP聊天的体验，并更新[智能洞察](projects/deep_research/README.md)的说明文档。
 
-* 🚀2025年7月16日：发布MS-Agent v1.0.0rc0，包含以下更新：
+* 🚀 2025.7.16：发布MS-Agent v1.0.0rc0，包含以下更新：
   - 支持Agent与MCP（模型上下文协议）聊天
   - 支持深度研究（智能洞察），参考：[报告演示](projects/deep_research/examples/task_20250617a/report.md)，[脚本演示](projects/deep_research/run.py)
   - 支持[MCP-Playground](https://modelscope.cn/mcp/playground)
@@ -238,6 +245,57 @@ asyncio.run(main())
 
 </details>
 
+
+### Agent Skills
+
+**MS-Agent Skills** 模块是对 [**Anthropic-Agent-Skills**](https://docs.claude.com/en/docs/agents-and-tools/agent-skills) 协议的实现，允许开发者轻松创建、管理和使用智能体技能，提升智能体在复杂任务上的表现。
+
+
+#### 1) 核心特性
+
+- 📜 **标准技能协议**：完全兼容 [Anthropic Skills](https://github.com/anthropics/skills) 协议
+- 🧠 **启发式上下文加载**：仅在需要时加载必要的上下文，如`References`、`Resources`和`Scripts`等
+- 🤖 **自主执行**：智能体根据技能定义，自主分析、规划和决策执行哪些脚本和资源
+- 🔍 **技能管理**：支持技能批量加载，可根据用户输入自动检索和发现相关技能
+- 🛡️ **代码执行环境**：可选代码本地直接执行，或使用沙箱环境（[**ms-enclave**](https://github.com/modelscope/ms-enclave)），自动处理依赖项安装和环境隔离
+- 📁 **多文件类型支持**：支持文档、脚本和资源文件
+- 🧩 **可扩展设计**：对「技能」的数据结构进行了模块化设计，提供 `SkillSchema`、`SkillContext`等实现，便于扩展和定制
+
+#### 2) 快速开始
+
+> 💡 提示：
+> 1. 在运行以下示例之前，请确保设置了 `OPENAI_API_KEY` 和 `OPENAI_BASE_URL` 环境变量，以便访问所需的模型 API
+> 2. Agent Skills 要求 ms-agent 版本 >= 1.4.0
+
+
+**安装依赖**：
+
+```shell
+pip install ms-agent
+```
+
+**使用示例**：
+> 该示例展示了如何配置和运行一个Agent Skill，基于p5.js的流场生成艺术代码。
+
+
+参考代码： [Run Skills](projects/agent_skills/run.py)
+
+
+**运行结果**：
+
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/9d5d78bf-c2db-4280-b780-324eab74a41e" alt="FlowFieldParticles" width="750">
+  <p><em>Agent-Skills: Flow Field Particles</em></p>
+</div>
+
+
+
+#### 3) 参考文档
+- **README**：请参考 [MS-Agent Skills](projects/agent_skills/README.md)
+- **Anthropic Agent Skills官方文档**：请参考 [Anthropic-Agent-Skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills)
+- **Anthropic预定义Skills GitHub仓库**：请参考 [Skills](https://github.com/anthropics/skills)
+
+
 ### Agentic Insight
 
 #### - 轻量级、高效且可扩展的多模态深度研究框架
@@ -275,6 +333,7 @@ asyncio.run(main())
 ```
 
 #### 报告
+
 <https://github.com/user-attachments/assets/b1091dfc-9429-46ad-b7f8-7cbd1cf3209b>
 
 
@@ -349,6 +408,18 @@ PYTHONPATH=. openai_api_key=your-api-key openai_base_url=your-api-url python ms_
 ### 有趣的工作
 
 1. 新闻收集智能体 [ms-agent/newspaper](https://www.modelscope.cn/models/ms-agent/newspaper/summary)
+
+
+## 未来计划
+
+我们致力于不断改进和扩展 MS-Agent 框架，提升大模型和智能体的能力边界。未来的计划包括：
+
+- [x] 支持[Anthropic-Agent-Skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills) 协议，实现智能体技能模块，提升智能体在复杂任务上的表现。
+- [ ] 金融深度研究智能体 **FinResearch** - 专注于金融领域的深度研究和分析。
+- [ ] 多模态检索增强生成 **Multimodal Agentic Search** - 支持大规模多模态文档检索和图文检索结果生成。
+- [ ] 增强的 **Agent Skills** - 提供更多预定义的技能和工具，提升智能体技能边界，并支持多技能协作，完成复杂任务执行。
+- [ ] 统一的WebUI **Agent-Workstation**，支持本地一键部署，集成了 MS-Agent 的所有智能体能力，如 AgentChat、MCP、AgentSkills、DeepResearch、DocResearch、CodeScratch 等。
+
 
 ## 许可证
 该项目基于 [Apache License (Version 2.0)](https://github.com/modelscope/modelscope/blob/master/LICENSE) 许可证。

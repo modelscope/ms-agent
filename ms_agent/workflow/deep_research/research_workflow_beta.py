@@ -851,13 +851,13 @@ class ResearchWorkflowBeta(ResearchWorkflow):
 
         return response_data.get('answer', '')
 
-    async def run(self,
-                  user_prompt: str,
-                  breadth: int = 4,
-                  depth: int = 2,
-                  is_report: bool = False,
-                  show_progress: bool = False,
-                  **kwargs) -> Optional[str]:
+    async def _run(self,
+                   user_prompt: str,
+                   breadth: int = 4,
+                   depth: int = 2,
+                   is_report: bool = False,
+                   show_progress: bool = False,
+                   **kwargs) -> None:
 
         if not user_prompt:
             initial_query = Prompt.ask(
@@ -891,6 +891,8 @@ class ResearchWorkflowBeta(ResearchWorkflow):
                     f'Initial Query:\n{initial_query}\n'
                     f'Follow-up Questions:\n{questions_text}\n'
                     f'User\'s Answers:\n{answer}')
+            else:
+                combined_query = initial_query
         except Exception as e:
             logger.info(
                 'Error generating follow-up questions, proceeding with initial query only...\n'
@@ -965,3 +967,42 @@ class ResearchWorkflowBeta(ResearchWorkflow):
         except Exception as e:
             logger.error(f'Error generating final output: {e}')
             return None
+
+    async def run(self,
+                  user_prompt: str,
+                  breadth: int = 4,
+                  depth: int = 2,
+                  is_report: bool = False,
+                  show_progress: bool = False,
+                  **kwargs) -> None:
+        """
+        Public interface for running the research workflow with proper Ray cleanup.
+        """
+        try:
+            result = await self._run(
+                user_prompt=user_prompt,
+                breadth=breadth,
+                depth=depth,
+                is_report=is_report,
+                show_progress=show_progress,
+                **kwargs
+            )
+            return result if result else None
+        finally:
+            # Clean up Ray resources to prevent atexit callback errors
+            try:
+                import ray
+                ray_available = True
+            except ImportError:
+                ray_available = False
+
+            if self._use_ray and ray_available:
+                try:
+                    if ray.is_initialized():
+                        ray.shutdown()
+                        if self._verbose:
+                            logger.info('Ray shutdown completed successfully')
+                except Exception as e:
+                    # Suppress Ray shutdown errors to avoid atexit callback issues
+                    if self._verbose:
+                        logger.warning(f'Ray shutdown warning (can be safely ignored): {e}')
