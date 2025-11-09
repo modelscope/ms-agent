@@ -1,6 +1,5 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import os
-from tkinter import N
 from typing import Any, AsyncGenerator, List, Union
 
 import json
@@ -30,22 +29,23 @@ class AggregatorAgent(LLMAgent):
             self, inputs: Union[str, List[str], List[Message],
                                 List[List[Message]]], **kwargs
     ) -> Union[List[Message], AsyncGenerator[List[Message], Any]]:
-        reports = []  # List of reports
+        reports = {}  # Dict of reports
 
         if isinstance(inputs, list):
             if isinstance(inputs[0], str):
                 refractory_inputs = [[Message(role='user', content=item)]
-                                     for item in inputs]
+                                     for item in inputs
+                                     ]  # multiple parent nodes
             elif isinstance(inputs[0], Message):
-                refractory_inputs = [inputs]
+                refractory_inputs = [inputs]  # single parent node
             elif len(inputs) > 1 and isinstance(inputs[0], list):
-                refractory_inputs = inputs
+                refractory_inputs = inputs  # multiple parent nodes
             else:
                 raise ValueError(
                     f"Invalid input type: List[{type(inputs[0]) if inputs else 'empty list'}]"
                 )
         elif isinstance(inputs, str):
-            refractory_inputs = [[Message(role='assistant', content=inputs)]]
+            refractory_inputs = [[Message(role='user', content=inputs)]]
         else:
             raise ValueError(f'Invalid input type: {type(inputs)}')
 
@@ -53,23 +53,31 @@ class AggregatorAgent(LLMAgent):
             report = None
             for message in sub_inputs[::-1]:
                 if message.role == 'user':
-                    report_path = json.loads(message.content).get(
-                        'report_path', '')
+                    report_path = ''
+                    try:
+                        content_data = json.loads(message.content)
+                        report_path = content_data.get('report_path', '')
+                    except json.JSONDecodeError:
+                        pass
                     if not report_path:
-                        report_path = extract_code_blocks(
-                            message.content)[0][0].get('code').get(
-                                'report_path', '')
+                        code_blocks, _ = extract_code_blocks(message.content)
+                        if code_blocks:
+                            try:
+                                code_content = code_blocks[0].get('code', '')
+                                code_data = json.loads(code_content)
+                                report_path = code_data.get('report_path', '')
+                            except (json.JSONDecodeError, IndexError):
+                                report_path = ''
                     break
 
             if report_path and os.path.exists(report_path):
-                with open(report_path, 'r') as f:
+                with open(report_path, 'r', encoding='utf-8') as f:
                     report = f.read()
 
-            if not report:
-                reports.append(message.content)
-            else:
-                reports.append(report)
-        reports_content = '\n'.join(reports)
+            report_type = ('**Financial Data Analysis Report**'
+                           if 'analysis' in report_path else
+                           '**Online Sentiment Analysis Report**')
+            reports[report_type] = report if report else message.content
 
         plan = {}
         plan_path = os.path.join(self.config.output_dir, 'plan.json')
@@ -82,12 +90,12 @@ class AggregatorAgent(LLMAgent):
             except Exception as e:
                 logger.warning(
                     f'Failed to load plan.json: {e}. Using empty plan.')
-        plan = json.dumps(plan, ensure_ascii=False, indent=2)
 
         return await super().run(
             messages=
-            (f'The reports from the SearchAgent and AnalystAgent are as follows:\n{reports_content}\n'
+            (f'The reports from the SearchAgent and AnalystAgent are as follows:\n'
+             f'{json.dumps(reports, ensure_ascii=False, indent=2)}\n'
              f'Please integrate the reports into a comprehensive financial analysis report.\n'
-             f'Please review the original plan for the financial analysis task:\n{plan}\n'
-             ),
+             f'Please review the original plan for the financial analysis task:\n'
+             f'{json.dumps(plan, ensure_ascii=False, indent=2)}\n'),
             kwargs=kwargs)

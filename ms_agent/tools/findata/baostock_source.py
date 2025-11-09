@@ -335,43 +335,51 @@ class BaoStockDataSource(FinancialDataSource):
         result = {}
         with baostock_session():
             for data_type in data_types:
-                parsed_extra_kwargs = {}
-                parsed_start_date = start_date
-                parsed_end_date = end_date
+                try:
+                    parsed_extra_kwargs = {}
+                    parsed_start_date = start_date
+                    parsed_end_date = end_date
 
-                if data_type == 'deposit_rate':
-                    query_func = bs.query_deposit_rate_data
+                    if data_type == 'deposit_rate':
+                        query_func = bs.query_deposit_rate_data
 
-                elif data_type == 'loan_rate':
-                    query_func = bs.query_loan_rate_data
+                    elif data_type == 'loan_rate':
+                        query_func = bs.query_loan_rate_data
 
-                elif data_type == 'required_reserve_ratio':
-                    query_func = bs.query_required_reserve_ratio_data
-                    if extra_kwargs:
-                        parsed_extra_kwargs.update(extra_kwargs)
-                    if 'yearType' not in parsed_extra_kwargs:
-                        parsed_extra_kwargs['yearType'] = '0'
+                    elif data_type == 'required_reserve_ratio':
+                        query_func = bs.query_required_reserve_ratio_data
+                        if extra_kwargs:
+                            parsed_extra_kwargs.update(extra_kwargs)
+                        if 'yearType' not in parsed_extra_kwargs:
+                            parsed_extra_kwargs['yearType'] = '0'
 
-                elif data_type == 'money_supply_month':
-                    query_func = bs.query_money_supply_data_month
-                    parsed_start_date = pd.to_datetime(start_date).strftime(
-                        '%Y-%m')
-                    parsed_end_date = pd.to_datetime(end_date).strftime(
-                        '%Y-%m')
+                    elif data_type == 'money_supply_month':
+                        query_func = bs.query_money_supply_data_month
+                        parsed_start_date = pd.to_datetime(
+                            start_date).strftime('%Y-%m')
+                        parsed_end_date = pd.to_datetime(end_date).strftime(
+                            '%Y-%m')
 
-                elif data_type == 'money_supply_year':
-                    query_func = bs.query_money_supply_data_year
-                    parsed_start_date = pd.to_datetime(start_date).strftime(
-                        '%Y')
-                    parsed_end_date = pd.to_datetime(end_date).strftime('%Y')
+                    elif data_type == 'money_supply_year':
+                        query_func = bs.query_money_supply_data_year
+                        parsed_start_date = pd.to_datetime(
+                            start_date).strftime('%Y')
+                        parsed_end_date = pd.to_datetime(end_date).strftime(
+                            '%Y')
 
-                else:
-                    raise ValueError(f'Invalid data type: {data_type}')
+                    else:
+                        raise ValueError(f'Invalid data type: {data_type}')
 
-                df = self._query_macro_data(query_func, data_type,
-                                            parsed_start_date, parsed_end_date,
-                                            **parsed_extra_kwargs)
-                result[data_type] = df
+                    df = self._query_macro_data(query_func, data_type,
+                                                parsed_start_date,
+                                                parsed_end_date,
+                                                **parsed_extra_kwargs)
+                    result[data_type] = df
+
+                except Exception as e:
+                    logger.warning(f'Failed to fetch {data_type} data: {e}')
+                    result[data_type] = pd.DataFrame()
+                    continue
 
         if not result:
             raise NoDataFoundError(

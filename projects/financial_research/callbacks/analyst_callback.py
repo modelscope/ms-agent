@@ -20,24 +20,26 @@ class AnalystCallback(Callback):
 
     def __init__(self, config: DictConfig):
         super().__init__(config)
-        self.file_system = FileSystemTool(config)
         self.report_path = self.config.get(
             'report_path',
             os.path.join(self.config.output_dir, 'analysis_report.md'))
 
     async def on_task_begin(self, runtime: Runtime, messages: List[Message]):
-        await self.file_system.connect()
+        for message in messages:
+            if message.role == 'system':
+                message.content = message.content.replace('\\\n', '')
 
         if os.path.exists(os.path.join(self.config.output_dir, 'plan.json')):
-            plan = self.file_system.read_file(
-                os.path.join(self.config.output_dir, 'plan.json'))
+            with open(os.path.join(self.config.output_dir, 'plan.json'),
+                      'r') as f:
+                plan = json.load(f)
             if not plan:
                 logger.error(
                     'The plan.json file is empty, please check the file.')
             user_message = Message(
                 role='user',
                 content=
-                (f'The complete plan for the current financial analysis task is as follows:\n{plan}\n'
+                (f'The complete plan for the current overall financial analysis task is as follows:\n{plan}\n'
                  f'Please follow the plan to complete the data analysis task.\n'
                  f'IMPORTANT: Review the input analysis specification provided under "financial_data_dimension"'
                  ))

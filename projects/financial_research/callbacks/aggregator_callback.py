@@ -25,6 +25,10 @@ class AggregatorCallback(Callback):
     async def on_task_begin(self, runtime: Runtime, messages: List[Message]):
         await self.file_system.connect()
 
+        for message in messages:
+            if message.role == 'system':
+                message.content = message.content.replace('\\\n', '')
+
     async def on_task_end(self, runtime: Runtime, messages: List[Message]):
         for message in messages[::-1]:
             if message.role == 'assistant' and not message.tool_calls:
