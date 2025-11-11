@@ -183,3 +183,11 @@ Instructions on how to use this skill...
  - The body of the SKILL.md should provide comprehensive details about the skill, including features, usage instructions, references, resources, and examples.
 
 <br>
+
+## Skills Generation & Conversion
+
+Although we can construct our own skills by following Anthropic’s Skills standard protocol, the high complexity poses challenges for manual creation.
+
+Therefore, using AI tools to automatically generate skills becomes an excellent alternative.
+
+Here, we recommend **Skill Seekers** (https://github.com/yusufkaraaslan/Skill_Seekers) for automatically building and converting agent skills.
