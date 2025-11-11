@@ -51,6 +51,8 @@ class SearchAgent(CodeAgent):
 
             self.workdir = getattr(self.config, 'output_dir', './output')
             self.use_ray = getattr(self.config, 'use_ray', False)
+            self.report_prefix = getattr(self.config, 'report_prefix',
+                                         'sentiment_')
 
     async def run(self, inputs: Union[str, List[Message]],
                   **kwargs) -> List[Message]:
@@ -59,7 +61,8 @@ class SearchAgent(CodeAgent):
             search_engine=self.search_engine,
             workdir=self.workdir,
             use_ray=self.use_ray,
-            enable_multimodal=False)
+            enable_multimodal=False,
+            report_prefix=self.report_prefix)
 
         if inputs is None:
             return [Message(role='assistant', content='')]

@@ -105,7 +105,9 @@ bash projects/financial_research/tools/build_jupyter_image.sh
 export OPENAI_API_KEY=your_api_key
 export OPENAI_BASE_URL=your-api-url
 
-# 搜索引擎（用于舆情研究，可选 exa 或 serpapi）
+# 搜索引擎（用于舆情研究，可选 exa 或 serpapi），下列服务均提供一定的免费额度，请注册并配置API Key
+# exa账号注册地址为https://exa.ai，SerpApi账号注册地址为https://serpapi.com
+# 如果不希望配置搜索引擎就启动FinResearch项目进行测试，可跳过并参考快速启动一节
 export EXA_API_KEY=your_exa_api_key
 export SERPAPI_API_KEY=your_serpapi_api_key
 ```
@@ -120,6 +122,8 @@ tools:
 
 ### 运行工作流
 
+快速启动完整FinResearch工作流进行测试：
+
 ```bash
 # 在 ms-agent 根目录执行
 PYTHONPATH=. python ms_agent/cli/cli.py run \
@@ -128,9 +132,35 @@ PYTHONPATH=. python ms_agent/cli/cli.py run \
   --trust_remote_code true
 ```
 
+在没有配置搜索引擎服务的情况下，允许配置最小版本FinResearch工作流进行测试（无舆情深度研究部分），需要修改workflow.yaml文件如下：
+
+```bash
+type: DagWorkflow
+
+orchestrator:
+  next:
+    - collector
+  agent_config: orchestrator.yaml
+
+collector:
+  next:
+    - analyst
+  agent_config: collector.yaml
+
+analyst:
+  next:
+    - aggregator
+  agent_config: analyst.yaml
+
+aggregator:
+  agent_config: aggregator.yaml
+```
+
+随后在命令行中按之前相同的方式启动即可。需要注意的是，由于信息维度不全面，FinResearch可能无法对复杂问题给出篇幅较长、内容丰富的分析报告，建议仅用于测试。
+
 ### 样例
 
-请参考`projects/financial_research/examples`。
+更多内容请参考`projects/financial_research/examples`。
 
 ## 🔧 开发指南
 
@@ -230,8 +260,8 @@ output/
 ├── ...
 ├── cross_chapter_mismatches.md         # 跨章节一致性校验结果
 ├── analysis_report.md                  # 数据分析报告
-├── report.md                           # 舆情分析报告
-└── aggregator_report.md                # 最终综合报告
+├── sentiment_report.md                 # 舆情分析报告
+└── report.md                           # 最终综合报告
 ```
 
 ## 📝 TODOs

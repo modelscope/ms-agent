@@ -105,7 +105,9 @@ bash projects/financial_research/tools/build_jupyter_image.sh
 export OPENAI_API_KEY=your_api_key
 export OPENAI_BASE_URL=your-api-url
 
-# Search Engine API (for sentiment analysis, you can choose exa or serpapi)
+# Search Engine APIs (for sentiment analysis; you may choose either Exa or SerpApi, both offer a free quota)
+# Exa account registration: https://exa.ai; SerpApi account registration: https://serpapi.com
+# If you prefer to run the FinResearch project for testing without configuring a search engine, you may skip this step and refer to the Quick Start section.
 export EXA_API_KEY=your_exa_api_key
 export SERPAPI_API_KEY=your_serpapi_api_key
 ```
@@ -120,6 +122,8 @@ tools:
 
 ### Running the Workflow
 
+Quickly start the full FinResearch workflow for testing:
+
 ```bash
 # Run from the ms-agent root directory
 PYTHONPATH=. python ms_agent/cli/cli.py run \
@@ -128,9 +132,36 @@ PYTHONPATH=. python ms_agent/cli/cli.py run \
   --trust_remote_code true
 ```
 
+When no search engine service is configured, you can set up a minimal version of the FinResearch workflow for testing (without the public sentiment deep research component) by modifying the workflow.yaml file as follows:
+
+```bash
+type: DagWorkflow
+
+orchestrator:
+  next:
+    - collector
+  agent_config: orchestrator.yaml
+
+collector:
+  next:
+    - analyst
+  agent_config: collector.yaml
+
+analyst:
+  next:
+    - aggregator
+  agent_config: analyst.yaml
+
+aggregator:
+  agent_config: aggregator.yaml
+```
+
+After that, start the project from the command line in the same way as before.
+Please note that due to incomplete information dimensions, FinResearch may not be able to generate long and detailed analysis reports for complex questions. It is recommended to use this setup for testing purposes only.
+
 ### Examples
 
-Please refer to `projects/financial_research/examples`
+Please refer to `projects/financial_research/examples` for more examples.
 
 ## 🔧 Developer Guide
 
@@ -233,8 +264,8 @@ output/
 ├── ...
 ├── cross_chapter_mismatches.md         # Consistency audit
 ├── analysis_report.md                  # Data analysis report
-├── report.md                           # Sentiment analysis report
-└── aggregator_report.md                # Final comprehensive report
+├── sentiment_report.md                 # Sentiment analysis report
+└── report.md                           # Final comprehensive report
 ```
 
 ## 📝 TODOs

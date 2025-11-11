@@ -64,8 +64,9 @@ class ResearchWorkflow:
 
         # Construct output directory for current workflow
         self.workdir = workdir
+        self.report_prefix = kwargs.get('report_prefix', '')
         self.workdir_structure: Dict[
-            str, str] = self._construct_workdir_structure(workdir)
+            str, str] = self._construct_workdir_structure(workdir, report_prefix=self.report_prefix)
 
         if self._verbose:
             logger.info(f'Workflow workdir structure: {self.workdir_structure}')
@@ -74,7 +75,7 @@ class ResearchWorkflow:
         # self.parser_workdir = self.workdir_structure['resources_dir']
 
     @staticmethod
-    def _construct_workdir_structure(workdir: str, report_prefix: str='') -> Dict[str, str]:
+    def _construct_workdir_structure(workdir: str, report_prefix: str = '') -> Dict[str, str]:
         """
         Construct the directory structure for the workflow outputs.
 

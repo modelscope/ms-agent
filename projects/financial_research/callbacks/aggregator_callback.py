@@ -20,8 +20,7 @@ class AggregatorCallback(Callback):
     def __init__(self, config: DictConfig):
         super().__init__(config)
         self.file_system = FileSystemTool(config)
-        self.report_path = os.path.join(self.config.output_dir,
-                                        'aggregator_report.md')
+        self.report_path = os.path.join(self.config.output_dir, 'report.md')
 
     async def on_task_begin(self, runtime: Runtime, messages: List[Message]):
         await self.file_system.connect()

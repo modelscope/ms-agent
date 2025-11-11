@@ -87,7 +87,9 @@ Configure API keys in your system environment or in YAML.
 export OPENAI_API_KEY=your_api_key
 export OPENAI_BASE_URL=your-api-url
 
-# Search engines (used for sentiment research; choose exa or serpapi)
+# Search Engine APIs (for sentiment analysis; you may choose either Exa or SerpApi, both offer a free quota)
+# Exa account registration: https://exa.ai; SerpApi account registration: https://serpapi.com
+# If you prefer to run the FinResearch project for testing without configuring a search engine, you may skip this step and refer to the Quick Start section.
 export EXA_API_KEY=your_exa_api_key
 export SERPAPI_API_KEY=your_serpapi_api_key
 ```
@@ -102,6 +104,8 @@ tools:
 
 ### Quick Start
 
+Quickly start the full FinResearch workflow for testing:
+
 ```bash
 # Run from the ms-agent project root
 PYTHONPATH=. python ms_agent/cli/cli.py run \
@@ -109,6 +113,33 @@ PYTHONPATH=. python ms_agent/cli/cli.py run \
   --query "Analyze CATL (300750.SZ): changes in profitability over the last four quarters and comparison with major competitors in the new energy sector; factoring in industrial policy and lithium price fluctuations, forecast the next two quarters." \
   --trust_remote_code true
 ```
+
+When no search engine service is configured, you can set up a minimal version of the FinResearch workflow for testing (without the public sentiment deep research component) by modifying the workflow.yaml file as follows:
+
+```bash
+type: DagWorkflow
+
+orchestrator:
+  next:
+    - collector
+  agent_config: orchestrator.yaml
+
+collector:
+  next:
+    - analyst
+  agent_config: collector.yaml
+
+analyst:
+  next:
+    - aggregator
+  agent_config: analyst.yaml
+
+aggregator:
+  agent_config: aggregator.yaml
+```
+
+After that, start the project from the command line in the same way as before.
+Please note that due to incomplete information dimensions, FinResearch may not be able to generate long and detailed analysis reports for complex questions. It is recommended to use this setup for testing purposes only.
 
 ## Developer Guide
 
@@ -171,22 +202,27 @@ is_report: true  # Output report instead of raw data
 
 ```text
 output/
-├── plan.json                           # Task decomposition results
-├── financial_data/                     # Financial data
+├── plan.json                           # Task decomposition result
+├── financial_data/                     # Collected data files
 │   ├── stock_prices_*.csv
 │   ├── quarterly_financials_*.csv
 │   └── ...
-├── sessions/                           # Analysis session artifacts (charts/metrics)
-├── memory/                             # Agent memories
-├── search/                             # Sentiment search results
-├── resources/                          # Images for sentiment analysis
-├── synthesized_findings.md             # Consolidated key findings
-├── report_outline.md                   # Report outline
-├── chapter_*.md                        # Chapters
-├── cross_chapter_mismatches.md         # Cross-chapter consistency checks
-├── analysis_report.md                  # Quantitative analysis report
-├── report.md                           # Sentiment analysis report
-└── aggregator_report.md                # Final comprehensive report
+├── sessions/                           # Analysis session artifacts
+│   └── session_xxxx/
+│       ├── *.png                       # Generated charts
+│       └── metrics_*.csv               # Computed metrics
+├── memory/                             # Memory for each agent
+├── search/                             # Search results from sentiment research
+├── resources/                          # Images from sentiment research
+├── synthesized_findings.md             # Integrated insights
+├── report_outline.md                   # Report structure
+├── chapter_1.md                        # Chapter 1 files
+├── chapter_2.md                        # Chapter 2 files
+├── ...
+├── cross_chapter_mismatches.md         # Consistency audit
+├── analysis_report.md                  # Data analysis report
+├── sentiment_report.md                 # Sentiment analysis report
+└── report.md                           # Final comprehensive report
 ```
 
 ### Data Coverage

@@ -186,7 +186,7 @@ class ResearchWorkflowBeta(ResearchWorkflow):
         self._kwargs = kwargs
 
     @staticmethod
-    def _construct_workdir_structure(workdir: str) -> Dict[str, str]:
+    def _construct_workdir_structure(workdir: str, report_prefix: str = '') -> Dict[str, str]:
         """
         Construct the directory structure for the workflow outputs.
 
@@ -212,7 +212,7 @@ class ResearchWorkflowBeta(ResearchWorkflow):
 
         search_dir: str = os.path.join(workdir, 'search')
         resources_dir: str = os.path.join(workdir, ResearchWorkflow.RESOURCES)
-        report_path: str = os.path.join(workdir, 'report.md')
+        report_path: str = os.path.join(workdir, report_prefix + 'report.md')
         os.makedirs(workdir, exist_ok=True)
         os.makedirs(resources_dir, exist_ok=True)
         os.makedirs(search_dir, exist_ok=True)
