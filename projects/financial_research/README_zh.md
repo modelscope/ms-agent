@@ -162,6 +162,8 @@ aggregator:
 
 更多内容请参考`projects/financial_research/examples`。
 
+<https://github.com/user-attachments/assets/2ef0f7a1-985b-4dbd-9d75-da16246e985e>
+
 ## 🔧 开发指南
 
 ### 组件说明
