@@ -1,4 +1,4 @@
-# 金融深度研究
+# **金融深度研究**
 
 本项目实现了一个面向金融市场研究的多智能体（Multi-Agent）工作流，结合定量金融数据分析与来自互联网的定性舆情分析，自动生成专业的金融研究报告。
 
@@ -71,12 +71,15 @@ cd ms-agent
 # Python 环境
 conda create -n financial_research python=3.11
 conda activate financial_research
+# 从 PyPI 安装（>=v1.4.1）
+pip install 'ms-agent[research]'
 # 从源码安装
 pip install -r requirements/framework.txt
 pip install -r requirements/research.txt
 pip install -e .
-# 从 PyPI 安装（>=v1.1.0）
-pip install 'ms-agent[research]'
+
+# 数据接口依赖
+pip install akshare baostock
 ```
 
 ### 沙箱环境
@@ -131,7 +134,7 @@ PYTHONPATH=. python ms_agent/cli/cli.py run \
 
 ## 🔧 开发指南
 
-### 项目组成与功能
+### 组件说明
 
 - `workflow.yaml`：工作流配置入口，编排 Orchestrator / Searcher / Collector / Analyst / Aggregator 五个智能体的执行流程，基于DagWorkflow运行。
 
@@ -188,7 +191,7 @@ tools:
 ```yaml
 breadth: 4  # 每层搜索生成的查询数
 depth: 1    # 最大搜索深度
-is_report: true  # 输出报告而非原始数据
+is_report: true  # 输出报告而非简短回答
 ```
 
 ### 金融数据支持

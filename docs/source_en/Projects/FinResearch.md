@@ -1,4 +1,4 @@
-# FinancialResearch
+# FinResearch
 
 Ms-Agent’s FinancialResearch project is a multi-agent workflow tailored for financial market research. It combines quantitative market/data analysis with in-depth online information research to automatically produce a structured, professional research report.
 
@@ -53,19 +53,22 @@ Ms-Agent’s FinancialResearch project is a multi-agent workflow tailored for fi
 ### Python Environment
 
 ```bash
-# Download source
+# Download source code
 git clone https://github.com/modelscope/ms-agent.git
 cd ms-agent
 
-# Install dependencies
+# Python environment setup
 conda create -n financial_research python=3.11
 conda activate financial_research
-# Install from source
+# From PyPI (>=v1.4.1)
+pip install 'ms-agent[research]'
+# From source code
 pip install -r requirements/framework.txt
 pip install -r requirements/research.txt
 pip install -e .
-# Install from PyPI (>=v1.1.0)
-pip install 'ms-agent[research]'
+
+# Data Interface Dependencies
+pip install akshare baostock
 ```
 
 ### Sandbox Environment

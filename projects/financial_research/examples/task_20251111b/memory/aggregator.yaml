@@ -1,7 +1,7 @@
 llm:
   service: openai
   model: qwen3-max
-  openai_api_key: sk-34041a53a0fc4dae8e76b00cb12ff9f5
+  openai_api_key: 
   openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 generation_config:
   stream: true

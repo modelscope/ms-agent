@@ -1,4 +1,4 @@
-# FinancialResearch
+# **FinResearch**
 
 This project provides a multi-agent framework for financial research, combining quantitative financial data analysis with qualitative sentiment analysis from online sources to generate professional financial reports.
 
@@ -64,19 +64,22 @@ To set up the FinancialResearch framework, follow these steps:
 ### Python Environment
 
 ```bash
-# From source code
+# Download source code
 git clone https://github.com/modelscope/ms-agent.git
 cd ms-agent
 
 # Python environment setup
 conda create -n financial_research python=3.11
 conda activate financial_research
+# From PyPI (>=v1.4.1)
+pip install 'ms-agent[research]'
 # From source code
 pip install -r requirements/framework.txt
 pip install -r requirements/research.txt
 pip install -e .
-# From PyPI (>=v1.1.0)
-pip install 'ms-agent[research]'
+
+# Data Interface Dependencies
+pip install akshare baostock
 ```
 
 ### Sandbox Setup
