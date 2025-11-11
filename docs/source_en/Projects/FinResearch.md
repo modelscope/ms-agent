@@ -58,8 +58,8 @@ git clone https://github.com/modelscope/ms-agent.git
 cd ms-agent
 
 # Python environment setup
-conda create -n financial_research python=3.11
-conda activate financial_research
+conda create -n fin_research python=3.11
+conda activate fin_research
 # From PyPI (>=v1.4.1)
 pip install 'ms-agent[research]'
 # From source code
@@ -75,7 +75,7 @@ pip install akshare baostock
 
 ```bash
 pip install ms-enclave  # https://github.com/modelscope/ms-enclave
-bash projects/financial_research/tools/build_jupyter_image.sh
+bash projects/fin_research/tools/build_jupyter_image.sh
 ```
 
 ### Environment Variables
@@ -99,7 +99,7 @@ Specify search engine configuration in `searcher.yaml`:
 ```yaml
 tools:
   search_engine:
-    config_file: projects/financial_research/conf.yaml
+    config_file: projects/fin_research/conf.yaml
 ```
 
 ### Quick Start
@@ -109,7 +109,7 @@ Quickly start the full FinResearch workflow for testing:
 ```bash
 # Run from the ms-agent project root
 PYTHONPATH=. python ms_agent/cli/cli.py run \
-  --config projects/financial_research \
+  --config projects/fin_research \
   --query "Analyze CATL (300750.SZ): changes in profitability over the last four quarters and comparison with major competitors in the new energy sector; factoring in industrial policy and lithium price fluctuations, forecast the next two quarters." \
   --trust_remote_code true
 ```

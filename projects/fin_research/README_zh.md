@@ -69,8 +69,8 @@ git clone https://github.com/modelscope/ms-agent.git
 cd ms-agent
 
 # Python 环境
-conda create -n financial_research python=3.11
-conda activate financial_research
+conda create -n fin_research python=3.11
+conda activate fin_research
 # 从 PyPI 安装（>=v1.4.1）
 pip install 'ms-agent[research]'
 # 从源码安装
@@ -91,7 +91,7 @@ Collector 与 Analyst 需要 Docker 沙箱以安全执行代码：
 pip install ms-enclave
 
 # 构建所需 Docker 镜像（确保设备已安装并运行 Docker）
-bash projects/financial_research/tools/build_jupyter_image.sh
+bash projects/fin_research/tools/build_jupyter_image.sh
 ```
 
 ## 🚀 快速开始
@@ -117,7 +117,7 @@ export SERPAPI_API_KEY=your_serpapi_api_key
 ```yaml
 tools:
   search_engine:
-    config_file: projects/financial_research/conf.yaml
+    config_file: projects/fin_research/conf.yaml
 ```
 
 ### 运行工作流
@@ -127,7 +127,7 @@ tools:
 ```bash
 # 在 ms-agent 根目录执行
 PYTHONPATH=. python ms_agent/cli/cli.py run \
-  --config projects/financial_research \
+  --config projects/fin_research \
   --query '请分析宁德时代（300750.SZ）近四个季度盈利能力变化，并与新能源领域主要竞争对手（如比亚迪、国轩高科、中创新航）进行对比；结合产业政策与锂价波动，预测其未来两季度业绩趋势。' \
   --trust_remote_code true
 ```
@@ -160,7 +160,7 @@ aggregator:
 
 ### 样例
 
-更多内容请参考`projects/financial_research/examples`。
+更多内容请参考`projects/fin_research/examples`。
 
 <https://github.com/user-attachments/assets/2ef0f7a1-985b-4dbd-9d75-da16246e985e>
 

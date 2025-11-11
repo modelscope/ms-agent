@@ -65,7 +65,7 @@ class PrincipleSkill(ToolBase):
     the principle to financial analysis and report writing. The underlying
     knowledge is stored as Markdown files and can be configured via
     `tools.principle_skill.principle_dir` in the agent config. When not provided,
-    the tool falls back to `projects/financial_research/tools/principles`
+    the tool falls back to `projects/fin_research/tools/principles`
     under the current working directory.
 
     Supported principle identifiers (case-insensitive, synonyms allowed):
@@ -77,7 +77,7 @@ class PrincipleSkill(ToolBase):
     - Boston Matrix / BCG / Boston Consulting Group → Boston_Matrix.md
     """
 
-    PRINCIPLE_DIR = 'projects/financial_research/tools/principles'
+    PRINCIPLE_DIR = 'projects/fin_research/tools/principles'
 
     def __init__(self, config):
         super().__init__(config)

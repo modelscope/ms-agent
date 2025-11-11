@@ -11,7 +11,7 @@ generation_config:
 
 tools:
   search_engine:
-    config_file: projects/financial_research/conf.yaml
+    config_file: projects/fin_research/conf.yaml
 
 
 code_file: searcher

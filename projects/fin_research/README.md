@@ -69,8 +69,8 @@ git clone https://github.com/modelscope/ms-agent.git
 cd ms-agent
 
 # Python environment setup
-conda create -n financial_research python=3.11
-conda activate financial_research
+conda create -n fin_research python=3.11
+conda activate fin_research
 # From PyPI (>=v1.4.1)
 pip install 'ms-agent[research]'
 # From source code
@@ -91,7 +91,7 @@ The Collector and Analyst agents require Docker for sandboxed execution:
 pip install ms-enclave
 
 # build the required Docker image, make sure you have installed Docker on your device
-bash projects/financial_research/tools/build_jupyter_image.sh
+bash projects/fin_research/tools/build_jupyter_image.sh
 ```
 
 ## 🚀 Quickstart
@@ -117,7 +117,7 @@ export SERPAPI_API_KEY=your_serpapi_api_key
 ```yaml
 tools:
   search_engine:
-    config_file: projects/financial_research/conf.yaml
+    config_file: projects/fin_research/conf.yaml
 ```
 
 ### Running the Workflow
@@ -127,7 +127,7 @@ Quickly start the full FinResearch workflow for testing:
 ```bash
 # Run from the ms-agent root directory
 PYTHONPATH=. python ms_agent/cli/cli.py run \
-  --config projects/financial_research \
+  --config projects/fin_research \
   --query 'Please analyze the changes in CATL’s (300750.SZ) profitability over the past four quarters and compare them with its major competitors in the new energy sector (such as BYD, Gotion High-Tech, and CALB). In addition, evaluate the impact of industry policies and lithium price fluctuations to forecast CATL’s performance trends for the next two quarters.' \
   --trust_remote_code true
 ```
@@ -161,7 +161,7 @@ Please note that due to incomplete information dimensions, FinResearch may not b
 
 ### Examples
 
-Please refer to `projects/financial_research/examples` for more examples.
+Please refer to `projects/fin_research/examples` for more examples.
 
 <https://github.com/user-attachments/assets/2ef0f7a1-985b-4dbd-9d75-da16246e985e>
 
