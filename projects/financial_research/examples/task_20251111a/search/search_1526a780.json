@@ -1,0 +1,80 @@
+[
+  {
+    "query": "(新能源政策调整 OR 动力电池补贴退坡 OR 产能调控) AND (市场情绪 OR 投资者信心 OR 板块展望) AND (2025 Q1 OR 2025 Q2)",
+    "arguments": {
+      "query": "(新能源政策调整 OR 动力电池补贴退坡 OR 产能调控) AND (市场情绪 OR 投资者信心 OR 板块展望) AND (2025 Q1 OR 2025 Q2)",
+      "text": true,
+      "type": "keyword",
+      "num_results": 10,
+      "start_published_date": "2024-11-11",
+      "end_published_date": "2025-11-11",
+      "start_crawl_date": null,
+      "end_crawl_date": null
+    },
+    "results": [
+      {
+        "url": "https://pic.bankofchina.com/bocappd/rareport/202511/P020251104718442591900.pdf",
+        "id": "https://pic.bankofchina.com/bocappd/rareport/202511/P020251104718442591900.pdf",
+        "title": "中国经济金融展望报告",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://pdf.dfcfw.com/pdf/H3_AP202412101641250504_1.pdf?1733865379000.pdf",
+        "id": "https://pdf.dfcfw.com/pdf/H3_AP202412101641250504_1.pdf?1733865379000.pdf",
+        "title": "金属行业2025年投资策略",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://news.futunn.com/notice/305672673/10-q-q2-2025-earnings-report",
+        "id": "https://news.futunn.com/notice/305672673/10-q-q2-2025-earnings-report",
+        "title": "10-Q: Q2 2025 Earnings Report - 富途牛牛",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://finance.sina.com.cn/money/future/fmnews/2025-09-17/doc-infqvaki4822614.shtml?cre=tianyi&mod=pchp&loc=20&r=0&rfunc=68&tj=cxvertical_pc_hp&tr=12",
+        "id": "https://finance.sina.com.cn/money/future/fmnews/2025-09-17/doc-infqvaki4822614.shtml?cre=tianyi&mod=pchp&loc=20&r=0&rfunc=68&tj=cxvertical_pc_hp&tr=12",
+        "title": "【观点汇总】铝&氧化铝：向上突破的空间打开?",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://www.qj-e.com/news/1324.html",
+        "id": "https://www.qj-e.com/news/1324.html",
+        "title": "AI红利助力被动元件发展，存储芯片预计Q2逐步回暖",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://www.jbzyw.com/view/453708",
+        "id": "https://www.jbzyw.com/view/453708",
+        "title": "生猪行业反内卷，猪价上涨要来了？",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://300498.fupanwang.com/",
+        "id": "https://300498.fupanwang.com/",
+        "title": "温氏股份300498最新行情_温氏股份实时行情数据- 股票复盘网",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      }
+    ]
+  }
+]

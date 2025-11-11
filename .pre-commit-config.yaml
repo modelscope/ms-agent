@@ -10,6 +10,7 @@ repos:
                 thirdparty/|
                 examples/|
                 tests/run.py|
+                projects/financial_research/examples/|
                 ms_agent/utils/prompts.py
             )$
   - repo: https://github.com/PyCQA/isort.git
@@ -19,6 +20,7 @@ repos:
         exclude: |
             (?x)^(
                 examples/|
+                projects/financial_research/examples/|
                 tests/run.py|
             )$
   - repo: https://github.com/pre-commit/mirrors-yapf.git
@@ -29,26 +31,27 @@ repos:
             (?x)^(
                 thirdparty/|
                 examples/|
+                projects/financial_research/examples/|
                 tests/run.py
             )$
   - repo: https://github.com/pre-commit/pre-commit-hooks.git
     rev: v3.1.0
     hooks:
       - id: trailing-whitespace
-        exclude: thirdparty/|tests/run.py
+        exclude: thirdparty/|tests/run.py|projects/financial_research/examples/
       - id: check-yaml
-        exclude: thirdparty/|tests/run.py
+        exclude: thirdparty/|tests/run.py|projects/financial_research/examples/
       - id: end-of-file-fixer
-        exclude: thirdparty/|tests/run.py
+        exclude: thirdparty/|tests/run.py|projects/financial_research/examples/
       - id: requirements-txt-fixer
-        exclude: thirdparty/|tests/run.py
+        exclude: thirdparty/|tests/run.py|projects/financial_research/examples/
       - id: double-quote-string-fixer
-        exclude: thirdparty/|tests/run.py
+        exclude: thirdparty/|tests/run.py|projects/financial_research/examples/
       - id: check-merge-conflict
         exclude: thirdparty/|tests/run.py
       - id: fix-encoding-pragma
-        exclude: thirdparty/|tests/run.py
+        exclude: thirdparty/|tests/run.py|projects/financial_research/examples/
         args: ["--remove"]
       - id: mixed-line-ending
-        exclude: thirdparty/|tests/run.py
+        exclude: thirdparty/|tests/run.py|projects/financial_research/examples/
         args: ["--fix=lf"]

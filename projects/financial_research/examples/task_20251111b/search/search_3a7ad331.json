@@ -1,0 +1,53 @@
+[
+  {
+    "query": "(美的集团 OR 格力电器 OR 海尔智家) AND (经营现金流 OR 回款质量) AND (媒体分析 OR 行业评论)",
+    "arguments": {
+      "query": "(美的集团 OR 格力电器 OR 海尔智家) AND (经营现金流 OR 回款质量) AND (媒体分析 OR 行业评论)",
+      "text": true,
+      "type": "keyword",
+      "num_results": 12,
+      "start_published_date": null,
+      "end_published_date": null,
+      "start_crawl_date": null,
+      "end_crawl_date": null
+    },
+    "results": [
+      {
+        "url": "https://pdf.dfcfw.com/pdf/H3_AP202407011637341383_1.pdf",
+        "id": "https://pdf.dfcfw.com/pdf/H3_AP202407011637341383_1.pdf",
+        "title": "进击的全球显示龙头，迎来全新发展机遇",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://m.yicai.com/news/1669815.html",
+        "id": "https://m.yicai.com/news/1669815.html",
+        "title": "银河证券4月26日晨会纪要",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://tech.sina.cn/csj/2021-01-05/doc-iiznezxt0632329.d.html?cre=wappage&mod=r&loc=2&r=0&rfunc=75&tj=wap_news_relate&wm=",
+        "id": "https://tech.sina.cn/csj/2021-01-05/doc-iiznezxt0632329.d.html?cre=wappage&mod=r&loc=2&r=0&rfunc=75&tj=wap_news_relate&wm=",
+        "title": "产能利用率仅5.3%，柔宇上市是假扩张、真圈钱？ - 科技- 新浪",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "http://m.jiajum.com/news-view-id-97282.html",
+        "id": "http://m.jiajum.com/news-view-id-97282.html",
+        "title": "三棵树继续不断突破股价新高，经营“激进”债务高企-家居装修设计网",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      }
+    ]
+  }
+]

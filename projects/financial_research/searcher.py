@@ -49,8 +49,8 @@ class SearchAgent(CodeAgent):
             else:
                 raise ValueError('Search engine configuration not found.')
 
-            self.workdir = getattr(self.config, 'output_dir',
-                                   './output/research')
+            self.workdir = getattr(self.config, 'output_dir', './output')
+            self.use_ray = getattr(self.config, 'use_ray', False)
 
     async def run(self, inputs: Union[str, List[Message]],
                   **kwargs) -> List[Message]:
@@ -58,7 +58,7 @@ class SearchAgent(CodeAgent):
             client=self.chat_client,
             search_engine=self.search_engine,
             workdir=self.workdir,
-            use_ray=False,
+            use_ray=self.use_ray,
             enable_multimodal=False)
 
         if inputs is None:

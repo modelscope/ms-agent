@@ -1,6 +1,6 @@
 llm:
   service: openai
-  model: qwen3-coder-plus
+  model: qwen3-max
   openai_api_key:
   openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 
@@ -37,6 +37,9 @@ prompt:
     - if file_operation and shell_executor are AVAILABLE, you can use them to perform file I/O and shell commands.
       - You may call shell commands sparingly (e.g., create/list directories) via shell_executor, but avoid destructive ops.
       - File I/O can also use file_operation.
+    - The previous node Collector was responsible for data collection and integration. \
+    The collected financial data are stored in the directory /data/financial_data/. \
+    The summary and description of these data can be found in the Collector's last message output.
     </Operating_Assumptions>
 
     <Task_Workflow>
@@ -67,8 +70,10 @@ prompt:
     and provide insights linked to the evidence.
 
     Phase 5: Result Summary & Final Report
-    - Summarize data sources & cleaning steps, key figures (with paths), metric tables (with file paths), \
+    - Summarize data sources & cleaning steps, key figures (with file paths), metric tables (with file paths), \
     assumptions (frequency, annualization, risk-free rate, etc.), conclusions, limitations, and next steps.
+      - You must output all file paths as relative paths to the /data/ directory, \
+      for example: "./sessions/session_b5e8d412/profitability_trends.png".
     </Task_Workflow>
 
     <Tool_Calling_Protocol>
@@ -93,9 +98,13 @@ prompt:
     <Visualization_Rules>
     - Use matplotlib as the base (seaborn optional, but saves must go through matplotlib).
     - Headless rendering: assume a non-GUI backend; never call plt.show().
-    - Titles/labels in English by default; if Chinese text is required, \
-    try SimHei and gracefully fall back to a default sans-serif if unavailable.
+    - Titles/labels MUST be in English by default; DO NOT use Chinese characters in titles/labels.
+    - Automatic adjustment for magnitude differences (use normalization, log scale, or dual y-axes if needed).
     - Each saved figure must have: clear title, labeled axes, and legible tick formatting.
+    - Select chart types based on analytical purpose (not always line plots): use line for time trends, \
+    bar/box/violin for category comparison, scatter/heatmap for correlation, histogram/KDE for distribution, stacked charts for composition.
+    - Prefer analytical diversity and professional aesthetics: varied and complementary figures \
+    (avoid repeating chart styles), consistent layout (gridlines, legend, readable labels), and highlight key data points or trends.
     </Visualization_Rules>
 
     <Financial_Analysis_Conventions>
@@ -176,17 +185,6 @@ handler: time_handler
 
 callbacks:
   - callbacks/analyst_callback
-
-
-memory:
-  - name: mem0
-    user_id: "financial_research"
-    agent_id: "analyst"
-    conversation_search_limit: 10
-    procedural_search_limit: 3
-    embedding_model: "text-embedding-v4"
-    summary_model: "qwen3-coder-plus"
-    max_tokens: 4096
 
 
 max_chat_round: 20

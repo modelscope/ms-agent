@@ -56,19 +56,21 @@ class ExaSearchRequestGenerator(SearchRequestGenerator):
                             'description':  (
                                 'Write a **Google-style keyword query** optimized for Exa\'s keyword search. '
                                 'Prefer precise boolean/keyword operators over natural language. Follow these rules:\n'
-                                '1) Use exact-match quotes for key phrases (e.g., \"contrastive learning\").\n'
+                                '1) Use exact-match quotes for key phrases (e.g., "contrastive learning"). '
+                                'Note that Chinese phrases do not require quotation marks.\n'
                                 '2) Combine terms with AND/OR and exclude noise with -term (e.g., LLM AND retrieval -advertisement).\n'
-                                '3) Use site: or domain scoping for authority (e.g., site:nature.com, site:arxiv.org).\n'
-                                '4) Narrow intent with intitle:, inurl:, filetype:pdf when helpful.\n'
-                                '5) Add topical disambiguators (year, acronym expansion) to reduce ambiguity.\n'
-                                '6) Keep it concise and deterministic; avoid chatty prose. '
-                                '7) If the research goal clearly needs semantic recall (synonyms/long queries), you MAY '
+                                '3) Keep it concise and deterministic; avoid chatty prose.\n'
+                                '4) If the research goal clearly needs semantic recall (synonyms/long queries), you MAY '
                                 'append a short natural-language tail AFTER the keyword core.\n\n'
+                                '5) Do not apply domain scoping (e.g., site:) or '
+                                'advanced operator filters (e.g., intitle:, filetype:). Prefer simpler, recall-oriented keyword formulations.\n'
                                 'Examples:\n'
-                                '- \"retrieval augmented generation\" AND evaluation site:arxiv.org\n'
-                                '- intitle:\"toolformer\" OR intitle:\"function calling\" -marketing\n'
-                                '- graph neural networks AND (molecular OR materials) filetype:pdf\n'
-                                '- site:docs.exa.ai search API start_published_date\n\n'
+                                '- "retrieval augmented generation" AND evaluation\n'
+                                '- (toolformer OR "function calling") -marketing\n'
+                                '- graph neural networks AND (molecular OR materials)\n'
+                                '- (RAG OR "retrieval augmented generation") evaluation compare benchmarks and datasets\n'
+                                '- 大模型 AND (函数调用 OR 工具调用) -广告\n'
+                                '- 医疗人工智能 AND (监管 OR 合规) 风险\n\n'
                                 'Notes: Exa supports both keyword and neural search; this schema **prefers keyword**. '
                                 'Respect any provided date filters.')
                         },
@@ -77,8 +79,7 @@ class ExaSearchRequestGenerator(SearchRequestGenerator):
                             'enum': ['keyword', 'neural'],
                             'description': (
                                 'Search mode hint. Default is "keyword" (Google-style lexical match). '
-                                'Use "neural" only if semantic recall is essential (e.g., long, fuzzy queries). '
-                                'Do NOT use "fast" by default.')
+                                'Use "neural" only if semantic recall is essential (e.g., long, fuzzy queries).')
                         },
                         'num_results': {
                             'type': 'integer',
@@ -140,9 +141,12 @@ class SerpApiSearchRequestGenerator(SearchRequestGenerator):
                             'type': 'string',
                             'description': (
                                 'Google-style search query. Use operators as needed: '
-                                'quotes for exact phrases ("..."), OR, "-" to exclude terms, '
-                                'site:, filetype:, intitle:, inurl:, and parentheses for grouping. '
-                                'Date limits supported via before:YYYY-MM-DD and after:YYYY-MM-DD. ')
+                                'quotes for exact phrases ("..."), OR, "-" to exclude terms '
+                                '(Note that Chinese phrases do not require quotation marks).\n'
+                                'Date limits supported via before:YYYY-MM-DD and after:YYYY-MM-DD. '
+                                'Unless absolutely required for the search objective, do not apply '
+                                'domain scoping (e.g., site:) or advanced operator filters (e.g., '
+                                'intitle:, filetype:). Prefer simpler, recall-oriented keyword formulations.')
                         },
                         'num_results': {
                             'type': 'integer',

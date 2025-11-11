@@ -52,7 +52,9 @@ To install the Deep Research project, follow these steps:
 ```bash
 # Install from source
 git clone https://github.com/modelscope/ms-agent.git
+cd ms-agent
 pip install -r requirements/research.txt
+pip install -e .
 
 # Install via PyPI (≥v1.1.0)
 pip install 'ms-agent[research]'

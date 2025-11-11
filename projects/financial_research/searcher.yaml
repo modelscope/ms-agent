@@ -1,6 +1,6 @@
 llm:
   service: openai
-  model: qwen3-coder-plus
+  model: qwen3-max
   openai_api_key:
   openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 
@@ -11,7 +11,7 @@ generation_config:
 
 tools:
   search_engine:
-    config_file: temp/feat-deep/conf.yaml
+    config_file: projects/financial_research/conf.yaml
 
 
 code_file: searcher
@@ -23,8 +23,10 @@ tool_call_timeout: 30000
 
 output_dir: ./output
 
-breadth: 2
+breadth: 3
 
 depth: 1
 
 is_report: true
+
+use_ray: false

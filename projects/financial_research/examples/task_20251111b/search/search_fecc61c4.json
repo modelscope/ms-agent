@@ -1,0 +1,80 @@
+[
+  {
+    "query": "家电行业 AND (应收账款风险 OR DSO OR 现金转换周期) -广告",
+    "arguments": {
+      "query": "家电行业 AND (应收账款风险 OR DSO OR 现金转换周期) -广告",
+      "text": true,
+      "type": "keyword",
+      "num_results": 10,
+      "start_published_date": null,
+      "end_published_date": null,
+      "start_crawl_date": null,
+      "end_crawl_date": null
+    },
+    "results": [
+      {
+        "url": "https://www.jpmorgan.com/content/dam/jpmorgan/images/payments/working-capital-index/cn-achieving-sustainable-capital-efficiency-china-wci.pdf",
+        "id": "https://www.jpmorgan.com/content/dam/jpmorgan/images/payments/working-capital-index/cn-achieving-sustainable-capital-efficiency-china-wci.pdf",
+        "title": "[PDF] 提升效益持盈保泰-摩根大通2024年中国运营资金指数报告 - J.P. Morgan",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "http://www.fmrmag.com/cn/article/pdf/preview/cwglyj-1231.pdf",
+        "id": "http://www.fmrmag.com/cn/article/pdf/preview/cwglyj-1231.pdf",
+        "title": "[PDF] 价值链视角下家电行业营运资金管理研究",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://wenku.docs.qq.com/detail?docId=tJYlhVjwBa",
+        "id": "https://wenku.docs.qq.com/detail?docId=tJYlhVjwBa",
+        "title": "家电行业上市公司应收账款风险测度研究的开题报告- 腾讯文库",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://finance.eastmoney.com/a/202510273545285265.html",
+        "id": "https://finance.eastmoney.com/a/202510273545285265.html",
+        "title": "长虹华意：公司应收账款规模处于家电配套行业合理水平 - 东方财富",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://pdf.dfcfw.com/pdf/H3_AP202410281640541933_1.pdf",
+        "id": "https://pdf.dfcfw.com/pdf/H3_AP202410281640541933_1.pdf",
+        "title": "[PDF] 海尔智家（600690.SH）",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://file.finance.sina.com.cn/211.154.219.97:9494/MRGG/CNSESH_STOCK/2025/2025-4/2025-04-25/10963832.PDF",
+        "id": "http://file.finance.sina.com.cn/211.154.219.97:9494/MRGG/CNSESH_STOCK/2025/2025-4/2025-04-25/10963832.PDF",
+        "title": "[PDF] 惠而浦（中国）股份有限公司2024 年年度报告",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      },
+      {
+        "url": "https://www.icbc.com.cn/column/1438058779555283064.html",
+        "id": "https://www.icbc.com.cn/column/1438058779555283064.html",
+        "title": "公司业务频道-企业服务栏目 - 工商银行",
+        "highlights": null,
+        "highlight_scores": null,
+        "summary": null,
+        "markdown": null
+      }
+    ]
+  }
+]

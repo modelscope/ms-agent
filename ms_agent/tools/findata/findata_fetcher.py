@@ -593,9 +593,9 @@ class FinancialDataFetcher(ToolBase):
                     tool_name='get_stock_list',
                     server_name='financial_data_fetcher',
                     description=
-                    ('Get stock list for a given date, support for SZSE 50 index constituents, '
-                     'CSI 300 index constituents, CSI 500 index constituents and all a-share stocks'
-                     ),
+                    ('Get stock list for a given date, support for SSE 50 index constituents (sse50), '
+                     'CSI 300 index constituents (hs300), CSI 500 index constituents (zz500) '
+                     'and all a-share stocks (all_a_share)'),
                     parameters={
                         'type': 'object',
                         'properties': {
@@ -608,7 +608,7 @@ class FinancialDataFetcher(ToolBase):
                                 'description':
                                 'Data type to get. Default is "all_a_share"',
                                 'enum':
-                                ['sz50', 'hs300', 'zz500', 'all_a_share']
+                                ['sse50', 'hs300', 'zz500', 'all_a_share']
                             }
                         },
                         'required': ['date'],

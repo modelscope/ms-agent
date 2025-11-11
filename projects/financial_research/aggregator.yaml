@@ -31,13 +31,13 @@ prompt:
       - Identify and highlight relationships or contradictions between quantitative data and qualitative sentiment.
       - Combine quantitative and qualitative insights into a coherent narrative that addresses \
       the user's initial goals and analytical focus.
-      - Output the synthesized findings to a file in the session output directory.
+      - Output the synthesized findings to a file in the default working directory.
     - Create a comprehensive report outline:
       - Based on the synthesized findings, financial data analysis report, online sentiment analysis report, \
       and user's original plan for the financial analysis task, create a comprehensive report outline.
       - You are encouraged to retrieve one or more principles as the foundation for constructing \
       the report outline, ensuring the final report's professionalism and refinement.
-      - Output the report outline to a file in the session output directory.
+      - Output the report outline to a file in the default working directory.
     - Avoid redundant tool calls for file queries or reads when the relevant information has \
     already been loaded or provided in the current context.
 
@@ -49,7 +49,7 @@ prompt:
       with earlier chapters (data conflicts, scope drift, terminology differences, etc.) and suggest resolutions.
     - After all chapters are completed:
       - Perform a cross-chapter consistency audit summarizing all mismatch notes.
-      - Save the consolidated results to `cross_chapter_mismatches.md` in the output directory.
+      - Save the consolidated results to `cross_chapter_mismatches.md` in the default working directory.
 
     Phase3: Consolidate and Finalize the Report:
     You MUST begin each message in this phase with `[ACT=final_report]: <action description>` on the first line to indicate intent.
@@ -62,15 +62,23 @@ prompt:
     - Output the final report in markdown formated text without tool calls.
     </Task_Workflow>
 
+    <Tool_Calling_Protocol>
+    - **Every turn MUST include at least one tool call**, unless you're providing the final report.
+    - Retrieve principles depending on the principle_skill server.
+    - To reduce the number of conversation turns, multiple tools can be invoked simultaneously within a single turn when necessary.
+    - When using the file_system---write_file tool, pass an empty string ('') to the path argument to use the default working directory.
+    </Tool_Calling_Protocol>
+
     <Visual_Element_Preservation>
+    - **Preserve and embed as many valuable images as possible into the final report.**
     - You may interpret the meaning of embedded images from their surrounding context \
-    in both the financial data analysis report and the online sentiment analysis report.
-    - Preserve and embed as many valuable images as possible into the final report.
+    in the financial data analysis report.
     - You should note that most of the charts generated during the analysis process \
     are stored in the default working directory. You may use the tools under the file_system \
     server to browse these files and select meaningful images — based on their filenames — to embed into the report.
       - Avoid inserting any images whose titles or filenames do not convey meaningful information.
       - Avoid inserting any images that are from websites or other external sources.
+      - The image paths should be relative paths to the the default working directory.
     </Visual_Element_Preservation>
 
     <Format_Requirements>
@@ -78,18 +86,33 @@ prompt:
     - Contains visual elements (charts, tables, figures).
     - Maintains a professional tone and report-style formatting.
     - Keep figure and table numbering independent, each following its own consistent sequence.
+    - Please generate the final report in the same language used in the plan (Chinese, English, etc.).
     </Format_Requirements>
-
-    <Tool_Calling_Protocol>
-    - Retrieve principles depending on the principle_skill server.
-    - To reduce the number of conversation turns, multiple tools can be invoked simultaneously within a single turn when necessary.
-    </Tool_Calling_Protocol>
 
     <Safety_Constraints>
     - When using the file_system server, you can only access contents within the tool's default working directory.
     - NEVER fabricate any facts or data as evidence.
     - NEVER output figure or table titles without corresponding images or tables to insert.
     </Safety_Constraints>
+
+    <Response_Example>
+    IMPORTANT: These examples show ONLY the natural language portion of your response.
+    In actual conversations, you MUST follow each natural language response with appropriate tool calls.
+    (except for [ACT=final_report] which is the final report with no tools).
+
+    </Response_Example>
+    Phase1 Examples (Synthesize Findings and Create Report Outline):
+    [ACT=outline]: Synthesize important findings and persist to file.
+    // Note: After this natural language output, you MUST make a tool call to save the findings to file.
+
+    Phase2 Examples (Generate the Final Report Chapter by Chapter):
+    [ACT=partial_report]: Generating Chapter 1: Introduction and Methodology.
+    // Note: After this natural language output, you MUST make a tool call.
+
+    Phase3 Example (Consolidate and Finalize the Report):
+    [ACT=final_report]: Integrating all chapters into final comprehensive report with resolved inconsistencies and visual elements.
+    // Note: You MUST write the final report and do not call any tool.
+    </Response_Example>
 
 
 tools:
@@ -99,17 +122,6 @@ tools:
       - create_directory
   plugins:
     - tools/principle_skill
-
-
-memory:
-  - name: mem0
-    user_id: "financial_research"
-    agent_id: "aggregator"
-    conversation_search_limit: 10
-    procedural_search_limit: 3
-    embedding_model: "text-embedding-v4"
-    summary_model: "qwen3-coder-plus"
-    max_tokens: 4096
 
 
 handler: time_handler

@@ -29,6 +29,7 @@ prompt:
     - Determine which tools under the financial_data_fetcher server can best fulfill each data requirement.
     - Develop a complete and concise data collection plan based on tool constraints and collection objectives.
     - Explicitly list any unavailable data in the plan and mark them as not required for collection.
+    - Output the data collection plan to a file in the default working directory.
 
     Phase2: Execute the Data Collection Loop
     You MUST begin each message with `[ACT=collect]: <action description>` on the first line to indicate intent.
@@ -63,7 +64,7 @@ prompt:
     <Operating_Assumptions>
     - Scope of Assets & Data (aligned with available tools in financial_data_fetcher):
       - Single stocks: A-shares (sh./sz.), partial HK (hk.) & US (us.) codes supported by the tools.
-      - A-share index constituents: SZ50, CSI 300 (HS300), CSI 500 (ZZ500) via stock list queries.
+      - A-share index constituents: SSE 50 (sse50), CSI 300 (hs300), CSI 500 (zz500) via stock list queries.
       - Macro indicators (China): deposit_rate, loan_rate, required_reserve_ratio, money_supply_month, money_supply_year.
       - Data types in scope: historical K-line (multi-frequency, with forward/backward/non-adjusted flags), \
       stock basic info, dividends, adjustment factors, quarterly financial statements (profit/operation/growth/balance/cash_flow/dupont), \
@@ -141,17 +142,12 @@ tools:
       max_requests_per_second: 1  # Maximum requests per second
       min_request_interval: 1  # Minimum interval between requests (seconds)
       max_concurrent: 1  # Maximum concurrent requests (reduced to work with thread semaphore)
-
-
-memory:
-  - name: mem0
-    user_id: "financial_research"
-    agent_id: "collector"
-    conversation_search_limit: 10
-    procedural_search_limit: 3
-    embedding_model: "text-embedding-v4"
-    summary_model: "qwen3-coder-plus"
-    max_tokens: 4096
+  file_system:
+    mcp: false
+    exclude:
+      - create_directory
+      - read_file
+      - list_files
 
 
 handler: time_handler

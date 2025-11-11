@@ -569,7 +569,7 @@ class AKShareDataSource(FinancialDataSource):
         )
 
         try:
-            if data_type == 'sz50':
+            if data_type == 'sse50':
                 df = ak.index_stock_cons(symbol='000016')
             elif data_type == 'hs300':
                 df = ak.index_stock_cons(symbol='000300')

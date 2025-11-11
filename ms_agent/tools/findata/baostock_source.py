@@ -287,7 +287,7 @@ class BaoStockDataSource(FinancialDataSource):
         )
 
         with baostock_session():
-            if data_type == 'sz50':
+            if data_type == 'sse50':
                 rs = bs.query_sz50_stocks(date=date)
             elif data_type == 'hs300':
                 rs = bs.query_hs300_stocks(date=date)

@@ -1,5 +1,6 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import os
+import re
 from typing import List
 
 from ms_agent.agent.runtime import Runtime
@@ -33,6 +34,11 @@ class AggregatorCallback(Callback):
         for message in messages[::-1]:
             if message.role == 'assistant' and not message.tool_calls:
                 with open(self.report_path, 'w') as f:
-                    f.write(message.content)
+                    filtered_content = re.sub(
+                        r'\s*\[ACT=(?:outline|partial_report|final_report)\]\s*:?\s*.*?(?:\n|\.)',
+                        '',
+                        message.content,
+                        flags=re.MULTILINE).strip()
+                    f.write(filtered_content)
                 break
         logger.info(f'Aggregator report saved to {self.report_path}')
