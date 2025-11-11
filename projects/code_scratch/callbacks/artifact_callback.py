@@ -23,8 +23,14 @@ class ArtifactCallback(Callback):
     async def on_task_begin(self, runtime: Runtime, messages: List[Message]):
         await self.file_system.connect()
 
-    async def after_generate_response(self, runtime: Runtime,
-                                      messages: List[Message]):
+    async def on_generate_response(self, runtime: Runtime,
+                                   messages: List[Message]):
+        for message in messages:
+            if message.role == 'assistant' and message.tool_calls and not message.content:
+                # Claude seems does not allow empty content
+                message.content = 'I should do a tool calling to continue:\n'
+
+    async def on_tool_call(self, runtime: Runtime, messages: List[Message]):
         if messages[-1].tool_calls or messages[-1].role == 'tool':
             return
         await self.file_system.create_directory()
@@ -32,16 +38,9 @@ class ArtifactCallback(Callback):
         all_files, _ = extract_code_blocks(content)
         results = []
         for f in all_files:
-            if not f['filename'].startswith(
-                    'frontend') and not f['filename'].startswith(
-                        'backend') and f['filename'] != 'files.json':
-                results.append(
-                    f'Error: You should generate files in frontend or backend, '
-                    f'but now is: {f["filename"]}')
-            else:
-                result = await self.file_system.write_file(
-                    f['filename'], f['code'])
-                results.append(result)
+            result = await self.file_system.write_file(f['filename'],
+                                                       f['code'])
+            results.append(result)
 
         r = '\n'.join(results)
         if len(r) > 0:

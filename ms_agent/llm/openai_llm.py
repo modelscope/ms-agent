@@ -5,14 +5,13 @@ from typing import Any, Dict, Generator, Iterable, List, Optional
 
 from ms_agent.llm import LLM
 from ms_agent.llm.utils import Message, Tool, ToolCall
-from ms_agent.utils import assert_package_exist, get_logger, retry
+from ms_agent.utils import (MAX_CONTINUE_RUNS, assert_package_exist,
+                            get_logger, retry)
 from omegaconf import DictConfig, OmegaConf
 from openai.types.chat.chat_completion_message_tool_call import (
     ChatCompletionMessageToolCall, Function)
 
 logger = get_logger()
-
-MAX_CONTINUE_RUNS = 3
 
 
 class OpenAI(LLM):
@@ -78,7 +77,7 @@ class OpenAI(LLM):
             tools = None
         return tools
 
-    @retry(max_attempts=3, delay=1.0)
+    @retry(max_attempts=LLM.retry_count, delay=1.0)
     def generate(self,
                  messages: List[Message],
                  tools: Optional[List[Tool]] = None,
@@ -167,9 +166,15 @@ class OpenAI(LLM):
                         message.tool_calls[0]['id'] = message_chunk.tool_calls[
                             0]['id']
                     if message_chunk.tool_calls[0]['arguments']:
-                        message.tool_calls[0][
-                            'arguments'] += message_chunk.tool_calls[0][
-                                'arguments']
+                        if message.tool_calls[0]['arguments']:
+                            message.tool_calls[0][
+                                'arguments'] += message_chunk.tool_calls[0][
+                                    'arguments']
+                        else:
+                            # message.tool_calls[0]['arguments'] may be None
+                            message.tool_calls[0][
+                                'arguments'] = message_chunk.tool_calls[0][
+                                    'arguments']
                     if message_chunk.tool_calls[0]['tool_name']:
                         message.tool_calls[0][
                             'tool_name'] = message_chunk.tool_calls[0][
@@ -362,11 +367,11 @@ class OpenAI(LLM):
         else:
             # In platforms Bailian, setting `message.partial = True` indicates that the message
             #         is not yet complete and may be continued in the next generation step.
-            new_message.partial = True
-            messages.append(new_message)
+            if messages[-1].content != new_message.content:
+                messages.append(new_message)
+            messages[-1].partial = True
         messages[-1].api_calls += 1
 
-        messages = self._format_input_message(messages)
         return self._call_llm(messages, tools, **kwargs)
 
     def _continue_generate(self,

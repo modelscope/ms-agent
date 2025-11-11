@@ -1,17 +1,27 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import asyncio
+import importlib
+import inspect
 import os
+import sys
 from copy import copy
+from types import TracebackType
 from typing import Any, Dict, List, Optional
 
 import json
 from ms_agent.llm.utils import Tool, ToolCall
 from ms_agent.tools.base import ToolBase
+from ms_agent.tools.code.code_executor import CodeExecutionTool
 from ms_agent.tools.filesystem_tool import FileSystemTool
 from ms_agent.tools.mcp_client import MCPClient
 from ms_agent.tools.split_task import SplitTask
+from ms_agent.utils import get_logger
+from ms_agent.utils.constants import TOOL_PLUGIN_NAME
+
+logger = get_logger()
 
 MAX_TOOL_NAME_LEN = int(os.getenv('MAX_TOOL_NAME_LEN', 64))
+TOOL_CALL_TIMEOUT = int(os.getenv('TOOL_CALL_TIMEOUT', 30))
 
 
 class ToolManager:
@@ -20,30 +30,92 @@ class ToolManager:
 
     TOOL_SPLITER = '---'
 
-    def __init__(self, config, mcp_config: Optional[Dict[str, Any]] = None):
+    def __init__(self,
+                 config,
+                 mcp_config: Optional[Dict[str, Any]] = None,
+                 mcp_client: Optional[MCPClient] = None,
+                 **kwargs):
         self.config = config
-        self.servers = MCPClient(config, mcp_config)
+        self.trust_remote_code = kwargs.get('trust_remote_code', False)
+
         self.extra_tools: List[ToolBase] = []
         self.has_split_task_tool = False
         if hasattr(config, 'tools') and hasattr(config.tools, 'split_task'):
             self.extra_tools.append(SplitTask(config))
         if hasattr(config, 'tools') and hasattr(config.tools, 'file_system'):
             self.extra_tools.append(FileSystemTool(config))
+        if hasattr(config, 'tools') and hasattr(config.tools, 'code_executor'):
+            self.extra_tools.append(CodeExecutionTool(config))
+        self.tool_call_timeout = getattr(config, 'tool_call_timeout',
+                                         TOOL_CALL_TIMEOUT)
+        local_dir = self.config.local_dir if hasattr(self.config,
+                                                     'local_dir') else None
+        if hasattr(config, 'tools') and hasattr(config.tools,
+                                                TOOL_PLUGIN_NAME):
+            plugins = getattr(config.tools, TOOL_PLUGIN_NAME)
+            for plugin in plugins:
+                subdir = os.path.dirname(plugin)
+                _plugin = os.path.basename(plugin)
+                assert local_dir is not None, 'Using external py files, but local_dir cannot be found.'
+                if subdir:
+                    subdir = os.path.join(local_dir, str(subdir))
+                if not self.trust_remote_code:
+                    raise AssertionError(
+                        '[External Code Found] Your config file contains external code, '
+                        'instantiate the code may be UNSAFE, if you trust the code, '
+                        'please pass `trust_remote_code=True` or `--trust_remote_code true`'
+                    )
+                if local_dir not in sys.path:
+                    sys.path.insert(0, local_dir)
+                if subdir and subdir not in sys.path:
+                    sys.path.insert(0, subdir)
+                if _plugin.endswith('.py'):
+                    _plugin = _plugin[:-3]
+                plugin_file = importlib.import_module(_plugin)
+                module_classes = {
+                    name: cls
+                    for name, cls in inspect.getmembers(
+                        plugin_file, inspect.isclass)
+                }
+                for name, cls in module_classes.items():
+                    # Find cls which base class is `ToolBase`
+                    if issubclass(cls, ToolBase) and cls.__module__ == _plugin:
+                        self.register_tool(cls(self.config))
         self._tool_index = {}
+
+        # Used temporarily during async initialization; the actual client is managed in self.servers
+        self.mcp_client = mcp_client
+        self.mcp_config = mcp_config
+        self.servers = None
+        self._managed_client = mcp_client is None
 
     def register_tool(self, tool: ToolBase):
         self.extra_tools.append(tool)
 
     async def connect(self):
-        await self.servers.connect()
+        if self.mcp_client and isinstance(self.mcp_client, MCPClient):
+            self.servers = self.mcp_client
+            await self.servers.add_mcp_config(self.mcp_config)
+            self.mcp_config = self.servers.mcp_config
+        else:
+            self.servers = MCPClient(self.mcp_config, self.config)
+            await self.servers.connect()
         for tool in self.extra_tools:
             await tool.connect()
         await self.reindex_tool()
 
     async def cleanup(self):
-        await self.servers.cleanup()
+        if self._managed_client and self.servers:
+            try:
+                await self.servers.cleanup()
+            except Exception:  # noqa
+                pass
+        self.servers = None
         for tool in self.extra_tools:
-            await tool.cleanup()
+            try:
+                await tool.cleanup()
+            except Exception:  # noqa
+                pass
 
     async def reindex_tool(self):
 
@@ -74,21 +146,49 @@ class ToolManager:
         return [value[2] for value in self._tool_index.values()]
 
     async def single_call_tool(self, tool_info: ToolCall):
+        brief_info = json.dumps(tool_info, ensure_ascii=False)
+        if len(brief_info) > 1024:
+            brief_info = brief_info[:1024] + '...'
         try:
             tool_name = tool_info['tool_name']
             tool_args = tool_info['arguments']
             while isinstance(tool_args, str):
-                tool_args = json.loads(tool_args)
+                try:
+                    tool_args = json.loads(tool_args)
+                except Exception:  # noqa
+                    return f'The input {tool_args} is not a valid JSON, fix your arguments and try again'
             assert tool_name in self._tool_index, f'Tool name {tool_name} not found'
             tool_ins, server_name, _ = self._tool_index[tool_name]
-            return await tool_ins.call_tool(
-                server_name,
-                tool_name=tool_name.split(self.TOOL_SPLITER)[1],
-                tool_args=tool_args)
+            response = await asyncio.wait_for(
+                tool_ins.call_tool(
+                    server_name,
+                    tool_name=tool_name.split(self.TOOL_SPLITER)[1],
+                    tool_args=tool_args),
+                timeout=self.tool_call_timeout)
+            return response
+        except asyncio.TimeoutError:
+            import traceback
+            logger.warning(traceback.format_exc())
+            # TODO: How to get the information printed by the tool before hanging to return to the model?
+            return f'Execute tool call timeout: {brief_info}'
         except Exception as e:
-            return f'Tool calling failed: {str(e)}'
+            import traceback
+            logger.warning(traceback.format_exc())
+            return f'Tool calling failed: {brief_info}, details: {str(e)}'
 
     async def parallel_call_tool(self, tool_list: List[ToolCall]):
         tasks = [self.single_call_tool(tool) for tool in tool_list]
         result = await asyncio.gather(*tasks)
         return result
+
+    async def __aenter__(self) -> 'ToolManager':
+
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        pass

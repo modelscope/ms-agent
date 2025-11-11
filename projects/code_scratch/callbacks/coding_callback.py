@@ -24,8 +24,9 @@ class CodingCallback(Callback):
         await self.file_system.connect()
 
     async def on_tool_call(self, runtime: Runtime, messages: List[Message]):
-        if not messages[-1].tool_calls or messages[-1].tool_calls[0][
-                'tool_name'] != 'split_to_sub_task':
+        # tool name is not 'split_to_sub_task', ut is 'SplitTask---split_to_sub_task'
+        if not messages[-1].tool_calls or 'split_to_sub_task' not in messages[
+                -1].tool_calls[0]['tool_name']:
             return
         assert messages[0].role == 'system'
         arguments = messages[-1].tool_calls[0]['arguments']
@@ -58,14 +59,21 @@ you may read other files if necessary, like config files or package files to enh
 
 3. Output your code with this format:
 
-```js:js/index.js
-... code ...
+```type: filename
+text
 ```
-The `js/index.js` will be used to saving.
+
+for example:
+```javascript: frontend/index.js
+your code here
+```
+
+The `frontend/index.js` will be used to saving. Therefore, you must generate it strictly in this format.
 
 4. Do not let your code silent crash, make the logs shown in the running terminal, later the compiling process can feedback these issues to you.
 
 5. Do not leave the images blank, you don't have any local assets(neither images nor logos), use image links from unsplash
+    * Do not generate icos or pngs, always import from unsplash
 
 6. Here is an extra instruction of making your website beautiful:
 
@@ -115,8 +123,8 @@ Now Begin:
         messages[-1].tool_calls[0]['arguments'] = json.dumps({'tasks': tasks})
 
     async def after_tool_call(self, runtime: Runtime, messages: List[Message]):
-        if not messages[-2].tool_calls or messages[-2].tool_calls[0][
-                'tool_name'] != 'split_to_sub_task':
+        if not messages[-2].tool_calls or 'split_to_sub_task' not in messages[
+                -2].tool_calls[0]['tool_name']:
             return
         assert messages[0].role == 'system'
         arguments = messages[-2].tool_calls[0]['arguments']
@@ -125,6 +133,7 @@ Now Begin:
         if isinstance(tasks, str):
             tasks = json.loads(tasks)
         for task in tasks:
-            task['system'] = task['_system']
-            task.pop('_system')
+            if '_system' in task:
+                task['system'] = task['_system']
+                task.pop('_system')
         messages[-2].tool_calls[0]['arguments'] = json.dumps({'tasks': tasks})

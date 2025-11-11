@@ -6,6 +6,9 @@ from omegaconf import DictConfig
 class ModelScope(OpenAI):
 
     def __init__(self, config: DictConfig):
+        assert hasattr(
+            config.llm, 'modelscope_api_key'
+        ) and config.llm.modelscope_api_key is not None, 'Please provide `modelscope_api_key` in env or cmd.'
         super().__init__(
             config,
             base_url=config.llm.modelscope_base_url,

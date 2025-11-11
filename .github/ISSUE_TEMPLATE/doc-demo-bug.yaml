@@ -11,16 +11,6 @@ body:
     attributes:
       label: Description
       description: |
-        Tell us about the change you'd like to see. For example, "I'd like to
-        see more examples of how to create a new tool."
+        Tell us about the change you'd like to see, and the link of the code/doc block.
     validations:
       required: true
-
-  - type: textarea
-    attributes:
-      label: Link
-      description: |
-        If the problem is related to an existing section, please add a link to
-        the section. For example, https://github.com/modelscope/ms-agent/blob/main/demo/demo_alpha_umi.ipynb.
-    validations:
-      required: false

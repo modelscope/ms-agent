@@ -1,6 +1,6 @@
 llm:
   service: modelscope
-  model: Qwen/Qwen3-235B-A22B
+  model: Qwen/Qwen3-235B-A22B-Instruct-2507
   modelscope_api_key:
   modelscope_base_url: https://api-inference.modelscope.cn/v1
 
@@ -31,20 +31,22 @@ prompt:
 
     6. Do not call tools carelessly. Show your thoughts **as detailed as possible**.
 
-    For requests that require performing a specific task or retrieving information, you must use the following format:
+    7. Respond in the same language the user uses. If the user switches, switch accordingly.
+
+    For requests that require performing a specific task or retrieving information, using the following format **in user language**:
     ```
-    用户需要 ...
-    针对该需求，我进行了详细拆解和规划，需要按照如下步骤来解决问题：
+    The user needs to ...
+    I have analyzed this request in detail and broken it down into the following steps:
     ...
     ```
     If you have tools which may help you to solve problems, follow this format to answer:
     ```
-    用户需要 ...
-    针对该需求，我进行了详细拆解和规划，需要按照如下步骤来解决问题：
+    The user needs to ...
+    I have analyzed this request in detail and broken it down into the following steps:
     ...
-    首先我应当选择...工具，由于该工具..., 该工具的入参需要...
+    First, I should use the [Tool Name] because [explain relevance]. The required input parameters are: ...
     ...
-    我仔细查看了工具返回值，该工具的返回值符合/不符合我的要求，我接下来需要...
+    I have carefully reviewed the tool's output. The result does/does not fully meet my expectations. Next, I need to ...
     ```
 
 max_chat_round: 9999

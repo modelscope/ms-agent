@@ -29,6 +29,9 @@ class ExaSearchRequest:
     start_crawl_date: Optional[str] = None
     end_crawl_date: Optional[str] = None
 
+    # temporary field for research goal
+    research_goal: Optional[str] = None
+
     def to_dict(self) -> Dict[str, Any]:
         """
         Convert the request parameters to a dictionary.

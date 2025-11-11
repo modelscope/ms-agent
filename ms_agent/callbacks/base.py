@@ -37,21 +37,8 @@ class Callback:
         """
         pass
 
-    async def after_generate_response(self, runtime: Runtime,
-                                      messages: List[Message]):
-        """Called after LLM generates response.
-
-        Args:
-            runtime: The runtime.
-            messages: The messages, you can modify it in-place.
-
-        Returns:
-            None.
-        """
-        pass
-
     async def on_tool_call(self, runtime: Runtime, messages: List[Message]):
-        """Called before calling tools.
+        """Called after LLM generates response.
 
         Args:
             runtime: The runtime.
@@ -80,17 +67,6 @@ class Callback:
         Args:
             runtime: The runtime.
             messages: The messages, you can modify it in-place.
-
-        Returns:
-            None.
-        """
-        pass
-
-    async def on_split_task(self, config: DictConfig):
-        """Called when a subtask begins, this will be called once for each subtask.
-
-        Args:
-            config: The config for the subtask, prompt.system and prompt.query is valid, you can modify it in-place.
 
         Returns:
             None.

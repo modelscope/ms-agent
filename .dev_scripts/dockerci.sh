@@ -6,7 +6,7 @@ export CODE_INTERPRETER_WORK_DIR=${GITHUB_WORKSPACE}
 echo "${CODE_INTERPRETER_WORK_DIR}"
 
 # cp file
-cp tests/* "${CODE_INTERPRETER_WORK_DIR}/"
+cp -r tests/* "${CODE_INTERPRETER_WORK_DIR}/"
 ls  "${CODE_INTERPRETER_WORK_DIR}"
 # pip install playwright
 # playwright install --with-deps chromium

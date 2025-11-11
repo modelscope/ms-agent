@@ -8,9 +8,8 @@ on:
     paths-ignore:
       - "setup.*"
       - "requirements.txt"
-      - "output/**"
+      - "requirements/*"
       - "README.md"
-      - "README_CN.md"
       - ".github/workflows/lint.yaml"
       - ".github/workflows/publish.yaml"
 
@@ -18,8 +17,8 @@ on:
     paths-ignore:
       - "setup.*"
       - "requirements.txt"
+      - "requirements/*"
       - "README.md"
-      - "README_zh-CN.md"
       - ".github/workflows/lint.yaml"
       - ".github/workflows/publish.yaml"
 
@@ -30,23 +29,11 @@ concurrency:
 jobs:
   unittest:
     # The type of runner that the job will run on
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 60
     environment: testci
     steps:
-    - uses: actions/checkout@v3
-
-#    - name: Cache Python dependencies
-#      uses: actions/cache@v3
-#      id: cache
-#      with:
-#        path: ~/.cache/pip
-#        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-
-    - name: Set up Python 3.10.14
-      uses: actions/setup-python@v3
-      with:
-        python-version: "3.10.14"
+    - uses: actions/checkout@v4
 
     # Add a step to check if it's a fork and set an environment variable
     - name: Check if PR is from a fork
@@ -63,11 +50,10 @@ jobs:
       if: steps.cache.outputs.cache-hit != 'true'
       run: pip install -r requirements/research.txt
 
-    - name: Run tests
-      env:
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
-        MODELSCOPE_API_KEY: ${{ secrets.MODELSCOPE_API_KEY }}
+    - name: Install Code Dependencies
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: pip install -r requirements/code.txt
 
+    - name: Run tests
       shell: bash
       run: bash .dev_scripts/dockerci.sh

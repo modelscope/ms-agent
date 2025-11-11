@@ -1,7 +1,7 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import argparse
 
-from modelscope.cli.base import CLICommand
+from .base import CLICommand
 
 
 def subparser_func(args):
@@ -11,6 +11,8 @@ def subparser_func(args):
 
 
 class AppCMD(CLICommand):
+    """The app webui class."""
+
     name = 'app'
 
     def __init__(self, args):
@@ -25,9 +27,10 @@ class AppCMD(CLICommand):
         group = parser.add_mutually_exclusive_group(required=True)
 
         group.add_argument(
-            '--doc_research',
-            action='store_true',
-            help='Launch the `Doc Research` app.')
+            '--app_type',
+            type=str,
+            default='doc_research',
+            help='The app type, supported values: `doc_research`')
 
         parser.add_argument(
             '--server_name',
@@ -50,11 +53,11 @@ class AppCMD(CLICommand):
 
     def execute(self):
 
-        if self.args.doc_research:
+        if self.args.app_type == 'doc_research':
             from ms_agent.app.doc_research import launch_server as launch_doc_research
             launch_doc_research(
                 server_name=self.args.server_name,
                 server_port=self.args.server_port,
                 share=self.args.share)
         else:
-            raise ValueError('Unsupported app type.')
+            raise ValueError(f'Unsupported app type: {self.args.app_type}')

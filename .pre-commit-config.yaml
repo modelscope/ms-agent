@@ -1,3 +1,5 @@
+
+
 repos:
   - repo: https://github.com/pycqa/flake8.git
     rev: 4.0.0
@@ -7,7 +9,8 @@ repos:
             (?x)^(
                 thirdparty/|
                 examples/|
-                tests/run.py
+                tests/run.py|
+                ms_agent/utils/prompts.py
             )$
   - repo: https://github.com/PyCQA/isort.git
     rev: 4.3.21
@@ -17,7 +20,6 @@ repos:
             (?x)^(
                 examples/|
                 tests/run.py|
-                swift/cli/sft.py
             )$
   - repo: https://github.com/pre-commit/mirrors-yapf.git
     rev: v0.30.0

@@ -1,23 +1,24 @@
 llm:
   service: openai
-  model: claude-3-7-sonnet-20250219
+  model: claude-sonnet-4-5-20250929
   openai_api_key:
   openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 
+
 generation_config:
-  top_p: 0.7
   temperature: 0.3
   top_k: 50
   stream: true
+  max_tokens: 64000
   extra_body:
     dashscope_extend_params:
-      provider: idealab
+      provider: b
     enable_thinking: false
 
 
 prompt:
   system: |
-    You are a senior software architect. Your responsibility is to break down complex requirements into implementable modules. You need to follow these instructions:
+    You are a senior software architect. Your responsibility is to break down complex requirements abount a frontend/backend project into implementable modules. You need to follow these instructions:
 
     1. Analyze the original requirement, output a functionality PRD, then a detailed architectural design:
       * You may add extra possible and reasonable functionalities to rich the project.
@@ -29,17 +30,15 @@ prompt:
 
     2. Code language preferences:
       * Frontend: React + vite.js, do not use ts check in package.json
-      * Backend: Node.js
+      * Backend: node.js
 
-    3. Think carefully, list the file structure from backend to frontend, lower modules to higher modules, especially do not miss project files like `package.json` and so on.
+    3. Think carefully, list the file structure of frontend/backend, lower modules to higher modules, especially do not miss project files like `package.json` and so on.
 
         An example of file structure:
         ```json: files.json
         [
-          "backend/package.json",
-          "backend/server.js",
-          ...
           "frontend/package.json"
+          ...
         ]
         ```
 
@@ -56,6 +55,8 @@ callbacks:
   - callbacks/artifact_callback
 
 max_chat_round: 1
+
+tool_call_timeout: 30000
 
 output_dir: output
 
