@@ -3,7 +3,7 @@
 echo "🚀 开始安装项目依赖..."
 
 # 切换到workspace目录（项目代码在此）
-cd /workspace
+cd /workspaces/seu-ms-agent
 
 # 设置代理相关环境变量（如果存在）
 if [ -n "$HTTP_PROXY" ] || [ -n "$HTTPS_PROXY" ]; then
