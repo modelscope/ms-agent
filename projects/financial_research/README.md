@@ -163,6 +163,8 @@ Please note that due to incomplete information dimensions, FinResearch may not b
 
 Please refer to `projects/financial_research/examples` for more examples.
 
+<img src="https://github.com/user-attachments/assets/2ef0f7a1-985b-4dbd-9d75-da16246e985e" width="750" alt="demo style="height: auto;" />
+
 ## 🔧 Developer Guide
 
 ### Project Components and Functions
