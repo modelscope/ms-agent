@@ -88,7 +88,7 @@ The Collector and Analyst agents require Docker for sandboxed execution:
 
 ```bash
 # install ms-enclave (https://github.com/modelscope/ms-enclave)
-pip install ms-enclave
+pip install ms-enclave docker websocket-client
 
 # build the required Docker image, make sure you have installed Docker on your device
 bash projects/fin_research/tools/build_jupyter_image.sh
@@ -98,7 +98,7 @@ bash projects/fin_research/tools/build_jupyter_image.sh
 
 ### Environment Configuration
 
-1. Configure API keys in your environment or directly in YAML files:
+Configure API keys in your environment or directly in YAML files:
 
 ```bash
 # LLM API
@@ -112,7 +112,7 @@ export EXA_API_KEY=your_exa_api_key
 export SERPAPI_API_KEY=your_serpapi_api_key
 ```
 
-2. Configure the search engine config file path in `searcher.yaml`:
+Configure the search engine config file path in `searcher.yaml`:
 
 ```yaml
 tools:
@@ -203,7 +203,7 @@ Each agent's behavior can be customized through its YAML configuration file:
 llm:
   service: openai
   model: qwen3-max  # or qwen3-coder-plus for Analyst
-  openai_api_key: ${OPENAI_API_KEY}
+  openai_api_key: your-api-key
   openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 ```
 
@@ -225,7 +225,7 @@ tools:
 **Search Configuration (searcher.yaml):**
 
 ```yaml
-breadth: 4  # Number of search queries per depth level
+breadth: 3  # Number of search queries per depth level
 depth: 1    # Maximum research depth
 is_report: true  # Generate report or return raw data
 ```

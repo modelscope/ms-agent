@@ -88,7 +88,7 @@ Collector 与 Analyst 需要 Docker 沙箱以安全执行代码：
 
 ```bash
 # 安装 ms-enclave（https://github.com/modelscope/ms-enclave）
-pip install ms-enclave
+pip install ms-enclave docker websocket-client
 
 # 构建所需 Docker 镜像（确保设备已安装并运行 Docker）
 bash projects/fin_research/tools/build_jupyter_image.sh
@@ -98,7 +98,7 @@ bash projects/fin_research/tools/build_jupyter_image.sh
 
 ### 环境变量配置
 
-1. 在系统环境或 YAML 中配置 API Key：
+在系统环境或 YAML 中配置 API Key：
 
 ```bash
 # LLM API（系统环境配置示例）
@@ -112,7 +112,7 @@ export EXA_API_KEY=your_exa_api_key
 export SERPAPI_API_KEY=your_serpapi_api_key
 ```
 
-2. 在 `searcher.yaml` 指定搜索引擎配置文件的路径：
+在 `searcher.yaml` 指定搜索引擎配置文件的路径：
 
 ```yaml
 tools:
@@ -199,7 +199,7 @@ aggregator:
 llm:
   service: openai
   model: qwen3-max  # Analyst 可选 qwen3-coder-plus
-  openai_api_key: ${OPENAI_API_KEY}
+  openai_api_key: your-api-key
   openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 ```
 
@@ -221,7 +221,7 @@ tools:
 **搜索配置（`searcher.yaml`）示例：**
 
 ```yaml
-breadth: 4  # 每层搜索生成的查询数
+breadth: 3  # 每层搜索生成的查询数
 depth: 1    # 最大搜索深度
 is_report: true  # 输出报告而非简短回答
 ```

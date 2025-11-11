@@ -10,6 +10,9 @@ IMAGE_TAG="version1"
 
 echo "Building Jupyter Kernel Gateway Docker image..."
 
+# Pull the latest python:3.12-slim image
+docker pull python:3.12-slim
+
 # Create a temporary Dockerfile
 cat > Dockerfile.sandbox << 'EOF'
 FROM python:3.12-slim

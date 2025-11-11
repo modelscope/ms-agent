@@ -1,6 +1,6 @@
 # FinResearch
 
-Ms-Agent’s FinancialResearch project is a multi-agent workflow tailored for financial market research. It combines quantitative market/data analysis with in-depth online information research to automatically produce a structured, professional research report.
+Ms-Agent’s FinResearch project is a multi-agent workflow tailored for financial market research. It combines quantitative market/data analysis with in-depth online information research to automatically produce a structured, professional research report.
 
 ## Overview
 
@@ -74,7 +74,7 @@ pip install akshare baostock
 ### Sandbox Environment
 
 ```bash
-pip install ms-enclave  # https://github.com/modelscope/ms-enclave
+pip install ms-enclave docker websocket-client  # https://github.com/modelscope/ms-enclave
 bash projects/fin_research/tools/build_jupyter_image.sh
 ```
 
@@ -171,7 +171,7 @@ LLM configuration example:
 llm:
   service: openai
   model: qwen3-max  # For Analyst, qwen3-coder-plus is also available
-  openai_api_key: ${OPENAI_API_KEY}
+  openai_api_key: your-api-key
   openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 ```
 
@@ -193,7 +193,7 @@ tools:
 Search configuration example (`searcher.yaml`):
 
 ```yaml
-breadth: 4  # Number of queries generated per layer
+breadth: 3  # Number of queries generated per layer
 depth: 1    # Maximum search depth
 is_report: true  # Output report instead of raw data
 ```
@@ -233,3 +233,10 @@ Data access is limited by upstream interfaces and may contain gaps or inaccuraci
 - **Indices**: SSE 50, CSI 300 (HS300), CSI 500 (ZZ500)
 - **Data types**: K-line, financial statements (P/L, balance sheet, cash flow), dividends, industry classification
 - **Macro**: Interest rates, reserve requirement ratio, money supply (China)
+
+## TODOs
+
+1. Optimize the stability and data coverage of the financial data retrieval tool.
+2. Refine the system architecture to reduce token consumption and improve report generation performance.
+3. Enhance the visual presentation of output reports and support exporting in multiple file formats.
+4. Improve the financial sentiment search pipeline.
