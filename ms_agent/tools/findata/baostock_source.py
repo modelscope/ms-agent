@@ -1,16 +1,15 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import threading
-import time
 from contextlib import contextmanager
 from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
-import baostock as bs
 import pandas as pd
 from ms_agent.tools.findata.data_source_base import (DataSourceError,
                                                      FinancialDataSource,
                                                      NoDataFoundError)
 from ms_agent.utils import get_logger
+from ms_agent.utils.utils import install_package
 
 logger = get_logger()
 
@@ -40,7 +39,7 @@ class BaoStockSessionManager:
     def _force_logout(self):
         with self._session_lock:
             if self._login_count == 0 and self._is_logged_in:
-                bs.logout()
+                baostock.logout()
                 self._is_logged_in = False
                 logger.debug('BaoStock session closed by idle-timeout')
             self._timer = None
@@ -56,7 +55,7 @@ class BaoStockSessionManager:
         """Ensure BaoStock is logged in (thread-safe)"""
         with self._session_lock:
             if not self._is_logged_in:
-                lg = bs.login()
+                lg = baostock.login()
                 if lg.error_code != '0':
                     raise DataSourceError(
                         f'BaoStock login failed: {lg.error_msg}')
@@ -108,6 +107,15 @@ class BaoStockDataSource(FinancialDataSource):
     ]
 
     def __init__(self):
+        logger.info('Installing BaoStock package...')
+        try:
+            install_package(package_name='baostock')
+        except Exception as e:
+            raise e
+
+        global baostock
+        import baostock
+
         logger.info('Initializing BaoStock data source')
         # Test connection
         with baostock_session():
@@ -146,7 +154,7 @@ class BaoStockDataSource(FinancialDataSource):
         logger.info(f'Fetching K-data for {code} ({start_date} to {end_date})')
 
         with baostock_session():
-            rs = bs.query_history_k_data_plus(
+            rs = baostock.query_history_k_data_plus(
                 code=code,
                 fields=fields_str,
                 start_date=start_date,
@@ -160,7 +168,7 @@ class BaoStockDataSource(FinancialDataSource):
         logger.info(f'Fetching basic info for {code}')
 
         with baostock_session():
-            rs = bs.query_stock_basic(code=code)
+            rs = baostock.query_stock_basic(code=code)
             return self._query_to_dataframe(rs, f'basic info for {code}')
 
     def get_dividend_data(self,
@@ -171,7 +179,7 @@ class BaoStockDataSource(FinancialDataSource):
         logger.info(f'Fetching dividend data for {code} ({year} {year_type})')
 
         with baostock_session():
-            rs = bs.query_dividend_data(
+            rs = baostock.query_dividend_data(
                 code=code, year=year, yearType=year_type)
             return self._query_to_dataframe(
                 rs, f'dividend data for {code} ({year} {year_type})')
@@ -184,7 +192,7 @@ class BaoStockDataSource(FinancialDataSource):
         )
 
         with baostock_session():
-            rs = bs.query_adjust_factor(
+            rs = baostock.query_adjust_factor(
                 code=code, start_date=start_date, end_date=end_date)
             return self._query_to_dataframe(
                 rs,
@@ -205,17 +213,17 @@ class BaoStockDataSource(FinancialDataSource):
         with baostock_session():
             for data_type in data_types:
                 if data_type == 'profit':
-                    query_func = bs.query_profit_data
+                    query_func = baostock.query_profit_data
                 elif data_type == 'operation':
-                    query_func = bs.query_operation_data
+                    query_func = baostock.query_operation_data
                 elif data_type == 'growth':
-                    query_func = bs.query_growth_data
+                    query_func = baostock.query_growth_data
                 elif data_type == 'balance':
-                    query_func = bs.query_balance_data
+                    query_func = baostock.query_balance_data
                 elif data_type == 'cash_flow':
-                    query_func = bs.query_cash_flow_data
+                    query_func = baostock.query_cash_flow_data
                 elif data_type == 'dupont':
-                    query_func = bs.query_dupont_data
+                    query_func = baostock.query_dupont_data
                 else:
                     raise ValueError(f'Invalid data type: {data_type}')
 
@@ -252,10 +260,10 @@ class BaoStockDataSource(FinancialDataSource):
 
         with baostock_session():
             if report_type == 'performance_express':
-                rs = bs.query_performance_express_report(
+                rs = baostock.query_performance_express_report(
                     code=code, start_date=start_date, end_date=end_date)
             elif report_type == 'performance_forecast':
-                rs = bs.query_forecast_report(
+                rs = baostock.query_forecast_report(
                     code=code, start_date=start_date, end_date=end_date)
             else:
                 raise ValueError(f'Invalid report type: {report_type}')
@@ -274,7 +282,7 @@ class BaoStockDataSource(FinancialDataSource):
         )
 
         with baostock_session():
-            rs = bs.query_stock_industry(code=code, date=date)
+            rs = baostock.query_stock_industry(code=code, date=date)
             return self._query_to_dataframe(
                 rs, f'stock industry for {code or "all"} ({date or "latest"})')
 
@@ -288,13 +296,13 @@ class BaoStockDataSource(FinancialDataSource):
 
         with baostock_session():
             if data_type == 'sse50':
-                rs = bs.query_sz50_stocks(date=date)
+                rs = baostock.query_sz50_stocks(date=date)
             elif data_type == 'hs300':
-                rs = bs.query_hs300_stocks(date=date)
+                rs = baostock.query_hs300_stocks(date=date)
             elif data_type == 'zz500':
-                rs = bs.query_zz500_stocks(date=date)
+                rs = baostock.query_zz500_stocks(date=date)
             elif data_type == 'all_a_share':
-                rs = bs.query_all_stock(day=date)
+                rs = baostock.query_all_stock(day=date)
             else:
                 raise ValueError(f'Invalid data type: {data_type}')
 
@@ -313,7 +321,8 @@ class BaoStockDataSource(FinancialDataSource):
         )
 
         with baostock_session():
-            rs = bs.query_trade_dates(start_date=start_date, end_date=end_date)
+            rs = baostock.query_trade_dates(
+                start_date=start_date, end_date=end_date)
             return self._query_to_dataframe(rs, 'trade dates')
 
     def get_macro_data(
@@ -341,27 +350,27 @@ class BaoStockDataSource(FinancialDataSource):
                     parsed_end_date = end_date
 
                     if data_type == 'deposit_rate':
-                        query_func = bs.query_deposit_rate_data
+                        query_func = baostock.query_deposit_rate_data
 
                     elif data_type == 'loan_rate':
-                        query_func = bs.query_loan_rate_data
+                        query_func = baostock.query_loan_rate_data
 
                     elif data_type == 'required_reserve_ratio':
-                        query_func = bs.query_required_reserve_ratio_data
+                        query_func = baostock.query_required_reserve_ratio_data
                         if extra_kwargs:
                             parsed_extra_kwargs.update(extra_kwargs)
                         if 'yearType' not in parsed_extra_kwargs:
                             parsed_extra_kwargs['yearType'] = '0'
 
                     elif data_type == 'money_supply_month':
-                        query_func = bs.query_money_supply_data_month
+                        query_func = baostock.query_money_supply_data_month
                         parsed_start_date = pd.to_datetime(
                             start_date).strftime('%Y-%m')
                         parsed_end_date = pd.to_datetime(end_date).strftime(
                             '%Y-%m')
 
                     elif data_type == 'money_supply_year':
-                        query_func = bs.query_money_supply_data_year
+                        query_func = baostock.query_money_supply_data_year
                         parsed_start_date = pd.to_datetime(
                             start_date).strftime('%Y')
                         parsed_end_date = pd.to_datetime(end_date).strftime(

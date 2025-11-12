@@ -2,12 +2,12 @@
 import re
 from typing import Any, Dict, List, Optional
 
-import akshare as ak
 import pandas as pd
 from ms_agent.tools.findata.data_source_base import (DataSourceError,
                                                      FinancialDataSource,
                                                      NoDataFoundError)
 from ms_agent.utils import get_logger
+from ms_agent.utils.utils import install_package
 
 logger = get_logger()
 
@@ -25,10 +25,19 @@ class AKShareDataSource(FinancialDataSource):
     """
 
     def __init__(self):
+        logger.info('Installing AKShare package...')
+        try:
+            install_package(package_name='akshare')
+        except Exception as e:
+            raise e
+
+        global akshare
+        import akshare
+
         logger.info('Initializing AKShare data source')
         try:
             # Test AKShare availability
-            ak.tool_trade_date_hist_sina()
+            akshare.tool_trade_date_hist_sina()
             logger.info('AKShare initialized successfully')
         except Exception as e:
             raise DataSourceError(f'Failed to initialize AKShare: {e}')
@@ -141,7 +150,7 @@ class AKShareDataSource(FinancialDataSource):
             if code.startswith('sh.') or code.startswith(
                     'sz.') or code.startswith('bj'):
                 clean_code = self._convert_code(code, market='A')
-                df = ak.stock_zh_a_hist(
+                df = akshare.stock_zh_a_hist(
                     symbol=clean_code,
                     period=period,
                     start_date=st_date,
@@ -149,7 +158,7 @@ class AKShareDataSource(FinancialDataSource):
                     adjust=adjust)
             elif code.startswith('hk'):
                 clean_code = self._convert_code(code, market='HK')
-                df = ak.stock_hk_hist(
+                df = akshare.stock_hk_hist(
                     symbol=clean_code,
                     period=period,
                     start_date=st_date,
@@ -157,7 +166,7 @@ class AKShareDataSource(FinancialDataSource):
                     adjust=adjust)
             else:
                 clean_code = self._convert_code(code, market='US')
-                df = ak.stock_us_hist(
+                df = akshare.stock_us_hist(
                     symbol=clean_code,
                     period=period,
                     start_date=st_date,
@@ -204,7 +213,7 @@ class AKShareDataSource(FinancialDataSource):
 
         # Try to fetch base info
         try:
-            df_base_info = ak.stock_hk_spot_em()
+            df_base_info = akshare.stock_hk_spot_em()
             stock_info = df_base_info[df_base_info['代码'] == clean_code]
             if not stock_info.empty:
                 df_stock_info = pd.DataFrame({
@@ -220,7 +229,7 @@ class AKShareDataSource(FinancialDataSource):
 
         # Try to fetch business info
         try:
-            df_business_info = ak.stock_zyjs_ths(symbol=clean_code)
+            df_business_info = akshare.stock_zyjs_ths(symbol=clean_code)
             if not df_business_info.empty:
                 df_business_info = df_business_info.rename(
                     columns={
@@ -256,7 +265,7 @@ class AKShareDataSource(FinancialDataSource):
         symbol = self._convert_code(code, 'US')
 
         try:
-            df = ak.stock_us_spot_em()
+            df = akshare.stock_us_spot_em()
             stock_info = df[df['代码'] == symbol]
 
             if stock_info.empty:
@@ -283,7 +292,7 @@ class AKShareDataSource(FinancialDataSource):
         clean_code = self._convert_code(code, 'A')
 
         try:
-            df_base_info = ak.stock_individual_info_em(symbol=clean_code)
+            df_base_info = akshare.stock_individual_info_em(symbol=clean_code)
 
             if df_base_info.empty:
                 raise NoDataFoundError(f'No basic info found for {code}')
@@ -307,7 +316,7 @@ class AKShareDataSource(FinancialDataSource):
                 'status': ['1']
             })
 
-            df_business_info = ak.stock_zyjs_ths(symbol=clean_code)
+            df_business_info = akshare.stock_zyjs_ths(symbol=clean_code)
             if df_business_info.empty:
                 raise NoDataFoundError(f'No business info found for {code}')
 
@@ -479,8 +488,9 @@ class AKShareDataSource(FinancialDataSource):
         ind_df = pd.DataFrame()
         if code.startswith(('hk.', 'us.')):
             try:
-                ind_df = ak.stock_financial_hk_analysis_indicator_em(symbol=clean_code) if code.startswith('hk.') else \
-                    ak.stock_financial_us_analysis_indicator_em(symbol=clean_code)
+                ind_df = akshare.stock_financial_hk_analysis_indicator_em(
+                    symbol=clean_code) if code.startswith('hk.') else \
+                    akshare.stock_financial_us_analysis_indicator_em(symbol=clean_code)
                 ind_df = _select_row_by_report(ind_df)
             except Exception as e:
                 logger.warning(
@@ -495,7 +505,7 @@ class AKShareDataSource(FinancialDataSource):
 
             if needs_indicator:
                 try:
-                    ind_df = ak.stock_financial_analysis_indicator(
+                    ind_df = akshare.stock_financial_analysis_indicator(
                         symbol=clean_code)
                     ind_df = _select_row_by_report(ind_df)
                 except Exception as e:
@@ -517,14 +527,14 @@ class AKShareDataSource(FinancialDataSource):
                         continue
 
                     elif data_type == 'balance':
-                        df = ak.stock_balance_sheet_by_report_em(
+                        df = akshare.stock_balance_sheet_by_report_em(
                             symbol=code.replace('.', '').upper())
                         row = _select_row_by_report(df)
                         if not row.empty:
                             result[data_type] = row
 
                     elif data_type == 'cash_flow':
-                        df = ak.stock_cash_flow_sheet_by_report_em(
+                        df = akshare.stock_cash_flow_sheet_by_report_em(
                             symbol=code.replace('.', '').upper())
                         row = _select_row_by_report(df)
                         if not row.empty:
@@ -570,13 +580,13 @@ class AKShareDataSource(FinancialDataSource):
 
         try:
             if data_type == 'sse50':
-                df = ak.index_stock_cons(symbol='000016')
+                df = akshare.index_stock_cons(symbol='000016')
             elif data_type == 'hs300':
-                df = ak.index_stock_cons(symbol='000300')
+                df = akshare.index_stock_cons(symbol='000300')
             elif data_type == 'zz500':
-                df = ak.index_stock_cons(symbol='000905')
+                df = akshare.index_stock_cons(symbol='000905')
             elif data_type == 'all_a_share':
-                df_a_share = ak.stock_zh_a_spot_em()
+                df_a_share = akshare.stock_zh_a_spot_em()
                 df_a_share['market'] = 'A'
                 df = df_a_share[['代码', '名称', 'market']].copy()
                 df = df.rename(columns={'代码': 'code', '名称': 'code_name'})
@@ -593,7 +603,7 @@ class AKShareDataSource(FinancialDataSource):
         logger.info(f'Fetching trade dates ({start_date} to {end_date})')
 
         try:
-            df = ak.tool_trade_date_hist_sina()
+            df = akshare.tool_trade_date_hist_sina()
 
             # Ensure trade_date is string for comparison
             if 'trade_date' in df.columns:
@@ -633,7 +643,7 @@ class AKShareDataSource(FinancialDataSource):
         for data_type in data_types:
             try:
                 if data_type in ('deposit_rate', 'loan_rate'):
-                    result[data_type] = ak.rate_interbank()
+                    result[data_type] = akshare.rate_interbank()
                 elif data_type in ('required_reserve_ratio'):
                     raise DataSourceError(
                         'Required reserve ratio is not supported by AKShare')
@@ -661,7 +671,7 @@ class AKShareDataSource(FinancialDataSource):
             start_date: Optional[str] = None,
             end_date: Optional[str] = None) -> pd.DataFrame:
         try:
-            df = ak.macro_china_money_supply()  # from 2008-01 to now
+            df = akshare.macro_china_money_supply()  # from 2008-01 to now
             df['月份'] = pd.to_datetime(df['月份'].str.replace('月份',
                                                            '').str.replace(
                                                                '年', '-'))
