@@ -125,8 +125,8 @@ tools:
       type: docker_notebook  # Sandbox type: 'docker_notebook' (recommended) or 'docker'
       image: jupyter-kernel-gateway:version1  # Docker image for sandbox
       timeout: 120  # Execution timeout in seconds
-      memory_limit: "2g"  # Memory limit (e.g., '512m', '1g', '2g')
-      cpu_limit: 2.0  # CPU limit (number of CPUs, can be fractional)
+      memory_limit: "1g"  # Memory limit (e.g., '512m', '1g', '2g')
+      cpu_limit: 1.0  # CPU limit (number of CPUs, can be fractional)
       network_enabled: True  # Enable network access in sandbox (default: false for security)
       tools_config:
         notebook_executor: {}

@@ -10,7 +10,7 @@ This project provides a multi-agent framework for financial research, combining 
 
 - **Financial Data Collection** - Automated collection of stock prices, financial statements, macro indicators, and market data for A-shares, HK, and US markets.
 
-- **Sentiment Research** - Leverages deep search workflow (`ms-agent/projects/deep_research`) to analyze market sentiment, news coverage, and social media discussions.
+- **Sentiment Research** - Deep research on multi-source information from news/media/communities.
 
 - **Professional Report Generation** - Generates structured, multi-section financial reports with visualizations, following industry-standard analytical frameworks (MECE, SWOT, Pyramid Principle, etc.).
 
@@ -217,8 +217,8 @@ tools:
       type: docker_notebook
       image: jupyter-kernel-gateway:version1
       timeout: 120
-      memory_limit: "2g"
-      cpu_limit: 2.0
+      memory_limit: "1g"
+      cpu_limit: 1.0
       network_enabled: true
 ```
 

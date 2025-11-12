@@ -49,6 +49,12 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 
 ## 🎉 News
 
+* 🚀 Nov 12, 2025: Release MS-Agent v1.4.1, which includes the following updates:
+  - 🔥 We present [FinResearch](projects/fin_research/README.md), a multi-agent workflow tailored for financial research
+  - 🔥 Support financial data collection via Akshare and Baostock
+  - 🔥 Support DagWorkflow for workflow orchestration
+  - 🔥 Optimize the DeepResearch workflow for stability and efficiency
+
 * 🚀 Nov 07, 2025: Release MS-Agent v1.4.0, which includes the following updates:
   - 🔥 We present [**MS-Agent Skills**](projects/agent_skills/README.md), an **Implementation** of [Anthropic-Agent-Skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills) Protocol.
   - 🔥 Add [Docs](https://ms-agent-en.readthedocs.io/en) and [中文文档](https://ms-agent.readthedocs.io/zh-cn)
@@ -407,6 +413,73 @@ The generated code will be output to the `output` folder in the current director
 - **Refine Phase**: Auto-compilation → Error analysis → Iterative bug fixing → Human evaluation loop
 
 For more details, refer to [Code Scratch](projects/code_scratch/README.md).
+
+<br>
+
+### FinResearch
+
+The MS-Agent FinResearch project is a multi-agent workflow tailored for financial market research. It combines quantitative financial data analysis with deep research on online news/sentiment to automatically generate professional research reports.
+
+#### Key Features
+
+- 🤖 **Multi-Agent Architecture**: Orchestrates multiple specialized agents to handle task decomposition, data collection, quantitative analysis, sentiment research, and final report generation.
+
+- 📁 **Multi-Dimensional Analysis**: Covers both financial indicators and public sentiment, enabling fusion analysis of structured and unstructured data.
+
+- 💰 **Financial Data Collection**: Supports automatic retrieval of quotes, financial statements, macro indicators, and market data for A-share, Hong Kong, and U.S. markets.
+
+- 🔍 **In-Depth Sentiment Research**: Deep research on multi-source information from news/media/communities.
+
+- 📝 **Professional Report Generation**: Produces multi-chapter, well-structured, image-and-text reports following common methodologies (MECE, SWOT, Pyramid Principle, etc.).
+
+- 🔒 **Secure Code Execution**: Runs data processing and analysis inside an isolated Docker sandbox to ensure security and reproducibility.
+
+#### Quick Start
+
+> 💡 Tips:
+> 1. Before running the examples below, set the `OPENAI_API_KEY` and `OPENAI_BASE_URL` environment variables to access the required model APIs. To run the full workflow, also configure the search engine variables EXA_API_KEY (https://exa.ai) or SERPAPI_API_KEY (https://serpapi.com).
+> 2. FinResearch requires ms-agent version >= 1.4.1.
+
+**Usage**:
+
+Quickly launch the full FinResearch workflow for testing:
+
+```bash
+# Run at the ms-agent project root
+PYTHONPATH=. python ms_agent/cli/cli.py run --config projects/fin_research --query 'Analyze CATL (300750.SZ) profitability over the past four quarters and compare it with key new-energy competitors (e.g., BYD, Gotion High-Tech, CALB); considering industry policies and lithium price volatility, forecast its performance for the next two quarters.' --trust_remote_code true
+```
+
+You can also run a minimal version without configuring a search engine by adjusting the [workflow configuration](projects/fin_research/workflow.yaml) as follows:
+
+```yaml
+type: DagWorkflow
+
+orchestrator:
+  next:
+    - collector
+  agent_config: orchestrator.yaml
+
+collector:
+  next:
+    - analyst
+  agent_config: collector.yaml
+
+analyst:
+  next:
+    - aggregator
+  agent_config: analyst.yaml
+
+aggregator:
+  agent_config: aggregator.yaml
+```
+
+**Result**:
+
+<https://github.com/user-attachments/assets/a11db8d2-b559-4118-a2c0-2622d46840ef>
+
+**References**:
+- README: [FinResearch](projects/fin_research/README.md)
+- Documentation: [MS-Agent Documentation](https://ms-agent-en.readthedocs.io/en/latest/Projects/FinResearch.html)
 
 <br>
 

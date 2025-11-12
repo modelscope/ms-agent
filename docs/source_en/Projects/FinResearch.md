@@ -9,7 +9,7 @@ Ms-Agent’s FinResearch project is a multi-agent workflow tailored for financia
 - **Multi-agent collaboration**: Five specialized agents—Orchestrator / Searcher / Collector / Analyst / Aggregator—work together to complete the end-to-end flow from task decomposition to report aggregation.
 - **Multi-dimensional research**: Covers both financial data indicators and public sentiment dimensions, enabling integrated analysis of structured and unstructured data to produce research reports with broad coverage and clear structure.
 - **Financial data collection**: Automatically fetches market quotes, financial statements, macro indicators, and market data for A-shares, Hong Kong stocks, and U.S. stocks. Uses the `FinancialDataFetcher` tool.
-- **In-depth sentiment research**: Reuses the deep research workflow (`ms-agent/projects/deep_research`) to analyze multi-source information from news/media/communities.
+- **In-depth sentiment research**: Deep research on multi-source information from news/media/communities.
 - **Secure and reproducible**: Quantitative analysis runs inside a Docker-based sandbox to ensure environment isolation and reproducibility.
 - **Professional report output**: Adheres to methodologies such as MECE, SWOT, and the Pyramid Principle, generates content chapter by chapter, and performs cross-chapter consistency checks.
 
@@ -185,8 +185,8 @@ tools:
       type: docker_notebook
       image: jupyter-kernel-gateway:version1
       timeout: 120
-      memory_limit: "2g"
-      cpu_limit: 2.0
+      memory_limit: "1g"
+      cpu_limit: 1.0
       network_enabled: true
 ```
 
