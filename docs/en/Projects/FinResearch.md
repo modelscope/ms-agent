@@ -186,7 +186,7 @@ tools:
       image: jupyter-kernel-gateway:version1
       timeout: 120
       memory_limit: "1g"
-      cpu_limit: 1.0
+      cpu_limit: 2.0
       network_enabled: true
 ```
 

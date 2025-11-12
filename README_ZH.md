@@ -48,7 +48,7 @@ MS-Agent是一个轻量级框架，旨在为智能体提供自主探索能力。
 
 * 🚀 2025.11.12：发布MS-Agent v1.4.1，包含以下更新：
   - 🔥 新增 [**FinResearch**](projects/fin_research/README.md)，支持金融领域的深度研究和分析
-  - 支持基于akshare和baostock的金融数据获取工具
+  - 支持基于[Akshare](https://github.com/akfamily/akshare)和[Baostock](http://baostock.com/mainContent?file=home.md)的金融数据获取工具
   - 支持以Dag形式编排工作流
   - 优化DeepResearch稳定性与效率
 
@@ -423,7 +423,7 @@ MS-Agent FinResearch项目是一个面向金融市场研究场景的多智能体
 
 - 💰 **金融数据采集**：支持模型自动获取A股、港股、美股等市场的行情、财报、宏观指标与市场数据。
 
-- 🔍 **舆情深度研究**：开展新闻/媒体/社区等多源舆情深度分析。
+- 🔍 **舆情深度研究**：新闻/媒体/社区等多源舆情深度分析。
 
 - 📝 **专业报告生成**：按业界常用方法论（MECE、SWOT、金字塔原理等）生成多章节、结构化、图文并茂的专业报告。
 

@@ -51,7 +51,7 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 
 * 🚀 Nov 12, 2025: Release MS-Agent v1.4.1, which includes the following updates:
   - 🔥 We present [FinResearch](projects/fin_research/README.md), a multi-agent workflow tailored for financial research
-  - Support financial data collection via Akshare and Baostock
+  - Support financial data collection via [Akshare](https://github.com/akfamily/akshare) and [Baostock](http://baostock.com/mainContent?file=home.md)
   - Support DagWorkflow for workflow orchestration
   - Optimize the DeepResearch workflow for stability and efficiency
 

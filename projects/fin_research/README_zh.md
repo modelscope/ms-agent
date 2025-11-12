@@ -10,7 +10,7 @@
 
 - **金融数据采集**：支持模型自动获取A股、港股、美股等市场的行情、财报、宏观指标与市场数据。
 
-- **舆情深度研究**：开展新闻/媒体/社区等多源舆情深度分析。
+- **舆情深度研究**：新闻/媒体/社区等多源舆情深度分析。
 
 - **专业报告生成**：按业界常用方法论（MECE、SWOT、金字塔原理等）生成多章节、结构化、图文并茂的专业报告。
 
@@ -214,7 +214,7 @@ tools:
       image: jupyter-kernel-gateway:version1
       timeout: 120
       memory_limit: "1g"
-      cpu_limit: 1.0
+      cpu_limit: 2.0
       network_enabled: true
 ```
 
