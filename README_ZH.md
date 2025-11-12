@@ -416,6 +416,8 @@ PYTHONPATH=. openai_api_key=your-api-key openai_base_url=your-api-url python ms_
 
 - [x] 支持[Anthropic-Agent-Skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills) 协议，实现智能体技能模块，提升智能体在复杂任务上的表现。
 - [ ] 金融深度研究智能体 **FinResearch** - 专注于金融领域的深度研究和分析。
+  - [x] 长周期深度金融分析报告生成
+  - [ ] 准实时事件驱动型简报生成
 - [ ] 多模态检索增强生成 **Multimodal Agentic Search** - 支持大规模多模态文档检索和图文检索结果生成。
 - [ ] 增强的 **Agent Skills** - 提供更多预定义的技能和工具，提升智能体技能边界，并支持多技能协作，完成复杂任务执行。
 - [ ] 统一的WebUI **Agent-Workstation**，支持本地一键部署，集成了 MS-Agent 的所有智能体能力，如 AgentChat、MCP、AgentSkills、DeepResearch、DocResearch、CodeScratch 等。

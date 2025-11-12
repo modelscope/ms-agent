@@ -29,6 +29,7 @@ MS-Agent DOCUMENTATION
    Projects/AgentSkills.md
    Projects/DeepResearch.md
    Projects/CodeScratch.md
+   Projects/FinResearch.md
 
 
 Indices and tables

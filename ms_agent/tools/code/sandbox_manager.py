@@ -29,7 +29,7 @@ class SandboxManagerFactory:
         from ms_enclave.sandbox.manager import HttpSandboxManager, LocalSandboxManager
 
         # Extract sandbox configuration
-        if isinstance(config, DictConfig):
+        if isinstance(config, (DictConfig, dict)):
             sandbox_config = config.get('sandbox', {})
         else:
             raise ValueError(f'Unknown config type: {type(config)}')

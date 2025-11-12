@@ -7,7 +7,7 @@ Ms-Agent’s FinResearch project is a multi-agent workflow tailored for financia
 ### Features
 
 - **Multi-agent collaboration**: Five specialized agents—Orchestrator / Searcher / Collector / Analyst / Aggregator—work together to complete the end-to-end flow from task decomposition to report aggregation.
-- **Multi-dimensional research**: Covers both quantitative “financial data” and qualitative “news/sentiment,” yielding more complete and explainable conclusions.
+- **Multi-dimensional research**: Covers both financial data indicators and public sentiment dimensions, enabling integrated analysis of structured and unstructured data to produce research reports with broad coverage and clear structure.
 - **Financial data collection**: Automatically fetches market quotes, financial statements, macro indicators, and market data for A-shares, Hong Kong stocks, and U.S. stocks. Uses the `FinancialDataFetcher` tool.
 - **In-depth sentiment research**: Reuses the deep research workflow (`ms-agent/projects/deep_research`) to analyze multi-source information from news/media/communities.
 - **Secure and reproducible**: Quantitative analysis runs inside a Docker-based sandbox to ensure environment isolation and reproducibility.
@@ -43,8 +43,8 @@ Ms-Agent’s FinResearch project is a multi-agent workflow tailored for financia
 ```
 
 - **Orchestrator**: Splits the user task into three parts: tasks and scope, financial data tasks, and sentiment research tasks.
-- **Searcher**: Invokes `ms-agent/projects/deep_research` to conduct in-depth sentiment research and produces a sentiment analysis report.
-- **Collector**: Collects financial data (e.g., statements, macro indicators) according to the task list using `FinancialDataFetcher` (akshare/baostock).
+- **Searcher**: Unstructured data collection invokes `ms-agent/projects/deep_research` to perform in-depth sentiment research and generate a public opinion analysis report.
+- **Collector**: Structured financial data collection gathers financial statements, macro indicators, and other data according to the task list, using the `FinancialDataFetcher` tool (implemented with `akshare` and `baostock` interfaces).
 - **Analyst**: Performs quantitative analysis in a sandbox and outputs a data analysis report with visualizations.
 - **Aggregator**: Consolidates sentiment and quantitative results, generates chaptered content with consistency checks, and produces the final comprehensive report.
 

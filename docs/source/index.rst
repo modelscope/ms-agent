@@ -29,6 +29,7 @@ MS-Agent DOCUMENTATION
    Projects/智能体技能.md
    Projects/深度研究.md
    Projects/代码生成.md
+   Projects/金融深度研究.md
 
 
 Indices and tables

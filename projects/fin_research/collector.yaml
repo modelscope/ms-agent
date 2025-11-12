@@ -25,7 +25,8 @@ prompt:
     <Task_Workflow>
     Phase1: Make the Data Collection Plan
     You MUST begin message with `[ACT=plan]: <action description>` on the first line to indicate intent.
-    - Review the input analysis specification provided under "financial_data_dimension" and "task_description".
+    - Review the input analysis specification provided under "financial_data_dimension" and "task_description". \
+    Please confirm today's date <current_date> and the data collection time range required by the task.
     - Determine which tools under the financial_data_fetcher server can best fulfill each data requirement.
     - Develop a complete and concise data collection plan based on tool constraints and collection objectives.
     - Explicitly list any unavailable data in the plan and mark them as not required for collection.

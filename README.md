@@ -421,6 +421,8 @@ We are committed to continuously improving and expanding the MS-Agent framework 
 
 - [x] **Anthropic Agent Skills** - Full support for the [Anthropic-Agent-Skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills) protocol, enabling agents to autonomously explore and execute complex tasks using predefined or custom "skills".
 - [ ] **FinResearch** – A financial deep-research agent dedicated to in-depth analysis and research in the finance domain.
+  - [x] Long-term deep financial analysis report generation
+  - [ ] Near real-time event-driven report generation
 - [ ] **Multimodal Agentic Search** – Supporting large-scale multimodal document retrieval and generation of search results combining text and images.
 - [ ] Enhanced **Agent Skills** – Providing a richer set of predefined skills and tools to expand agent capabilities and enabling multi-skill collaboration for complex task execution.
 - [ ] **Agent-Workstation** - An unified WebUI with one-click local deployment support with combining all agent capabilities of MS-Agent, such as AgentChat, MCP, AgentSkills, DeepResearch, DocResearch, CodeScratch, etc.

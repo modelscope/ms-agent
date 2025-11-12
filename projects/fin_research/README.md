@@ -6,7 +6,7 @@ This project provides a multi-agent framework for financial research, combining 
 
 - **Multi-Agent Architecture** - Orchestrated workflow with specialized agents for task decomposition, data collection, analysis, sentiment research, and report aggregation.
 
-- **Dual-Dimension Analysis** - Integrates both financial data metrics and public sentiment analysis for comprehensive insights.
+- **Multi-Dimension Analysis** - Covers both financial data indicators and public sentiment dimensions, enabling integrated analysis of structured and unstructured data to produce research reports with broad coverage and clear structure.
 
 - **Financial Data Collection** - Automated collection of stock prices, financial statements, macro indicators, and market data for A-shares, HK, and US markets.
 
@@ -49,9 +49,9 @@ The workflow consists of five specialized agents orchestrated in a DAG structure
 
 1. **Orchestrator Agent** - Decomposes user queries into three components: task description and scope, financial data tasks, and public sentiment tasks.
 
-2. **Searcher Agent** - Conducts in-depth public sentiment research using ResearchWorkflowBeta (`ms-agent/projects/deep_research`) and generates a public sentiment analysis report.
+2. **Searcher Agent** - Unstructured data collection invokes the Deep Research workflow (`ms-agent/projects/deep_research`) to conduct in-depth sentiment analysis and generate a public opinion report.
 
-3. **Collector Agent** - Collects financial data based on the defined financial data tasks, using the FinancialDataFetcher tool built on akshare and baostock.
+3. **Collector Agent** - Structured financial data collection uses data acquisition tools built on `akshare`/`baostock` to gather required financial data according to the orchestrator agent’s analysis task.
 
 4. **Analyst Agent** - Performs quantitative analysis within a Docker sandbox and generates a quantitative analysis report based on the data obtained from the Collector Agent.
 

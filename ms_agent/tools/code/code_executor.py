@@ -794,7 +794,7 @@ class CodeExecutionTool(ToolBase):
                         'success': True,
                         'sandbox_id': info.id,
                         'status': info.status.value,
-                        'type': info.type,
+                        'type': str(info.type),
                         'created_at': str(info.created_at),
                         'updated_at': str(info.updated_at),
                         'available_tools': list(info.available_tools.keys()),
