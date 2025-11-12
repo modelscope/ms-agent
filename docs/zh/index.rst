@@ -7,14 +7,14 @@ MS-Agent DOCUMENTATION
 
 .. toctree::
    :maxdepth: 2
-   :caption: Get Started
+   :caption: 🚀 快速开始
 
    GetStarted/安装.md
-   GetStarted/快速开始.md
+   GetStarted/快速上手.md
 
 .. toctree::
    :maxdepth: 2
-   :caption: Components
+   :caption: ⚙️ 组件
 
    Components/配置与参数.md
    Components/基础智能体.md
@@ -24,16 +24,9 @@ MS-Agent DOCUMENTATION
 
 .. toctree::
    :maxdepth: 2
-   :caption: Projects
+   :caption: 📁 项目
 
    Projects/智能体技能.md
    Projects/深度研究.md
    Projects/代码生成.md
    Projects/金融深度研究.md
-
-
-Indices and tables
-==================
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`

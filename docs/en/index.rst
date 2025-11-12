@@ -7,14 +7,14 @@ MS-Agent DOCUMENTATION
 
 .. toctree::
    :maxdepth: 2
-   :caption: Get Started
+   :caption: 🚀 Quick Start
 
    GetStarted/Introduction.md
    GetStarted/Installation.md
 
 .. toctree::
    :maxdepth: 2
-   :caption: Components
+   :caption: ⚙️ Components
 
    Components/Config.md
    Components/LLMAgent.md
@@ -24,16 +24,9 @@ MS-Agent DOCUMENTATION
 
 .. toctree::
    :maxdepth: 2
-   :caption: Projects
+   :caption: 📁 Projects
 
    Projects/AgentSkills.md
    Projects/DeepResearch.md
    Projects/CodeScratch.md
    Projects/FinResearch.md
-
-
-Indices and tables
-==================
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
