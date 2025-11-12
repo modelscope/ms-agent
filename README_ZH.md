@@ -446,7 +446,7 @@ PYTHONPATH=. python ms_agent/cli/cli.py run --config projects/fin_research --que
 
 不配置搜索引擎也可最小化运行，将[工作流配置](projects/fin_research/workflow.yaml)调整为：
 
-```bash
+```yaml
 type: DagWorkflow
 
 orchestrator:
