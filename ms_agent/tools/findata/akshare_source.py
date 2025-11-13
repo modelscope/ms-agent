@@ -3,10 +3,11 @@ import re
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
+from ms_agent.tools.findata.data_source_base import (DataSourceError,
+                                                     FinancialDataSource,
+                                                     NoDataFoundError)
 from ms_agent.utils import get_logger
 from ms_agent.utils.utils import install_package
-from projects.fin_research.tools.findata.data_source_base import (
-    DataSourceError, FinancialDataSource, NoDataFoundError)
 
 logger = get_logger()
 
