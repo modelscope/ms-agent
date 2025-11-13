@@ -1,7 +1,7 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 # flake8: noqa
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import json
 from ms_agent.llm.utils import Tool
@@ -83,7 +83,6 @@ class PrincipleSkill(ToolBase):
         super().__init__(config)
         tools_cfg = getattr(config, 'tools',
                             None) if config is not None else None
-        self.exclude_func(getattr(tools_cfg, 'principle_skill', None))
 
         configured_dir = None
         if tools_cfg is not None:

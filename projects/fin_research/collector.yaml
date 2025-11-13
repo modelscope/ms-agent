@@ -149,6 +149,8 @@ tools:
       - create_directory
       - read_file
       - list_files
+  plugins:
+    - tools/findata/findata_fetcher.py
 
 
 handler: time_handler

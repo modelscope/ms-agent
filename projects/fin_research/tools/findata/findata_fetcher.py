@@ -11,15 +11,16 @@ import numpy as np
 import pandas as pd
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
-from ms_agent.tools.findata.akshare_source import AKShareDataSource
-from ms_agent.tools.findata.baostock_source import BaoStockDataSource
-from ms_agent.tools.findata.data_source_base import (DataSourceError,
-                                                     FinancialDataSource,
-                                                     NoDataFoundError)
-from ms_agent.tools.findata.hybrid_source import HybridDataSource
 from ms_agent.utils import get_logger
 from ms_agent.utils.rate_limiter import AdaptiveRateLimiter, RateLimiter
 from omegaconf import DictConfig
+from projects.fin_research.tools.findata.akshare_source import \
+    AKShareDataSource
+from projects.fin_research.tools.findata.baostock_source import \
+    BaoStockDataSource
+from projects.fin_research.tools.findata.data_source_base import (
+    DataSourceError, FinancialDataSource, NoDataFoundError)
+from projects.fin_research.tools.findata.hybrid_source import HybridDataSource
 
 logger = get_logger()
 
