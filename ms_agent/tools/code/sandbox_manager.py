@@ -40,7 +40,7 @@ class SandboxManagerFactory:
             return image_exists
         except Exception as e:
             logger.error(f'Error checking if image exists: {e}')
-            raise RuntimeError(f'Failed to check image existence: {e}')
+            raise RuntimeError(f'Failed to check image existence: {e}') from e
 
     @staticmethod
     async def create_manager(
@@ -64,6 +64,10 @@ class SandboxManagerFactory:
         if isinstance(config, DictConfig) and hasattr(
                 config, 'tools') and hasattr(config.tools, 'code_executor'):
             sandbox_config = getattr(config.tools.code_executor, 'sandbox', {})
+        elif isinstance(config, (DictConfig, dict)):
+            sandbox_config = config.get('tools', {}).get(
+                'code_executor', {}).get('sandbox', {}) or config.get(
+                    'sandbox', {})
         else:
             raise ValueError(f'Unknown config type: {type(config)}')
 
@@ -86,7 +90,8 @@ class SandboxManagerFactory:
                             f'Image "{image}" does not exist in local Docker registry'
                         )
                 except RuntimeError as e:
-                    raise ValueError(f'Error checking if image exists: {e}')
+                    raise ValueError(
+                        f'Error checking if image exists: {e}') from e
             else:
                 logger.warning(
                     'No image specified for LocalSandboxManager, using default'
