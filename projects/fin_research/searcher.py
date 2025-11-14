@@ -14,6 +14,8 @@ from omegaconf import DictConfig
 
 logger = get_logger()
 
+os.environ['PAGE_RANGE'] = '(1, 50)'
+
 
 class SearchAgent(CodeAgent):
     """Agent wrapper that delegates work to ResearchWorkflowBeta."""
