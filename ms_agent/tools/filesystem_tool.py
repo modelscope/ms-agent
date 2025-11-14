@@ -22,8 +22,9 @@ class FileSystemTool(ToolBase):
         self.exclude_func(getattr(config.tools, 'file_system', None))
         self.output_dir = getattr(config, 'output_dir', DEFAULT_OUTPUT_DIR)
         self.trust_remote_code = kwargs.get('trust_remote_code', False)
-        self.allow_read_all_files = getattr(config.tools.file_system,
-                                            'allow_read_all_files', False)
+        self.allow_read_all_files = getattr(
+            getattr(config.tools, 'file_system', {}), 'allow_read_all_files',
+            False)
         if not self.trust_remote_code:
             self.allow_read_all_files = False
 
