@@ -1,12 +1,14 @@
 # flake8: noqa
+import ast
 import os
-from typing import Dict, Iterator, List, Union
+from typing import Dict, Iterator, List, Optional, Tuple, Union
 
 from docling.backend.html_backend import HTMLDocumentBackend
 from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.document import ConversionResult
 from docling.datamodel.pipeline_options import PdfPipelineOptions
+from docling.datamodel.settings import DEFAULT_PAGE_RANGE, PageRange
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.models.document_picture_classifier import \
     DocumentPictureClassifier
@@ -165,12 +167,13 @@ class DocLoader:
         return ref_item_d
 
     @staticmethod
-    def _preprocess(url_or_files: List[str]) -> List[str]:
+    def _preprocess(url_or_files: List[str], max_file_size: int) -> List[str]:
         """
         Pre-process the URLs or files before conversion.
 
         Args:
             urls_or_files (List[str]): The list of URLs or files to preprocess.
+            max_file_size (int): Maximum file size in bytes.
 
         Returns:
             List[str]: The pre-processed list of URLs or files.
@@ -217,9 +220,9 @@ class DocLoader:
                 return None
 
             try:
-                if os.path.getsize(_file) > DocLoader.MAX_FILE_SIZE:
+                if os.path.getsize(_file) > max_file_size:
                     logger.warning(
-                        f'File size exceeds limit ({DocLoader.MAX_FILE_SIZE} bytes): {_file}'
+                        f'File size exceeds limit ({max_file_size} bytes): {_file}'
                     )
                     return None
 
@@ -300,19 +303,53 @@ class DocLoader:
            download_models_pic_classifier_ms)
     @patch(HTMLDocumentBackend, 'handle_image', html_handle_image)
     @patch(HTMLDocumentBackend, 'handle_figure', html_handle_figure)
-    def load(self, urls_or_files: list[str]) -> List[DoclingDocument]:
+    def load(
+            self,
+            urls_or_files: list[str],
+            max_num_pages: Optional[int] = None,
+            max_file_size: Optional[int] = None,
+            page_range: Optional[Tuple[int,
+                                       int]] = None) -> List[DoclingDocument]:
 
         # Patch easyocr model paths
         patch_easyocr_models()
 
-        urls_or_files: List[str] = self._preprocess(urls_or_files)
+        # Resolve parameter values: use provided values, then env vars, then defaults
+        resolved_max_num_pages = (
+            max_num_pages if max_num_pages is not None else
+            (int(os.environ.get('MAX_NUM_PAGES', 0))
+             or DocLoader.MAX_NUM_PAGES))
+        resolved_max_file_size = (
+            max_file_size if max_file_size is not None else
+            (int(os.environ.get('MAX_FILE_SIZE', 0))
+             or DocLoader.MAX_FILE_SIZE))
+
+        resolved_page_range = (
+            page_range or os.environ.get('PAGE_RANGE', None)
+            or DEFAULT_PAGE_RANGE)
+        if isinstance(resolved_page_range, str):
+            try:
+                resolved_page_range = ast.literal_eval(resolved_page_range)
+            except (ValueError, SyntaxError) as e:
+                logger.warning(
+                    f'Invalid PAGE_RANGE format: {resolved_page_range}, using default. Error: {e}'
+                )
+                resolved_page_range = DEFAULT_PAGE_RANGE
+
+        urls_or_files: List[str] = self._preprocess(urls_or_files,
+                                                    resolved_max_file_size)
 
         if self._verbose:
             logger.info(f'Preprocessed `urls_or_files`: {urls_or_files}')
+            logger.info(f'Effective page range: {resolved_page_range}')
 
         # TODO: Support progress bar for document loading (with pather)
         results: Iterator[ConversionResult] = self._converter.convert_all(
-            source=urls_or_files, )
+            source=urls_or_files,
+            max_num_pages=resolved_max_num_pages,
+            max_file_size=resolved_max_file_size,
+            page_range=resolved_page_range,
+        )
 
         final_results = []
         while True:
@@ -339,7 +376,7 @@ class DocLoader:
 if __name__ == '__main__':
 
     urls = [
-        'https://arxiv.org/pdf/2408.09869',
+        # 'https://arxiv.org/pdf/2408.09869',
         # 'https://arxiv.org/pdf/2502.15214',
         # 'https://arxiv.org/pdf/2505.13400',  # todo: cannot convert
         # 'https://github.com/modelscope/evalscope',
@@ -347,6 +384,7 @@ if __name__ == '__main__':
         # 'https://www.chinaxiantour.com/chengdu-travel-guide/how-to-eat-hot-pot.html',
         # 'https://www.chinahighlights.com/hangzhou/food-restaurant.htm',
         # 'aaa',
+        'https://v.icbc.com.cn/userfiles/resources/icbcltd/download/2025/1.pdf'
     ]
 
     doc_loader = DocLoader()
