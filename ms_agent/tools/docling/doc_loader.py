@@ -376,7 +376,7 @@ class DocLoader:
 if __name__ == '__main__':
 
     urls = [
-        # 'https://arxiv.org/pdf/2408.09869',
+        'https://arxiv.org/pdf/2408.09869',
         # 'https://arxiv.org/pdf/2502.15214',
         # 'https://arxiv.org/pdf/2505.13400',  # todo: cannot convert
         # 'https://github.com/modelscope/evalscope',
@@ -384,7 +384,7 @@ if __name__ == '__main__':
         # 'https://www.chinaxiantour.com/chengdu-travel-guide/how-to-eat-hot-pot.html',
         # 'https://www.chinahighlights.com/hangzhou/food-restaurant.htm',
         # 'aaa',
-        'https://v.icbc.com.cn/userfiles/resources/icbcltd/download/2025/1.pdf'
+        # 'https://v.icbc.com.cn/userfiles/resources/icbcltd/download/2025/1.pdf'
     ]
 
     doc_loader = DocLoader()
