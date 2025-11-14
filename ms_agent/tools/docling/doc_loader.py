@@ -317,12 +317,12 @@ class DocLoader:
         # Resolve parameter values: use provided values, then env vars, then defaults
         resolved_max_num_pages = (
             max_num_pages if max_num_pages is not None else
-            (int(os.environ.get('MAX_NUM_PAGES', 0))
-             or DocLoader.MAX_NUM_PAGES))
+            (int(os.environ.get('MAX_NUM_PAGES', 0)) if os.environ.get(
+                'MAX_NUM_PAGES', 0) else DocLoader.MAX_NUM_PAGES))
         resolved_max_file_size = (
             max_file_size if max_file_size is not None else
-            (int(os.environ.get('MAX_FILE_SIZE', 0))
-             or DocLoader.MAX_FILE_SIZE))
+            (int(os.environ.get('MAX_FILE_SIZE', 0)) if os.environ.get(
+                'MAX_FILE_SIZE', 0) else DocLoader.MAX_FILE_SIZE))
 
         resolved_page_range = (
             page_range or os.environ.get('PAGE_RANGE', None)
