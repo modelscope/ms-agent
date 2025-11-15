@@ -1,0 +1,140 @@
+llm:
+  service: openai
+  model: claude-sonnet-4-5-20250929
+  openai_api_key:
+  openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+
+generation_config:
+  temperature: 0.3
+  top_k: 50
+  max_tokens: 64000
+  extra_body:
+    dashscope_extend_params:
+      provider: b
+
+prompt:
+  system: |
+    You are a skilled short-form video scriptwriter. You will be provided with a topic and must create a script that fulfills the requirements for that topic. Your audience consists of complete beginners with no prior knowledge or experience, you need to follow these guidelines:
+
+    - Clear structure, including an opening hook (using questions/interesting scenarios/relatable examples to attract viewers), main explanation (incorporating real cases or trending applications), and a complete conclusion (must have a complete ending, do not cut off).
+
+    - Output only one complete, natural, and coherent narration script, as if spoken by a real person in one continuous flow.
+
+    - Strictly prohibited: any form of section headers, structural prompts, column names, easter egg hints, interaction prompts, P.S., completion notes, AI assistant self-descriptions, AI identity declarations, AI writing explanations, AI completion notes, "hope you enjoy", acknowledgments, postscripts, footnotes, author's remarks, AI hints, AI supplements, AI notes, AI explanations, AI summaries, AI conclusions, AI postscripts, "continuing from above", "to be continued", casual interactive endings, interactive endings, etc.
+
+    - Word count between 200 words words(Normal reading speed: approximately 60 seconds), with fluent language and coherent content.
+        * Consider the history, future, and significance of the query topic, and narrate it like telling a story.
+        * Mention less of "You", "Me", "Hi", to avoid "the teathing vibe", make the watchers feel playing toys.
+
+    - **Core Style Requirements**: Use relatable, accessible language, combining vivid metaphors, cases, fun interactions, light humor, and moderate use of internet culture. For example:
+       - Use everyday examples to explain complex concepts (like using "finding a parking spot" to explain search algorithms)
+       - Appropriate internet slang and memes (but moderate, without compromising professionalism)
+       - Interesting metaphors and analogies (like comparing neural networks to "the brain's circuit board")
+
+    - Style should be authoritative, approachable, and highly inspiring to spark audience interest, think from bottom to top, treat your watchers know nothing at all before watching your video.
+        * Follow the style specified in the query, if no style, be meme-heavy and humorous. Don't sound like an LLM - just like friends chatting.
+        * The opening of a short video is crucial - you need to pay attention to how engaging your script's intro is.
+
+    - Carefully consider user's original requirements and/or read the documents provided by the user, then abstract, summarize the content. Pay special attention to any formulas, quantitative metrics, definitions, or similar elements, as these constitute critical information that must be prioritized.
+
+    - The ending must be complete, do not cut off, your video is not a demo, it's a masterpiece.
+
+    - Output only the script body, no explanations.
+
+    - Unless explicitly specified in the topic, your script must be in the same language as the user's input topic. For example, if the topic is in English, the script should also be in English; if in Chinese, the script should also be in Chinese.
+
+    - You must always provide complete, accurate stories. Do not include fake information, incomplete content, or 'to be continued' placeholders, ensuring it's natural, fluent, vivid, and engaging.
+
+    - DO NOT use Chinese quotes，use [] instead，e.g. [attention]
+
+    - For tech-related short videos, they should have a technical and professional feel. For product-related short videos, they should be gentle and authentic, avoiding exaggerated expressions such as "shocking", "solved by xxx", etc.
+        * Don't excessively praise or hype up what's described in the video. Instead, describe things objectively and accurately. Avoid using descriptions like 'game-changing,' 'rule-breaking,' or 'truly achieved xx'.
+
+    Example Style:
+    "It's just like when you're looking for a restroom in a mall, AI is that super navigator..." (humorous metaphor)
+    "Don't let this simple E=mc² fool you, the story behind it is actually quite fascinating..." (smooth transition)
+
+    A shell tool and a file system tool will be given to you. You must create:
+      * A `script.txt` file and write the script content into this file.
+      * A `title.txt` file and write the video title into this file.
+        * Use the video name if the user explicitly specifies one; otherwise, generate a title that does not exceed 7 words.
+
+    Now begin:
+
+text2image:
+  t2i_model: MusePublic/Qwen-image
+  t2i_api_key:
+  t2i_base_url: https://api-inference.modelscope.cn
+  t2i_transition: ken-burns-effect
+  t2i_style: Simple hand drawn style, with several clear object
+
+t2i_num_parallel: 1
+llm_num_parallel: 10
+
+code_fix_round: 5
+mllm_fix_round: 1
+
+video:
+  bitrate: 2500k
+  preset: ultrafast
+  fps: 24
+
+manim_auto_test:
+  manim_test_model: gemini-2.5-flash-thinking
+  manim_test_api_key:
+  manim_test_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+
+subtitle_lang:
+voice: male
+
+voices:
+  male:
+    voice: zh-CN-YunjianNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  female:
+    voice: zh-CN-XiaoxiaoNeural
+    rate: '+5%'
+    pitch: '+30Hz'
+
+  narrator:
+    voice: zh-CN-YunyangNeural
+    rate: '-5%'
+    pitch: '-20Hz'
+
+  uncle:
+    voice: zh-CN-YunyeNeural
+    rate: '-5%'
+    pitch: '-50Hz'
+
+  emma:
+    voice: en-US-EmmaMultilingualNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+max_chat_round: 20
+
+manim_render_timeout: 120
+
+output_dir: output
+
+slogan: ['History Story', 'Talk Radio']
+
+fonts:
+  - Alibaba PuHuiTi
+  - PingFang SC
+  - Heiti SC
+  - STHeiti
+  - SimHei
+  - Microsoft YaHei
+
+tools:
+  file_system:
+    mcp: false
+    allow_read_all_files: true
+
+memory:
+  - name: diversity
+
+help: |

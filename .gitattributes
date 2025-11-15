@@ -1,0 +1,2 @@
+docs/resources/a-history-of-us-gdp.mp4 filter=lfs diff=lfs merge=lfs -text
+docs/resources/deepspeed-zero.mp4 filter=lfs diff=lfs merge=lfs -text

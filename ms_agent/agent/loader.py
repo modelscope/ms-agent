@@ -47,7 +47,9 @@ class AgentLoader:
         from .llm_agent import LLMAgent
         from .code_agent import CodeAgent
         agent_type = LLMAgent.AGENT_NAME
-        if agent_config is not None:
+        if 'code_file' in kwargs:
+            code_file = kwargs.pop('code_file')
+        elif agent_config is not None:
             agent_type = getattr(agent_config, 'type',
                                  '').lower() or agent_type.lower()
             code_file = getattr(agent_config, 'code_file', None)
@@ -57,7 +59,8 @@ class AgentLoader:
                 getattr(agent_config, 'local_dir', ''), DEFAULT_AGENT_FILE)
 
         if code_file is not None:
-            agent_instance = cls._load_external_code(agent_config, code_file)
+            agent_instance = cls._load_external_code(agent_config, code_file,
+                                                     **kwargs)
         else:
             assert agent_config is not None
             if agent_type == LLMAgent.AGENT_NAME.lower():
@@ -71,7 +74,7 @@ class AgentLoader:
         return agent_instance
 
     @classmethod
-    def _load_external_code(cls, config, code_file) -> 'Agent':
+    def _load_external_code(cls, config, code_file, **kwargs) -> 'Agent':
         assert code_file is not None, 'Code file cannot be None'
         assert config.trust_remote_code, (
             f'[External Code]A code file is required to run in the LLMAgent: {code_file}'
@@ -85,10 +88,14 @@ class AgentLoader:
             subdir = os.path.join(local_dir, subdir)  # noqa
         if local_dir not in sys.path:
             sys.path.insert(0, local_dir)
+        subdir_inserted = False
         if subdir and subdir not in sys.path:
             sys.path.insert(0, subdir)
+            subdir_inserted = True
         if code_file.endswith('.py'):
             code_file = code_file[:-3]
+        if code_file in sys.modules:
+            del sys.modules[code_file]
         code_module = importlib.import_module(code_file)
         module_classes = {
             name: agent_cls
@@ -102,7 +109,10 @@ class AgentLoader:
                 agent_instance = agent_cls(
                     config,
                     config.tag,
-                    trust_remote_code=config.trust_remote_code)
+                    trust_remote_code=config.trust_remote_code,
+                    **kwargs)
                 break
         assert agent_instance is not None, f'Cannot find a proper agent class in the external code file: {code_file}'
+        if subdir_inserted:
+            sys.path.pop(0)
         return agent_instance

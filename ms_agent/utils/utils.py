@@ -204,6 +204,7 @@ def save_history(output_dir: str, task: str, config: DictConfig,
     with open(message_file, 'w') as f:
         json.dump([message.to_dict() for message in messages],
                   f,
+                  indent=4,
                   ensure_ascii=False)
 
 

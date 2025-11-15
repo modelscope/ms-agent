@@ -1,3 +1,0 @@
-synthesize_video:
-  description: Synthesize the video from an existing asset_info.json path passed as the query
-  agent_config: "step3_synthesis_agent.yaml"

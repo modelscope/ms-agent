@@ -1,10 +1,11 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import os
 from abc import ABC, abstractmethod
-from typing import Any, AsyncGenerator, List, Union
+from typing import Any, AsyncGenerator, List, Tuple, Union
 
 from ms_agent.llm import Message
-from ms_agent.utils.constants import DEFAULT_RETRY_COUNT
+from ms_agent.utils import read_history, save_history
+from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR, DEFAULT_RETRY_COUNT
 from omegaconf import DictConfig
 
 
@@ -41,6 +42,8 @@ class Agent(ABC):
         self.trust_remote_code = trust_remote_code
         self.config.tag = tag
         self.config.trust_remote_code = trust_remote_code
+        self.output_dir = getattr(self.config, 'output_dir',
+                                  DEFAULT_OUTPUT_DIR)
 
     @abstractmethod
     async def run(
@@ -61,3 +64,16 @@ class Agent(ABC):
             NotImplementedError: Must be implemented by subclasses.
         """
         raise NotImplementedError()
+
+    def read_history(self, messages: Any,
+                     **kwargs) -> Tuple[DictConfig, List[Message]]:
+        return read_history(self.output_dir, self.tag)
+
+    def save_history(self, messages: Any, **kwargs):
+        if not getattr(self.config, 'save_history', True):
+            return
+        save_history(self.output_dir, self.tag, self.config, messages)
+
+    def next_flow(self, idx: int) -> int:
+        """Used in workflow, decide which agent goes next."""
+        return idx + 1

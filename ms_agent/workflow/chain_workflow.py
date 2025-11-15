@@ -73,10 +73,13 @@ class ChainWorkflow(Workflow):
             Any: The final output after executing all tasks in the chain.
         """
         agent_config = None
-        for task in self.workflow_chains:
+        idx = 0
+        # step_inputs is used for when you want to do a loop
+        step_inputs = {}
+        while True:
+            task = self.workflow_chains[idx]
             task_info = getattr(self.config, task)
             config = getattr(task_info, 'agent_config', agent_config)
-            assert isinstance(config, str)
             if not hasattr(task_info, 'agent'):
                 task_info.agent = DictConfig({})
             init_args = getattr(task_info.agent, 'kwargs', {})
@@ -85,12 +88,25 @@ class ChainWorkflow(Workflow):
             init_args['mcp_server_file'] = self.mcp_server_file
             init_args['task'] = task
             init_args['load_cache'] = self.load_cache
-            init_args['config_dir_or_id'] = os.path.join(
-                self.config.local_dir, config)
+            if isinstance(config, str):
+                init_args['config_dir_or_id'] = os.path.join(
+                    self.config.local_dir, config)
+            else:
+                init_args['config'] = config
             init_args['env'] = self.env
             if 'tag' not in init_args:
                 init_args['tag'] = task
             engine = AgentLoader.build(**init_args)
-            inputs = await engine.run(inputs)
-            agent_config = engine.config
+            step_inputs[idx] = (inputs, config)
+            outputs = await engine.run(inputs)
+            next_idx = engine.next_flow(idx)
+            assert next_idx - idx <= 1
+            if next_idx == idx + 1:
+                inputs = outputs
+                agent_config = engine.config
+            else:
+                inputs, agent_config = step_inputs[next_idx]
+            idx = next_idx
+            if idx >= len(self.workflow_chains):
+                break
         return inputs

@@ -79,8 +79,6 @@ class LLMAgent(Agent):
             kwargs.get('mcp_config', {}))
         self.mcp_client = kwargs.get('mcp_client', None)
         self.config_handler = self.register_config_handler()
-        self.output_dir = getattr(self.config, 'output_dir',
-                                  DEFAULT_OUTPUT_DIR)
 
     def register_callback(self, callback: Callback):
         """
@@ -342,7 +340,9 @@ class LLMAgent(Agent):
                     service = self.config.llm.service
                     config_dict = {
                         'model':
-                        _memory.summary_model,
+                        _memory.summary_model if hasattr(
+                            _memory, 'summary_model') else getattr(
+                                self.config.llm, 'model', None),
                         'provider':
                         'openai',
                         'openai_base_url':
@@ -350,7 +350,7 @@ class LLMAgent(Agent):
                         'openai_api_key':
                         getattr(self.config.llm, f'{service}_api_key', None),
                         'max_tokens':
-                        _memory.max_tokens,
+                        getattr(_memory, 'max_tokens', 4096),
                     }
                     llm_config_obj = OmegaConf.create(config_dict)
                     setattr(_memory, 'llm', llm_config_obj)
@@ -361,6 +361,10 @@ class LLMAgent(Agent):
                 else:
                     self.memory_tools.append(
                         memory_mapping[memory_type](_memory))
+
+                for memory in self.memory_tools:
+                    # In case any memory tool need other information
+                    memory.set_base_config(self.config)
 
     async def prepare_rag(self):
         """Load and initialize the RAG component from the config."""
@@ -560,6 +564,9 @@ class LLMAgent(Agent):
         elif messages:
             query = messages[0].content
         if not query:
+            return
+
+        if not getattr(self.config, 'save_history', True):
             return
 
         config: DictConfig = deepcopy(self.config)

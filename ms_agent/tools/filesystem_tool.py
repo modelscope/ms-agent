@@ -1,5 +1,6 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import os
+import shutil
 from typing import Optional
 
 from ms_agent.llm.utils import Tool
@@ -16,10 +17,16 @@ class FileSystemTool(ToolBase):
     TODO: This tool now is a simple implementation, sandbox or mcp TBD.
     """
 
-    def __init__(self, config):
+    def __init__(self, config, **kwargs):
         super(FileSystemTool, self).__init__(config)
         self.exclude_func(getattr(config.tools, 'file_system', None))
         self.output_dir = getattr(config, 'output_dir', DEFAULT_OUTPUT_DIR)
+        self.trust_remote_code = kwargs.get('trust_remote_code', False)
+        self.allow_read_all_files = getattr(
+            getattr(config.tools, 'file_system', {}), 'allow_read_all_files',
+            False)
+        if not self.trust_remote_code:
+            self.allow_read_all_files = False
 
     async def connect(self):
         logger.warning_once(
@@ -103,6 +110,21 @@ class FileSystemTool(ToolBase):
                         'required': [],
                         'additionalProperties': False
                     }),
+                Tool(
+                    tool_name='delete_file_or_dir',
+                    server_name='file_system',
+                    description='Delete one file or one directory',
+                    parameters={
+                        'type': 'object',
+                        'properties': {
+                            'path': {
+                                'type': 'string',
+                                'description': 'The relative path to delete',
+                            }
+                        },
+                        'required': ['path'],
+                        'additionalProperties': False
+                    }),
             ]
         }
         return {
@@ -171,11 +193,52 @@ class FileSystemTool(ToolBase):
         results = {}
         for path in paths:
             try:
-                with open(os.path.join(self.output_dir, path), 'r') as f:
+                if os.path.isabs(path):
+                    target_path = path
+                else:
+                    target_path = os.path.join(self.output_dir, path)
+                target_path_real = os.path.realpath(target_path)
+                output_dir_real = os.path.realpath(self.output_dir)
+                is_in_output_dir = target_path_real.startswith(
+                    output_dir_real
+                    + os.sep) or target_path_real == output_dir_real
+
+                if not is_in_output_dir and not self.allow_read_all_files:
+                    results[path] = (
+                        f'Access denied: Reading file <{path}> outside output directory is not allowed. '
+                        f'Set allow_read_all_files=true in config to enable.')
+                    logger.warning(
+                        f'Attempt to read file outside output directory blocked: {path} -> {target_path_real}'
+                    )
+                    continue
+
+                with open(target_path_real, 'r') as f:
                     results[path] = f.read()
             except Exception as e:
                 results[path] = f'Read file <{path}> failed, error: ' + str(e)
         return str(results)
+
+    async def delete_file_or_dir(self, path: str):
+        """Delete a file or a directory.
+
+        Args:
+            path(str): The file or directory to delete, a prefix dir will be automatically concatenated.
+
+        Returns:
+            boolean
+        """
+        abs_path = os.path.join(self.output_dir, path)
+        if os.path.exists(abs_path):
+            try:
+                if os.path.isfile(abs_path):
+                    os.remove(abs_path)
+                else:
+                    shutil.rmtree(abs_path)
+                return f'Path deleted: <{path}>'
+            except Exception as e:
+                return f'Delete file <{path}> failed, error: ' + str(e)
+        else:
+            return f'Path not found: {path}'
 
     async def list_files(self, path: str = None):
         """List all files in a directory.
