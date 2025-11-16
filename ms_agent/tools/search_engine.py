@@ -10,6 +10,7 @@ from ms_agent.tools.search.serpapi import SerpApiSearch
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
+SEARCH_ENGINE_OVERRIDE_ENV = 'FIN_RESEARCH_SEARCH_ENGINE'
 
 
 def get_search_config(config_file: str):
@@ -98,16 +99,25 @@ def get_web_search_tool(config_file: str):
     """
     search_config = get_search_config(config_file=config_file)
 
-    if search_config.get('engine', '') == SearchEngineType.EXA.value:
+    engine_override = (os.getenv(SEARCH_ENGINE_OVERRIDE_ENV, '')
+                       or '').strip().lower()
+    if engine_override and engine_override in (SearchEngineType.EXA.value,
+                                               SearchEngineType.SERPAPI.value,
+                                               SearchEngineType.ARXIV.value):
+        search_config['engine'] = engine_override
+
+    engine_name = (search_config.get('engine', '') or '').lower()
+
+    if engine_name == SearchEngineType.EXA.value:
         return ExaSearch(
             api_key=search_config.get('exa_api_key',
                                       os.getenv('EXA_API_KEY', None)))
-    elif search_config.get('engine', '') == SearchEngineType.SERPAPI.value:
+    elif engine_name == SearchEngineType.SERPAPI.value:
         return SerpApiSearch(
             api_key=search_config.get('serpapi_api_key',
                                       os.getenv('SERPAPI_API_KEY', None)),
             provider=search_config.get('provider', 'google').lower())
-    elif search_config.get('engine', '') == SearchEngineType.ARXIV.value:
+    elif engine_name == SearchEngineType.ARXIV.value:
         return ArxivSearch()
     else:
         return ArxivSearch()
