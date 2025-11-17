@@ -3,12 +3,15 @@
 # yapf: disable
 import asyncio
 import base64
+import logging
 import os
 import re
 import shutil
 import threading
 import time
 import uuid
+import zipfile
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -18,12 +21,57 @@ import json
 import markdown
 from ms_agent.agent.loader import AgentLoader
 from ms_agent.config import Config
+from ms_agent.tools import search_engine as search_engine_module
 from ms_agent.tools.search.search_base import SearchEngineType
 from ms_agent.utils.logger import get_logger
 from ms_agent.workflow.dag_workflow import DagWorkflow
 from omegaconf import DictConfig
 
 logger = get_logger()
+
+_fin_log_context = threading.local()
+
+
+class _FinLogContextFilter(logging.Filter):
+
+    def filter(self, record):
+        context_val = getattr(_fin_log_context, 'value', '')
+        if context_val:
+            record.msg = f'{context_val} {record.msg}'
+        return True
+
+
+_FIN_LOG_FILTER = _FinLogContextFilter()
+if not any(
+        isinstance(f, _FinLogContextFilter)
+        for f in getattr(logger, 'filters', [])):
+    logger.addFilter(_FIN_LOG_FILTER)
+
+
+def _set_task_log_context(value: Optional[str]):
+    if value:
+        _fin_log_context.value = value
+    else:
+        _clear_task_log_context()
+
+
+def _clear_task_log_context():
+    if hasattr(_fin_log_context, 'value'):
+        delattr(_fin_log_context, 'value')
+
+
+@contextmanager
+def _task_log_context(value: Optional[str]):
+    prev = getattr(_fin_log_context, 'value', None)
+    _set_task_log_context(value)
+    try:
+        yield
+    finally:
+        if prev is None:
+            _clear_task_log_context()
+        else:
+            _fin_log_context.value = prev
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[0]
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -32,7 +80,10 @@ if not FIN_RESEARCH_CONFIG_DIR.exists():
     FIN_RESEARCH_CONFIG_DIR = REPO_ROOT / 'projects' / 'fin_research'
 BASE_WORKDIR = PROJECT_ROOT / 'temp_workspace'
 GRADIO_DEFAULT_CONCURRENCY_LIMIT = int(
-    os.environ.get('GRADIO_DEFAULT_CONCURRENCY_LIMIT', '2'))
+    os.environ.get('GRADIO_DEFAULT_CONCURRENCY_LIMIT', '3'))
+# Maximum number of concurrent FinResearch tasks allowed globally.
+FIN_MAX_CONCURRENT_TASKS = int(
+    os.environ.get('FIN_MAX_CONCURRENT_TASKS', '3'))
 LOCAL_MODE = os.environ.get('LOCAL_MODE', 'true').lower() == 'true'
 SEARCH_ENGINE_OVERRIDE_ENV = 'FIN_RESEARCH_SEARCH_ENGINE'
 FIN_STATUS_TIMER_SIGNAL_ID = 'fin-status-timer-signal'
@@ -58,6 +109,51 @@ AGENT_DUTIES = {
     'aggregator': '汇总并生成综合报告'
 }
 
+SAFE_USER_ID_PATTERN = re.compile(r'[^a-zA-Z0-9._-]')
+
+
+def _sanitize_user_id(user_id: str) -> str:
+    user_id = (user_id or '').strip() or 'anonymous'
+    sanitized = SAFE_USER_ID_PATTERN.sub('_', user_id)
+    return sanitized[:80]
+
+
+def _build_task_log_label(user_id: str, task_id: str) -> str:
+    safe_user = _sanitize_user_id(user_id)
+    obfuscated = (safe_user[:8] + '***') if len(safe_user) > 8 else safe_user
+    return f'[FinResearch user={obfuscated} task={task_id}]'
+
+
+class LocalSessionRegistry:
+    """Map Gradio session hashes/IPs to stable local user identifiers."""
+
+    def __init__(self):
+        self._sessions: Dict[str, str] = {}
+        self._lock = threading.Lock()
+
+    def resolve(self, request: Optional[gr.Request]) -> str:
+        if request is None:
+            return 'local_default'
+        session_hash = getattr(request, 'session_hash', '') or ''
+        if session_hash:
+            with self._lock:
+                if session_hash not in self._sessions:
+                    self._sessions[session_hash] = f'local_{session_hash}'
+                return self._sessions[session_hash]
+        client_host = getattr(getattr(request, 'client', None), 'host', '') or ''
+        if client_host:
+            safe_host = SAFE_USER_ID_PATTERN.sub('-', client_host)
+            return f'local_{safe_host}'
+        return 'local_default'
+
+    def release(self, request: Optional[gr.Request]):
+        if request is None:
+            return
+        session_hash = getattr(request, 'session_hash', '') or ''
+        if session_hash:
+            with self._lock:
+                self._sessions.pop(session_hash, None)
+
 
 class UserStatusManager:
     """Thread-safe concurrency tracker for multi-user isolation."""
@@ -77,6 +173,11 @@ class UserStatusManager:
                     'is_active': True
                 }
         return {'status': 'idle', 'elapsed_time': 0, 'is_active': False}
+
+    def get_active_task_count(self) -> int:
+        """Return the number of currently active user tasks."""
+        with self.lock:
+            return len(self.active_users)
 
     def start_user_task(self, user_id: str, task_id: str = ''):
         with self.lock:
@@ -102,8 +203,71 @@ class UserStatusManager:
         with self.lock:
             return user_id in self.active_users
 
+    def force_cleanup_user(self, user_id: str) -> bool:
+        """Force remove a user's active task entry (used for user-initiated cancellations)."""
+        with self.lock:
+            if user_id in self.active_users:
+                del self.active_users[user_id]
+                logger.info(
+                    f'FinResearch task force-cleaned - User: {user_id[:8]}***, Remaining: {len(self.active_users)}'
+                )
+                return True
+            return False
+
 
 user_status_manager = UserStatusManager()
+local_session_registry = LocalSessionRegistry()
+
+
+class CancellationManager:
+    """Manage cooperative cancellation flags for FinResearch tasks (per user)."""
+
+    def __init__(self):
+        self._flags: Dict[str, Dict[str, threading.Event]] = {}
+        self._lock = threading.Lock()
+
+    def create_for_task(self, user_id: str,
+                        task_id: str) -> threading.Event:
+        """Create a cancellation flag for the given user task."""
+        with self._lock:
+            user_map = self._flags.setdefault(user_id, {})
+            ev = threading.Event()
+            user_map[task_id] = ev
+            return ev
+
+    def cancel_for_task(self, user_id: str, task_id: str):
+        """Signal cancellation for a specific user task."""
+        with self._lock:
+            ev = self._flags.get(user_id, {}).get(task_id)
+            if ev is not None:
+                ev.set()
+
+    def cancel_for_user(self, user_id: str):
+        """Signal cancellation for all tasks of the given user."""
+        with self._lock:
+            for ev in self._flags.get(user_id, {}).values():
+                ev.set()
+
+    def clear_for_user(self, user_id: Optional[str]):
+        """Remove cancellation flag for the given user."""
+        if not user_id:
+            return
+        with self._lock:
+            self._flags.pop(user_id, None)
+
+    def clear_for_task(self, user_id: Optional[str], task_id: Optional[str]):
+        if not user_id or not task_id:
+            return
+        with self._lock:
+            user_map = self._flags.get(user_id)
+            if not user_map:
+                return
+            user_map.pop(task_id, None)
+            if not user_map:
+                self._flags.pop(user_id, None)
+
+
+cancellation_manager = CancellationManager()
 
 
 def get_user_id_from_request(request: gr.Request) -> str:
@@ -120,8 +284,25 @@ def check_user_auth(request: gr.Request) -> Tuple[bool, str]:
     return True, user_id
 
 
+def resolve_user_id_for_request(request: Optional[gr.Request],
+                                *,
+                                local_mode: bool) -> Tuple[bool, str]:
+    """Return (is_ok, user_id_or_error)."""
+    if not local_mode:
+        return check_user_auth(request)
+    user_id = get_user_id_from_request(request)
+    if user_id:
+        return True, user_id
+    return True, local_session_registry.resolve(request)
+
+
+def get_user_workdir_path(user_id: str) -> Path:
+    safe_user = _sanitize_user_id(user_id)
+    return Path(BASE_WORKDIR) / f'user_{safe_user}'
+
+
 def create_user_workdir(user_id: str) -> str:
-    base_dir = Path(BASE_WORKDIR) / f'user_{user_id}'
+    base_dir = get_user_workdir_path(user_id)
     base_dir.mkdir(parents=True, exist_ok=True)
     return str(base_dir)
 
@@ -152,6 +333,13 @@ def build_fin_prompt(
     goal = (goal or '').strip()
     if not goal:
         raise ValueError('请输入研究目标 | Research goal cannot be empty.')
+
+    # Minimal pass-through (current requirement):
+    # Only pass the clean user research goal to the model.
+    # Set FIN_USE_STRUCTURED_PROMPT=1 to enable the structured prompt below.
+    use_structured = (os.environ.get('FIN_USE_STRUCTURED_PROMPT', '') or '').lower() in ('1', 'true', 'yes', 'on')
+    if not use_structured:
+        return goal
 
     sections = [f'Primary research objective:\n{goal}']
 
@@ -417,12 +605,14 @@ class FinResearchWorkflowRunner:
                  include_sentiment: bool = True,
                  search_depth: int = 1,
                  search_breadth: int = 3,
-                 search_api_key: Optional[str] = None):
+                 search_api_key: Optional[str] = None,
+                 cancel_event: Optional[threading.Event] = None):
         self.workdir = workdir
         self.include_sentiment = include_sentiment
         self.search_depth = search_depth
         self.search_breadth = search_breadth
         self.search_api_key = search_api_key
+        self.cancel_event = cancel_event
 
     def _parse_search_api_overrides(self) -> Tuple[Dict[str, str], Optional[str]]:
         overrides: Dict[str, str] = {}
@@ -512,7 +702,17 @@ class FinResearchWorkflowRunner:
         if preferred_engine:
             env_overrides[SEARCH_ENGINE_OVERRIDE_ENV] = preferred_engine
 
-        applied_env = self._apply_runtime_env(env_overrides)
+        # Install per-request search environment overrides in a thread-local way
+        # so that concurrent FinResearch tasks do not interfere with each other.
+        search_env: Dict[str, str] = {}
+        if 'EXA_API_KEY' in key_overrides:
+            search_env['EXA_API_KEY'] = key_overrides['EXA_API_KEY']
+        if 'SERPAPI_API_KEY' in key_overrides:
+            search_env['SERPAPI_API_KEY'] = key_overrides['SERPAPI_API_KEY']
+        if preferred_engine:
+            search_env[SEARCH_ENGINE_OVERRIDE_ENV] = preferred_engine
+
+        search_engine_module.set_search_env_overrides(search_env)
         try:
             config = self._prepare_config(env_overrides)
             workflow = TrackedDagWorkflow(
@@ -520,7 +720,8 @@ class FinResearchWorkflowRunner:
                 env=env_overrides,
                 trust_remote_code=True,
                 load_cache=False,
-                status_callback=status_callback)
+                status_callback=status_callback,
+                cancel_event=self.cancel_event)
 
             async def _execute():
                 return await workflow.run(user_prompt)
@@ -536,7 +737,8 @@ class FinResearchWorkflowRunner:
                 finally:
                     loop.close()
         finally:
-            self._restore_runtime_env(applied_env)
+            # Ensure overrides are cleared even if execution fails.
+            search_engine_module.set_search_env_overrides(None)
 
 
 def format_result_summary(workdir: str, include_sentiment: bool,
@@ -547,12 +749,10 @@ def format_result_summary(workdir: str, include_sentiment: bool,
         '✅ FinResearch 工作流执行完成！',
         f'- 完成时间: {timestamp}',
         f'- 工作目录: {workdir}',
-        f'- 舆情深研模块: {"启用" if include_sentiment else "关闭"}',
-        f'- 输出语言: {output_language or "依据输入自动匹配"}'
     ]
     if focus_areas:
         lines.append(f'- 关注领域: {", ".join(focus_areas)}')
-    lines.append('请查阅研究计划、数据分析报告及最终综合报告。')
+    lines.append('请查阅过程报告及最终综合报告。')
     return '\n'.join(lines)
 
 
@@ -600,6 +800,72 @@ def collect_fin_reports(workdir: str,
     return reports
 
 
+def prepare_report_download_package(workdir: str) -> Optional[str]:
+    """Bundle the final report with required assets for download (report.md, search/, sessions/)."""
+    workdir_path = Path(workdir)
+    if not workdir_path.exists():
+        return None
+
+    report_path = workdir_path / 'report.md'
+    if not report_path.exists():
+        return None
+
+    bundle_path = workdir_path / 'report_bundle.zip'
+    if bundle_path.exists():
+        try:
+            bundle_path.unlink()
+        except OSError:
+            logger.warning('Unable to remove existing bundle zip, creating a new file with unique suffix.')
+            bundle_path = workdir_path / f'report_bundle_{uuid.uuid4().hex[:8]}.zip'
+
+    allowed_items = ['report.md', 'search', 'sessions']
+    added_entry = False
+
+    try:
+        with zipfile.ZipFile(bundle_path, 'w',
+                             compression=zipfile.ZIP_DEFLATED) as bundle:
+            for name in allowed_items:
+                src = workdir_path / name
+                if not src.exists():
+                    continue
+                if src.is_file():
+                    bundle.write(src, arcname=src.name)
+                    added_entry = True
+                    continue
+                if src.is_dir():
+                    has_file = False
+                    for file_path in src.rglob('*'):
+                        if file_path.is_file():
+                            bundle.write(file_path,
+                                         arcname=str(
+                                             file_path.relative_to(workdir_path)))
+                            added_entry = True
+                            has_file = True
+                    if not has_file:
+                        dir_rel = src.relative_to(workdir_path).as_posix()
+                        bundle.writestr(f'{dir_rel}/', '')
+                        added_entry = True
+        if added_entry:
+            return str(bundle_path)
+    except Exception:
+        logger.exception('Failed to build report download package')
+
+    try:
+        if bundle_path.exists():
+            bundle_path.unlink()
+    except OSError:
+        pass
+    return None
+
+
+def build_download_state(file_path: Optional[str]) -> Dict[str, Any]:
+    """Return a DownloadButton update payload compatible with newer Gradio versions."""
+    base_kwargs = {'visible': True}
+    if file_path:
+        return gr.update(value=file_path, interactive=True, **base_kwargs)
+    return gr.update(value=None, interactive=False, **base_kwargs)
+
+
 def run_fin_research_workflow(
         research_goal,
         search_depth,
@@ -609,34 +875,23 @@ def run_fin_research_workflow(
         progress=gr.Progress()):
     user_id = None
     task_workdir = None
+    task_id = None
+    task_log_label = None
+    context_installed = False
     try:
         local_mode = LOCAL_MODE
-        if not local_mode:
-            is_auth, user_id_or_error = check_user_auth(request)
-            if not is_auth:
-                return (
-                    DEFAULT_TIMER_SIGNAL,
-                    f'❌ 认证失败：{user_id_or_error}',
-                    '⚠️ Failed',
-                    '',
-                    '⚠️ Failed',
-                    '',
-                    '⚠️ Failed',
-                    '',
-                    '未能列出输出文件',
-                    None,
-                    None,
-                    None)
-            user_id = user_id_or_error
-        else:
-            # Generate unique user ID for local mode per session
-            user_id = get_user_id_from_request(request) or f'local_user_{uuid.uuid4().hex[:12]}'
-
-        progress(0.05, desc='验证输入...')
-        if not research_goal or not research_goal.strip():
-            return (
+        ok, user_id_or_error = resolve_user_id_for_request(
+            request, local_mode=local_mode)
+        disabled_dl = build_download_state(None)
+        if not ok:
+            # Authentication failed - stream a single failure state.
+            logger.warning(
+                'FinResearch auth failed: %s',
+                user_id_or_error,
+            )
+            yield (
                 DEFAULT_TIMER_SIGNAL,
-                '❌ 输入错误：请填写研究目标。',
+                f'❌ 认证失败：{user_id_or_error}',
                 '⚠️ Failed',
                 '',
                 '⚠️ Failed',
@@ -644,15 +899,125 @@ def run_fin_research_workflow(
                 '⚠️ Failed',
                 '',
                 '未能列出输出文件',
-                None,
-                None,
-                None)
+                disabled_dl,
+                disabled_dl,
+                disabled_dl,
+            )
+            return
+        user_id = user_id_or_error
 
-        search_depth = int(search_depth or 1)
-        search_breadth = int(search_breadth or 3)
+        # Global concurrency control: limit system-wide FinResearch tasks.
+        active_count = user_status_manager.get_active_task_count()
+        if active_count >= FIN_MAX_CONCURRENT_TASKS:
+            logger.warning(
+                'FinResearch concurrency limit reached: active=%d, max=%d',
+                active_count,
+                FIN_MAX_CONCURRENT_TASKS,
+            )
+            message = (
+                f'⚠️ 当前系统正在处理的金融研究任务已达到上限（{FIN_MAX_CONCURRENT_TASKS} 个），'
+                '请稍后再试。\n\n'
+                '⚠️ FinResearch is currently at full capacity. Please try again in a few moments.'
+            )
+            yield (
+                DEFAULT_TIMER_SIGNAL,
+                message,
+                '⚠️ Busy',
+                '',
+                '⚠️ Busy',
+                '',
+                '⚠️ Busy',
+                '',
+                '系统繁忙：暂无可用计算槽位',
+                disabled_dl,
+                disabled_dl,
+                disabled_dl,
+            )
+            return
+
+        # Per-user concurrency: one running task per user.
+        if user_status_manager.is_user_running(user_id):
+            logger.warning(
+                'FinResearch duplicate task request for user=%s; rejecting.',
+                user_id[:8] + '***',
+            )
+            message = (
+                '⚠️ 当前用户已有研究任务在运行中。如需重新启动，请先点击“清理工作区”停止当前任务。\n\n'
+                '⚠️ You already have a FinResearch task running. '
+                'Please clear the workspace first if you want to start a new one.'
+            )
+            yield (
+                DEFAULT_TIMER_SIGNAL,
+                message,
+                '⚠️ Active Task',
+                '',
+                '⚠️ Active Task',
+                '',
+                '⚠️ Active Task',
+                '',
+                '无法启动：已有任务在运行',
+                disabled_dl,
+                disabled_dl,
+                disabled_dl,
+            )
+            return
+
+        progress(0.05, desc='验证输入...')
+        if not research_goal or not research_goal.strip():
+            message = (
+                '❌ 输入错误：请填写研究目标。\n\n'
+                '❌ Input error: Research goal cannot be empty.'
+            )
+            yield (
+                DEFAULT_TIMER_SIGNAL,
+                message,
+                '⚠️ Failed',
+                '',
+                '⚠️ Failed',
+                '',
+                '⚠️ Failed',
+                '',
+                '未能列出输出文件',
+                disabled_dl,
+                disabled_dl,
+                disabled_dl,
+            )
+            return
+
+        # Validate numeric inputs defensively.
+        try:
+            search_depth = int(search_depth or 1)
+            search_breadth = int(search_breadth or 3)
+        except (TypeError, ValueError):
+            logger.warning(
+                'FinResearch invalid search params: depth=%r, breadth=%r',
+                search_depth,
+                search_breadth,
+            )
+            message = (
+                '❌ 输入错误：搜索深度与搜索宽度必须为整数。\n\n'
+                '❌ Input error: Search depth and breadth must be integers.'
+            )
+            yield (
+                DEFAULT_TIMER_SIGNAL,
+                message,
+                '⚠️ Failed',
+                '',
+                '⚠️ Failed',
+                '',
+                '⚠️ Failed',
+                '',
+                '未能列出输出文件',
+                disabled_dl,
+                disabled_dl,
+                disabled_dl,
+            )
+            return
+
         search_api_key = (search_api_key or '').strip()
         extra_notes = (f'请按照以下舆情搜索参数执行深度研究：depth={search_depth}, '
                        f'breadth={search_breadth}。')
+        # Currently only use the research goal to build the prompt
         fin_prompt = build_fin_prompt(
             research_goal,
             primary_tickers='',
@@ -671,9 +1036,15 @@ def run_fin_research_workflow(
         progress(0.1, desc='创建工作目录...')
         task_workdir = create_task_workdir(user_id)
         task_id = Path(task_workdir).name
+        task_log_label = _build_task_log_label(user_id, task_id)
         ensure_workdir(Path(task_workdir))
         progress(0.15, desc='启动 FinResearch 工作流...')
+        _set_task_log_context(task_log_label)
+        context_installed = True
         user_status_manager.start_user_task(user_id, task_id)
+
+        # Create a cooperative cancellation flag for this user's current task.
+        cancel_event = cancellation_manager.create_for_task(user_id, task_id)
 
         status_tracker = StatusTracker(include_searcher=True)
 
@@ -690,12 +1061,14 @@ def run_fin_research_workflow(
             include_sentiment=True,
             search_depth=search_depth,
             search_breadth=search_breadth,
-            search_api_key=search_api_key or None)
+            search_api_key=search_api_key or None,
+            cancel_event=cancel_event)
         # Run in background to stream status updates
         run_exc: List[Optional[BaseException]] = [None]
         def _bg_run():
             try:
-                runner.run(fin_prompt, status_callback=status_tracker.update)
+                with _task_log_context(task_log_label):
+                    runner.run(fin_prompt, status_callback=status_tracker.update)
             except BaseException as e:
                 run_exc[0] = e
         bg_thread = threading.Thread(target=_bg_run, daemon=True)
@@ -706,6 +1079,32 @@ def run_fin_research_workflow(
         last_emit_ts = 0.0
         while bg_thread.is_alive():
             now_ts = time.time()
+            # If the user has requested cancellation (via clearing workspace),
+            # stop streaming and report a cancelled state.
+            if not user_status_manager.is_user_running(user_id):
+                elapsed_now = int(now_ts - status_tracker.start_time)
+                status_html = status_tracker.render(elapsed_seconds=elapsed_now)
+                cancel_msg = (
+                    '⚠️ 当前任务已根据您的请求停止，工作空间已清理，可重新发起新的研究任务。\n\n'
+                    '⚠️ Current FinResearch task has been cancelled. '
+                    'The workspace has been cleared and you can start a new task.'
+                )
+                yield (
+                    build_timer_signal(elapsed_now),
+                    status_html,
+                    '⚠️ Cancelled',
+                    '',
+                    '⚠️ Cancelled',
+                    '',
+                    '⚠️ Cancelled',
+                    '',
+                    '任务已取消：输出文件可能不完整',
+                    disabled_dl,
+                    disabled_dl,
+                    disabled_dl,
+                )
+                return
+
             revision_changed = status_tracker.revision != last_rev
             if revision_changed or now_ts - last_emit_ts >= 1.0:
                 if revision_changed:
@@ -725,9 +1124,9 @@ def run_fin_research_workflow(
                     '⌛ Waiting...',
                     '',
                     '📂 正在生成输出文件，请稍候...',
-                    None,
-                    None,
-                    None,
+                    build_download_state(None),
+                    build_download_state(None),
+                    build_download_state(None),
                 )
             time.sleep(0.2)
 
@@ -737,6 +1136,7 @@ def run_fin_research_workflow(
         progress(0.85, desc='整理输出结果...')
 
         reports = collect_fin_reports(task_workdir, include_sentiment=True)
+        bundle_path = prepare_report_download_package(task_workdir)
 
         progress(0.95, desc='生成总结...')
         final_elapsed = int(time.time() - status_tracker.start_time)
@@ -759,33 +1159,49 @@ def run_fin_research_workflow(
                 'sentiment']['error']
 
         # Prepare download button values - only set if file exists
-        final_download_path = reports['final']['path'] if reports['final']['path'] and Path(reports['final']['path']).exists() else None
+        final_download_path = None
+        report_file_path = reports['final']['path']
+        if bundle_path and Path(bundle_path).exists():
+            final_download_path = bundle_path
+        elif report_file_path and Path(report_file_path).exists():
+            final_download_path = report_file_path
         analysis_download_path = reports['analysis']['path'] if reports['analysis']['path'] and Path(reports['analysis']['path']).exists() else None
         sentiment_download_path = reports['sentiment']['path'] if reports['sentiment']['path'] and Path(reports['sentiment']['path']).exists() else None
+
+        final_status_label = '✅ Ready (.zip)' if final_download_path and bundle_path and final_download_path == bundle_path else ('✅ Ready' if final_download_path else '⌛ Waiting...')
 
         yield (
             build_timer_signal(final_elapsed),
             status_text,
-            '✅ Ready' if final_download_path else '⌛ Waiting...',
+            final_status_label,
             final_report_value,
             '✅ Ready' if analysis_download_path else '⌛ Waiting...',
             analysis_value,
             '✅ Ready' if sentiment_download_path else '⌛ Waiting...',
             sentiment_value,
             reports['resources'],
-            final_download_path,
-            analysis_download_path,
-            sentiment_download_path,
+            build_download_state(final_download_path),
+            build_download_state(analysis_download_path),
+            build_download_state(sentiment_download_path),
         )
     except Exception as e:
-        logger.exception('FinResearch workflow failed')
+        logger.exception(
+            'FinResearch workflow failed for user=%s',
+            (user_id[:8] + '***') if isinstance(user_id, str) else 'unknown',
+        )
         final_elapsed = int(time.time() - status_tracker.start_time
                             ) if 'status_tracker' in locals() else 0
         timer_payload = (build_timer_signal(final_elapsed)
                          if 'status_tracker' in locals() else DEFAULT_TIMER_SIGNAL)
-        return (
+        disabled_dl = build_download_state(None)
+        message = (
+            '❌ 执行失败：系统在处理金融研究任务时遇到异常，请稍后重试或联系管理员。\n\n'
+            '❌ Execution failed: An unexpected error occurred while running FinResearch. '
+            'Please try again later or check the service logs.'
+        )
+        yield (
             timer_payload,
-            f'❌ 执行失败：{str(e)}',
+            message,
             '⚠️ Failed',
             '',
             '⚠️ Failed',
@@ -793,61 +1209,78 @@ def run_fin_research_workflow(
             '⚠️ Failed',
             '',
             '未能列出输出文件，请检查日志',
-            None,
-            None,
-            None,
+            disabled_dl,
+            disabled_dl,
+            disabled_dl,
         )
+        return
     finally:
-        user_status_manager.finish_user_task(user_id if 'user_id' in locals()
-                                             else 'unknown')
+        if user_id:
+            if task_id:
+                cancellation_manager.clear_for_task(user_id, task_id)
+            else:
+                cancellation_manager.clear_for_user(user_id)
+            user_status_manager.finish_user_task(user_id)
+        else:
+            user_status_manager.finish_user_task('unknown')
+        if context_installed:
+            _clear_task_log_context()
 
 
 def clear_user_workspace(request: gr.Request):
     try:
-        if not LOCAL_MODE:
-            is_auth, user_id_or_error = check_user_auth(request)
-            if not is_auth:
-                return (
-                    DEFAULT_TIMER_SIGNAL,
-                    f'❌ 认证失败：{user_id_or_error}',
-                    '⚠️ Failed',
-                    '',
-                    '⚠️ Failed',
-                    '',
-                    '⚠️ Failed',
-                    '',
-                    '未能列出输出文件',
-                    None,
-                    None,
-                    None)
-            user_id = user_id_or_error
-        else:
-            # In LOCAL_MODE, use the same user_id logic as workflow
-            user_id = get_user_id_from_request(request) or 'local_default'
-
-        # Check if user has active tasks
-        if user_status_manager.is_user_running(user_id):
+        ok, user_id_or_error = resolve_user_id_for_request(
+            request, local_mode=LOCAL_MODE)
+        disabled_dl = build_download_state(None)
+        if not ok:
             return (
                 DEFAULT_TIMER_SIGNAL,
-                '⚠️ 当前用户有正在运行的任务，无法清理工作空间。请等待任务完成后再试。\n\n⚠️ Cannot clear workspace: User has active task running. Please wait for completion.',
-                '⚠️ Active Task',
+                f'❌ 认证失败：{user_id_or_error}',
+                '⚠️ Failed',
                 '',
-                '⚠️ Active Task',
+                '⚠️ Failed',
                 '',
-                '⚠️ Active Task',
+                '⚠️ Failed',
                 '',
-                '无法清理：任务进行中',
-                None,
-                None,
-                None)
+                '未能列出输出文件',
+                disabled_dl,
+                disabled_dl,
+                disabled_dl)
+        user_id = user_id_or_error
 
-        user_dir = Path(create_user_workdir(user_id))
+        # If the user has an active task, mark it as cancelled so that the
+        # streaming loop can stop and the user can immediately start a new task.
+        had_active_task = user_status_manager.force_cleanup_user(user_id)
+        if had_active_task:
+            logger.info(
+                'FinResearch task cancelled via workspace clear - User: %s***',
+                user_id[:8],
+            )
+        # Signal cooperative cancellation to the running workflow (if any).
+        cancellation_manager.cancel_for_user(user_id)
+
+        # Always clear the workspace directory for this user.
+        user_dir = get_user_workdir_path(user_id)
         if user_dir.exists():
             shutil.rmtree(user_dir)
             logger.info(f'Workspace cleared for user: {user_id[:8]}***')
+        if LOCAL_MODE:
+            local_session_registry.release(request)
+
+        if had_active_task:
+            status_text = (
+                '🧹 当前运行中的研究任务已被停止，工作空间已清理。\n\n'
+                '🧹 The running FinResearch task has been cancelled and the workspace has been cleared.'
+            )
+        else:
+            status_text = (
+                '✅ 工作空间已清理。准备好下一次任务。\n\n'
+                '✅ Workspace cleared. Ready for the next task.'
+            )
+
         return (
             DEFAULT_TIMER_SIGNAL,
-            '✅ 工作空间已清理。准备好下一次任务。\n\n✅ Workspace cleared. Ready for next task.',
+            status_text,
             '⌛ Waiting...',
             '',
             '⌛ Waiting...',
@@ -855,11 +1288,12 @@ def clear_user_workspace(request: gr.Request):
             '⌛ Waiting...',
             '',
             '📂 输出文件已清空',
-            None,
-            None,
-            None)
+            disabled_dl,
+            disabled_dl,
+            disabled_dl)
     except Exception as e:
         logger.exception('Failed to clear workspace')
+        disabled_dl = build_download_state(None)
         return (
             DEFAULT_TIMER_SIGNAL,
             f'❌ 清理失败：{str(e)}\n\n❌ Clear failed: {str(e)}',
@@ -870,9 +1304,9 @@ def clear_user_workspace(request: gr.Request):
             '⚠️ Failed',
             '',
             '未能列出输出文件',
-            None,
-            None,
-            None)
+            disabled_dl,
+            disabled_dl,
+            disabled_dl)
 
 
 class StatusTracker:
@@ -990,21 +1424,6 @@ class StatusTracker:
                     var nearBottom = (c.scrollHeight - (c.scrollTop + c.clientHeight)) < 60;
                     if (nearBottom) { c.scrollTop = c.scrollHeight; }
                 }
-                // Elapsed time ticker
-                var t = document.querySelector('.status-header .status-time');
-                if (t && !t.dataset.bound) {
-                    t.dataset.bound = '1';
-                    var startTs = __START_TS__;
-                    var tick = function() {
-                        var now = Math.floor(Date.now() / 1000);
-                        var elapsed = Math.max(0, now - startTs);
-                        var m = Math.floor(elapsed / 60);
-                        var s = elapsed % 60;
-                        t.textContent = '⏱️ ' + (m > 0 ? (m + '分' + s + '秒') : (s + '秒'));
-                    };
-                    tick();
-                    setInterval(tick, 1000);
-                }
                 // Persist details open state
                 var key = 'fin_status_open_map';
                 var openMap = {};
@@ -1021,7 +1440,6 @@ class StatusTracker:
         })();
         </script>
         """
-        auto_scroll_js = auto_scroll_js.replace('__START_TS__', str(int(self.start_time)))
         return f'''
         <div class="status-container">
             <div class="status-header">
@@ -1038,13 +1456,22 @@ class StatusTracker:
 
 class TrackedDagWorkflow(DagWorkflow):
 
-    def __init__(self, *args, status_callback=None, **kwargs):
+    def __init__(self, *args, status_callback=None, cancel_event=None, **kwargs):
         self.status_callback = status_callback
+        self.cancel_event = cancel_event
         super().__init__(*args, **kwargs)
 
     async def run(self, inputs, **kwargs):
         outputs: Dict[str, Any] = {}
         for task in self.topo_order:
+            # Cooperative cancellation support: stop before starting the next task
+            # if a cancellation flag has been raised.
+            if getattr(self, 'cancel_event', None) is not None and self.cancel_event.is_set():
+                logger.info(
+                    'FinResearch workflow cancelled before starting task "%s".',
+                    task,
+                )
+                break
             if task in self.roots:
                 task_input = inputs
             else:
@@ -1072,6 +1499,14 @@ class TrackedDagWorkflow(DagWorkflow):
             engine = AgentLoader.build(**init_args)
             result = await engine.run(task_input)
             outputs[task] = result
+
+            # Check for cancellation after each task completes.
+            if getattr(self, 'cancel_event', None) is not None and self.cancel_event.is_set():
+                logger.info(
+                    'FinResearch workflow cancelled after finishing task "%s".',
+                    task,
+                )
+                break
 
             if self.status_callback:
                 # Agent-specific output extraction with preview/raw protocol
@@ -1243,13 +1678,32 @@ def create_interface():
         }
 
         /* Column styling */
-        .input-column {
-            padding-right: 1.5rem;
-            border-right: 1px solid var(--border-color-primary);
+        .fin-top-row {
+            align-items: stretch;
+            gap: 1.5rem;
         }
 
-        .output-column {
-            padding-left: 1.5rem;
+        .input-column {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            padding-right: 1rem;
+        }
+
+        .search-config-row,
+        .action-row {
+            gap: 1rem;
+        }
+
+        .status-column {
+            display: flex;
+            flex-direction: column;
+            padding-left: 1rem;
+        }
+
+        .status-scroll-container {
+            flex: 1;
+            overflow-y: auto;
         }
 
         /* Status container - chat style */
@@ -1318,9 +1772,13 @@ def create_interface():
         }
 
         .agent-message.waiting {
-            background: #fef3c7;
-            border-left: 4px solid #f59e0b;
+            background: linear-gradient(135deg, #fff7ed 0%, #fffbeb 100%);
+            border-left: 4px solid #f97316;
             text-align: center;
+        }
+        .agent-message.waiting .agent-content {
+            color: #7c2d12;
+            font-weight: 600;
         }
 
         .agent-header {
@@ -1446,31 +1904,94 @@ def create_interface():
             }
         }
 
-        /* Report containers with increased height and scroll */
-        .report-container {
-            height: 700px;
-            overflow-y: auto;
+        .stacked {
+            margin-top: 2rem;
+        }
+
+        .fin-reports-row {
+            gap: 1.5rem;
+            align-items: stretch;
+        }
+
+        .process-column,
+        .final-column {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .report-panel {
             border: 1px solid var(--border-color-primary);
             border-radius: 0.5rem;
             padding: 1rem;
             background: var(--background-fill-primary);
-            margin-top: 0.5rem;
-        }
-
-        .scrollable-html-report {
-            height: 700px;
+            min-height: 235px;
+            max-height: 655px;
             overflow-y: auto;
         }
 
-        /* Fix double scrollbar issue for HTML reports */
-        .scrollable-html-report .markdown-html-content {
+        .process-tabs {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .process-tabs .tabitem {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            height: 100%;
+        }
+
+        .process-tabs .tabitem .report-panel {
+            flex: 1;
+        }
+
+        .final-report-panel {
+            border: 1px solid var(--border-color-primary);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            background: var(--background-fill-primary);
+            min-height: 280px;
+            max-height: 700px;
+            overflow-y: auto;
+        }
+
+        .final-report-panel .gr-panel,
+        .final-report-panel .gr-panel > div,
+        .final-report-panel .gr-markdown,
+        .final-report-panel .prose,
+        .final-report-panel .wrap,
+        .report-panel .gr-panel,
+        .report-panel .gr-panel > div,
+        .report-panel .gr-markdown,
+        .report-panel .prose,
+        .report-panel .wrap {
             max-height: none !important;
             overflow: visible !important;
         }
 
-        .scrollable-html-report .content-area {
+        .fin-html-report .markdown-html-content,
+        .fin-html-report .content-area,
+        .final-report-panel .markdown-html-content,
+        .final-report-panel .content-area {
             max-height: none !important;
             overflow: visible !important;
+        }
+
+        .sub-section-header {
+            font-weight: 600;
+            color: #1f2937;
+            margin-top: 0.2rem;
+        }
+
+        .sub-section-header.primary {
+            font-size: 1.2rem;
+            color: #2563eb;
+        }
+
+        .report-status {
+            margin-bottom: 0.35rem !important;
         }
 
         /* Status indicators */
@@ -1536,33 +2057,50 @@ def create_interface():
             border: 1px solid #e2e8f0;
         }
 
+        .resources-box textarea {
+            min-height: 280px !important;
+            max-height: 640px !important;
+            overflow-y: auto !important;
+            font-family: 'Monaco', 'Menlo', monospace !important;
+            white-space: pre !important;
+        }
+
+        .resources-box textarea:disabled {
+            color: #0f172a !important;
+            opacity: 1 !important;
+        }
+
         /* Scrollbar styling */
-        .report-container::-webkit-scrollbar,
-        .scrollable-html-report::-webkit-scrollbar,
+        .report-panel::-webkit-scrollbar,
+        .final-report-panel::-webkit-scrollbar,
+        .fin-html-report::-webkit-scrollbar,
         .status-messages::-webkit-scrollbar,
         .gr-textbox textarea::-webkit-scrollbar {
             width: 8px;
             height: 8px;
         }
 
-        .report-container::-webkit-scrollbar-track,
-        .scrollable-html-report::-webkit-scrollbar-track,
+        .report-panel::-webkit-scrollbar-track,
+        .final-report-panel::-webkit-scrollbar-track,
+        .fin-html-report::-webkit-scrollbar-track,
         .status-messages::-webkit-scrollbar-track,
         .gr-textbox textarea::-webkit-scrollbar-track {
             background: #f1f5f9;
             border-radius: 4px;
         }
 
-        .report-container::-webkit-scrollbar-thumb,
-        .scrollable-html-report::-webkit-scrollbar-thumb,
+        .report-panel::-webkit-scrollbar-thumb,
+        .final-report-panel::-webkit-scrollbar-thumb,
+        .fin-html-report::-webkit-scrollbar-thumb,
         .status-messages::-webkit-scrollbar-thumb,
         .gr-textbox textarea::-webkit-scrollbar-thumb {
             background: #cbd5e1;
             border-radius: 4px;
         }
 
-        .report-container::-webkit-scrollbar-thumb:hover,
-        .scrollable-html-report::-webkit-scrollbar-thumb:hover,
+        .report-panel::-webkit-scrollbar-thumb:hover,
+        .final-report-panel::-webkit-scrollbar-thumb:hover,
+        .fin-html-report::-webkit-scrollbar-thumb:hover,
         .status-messages::-webkit-scrollbar-thumb:hover,
         .gr-textbox textarea::-webkit-scrollbar-thumb:hover {
             background: #94a3b8;
@@ -1570,16 +2108,22 @@ def create_interface():
 
         /* Responsive layout */
         @media (max-width: 1024px) {
-            .input-column {
-                border-right: none;
-                border-bottom: 1px solid var(--border-color-primary);
-                padding-right: 0;
-                padding-bottom: 1rem;
+            .fin-top-row,
+            .fin-reports-row {
+                flex-direction: column !important;
             }
 
-            .output-column {
-                padding-left: 0;
-                padding-top: 1rem;
+            .input-column,
+            .status-column {
+                padding: 0 !important;
+            }
+
+            .report-panel {
+                max-height: 500px;
+            }
+
+            .final-report-panel {
+                max-height: 500px;
             }
         }
 
@@ -1605,6 +2149,13 @@ def create_interface():
         .dark .agent-message.completed {
             background: #1e293b;
             border-left-color: #34d399;
+        }
+        .dark .agent-message.waiting {
+            background: linear-gradient(135deg, #7c2d12 0%, #9a3412 100%);
+            border-left-color: #fdba74;
+        }
+        .dark .agent-message.waiting .agent-content {
+            color: #fff7ed;
         }
 
         .dark .agent-name {
@@ -1635,6 +2186,12 @@ def create_interface():
         }
 
         .dark .resources-box {
+            background: #1e293b;
+            border-color: #334155;
+        }
+
+        .dark .report-panel,
+        .dark .final-report-panel {
             background: #1e293b;
             border-color: #334155;
         }
@@ -1701,20 +2258,20 @@ def create_interface():
         gr.HTML(timer_script.replace('__TIMER_SIGNAL_ID__',
                                      FIN_STATUS_TIMER_SIGNAL_ID))
 
-        with gr.Row():
-            with gr.Column(scale=2, elem_classes=['input-column']):
+        with gr.Row(elem_classes=['fin-top-row']):
+            with gr.Column(scale=1, min_width=0, elem_classes=['input-column']):
                 gr.HTML('<h3 class="section-header">📝 研究输入 | Research Input</h3>')
 
                 research_goal = gr.Textbox(
                     label='研究目标 | Research Goal',
                     placeholder='例如：分析宁德时代近四个季度的盈利能力与行业政策影响...\n\nExample: Analyze the profitability and policy impact of CATL over the past four quarters...',
-                    lines=8,
-                    max_lines=12
+                    lines=7,
+                    max_lines=10
                 )
 
                 gr.HTML('<h3 class="section-header">🔍 舆情搜索配置 | Search Settings</h3>')
 
-                with gr.Row():
+                with gr.Row(elem_classes=['search-config-row']):
                     search_depth = gr.Number(
                         label='搜索深度 | Depth',
                         value=1,
@@ -1732,24 +2289,23 @@ def create_interface():
 
                 search_api_key = gr.Textbox(
                     label='搜索引擎 API Key (可选 | Optional)',
-                    placeholder='支持 exa: <key> / serpapi: <key>，可多条逗号或换行分隔',
+                    placeholder='支持 exa: <key> / serpapi: <key>',
                     type='password'
                 )
 
-                gr.HTML('<div style="margin-top: 1.5rem;"></div>')
+                with gr.Row(elem_classes=['action-row']):
+                    run_btn = gr.Button(
+                        '🚀 启动研究 | Launch',
+                        variant='primary',
+                        size='lg'
+                    )
+                    clear_btn = gr.Button(
+                        '🧹 清理工作区 | Clear',
+                        variant='primary',
+                        size='lg'
+                    )
 
-                run_btn = gr.Button(
-                    '🚀 启动 FinResearch | Launch Research',
-                    variant='primary',
-                    size='lg'
-                )
-
-                clear_btn = gr.Button(
-                    '🧹 清理工作区 | Clear Workspace',
-                    variant='secondary'
-                )
-
-            with gr.Column(scale=3, elem_classes=['output-column']):
+            with gr.Column(scale=1, min_width=0, elem_classes=['status-column']):
                 gr.HTML('<h3 class="section-header">📡 执行状态 | Execution Status</h3>')
 
                 status_output = gr.HTML(
@@ -1765,73 +2321,67 @@ def create_interface():
                             </div>
                         </div>
                     </div>
-                    '''
+                    ''',
+                    elem_classes=['status-scroll-container']
                 )
                 status_timer_signal = gr.HTML(
                     value=DEFAULT_TIMER_SIGNAL,
                     visible=False,
                     elem_id=FIN_STATUS_TIMER_SIGNAL_ID)
 
-                gr.HTML('<h3 class="section-header">📑 研究报告 | Research Reports</h3>')
+        gr.HTML('<h3 class="section-header stacked">📑 研究结果 | Research Outputs</h3>')
 
-                with gr.Tabs():
-                    with gr.Tab('📊 综合报告 | Final Report'):
-                        final_status_output = gr.Markdown('⌛ Waiting...')
-                        if LOCAL_MODE:
-                            final_report_output = gr.Markdown(
-                                elem_classes=['report-container']
-                            )
+        local_mode = LOCAL_MODE
+        with gr.Row(elem_classes=['fin-reports-row']):
+            with gr.Column(scale=3, elem_classes=['process-column']):
+                gr.HTML('<div class="sub-section-header primary">⚙️ 过程报告 | Process Reports</div>')
+                with gr.Tabs(elem_classes=['process-tabs']):
+                    with gr.Tab('📈 数据分析', id=0):
+                        analysis_status_output = gr.Markdown('⌛ Waiting...', elem_classes=['report-status'])
+                        if local_mode:
+                            analysis_report_output = gr.Markdown(elem_classes=['report-panel'])
                         else:
-                            final_report_output = gr.HTML(
-                                elem_classes=['scrollable-html-report']
-                            )
-                        final_download = gr.DownloadButton(
-                            label='⬇️ 下载综合报告 | Download Final Report',
-                            value=None,
-                            interactive=False
-                        )
-
-                    with gr.Tab('📈 数据分析 | Quantitative Analysis'):
-                        analysis_status_output = gr.Markdown('⌛ Waiting...')
-                        if LOCAL_MODE:
-                            analysis_report_output = gr.Markdown(
-                                elem_classes=['report-container']
-                            )
-                        else:
-                            analysis_report_output = gr.HTML(
-                                elem_classes=['scrollable-html-report']
-                            )
+                            analysis_report_output = gr.HTML(elem_classes=['report-panel', 'fin-html-report'])
                         analysis_download = gr.DownloadButton(
                             label='⬇️ 下载数据分析报告 | Download Analysis Report',
                             value=None,
                             interactive=False
                         )
 
-                    with gr.Tab('📰 舆情洞察 | Sentiment Insights'):
-                        sentiment_status_output = gr.Markdown('⌛ Waiting...')
-                        if LOCAL_MODE:
-                            sentiment_report_output = gr.Markdown(
-                                elem_classes=['report-container']
-                            )
+                    with gr.Tab('📰 舆情洞察', id=1):
+                        sentiment_status_output = gr.Markdown('⌛ Waiting...', elem_classes=['report-status'])
+                        if local_mode:
+                            sentiment_report_output = gr.Markdown(elem_classes=['report-panel'])
                         else:
-                            sentiment_report_output = gr.HTML(
-                                elem_classes=['scrollable-html-report']
-                            )
+                            sentiment_report_output = gr.HTML(elem_classes=['report-panel', 'fin-html-report'])
                         sentiment_download = gr.DownloadButton(
                             label='⬇️ 下载舆情分析报告 | Download Sentiment Report',
                             value=None,
                             interactive=False
                         )
 
-                    with gr.Tab('📁 输出文件 | Output Files'):
+                    with gr.Tab('📁 输出文件', id=2):
                         resources_output = gr.Textbox(
                             label='输出文件列表 | Output Files List',
-                            lines=20,
+                            lines=16,
                             max_lines=25,
                             interactive=False,
                             show_copy_button=True,
-                            elem_classes=['resources-box']
+                            elem_classes=['resources-box', 'report-panel']
                         )
+
+            with gr.Column(scale=4, elem_classes=['final-column']):
+                gr.HTML('<div class="sub-section-header primary">📊 综合报告 | Final Report</div>')
+                final_status_output = gr.Markdown('⌛ Waiting...', elem_classes=['report-status'])
+                if local_mode:
+                    final_report_output = gr.Markdown(elem_classes=['final-report-panel'])
+                else:
+                    final_report_output = gr.HTML(elem_classes=['final-report-panel', 'fin-html-report'])
+                final_download = gr.DownloadButton(
+                    label='⬇️ 下载综合报告压缩包 (.zip) | Download Final Report Package',
+                    value=None,
+                    interactive=False
+                )
 
         # 使用说明
         gr.HTML("""
@@ -1847,10 +2397,10 @@ def create_interface():
                     <h4 style="color: #0369a1; margin-bottom: 1.25rem; font-size: 1.3rem; font-weight: 600; border-bottom: 2px solid #0ea5e9; padding-bottom: 0.5rem;">
                         🇨🇳 中文说明
                     </h4>
-                    <ul style="line-height: 2; color: #1e293b; font-size: 0.95rem; padding-left: 1.5rem; margin: 0;">
-                        <li style="margin-bottom: 0.75rem;"><strong style="color: #0369a1;">研究目标：</strong>详细描述您的金融研究需求，可以包括特定的公司、行业、时间段等</li>
-                        <li style="margin-bottom: 0.75rem;"><strong style="color: #0369a1;">搜索深度：</strong>设置舆情搜索的递归深度（1-3），越大越深入但耗时越长</li>
-                        <li style="margin-bottom: 0.75rem;"><strong style="color: #0369a1;">搜索宽度：</strong>设置舆情搜索的并发主题数量（1-6），越大覆盖面越广但耗时越长</li>
+                    <ul style="line-height: 2; color: #1e293b; font-size: 0.95rem; padding-left: 0; margin: 0; list-style: none;">
+                        <li style="margin-bottom: 0.75rem;"><strong style="color: #0369a1;">研究目标：</strong>详细描述您的问题，包括特定的公司、行业、时间段等</li>
+                        <li style="margin-bottom: 0.75rem;"><strong style="color: #0369a1;">搜索深度：</strong>设置舆情搜索深度（1-2），越大越深入但耗时越长</li>
+                        <li style="margin-bottom: 0.75rem;"><strong style="color: #0369a1;">搜索宽度：</strong>设置舆情搜索并发主题数（1-6），越大覆盖越广但耗时越长</li>
                         <li style="margin-bottom: 0.75rem;"><strong style="color: #0369a1;">多智能体协作：</strong>系统自动调度 5 个专业 Agent 协同工作</li>
                         <li style="margin-bottom: 0.75rem;"><strong style="color: #0369a1;">综合报告：</strong>完整的研究分析、结论和建议</li>
                         <li style="margin-bottom: 0.75rem;"><strong style="color: #0369a1;">数据分析：</strong>基于结构化数据的统计和可视化</li>
@@ -1862,10 +2412,10 @@ def create_interface():
                     <h4 style="color: #0369a1; margin-bottom: 1.25rem; font-size: 1.3rem; font-weight: 600; border-bottom: 2px solid #0ea5e9; padding-bottom: 0.5rem;">
                         🇺🇸 English Guide
                     </h4>
-                    <ul style="line-height: 2; color: #1e293b; font-size: 0.95rem; padding-left: 1.5rem; margin: 0;">
+                    <ul style="line-height: 2; color: #1e293b; font-size: 0.95rem; padding-left: 0; margin: 0; list-style: none;">
                         <li style="margin-bottom: 0.75rem;"><strong style="color: #0369a1;">Research Goal:</strong> Describe your financial research needs in detail</li>
-                        <li style="margin-bottom: 0.75rem;"><strong style="color: #0369a1;">Search Depth:</strong> Set recursive depth (1-3), higher = deeper analysis</li>
-                        <li style="margin-bottom: 0.75rem;"><strong style="color: #0369a1;">Search Breadth:</strong> Set concurrent topics (1-6), higher = broader coverage</li>
+                        <li style="margin-bottom: 0.75rem;"><strong style="color: #0369a1;">Search Depth:</strong> Set recursive depth (1-2), higher = deeper</li>
+                        <li style="margin-bottom: 0.75rem;"><strong style="color: #0369a1;">Search Breadth:</strong> Set concurrent topics (1-6), higher = broader</li>
                         <li style="margin-bottom: 0.75rem;"><strong style="color: #0369a1;">Multi-Agent:</strong> 5 specialized agents work collaboratively</li>
                         <li style="margin-bottom: 0.75rem;"><strong style="color: #0369a1;">Final Report:</strong> Comprehensive analysis with conclusions</li>
                         <li style="margin-bottom: 0.75rem;"><strong style="color: #0369a1;">Quantitative:</strong> Statistical and visual data analysis</li>
@@ -1879,7 +2429,7 @@ def create_interface():
                     <strong style="font-size: 1.1rem;">💡 提示 | Tip</strong>
                     <br/><br/>
                     <span style="display: block; margin-bottom: 0.5rem;">
-                        研究任务通常需要几分钟时间完成。您可以实时查看右侧的执行状态，了解当前是哪个 Agent 在工作。建议在研究目标中明确指定股票代码、时间范围和关注的分析维度，以获得更精准的结果。
+                        研究任务通常需要十几分钟时间完成。您可以实时查看右侧的执行状态，了解当前是哪个 Agent 在工作。建议在研究目标中明确指定股票代码、时间范围和关注的分析维度，以获得更精准的结果。
                     </span>
                     <span style="display: block; opacity: 0.9;">
                         Research tasks typically take several minutes to complete. You can monitor the execution status on the right to see which agent is working. Specify stock tickers, time ranges, and analysis dimensions for more accurate results.
@@ -1941,4 +2491,4 @@ def launch_server(server_name: Optional[str] = '0.0.0.0',
 
 
 if __name__ == '__main__':
-    launch_server()
+    launch_server(server_name='0.0.0.0', server_port=7861, share=False)

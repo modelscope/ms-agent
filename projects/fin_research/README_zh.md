@@ -158,6 +158,17 @@ aggregator:
 
 随后在命令行中按之前相同的方式启动即可。需要注意的是，由于信息维度不全面，FinResearch可能无法对复杂问题给出篇幅较长、内容丰富的分析报告，建议仅用于测试。
 
+运行FinResearch应用：
+
+```bash
+# 使用命令行的方式启动Gradio服务（可以不带参数启动，只使用--app_type fin_research）
+ms-agent app --app_type fin_research --server_name 0.0.0.0 --server_port 7860 --share
+
+# 使用Python脚本的方式启动Gradio服务
+cd ms-agent/app
+python fin_research.py
+```
+
 ### 样例
 
 更多内容请参考`projects/fin_research/examples`。

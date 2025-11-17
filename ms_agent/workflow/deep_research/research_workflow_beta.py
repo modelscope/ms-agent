@@ -980,6 +980,7 @@ class ResearchWorkflowBeta(ResearchWorkflow):
                    depth: int = 2,
                    is_report: bool = False,
                    show_progress: bool = False,
+                   use_feedback: bool = True,
                    **kwargs) -> None:
 
         if not user_prompt:
@@ -1002,26 +1003,30 @@ class ResearchWorkflowBeta(ResearchWorkflow):
         else:
             initial_query = user_prompt
 
-        try:
-            follow_up_questions: List[str] = await self.generate_feedback(
-                query=initial_query, num_questions=3)
-            if follow_up_questions:
-                logger.info('Follow-up questions:\n'
-                            + '\n'.join(follow_up_questions))
-                answer = input('Please enter you answer: ')
-                questions_text = '\n'.join(follow_up_questions)
-                combined_query = (
-                    f'Initial Query:\n{initial_query}\n'
-                    f'Follow-up Questions:\n{questions_text}\n'
-                    f'User\'s Answers:\n{answer}')
-            else:
+        if use_feedback:
+            try:
+                follow_up_questions: List[str] = await self.generate_feedback(
+                    query=initial_query, num_questions=3)
+                if follow_up_questions:
+                    logger.info('Follow-up questions:\n'
+                                + '\n'.join(follow_up_questions))
+                    answer = input('Please enter you answer: ')
+                    questions_text = '\n'.join(follow_up_questions)
+                    combined_query = (
+                        f'Initial Query:\n{initial_query}\n'
+                        f'Follow-up Questions:\n{questions_text}\n'
+                        f'User\'s Answers:\n{answer}')
+                else:
+                    combined_query = initial_query
+                    logger.info('No follow-up questions generated, proceeding with initial query only...')
+            except Exception as e:
+                logger.info(
+                    'Error generating follow-up questions, proceeding with initial query only...\n'
+                    + f'Error: {e}')
                 combined_query = initial_query
-                logger.info('No follow-up questions generated, proceeding with initial query only...')
-        except Exception as e:
-            logger.info(
-                'Error generating follow-up questions, proceeding with initial query only...\n'
-                + f'Error: {e}')
+        else:
             combined_query = initial_query
+            logger.info('Disabled follow-up questions, proceeding with initial query only...')
 
         if show_progress:
             # Perform research with progress tracking
@@ -1098,6 +1103,7 @@ class ResearchWorkflowBeta(ResearchWorkflow):
                   depth: int = 2,
                   is_report: bool = False,
                   show_progress: bool = False,
+                  use_feedback: bool = True,
                   **kwargs) -> None:
         """
         Public interface for running the research workflow with proper resource cleanup.
@@ -1109,6 +1115,7 @@ class ResearchWorkflowBeta(ResearchWorkflow):
                 depth=depth,
                 is_report=is_report,
                 show_progress=show_progress,
+                use_feedback=use_feedback,
                 **kwargs
             )
             return result if result else None

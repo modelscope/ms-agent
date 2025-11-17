@@ -1,5 +1,6 @@
 import os
-from typing import Any, Dict
+import threading
+from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
 from ms_agent.config.env import Env
@@ -10,7 +11,33 @@ from ms_agent.tools.search.serpapi import SerpApiSearch
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
+
 SEARCH_ENGINE_OVERRIDE_ENV = 'FIN_RESEARCH_SEARCH_ENGINE'
+
+_search_env_local = threading.local()
+
+
+def set_search_env_overrides(env_overrides: Optional[Dict[str, str]]) -> None:
+    """Set per-thread search environment overrides.
+
+    Expected keys (all optional):
+      - 'EXA_API_KEY'
+      - 'SERPAPI_API_KEY'
+      - SEARCH_ENGINE_OVERRIDE_ENV (e.g. 'exa' / 'serpapi' / 'arxiv')
+    """
+    if not env_overrides:
+        if hasattr(_search_env_local, 'overrides'):
+            delattr(_search_env_local, 'overrides')
+        return
+    _search_env_local.overrides = {
+        k: v
+        for k, v in env_overrides.items() if v is not None
+    }
+
+
+def get_search_env_overrides() -> Dict[str, str]:
+    """Get current thread-local search environment overrides."""
+    return getattr(_search_env_local, 'overrides', {}) or {}
 
 
 def get_search_config(config_file: str):
@@ -98,9 +125,14 @@ def get_web_search_tool(config_file: str):
         SearchEngine: An instance of the SearchEngine class configured with the API key.
     """
     search_config = get_search_config(config_file=config_file)
+    local_env = get_search_env_overrides()
 
-    engine_override = (os.getenv(SEARCH_ENGINE_OVERRIDE_ENV, '')
-                       or '').strip().lower()
+    # Engine override precedence:
+    # 1) Thread-local override (per-request, e.g. FinResearch UI)
+    # 2) Global environment variable (shared default)
+    engine_override = ((local_env.get(SEARCH_ENGINE_OVERRIDE_ENV, '') or '')
+                       or (os.getenv(SEARCH_ENGINE_OVERRIDE_ENV, '')
+                           or '')).strip().lower()
     if engine_override and engine_override in (SearchEngineType.EXA.value,
                                                SearchEngineType.SERPAPI.value,
                                                SearchEngineType.ARXIV.value):
@@ -108,14 +140,18 @@ def get_web_search_tool(config_file: str):
 
     engine_name = (search_config.get('engine', '') or '').lower()
 
+    # Per-request API key overrides (thread-local) take precedence
+    override_exa_key = local_env.get('EXA_API_KEY')
+    override_serp_key = local_env.get('SERPAPI_API_KEY')
+
     if engine_name == SearchEngineType.EXA.value:
         return ExaSearch(
-            api_key=search_config.get('exa_api_key',
-                                      os.getenv('EXA_API_KEY', None)))
+            api_key=override_exa_key or search_config.get(
+                'exa_api_key', os.getenv('EXA_API_KEY', None)))
     elif engine_name == SearchEngineType.SERPAPI.value:
         return SerpApiSearch(
-            api_key=search_config.get('serpapi_api_key',
-                                      os.getenv('SERPAPI_API_KEY', None)),
+            api_key=override_serp_key or search_config.get(
+                'serpapi_api_key', os.getenv('SERPAPI_API_KEY', None)),
             provider=search_config.get('provider', 'google').lower())
     elif engine_name == SearchEngineType.ARXIV.value:
         return ArxivSearch()

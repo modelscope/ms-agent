@@ -32,6 +32,15 @@ class ArxivSearchRequest(SearchRequest):
         super().__init__(query=query, num_results=num_results, **kwargs)
         self.sort_strategy = sort_strategy
         self.sort_order = sort_order
+        self.sort_strategy_map = {
+            'relevance': SortCriterion.Relevance,
+            'lastUpdatedDate': SortCriterion.LastUpdatedDate,
+            'submittedDate': SortCriterion.SubmittedDate
+        }
+        self.sort_order_map = {
+            'descending': SortOrder.Descending,
+            'ascending': SortOrder.Ascending
+        }
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -40,6 +49,13 @@ class ArxivSearchRequest(SearchRequest):
         Returns:
             Dict[str, Any]: The parameters as a dictionary
         """
+        if isinstance(self.sort_strategy, str) and self.sort_strategy_map.get(
+                self.sort_strategy):
+            self.sort_strategy = self.sort_strategy_map[self.sort_strategy]
+        if isinstance(self.sort_order, str) and self.sort_order_map.get(
+                self.sort_order):
+            self.sort_order = self.sort_order_map[self.sort_order]
+
         return {
             'query': self.query,
             'max_results': self.num_results,
