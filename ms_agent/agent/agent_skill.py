@@ -137,7 +137,8 @@ class AgentSkill:
             return skills
 
         # Process skill IDs on the hub
-        if isinstance(skills[0], str) and valid_repo_id(skills[0]):
+        if isinstance(skills[0], str) and valid_repo_id(
+                skills[0]) and not os.path.exists(skills[0]):
             from modelscope import snapshot_download
 
             skill_cache_dirs: List[str] = []

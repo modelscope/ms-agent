@@ -170,8 +170,9 @@ def main():
     base_url: str = 'https://api-inference.modelscope.cn/v1/'
 
     agent = create_agent_skill(
-        # You can replace the `skill_dir` with a list of skill IDs, e.g. `ms-agent/skill_examples` or `['ms-agent/skill_examples', ...]`
-        # If using skill IDs, please refer to: `https://modelscope.cn/models/ms-agent/skill_examples`
+        # Use a skill from ModelScope Hub by its ID. A list of IDs is also supported. e.g. `ms-agent/skill_examples`
+        # To use local skills, provide the path to the directory, e.g., skills='./skills'
+        # For more details on skill IDs, see: https://modelscope.cn/models/ms-agent/skill_examples
         skills=skills_dir,
         model=model,
         api_key=os.getenv('OPENAI_API_KEY', api_key),
