@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
 import json
 from ms_agent.llm import Message
@@ -22,7 +22,7 @@ from ms_agent.skill.skill_utils import (copy_with_exec_if_script,
                                         extract_packages_from_code_blocks,
                                         find_skill_dir)
 from ms_agent.utils.logger import logger
-from ms_agent.utils.utils import install_package, str_to_md5
+from ms_agent.utils.utils import install_package, str_to_md5, valid_repo_id
 from omegaconf import DictConfig, OmegaConf
 
 
@@ -53,8 +53,8 @@ class AgentSkill:
 
         Args:
             skills: Path(s) to skill directories,
-                the root path of skill directories, list of SkillSchema, or skill IDs on the hub
-                Note: skill IDs on the hub are not yet implemented.
+                the root path of skill directories, list of SkillSchema, or skill IDs on the hub.
+                If using skill IDs on the hub, refer to `https://modelscope.cn/models/ms-agent/skill_examples`
             api_key: OpenAI API key
             base_url: Custom API base URL
             model: LLM model name
@@ -135,6 +135,19 @@ class AgentSkill:
 
         if isinstance(skills[0], SkillSchema):
             return skills
+
+        # Process skill IDs on the hub
+        if isinstance(skills[0], str) and valid_repo_id(skills[0]):
+            from modelscope import snapshot_download
+
+            skill_cache_dirs: List[str] = []
+            for skill_id in skills:
+                skill_dir: str = snapshot_download(repo_id=skill_id)
+                logger.info(
+                    f'Downloaded skill from hub: {skill_id} to {skill_dir}')
+                skill_cache_dirs.append(skill_dir)
+
+            skills = skill_cache_dirs
 
         skill_paths: List[str] = find_skill_dir(skills)
 
@@ -664,8 +677,8 @@ def create_agent_skill(skills: Union[str, List[str], List[SkillSchema]],
 
     Args:
         skills: Path(s) to skill directories,
-            the root path of skill directories, list of SkillSchema, or skill IDs on the hub
-            Note: skill IDs on the hub are not yet implemented.
+            the root path of skill directories, list of SkillSchema, or skill IDs on the hub.
+            If using skill IDs on the hub, refer to `https://modelscope.cn/models/ms-agent/skill_examples`
         api_key: OpenAI API key
         base_url: Custom API base URL
         model: LLM model name
