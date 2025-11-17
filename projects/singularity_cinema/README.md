@@ -58,6 +58,12 @@ OPENAI_API_KEY=xxx-xxx
 T2I_API_KEY=ms-xxx-xxx
 ```
 
+### 准备一个多模态大模型用于质量检测
+
+```shell
+MANIM_TEST_API_KEY=xxx-xxx
+```
+
 2. 准备你的短视频材料
 
 你可以选择使用一句话生成视频，例如：

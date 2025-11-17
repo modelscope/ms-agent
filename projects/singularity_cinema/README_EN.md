@@ -58,6 +58,12 @@ The default model is currently Qwen-Image. The ModelScope API Key can be applied
 T2I_API_KEY=ms-xxx-xxx
 ```
 
+### Prepare an MLLM to check animation layouts
+
+```shell
+MANIM_TEST_API_KEY=xxx-xxx
+```
+
 2. Prepare your short video materials
 
 You can choose to generate a video with a single sentence, for example:

@@ -4,6 +4,12 @@ llm:
   openai_api_key:
   openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 
+mllm:
+  mllm_service: openai
+  mllm_model: gemini-2.5-flash-thinking
+  mllm_openai_api_key:
+  mllm_openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+
 generation_config:
   temperature: 0.3
   top_k: 50
@@ -58,6 +64,7 @@ prompt:
       * A `script.txt` file and write the script content into this file.
       * A `title.txt` file and write the video title into this file.
         * Use the video name if the user explicitly specifies one; otherwise, generate a title that does not exceed 7 words.
+      * A `docs.txt` file and write the external filename list mentioned in the original query, split by lines(`\n`)
 
     Now begin:
 
@@ -71,12 +78,16 @@ text2image:
 t2i_num_parallel: 1
 llm_num_parallel: 10
 
+code_fix_round: 5
+mllm_fix_round: 1
+
 video:
   bitrate: 2500k
   preset: ultrafast
   fps: 24
 
-voice: emma
+subtitle_lang:
+voice: male
 
 voices:
   male:
@@ -124,6 +135,8 @@ tools:
   file_system:
     mcp: false
     allow_read_all_files: true
+    exclude:
+      - list_files
 
 memory:
   - name: diversity

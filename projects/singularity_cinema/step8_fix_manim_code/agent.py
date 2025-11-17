@@ -113,9 +113,11 @@ class FixManimCode(CodeAgent):
 - Keep the good parts, only fix problematic areas
 - Ensure no new layout issues are introduced
 - If some issues are difficult to solve, prioritize the most impactful ones
+- Make minimal code changes to fix the issue while keeping the correct parts unchanged
+- The code may contain images & image effects, such as glowing or frames - **don't remove them when making modifications**
 
 Please precisely fix the detected issues while maintaining the richness and creativity of the animation.
-"""
+""" # noqa
         inputs = [Message(role='user', content=fix_request)]
         _response_message = llm.generate(inputs)
         response = _response_message.content

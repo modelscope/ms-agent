@@ -426,7 +426,8 @@ class OpenAI(LLM):
         openai_messages = []
         for message in messages:
             if isinstance(message, Message):
-                message.content = message.content.strip()
+                if isinstance(message.content, str):
+                    message.content = message.content.strip()
                 message = message.to_dict()
 
             if message.get('tool_calls'):

@@ -21,14 +21,15 @@ class ComposeVideo(CodeAgent):
                  **kwargs):
         super().__init__(config, tag, trust_remote_code, **kwargs)
         self.work_dir = getattr(self.config, 'output_dir', 'output')
-        self.transition = getattr(self.config, 't2i_transition', None)
+        self.transition = getattr(self.config.text2image, 't2i_transition',
+                                  None)
         self.bg_path = os.path.join(self.work_dir, 'background.jpg')
         self.render_dir = os.path.join(self.work_dir, 'manim_render')
         self.tts_dir = os.path.join(self.work_dir, 'audio')
         self.images_dir = os.path.join(self.work_dir, 'images')
         self.subtitle_dir = os.path.join(self.work_dir, 'subtitles')
         self.bitrate = getattr(self.config.video, 'bitrate', '5000k')
-        self.preset = getattr(self.config.video, 'preset', 'faster')
+        self.preset = getattr(self.config.video, 'preset', 'ultrafast')
         self.fps = getattr(self.config.video, 'fps', 24)
 
     def compose_final_video(self, background_path, foreground_paths,
@@ -87,31 +88,37 @@ class ComposeVideo(CodeAgent):
                            illustration_paths[i]):
                 illustration_clip = mp.ImageClip(
                     illustration_paths[i], duration=duration)
-                original_w, original_h = illustration_clip.size
+                bg_original_w, bg_original_h = illustration_clip.size
 
                 # Validate image dimensions
-                if original_w <= 0 or original_h <= 0:
+                if bg_original_w <= 0 or bg_original_h <= 0:
                     logger.error(
-                        f'Invalid illustration dimensions: {original_w}x{original_h} for {illustration_paths[i]}'
+                        f'Invalid illustration dimensions: {bg_original_w}x{bg_original_h} for {illustration_paths[i]}'
                     )
                     continue
 
-                available_w, available_h = 1920, 1080
-                scale_w = available_w / original_w
-                scale_h = available_h / original_h
+                bg_available_w, bg_available_h = 1920, 1080
+                bg_scale_w = bg_available_w / bg_original_w
+                bg_scale_h = bg_available_h / bg_original_h
                 # Use max instead of min to fill the entire screen (cover mode)
-                scale = max(scale_w, scale_h)
+                bg_scale = max(bg_scale_w, bg_scale_h)
 
                 # Always resize to fill the screen
-                new_w = int(original_w * scale)
-                new_h = int(original_h * scale)
+                bg_new_w = int(bg_original_w * bg_scale)
+                bg_new_h = int(bg_original_h * bg_scale)
+                if bg_new_w % 2 != 0:
+                    bg_new_w += 1
+                if bg_new_h % 2 != 0:
+                    bg_new_h += 1
 
                 # Ensure dimensions are positive
-                if new_w <= 0 or new_h <= 0:
-                    logger.error(f'Invalid scaled dimensions: {new_w}x{new_h}')
+                if bg_new_w <= 0 or bg_new_h <= 0:
+                    logger.error(
+                        f'Invalid scaled dimensions: {bg_new_w}x{bg_new_h}')
                     continue
 
-                illustration_clip = illustration_clip.resized((new_w, new_h))
+                illustration_clip = illustration_clip.resized(
+                    (bg_new_w, bg_new_h))
 
                 exit_duration = 1.0
                 start_animation_time = max(duration - exit_duration, 0)
@@ -121,29 +128,30 @@ class ComposeVideo(CodeAgent):
                     zoom_start = 1.0  # Initial scale
                     zoom_end = 1.15  # Final scale (15% zoom)
 
-                    effect_process = {'eased_progress': 0.0}
+                    # Capture variables in closure to prevent external modification
+                    kb_base_w = bg_new_w
+                    kb_base_h = bg_new_h
+                    kb_duration = duration
 
                     def make_ken_burns(t):
                         """Create smooth zoom-in effect with easing"""
                         # Smooth easing function (ease-in-out)
-                        progress = t / duration if duration > 0 else 0
+                        progress = t / kb_duration if kb_duration > 0 else 0
+                        progress = min(1.0, progress)
                         # Cubic easing for smooth acceleration/deceleration
                         eased_progress = progress * progress * (
                             3.0 - 2.0 * progress)
-                        if eased_progress < effect_process['eased_progress']:
-                            eased_progress = effect_process['eased_progress']
                         if eased_progress > 1.0:
                             eased_progress = 1.0
-                        effect_process['eased_progress'] = eased_progress
                         # Calculate current zoom level
                         current_zoom = zoom_start + (
                             zoom_end - zoom_start) * eased_progress
                         # Calculate new dimensions with validation
-                        zoom_w = int(new_w * current_zoom)
-                        zoom_h = int(new_h * current_zoom)
+                        zoom_w = int(kb_base_w * current_zoom)
+                        zoom_h = int(kb_base_h * current_zoom)
                         # Ensure dimensions are always positive and at least 1
-                        zoom_w = max(new_w, zoom_w)
-                        zoom_h = max(new_h, zoom_h)
+                        zoom_w = max(kb_base_w, zoom_w)
+                        zoom_h = max(kb_base_h, zoom_h)
                         # Return the new size at time t as a tuple (width, height)
                         return zoom_w, zoom_h
 
@@ -157,12 +165,12 @@ class ComposeVideo(CodeAgent):
                 elif self.transition == 'slide':
                     # TODO legacy code, untested
                     # Default slide left animation
-                    def illustration_pos_factory(idx, start_x, end_x, new_h,
+                    def illustration_pos_factory(idx, start_x, end_x, bg_h,
                                                  start_animation_time,
                                                  exit_duration):
 
                         def illustration_pos(t):
-                            y = (1080 - new_h) // 2
+                            y = (1080 - bg_h) // 2
                             if t < start_animation_time:
                                 x = start_x
                             elif t < start_animation_time + exit_duration:
@@ -177,8 +185,8 @@ class ComposeVideo(CodeAgent):
                         return illustration_pos
 
                     illustration_clip = illustration_clip.with_position(
-                        illustration_pos_factory(i, (1920 - new_w) // 2,
-                                                 -new_w, new_h,
+                        illustration_pos_factory(i, (1920 - bg_new_w) // 2,
+                                                 -bg_new_w, bg_new_h,
                                                  start_animation_time,
                                                  exit_duration))
 
@@ -189,7 +197,7 @@ class ComposeVideo(CodeAgent):
                            foreground_paths[i]):
                 fg_clip = mp.VideoFileClip(foreground_paths[i], has_mask=True)
                 original_w, original_h = fg_clip.size
-                available_w, available_h = 1500, 750
+                available_w, available_h = 1250, 700
                 scale_w = available_w / original_w
                 scale_h = available_h / original_h
                 scale = min(scale_w, scale_h, 1.0)

@@ -1,9 +1,12 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import base64
 import os
 import re
 import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from copy import deepcopy
+from os import getcwd
 from typing import List, Union
 
 import json
@@ -12,13 +15,14 @@ from ms_agent.agent import CodeAgent
 from ms_agent.llm import LLM, Message
 from ms_agent.utils import get_logger
 from omegaconf import DictConfig
+from PIL import Image
 
 logger = get_logger()
 
 
 class RenderManim(CodeAgent):
 
-    window_size = (1800, 900)
+    window_size = (1250, 700)
 
     def __init__(self,
                  config: DictConfig,
@@ -31,6 +35,8 @@ class RenderManim(CodeAgent):
         self.manim_render_timeout = getattr(self.config,
                                             'manim_render_timeout', 300)
         self.render_dir = os.path.join(self.work_dir, 'manim_render')
+        self.code_fix_round = getattr(self.config, 'code_fix_round', 5)
+        self.mllm_check_round = getattr(self.config, 'mllm_fix_round', 1)
         os.makedirs(self.render_dir, exist_ok=True)
 
     async def execute_code(self, messages: Union[str, List[Message]],
@@ -59,7 +65,8 @@ class RenderManim(CodeAgent):
                 executor.submit(self._render_manim_scene_static, i, segment,
                                 code, duration, self.config, self.work_dir,
                                 self.render_dir, self.window_size,
-                                self.manim_render_timeout): i
+                                self.manim_render_timeout, self.code_fix_round,
+                                self.mllm_check_round): i
                 for i, segment, code, duration in tasks
             }
             for future in as_completed(futures):
@@ -70,17 +77,20 @@ class RenderManim(CodeAgent):
     @staticmethod
     def _render_manim_scene_static(i, segment, code, audio_duration, config,
                                    work_dir, render_dir, window_size,
-                                   manim_render_timeout):
+                                   manim_render_timeout, code_fix_round,
+                                   mllm_check_round):
         """Static method for multiprocessing"""
         llm = LLM.from_config(config)
         return RenderManim._render_manim_impl(llm, i, segment, code,
                                               audio_duration, work_dir,
                                               render_dir, window_size,
-                                              manim_render_timeout)
+                                              manim_render_timeout, config,
+                                              code_fix_round, mllm_check_round)
 
     @staticmethod
     def _render_manim_impl(llm, i, segment, code, audio_duration, work_dir,
-                           render_dir, window_size, manim_render_timeout):
+                           render_dir, window_size, manim_render_timeout,
+                           config, code_fix_round, mllm_check_round):
         scene_name = f'Scene{i+1}'  # sometimes actual_scene_name cannot find matched class, so do not change this name
         logger.info(f'Rendering manim code for: scene_{i + 1}')
         output_dir = os.path.join(render_dir, f'scene_{i + 1}')
@@ -99,7 +109,9 @@ class RenderManim(CodeAgent):
             return output_path
         logger.info(f'Rendering scene {actual_scene_name}')
         fix_history = ''
-        for retry_idx in range(5):
+        mllm_max_check_round = mllm_check_round
+        cur_check_round = 0
+        for retry_idx in range(code_fix_round):
             with open(code_file, 'w') as f:
                 f.write(code)
 
@@ -113,13 +125,14 @@ class RenderManim(CodeAgent):
             cmd = [
                 'manim', 'render', '-ql', '--transparent', '--format=mov',
                 f'--resolution={window_size_str}', '--disable_caching',
-                os.path.basename(code_file), actual_scene_name
+                f'--media_dir={os.path.dirname(code_file)}', code_file,
+                actual_scene_name
             ]
 
             try:
                 process = subprocess.Popen(
                     cmd,
-                    cwd=output_dir,
+                    cwd=getcwd(),
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
@@ -152,7 +165,7 @@ class RenderManim(CodeAgent):
                 logger.info('Trying to fix manim code.')
                 code, fix_history = RenderManim._fix_manim_code_impl(
                     llm, output_text, fix_history, code, manim_requirement,
-                    class_name, content, audio_duration)
+                    class_name, content, audio_duration, segment, i, work_dir)
                 continue
 
             if result.returncode != 0:
@@ -175,7 +188,8 @@ class RenderManim(CodeAgent):
                     logger.info('Trying to fix manim code.')
                     code, fix_history = RenderManim._fix_manim_code_impl(
                         llm, output_text, fix_history, code, manim_requirement,
-                        class_name, content, audio_duration)
+                        class_name, content, audio_duration, segment, i,
+                        work_dir)
                     continue
 
             for root, dirs, files in os.walk(output_dir):
@@ -201,10 +215,33 @@ class RenderManim(CodeAgent):
                 )
                 code, fix_history = RenderManim._fix_manim_code_impl(
                     llm, output_text, fix_history, code, manim_requirement,
-                    class_name, content, audio_duration)
+                    class_name, content, audio_duration, segment, i, work_dir)
             else:
-                break
+                if cur_check_round >= mllm_max_check_round:
+                    break
+                output_text = RenderManim.check_manim_quality(
+                    final_file_path, work_dir, i, config, segment,
+                    cur_check_round)
+                cur_check_round += 1
+                if output_text:
+                    try:
+                        os.remove(final_file_path)
+                        final_file_path = None
+                    except OSError:
+                        pass
+                    logger.info(
+                        f'Trying to fix manim code of segment {i+1}, because model checking not passed: \n{output_text}'
+                    )
+                    code, fix_history = RenderManim._fix_manim_code_impl(
+                        llm, output_text, fix_history, code, manim_requirement,
+                        class_name, content, audio_duration, segment, i,
+                        work_dir)
+                    continue
+                else:
+                    break
         if final_file_path:
+            RenderManim._extract_preview_frames_static(final_file_path, i,
+                                                       work_dir, 'final')
             manim_code_dir = os.path.join(work_dir, 'manim_code')
             manim_file = os.path.join(manim_code_dir, f'segment_{i + 1}.py')
             with open(manim_file, 'w') as f:
@@ -213,9 +250,191 @@ class RenderManim(CodeAgent):
             raise FileNotFoundError(final_file_path)
 
     @staticmethod
+    def check_manim_quality(final_file_path, work_dir, i, config, segment,
+                            cur_check_round):
+        _mm_config = deepcopy(config)
+        delattr(_mm_config, 'llm')
+        _mm_config.llm = DictConfig({})
+        _mm_config.generation_config = DictConfig({'temperature': 0.3})
+        for key, value in _mm_config.mllm.items():
+            key = key[len('mllm_'):]
+            setattr(_mm_config.llm, key, value)
+
+        test_system = """**Role Definition**
+You are a Manim animation layout inspection expert, responsible for checking layout issues in animation frames.
+
+**Background Information**
+- The images you receive are video frames rendered by Manim (intermediate frames or final frames)
+- Video dimensions: 1250×700
+
+**Inspection Focus**
+
+**Critical issues that must be reported:**
+1. Component or text overlap
+2. Components or text being cropped by edges (even slight cropping)
+3. Pay extra attention to components at canvas edges, especially whether title components are being cut off
+4. Parent-child component inconsistency (child elements exceeding parent container boundaries)
+5. Chart element misalignment (pie chart center offset, incorrect bar chart/line chart positioning)
+
+**Secondary issues that should be reported:**
+1. Components with the same function not aligned
+2. Connection line start/end point errors, incorrect arrow direction, lines overlapping with components
+
+**Inspection Rules**
+- Intermediate frames: Focus only on overlap and edge cropping issues, ignore incomplete components
+- Final frames: Check all the above issues
+- Ignore: Aesthetic issues, temporary unreasonable positions caused by animation processes
+- If images exist in the frame but is not mentioned in the manim requirement, this behavior is correct, ignore them
+- Focus only on image position, overlap, and cropping issues, ignoring whether the image content is relevant or correct with the manim requirement
+
+**Output Format**
+
+```
+<description>
+Detailed description of the image content, including the positions of all components and their distances from edges and other components
+</description>
+
+<result>
+List discovered issues and fix suggestions. Leave empty if no issues found.
+</result>
+```
+
+**Example:**
+```
+<description>
+There are four square components in the image. The first component is approximately... from the left edge...
+</description>
+
+<result>
+The right component is squeezed to the edge. Fix suggestion: Reduce the width of the four left components, move the right component further right...
+</result>
+```
+"""# noqa
+
+        test_images = RenderManim._extract_preview_frames_static(
+            final_file_path, i, work_dir, cur_check_round)
+        llm = LLM.from_config(_mm_config)
+
+        frame_names = [
+            'the middle frame of the animation',
+            'the last frame of the animation'
+        ]
+        content = segment['content']
+        manim_requirement = segment['manim']
+
+        all_issues = []
+        for idx, (image_path,
+                  frame_name) in enumerate(zip(test_images, frame_names)):
+            with open(image_path, 'rb') as image_file:
+                image_data = image_file.read()
+                base64_image = base64.b64encode(image_data).decode('utf-8')
+
+            _content = [{
+                'type':
+                'text',
+                'text':
+                (f'The checked frame is: {frame_name} of this animation\n'
+                 f'The content of this animation: {content}\n'
+                 f'The manim animation requirement: {manim_requirement}\n'
+                 f'You must carefully check the animation layout issues.')
+            }, {
+                'type': 'image_url',
+                'image_url': {
+                    'url': f'data:image/png;base64,{base64_image}',
+                    'detail': 'high'
+                }
+            }]
+
+            messages = [
+                Message(role='system', content=test_system),
+                Message(role='user', content=_content),
+            ]
+            response = llm.generate(messages)
+            response_text = response.content
+
+            pattern = r'<result>(.*?)</result>'
+            issues = []
+            for issue in re.findall(pattern, response_text, re.DOTALL):
+                issues.append(issue)
+            issues = '\n'.join(issues).strip()
+            if issues:
+                issues = (f'The checked frame is: {frame_name}\n'
+                          f'Problems found: {issues}\n')
+
+            pattern = r'<description>(.*?)</description>'
+            desc = []
+            for _desc in re.findall(pattern, response_text, re.DOTALL):
+                desc.append(_desc)
+            desc = '\n'.join(desc).strip()
+            if issues and desc:
+                issues = (f'{issues}'
+                          f'The detail description of this frame: {desc}\n')
+            all_issues.append(issues)
+
+        all_issues = '\n\n'.join(all_issues).strip()
+        return all_issues
+
+    @staticmethod
+    def _extract_preview_frames_static(video_path, segment_id, work_dir,
+                                       cur_check_round):
+        from moviepy import VideoFileClip
+
+        test_dir = os.path.join(work_dir, 'manim_test')
+        os.makedirs(test_dir, exist_ok=True)
+        video = VideoFileClip(video_path)
+        duration = video.duration
+
+        timestamps = {1: duration / 2, 2: max(0, duration - 0.5)}
+
+        preview_paths = []
+        for frame_idx, timestamp in timestamps.items():
+            output_path = os.path.join(
+                test_dir,
+                f'segment_{segment_id + 1}_round{cur_check_round}_{frame_idx}.png'
+            )
+            video.save_frame(output_path, t=timestamp)
+            preview_paths.append(output_path)
+        video.close()
+        return preview_paths
+
+    @staticmethod
+    def get_image_size(filename):
+        with Image.open(filename) as img:
+            return f'{img.width}x{img.height}'
+
+    @staticmethod
+    def get_all_images_info(segment, i, image_dir):
+        all_images_info = []
+        foreground = segment.get('foreground', [])
+        for idx, _req in enumerate(foreground):
+            foreground_image = os.path.join(
+                image_dir, f'illustration_{i + 1}_foreground_{idx + 1}.png')
+            size = RenderManim.get_image_size(foreground_image)
+            image_info = {
+                'filename': foreground_image,
+                'size': size,
+                'description': _req,
+            }
+            all_images_info.append(image_info)
+
+        image_info_file = os.path.join(
+            os.path.dirname(image_dir), 'image_info.txt')
+        if os.path.exists(image_info_file):
+            with open(image_info_file, 'r') as f:
+                for line in f.readlines():
+                    if not line.strip():
+                        continue
+                    image_info = json.loads(line)
+                    if image_info['filename'] in segment.get('user_image', []):
+                        all_images_info.append(image_info)
+        return all_images_info
+
+    @staticmethod
     def _fix_manim_code_impl(llm, error_log, fix_history, manim_code,
                              manim_requirement, class_name, content,
-                             audio_duration):
+                             audio_duration, segment, i, work_dir):
+        image_dir = os.path.join(work_dir, 'images')
+        images_info = RenderManim.get_all_images_info(segment, i, image_dir)
         fix_request = f"""You are a professional code debugging specialist. You need to help me fix issues in the code. Error messages will be passed directly to you. You need to carefully examine the problems and provide the correct, complete code.
 {error_log}
 
@@ -229,16 +448,44 @@ class RenderManim(CodeAgent):
 **Original code task**: Create manim animation
 - Class name: {class_name}
 - Content: {content}
-- Extra requirement: {manim_requirement}
 - Duration: {audio_duration} seconds
 - Code language: **Python**
+- ImageInfo:
 
-- Please focus on solving the detected issues
-- If you find other issues, fix them too
-- Keep the good parts, do minimum changes, only fix problematic areas
-- Ensure no new layout issues are introduced
-- If some issues are difficult to solve, prioritize the most impactful ones
-- There may be some beginner's error because the code was generated by an AI model
+{images_info}
+
+These images must be used.
+
+Manim instructions:
+
+* Canvas size: (1250, 700) (width x height) which is the top 3/4 of screen, bottom is left for subtitles
+* Ensure all content stays within safe bounds x∈(-6.0, 6.0), y∈(-3.4, 3.4) with minimum buff=0.5 from any edge to prevent cropping.
+* [CRITICAL]Absolutely prevent **element spatial overlap** or **elements going out of bounds** or **elements not aligned**.
+* [CRITICAL]Connection lines between boxes/text are of proper length, with **both endpoints attached to the objects**.
+* All boxes must have thick strokes for clear visibility
+* Keep text within frame by controlling font sizes. Use smaller fonts for Latin script than Chinese due to longer length.
+* Ensure all pie chart pieces share the same center coordinates. Previous pie charts were drawn incorrectly.
+* Use clear, high-contrast font colors to prevent text from blending with the background
+* Use a cohesive color palette of 2-4 colors for the entire video. Avoid cluttered colors, bright blue, and bright yellow. Prefer deep, dark tones
+* Low-quality animations such as stick figures are forbidden
+* Scale the images
+    a. The image size on the canvas depend on its importance, important image occupies more spaces
+    b. Recommended size is from 1/8 to 1/4 on the canvas. If the image if the one unique element, the size can reach 1/2 or more
+
+**Color Suggestions**:
+* You need to explicitly specify element colors and make these colors coordinated and elegant in style.
+* Consider the advices from the storyboard designer.
+
+Fixing detected issues, plus any other problems you find. Verify:
+* All elements follow instructions
+* No overlapping or edge cutoff, **ensure all manim elements after rendering are within x∈(-6.0, 6.0), y∈(-3.4, 3.4)**
+* No new layout issues introduced
+* Prioritize high-impact fixes if needed
+* Make minimal code changes to fix the issue while keeping the correct parts unchanged
+* Watch for AI-generated code errors
+* If the problem is hard to solve, rewrite the code
+* The code may contain images & image effects, such as glowing or frames
+    - **don't remove any image or its effects when making modifications**
 
 Please precisely fix the detected issues while maintaining the richness and creativity of the animation.
 """ # noqa

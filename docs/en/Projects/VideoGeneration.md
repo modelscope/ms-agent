@@ -27,9 +27,9 @@ SingularityCinema generates scripts and storyboards based on large language mode
 
 ### Compatibility
 
-- Short video types: Educational, economic videos, especially those containing charts, formulas, and principle explanations
+- Short video types: Wide compatibility - popular science, economics, daily life videos are all supported, especially videos containing charts, formulas, images, and explanatory content
 - Language: No restrictions, subtitles and voice follow your original query and document materials
-- Reading external materials: Supports plain text, does not support multimodal
+- Reading external materials: Supports plain text and text-with-images, can utilize images in short videos
 - Secondary development: Complete code is in stepN/agent.py with no license restrictions, free for secondary development and commercial use
   - Please note and comply with the commercial licenses of background music and fonts you use
 
@@ -37,6 +37,7 @@ SingularityCinema generates scripts and storyboards based on large language mode
 
 - LLM test range: Claude, effects with other models untested
 - AIGC model test range: Qwen-Image, effects with other models untested
+- Multimodal model testing scope: Gemini-flash-2.5, other models have not been tested
 
 ## Running
 
@@ -56,6 +57,12 @@ The default model is currently Qwen-Image. The ModelScope API Key can be applied
 
 ```shell
 T2I_API_KEY=ms-xxx-xxx
+```
+
+### Prepare a Multimodal Large Model for Image Understanding and Quality Detection
+
+```shell
+MLLM_OPENAI_API_KEY=xxx-xxx
 ```
 
 2. Prepare your short video materials
@@ -78,7 +85,7 @@ Generate a short video describing large language model technology, read /home/us
 ms-agent run --config "projects/singularity_cinema" --query "Your custom theme, see description above" --load_cache true --trust_remote_code true
 ```
 
-4. The run takes approximately 20 minutes. The video is generated at output/final_video.mp4. After generation, you can review this file, compile the parts that don't meet requirements, input them into the command line input, and the workflow will continue improving. If requirements are met, input quit or exit and the program will automatically terminate.
+4. The run takes approximately 30-40 minutes. The video is generated at output/final_video.mp4. After generation, you can review this file, compile any unsatisfactory aspects, input them into the command line input, and the workflow will continue to improve. If requirements are met, input quit or exit and the program will automatically terminate.
 
 5. If the execution fails, such as URL call timeout or file generation failure, you can re-run the command above. ms-agent saves execution information in the output/memory folder, and after re-running the command, it will continue from where it failed.
     * If you want to regenerate from scratch, please rename or move the output folder elsewhere, or delete the corresponding memory and input files.
@@ -88,38 +95,42 @@ ms-agent run --config "projects/singularity_cinema" --query "Your custom theme, 
 
 1. Generate basic script based on user requirements
     * Input: User requirements, may read user-specified files
-    * Output: Script file script.txt, original requirement file topic.txt, short video name file title.txt
-2. Split storyboard design based on script
-    * Input: topic.txt, script.txt
-    * Output: segments.txt, storyboard list describing narration, background image generation requirements, foreground manim animation requirements
-3. Generate audio narration for storyboards
+    * Output: Script file script.txt, original requirements file topic.txt, short video name file title.txt, file list docs.txt
+2. Parse image content using multimodal model
+    * Input: File list docs.txt
+    * Output: Image information list image_info.txt
+3. Segment design based on script
+    * Input: topic.txt, script.txt, image_info.txt
+    * Output: segments.txt, describing narration, background image generation requirements, foreground manim animation requirements, foreground image requirements segment list
+4. Generate audio narration for segments
     * Input: segments.txt
     * Output: audio/audio_N.mp3 list, N is segment number starting from 1, and root directory audio_info.txt containing audio duration
-4. Generate manim animation code based on voice duration
-    * Input: segments.txt, audio_info.txt
-    * Output: Manim code file list manim_code/segment_N.py, N is segment number starting from 1
-5. Fix manim code
-    * Input: manim_code/segment_N.py N is segment number starting from 1, code_fix/code_fix_N.txt error prediction file
-    * Output: Updated manim_code/segment_N.py files
-6. Render manim code
-    * Input: manim_code/segment_N.py
-    * Output: manim_render/scene_N folder list, if segments.txt contains manim requirements for a step, the corresponding folder will have a manim.mov file
-7. Generate text-to-image prompts
+5. Generate text-to-image prompts
     * Input: segments.txt
     * Output: illustration_prompts/segment_N.txt, N is segment number starting from 1
-8. Text-to-image
+6. Text-to-image generation
     * Input: illustration_prompts/segment_N.txt list
     * Output: images/illustration_N.png list, N is segment number starting from 1
-9. Generate subtitles
+7. Generate manim animation code based on audio duration
+    * Input: segments.txt, audio_info.txt, image_info.txt
+    * Output: manim code file list manim_code/segment_N.py, N is segment number starting from 1
+8. Fix manim code
+    * Input: manim_code/segment_N.py N is segment number starting from 1, code_fix/code_fix_N.txt manual feedback error file
+    * Output: Updated manim_code/segment_N.py file
+    * Note: This step is skipped on first execution, only used for manual feedback
+9. Render manim code
+    * Input: manim_code/segment_N.py
+    * Output: manim_render/scene_N folder list, if segments.txt contains manim requirements for a step, the corresponding folder will have a manim.mov file
+10. Generate subtitles
     * Input: segments.txt
     * Output: subtitles/bilingual_subtitle_N.png list, N is segment number starting from 1
-10. Generate background, a solid color image with short video title and slogans
+11. Generate background, a solid color image with short video title and slogans
     * Input: title.txt
     * Output: background.jpg
-11. Composite complete video
+12. Composite final video
     * Input: All previous file information
     * Output: final_video.mp4
-12. Human feedback
+13. Manual feedback
 
 ## Adjustable Parameters
 
@@ -141,3 +152,6 @@ Some important parameters are listed below:
 - subtitle_lang: Multilingual subtitle language, if not set, no translation is performed
 - slogan: Displayed on the right side of the screen, generally shows producer name and short video collection
 - fonts: The recommended fonts list
+- mllm: Same configuration items as llm, only with mllm_ prefix added at the front, used to configure multimodal large model
+- code_fix_round: Code fix rounds, used for fixing code when rendering manim code, will report error if still not fixed after exceeding rounds, default is 5
+- mllm_fix_round: Number of rounds using MLLM for animation detection, default is 1

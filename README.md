@@ -17,7 +17,7 @@
     <img src='https://readthedocs.org/projects/ms-agent/badge/?version=latest' alt='Documentation Status' />
 </a>
 <a href="https://github.com/modelscope/ms-agent/actions?query=branch%3Amaster+workflow%3Acitest++"><img src="https://img.shields.io/github/actions/workflow/status/modelscope/ms-agent/citest.yaml?branch=master&logo=github&label=CI"></a>
-<a href="https://github.com/modelscope/ms-agent/blob/main/LICENSE"><img src="https://img.shields.io/github/license/modelscope/ms-agent"></a>
+<a href="https://github.com/modelscope/ms-agent/blob/main/LICENSE"><img src="https://img.shields.io/github/license/modelscope/modelscope-agent"></a>
 <a href="https://github.com/modelscope/ms-agent/pulls"><img src="https://img.shields.io/badge/PR-welcome-55EB99.svg"></a>
 <a href="https://pypi.org/project/ms-agent/"><img src="https://badge.fury.io/py/ms-agent.svg"></a>
 <a href="https://pepy.tech/project/ms-agent"><img src="https://static.pepy.tech/badge/ms-agent"></a>
@@ -508,7 +508,7 @@ Singularity Cinema is an Agent-powered workflow for generating short videos, cap
 **Usage Example**:
 
 ```bash
-OPENAI_API_KEY=xxx-xxx T2I_API_KEY=ms-xxx-xxx ms-agent run --config "projects/singularity_cinema" --query "Your custom topic" --load_cache true --trust_remote_code true
+OPENAI_API_KEY=xxx-xxx T2I_API_KEY=ms-xxx-xxx MANIM_TEST_API_KEY=xxx-xxx ms-agent run --config "projects/singularity_cinema" --query "Your custom topic" --load_cache true --trust_remote_code true
 ```
 
 **Results**:

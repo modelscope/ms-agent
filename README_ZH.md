@@ -13,11 +13,11 @@
 
 <p align="center">
 <img src="https://img.shields.io/badge/python-%E2%89%A53.10-5be.svg">
-<a href='https://ms-agent-en.readthedocs.io/en/latest/'>
+<a href='https://ms-agent.readthedocs.io/zh-cn/latest/'>
     <img src='https://readthedocs.org/projects/ms-agent/badge/?version=latest' alt='Documentation Status' />
 </a>
 <a href="https://github.com/modelscope/ms-agent/actions?query=branch%3Amaster+workflow%3Acitest++"><img src="https://img.shields.io/github/actions/workflow/status/modelscope/ms-agent/citest.yaml?branch=master&logo=github&label=CI"></a>
-<a href="https://github.com/modelscope/ms-agent/blob/main/LICENSE"><img src="https://img.shields.io/github/license/modelscope/ms-agent"></a>
+<a href="https://github.com/modelscope/ms-agent/blob/main/LICENSE"><img src="https://img.shields.io/github/license/modelscope/modelscope-agent"></a>
 <a href="https://github.com/modelscope/ms-agent/pulls"><img src="https://img.shields.io/badge/PR-welcome-55EB99.svg"></a>
 <a href="https://pypi.org/project/ms-agent/"><img src="https://badge.fury.io/py/ms-agent.svg"></a>
 <a href="https://pepy.tech/project/ms-agent"><img src="https://static.pepy.tech/badge/ms-agent"></a>
@@ -506,7 +506,7 @@ aggregator:
 
 
 ```bash
-OPENAI_API_KEY=xxx-xxx T2I_API_KEY=ms-xxx-xxx ms-agent run --config "projects/singularity_cinema" --query "你的自定义主题" --load_cache true --trust_remote_code true
+OPENAI_API_KEY=xxx-xxx T2I_API_KEY=ms-xxx-xxx MANIM_TEST_API_KEY=xxx-xxx ms-agent run --config "projects/singularity_cinema" --query "你的自定义主题" --load_cache true --trust_remote_code true
 ```
 
 **运行结果**：
