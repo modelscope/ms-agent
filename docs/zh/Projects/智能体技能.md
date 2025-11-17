@@ -160,7 +160,7 @@ def main():
     """
     work_dir: str = './temp_workspace'
     # Refer to `https://github.com/modelscope/ms-agent/tree/main/projects/agent_skills/skills`
-    skills_dir: str = './skills'
+    skill_id_or_dir: str = './skills'
     use_sandbox: bool = True
 
     ## Configuration for ModelScope API-Inference, or set your own model with OpenAI API compatible format
@@ -173,7 +173,7 @@ def main():
         # Use a skill from ModelScope Hub by its ID. A list of IDs is also supported. e.g. `ms-agent/skill_examples`
         # To use local skills, provide the path to the directory, e.g., skills='./skills'
         # For more details on skill IDs, see: https://modelscope.cn/models/ms-agent/skill_examples
-        skills=skills_dir,
+        skills=skill_id_or_dir,
         model=model,
         api_key=os.getenv('OPENAI_API_KEY', api_key),
         base_url=os.getenv('OPENAI_BASE_URL', base_url),
