@@ -61,7 +61,6 @@ Only return the prompt itself, do not add any other explainations or marks."""  
         logger.info('Generating illustration prompts.')
 
         tasks = [(i, segment) for i, segment in enumerate(segments)]
-        illustration_prompts = [''] * len(segments)
 
         with ThreadPoolExecutor(max_workers=self.num_parallel) as executor:
             futures = {
@@ -71,15 +70,7 @@ Only return the prompt itself, do not add any other explainations or marks."""  
                 for i, segment in tasks
             }
             for future in as_completed(futures):
-                i, prompt = future.result()
-                illustration_prompts[i] = prompt
-
-        assert len(illustration_prompts) == len(segments)
-        for i, prompt in enumerate(illustration_prompts):
-            with open(
-                    os.path.join(self.illustration_prompts_dir,
-                                 f'segment_{i+1}.txt'), 'w') as f:
-                f.write(prompt)
+                future.result()
         return messages
 
     @staticmethod
@@ -88,18 +79,17 @@ Only return the prompt itself, do not add any other explainations or marks."""  
                                               illustration_prompts_dir):
         """Static method for multiprocessing"""
         llm = LLM.from_config(config)
-        return GenerateIllustrationPrompts._generate_illustration_impl(
+        GenerateIllustrationPrompts._generate_illustration_impl(
             llm, i, segment, style, system, illustration_prompts_dir)
+        GenerateIllustrationPrompts._generate_foreground_impl(
+            llm, i, segment, system, illustration_prompts_dir)
 
     @staticmethod
     def _generate_illustration_impl(llm, i, segment, style, system,
                                     illustration_prompts_dir):
         if os.path.exists(
                 os.path.join(illustration_prompts_dir, f'segment_{i+1}.txt')):
-            with open(
-                    os.path.join(illustration_prompts_dir,
-                                 f'segment_{i+1}.txt'), 'r') as f:
-                return i, f.read()
+            return
         background = segment['background']
         manim_query = ''
         if segment.get('manim'):
@@ -119,4 +109,41 @@ Only return the prompt itself, do not add any other explainations or marks."""  
         ]
         _response_message = llm.generate(inputs)
         response = _response_message.content
-        return i, response.strip()
+        prompt = response.strip()
+        with open(
+                os.path.join(illustration_prompts_dir, f'segment_{i + 1}.txt'),
+                'w') as f:
+            f.write(prompt)
+
+    @staticmethod
+    def _generate_foreground_impl(llm, i, segment, system,
+                                  illustration_prompts_dir):
+        foreground = segment['foreground']
+        for idx, _req in enumerate(foreground):
+            if os.path.exists(
+                    os.path.join(illustration_prompts_dir,
+                                 f'segment_{i+1}_foreground_{idx+1}.txt')):
+                return
+            manim_query = ''
+            if segment.get('manim'):
+                manim_query = (
+                    f'There is a manim animation which will use this generated image: {segment["manim"]}'
+                )
+            query = (f'illustration based on: {segment["content"]}, '
+                     f'{manim_query}, '
+                     f'Requirements from the storyboard designer: {_req}')
+            logger.info(
+                f'Generating foreground_{idx} illustration prompt for : {segment["content"]}.'
+            )
+            inputs = [
+                Message(role='system', content=system),
+                Message(role='user', content=query),
+            ]
+            _response_message = llm.generate(inputs)
+            response = _response_message.content
+            prompt = response.strip()
+            with open(
+                    os.path.join(illustration_prompts_dir,
+                                 f'segment_{i+1}_foreground_{idx+1}.txt'),
+                    'w') as f:
+                f.write(prompt)

@@ -75,10 +75,12 @@ class GenerateImages(CodeAgent):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            result = loop.run_until_complete(
+            loop.run_until_complete(
                 GenerateImages._process_single_illustration_impl(
                     i, segment, prompt, config, images_dir, fusion_name))
-            return result
+            loop.run_until_complete(
+                GenerateImages._process_foreground_illustration_impl(
+                    i, segment, config, images_dir))
         finally:
             loop.close()
 
@@ -104,6 +106,30 @@ class GenerateImages(CodeAgent):
             os.remove(img_path)
         except OSError:
             pass
+
+    @staticmethod
+    async def _process_foreground_illustration_impl(i, segment, config,
+                                                    images_dir):
+        """Implementation of foreground illustration processing"""
+        logger.info(f'Generating foreground image for: segment {i}.')
+        foreground = segment['foreground']
+        work_dir = getattr(config, 'output_dir', 'output')
+        illustration_prompts_dir = os.path.join(work_dir,
+                                                'illustration_prompts')
+        for idx, _req in enumerate(foreground):
+            foreground_image = os.path.join(
+                images_dir, f'illustration_{i + 1}_foreground_{idx + 1}.png')
+            if os.path.exists(foreground_image):
+                continue
+
+            foreground_prompt_path = os.path.join(
+                illustration_prompts_dir,
+                f'segment_{i+1}_foreground_{idx+1}.txt')
+            with open(foreground_prompt_path, 'r') as f:
+                prompt = f.read()
+            await GenerateImages._generate_images_impl(prompt,
+                                                       foreground_image,
+                                                       config)
 
     @staticmethod
     async def _generate_images_impl(prompt,
