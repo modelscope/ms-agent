@@ -70,8 +70,7 @@ class LocalKernelSession:
 
         start_kernel_result = self._km.start_kernel(
             extra_arguments=self.extra_arguments,
-            env=self.
-            env,  # Must be passed in to isolate local environment variables
+            env=self.env,
         )
         if inspect.isawaitable(start_kernel_result):
             await start_kernel_result
