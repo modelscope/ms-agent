@@ -93,7 +93,7 @@ prompt:
     </Tool_Calling_Protocol>
 
     <Safety_Constraints>
-    - When using the code_executor server, you can only access directories mounted inside the sandbox (i.e., /data/...).
+    - When using the code_executor server, you can only access directories under <DATA_ROOT>/.
     - When using the file_system server, you can only access contents within the tool's default working directory.
     - Due to API limitations, data retrieval often fails — never generate data on your own when it cannot be obtained.
     - Never attempt to call a tool with unsupported arguments.

@@ -1,5 +1,6 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import os
+from pathlib import Path
 from typing import List
 
 import json
@@ -19,10 +20,23 @@ class CollectorCallback(Callback):
     def __init__(self, config: DictConfig):
         super().__init__(config)
 
+    def _resolve_data_root(self) -> str:
+        code_exec_cfg = getattr(
+            getattr(self.config, 'tools', {}), 'code_executor', None)
+        impl = getattr(code_exec_cfg, 'implementation',
+                       'sandbox') if code_exec_cfg else 'sandbox'
+
+        if isinstance(impl, str) and impl.lower() == 'sandbox':
+            return '/data'
+        output_dir = getattr(self.config, 'output_dir', './output')
+        return str(Path(output_dir).expanduser().absolute())
+
     async def on_task_begin(self, runtime: Runtime, messages: List[Message]):
         for message in messages:
             if message.role == 'system':
                 message.content = message.content.replace('\\\n', '')
+                message.content = message.content.replace(
+                    '<DATA_ROOT>', self._resolve_data_root())
 
         if os.path.exists(os.path.join(self.config.output_dir, 'plan.json')):
             with open(os.path.join(self.config.output_dir, 'plan.json'),
