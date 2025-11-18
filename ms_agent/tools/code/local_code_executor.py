@@ -389,13 +389,13 @@ class LocalCodeExecutionTool(ToolBase):
                 Tool(
                     tool_name='python_executor',
                     server_name='code_executor',
-                    description=(
-                        'Execute stateless Python code locally. '
-                        'Each call runs in an isolated environment without '
-                        'persisting context between invocations. '
-                        'Supports pandas, numpy, matplotlib, seaborn and other '
-                        'libraries you need for data analysis. '
-                        'Use print() to output results.'),
+                    description=
+                    ('Execute stateless Python code locally. '
+                     'Each call runs in an isolated environment without '
+                     'persisting context between invocations. '
+                     'Supports pandas, numpy, matplotlib, seaborn, and other '
+                     'libraries you need for data analysis. '
+                     'Use print() to output results.'),
                     parameters={
                         'type': 'object',
                         'properties': {
