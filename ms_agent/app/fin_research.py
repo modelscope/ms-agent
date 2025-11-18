@@ -73,26 +73,84 @@ def _task_log_context(value: Optional[str]):
             _fin_log_context.value = prev
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[0]
+PROJECT_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = Path(__file__).resolve().parents[2]
-FIN_RESEARCH_CONFIG_DIR = PROJECT_ROOT / 'projects' / 'fin_research'
-if not FIN_RESEARCH_CONFIG_DIR.exists():
-    FIN_RESEARCH_CONFIG_DIR = REPO_ROOT / 'projects' / 'fin_research'
-BASE_WORKDIR = PROJECT_ROOT / 'temp_workspace'
+
+# Optional override for where the FinResearch YAML configs live.
+# This makes it possible to:
+# - Run inside the original ms-agent repo (configs in <repo>/projects/fin_research)
+# - Run from a standalone FinResearch repo that vendors projects/fin_research
+# - Or point to an arbitrary config directory via environment variable.
+FIN_CONFIG_DIR_ENV = 'FIN_RESEARCH_CONFIG_DIR'
+
+
+def _resolve_fin_research_config_dir() -> Path:
+    """Locate the fin_research workflow config directory in a flexible way.
+
+    Priority:
+    1) FIN_RESEARCH_CONFIG_DIR env var, if it exists and is a valid path.
+    2) Local `projects/fin_research` next to this file (standalone FinResearch repo layout).
+    3) Legacy layout: <repo_root>/projects/fin_research (original ms-agent repo).
+    4) (Best-effort) packaged resources under `ms_agent.projects.fin_research`.
+    """
+    # 1) Explicit env override
+    env_dir = os.environ.get(FIN_CONFIG_DIR_ENV)
+    if env_dir:
+        candidate = Path(env_dir).expanduser()
+        if candidate.exists():
+            return candidate
+
+    # 2) Standalone FinResearch repo layout: ./projects/fin_research
+    local_projects = PROJECT_ROOT / 'projects' / 'fin_research'
+    if local_projects.exists():
+        return local_projects
+
+    # 3) Original ms-agent repo layout: <repo_root>/projects/fin_research
+    repo_projects = REPO_ROOT / 'projects' / 'fin_research'
+    if repo_projects.exists():
+        return repo_projects
+
+    # 4) Optional: packaged as resources inside the installed ms_agent wheel
+    try:
+        import importlib.resources as resources  # py3.9+
+        pkg_dir = resources.files('ms_agent.projects.fin_research')
+        # Some resource backends return an abstract Traversable; convert to Path when possible.
+        try:
+            pkg_path = Path(pkg_dir)
+        except TypeError:
+            pkg_path = Path(str(pkg_dir))
+        if pkg_path.exists():
+            return pkg_path
+    except Exception:
+        # Swallow all errors here; we'll fall through to the explicit error below.
+        pass
+
+    raise RuntimeError(
+        'Unable to locate FinResearch config directory. '
+        f'Please set the environment variable {FIN_CONFIG_DIR_ENV} to the path '
+        'of the "projects/fin_research" directory.'
+    )
+
+
+FIN_RESEARCH_CONFIG_DIR = _resolve_fin_research_config_dir()
+SEARCH_ENGINE_OVERRIDE_ENV = 'FIN_RESEARCH_SEARCH_ENGINE'
+_default_workdir = PROJECT_ROOT / 'temp_workspace'
+BASE_WORKDIR = Path(os.environ.get('FIN_RESEARCH_WORKDIR',
+                                   str(_default_workdir)))
+
 GRADIO_DEFAULT_CONCURRENCY_LIMIT = int(
     os.environ.get('GRADIO_DEFAULT_CONCURRENCY_LIMIT', '3'))
 # Maximum number of concurrent FinResearch tasks allowed globally.
 FIN_MAX_CONCURRENT_TASKS = int(
     os.environ.get('FIN_MAX_CONCURRENT_TASKS', '3'))
 LOCAL_MODE = os.environ.get('LOCAL_MODE', 'true').lower() == 'true'
-SEARCH_ENGINE_OVERRIDE_ENV = 'FIN_RESEARCH_SEARCH_ENGINE'
+
 FIN_STATUS_TIMER_SIGNAL_ID = 'fin-status-timer-signal'
 DEFAULT_TIMER_SIGNAL = json.dumps({'start': 0, 'elapsed': 0})
 
 AGENT_SEQUENCE = [
     'orchestrator', 'searcher', 'collector', 'analyst', 'aggregator'
 ]
-
 AGENT_LABELS = {
     'orchestrator': 'Orchestrator - 解析任务并拆解计划',
     'searcher': 'Searcher - 舆情与资讯深度研究',
@@ -100,7 +158,6 @@ AGENT_LABELS = {
     'analyst': 'Analyst - 量化与可视化分析',
     'aggregator': 'Aggregator - 汇总生成综合报告'
 }
-
 AGENT_DUTIES = {
     'orchestrator': '解析任务并创建研究计划',
     'searcher': '进行舆情/新闻/资料搜索与梳理',
@@ -2483,7 +2540,7 @@ def create_interface():
 
 
 def launch_server(server_name: Optional[str] = '0.0.0.0',
-                  server_port: Optional[int] = 7861,
+                  server_port: Optional[int] = 7860,
                   share: bool = False):
     demo = create_interface()
     demo.queue(default_concurrency_limit=GRADIO_DEFAULT_CONCURRENCY_LIMIT)
@@ -2491,4 +2548,4 @@ def launch_server(server_name: Optional[str] = '0.0.0.0',
 
 
 if __name__ == '__main__':
-    launch_server(server_name='0.0.0.0', server_port=7861, share=False)
+    launch_server(server_name='0.0.0.0', server_port=7860, share=False)
