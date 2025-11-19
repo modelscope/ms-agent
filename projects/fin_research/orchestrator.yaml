@@ -25,6 +25,7 @@ prompt:
     - Scope of the task, e.g. entities, time horizon, market, etc.
       - Do not guess any information about the scope, only use the information provided in the user's question.
       - Do not guess stock codes or indexes.
+    - Final report language: Match the language of the user's question or user's language preference.
     - Output under "task_description".
 
     2.Financial Data Dimension
@@ -57,7 +58,8 @@ prompt:
           "entities": ["TSLA"],
           "time_horizon": "last 6 months",
           "markets": ["US"]
-        }
+        },
+        "report_language": "English"
       },
       "financial_data_dimension": {
         "data_requirements": [
@@ -66,7 +68,7 @@ prompt:
           "Analyst consensus on EV sector growth"
         ],
         "analysis_tasks": [
-          "Compare Tesla’s quarterly performance to competitors",
+          "Compare Tesla's quarterly performance to competitors",
           "Conduct time-series volatility analysis"
         ]
       },

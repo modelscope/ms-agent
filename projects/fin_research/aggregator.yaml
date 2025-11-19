@@ -63,7 +63,8 @@ prompt:
     </Task_Workflow>
 
     <Tool_Calling_Protocol>
-    - **Every turn MUST include at least one tool call**, unless you're providing the final report.
+    - **Every turn MUST include at least one tool call — without exception — unless you are producing the final report. \
+    Failure to call a tool in any non-final-report turn is considered a violation of the protocol.**
     - Retrieve principles depending on the principle_skill server.
     - To reduce the number of conversation turns, multiple tools can be invoked simultaneously within a single turn when necessary.
     - When using the file_system---write_file tool, pass an empty string ('') to the path argument to use the default working directory.

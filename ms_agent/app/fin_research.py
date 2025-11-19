@@ -3,6 +3,7 @@
 # yapf: disable
 import asyncio
 import base64
+import html
 import logging
 import os
 import re
@@ -506,7 +507,8 @@ def convert_markdown_images_to_file_info(markdown_content: str,
     return re.sub(pattern, replace_image, markdown_content)
 
 
-def convert_markdown_to_html(markdown_content: str) -> str:
+def _render_markdown_html_core(markdown_content: str,
+                               add_permalink: bool = True) -> Tuple[str, str]:
     latex_placeholders = {}
     placeholder_counter = 0
 
@@ -532,14 +534,15 @@ def convert_markdown_to_html(markdown_content: str) -> str:
         'markdown.extensions.toc', 'markdown.extensions.tables',
         'markdown.extensions.fenced_code', 'markdown.extensions.nl2br'
     ]
+    toc_config: Dict[str, Any] = {'permalink': True}
+    if not add_permalink:
+        toc_config['permalink'] = False
     extension_configs = {
         'markdown.extensions.codehilite': {
             'css_class': 'highlight',
             'use_pygments': True
         },
-        'markdown.extensions.toc': {
-            'permalink': True
-        }
+        'markdown.extensions.toc': toc_config
     }
     md = markdown.Markdown(
         extensions=extensions, extension_configs=extension_configs)
@@ -547,8 +550,11 @@ def convert_markdown_to_html(markdown_content: str) -> str:
     for placeholder, latex_formula in latex_placeholders.items():
         html_content = html_content.replace(placeholder, latex_formula)
     container_id = f'katex-content-{int(time.time() * 1_000_000)}'
+    return html_content, container_id
 
-    styled_html = f"""
+
+def _build_inline_markdown_html(html_content: str, container_id: str) -> str:
+    return f"""
     <div class="markdown-html-content" id="{container_id}">
         <link rel="stylesheet"
               href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"
@@ -588,7 +594,217 @@ def convert_markdown_to_html(markdown_content: str) -> str:
         </script>
     </div>
     """
-    return styled_html
+
+
+def convert_markdown_to_html(markdown_content: str) -> str:
+    html_content, container_id = _render_markdown_html_core(markdown_content)
+    return _build_inline_markdown_html(html_content, container_id)
+
+
+def build_exportable_report_html(markdown_content: str,
+                                 title: str = 'FinResearch 综合报告') -> str:
+    effective_title = (title or '').strip() or 'FinResearch 综合报告'
+    safe_title = html.escape(effective_title, quote=True)
+    markdown_for_render = markdown_content
+    stripped = markdown_content.lstrip()
+    if stripped.startswith('#'):
+        first_line, _, remainder = stripped.partition('\n')
+        heading_match = re.match(r'#\s+(.+)', first_line.strip())
+        if heading_match and heading_match.group(1).strip() == effective_title:
+            markdown_for_render = remainder.lstrip('\r\n')
+    html_content, container_id = _render_markdown_html_core(
+        markdown_for_render, add_permalink=False)
+    generated_ts = datetime.now().strftime('%Y-%m-%d %H:%M')
+    base_css = """
+    :root {
+        color-scheme: light;
+    }
+    body {
+        margin: 0;
+        padding: 36px 16px 64px;
+        background: #f4f6fb;
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display',
+            'PingFang SC', 'Microsoft YaHei', sans-serif;
+        color: #0f172a;
+        line-height: 1.75;
+    }
+    .report-page {
+        min-height: 100vh;
+    }
+    .report-shell {
+        max-width: 960px;
+        margin: 0 auto;
+        background: #ffffff;
+        border-radius: 28px;
+        box-shadow: 0 30px 65px rgba(15, 23, 42, 0.08);
+        padding: 52px 60px 64px;
+    }
+    .report-header {
+        border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+        margin-bottom: 32px;
+        padding-bottom: 28px;
+    }
+    .report-subtitle {
+        font-size: 0.95rem;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: #64748b;
+        margin: 0 0 8px;
+    }
+    .report-header h1 {
+        font-size: 2.25rem;
+        margin: 0 0 10px;
+        color: #0f172a;
+    }
+    .report-meta {
+        margin: 0;
+        color: #94a3b8;
+        font-size: 0.95rem;
+    }
+    .markdown-html-content .content-area {
+        max-width: 720px;
+        margin: 0 auto;
+        font-size: 1.02rem;
+    }
+    .markdown-html-content h2,
+    .markdown-html-content h3,
+    .markdown-html-content h4 {
+        color: #0f172a;
+        margin-top: 2.4rem;
+        margin-bottom: 1rem;
+    }
+    .markdown-html-content p {
+        margin: 1rem 0;
+    }
+    .markdown-html-content img {
+        max-width: 100%;
+        display: block;
+        margin: 1.5rem auto;
+        border-radius: 16px;
+        box-shadow: 0 20px 40px rgba(15, 23, 42, 0.12);
+    }
+    .markdown-html-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1.5rem 0;
+        font-size: 0.95rem;
+    }
+    .markdown-html-content table th,
+    .markdown-html-content table td {
+        border: 1px solid rgba(15, 23, 42, 0.15);
+        padding: 12px 16px;
+        text-align: left;
+    }
+    .markdown-html-content blockquote {
+        border-left: 4px solid #6366f1;
+        padding: 0.5rem 1.5rem;
+        background: rgba(99, 102, 241, 0.08);
+        border-radius: 0 18px 18px 0;
+        margin: 1.5rem 0;
+        color: #312e81;
+    }
+    pre,
+    code {
+        font-family: 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas,
+            'Liberation Mono', monospace;
+    }
+    pre {
+        padding: 18px 20px;
+        background: #0f172a;
+        color: #e2e8f0;
+        border-radius: 18px;
+        overflow-x: auto;
+        font-size: 0.9rem;
+    }
+    code {
+        background: rgba(99, 102, 241, 0.12);
+        color: #4c1d95;
+        padding: 2px 6px;
+        border-radius: 6px;
+    }
+    .codehilite {
+        background: #0f172a;
+        color: #f8fafc;
+        border-radius: 18px;
+        padding: 18px 22px;
+        overflow-x: auto;
+    }
+    .codehilite .hll { background-color: #4c1d95; }
+    .codehilite .c { color: #94a3b8; }
+    .codehilite .k { color: #a5b4fc; }
+    .codehilite .s { color: #f9a8d4; }
+    .codehilite .o,
+    .codehilite .p { color: #cbd5f5; }
+    @media (max-width: 768px) {
+        .report-shell {
+            padding: 32px 24px 48px;
+        }
+        .markdown-html-content .content-area {
+            max-width: 100%;
+        }
+    }
+    """
+    return f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{safe_title}</title>
+    <style>
+    {base_css}
+    </style>
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"
+          integrity="sha384-n8MVd4RsNIU0tAv4ct0nTaAbDJwPJzDEaqSD1odI+WdtXRGWt2kTvGFasHpSy3SV"
+          crossorigin="anonymous">
+</head>
+<body>
+    <div class="report-page">
+        <div class="report-shell">
+            <header class="report-header">
+                <p class="report-subtitle">FinResearch</p>
+                <h1>{safe_title}</h1>
+                <p class="report-meta">导出时间 · {generated_ts}</p>
+            </header>
+            <section class="report-content markdown-html-content" id="{container_id}">
+                <div class="content-area">
+                    {html_content}
+                </div>
+            </section>
+        </div>
+    </div>
+    <script defer
+        src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"
+        integrity="sha384-XjKyOOlGwcjNTAIQHIpVOOVA+CuTF5UvLqGSXPM6njWx5iNxN7jyVjNOq8Ks4pxy"
+        crossorigin="anonymous"></script>
+    <script defer
+        src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+        integrity="sha384-+VBxd3r6XgURycqtZ117nYw44OOcIax56Z4dCRWbxyPt0Koah1uHoK0o4+/RRE05"
+        crossorigin="anonymous"></script>
+    <script type="text/javascript">
+        (function() {{
+            const containerId = '{container_id}';
+            function renderKaTeX() {{
+                if (typeof renderMathInElement !== 'undefined') {{
+                    renderMathInElement(document.getElementById(containerId), {{
+                        delimiters: [
+                            {{left: '$$', right: '$$', display: true}},
+                            {{left: '$', right: '$', display: false}},
+                            {{left: '\\\\[', right: '\\\\]', display: true}},
+                            {{left: '\\\\(', right: '\\\\)', display: false}}
+                        ],
+                        throwOnError: false
+                    }});
+                }} else {{
+                    setTimeout(renderKaTeX, 200);
+                }}
+            }}
+            setTimeout(renderKaTeX, 200);
+        }})();
+    </script>
+</body>
+</html>
+    """
 
 
 def read_plan_file(workdir: str) -> str:
@@ -857,8 +1073,38 @@ def collect_fin_reports(workdir: str,
     return reports
 
 
+def ensure_exportable_report_html(workdir_path: Path,
+                                  markdown_name: str = 'report.md') -> Optional[Path]:
+    report_path = workdir_path / markdown_name
+    if not report_path.exists():
+        return None
+    try:
+        with open(report_path, 'r', encoding='utf-8') as f:
+            markdown_content = f.read()
+    except Exception:
+        logger.exception('Failed to read markdown report for HTML export')
+        return None
+
+    heading_match = re.search(r'^\s*#\s+(.+)$',
+                              markdown_content,
+                              flags=re.MULTILINE)
+    export_title = heading_match.group(1).strip(
+    ) if heading_match else 'FinResearch 综合报告'
+
+    try:
+        html_doc = build_exportable_report_html(markdown_content,
+                                                title=export_title)
+        html_path = report_path.with_suffix('.html')
+        with open(html_path, 'w', encoding='utf-8') as f:
+            f.write(html_doc)
+        return html_path
+    except Exception:
+        logger.exception('Failed to convert markdown report to HTML export')
+        return None
+
+
 def prepare_report_download_package(workdir: str) -> Optional[str]:
-    """Bundle the final report with required assets for download (report.md, search/, sessions/)."""
+    """Bundle the final report with required assets for download (report.md/html, search/, sessions/)."""
     workdir_path = Path(workdir)
     if not workdir_path.exists():
         return None
@@ -866,6 +1112,9 @@ def prepare_report_download_package(workdir: str) -> Optional[str]:
     report_path = workdir_path / 'report.md'
     if not report_path.exists():
         return None
+
+    if LOCAL_MODE:
+        ensure_exportable_report_html(workdir_path)
 
     bundle_path = workdir_path / 'report_bundle.zip'
     if bundle_path.exists():
@@ -875,7 +1124,7 @@ def prepare_report_download_package(workdir: str) -> Optional[str]:
             logger.warning('Unable to remove existing bundle zip, creating a new file with unique suffix.')
             bundle_path = workdir_path / f'report_bundle_{uuid.uuid4().hex[:8]}.zip'
 
-    allowed_items = ['report.md', 'search', 'sessions']
+    allowed_items = ['report.md', 'report.html', 'search', 'sessions']
     added_entry = False
 
     try:
@@ -2374,7 +2623,7 @@ def create_interface():
                         </div>
                         <div class="status-messages">
                             <div class="agent-message waiting">
-                                <div class="agent-content">⏳ 等待执行... | Waiting for execution...</div>
+                                <div class="agent-content">⏳ 等待启动... | Waiting to start...</div>
                             </div>
                         </div>
                     </div>

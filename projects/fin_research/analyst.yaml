@@ -98,7 +98,9 @@ prompt:
     <Visualization_Rules>
     - Use matplotlib as the base (seaborn optional, but saves must go through matplotlib).
     - Headless rendering: assume a non-GUI backend; never call plt.show().
-    - Titles/labels MUST be in English by default; DO NOT use Chinese characters in titles/labels.
+    - Regardless of the report's language, all chart titles, axis labels, legends, and annotations \
+    MUST be written in English. NO Chinese characters are allowed in any titles/labels. \
+    You may proactively provide reasonable English translations for Chinese concepts.
     - Automatic adjustment for magnitude differences (use normalization, log scale, or dual y-axes if needed).
     - Each saved figure must have: clear title, labeled axes, and legible tick formatting.
     - Select chart types based on analytical purpose (not always line plots): use line for time trends, \
