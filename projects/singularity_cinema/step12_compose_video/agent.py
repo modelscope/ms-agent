@@ -197,7 +197,7 @@ class ComposeVideo(CodeAgent):
                            foreground_paths[i]):
                 fg_clip = mp.VideoFileClip(foreground_paths[i], has_mask=True)
                 original_w, original_h = fg_clip.size
-                available_w, available_h = 1500, 700
+                available_w, available_h = 1250, 700
                 scale_w = available_w / original_w
                 scale_h = available_h / original_h
                 scale = min(scale_w, scale_h, 1.0)
