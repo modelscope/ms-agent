@@ -15,7 +15,7 @@ class SharedMemoryManager:
     _instances: Dict[str, Memory] = {}
 
     @classmethod
-    def get_shared_memory(cls, config: DictConfig) -> Memory:
+    async def get_shared_memory(cls, config: DictConfig) -> Memory:
         """Get or create a shared memory instance based on configuration."""
         # Create a unique key based on memory configuration
         user_id: str = getattr(config, 'user_id', 'default_user')

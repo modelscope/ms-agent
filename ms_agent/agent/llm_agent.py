@@ -348,7 +348,7 @@ class LLMAgent(Agent):
                         service,
                         'openai_base_url':
                         getattr(self.config.llm, f'{service}_base_url', None),
-                        'openai_api_key':
+                        'api_key':
                         getattr(self.config.llm, f'{service}_api_key', None),
                         'max_tokens':
                         getattr(self.config.generation_config, 'max_tokens',
@@ -357,7 +357,7 @@ class LLMAgent(Agent):
                     llm_config_obj = OmegaConf.create(config_dict)
                     setattr(_memory, 'llm', llm_config_obj)
 
-                shared_memory = SharedMemoryManager.get_shared_memory(_memory)
+                shared_memory = await SharedMemoryManager.get_shared_memory(_memory)
                 self.memory_tools.append(shared_memory)
 
                 for memory in self.memory_tools:

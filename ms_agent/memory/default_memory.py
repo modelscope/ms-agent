@@ -99,13 +99,12 @@ class DefaultMemory(Memory):
         # Add lock for thread safety in shared usage
         self._lock = asyncio.Lock()
         self.memory = self._init_memory_obj()
-        self.init_cache_messages()
-
-    def init_cache_messages(self):
         self.load_cache()
+
+    async def init_cache_messages(self):
         if len(self.cache_messages) and not len(self.memory_snapshot):
             for id, messages in self.cache_messages.items():
-                self.add_single(messages, msg_id=id)
+                await self.add_single(messages, msg_id=id)
 
     def save_cache(self):
         """
@@ -587,27 +586,26 @@ class DefaultMemory(Memory):
 
         mem0.memory.main.capture_event = partial(patched_capture_event, )
 
-        if not self.is_retrieve:
-            return
-
         # emb config
+        embedder = None
         embedder_config = getattr(self.config, 'embedder',
                                   OmegaConf.create({}))
         service = getattr(embedder_config, 'service', 'modelscope')
         api_key = getattr(embedder_config, 'api_key', None)
         emb_model = getattr(embedder_config, 'model',
                             'Qwen/Qwen3-Embedding-8B')
-        embedding_dims = getattr(embedder_config, 'embedding_dims', None)
+        embedding_dims = getattr(embedder_config, 'embedding_dims', None) # for vector store config
 
-        embedder = OmegaConf.create({
-            'provider': 'openai',
-            'config': {
-                'api_key': api_key or os.getenv(f'{service.upper()}_API_KEY'),
-                'openai_base_url': get_service_config(service).base_url,
-                'model': emb_model,
-                'embedding_dims': embedding_dims
-            }
-        })
+        if self.is_retrieve:
+            embedder = OmegaConf.create({
+                'provider': 'openai',
+                'config': {
+                    'api_key': api_key or os.getenv(f'{service.upper()}_API_KEY'),
+                    'openai_base_url': get_service_config(service).base_url,
+                    'model': emb_model,
+                    'embedding_dims': embedding_dims
+                }
+            })
 
         # llm config
         llm = None
@@ -617,7 +615,7 @@ class DefaultMemory(Memory):
                 service = getattr(llm_config, 'service', 'modelscope')
                 llm_model = getattr(llm_config, 'model',
                                     'Qwen/Qwen3-Coder-30B-A3B-Instruct')
-                api_key = getattr(llm_config, 'openai_api_key', None)
+                api_key = getattr(llm_config, 'api_key', None)
                 openai_base_url = getattr(llm_config, 'openai_base_url', None)
                 max_tokens = getattr(llm_config, 'max_tokens', None)
 
@@ -698,9 +696,10 @@ class DefaultMemory(Memory):
 
         mem0_config = {
             'is_infer': self.compress,
-            'vector_store': vector_store,
-            'embedder': embedder
+            'vector_store': vector_store
         }
+        if embedder:
+            mem0_config['embedder'] = embedder
         if llm:
             mem0_config['llm'] = llm
         logger.info(f'Memory config: {mem0_config}')
