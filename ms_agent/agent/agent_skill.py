@@ -143,7 +143,17 @@ class AgentSkill:
 
             skill_cache_dirs: List[str] = []
             for skill_id in skills:
-                skill_dir: str = snapshot_download(repo_id=skill_id)
+                skill_id_parts: List[str] = skill_id.split('/')
+                subfolder = skill_id_parts[-1] if len(
+                    skill_id_parts) == 3 else None
+                allow_pattern: str = f'{subfolder}/*' if subfolder else None
+                skill_id = '/'.join(
+                    skill_id_parts[:2]) if subfolder else skill_id
+
+                skill_dir: str = snapshot_download(
+                    repo_id=skill_id,
+                    allow_patterns=allow_pattern,
+                )
                 logger.info(
                     f'Downloaded skill from hub: {skill_id} to {skill_dir}')
                 skill_cache_dirs.append(skill_dir)
