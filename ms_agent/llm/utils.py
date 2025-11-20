@@ -2,6 +2,7 @@
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Union
 
+import json
 from typing_extensions import Literal, Required, TypedDict
 
 
@@ -9,8 +10,8 @@ class ToolCall(TypedDict, total=False):
     id: str = 'default_id'
     index: int = 0
     type: str = 'function'
-    tool_name: Required[str]
-    arguments: str = ''
+    tool_name: str = ''
+    arguments: str = '{}'
 
 
 class Tool(TypedDict, total=False):
@@ -52,3 +53,28 @@ class Message:
 
     def to_dict(self):
         return asdict(self)
+
+    def to_dict_clean(self):
+        raw_dict = asdict(self)
+        if raw_dict.get('tool_calls'):
+            for idx, tool_call in enumerate(raw_dict['tool_calls']):
+                try:
+                    if tool_call['arguments']:
+                        json.loads(tool_call['arguments'])
+                except Exception:
+                    tool_call['arguments'] = '{}'
+                raw_dict['tool_calls'][idx] = {
+                    'id': tool_call['id'],
+                    'type': tool_call['type'],
+                    'function': {
+                        'name': tool_call['tool_name'],
+                        'arguments': tool_call['arguments'],
+                    }
+                }
+        required = ['content', 'role']
+        rm = ['completion_tokens', 'prompt_tokens', 'api_calls']
+        return {
+            key: value
+            for key, value in raw_dict.items()
+            if (value or key in required) and key not in rm
+        }

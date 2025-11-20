@@ -13,8 +13,8 @@ from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback, callbacks_mapping
 from ms_agent.llm.llm import LLM
 from ms_agent.llm.utils import Message
-from ms_agent.memory import Memory, memory_mapping
-from ms_agent.memory.mem0ai import Mem0Memory, SharedMemoryManager
+from ms_agent.memory import Memory, get_memory_meta_safe, memory_mapping
+from ms_agent.memory.memory_manager import SharedMemoryManager
 from ms_agent.rag.base import RAG
 from ms_agent.rag.utils import rag_mapping
 from ms_agent.tools import ToolManager
@@ -329,38 +329,37 @@ class LLMAgent(Agent):
         self.config: DictConfig
         if hasattr(self.config, 'memory'):
             for _memory in (self.config.memory or []):
-                memory_type = getattr(_memory, 'name', 'default_memory')
-                assert memory_type in memory_mapping, (
-                    f'{memory_type} not in memory_mapping, '
+                mem_instance_type = getattr(_memory, 'name', None)
+                if mem_instance_type is None:
+                    mem_instance_type = 'default_memory'
+                    setattr(_memory, 'name', 'default_memory')
+                assert mem_instance_type in memory_mapping, (
+                    f'{mem_instance_type} not in memory_mapping, '
                     f'which supports: {list(memory_mapping.keys())}')
 
-                # Use LLM config if no special configuration is specified
+                # Use LLM config if no memory llm configuration is specified
                 llm_config = getattr(_memory, 'llm', None)
                 if llm_config is None:
                     service = self.config.llm.service
                     config_dict = {
                         'model':
-                        _memory.summary_model if hasattr(
-                            _memory, 'summary_model') else getattr(
-                                self.config.llm, 'model', None),
-                        'provider':
-                        'openai',
+                        self.config.llm.model,
+                        'service':
+                        service,
                         'openai_base_url':
                         getattr(self.config.llm, f'{service}_base_url', None),
-                        'openai_api_key':
+                        'api_key':
                         getattr(self.config.llm, f'{service}_api_key', None),
                         'max_tokens':
-                        getattr(_memory, 'max_tokens', 4096),
+                        getattr(self.config.generation_config, 'max_tokens',
+                                None),
                     }
                     llm_config_obj = OmegaConf.create(config_dict)
                     setattr(_memory, 'llm', llm_config_obj)
-                if memory_type == 'mem0':
-                    shared_memory = SharedMemoryManager.get_shared_memory(
-                        _memory)
-                    self.memory_tools.append(shared_memory)
-                else:
-                    self.memory_tools.append(
-                        memory_mapping[memory_type](_memory))
+
+                shared_memory = await SharedMemoryManager.get_shared_memory(
+                    _memory)
+                self.memory_tools.append(shared_memory)
 
                 for memory in self.memory_tools:
                     # In case any memory tool need other information
@@ -551,6 +550,50 @@ class LLMAgent(Agent):
                     break
         return user_id
 
+    def _get_step_memory_info(self, memory_config: DictConfig):
+        user_id, agent_id, run_id, memory_type = get_memory_meta_safe(
+            memory_config, 'add_after_step')
+        if all(value is None
+               for value in [user_id, agent_id, run_id, memory_type]):
+            return None, None, None, None
+        user_id = user_id or getattr(memory_config, 'user_id', None)
+        return user_id, agent_id, run_id, memory_type
+
+    def _get_run_memory_info(self, memory_config: DictConfig):
+        user_id, agent_id, run_id, memory_type = get_memory_meta_safe(
+            memory_config,
+            'add_after_task',
+            default_user_id=getattr(memory_config, 'user_id', None))
+        if all(value is None
+               for value in [user_id, agent_id, run_id, memory_type]):
+            return None, None, None, None
+        user_id = user_id or getattr(memory_config, 'user_id', None)
+        agent_id = agent_id or self.tag
+        memory_type = memory_type or None
+        return user_id, agent_id, run_id, memory_type
+
+    async def add_memory(self, messages: List[Message], **kwargs):
+        if hasattr(self.config, 'memory') and self.config.memory:
+            tools_num = len(
+                self.memory_tools
+            ) if self.memory_tools else 0  # Check index bounds before access to avoid IndexError
+            for idx, memory_config in enumerate(self.config.memory):
+                if self.runtime.should_stop:
+                    user_id, agent_id, run_id, memory_type = self._get_run_memory_info(
+                        memory_config)
+                else:
+                    user_id, agent_id, run_id, memory_type = self._get_step_memory_info(
+                        memory_config)
+                if idx < tools_num:
+                    if any(value is not None for value in
+                           [user_id, agent_id, run_id, memory_type]):
+                        await self.memory_tools[idx].add(
+                            messages,
+                            user_id=user_id,
+                            agent_id=agent_id,
+                            run_id=run_id,
+                            memory_type=memory_type)
+
     def save_history(self, messages: List[Message], **kwargs):
         """
         Save current chat history to disk for future resuming.
@@ -573,37 +616,6 @@ class LLMAgent(Agent):
         config.runtime = self.runtime.to_dict()
         save_history(
             self.output_dir, task=self.tag, config=config, messages=messages)
-
-    def save_memory(self, messages: List[Message]):
-        """
-        Save memories to disk for future resuming.
-
-        Args:
-            messages (List[Message]): Current message history to save.
-        """
-        messages = deepcopy(messages)
-        for message in messages:
-            # Prevent the arguments are not json
-            if message.tool_calls:
-                for tool_call in message.tool_calls:
-                    try:
-                        if tool_call['arguments']:
-                            json.loads(tool_call['arguments'])
-                    except Exception:
-                        tool_call['arguments'] = '{}'
-
-        if self.memory_tools:
-            if self.runtime.should_stop:
-                for memory_tool in self.memory_tools:
-                    if isinstance(memory_tool, Mem0Memory):
-                        memory_tool.add_memories_from_procedural(
-                            messages, self.get_user_id(), self.tag,
-                            'procedural_memory')
-            else:
-                for memory_tool in self.memory_tools:
-                    if isinstance(memory_tool, Mem0Memory):
-                        memory_tool.add_memories_from_conversation(
-                            messages, self.get_user_id())
 
     async def run_loop(self, messages: Union[List[Message], str],
                        **kwargs) -> AsyncGenerator[Any, Any]:
@@ -646,7 +658,7 @@ class LLMAgent(Agent):
                     yield messages
                 self.runtime.round += 1
                 # save memory and history
-                self.save_memory(messages)
+                await self.add_memory(messages, **kwargs)
                 self.save_history(messages)
 
                 # +1 means the next round the assistant may give a conclusion
@@ -662,7 +674,7 @@ class LLMAgent(Agent):
                     yield messages
 
             # save memory
-            self.save_memory(messages)
+            await self.add_memory(messages, **kwargs)
 
             await self.on_task_end(messages)
             await self.cleanup_tools()

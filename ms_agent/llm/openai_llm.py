@@ -7,6 +7,7 @@ from ms_agent.llm import LLM
 from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.utils import (MAX_CONTINUE_RUNS, assert_package_exist,
                             get_logger, retry)
+from ms_agent.utils.constants import get_service_config
 from omegaconf import DictConfig, OmegaConf
 from openai.types.chat.chat_completion_message_tool_call import (
     ChatCompletionMessageToolCall, Function)
@@ -41,7 +42,8 @@ class OpenAI(LLM):
         self.model: str = config.llm.model
         self.max_continue_runs = getattr(config.llm, 'max_continue_runs',
                                          None) or MAX_CONTINUE_RUNS
-        base_url = base_url or config.llm.openai_base_url
+        base_url = base_url or config.llm.openai_base_url or get_service_config(
+            'openai').base_url
         api_key = api_key or config.llm.openai_api_key
 
         self.client = openai.OpenAI(
@@ -129,8 +131,7 @@ class OpenAI(LLM):
             Any: Raw output from the OpenAI chat completion API.
         """
         messages = self._format_input_message(messages)
-        if kwargs.get('stream', False):
-            kwargs['stream_options'] = {'include_usage': True}
+
         return self.client.chat.completions.create(
             model=self.model, messages=messages, tools=tools, **kwargs)
 
@@ -428,22 +429,7 @@ class OpenAI(LLM):
             if isinstance(message, Message):
                 if isinstance(message.content, str):
                     message.content = message.content.strip()
-                message = message.to_dict()
-
-            if message.get('tool_calls'):
-                tool_calls = list()
-                for tool_call in message['tool_calls']:
-                    function_data: Function = {
-                        'name': tool_call['tool_name'],
-                        'arguments': tool_call['arguments']
-                    }
-                    tool_call: ChatCompletionMessageToolCall = {
-                        'id': tool_call['id'],
-                        'function': function_data,
-                        'type': tool_call['type'],
-                    }
-                    tool_calls.append(tool_call)
-                message['tool_calls'] = tool_calls
+                message = message.to_dict_clean()
 
             message = {
                 key: value.strip() if isinstance(value, str) else value

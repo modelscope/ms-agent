@@ -69,6 +69,8 @@ class LLM:
         Returns:
             The LLM instance.
         """
-        from .model_mapping import all_services_mapping
-        assert config.llm.service in all_services_mapping
-        return all_services_mapping[config.llm.service](config)
+        from .model_mapping import all_services_mapping, OpenAI
+        if config.llm.get('service') in all_services_mapping:
+            return all_services_mapping[config.llm.service](config)
+        else:
+            return OpenAI(config)
