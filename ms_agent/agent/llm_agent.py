@@ -357,7 +357,8 @@ class LLMAgent(Agent):
                     llm_config_obj = OmegaConf.create(config_dict)
                     setattr(_memory, 'llm', llm_config_obj)
 
-                shared_memory = await SharedMemoryManager.get_shared_memory(_memory)
+                shared_memory = await SharedMemoryManager.get_shared_memory(
+                    _memory)
                 self.memory_tools.append(shared_memory)
 
                 for memory in self.memory_tools:

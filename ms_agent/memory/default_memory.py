@@ -594,13 +594,15 @@ class DefaultMemory(Memory):
         api_key = getattr(embedder_config, 'api_key', None)
         emb_model = getattr(embedder_config, 'model',
                             'Qwen/Qwen3-Embedding-8B')
-        embedding_dims = getattr(embedder_config, 'embedding_dims', None) # for vector store config
+        embedding_dims = getattr(embedder_config, 'embedding_dims',
+                                 None)  # for vector store config
 
         if self.is_retrieve:
             embedder = OmegaConf.create({
                 'provider': 'openai',
                 'config': {
-                    'api_key': api_key or os.getenv(f'{service.upper()}_API_KEY'),
+                    'api_key': api_key
+                    or os.getenv(f'{service.upper()}_API_KEY'),
                     'openai_base_url': get_service_config(service).base_url,
                     'model': emb_model,
                     'embedding_dims': embedding_dims
@@ -694,10 +696,7 @@ class DefaultMemory(Memory):
         else:
             vector_store = {}
 
-        mem0_config = {
-            'is_infer': self.compress,
-            'vector_store': vector_store
-        }
+        mem0_config = {'is_infer': self.compress, 'vector_store': vector_store}
         if embedder:
             mem0_config['embedder'] = embedder
         if llm:
