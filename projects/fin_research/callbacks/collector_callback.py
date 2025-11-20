@@ -46,7 +46,7 @@ class CollectorCallback(Callback):
                 logger.error(
                     'The plan.json file is empty, please check the file.')
             if messages[-1].role == 'user':
-                messages[-1].content += (
+                messages[-1].content = (
                     f'The complete plan for the current overall financial analysis task is as follows:\n{plan}\n'
                     f'Please follow the plan to complete the data collection task.\n'
                 )
@@ -58,6 +58,11 @@ class CollectorCallback(Callback):
                      f'Please follow the plan to complete the data collection task.\n'
                      ))
                 messages.append(user_message)
+            messages[:] = [
+                messages[i] for i in range(len(messages))
+                if (messages[i].role == 'system') or (
+                    i == (len(messages) - 1) and messages[i].role == 'user')
+            ]
         else:
             user_message = Message(
                 role='user',

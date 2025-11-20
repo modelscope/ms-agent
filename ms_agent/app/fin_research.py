@@ -1973,6 +1973,22 @@ def create_interface():
             opacity: 0.95;
         }
 
+        .main-header .powered-by {
+            margin-top: 0.35rem;
+            font-size: clamp(0.85rem, 1.2vw, 1rem);
+            opacity: 0.95;
+        }
+
+        .main-header .powered-by a {
+            color: #bfdbfe;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .main-header .powered-by a:hover {
+            text-decoration: underline;
+        }
+
         /* Section headers */
         .section-header {
             color: #2563eb;
@@ -2506,6 +2522,20 @@ def create_interface():
         <div class="main-header">
             <h1>📊 FinResearch 金融深度研究</h1>
             <p>Multi-Agent Financial Research Workflow</p>
+            <p class="powered-by">
+                Powered by
+                <a href="https://github.com/modelscope/ms-agent"
+                   target="_blank"
+                   rel="noopener noreferrer">
+                    MS-Agent
+                </a>
+                |
+                <a href="https://github.com/modelscope/ms-agent/tree/main/projects/fin_research"
+                   target="_blank"
+                   rel="noopener noreferrer">
+                    Readme
+                </a>
+            </p>
         </div>
         """)
         timer_script = """

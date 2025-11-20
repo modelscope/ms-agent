@@ -403,8 +403,16 @@ class ResearchWorkflowBeta(ResearchWorkflow):
 
         if search_requests_data:
             if isinstance(search_requests_data, dict):
-                search_requests_data: List[Dict[str, Any]] = search_requests_data.get(
-                    'search_requests', []) or search_requests_data
+                extracted = search_requests_data.get('search_requests')
+                if isinstance(extracted, list):
+                    search_requests_data = extracted
+                elif 'query' in search_requests_data:
+                    # Handle case where LLM returns a single request object directly
+                    search_requests_data = [search_requests_data]
+                else:
+                    # Fallback to empty list if structure is unrecognizable
+                    search_requests_data = []
+
             search_requests = [
                 search_request_generator.create_request(search_request)
                 for search_request in search_requests_data

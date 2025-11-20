@@ -36,11 +36,17 @@ class AnalystCallback(Callback):
         return str(Path(output_dir).expanduser().absolute())
 
     async def on_task_begin(self, runtime: Runtime, messages: List[Message]):
+        summary_messages = {'collector_plan': '', 'collector_summary': ''}
         for message in messages:
             if message.role == 'system':
                 message.content = message.content.replace('\\\n', '')
                 message.content = message.content.replace(
                     '<DATA_ROOT>', self._resolve_data_root())
+            elif message.role == 'assistant':
+                if '[ACT=summary]' in message.content:
+                    summary_messages['collector_summary'] = message.content
+                elif '[ACT=plan]' in message.content:
+                    summary_messages['collector_plan'] = message.content
 
         if os.path.exists(os.path.join(self.config.output_dir, 'plan.json')):
             with open(os.path.join(self.config.output_dir, 'plan.json'),
@@ -63,6 +69,17 @@ class AnalystCallback(Callback):
                 ('Please conduct data analysis in accordance with the research plan followed during the data '
                  'collection phase and the results obtained from data collection.'
                  ))
+
+        # Add the summary of the data collection phase to the user message (add plan if exists)
+        if summary_messages['collector_summary']:
+            messages[:] = [
+                message for message in messages if message.role == 'system'
+            ]
+            summary_messages = (
+                f'The summary of the data collection phase is as follows:\n'
+                f'{json.dumps(summary_messages, ensure_ascii=False, indent=2)}'
+            )
+            user_message.content += f'\n{summary_messages}'
         messages.append(user_message)
 
     async def on_task_end(self, runtime: Runtime, messages: List[Message]):
