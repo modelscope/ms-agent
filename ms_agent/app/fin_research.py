@@ -538,6 +538,93 @@ def convert_markdown_images_to_file_info(markdown_content: str,
     return re.sub(pattern, replace_image, markdown_content)
 
 
+MARKDOWN_TABLE_STYLE_BLOCK = """
+.markdown-html-content .fin-table-wrapper {
+    margin: 1.5rem 0;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 18px;
+    overflow-x: auto;
+    background: #ffffff;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+}
+.markdown-html-content .fin-table-wrapper table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 640px;
+}
+.markdown-html-content .fin-table-wrapper table th,
+.markdown-html-content .fin-table-wrapper table td {
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    padding: 12px 16px;
+    text-align: left;
+    font-size: 0.95rem;
+}
+.markdown-html-content .fin-table-wrapper table thead {
+    background: rgba(59, 130, 246, 0.08);
+    font-weight: 600;
+    color: #0f172a;
+}
+.markdown-html-content .fin-table-wrapper table tbody tr:nth-child(even) {
+    background: rgba(15, 23, 42, 0.03);
+}
+.markdown-html-content .fin-table-wrapper table caption {
+    caption-side: bottom;
+    padding: 0.75rem 0.5rem 0;
+    color: #475569;
+    font-size: 0.9rem;
+}
+.markdown-html-content .fin-table-wrapper table code {
+    background: rgba(99, 102, 241, 0.12);
+    color: #4c1d95;
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+@media (max-width: 640px) {
+    .markdown-html-content .fin-table-wrapper table {
+        min-width: 520px;
+    }
+}
+.dark .markdown-html-content .fin-table-wrapper {
+    background: #0f172a;
+    border-color: #1e293b;
+    box-shadow: 0 12px 30px rgba(2, 6, 23, 0.45);
+}
+.dark .markdown-html-content .fin-table-wrapper table th,
+.dark .markdown-html-content .fin-table-wrapper table td {
+    border-color: rgba(148, 163, 184, 0.35);
+    color: #e2e8f0;
+}
+.dark .markdown-html-content .fin-table-wrapper table thead {
+    background: rgba(59, 130, 246, 0.25);
+    color: #f1f5f9;
+}
+.dark .markdown-html-content .fin-table-wrapper table tbody tr:nth-child(even) {
+    background: rgba(15, 23, 42, 0.8);
+}
+.dark .markdown-html-content .fin-table-wrapper table caption {
+    color: #cbd5f5;
+}
+.dark .markdown-html-content .fin-table-wrapper table code {
+    background: #020617 !important;
+    color: #fef9c3 !important;
+}
+"""
+
+_TABLE_WRAPPER_PATTERN = re.compile(r'(<table\b.*?</table>)',
+                                    flags=re.IGNORECASE | re.DOTALL)
+
+
+def _wrap_tables_with_container(html_content: str) -> str:
+    """Ensure markdown tables are wrapped for styling/scrolling."""
+    def _inject_wrapper(match: re.Match) -> str:
+        table_html = match.group(1)
+        if 'fin-table-wrapper' in table_html:
+            return table_html
+        return f'<div class="fin-table-wrapper">{table_html}</div>'
+
+    return _TABLE_WRAPPER_PATTERN.sub(_inject_wrapper, html_content)
+
+
 def _render_markdown_html_core(markdown_content: str,
                                add_permalink: bool = True) -> Tuple[str, str]:
     latex_placeholders = {}
@@ -580,6 +667,7 @@ def _render_markdown_html_core(markdown_content: str,
     html_content = md.convert(protected_content)
     for placeholder, latex_formula in latex_placeholders.items():
         html_content = html_content.replace(placeholder, latex_formula)
+    html_content = _wrap_tables_with_container(html_content)
     container_id = f'katex-content-{int(time.time() * 1_000_000)}'
     return html_content, container_id
 
@@ -591,6 +679,9 @@ def _build_inline_markdown_html(html_content: str, container_id: str) -> str:
               href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"
               integrity="sha384-n8MVd4RsNIU0tAv4ct0nTaAbDJwPJzDEaqSD1odI+WdtXRGWt2kTvGFasHpSy3SV"
               crossorigin="anonymous">
+        <style>
+            {MARKDOWN_TABLE_STYLE_BLOCK}
+        </style>
         <div class="content-area">
             {html_content}
         </div>
@@ -714,18 +805,9 @@ def build_exportable_report_html(markdown_content: str,
         border-radius: 16px;
         box-shadow: 0 20px 40px rgba(15, 23, 42, 0.12);
     }
-    .markdown-html-content table {
-        width: 100%;
-        border-collapse: collapse;
-        margin: 1.5rem 0;
-        font-size: 0.95rem;
-    }
-    .markdown-html-content table th,
-    .markdown-html-content table td {
-        border: 1px solid rgba(15, 23, 42, 0.15);
-        padding: 12px 16px;
-        text-align: left;
-    }
+    """
+    base_css += MARKDOWN_TABLE_STYLE_BLOCK
+    base_css += """
     .markdown-html-content blockquote {
         border-left: 4px solid #6366f1;
         padding: 0.5rem 1.5rem;
