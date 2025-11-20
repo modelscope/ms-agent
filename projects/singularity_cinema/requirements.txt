@@ -1,0 +1,6 @@
+aiohttp>=3.9.0
+edge-tts>=6.1.0
+manim>=0.18.0
+matplotlib>=3.8.0
+moviepy>=2.0.0
+Pillow

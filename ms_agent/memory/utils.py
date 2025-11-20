@@ -2,8 +2,12 @@
 from omegaconf import DictConfig, OmegaConf
 
 from .default_memory import DefaultMemory
+from .diversity import Diversity
 
-memory_mapping = {'default_memory': DefaultMemory}
+memory_mapping = {
+    'default_memory': DefaultMemory,
+    'diversity': Diversity,
+}
 
 
 def get_memory_meta_safe(config: DictConfig,

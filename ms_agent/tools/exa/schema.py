@@ -82,13 +82,20 @@ class ExaSearchResult:
         res_list: List[Any] = []
         for res in self.response.results:
             res_list.append({
-                'url': res.url,
-                'id': res.id,
-                'title': res.title,
-                'highlights': res.highlights,
-                'highlight_scores': res.highlight_scores,
-                'summary': res.summary,
-                'markdown': None,
+                'url':
+                getattr(res, 'url', ''),
+                'id':
+                getattr(res, 'id', ''),
+                'title':
+                getattr(res, 'title'),
+                'published_date':
+                getattr(res, 'published_date', ''),
+                'summary':
+                getattr(res, 'summary', ''),
+                # 'text': getattr(res, 'text', ''),
+                # 'highlights': getattr(res, 'highlights', ''),
+                # 'highlight_scores': getattr(res, 'highlight_scores', ''),
+                # 'markdown': getattr(res, 'markdown', ''),
             })
 
         return res_list

@@ -1,6 +1,6 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import json
 from typing_extensions import Literal, Required, TypedDict
@@ -28,7 +28,7 @@ class Tool(TypedDict, total=False):
 class Message:
     role: Literal['system', 'user', 'assistant', 'tool']
 
-    content: str = ''
+    content: Union[str, List[Dict[str, str]]] = ''
 
     tool_calls: List[ToolCall] = field(default_factory=list)
 

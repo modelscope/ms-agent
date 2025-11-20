@@ -7,6 +7,7 @@ repos:
             (?x)^(
                 thirdparty/|
                 examples/|
+                projects/fin_research/examples/|
                 tests/run.py
             )$
   - repo: /home/admin/pre-commit/isort
@@ -16,6 +17,7 @@ repos:
         exclude: |
             (?x)^(
                 examples/|
+                projects/fin_research/examples/|
                 tests/run.py|
             )$
   - repo: /home/admin/pre-commit/mirrors-yapf
@@ -26,26 +28,27 @@ repos:
             (?x)^(
                 thirdparty/|
                 examples/|
+                projects/fin_research/examples/|
                 tests/run.py
             )$
   - repo: /home/admin/pre-commit/pre-commit-hooks
     rev: v3.1.0
     hooks:
       - id: trailing-whitespace
-        exclude: thirdparty/|tests/run.py
+        exclude: thirdparty/|tests/run.py|projects/fin_research/examples/
       - id: check-yaml
-        exclude: thirdparty/|tests/run.py
+        exclude: thirdparty/|tests/run.py|projects/fin_research/examples/
       - id: end-of-file-fixer
-        exclude: thirdparty/
+        exclude: thirdparty/|projects/fin_research/examples/
       - id: requirements-txt-fixer
-        exclude: thirdparty/|tests/run.py
+        exclude: thirdparty/|tests/run.py|projects/fin_research/examples/
       - id: double-quote-string-fixer
-        exclude: thirdparty/|tests/run.py
+        exclude: thirdparty/|tests/run.py|projects/fin_research/examples/
       - id: check-merge-conflict
         exclude: thirdparty/|tests/run.py
       - id: fix-encoding-pragma
-        exclude: thirdparty/|tests/run.py
+        exclude: thirdparty/|tests/run.py|projects/fin_research/examples/
         args: ["--remove"]
       - id: mixed-line-ending
-        exclude: thirdparty/|tests/run.py
+        exclude: thirdparty/|tests/run.py|projects/fin_research/examples/
         args: ["--fix=lf"]

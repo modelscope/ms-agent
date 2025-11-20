@@ -5,7 +5,7 @@ import os
 
 from ms_agent.config import Config
 from ms_agent.utils import strtobool
-from ms_agent.utils.constants import AGENT_CONFIG_FILE
+from ms_agent.utils.constants import AGENT_CONFIG_FILE, MS_AGENT_ASCII
 
 from .base import CLICommand
 
@@ -77,6 +77,15 @@ class RunCMD(CLICommand):
             type=str,
             default=None,
             help='API key for accessing ModelScope api-inference services.')
+        parser.add_argument(
+            '--animation_mode',
+            required=False,
+            type=str,
+            choices=['auto', 'human'],
+            default=None,
+            help=
+            'Animation mode for video_generate project: auto (default) or human.'
+        )
         parser.set_defaults(func=subparser_func)
 
     def execute(self):
@@ -90,6 +99,33 @@ class RunCMD(CLICommand):
         self.args.trust_remote_code = strtobool(
             self.args.trust_remote_code)  # noqa
         self.args.load_cache = strtobool(self.args.load_cache)
+
+        # Propagate animation mode via environment variable for downstream code agents
+        if getattr(self.args, 'animation_mode', None):
+            os.environ['MS_ANIMATION_MODE'] = self.args.animation_mode
+
+        if os.path.isfile(self.args.config):
+            config_path = os.path.abspath(self.args.config)
+        else:
+            config_path = self.args.config
+        author_file = os.path.join(config_path, 'author.txt')
+        author = ''
+        if os.path.exists(author_file):
+            with open(author_file, 'r') as f:
+                author = f.read()
+        blue_color_prefix = '\033[34m'
+        blue_color_suffix = '\033[0m'
+        print(
+            blue_color_prefix + MS_AGENT_ASCII + blue_color_suffix, flush=True)
+        line_start = '═════════════════════════Workflow Contributed By════════════════════════════'
+        line_end = '════════════════════════════════════════════════════════════════════════════'
+        if author:
+            print(
+                blue_color_prefix + line_start + blue_color_suffix, flush=True)
+            print(
+                blue_color_prefix + author.strip() + blue_color_suffix,
+                flush=True)
+            print(blue_color_prefix + line_end + blue_color_suffix, flush=True)
 
         config = Config.from_task(self.args.config)
 

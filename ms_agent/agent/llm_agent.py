@@ -79,8 +79,6 @@ class LLMAgent(Agent):
             kwargs.get('mcp_config', {}))
         self.mcp_client = kwargs.get('mcp_client', None)
         self.config_handler = self.register_config_handler()
-        self.output_dir = getattr(self.config, 'output_dir',
-                                  DEFAULT_OUTPUT_DIR)
 
     def register_callback(self, callback: Callback):
         """
@@ -362,6 +360,10 @@ class LLMAgent(Agent):
                 shared_memory = SharedMemoryManager.get_shared_memory(_memory)
                 self.memory_tools.append(shared_memory)
 
+                for memory in self.memory_tools:
+                    # In case any memory tool need other information
+                    memory.set_base_config(self.config)
+
     async def prepare_rag(self):
         """Load and initialize the RAG component from the config."""
         if hasattr(self.config, 'rag'):
@@ -604,6 +606,9 @@ class LLMAgent(Agent):
         elif messages:
             query = messages[0].content
         if not query:
+            return
+
+        if not getattr(self.config, 'save_history', True):
             return
 
         config: DictConfig = deepcopy(self.config)

@@ -1,7 +1,7 @@
 ## maintain docs
 1. build docs
     ```shell
-    # in root directory:
+    # in root directory of ms-agent:
     make docs
     ```
 

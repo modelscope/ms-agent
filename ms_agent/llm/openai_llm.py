@@ -162,23 +162,23 @@ class OpenAI(LLM):
         message.content += message_chunk.content
         if message_chunk.tool_calls:
             if message.tool_calls:
-                if message.tool_calls[0]['index'] == message_chunk.tool_calls[
+                if message.tool_calls[-1]['index'] == message_chunk.tool_calls[
                         0]['index']:
                     if message_chunk.tool_calls[0]['id']:
-                        message.tool_calls[0]['id'] = message_chunk.tool_calls[
-                            0]['id']
+                        message.tool_calls[-1][
+                            'id'] = message_chunk.tool_calls[0]['id']
                     if message_chunk.tool_calls[0]['arguments']:
-                        if message.tool_calls[0]['arguments']:
-                            message.tool_calls[0][
+                        if message.tool_calls[-1]['arguments']:
+                            message.tool_calls[-1][
                                 'arguments'] += message_chunk.tool_calls[0][
                                     'arguments']
                         else:
-                            # message.tool_calls[0]['arguments'] may be None
-                            message.tool_calls[0][
+                            # message.tool_calls[-1]['arguments'] may be None
+                            message.tool_calls[-1][
                                 'arguments'] = message_chunk.tool_calls[0][
                                     'arguments']
                     if message_chunk.tool_calls[0]['tool_name']:
-                        message.tool_calls[0][
+                        message.tool_calls[-1][
                             'tool_name'] = message_chunk.tool_calls[0][
                                 'tool_name']
                 else:
@@ -428,7 +428,8 @@ class OpenAI(LLM):
         openai_messages = []
         for message in messages:
             if isinstance(message, Message):
-                message.content = message.content.strip()
+                if isinstance(message.content, str):
+                    message.content = message.content.strip()
                 message = message.to_dict_clean()
 
             message = {
@@ -436,6 +437,8 @@ class OpenAI(LLM):
                 for key, value in message.items()
                 if key in self.input_msg and value
             }
+            if 'content' not in message:
+                message['content'] = ''
 
             openai_messages.append(message)
 
