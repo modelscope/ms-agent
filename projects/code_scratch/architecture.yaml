@@ -13,7 +13,6 @@ generation_config:
   extra_body:
     dashscope_extend_params:
       provider: b
-    enable_thinking: false
 
 
 prompt:

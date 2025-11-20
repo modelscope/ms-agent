@@ -13,7 +13,6 @@ generation_config:
   extra_body:
     dashscope_extend_params:
       provider: b
-    enable_thinking: false
 
 
 prompt:
@@ -64,6 +63,7 @@ tools:
 
 memory:
   - user_id: "code_scratch"
+    add_after_step:
     add_after_task:
       user_id: "subagent"
       memory_type: "procedural_memory"

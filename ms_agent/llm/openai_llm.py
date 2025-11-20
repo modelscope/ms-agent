@@ -131,8 +131,7 @@ class OpenAI(LLM):
             Any: Raw output from the OpenAI chat completion API.
         """
         messages = self._format_input_message(messages)
-        if kwargs.get('stream', False):
-            kwargs['stream_options'] = {'include_usage': True}
+
         return self.client.chat.completions.create(
             model=self.model, messages=messages, tools=tools, **kwargs)
 
