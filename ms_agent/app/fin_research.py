@@ -374,6 +374,37 @@ def create_task_workdir(user_id: str) -> str:
     return str(workdir)
 
 
+def get_user_session_file_path(user_id: str) -> Path:
+    """Return the path that stores the per-user FinResearch session snapshot."""
+    return get_user_workdir_path(user_id) / 'session_data.json'
+
+
+def save_user_session_snapshot(user_id: str, data: Dict[str, Any]):
+    """Persist the latest successful FinResearch run snapshot for the user."""
+    try:
+        session_file = get_user_session_file_path(user_id)
+        session_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(session_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        logger.exception('Failed to save FinResearch session snapshot for user=%s',
+                         user_id[:8] + '***')
+
+
+def load_user_session_snapshot(user_id: str) -> Optional[Dict[str, Any]]:
+    """Load the persisted FinResearch snapshot for the user, if any."""
+    session_file = get_user_session_file_path(user_id)
+    if not session_file.exists():
+        return None
+    try:
+        with open(session_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        logger.exception('Failed to load FinResearch session snapshot for user=%s',
+                         user_id[:8] + '***')
+        return None
+
+
 def build_fin_prompt(
         goal: str,
         primary_tickers: str,
@@ -1113,8 +1144,7 @@ def prepare_report_download_package(workdir: str) -> Optional[str]:
     if not report_path.exists():
         return None
 
-    if LOCAL_MODE:
-        ensure_exportable_report_html(workdir_path)
+    ensure_exportable_report_html(workdir_path)
 
     bundle_path = workdir_path / 'report_bundle.zip'
     if bundle_path.exists():
@@ -1423,11 +1453,11 @@ def run_fin_research_workflow(
                 yield (
                     build_timer_signal(elapsed_now),
                     status_html,
-                    '⌛ Waiting...',
                     '',
-                    '⌛ Waiting...',
                     '',
-                    '⌛ Waiting...',
+                    '',
+                    '',
+                    '',
                     '',
                     '📂 正在生成输出文件，请稍候...',
                     build_download_state(None),
@@ -1471,19 +1501,45 @@ def run_fin_research_workflow(
             final_download_path = bundle_path
         elif report_file_path and Path(report_file_path).exists():
             final_download_path = report_file_path
-        analysis_download_path = reports['analysis']['path'] if reports['analysis']['path'] and Path(reports['analysis']['path']).exists() else None
-        sentiment_download_path = reports['sentiment']['path'] if reports['sentiment']['path'] and Path(reports['sentiment']['path']).exists() else None
+        analysis_download_path = reports['analysis']['path'] if reports[
+            'analysis']['path'] and Path(
+                reports['analysis']['path']).exists() else None
+        sentiment_download_path = reports['sentiment']['path'] if reports[
+            'sentiment']['path'] and Path(
+                reports['sentiment']['path']).exists() else None
 
-        final_status_label = '✅ Ready (.zip)' if final_download_path and bundle_path and final_download_path == bundle_path else ('✅ Ready' if final_download_path else '⌛ Waiting...')
+        final_status_label = '✅ Ready (.zip)' if final_download_path and bundle_path and final_download_path == bundle_path else (
+            '✅ Ready' if final_download_path else '')
+        analysis_status_label = '✅ Ready' if analysis_download_path else ''
+        sentiment_status_label = '✅ Ready' if sentiment_download_path else ''
+
+        session_snapshot = {
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'timer_signal': build_timer_signal(final_elapsed),
+            'status_html': status_text,
+            'final_status_label': final_status_label,
+            'final_report_value': final_report_value,
+            'analysis_status_label': analysis_status_label,
+            'analysis_report_value': analysis_value,
+            'sentiment_status_label': sentiment_status_label,
+            'sentiment_report_value': sentiment_value,
+            'resources_output': reports['resources'],
+            'final_download_path': final_download_path,
+            'analysis_download_path': analysis_download_path,
+            'sentiment_download_path': sentiment_download_path,
+            'workdir': task_workdir,
+            'include_sentiment': runner.include_sentiment,
+        }
+        save_user_session_snapshot(user_id, session_snapshot)
 
         yield (
             build_timer_signal(final_elapsed),
             status_text,
             final_status_label,
             final_report_value,
-            '✅ Ready' if analysis_download_path else '⌛ Waiting...',
+            analysis_status_label,
             analysis_value,
-            '✅ Ready' if sentiment_download_path else '⌛ Waiting...',
+            sentiment_status_label,
             sentiment_value,
             reports['resources'],
             build_download_state(final_download_path),
@@ -1531,6 +1587,104 @@ def run_fin_research_workflow(
             user_status_manager.finish_user_task('unknown')
         if context_installed:
             _clear_task_log_context()
+
+
+def reload_last_fin_result(request: gr.Request):
+    """Reload the most recent finished FinResearch result for the current user."""
+    disabled_dl = build_download_state(None)
+    ok, user_id_or_error = resolve_user_id_for_request(
+        request, local_mode=LOCAL_MODE)
+    if not ok:
+        message = (
+            '❌ 认证失败：无法获取历史报告。\n\n'
+            '❌ Authentication required to reload the last FinResearch report.'
+        )
+        return (
+            DEFAULT_TIMER_SIGNAL,
+            f'<div class="status-banner warn-banner">{message}</div>',
+            '⚠️ Failed',
+            '',
+            '⚠️ Failed',
+            '',
+            '⚠️ Failed',
+            '',
+            '未能列出输出文件',
+            disabled_dl,
+            disabled_dl,
+            disabled_dl,
+        )
+
+    user_id = user_id_or_error
+    snapshot = load_user_session_snapshot(user_id)
+    if not snapshot:
+        info_html = (
+            '<div class="status-banner warn-banner">'
+            '⚠️ 尚未找到历史研究报告，请先执行一次任务。'
+            '</div>'
+        )
+        return (
+            DEFAULT_TIMER_SIGNAL,
+            info_html,
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '📂 尚无历史输出文件，请先运行任务。',
+            disabled_dl,
+            disabled_dl,
+            disabled_dl,
+        )
+
+    def _path_if_exists(path_value: Optional[str]) -> Optional[str]:
+        if path_value and os.path.exists(path_value):
+            return path_value
+        return None
+
+    timestamp_label = snapshot.get('timestamp', '未知时间')
+    status_banner = (
+        f'<div class="status-banner reload-banner">'
+        f'♻️ 已加载最近一次 FinResearch 结果（完成时间 {timestamp_label}）'
+        f'</div>'
+    )
+    saved_status_html = snapshot.get('status_html') or ''
+    status_html = status_banner + saved_status_html
+
+    timer_signal = snapshot.get('timer_signal', DEFAULT_TIMER_SIGNAL)
+
+    final_status_label = snapshot.get('final_status_label', '✅ Ready')
+    final_status_output = (
+        f'{final_status_label}\n\n> ♻️ 最近完成时间：{timestamp_label}'
+    )
+    analysis_status_label = snapshot.get('analysis_status_label', '✅ Ready')
+    sentiment_status_label = snapshot.get('sentiment_status_label', '✅ Ready')
+
+    final_report_value = snapshot.get('final_report_value', '')
+    analysis_report_value = snapshot.get('analysis_report_value', '')
+    sentiment_report_value = snapshot.get('sentiment_report_value', '')
+    resources_output = snapshot.get('resources_output') or '📂 历史输出目录为空或已清理。'
+
+    final_download_path = _path_if_exists(snapshot.get('final_download_path'))
+    analysis_download_path = _path_if_exists(
+        snapshot.get('analysis_download_path'))
+    sentiment_download_path = _path_if_exists(
+        snapshot.get('sentiment_download_path'))
+
+    return (
+        timer_signal,
+        status_html,
+        final_status_output,
+        final_report_value,
+        analysis_status_label,
+        analysis_report_value,
+        sentiment_status_label,
+        sentiment_report_value,
+        resources_output,
+        build_download_state(final_download_path),
+        build_download_state(analysis_download_path),
+        build_download_state(sentiment_download_path),
+    )
 
 
 def clear_user_workspace(request: gr.Request):
@@ -1587,11 +1741,11 @@ def clear_user_workspace(request: gr.Request):
         return (
             DEFAULT_TIMER_SIGNAL,
             status_text,
-            '⌛ Waiting...',
             '',
-            '⌛ Waiting...',
             '',
-            '⌛ Waiting...',
+            '',
+            '',
+            '',
             '',
             '📂 输出文件已清空',
             disabled_dl,
@@ -2017,6 +2171,14 @@ def create_interface():
             gap: 1rem;
         }
 
+        .action-row-single {
+            margin-bottom: 0.5rem;
+        }
+
+        .action-row-single .gr-button {
+            width: 100%;
+        }
+
         .status-column {
             display: flex;
             flex-direction: column;
@@ -2036,6 +2198,26 @@ def create_interface():
             margin-bottom: 1rem;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
             overflow: hidden;
+        }
+
+        .status-banner {
+            border-radius: 0.75rem;
+            padding: 0.85rem 1rem;
+            margin-bottom: 0.75rem;
+            font-weight: 500;
+            border: 1px solid transparent;
+        }
+
+        .status-banner.reload-banner {
+            background: #ecfeff;
+            border-color: #a5f3fc;
+            color: #0f172a;
+        }
+
+        .status-banner.warn-banner {
+            background: #fef2f2;
+            border-color: #fecaca;
+            color: #7f1d1d;
         }
 
         .status-header {
@@ -2278,6 +2460,103 @@ def create_interface():
             max-height: 700px;
             overflow-y: auto;
         }
+        /* Enhanced markdown look for online reports (reusing export styles, scoped locally) */
+        .final-report-panel .markdown-html-content .content-area,
+        .report-panel .markdown-html-content .content-area {
+            max-width: 720px;
+            margin: 0 auto;
+            font-size: 1.02rem;
+            line-height: 1.75;
+        }
+        .final-report-panel .markdown-html-content h2,
+        .final-report-panel .markdown-html-content h3,
+        .final-report-panel .markdown-html-content h4,
+        .report-panel .markdown-html-content h2,
+        .report-panel .markdown-html-content h3,
+        .report-panel .markdown-html-content h4 {
+            color: #0f172a;
+            margin-top: 2.4rem;
+            margin-bottom: 1rem;
+        }
+        .final-report-panel .markdown-html-content p,
+        .report-panel .markdown-html-content p {
+            margin: 1rem 0;
+        }
+        .final-report-panel .markdown-html-content img,
+        .report-panel .markdown-html-content img {
+            max-width: 100%;
+            display: block;
+            margin: 1.5rem auto;
+            border-radius: 16px;
+            box-shadow: 0 20px 40px rgba(15, 23, 42, 0.12);
+        }
+        .final-report-panel .markdown-html-content table,
+        .report-panel .markdown-html-content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+            font-size: 0.95rem;
+        }
+        .final-report-panel .markdown-html-content table th,
+        .final-report-panel .markdown-html-content table td,
+        .report-panel .markdown-html-content table th,
+        .report-panel .markdown-html-content table td {
+            border: 1px solid rgba(15, 23, 42, 0.15);
+            padding: 12px 16px;
+            text-align: left;
+        }
+        .final-report-panel .markdown-html-content blockquote,
+        .report-panel .markdown-html-content blockquote {
+            border-left: 4px solid #6366f1;
+            padding: 0.5rem 1.5rem;
+            background: rgba(99, 102, 241, 0.08);
+            border-radius: 0 18px 18px 0;
+            margin: 1.5rem 0;
+            color: #312e81;
+        }
+        .final-report-panel pre,
+        .final-report-panel code,
+        .report-panel pre,
+        .report-panel code {
+            font-family: 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas,
+                'Liberation Mono', monospace;
+        }
+        .final-report-panel pre,
+        .report-panel pre {
+            padding: 18px 20px;
+            background: #0f172a;
+            color: #e2e8f0;
+            border-radius: 18px;
+            overflow-x: auto;
+            font-size: 0.9rem;
+        }
+        .final-report-panel code,
+        .report-panel code {
+            background: rgba(99, 102, 241, 0.12);
+            color: #4c1d95;
+            padding: 2px 6px;
+            border-radius: 6px;
+        }
+        .final-report-panel .codehilite,
+        .report-panel .codehilite {
+            background: #0f172a;
+            color: #f8fafc;
+            border-radius: 18px;
+            padding: 18px 22px;
+            overflow-x: auto;
+        }
+        .final-report-panel .codehilite .hll,
+        .report-panel .codehilite .hll { background-color: #4c1d95; }
+        .final-report-panel .codehilite .c,
+        .report-panel .codehilite .c { color: #94a3b8; }
+        .final-report-panel .codehilite .k,
+        .report-panel .codehilite .k { color: #a5b4fc; }
+        .final-report-panel .codehilite .s,
+        .report-panel .codehilite .s { color: #f9a8d4; }
+        .final-report-panel .codehilite .o,
+        .final-report-panel .codehilite .p,
+        .report-panel .codehilite .o,
+        .report-panel .codehilite .p { color: #cbd5f5; }
 
         .final-report-panel .gr-panel,
         .final-report-panel .gr-panel > div,
@@ -2348,6 +2627,17 @@ def create_interface():
             border-radius: 0.5rem !important;
             font-weight: 500 !important;
             transition: all 0.2s ease !important;
+            white-space: pre-line !important;
+            line-height: 1.35 !important;
+            text-align: center !important;
+        }
+
+        .action-row .gr-button {
+            min-height: 72px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
         }
 
         .gr-button-primary {
@@ -2459,6 +2749,18 @@ def create_interface():
             border-color: #334155;
         }
 
+        .dark .status-banner.reload-banner {
+            background: rgba(59, 130, 246, 0.15);
+            border-color: rgba(59, 130, 246, 0.35);
+            color: #dbeafe;
+        }
+
+        .dark .status-banner.warn-banner {
+            background: rgba(248, 113, 113, 0.18);
+            border-color: rgba(248, 113, 113, 0.35);
+            color: #fee2e2;
+        }
+
         .dark .status-messages {
             background: #0f172a;
         }
@@ -2516,6 +2818,43 @@ def create_interface():
         .dark .final-report-panel {
             background: #1e293b;
             border-color: #334155;
+        }
+        .dark .final-report-panel .markdown-html-content h2,
+        .dark .final-report-panel .markdown-html-content h3,
+        .dark .final-report-panel .markdown-html-content h4,
+        .dark .report-panel .markdown-html-content h2,
+        .dark .report-panel .markdown-html-content h3,
+        .dark .report-panel .markdown-html-content h4 {
+            color: #e5e7eb;
+        }
+        .dark .final-report-panel .markdown-html-content p,
+        .dark .report-panel .markdown-html-content p {
+            color: #e5e7eb;
+        }
+        .dark .final-report-panel .markdown-html-content blockquote,
+        .dark .report-panel .markdown-html-content blockquote {
+            background: rgba(59, 130, 246, 0.18);
+            border-left-color: #60a5fa;
+            color: #e5e7eb;
+        }
+        .dark .final-report-panel pre,
+        .dark .report-panel pre {
+            background: #020617;
+            color: #e5e7eb;
+        }
+        .dark .final-report-panel code,
+        .dark .final-report-panel .markdown-html-content code,
+        .dark .report-panel code,
+        .dark .report-panel .markdown-html-content code {
+            /* Make inline code such as image paths much more legible in dark mode */
+            background: #020617 !important;  /* very dark slate */
+            color: #fef9c3 !important;       /* soft light yellow */
+            font-weight: 500;
+        }
+        .dark .final-report-panel .codehilite,
+        .dark .report-panel .codehilite {
+            background: #020617;
+            color: #e5e7eb;
         }
     """) as demo:
         gr.HTML("""
@@ -2629,17 +2968,25 @@ def create_interface():
                     type='password'
                 )
 
-                with gr.Row(elem_classes=['action-row']):
+                with gr.Row(elem_classes=['action-row', 'action-row-single']):
                     run_btn = gr.Button(
-                        '🚀 启动研究 | Launch',
+                        '🚀 启动深度研究 | Launch',
                         variant='primary',
                         size='lg'
                     )
-                    clear_btn = gr.Button(
-                        '🧹 清理工作区 | Clear',
-                        variant='primary',
-                        size='lg'
-                    )
+                with gr.Row(elem_classes=['action-row']):
+                    with gr.Column(scale=1):
+                        clear_btn = gr.Button(
+                            '🧹 清理工作区 | Clear',
+                            variant='primary',
+                            size='lg'
+                        )
+                    with gr.Column(scale=1):
+                        reload_btn = gr.Button(
+                            '🔄 重载最近报告 | Reload',
+                            variant='primary',
+                            size='lg'
+                        )
 
             with gr.Column(scale=1, min_width=0, elem_classes=['status-column']):
                 gr.HTML('<h3 class="section-header">📡 执行状态 | Execution Status</h3>')
@@ -2673,7 +3020,8 @@ def create_interface():
                 gr.HTML('<div class="sub-section-header primary">⚙️ 过程报告 | Process Reports</div>')
                 with gr.Tabs(elem_classes=['process-tabs']):
                     with gr.Tab('📈 数据分析', id=0):
-                        analysis_status_output = gr.Markdown('⌛ Waiting...', elem_classes=['report-status'])
+                        analysis_status_output = gr.Markdown(
+                            '', elem_classes=['report-status'])
                         if local_mode:
                             analysis_report_output = gr.Markdown(elem_classes=['report-panel'])
                         else:
@@ -2685,7 +3033,8 @@ def create_interface():
                         )
 
                     with gr.Tab('📰 舆情洞察', id=1):
-                        sentiment_status_output = gr.Markdown('⌛ Waiting...', elem_classes=['report-status'])
+                        sentiment_status_output = gr.Markdown(
+                            '', elem_classes=['report-status'])
                         if local_mode:
                             sentiment_report_output = gr.Markdown(elem_classes=['report-panel'])
                         else:
@@ -2707,8 +3056,11 @@ def create_interface():
                         )
 
             with gr.Column(scale=4, elem_classes=['final-column']):
-                gr.HTML('<div class="sub-section-header primary">📊 综合报告 | Final Report</div>')
-                final_status_output = gr.Markdown('⌛ Waiting...', elem_classes=['report-status'])
+                gr.HTML(
+                    '<div class="sub-section-header primary">📊 综合报告 | Final Report</div>'
+                )
+                final_status_output = gr.Markdown(
+                    '', elem_classes=['report-status'])
                 if local_mode:
                     final_report_output = gr.Markdown(elem_classes=['final-report-panel'])
                 else:
@@ -2804,6 +3156,16 @@ def create_interface():
                 sentiment_download
             ],
             show_progress=False)
+
+        reload_btn.click(
+            fn=reload_last_fin_result,
+            outputs=[
+                status_timer_signal, status_output, final_status_output, final_report_output,
+                analysis_status_output, analysis_report_output,
+                sentiment_status_output, sentiment_report_output,
+                resources_output, final_download, analysis_download,
+                sentiment_download
+            ])
 
         clear_btn.click(
             fn=clear_user_workspace,
