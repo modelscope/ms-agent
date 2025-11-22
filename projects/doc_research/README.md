@@ -82,7 +82,7 @@ export OPENAI_MODEL_ID=Qwen/Qwen3-235B-A22B-Instruct-2507
 **Quick start:**
 ```bash
 # Use ms-agent CLI to run the app
-ms-agent app --doc_research
+ms-agent app --app_type doc_research
 
 # Use Python script to run the app
 cd ms-agent/app
@@ -91,7 +91,7 @@ python doc_research.py
 
 **Start with Parameters:**
 ```bash
-ms-agent app --doc_research \
+ms-agent app --app_type doc_research \
     --server_name 0.0.0.0 \
     --server_port 7860 \
     --share

@@ -30,7 +30,8 @@ class AppCMD(CLICommand):
             '--app_type',
             type=str,
             default='doc_research',
-            help='The app type, supported values: `doc_research`')
+            help=
+            'The app type, supported values: `doc_research`, `fin_research`')
 
         parser.add_argument(
             '--server_name',
@@ -56,6 +57,12 @@ class AppCMD(CLICommand):
         if self.args.app_type == 'doc_research':
             from ms_agent.app.doc_research import launch_server as launch_doc_research
             launch_doc_research(
+                server_name=self.args.server_name,
+                server_port=self.args.server_port,
+                share=self.args.share)
+        elif self.args.app_type == 'fin_research':
+            from ms_agent.app.fin_research import launch_server as launch_fin_research
+            launch_fin_research(
                 server_name=self.args.server_name,
                 server_port=self.args.server_port,
                 share=self.args.share)

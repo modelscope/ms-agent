@@ -465,7 +465,7 @@ class CodeExecutionTool(ToolBase):
                         'additionalProperties': False
                     }),
                 Tool(
-                    tool_name='reset_sandbox',
+                    tool_name='reset_executor',
                     server_name='code_executor',
                     description=
                     ('Reset the sandbox state by restarting the kernel. '
@@ -479,7 +479,7 @@ class CodeExecutionTool(ToolBase):
                     },
                 ),
                 Tool(
-                    tool_name='get_sandbox_info',
+                    tool_name='get_executor_info',
                     server_name='code_executor',
                     description='Get current sandbox status and information',
                     parameters={
@@ -739,7 +739,7 @@ class CodeExecutionTool(ToolBase):
                 },
                 indent=2)
 
-    async def reset_sandbox(self) -> str:
+    async def reset_executor(self) -> str:
         """
         Reset the sandbox by recreating it.
         This clears all variables and session state.
@@ -778,7 +778,7 @@ class CodeExecutionTool(ToolBase):
             logger.error(f'Reset sandbox failed: {e}', exc_info=True)
             return json.dumps({'success': False, 'error': str(e)}, indent=2)
 
-    async def get_sandbox_info(self) -> str:
+    async def get_executor_info(self) -> str:
         """
         Get current sandbox information.
 

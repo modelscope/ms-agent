@@ -159,6 +159,17 @@ aggregator:
 After that, start the project from the command line in the same way as before.
 Please note that due to incomplete information dimensions, FinResearch may not be able to generate long and detailed analysis reports for complex questions. It is recommended to use this setup for testing purposes only.
 
+Run the FinResearch application:
+
+```bash
+# Launch the Gradio service via command line (you can start without additional arguments, specifying only --app_type fin_research)
+ms-agent app --app_type fin_research --server_name 0.0.0.0 --server_port 7860 --share
+
+# Alternatively, launch the Gradio service by running a Python script
+cd ms-agent/app
+python fin_research.py
+```
+
 ### Examples
 
 Please refer to `projects/fin_research/examples` for more examples.
