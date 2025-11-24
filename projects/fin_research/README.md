@@ -84,15 +84,44 @@ pip install akshare baostock
 
 ### Sandbox Setup
 
-The Collector and Analyst agents require Docker for sandboxed execution:
+The Collector and Analyst agents default use Docker for sandboxed code execution (optional):
 
 ```bash
 # install ms-enclave (https://github.com/modelscope/ms-enclave)
 pip install ms-enclave docker websocket-client
 
-# build the required Docker image, make sure you have installed Docker on your device
+# build the required Docker image, make sure you have installed Docker on your system
 bash projects/fin_research/tools/build_jupyter_image.sh
 ```
+
+If you prefer not to install Docker and related dependencies, you can instead configure the local code execution tool by modifying the default `tools` section in both `analyst.yaml` and `collector.yaml`:
+
+```yaml
+tools:
+  code_executor:
+    mcp: false
+    implementation: python_env
+    exclude:
+      - python_executor
+      - shell_executor
+      - file_operation
+```
+
+With this configuration, code is executed through a Jupyter kernel–based notebook executor that isolates environment variables and supports running shell commands. The required dependencies (including those for data analysis and code execution) will be installed automatically on the first run.
+
+If you want a lighter-weight Python-only execution environment without introducing additional notebook dependencies, you can use:
+
+```yaml
+tools:
+  code_executor:
+    mcp: false
+    implementation: python_env
+    exclude:
+      - notebook_executor
+      - file_operation
+```
+
+This configuration uses an independent Python executor together with a shell command executor and is suitable for lightweight code execution scenarios.
 
 ## 🚀 Quickstart
 
