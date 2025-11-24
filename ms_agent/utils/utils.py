@@ -680,7 +680,7 @@ def valid_repo_id(repo_id: str) -> bool:
     Validate the format of a ModelScope repository ID.
 
     Args:
-        repo_id (str): The repository ID to validate. e.g. owner/model_name
+        repo_id (str): The repository ID to validate. e.g. owner/model_name, owner/model_name/subfolder
 
     Returns:
         bool: True if the repo_id is valid, False otherwise.
@@ -689,7 +689,7 @@ def valid_repo_id(repo_id: str) -> bool:
         return False
 
     repo_id_parts: List[str] = repo_id.split('/')
-    if len(repo_id_parts) == 2 and all(repo_id_parts):
+    if len(repo_id_parts) in (2, 3) and all(repo_id_parts):
         return True
 
     return False
