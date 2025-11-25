@@ -58,7 +58,7 @@ Parameters:
 Code execution tool that can run Python code either in a sandboxed environment or directly in the local Python environment. The behavior is controlled by the `tools.code_executor.implementation` field.
 
 - When omitted or set to `sandbox`:
-  - Uses an `ms-enclave` based sandbox. The sandbox can be created locally with Docker or via a remote HTTP service.
+  - Uses an [ms-enclave](https://github.com/modelscope/ms-enclave) based sandbox. The sandbox can be created locally with Docker or via a remote HTTP service.
   - Currently supports two sandbox types: `docker` and `docker_notebook`. The former is suitable for non-interactive/stateless execution; the latter maintains notebook-style state across calls.
   - The configured `output_dir` on the host is mounted into the sandbox at `/data` so code can read and write persistent artifacts there.
 
