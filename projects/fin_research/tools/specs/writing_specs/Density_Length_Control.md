@@ -12,7 +12,7 @@ This spec ensures conciseness without losing analytical depth.
 - One main idea per paragraph; supporting evidence can stay in the same paragraph.
 
 ## Do
-- Summarize background when necessary instead of narrating it in full. .
+- Summarize background when necessary instead of narrating it in full.
 - Consolidate similar facts into a single, high-density paragraph or table.
 - Prune paragraphs that don’t change conclusions, risk assessment, or forecasts.
 
