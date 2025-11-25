@@ -1,3 +1,9 @@
+---
+slug: supported-models
+title: 支持的模型
+description: Ms-Agent 支持模型列表： OpenAI、ModelScope、Anthropic 等。
+---
+
 # 支持的模型
 
 MS-Agent支持标准OpenAI接口的大模型API。除此之外，为了方便不同模型provider使用，也提供了yaml中不同的配置key。

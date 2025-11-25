@@ -1,8 +1,14 @@
+---
+slug: Workflow
+title: Workflow
+description: Ms-Agent Workflow
+---
+
 # Workflow
 
 MS-Agent supports workflow execution. Workflows are also configured by yaml files. Workflows are composed of different Agents to complete more complex tasks. Currently, MS-Agent's workflow supports two types of Agents:
 
-- LLMAgent: This Agent is introduced in [Basic Agent](./Basic%20Agent.md), which is a basic Agent loop that integrates LLM reasoning
+- LLMAgent: This Agent is introduced in [Basic Agent](./LLMAgent.md), which is a basic Agent loop that integrates LLM reasoning
 - CodeAgent: Contains only a run method, which is a pure code execution process that can provide custom code implementation
 
 ## ChainWorkFlow

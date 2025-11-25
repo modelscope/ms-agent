@@ -1,3 +1,9 @@
+---
+slug: config
+title: 配置与参数
+description: Ms-Agent 配置与参数：类型配置、自定义代码、LLM配置、推理配置、system和query、callbacks、工具配置、其他、config_handler、命令行配置
+---
+
 # 配置与参数
 
 MS-Agent使用一个yaml文件进行配置管理，通常这个文件被命名为`agent.yaml`，这样的设计使不同场景可以读取不同的配置文件。该文件具体包含的字段有：
@@ -98,7 +104,7 @@ tools:
       - map_geo
 ```
 
-支持的完整工具列表，以及自定义工具请参考[这里](./工具.md)
+支持的完整工具列表，以及自定义工具请参考[这里](./tools)
 
 ## 其他
 

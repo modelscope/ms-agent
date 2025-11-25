@@ -1,3 +1,9 @@
+---
+slug: SupportedModels
+title: Supported Models
+description: Ms-Agent Supported Models
+---
+
 # Supported Models
 
 MS-Agent supports large model APIs with the standard OpenAI interface. In addition, to facilitate usage by different model providers, it also provides distinct configuration keys in YAML.

@@ -1,6 +1,14 @@
+---
+slug: fin-research
+title: 金融深度研究
+description: Ms-Agent 金融深度研究项目：多智能体驱动的量化与舆情融合分析系统
+---
+
 # 金融深度研究
 
-Ms-Agent的 FinResearch 项目是一个面向金融市场研究场景的多智能体工作流，融合了定量金融数据分析能力与互联网舆情/资讯深度研究能力，自动生成结构化的专业研究报告。
+📊 FinResearch：面向金融研究的多智能体分析引擎
+FinResearch 是 MS-Agent 体系下专为金融领域打造的智能研究工作流系统，旨在自动化完成从原始市场信号到专业级研究报告的端到端生成。
+它不再依赖单一大模型“幻觉式”输出，而是通过结构化任务分解 + 多源异构数据融合 + 可验证分析闭环，实现高可信度、高解释性、高可复现性的金融洞察。
 
 ## 原理介绍
 
@@ -73,6 +81,8 @@ pip install akshare baostock
 
 ### 沙箱环境
 
+Collector 与 Analyst 默认使用 Docker 沙箱以安全执行代码（可选）：
+
 ```bash
 # 安装 ms-enclave（https://github.com/modelscope/ms-enclave）
 pip install ms-enclave docker websocket-client
@@ -80,6 +90,33 @@ pip install ms-enclave docker websocket-client
 # 构建所需 Docker 镜像（确保设备已安装并运行 Docker）
 bash projects/fin_research/tools/build_jupyter_image.sh
 ```
+
+如果不希望安装 Docker 等依赖，也可以选择配置本地代码执行工具，推荐将 `analyst.yaml` 和 `collector.yaml` 中默认的 `tools` 配置修改为：
+
+```yaml
+tools:
+  code_executor:
+    mcp: false
+    implementation: python_env
+    exclude:
+      - python_executor
+      - shell_executor
+      - file_operation
+```
+
+该配置下默认依赖 Jupyter Kernel 执行代码，提供对环境变量的隔离，并支持 shell 命令执行，相应的依赖将在第一次运行代码时自动安装（包括数据分析和代码执行需要的依赖）。如果希望只使用更轻量的 Python 执行环境而不引入其他依赖，可以修改为：
+
+```yaml
+tools:
+  code_executor:
+    mcp: false
+    implementation: python_env
+    exclude:
+      - notebook_executor
+      - file_operation
+```
+
+该配置使用独立的 Python 执行器和 Shell 命令执行器，适合轻量级代码执行场景。
 
 ### 环境变量
 

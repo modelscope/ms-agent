@@ -1,3 +1,9 @@
+---
+slug: installation
+title: 安装
+description: Ms-Agent 环境安装
+---
+
 # 安装
 
 ## Wheel包安装

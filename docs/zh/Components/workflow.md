@@ -1,8 +1,14 @@
+---
+slug: workflow
+title: 工作流
+description: Ms-Agent 工作流：支持多智能体组合执行复杂任务
+---
+
 # 工作流
 
 MS-Agent支持工作流执行。工作流同样由yaml文件所配置。工作流由不同的Agent组合而成，完成一个更复杂的任务。目前MS-Agent的工作流支持两类Agent：
 
-- LLMAgent：这个Agent的介绍在[基础智能体](./基础智能体.md)中，是融合的LLM推理的基本Agent循环
+- LLMAgent：这个Agent的介绍在[基础智能体](./llm-agent)中，是融合的LLM推理的基本Agent循环
 - CodeAgent：仅包含一个run方法，是纯代码的执行流程，可以提供自定义代码实现
 
 ## ChainWorkFlow

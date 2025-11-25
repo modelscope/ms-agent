@@ -1,4 +1,10 @@
-# SingularityCinema
+---
+slug: SingularityCinema
+title: Singularity Cinema
+description: Ms-Agent Singularity Cinema is a lightweight and excellent short video generator.
+---
+
+# Singularity Cinema
 
 A lightweight and excellent short video generator
 

@@ -1,6 +1,12 @@
-# SingularityCinema
+---
+slug: video-generation
+title: 奇点放映室
+description: Ms-Agent 奇点放映室项目：基于大模型的短视频生成器
+---
 
-一个轻量优秀的短视频生成器
+# 奇点放映室 (Singularity Cinema)
+
+一个轻量优秀的短视频生成器，支持文本或文档生成短视频。
 
 ## 安装
 

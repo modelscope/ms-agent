@@ -1,3 +1,9 @@
+---
+slug: Tools
+title: Tools
+description: Ms-Agent Tools
+---
+
 # Tools
 
 ## Tool List
@@ -53,6 +59,72 @@ Parameters:
 
 - path: `str`, relative directory based on the `output` in yaml configuration. If empty, lists all files in the root directory.
 
+### code_executor
+
+Code execution tool that can run Python code either in a sandboxed environment or directly in the local Python environment. The behavior is controlled by the `tools.code_executor.implementation` field.
+
+- When omitted or set to `sandbox`:
+  - Uses an [ms-enclave](https://github.com/modelscope/ms-enclave) based sandbox. The sandbox can be created locally with Docker or via a remote HTTP service.
+  - Currently supports two sandbox types: `docker` and `docker_notebook`. The former is suitable for non-interactive/stateless execution; the latter maintains notebook-style state across calls.
+  - The configured `output_dir` on the host is mounted into the sandbox at `/data` so code can read and write persistent artifacts there.
+
+- When set to `python_env`:
+  - Runs code in the local Python environment. The tool API is aligned with the sandbox version and supports both Jupyter-kernel based execution and plain Python interpreter execution.
+  - Required dependencies should be installed locally; on the first run, common data-analysis and execution dependencies (such as `numpy`, `pandas`, etc.) will be installed automatically when missing.
+
+#### notebook_executor
+
+- **Sandbox mode**: Executes code inside a `docker_notebook` sandbox, preserving state (variables, imports, dataframes, etc.) across calls. Files under the mounted data directory are available at `/data/...`, and you can also run simple shell commands from code cells using the standard `!` prefix.
+- **Local mode**: Executes code in a local Jupyter kernel, with environment isolation and state persistence across calls. In the notebook environment you can also use simple shell commands via the standard `!` syntax.
+
+**Parameters**:
+
+- **code**: `string` – Python code to execute.
+- **description**: `string` – Short description of what the code is doing.
+- **timeout**: `integer` – Optional execution timeout in seconds; if omitted, the tool-level default is used.
+
+#### python_executor
+
+- **Sandbox mode**: Executes Python code in a `docker`-type sandbox using the sandbox’s Python interpreter, typically used when you do not need full notebook-style interaction.
+- **Local mode**: Executes code with the local Python interpreter in a stateless fashion; each call has its own execution context and does not share variables with previous calls.
+
+**Parameters**:
+
+- **code**: `string` – Python code to execute.
+- **description**: `string` – Short description of what the code is doing.
+- **timeout**: `integer` – Optional execution timeout in seconds; if omitted, the tool-level default is used.
+
+#### shell_executor
+
+- **Sandbox mode**: Dedicated to `docker`-type sandboxes and executes shell commands inside the sandbox using `bash`, supporting basic operations like `ls`, `cd`, `mkdir`, `rm`, etc., and access to files under `/data`.
+- **Local mode**: Executes shell commands using the local `bash` interpreter with the working directory set to `output_dir`; this is convenient for development but generally not recommended for production.
+
+**Parameters**:
+
+- **command**: `string` – Shell command to execute.
+- **timeout**: `integer` – Optional execution timeout in seconds; if omitted, the tool-level default is used.
+
+#### file_operation
+
+- **Sandbox mode**: Dedicated to `docker`-type sandboxes and performs basic file operations inside the sandbox (create, read, write, delete, list, exists). Paths are interpreted as sandbox-internal paths; in most cases you should work under `/data/...`.
+- **Local mode**: Performs the same basic file operations on the local filesystem but always constrained under `output_dir` to prevent accessing arbitrary locations.
+
+**Parameters**:
+
+- **operation**: `string` – Type of file operation to perform; one of `'create'`, `'read'`, `'write'`, `'delete'`, `'list'`, `'exists'`.
+- **file_path**: `string` – File or directory path (sandbox-internal in sandbox mode; relative to or under `output_dir` in local mode).
+- **content**: `string` – Optional, content to write when `operation` is `'write'`.
+- **encoding**: `string` – Optional file encoding, default `utf-8`.
+
+#### reset_executor
+
+- **Sandbox mode**: Recreates the sandbox (or restarts the notebook kernel) to clear all variables and session state when the environment becomes unstable.
+- **Local mode**: Restarts the local Jupyter kernel used by `notebook_executor`, dropping all in-memory state.
+
+#### get_executor_info
+
+- **Sandbox mode**: Returns the current sandbox status and configuration summary (such as memory/CPU limits, available tools, etc.).
+- **Local mode**: Returns basic information about the local execution environment (working directory, whether it is initialized, current execution count, uptime, etc.).
 
 ### MCP Tools
 
@@ -79,7 +151,7 @@ ms-agent run --config xxx/xxx --mcp_server_file ./mcp.json
 
 ### Configuring yaml file
 
-Additional tools can be added in tools within yaml. Refer to [Configuration and Parameters](./Config.md#Tool%20Configuration)
+Additional tools can be added in tools within yaml. Refer to [Configuration and Parameters](./Config.md) for details.
 
 ### Writing new tools
 

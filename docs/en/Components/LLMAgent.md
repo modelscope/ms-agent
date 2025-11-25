@@ -1,3 +1,9 @@
+---
+slug: LLMAgent
+title: LLMAgent for basic usage
+description: Ms-Agent LLMAgent for basic usage
+---
+
 # LLM Agent
 
 The basic agent class in MS-Agent is [LLMAgent](https://github.com/modelscope/ms-agent/blob/main/ms_agent/agent/llm_agent.py). MS-Agent's conversational capabilities and tool invocation are all handled through this class. The diagram is as follows:
