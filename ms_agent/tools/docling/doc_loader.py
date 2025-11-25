@@ -256,9 +256,10 @@ class DocLoader:
         file_paths = [(i, file) for i, file in enumerate(url_or_files)
                       if file and not file.startswith('http')]
         preprocessed = []
+        max_workers = min(8, (os.cpu_count() or 4))
 
         # Step1: Remove urls that cannot be processed
-        with ThreadPoolExecutor() as executor:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
                 executor.submit(check_url_valid, url) for url in http_urls
             ]
@@ -268,7 +269,7 @@ class DocLoader:
                     preprocessed.append(result)
 
         # Step2: Add file paths that are valid
-        with ThreadPoolExecutor() as executor:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
                 executor.submit(check_file_valid, file) for file in file_paths
             ]

@@ -7,6 +7,8 @@ llm:
 
 generation_config:
   stream: true
+  stream_options:
+    include_usage: true
 
 
 prompt:

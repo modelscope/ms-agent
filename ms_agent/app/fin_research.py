@@ -2209,6 +2209,36 @@ def create_interface():
             opacity: 0.95;
         }
 
+        .main-header .main-intro {
+            max-width: 1024px;
+            margin: 1rem auto 0.75rem;
+            padding: 0.85rem 1.25rem;
+            background: rgba(15, 23, 42, 0.22);
+            border-radius: 0.85rem;
+            border: 1px solid rgba(255, 255, 255, 0.28);
+            font-size: clamp(0.95rem, 1.4vw, 1.1rem);
+            line-height: 1.65;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+                        0 10px 30px rgba(15, 23, 42, 0.18);
+            backdrop-filter: blur(2px);
+        }
+
+        .main-header .main-intro span {
+            display: block;
+        }
+
+        .main-header .main-intro .cn {
+            font-weight: 600;
+            letter-spacing: 0.01em;
+        }
+
+        .main-header .main-intro .en {
+            margin-top: 0.35rem;
+            font-size: clamp(0.9rem, 1.25vw, 1.05rem);
+            color: rgba(226, 232, 240, 0.95);
+            letter-spacing: 0.01em;
+        }
+
         .main-header .powered-by {
             margin-top: 0.35rem;
             font-size: clamp(0.85rem, 1.2vw, 1rem);
@@ -2826,6 +2856,14 @@ def create_interface():
             background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
         }
 
+        .dark .main-header .main-intro {
+            background: rgba(15, 23, 42, 0.6);
+            border-color: rgba(148, 163, 184, 0.35);
+            box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.25),
+                        0 10px 30px rgba(2, 6, 23, 0.55);
+            color: rgba(248, 250, 252, 0.95);
+        }
+
         .dark .status-container {
             background: #1e293b;
             border-color: #334155;
@@ -2943,6 +2981,10 @@ def create_interface():
         <div class="main-header">
             <h1>📊 FinResearch 金融深度研究</h1>
             <p>Multi-Agent Financial Research Workflow</p>
+            <div class="main-intro">
+                <span class="cn" lang="zh">面向金融研究的多智能体分析引擎，实现从原始市场信号到专业级研究的自动化、端到端金融报告生成。</span>
+                <span class="en" lang="en">A multi-agent analysis engine for financial research that automates the journey from raw market signals to professional-grade insights and end-to-end financial report generation.</span>
+            </div>
             <p class="powered-by">
                 Powered by
                 <a href="https://github.com/modelscope/ms-agent"
@@ -2955,6 +2997,12 @@ def create_interface():
                    target="_blank"
                    rel="noopener noreferrer">
                     Readme
+                </a>
+                |
+                <a href="https://www.modelscope.cn/models/ms-agent/fin_research_examples/file/view/master/README.md?status=1"
+                   target="_blank"
+                   rel="noopener noreferrer">
+                    Examples
                 </a>
             </p>
         </div>
@@ -3046,7 +3094,7 @@ def create_interface():
 
                 search_api_key = gr.Textbox(
                     label='搜索引擎 API Key (可选 | Optional)',
-                    placeholder='支持 exa: <key> / serpapi: <key>',
+                    placeholder='输入格式：exa:xxx 或 serpapi:xxx',
                     type='password'
                 )
 
@@ -3082,7 +3130,7 @@ def create_interface():
                         </div>
                         <div class="status-messages">
                             <div class="agent-message waiting">
-                                <div class="agent-content">⏳ 等待启动... | Waiting to start...</div>
+                                <div class="agent-content">⏳ 准备就绪... | Ready for Execution....</div>
                             </div>
                         </div>
                     </div>
@@ -3199,10 +3247,10 @@ def create_interface():
                     <strong style="font-size: 1.1rem;">💡 提示 | Tip</strong>
                     <br/><br/>
                     <span style="display: block; margin-bottom: 0.5rem;">
-                        研究任务通常需要十几分钟时间完成。您可以实时查看右侧的执行状态，了解当前是哪个 Agent 在工作。建议在研究目标中明确指定股票代码、时间范围和关注的分析维度，以获得更精准的结果。
+                        研究任务通常需要十几分钟时间完成。您可以实时查看右侧的执行状态，了解当前是哪个 Agent 在工作。建议在研究目标中明确指定股票代码、时间范围和关注的分析维度，以获得更精准的结果。如果希望获得速度更快、更稳定的体验，建议在本地进行部署。
                     </span>
                     <span style="display: block; opacity: 0.9;">
-                        Research tasks typically take several minutes to complete. You can monitor the execution status on the right to see which agent is working. Specify stock tickers, time ranges, and analysis dimensions for more accurate results.
+                        Research tasks typically take several minutes to complete. You can monitor the execution status on the right to see which agent is working. Specify stock tickers, time ranges, and analysis dimensions for more accurate results. For a faster and more stable experience, we recommend deploying it locally.
                     </span>
                 </p>
             </div>

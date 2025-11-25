@@ -7,6 +7,8 @@ llm:
 
 generation_config:
   stream: true
+  stream_options:
+    include_usage: true
 
 
 prompt:
@@ -59,6 +61,8 @@ prompt:
       - Review the report outline, all chapter files, `cross_chapter_mismatches.md`, and user's original plan for the financial analysis task.
       - Summarize and resolve all mismatch issues, ensuring consistency in data, scope, and terminology.
       - Search for and retain valuable visual elements from the historical context and available resources in the working directory.
+      - You are STRONGLY ENCOURAGED to retrieve relevant writing specs before drafting the final report, \
+      using the spec tools that are currently visible via the spec_loader server.
     - Perform self-check and refinement for logical flow, clarity, and professional tone, \
     and optionally append a brief **Final_Checklist** section summarizing remaining issues and validations.
     - Output the final report in markdown formated text without tool calls.
@@ -67,7 +71,8 @@ prompt:
     <Tool_Calling_Protocol>
     - **Every turn MUST include at least one tool call — without exception — unless you are producing the final report. \
     Failure to call a tool in any non-final-report turn is considered a violation of the protocol.**
-    - Retrieve principles depending on the principle_skill server.
+    - Retrieve principle specs, writing specs, or other available specs through the spec_loader server, \
+    based on the spec tools currently exposed to you.
     - To reduce the number of conversation turns, multiple tools can be invoked simultaneously within a single turn when necessary.
     - When using the file_system---write_file tool, pass an empty string ('') to the path argument to use the default working directory.
     - Avoid redundant tool calls for file queries or reads when the relevant information has \
@@ -92,6 +97,7 @@ prompt:
     - Maintains a professional tone and report-style formatting.
     - Keep figure and table numbering independent, each following its own consistent sequence.
     - Please generate the final report in the same language used in the plan (Chinese, English, etc.).
+    - You are encouraged to follow the writing specs retrieved from the spec_loader server if available.
     </Format_Requirements>
 
     <Safety_Constraints>
@@ -125,8 +131,10 @@ tools:
     mcp: false
     exclude:
       - create_directory
+  spec_loader:
+    mcp: false
   plugins:
-    - tools/principle_skill
+    - tools/spec_loader
 
 
 handler: time_handler
