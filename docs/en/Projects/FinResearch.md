@@ -1,3 +1,9 @@
+---
+slug: FinResearch
+title: Finance Research Workflow
+description: Ms-Agent FinResearch is a multi-agent workflow designed for financial market research, combining quantitative data analysis and in-depth sentiment research to generate professional reports.
+---
+
 # FinResearch
 
 Ms-Agent’s FinResearch project is a multi-agent workflow tailored for financial market research. It combines quantitative market/data analysis with in-depth online information research to automatically produce a structured, professional research report.

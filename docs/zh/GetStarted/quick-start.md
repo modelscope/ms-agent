@@ -1,3 +1,9 @@
+---
+slug: quick-start
+title: 快速开始
+description: Ms-Agent 快速开始
+---
+
 # 快速开始
 
 MS-Agent是魔搭社区官方推出的Agent智能体框架。本框架致力于使用一个清晰简单的通用能力框架，解决若干领域的专有问题。
@@ -12,7 +18,7 @@ MS-Agent也是魔搭官网的[mcp-playground](https://modelscope.cn/mcp/playgrou
 
 ## 安装
 
-MS-Agent的安装请参考[安装文档](安装.md)。
+MS-Agent的安装请参考[安装文档](installation)。
 
 ## 使用样例
 

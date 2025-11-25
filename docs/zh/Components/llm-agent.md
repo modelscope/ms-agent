@@ -1,3 +1,9 @@
+---
+slug: llm-agent
+title: 基础智能体
+description: Ms-Agent 基础智能体：LLMAgent对话能力、工具调用、callbacks机制、自定义Agent方法
+---
+
 # 基础智能体
 
 MS-Agent的基础智能体类是[LLMAgent](https://github.com/modelscope/ms-agent/blob/main/ms_agent/agent/llm_agent.py)。MS-Agent的对话能力、工具调用都经由该类进行处理。示意图如下：

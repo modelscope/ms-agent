@@ -1,4 +1,10 @@
-# Agent Skills (智能体技能)
+---
+slug: agent-skills
+title: 智能体技能
+description: Ms-Agent 智能体技能：模块化封装领域知识，提升智能体在特定任务上的表现，完全兼容 Anthropic Agent Skills 协议。
+---
+
+# 智能体技能 (Agent Skills)
 
 
 ## 1. 背景和动机
@@ -194,6 +200,11 @@ if __name__ == '__main__':
 
     main()
 ```
+
+- skill_id_or_dir: 支持传入本地技能目录路径，或从ModelScope Hub加载技能ID。
+  - skill_id_or_dir (str): 示例： 'path/to/skill-directory', 'ms-agent/skill_examples', 'ma-agent/skill_examples/pdf' (格式为 `owner/skill_name` or `owner/skill_name/subfolder`)
+  - 参考 [AgentSkillExamples](https://modelscope.cn/models/ms-agent/skill_examples)
+
 
 * 本地执行
   - 若 `use_sandbox=False`，技能脚本将在本地环境中直接执行

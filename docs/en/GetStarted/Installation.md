@@ -1,3 +1,9 @@
+---
+slug: Installation
+title: Installation
+description: Ms-Agent Installation Guide
+---
+
 # Installation
 
 ## Wheel Package Installation

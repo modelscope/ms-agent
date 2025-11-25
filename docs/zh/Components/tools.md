@@ -1,3 +1,9 @@
+---
+slug: tools
+title: 工具
+description: Ms-Agent 工具：支持多种内置工具和自定义工具扩展
+---
+
 # 工具
 
 ## 工具列表
@@ -59,7 +65,7 @@ MS-Agent支持很多内部工具：
 
 - 默认或 `implementation: sandbox` 启动沙箱模式：
   - 基于沙箱环境运行代码，支持通过本地 Docker 或远程 HTTP 服务建立沙箱运行环境，主要支持 `docker` 和 `docker_notebook` 两种环境类型，分别适合于无状态的代码运行和需要在对话内保持上下文状态的代码运行。
-  - 工具基于 `ms-enclave` 实现，依赖于本地可用的 Docker 环境。如果代码执行需要的依赖较多，建议预先构建包含所需依赖的镜像。准备好基础镜像后，需要完善本次启动容器的基础配置，如配置所选择的执行环境类型、可用的工具、容器需要挂载的目录等。
+  - 工具基于 [ms-enclave](https://github.com/modelscope/ms-enclave) 实现，依赖于本地可用的 Docker 环境。如果代码执行需要的依赖较多，建议预先构建包含所需依赖的镜像。准备好基础镜像后，需要完善本次启动容器的基础配置，如配置所选择的执行环境类型、可用的工具、容器需要挂载的目录等。
   - 默认会将配置中的 `output_dir` 目录挂载到沙箱内的 `/data`，用于读写持久化文件。
 
 - `implementation: python_env` 时启动本地模式：
@@ -151,7 +157,7 @@ ms-agent run --config xxx/xxx --mcp_server_file ./mcp.json
 
 ### 配置yaml文件
 
-yaml中可以在tools中添加额外工具。可以参考[配置与参数](./配置与参数.md#工具配置)
+yaml中可以在tools中添加额外工具。可以参考[配置与参数](./config.md#工具配置)
 
 ### 编写新的工具
 

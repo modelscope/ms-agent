@@ -1,3 +1,9 @@
+---
+slug: contributor-guide
+title: 贡献者指南
+description: Ms-Agent 贡献者指南：如何为 Ms-Agent 贡献工作流和代码。
+---
+
 # 贡献者指南
 
 ## 工作流贡献

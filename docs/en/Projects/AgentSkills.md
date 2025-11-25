@@ -1,3 +1,9 @@
+---
+slug: AgentSkills
+title: Agent Skills
+description: Ms-Agent Skills implementation of Anthropic Agent Skills Protocol
+---
+
 # Agent Skills
 
 
@@ -194,6 +200,11 @@ if __name__ == '__main__':
 
     main()
 ```
+
+- skill_id_or_dir: Path to the local skill directory or skill ID from The ModelScope hub.
+  - skill_id_or_dir (str): e.g. 'path/to/skill-directory', 'ms-agent/skill_examples', 'ma-agent/skill_examples/pdf' (in the form of `owner/skill_name` or `owner/skill_name/subfolder`)
+  - Refer to [AgentSkillExamples](https://modelscope.cn/models/ms-agent/skill_examples) for more details on skill publishing and sharing.
+
 
 
 * Local Execution

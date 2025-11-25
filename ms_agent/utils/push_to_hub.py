@@ -443,6 +443,7 @@ class PushToModelScope(PushToHub):
         repo_type: Optional[str] = 'model',
         commit_message: Optional[str] = None,
         exclude: Optional[List[str]] = None,
+        add_powered_by: Optional[bool] = True,
     ):
         """
         Push files from a local directory to the ModelScope repository.
@@ -460,7 +461,10 @@ class PushToModelScope(PushToHub):
         path_in_repo_replace = f'{path_in_repo.rstrip("/")}/' if path_in_repo else ''
         path_in_repo_url: str = f'{self.endpoint}/{repo_type}s/{repo_id}/resolve/master/{path_in_repo_replace}'
         origin_report, backup_report = self._preprocess(
-            folder_path, path_in_repo_url)
+            folder_path=folder_path,
+            path_in_repo_url=path_in_repo_url,
+            add_powered_by=add_powered_by,
+        )
 
         try:
             self.api.upload_folder(

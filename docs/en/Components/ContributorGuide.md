@@ -1,3 +1,9 @@
+---
+slug: ContributorGuide
+title: Contributor Guide
+description: Ms-Agent Contributor Guide
+---
+
 # Contributor Guide
 
 ## Workflow Contribution

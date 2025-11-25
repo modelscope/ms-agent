@@ -83,7 +83,7 @@ def main():
     """
     work_dir: str = str(_PATH / 'temp_workspace')
     # Refer to `https://github.com/modelscope/ms-agent/tree/main/projects/agent_skills/skills`
-    skills_dir: str = str(_PATH / 'skills')
+    skill_id_or_dir: str = str(_PATH / 'skills')
     use_sandbox: bool = True
 
     ## Configuration for ModelScope API-Inference, or set your own model with OpenAI API compatible format
@@ -93,7 +93,7 @@ def main():
     base_url: str = 'https://api-inference.modelscope.cn/v1/'
 
     agent = create_agent_skill(
-        skills=skills_dir,
+        skills=skill_id_or_dir,
         model=model,
         api_key=os.getenv('OPENAI_API_KEY', api_key),
         base_url=os.getenv('OPENAI_BASE_URL', base_url),
@@ -114,6 +114,11 @@ if __name__ == '__main__':
 
     main()
 ```
+
+- skill_id_or_dir: Path to the local skill directory or skill ID from The ModelScope hub.
+  - skill_id_or_dir (str): e.g. 'path/to/skill-directory', 'ms-agent/skill_examples', 'ma-agent/skill_examples/pdf' (in the form of `owner/skill_name` or `owner/skill_name/subfolder`)
+  - Refer to [AgentSkillExamples](https://modelscope.cn/models/ms-agent/skill_examples) for more details on skill publishing and sharing.
+
 
 **Result:**
 

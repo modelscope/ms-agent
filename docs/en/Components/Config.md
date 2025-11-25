@@ -1,3 +1,9 @@
+---
+slug: Config
+title: Config & Parameters
+description: Ms-Agent Configuration & Parameters
+---
+
 # Config
 
 MS-Agent uses a yaml file for configuration management, typically named `agent.yaml`, which allows different scenarios to read different configuration files. The specific fields contained in this file are:
@@ -98,7 +104,7 @@ tools:
       - map_geo
 ```
 
-For the complete list of supported tools and custom tools, please refer to [here](./工具.md)
+For the complete list of supported tools and custom tools, please refer to [here](./Tools.md)
 
 ## Others
 

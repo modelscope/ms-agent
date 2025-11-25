@@ -9,26 +9,25 @@ MS-Agent DOCUMENTATION
    :maxdepth: 2
    :caption: 🚀 Quick Start
 
-   GetStarted/Introduction.md
-   GetStarted/Installation.md
+   GetStarted/Introduction
+   GetStarted/Installation
 
 .. toctree::
    :maxdepth: 2
    :caption: ⚙️ Components
 
-   Components/Config.md
-   Components/LLMAgent.md
-   Components/Workflow.md
-   Components/SupportedModels.md
-   Components/Tools.md
-   Components/ContributorGuide.md
+   Components/Config
+   Components/LLMAgent
+   Components/Workflow
+   Components/SupportedModels
+   Components/Tools
+   Components/ContributorGuide
 
 .. toctree::
    :maxdepth: 2
    :caption: 📁 Projects
 
-   Projects/AgentSkills.md
-   Projects/DeepResearch.md
-   Projects/CodeScratch.md
-   Projects/FinResearch.md
-   Projects/VideoGeneration.md
+   Projects/AgentSkills
+   Projects/DeepResearch
+   Projects/FinResearch
+   Projects/VideoGeneration
