@@ -161,3 +161,6 @@ ms_agent/app/temp_workspace/
 
 # Ignore local reference md files folder
 skx-docs/
+
+# QWEN context file
+QWEN.md
