@@ -1,4 +1,5 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+from .agent_tool import AgentTool
 from .code import CodeExecutionTool, SandboxManagerFactory
 from .filesystem_tool import FileSystemTool
 from .mcp_client import MCPClient

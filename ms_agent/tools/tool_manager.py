@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 
 import json
 from ms_agent.llm.utils import Tool, ToolCall
+from ms_agent.tools.agent_tool import AgentTool
 from ms_agent.tools.base import ToolBase
 from ms_agent.tools.code import CodeExecutionTool, LocalCodeExecutionTool
 from ms_agent.tools.filesystem_tool import FileSystemTool
@@ -66,6 +67,12 @@ class ToolManager:
         if hasattr(config, 'tools') and hasattr(config.tools,
                                                 'financial_data_fetcher'):
             self.extra_tools.append(FinancialDataFetcher(config))
+        if hasattr(config, 'tools') and getattr(config.tools, 'agent_tools',
+                                                None):
+            agent_tool = AgentTool(
+                config, trust_remote_code=self.trust_remote_code)
+            if agent_tool.enabled:
+                self.extra_tools.append(agent_tool)
         self.tool_call_timeout = getattr(config, 'tool_call_timeout',
                                          TOOL_CALL_TIMEOUT)
         local_dir = self.config.local_dir if hasattr(self.config,
