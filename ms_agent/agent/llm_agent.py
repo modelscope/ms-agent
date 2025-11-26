@@ -405,7 +405,7 @@ class LLMAgent(Agent):
         assert response_message is not None, 'No response message generated from LLM.'
         if response_message.tool_calls:
             self.log_output('[tool_calling]:')
-            for tool_call in response_message.tool_calls:
+            for idx, tool_call in enumerate(response_message.tool_calls):
                 tool_call = deepcopy(tool_call)
                 if isinstance(tool_call['arguments'], str):
                     try:
@@ -413,6 +413,12 @@ class LLMAgent(Agent):
                             tool_call['arguments'])
                     except json.decoder.JSONDecodeError:
                         pass
+                if tool_call['arguments'] is None:
+                    response_message.tool_calls[idx]['arguments'] = {
+                        '__error__':
+                        'Original arguments were None, replaced by default.'
+                    }
+
                 self.log_output(
                     json.dumps(tool_call, ensure_ascii=False, indent=4))
 

@@ -1,6 +1,6 @@
 llm:
   service: openai
-  model: claude-sonnet-4-5-20250929
+  model: claude-haiku-4-5-20251001
   openai_api_key:
   openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 
@@ -40,21 +40,7 @@ prompt:
        * Do a minimum change in case that the normal code is damaged, if you are doing a break change, change related files also
        * Fix other issues you discover while reading the code files, and these issues need to be ones where you have identified the root cause
 
-    4. Express your thinking in concise and clear language. When you fix files, you should use the following format:
-
-    ```type: filename
-    text
-    ```
-
-    for example:
-    ```javascript: frontend/index.js
-    your code here
-    ```
-
-    `javascript: frontend/index.js` will be used as the filename. If you are fixing a file, you need to:
-      * Read the target file
-      * Follow the original data structures and file imports, do not break it(you may read more files depends on)
-      * Then output the complete fixed code of the file.
+    4. Express your thinking in concise and clear language. When you fix files, you should use the edit_file tool
 
     If you only output code snippets to demonstrate your conclusions, you can use standard code blocks:
 
@@ -66,8 +52,27 @@ prompt:
 
     Let's begin:
 
+  devtool: |
+    Use chrome-devtools to thoroughly test the generated frontend and backend code:
+    * List all console messages using list_console_messages to identify JavaScript errors, warnings, or logs
+    * Get detailed error information using get_console_message for each error or warning found
+    * List network requests using list_network_requests to check if API calls are successful, verify HTTP status codes, and identify failed requests
+    * Get detailed network request/response information using get_network_request to analyze request headers, payloads, and response data
+    * Take a snapshot of the page to understand the current UI state and available interactive elements
+    * Test the implemented functionality by:
+        - Clicking on interactive elements (buttons, links, forms) using click tool
+        - Filling out forms using fill or fill_form tools to test user input workflows
+        - Navigating between pages to verify routing works correctly
+        - Testing keyboard interactions using press_key when necessary
+    * Take screenshots at critical steps to document the UI state and verify visual correctness
+    * Analyze the feedback from all these operations to identify:
+        - Console errors (e.g., undefined variables, import errors, runtime exceptions)
+        - Network failures (e.g., 404/500 errors, CORS issues, timeout problems)
+        - UI/UX issues (e.g., broken layouts, missing elements, non-functional buttons)
+        - Logic errors (e.g., incorrect data display, failed form submissions)
+    * Use this comprehensive feedback to help the refine model better understand and fix the issues
+
 callbacks:
-  - callbacks/artifact_callback
   - callbacks/eval_callback
 
 tools:
@@ -77,6 +82,16 @@ tools:
       - create_directory
       - write_file
       - list_files
+    edit_file_config:
+      diff_model: morph-v3-fast
+      api_key:
+      base_url: https://api.morphllm.com/v1
+
+  chrome-devtools:
+    mcp: true
+    command: "npx"
+    args: ["-y", "chrome-devtools-mcp@latest"]
+    transport: "stdio"
 
 max_chat_round: 100
 

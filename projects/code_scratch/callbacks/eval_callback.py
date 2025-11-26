@@ -4,7 +4,6 @@ import subprocess
 from contextlib import contextmanager
 from typing import List, Optional
 
-from file_parser import extract_code_blocks
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback
 from ms_agent.llm.utils import Message
@@ -26,6 +25,7 @@ class EvalCallback(Callback):
         self.compile_round = 300
         self.cur_round = 0
         self.last_issue_length = 0
+        self.devtool_prompt = getattr(config.prompt, 'devtool', None)
 
     async def on_task_begin(self, runtime: Runtime, messages: List[Message]):
         self.omit_intermediate_messages(messages)
@@ -87,25 +87,17 @@ class EvalCallback(Callback):
     @staticmethod
     def check_runtime():
         try:
-            os.system('pkill -f node')
-            if os.getcwd().endswith('backend'):
-                result = subprocess.run(['npm', 'run', 'dev'],
-                                        capture_output=True,
-                                        text=True,
-                                        timeout=5,
-                                        stdin=subprocess.DEVNULL)
-            else:
-                result = subprocess.run(['npm', 'run', 'build'],
-                                        capture_output=True,
-                                        text=True,
-                                        check=True)
+            result = subprocess.run(['npm', 'run', 'dev'],
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=5,
+                                    stdin=subprocess.DEVNULL)
         except subprocess.CalledProcessError as e:
             output = EvalCallback._parse_e_msg(e)
         except subprocess.TimeoutExpired as e:
             output = EvalCallback._parse_e_msg(e)
         else:
             output = result.stdout + '\n' + result.stderr
-        os.system('pkill -f node')
         return output
 
     def _run_compile(self):
@@ -139,12 +131,21 @@ class EvalCallback(Callback):
         self.last_issue_length = len(messages) - 3 - self.last_issue_length
         self.omit_intermediate_messages(messages)
         query = self.get_compile_feedback('frontend').strip()
+
+        # compile -> devtools
         if not query:
-            human_feedback = True
-            query = self.get_human_feedback().strip()
+            feedback_type = 'devtools'
+            query = self.devtool_prompt
+            self.devtool_prompt = 'Use chrome-devtools to thoroughly test again'
         else:
-            human_feedback = False
+            feedback_type = 'compling'
             logger.warn(f'[Compile Feedback]: {query}]')
+
+        # devtools -> human
+        if not query:
+            feedback_type = 'human'
+            query = self.get_human_feedback().strip()
+
         if not query:
             self.feedback_ended = True
             feedback = (
@@ -153,22 +154,11 @@ class EvalCallback(Callback):
         else:
             all_local_files = await self.file_system.list_files()
             feedback = (
-                f'Feedback from {"human" if human_feedback else "compling"}: {query}\n'
+                f'Feedback from {feedback_type}: {query}\n'
                 f'The files on the local system of this project: {all_local_files}\n'
                 f'Now please analyze and fix this issue:\n')
         messages.append(Message(role='user', content=feedback))
-
-    async def on_tool_call(self, runtime: Runtime, messages: List[Message]):
-        design, _ = extract_code_blocks(
-            messages[-1].content, target_filename='design.txt')
-        if len(design) > 0:
-            front, design = messages[-1].content.split(
-                '```text: design.txt', maxsplit=1)
-            design, end = design.rsplit('```', 1)
-            design = design.strip()
-            if design:
-                messages[2].content = await self.do_arch_update(
-                    runtime=runtime, messages=messages, updated_arch=design)
+        logger.info(messages)
 
     async def after_tool_call(self, runtime: Runtime, messages: List[Message]):
         runtime.should_stop = runtime.should_stop and self.feedback_ended
