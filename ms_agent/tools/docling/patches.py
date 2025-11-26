@@ -1,4 +1,5 @@
 # flake8: noqa
+import sys
 from pathlib import Path
 
 from bs4 import Tag
@@ -170,3 +171,18 @@ def patch_easyocr_models():
         'url'] = 'https://modelscope.cn/models/ms-agent/kannada_g2/resolve/master/kannada_g2.zip'
     recognition_models['gen2']['cyrillic_g2'][
         'url'] = 'https://modelscope.cn/models/ms-agent/cyrillic_g2/resolve/master/cyrillic_g2.zip'
+
+
+def requests_get_with_timeout(
+    *args,
+    _original_requests_get=sys.modules['requests'].get,
+    **kwargs
+):  # yapf: disable
+    """
+    Wrapper for requests.get that enforces a default timeout if none is provided.
+    This is used to patch docling_core.utils.file.requests.get only.
+    """
+    if 'timeout' not in kwargs or kwargs['timeout'] is None:
+        kwargs['timeout'] = (10, 30)
+
+    return _original_requests_get(*args, **kwargs)
