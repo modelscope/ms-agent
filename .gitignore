@@ -151,7 +151,6 @@ apps/agentfabric/config/local_user/*
 # ast template
 ast_index_file.py
 
-
 #neo4j
 .neo4j.lock
 neo4j.lock
@@ -159,3 +158,6 @@ neo4j.lock
 
 **/temp_workspace/
 ms_agent/app/temp_workspace/
+
+# Ignore local reference md files folder
+skx-docs/
