@@ -26,7 +26,7 @@ class CodeAdapter(BaseAdapter):
             tests_dir: Path,
             error_log: str = '') -> Dict[str, Any]:
         """
-        执行代码生成。
+        执行代码生成和验证。
 
         Args:
             query: 原始需求。
@@ -56,11 +56,14 @@ class CodeAdapter(BaseAdapter):
 
         # 检查代码生成是否成功
         if not result['success']:
-            self.logger.error(f"Code generation failed: {result['stderr']}")
+            # 即使代码生成失败，也要确保src目录存在，以便后续流程
+            src_dir = self.workspace.work_dir / DIR_SRC
+            src_dir.mkdir(exist_ok=True)
             return {
-                'src_dir': self.workspace.work_dir / DIR_SRC,
+                'src_dir': src_dir,
                 'success': False,
-                'error_message': result['stderr']
+                'error_message': result['stderr'],
+                'test_feedback': None
             }
 
         # 验证生成的代码目录
@@ -69,7 +72,15 @@ class CodeAdapter(BaseAdapter):
             # 如果code_scratch没有生成src目录，创建一个空目录
             src_dir.mkdir(exist_ok=True)
 
+        # 执行测试验证
+        test_feedback = self.test_runner.run_tests_with_feedback(
+            work_dir=self.workspace.work_dir
+        )
+
+        success = test_feedback['test_results']['success']
+
         return {
             'src_dir': src_dir,
-            'success': True
+            'success': success,
+            'test_feedback': test_feedback
         }

@@ -1,7 +1,7 @@
 llm:
   service: modelscope
   model: Qwen/Qwen3-235B-A22B-Instruct-2507
-  modelscope_api_key:
+  modelscope_api_key: MODELSCOPE_API_KEY
   modelscope_base_url: https://api-inference.modelscope.cn/v1
 
 generation_config:
