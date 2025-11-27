@@ -71,4 +71,3 @@ By addressing these aspects, the calculator app can evolve into a comprehensive 
 
 
 ## Sources
-

@@ -6,7 +6,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 
 class CodeScratchCaller:
@@ -14,17 +14,20 @@ class CodeScratchCaller:
     Code Scratch 调用器
     通过subprocess调用projects/code_scratch，使用预设的spec和tests
     """
-    
+
     def __init__(self, timeout: int = 300):
         """
         初始化CodeScratchCaller
-        
+
         Args:
             timeout: subprocess调用的超时时间（秒）
         """
         self.timeout = timeout
 
-    def run(self, prompt: str, work_dir: Path, model: Optional[str] = None) -> Dict[str, Any]:
+    def run(self,
+            prompt: str,
+            work_dir: Path,
+            model: Optional[str] = None) -> Dict[str, Any]:
         """
         通过subprocess调用code_scratch生成代码
 
@@ -41,7 +44,7 @@ class CodeScratchCaller:
         work_dir.mkdir(parents=True, exist_ok=True)
 
         # 创建一个临时脚本来运行CLI命令
-        temp_script = work_dir / "_temp_run_code_scratch.py"
+        temp_script = work_dir / '_temp_run_code_scratch.py'
         script_content = f'''
 import sys
 import os
@@ -89,8 +92,7 @@ run_cmd()
                 env=env,
                 capture_output=True,
                 text=True,
-                timeout=self.timeout
-            )
+                timeout=self.timeout)
 
             # 删除临时脚本
             try:
@@ -117,7 +119,8 @@ run_cmd()
                 'success': False,
                 'returncode': -1,
                 'stdout': '',
-                'stderr': f'Code Scratch execution timed out after {self.timeout} seconds',
+                'stderr':
+                f'Code Scratch execution timed out after {self.timeout} seconds',
                 'work_dir': work_dir
             }
         except Exception as e:

@@ -1,11 +1,11 @@
 from pathlib import Path
 from typing import Any, Dict, List
 
-from orchestrator.adapters.base import BaseAdapter
-from orchestrator.core.const import DIR_SRC
 from external_integration.code_scratch_caller import CodeScratchCaller
 from external_integration.prompt_injector import PromptInjector
 from external_integration.test_runner import TestRunner
+from orchestrator.adapters.base import BaseAdapter
+from orchestrator.core.const import DIR_SRC
 
 
 class CodeAdapter(BaseAdapter):
@@ -41,18 +41,17 @@ class CodeAdapter(BaseAdapter):
         if error_log:
             # 如果有错误日志，包含修复指导
             full_prompt = self.prompt_injector.inject_with_error_feedback(
-                spec_path, tests_dir, query, error_log
-            )
+                spec_path, tests_dir, query, error_log)
         else:
             # 正常情况下的prompt注入
-            full_prompt = self.prompt_injector.inject(spec_path, tests_dir, query)
+            full_prompt = self.prompt_injector.inject(spec_path, tests_dir,
+                                                      query)
 
         # 调用CodeScratchCaller执行代码生成
         result = self.code_caller.run(
             prompt=full_prompt,
             work_dir=self.workspace.work_dir,
-            model=getattr(self.config, 'model', None)
-        )
+            model=getattr(self.config, 'model', None))
 
         # 检查代码生成是否成功
         if not result['success']:
@@ -74,8 +73,7 @@ class CodeAdapter(BaseAdapter):
 
         # 执行测试验证
         test_feedback = self.test_runner.run_tests_with_feedback(
-            work_dir=self.workspace.work_dir
-        )
+            work_dir=self.workspace.work_dir)
 
         success = test_feedback['test_results']['success']
 

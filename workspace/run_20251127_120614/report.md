@@ -69,4 +69,3 @@ The simple calculator app, designed with user simplicity in mind, will offer a r
 
 
 ## Sources
-

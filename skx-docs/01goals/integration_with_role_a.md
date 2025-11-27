@@ -61,7 +61,7 @@ Orchestrator -> Code Integration? -> Role C (Code Adapter)
 - **修改文件**: `orchestrator/adapters/deep_research_adapter.py`
   - 保持现有的类结构和接口
   - 将Mock实现替换为调用 `external_integration/deep_research_caller.py`
-  
+
 - **修改文件**: `orchestrator/adapters/code_adapter.py`
   - 保持现有的类结构和接口
   - 将Mock实现替换为完整的外部工具调用逻辑

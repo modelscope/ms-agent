@@ -23,7 +23,7 @@
 使用Mock实现，可以验证完整流程：
 
 ```
-User Query 
+User Query
     ↓
 Orchestrator (Role A)
     ↓
