@@ -1,9 +1,8 @@
 llm:
   service: openai
-  model: claude-sonnet-4-5-20250929
+  model: <OPENAI_MODEL_ID>
   openai_api_key:
   openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
-
 
 generation_config:
   temperature: 0.2
@@ -13,7 +12,6 @@ generation_config:
   extra_body:
     dashscope_extend_params:
       provider: b
-
 
 prompt:
   system: |
