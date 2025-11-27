@@ -2,6 +2,19 @@
 
 echo "🔧 开始配置 Git 环境..."
 
+# 确保 pre-commit 可用，避免 Git 钩子报错
+if ! python3 -m pre_commit --version >/dev/null 2>&1; then
+    echo "📦 检测到缺少 pre-commit，开始安装..."
+    python3.10 -m pip install --user --upgrade pre-commit
+    if python3 -m pre_commit --version >/dev/null 2>&1; then
+        echo "✅ pre-commit 安装成功"
+    else
+        echo "❌ pre-commit 安装失败，请检查网络或 pip 设置"
+    fi
+else
+    echo "✅ 已检测到 pre-commit"
+fi
+
 # 配置 Git 用户信息
 if [ -n "$GIT_AUTHOR_NAME" ] && [ -n "$GIT_AUTHOR_EMAIL" ]; then
     echo "✅ 配置 Git 用户信息..."

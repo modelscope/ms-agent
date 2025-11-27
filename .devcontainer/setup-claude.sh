@@ -108,6 +108,6 @@ echo "   npm: $(npm --version)"
 if command -v claude &> /dev/null; then
     echo "   Claude Code: $(claude --version 2>/dev/null || echo 'installed')"
 fi
-echo "   Python: $(python3.11 --version)"
+echo "   Python: $(python3.10 --version)"
 echo ""
 echo "💡 现在您可以使用 'claude' 命令启动 Claude Code！"

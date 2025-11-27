@@ -4,19 +4,26 @@ FROM ubuntu:22.04
 # 设置非交互式安装
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 设置时区
+# 设置时区与默认语言环境
 ENV TZ=Asia/Shanghai
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+ENV LANGUAGE=en_US:en
+
+# 先安装CA证书，避免切换HTTPS源后因证书缺失导致失败
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# 优先使用可访问的国内镜像源并增加apt重试，减少网络抖动导致的失败
+RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|https://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list \
+    && sed -i 's|http://security.ubuntu.com/ubuntu/|https://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list \
+    && printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\n' > /etc/apt/apt.conf.d/80-retries
 
 # 创建用户（避免使用root）
 ARG USERNAME=vscode
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
-
-# 添加deadsnakes PPA以获取Python 3.11
-RUN apt-get update && apt-get install -y \
-    software-properties-common \
-    && add-apt-repository ppa:deadsnakes/ppa -y \
-    && apt-get update
 
 # 更新系统并安装基础软件包
 RUN apt-get update && apt-get install -y \
@@ -32,19 +39,23 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
     pkg-config \
-    # Python 3.11相关
-    python3.11 \
+    # Python 3.10相关
+    python3.10 \
     python3-pip \
     python3-venv \
     python3-dev \
     python3-distutils \
     # 网络工具
     openssh-client \
+    # 语言环境
+    locales \
     # 其他有用工具
     htop \
     tree \
     jq \
-    # 清理缓存
+    # 配置语言环境并清理缓存
+    && locale-gen en_US.UTF-8 \
+    && update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -62,8 +73,8 @@ ENV PATH="/home/${USERNAME}/.local/bin:${PATH}"
 ENV PYTHONPATH="/workspace"
 ENV PYTHONUNBUFFERED=1
 
-# 升级pip并安装基础Python包 (使用Python 3.11)
-RUN python3.11 -m pip install --user --upgrade pip setuptools wheel
+# 升级pip并安装基础Python包
+RUN python3.10 -m pip install --user --upgrade pip setuptools wheel
 
 # 创建工作目录
 WORKDIR /workspace
@@ -84,7 +95,7 @@ COPY <<EOF /usr/local/bin/post-start.sh
 #!/bin/bash
 echo "=== MS-Agent DevContainer 已启动 ==="
 echo "工作目录: $(pwd)"
-echo "Python版本: $(python3.11 --version)"
+echo "Python版本: $(python3.10 --version)"
 echo "用户: $(whoami)"
 echo "====================================="
 EOF

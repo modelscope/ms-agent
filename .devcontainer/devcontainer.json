@@ -24,7 +24,7 @@
       ],
       // VS Code设置
       "settings": {
-        "python.defaultInterpreterPath": "/usr/bin/python3.11",
+        "python.defaultInterpreterPath": "/usr/bin/python3.10",
         "python.linting.enabled": true,
         "python.linting.pylintEnabled": true,
         "python.formatting.provider": "black",
@@ -72,7 +72,7 @@
   "remoteEnv": {
     "PYTHONPATH": "/workspace",
     "PYTHONUNBUFFERED": "1",
-    "PYTHON_VERSION": "3.11",
+    "PYTHON_VERSION": "3.10",
     "NODE_PATH": "/usr/local/lib/node_modules",
     "CLAUDE_API_KEY": "${localEnv:ANTHROPIC_API_KEY}",
     "HTTP_PROXY": "${localEnv:HTTP_PROXY}",
@@ -100,6 +100,6 @@
     "--network=host"
   ],
   // 生命周期钩子
-  "postStartCommand": "echo '🚀 MS-Agent DevContainer 已准备就绪！' && node --version && python3.11 --version",
+  "postStartCommand": "echo '🚀 MS-Agent DevContainer 已准备就绪！' && node --version && python3.10 --version",
   "postAttachCommand": "echo '💡 提示：使用 claude 命令启动 Claude Code'"
 }

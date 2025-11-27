@@ -39,13 +39,13 @@ fi
 
 echo "📦 安装 Python 项目依赖..."
 # 升级pip
-python3.11 -m pip install --upgrade pip
+python3.10 -m pip install --upgrade pip
 
 if [ -f "requirements.txt" ]; then
-    python3.11 -m pip install -r requirements.txt
+    python3.10 -m pip install -r requirements.txt
     echo "✅ 已安装 requirements.txt 中的依赖"
 elif [ -f "requirements/framework.txt" ]; then
-    python3.11 -m pip install -r requirements/framework.txt
+    python3.10 -m pip install -r requirements/framework.txt
     echo "✅ 已安装 requirements/framework.txt 中的依赖"
 else
     echo "⚠️  未找到requirements文件，跳过Python依赖安装"
