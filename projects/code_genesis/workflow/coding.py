@@ -2,8 +2,10 @@ import asyncio
 import dataclasses
 import os
 import re
+import shutil
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from copy import deepcopy
 from typing import List, Optional, Set, Tuple
 
@@ -17,6 +19,36 @@ from omegaconf import DictConfig
 from utils import parse_imports, stop_words
 
 logger = get_logger()
+
+
+@contextmanager
+def file_lock(lock_dir: str, filename: str):
+    """Context manager for file-based locking.
+    
+    Args:
+        lock_dir: Directory to store lock files
+        filename: The target filename to lock
+    
+    Yields:
+        None
+    """
+    os.makedirs(lock_dir, exist_ok=True)
+    lock_file_name = filename.replace(os.sep, '_') + '.lock'
+    lock_file_path = os.path.join(lock_dir, lock_file_name)
+    
+    # Acquire lock
+    lock_fd = os.open(lock_file_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    os.write(lock_fd, f'{os.getpid()}'.encode())
+    
+    try:
+        yield
+    finally:
+        # Release lock
+        os.close(lock_fd)
+        try:
+            os.remove(lock_file_path)
+        except:
+            pass
 
 
 def extract_code_blocks(text: str,
@@ -76,14 +108,16 @@ class Programmer(LLMAgent):
         self.find_all_files()
 
     def generate_abbr_file(self, file):
+        lock_dir = os.path.join(self.output_dir, 'locks')
         abbr_dir = os.path.join(self.output_dir, 'abbr')
         os.makedirs(abbr_dir, exist_ok=True)
         abbr_file = os.path.join(abbr_dir, file)
-        if os.path.exists(abbr_file):
-            with open(abbr_file, 'r') as f:
-                return f.read()
+        with file_lock(lock_dir, abbr_file):
+            if os.path.exists(abbr_file):
+                with open(abbr_file, 'r') as f:
+                    return f.read()
 
-        system = """你是一个帮我简化代码并返回缩略的机器人。你缩略的文件会给与另一个LLM用来编写代码，因此你生成的缩略文件需要具有充足的供其他文件依赖的信息。
+            system = """你是一个帮我简化代码并返回缩略的机器人。你缩略的文件会给与另一个LLM用来编写代码，因此你生成的缩略文件需要具有充足的供其他文件依赖的信息。
 
 需要保留的信息：
 1. 代码框架：类名、方法名、方法参数类型，返回值类型
@@ -98,26 +132,26 @@ class Programmer(LLMAgent):
 1. 【优先】保留充足的信息供其它代码使用
 2. 【其次】保留尽量少的token数量
 """
-        query = f'原始代码：{file}'
-        messages = [
-            Message(role='system', content=system),
-            Message(role='user', content=query),
-        ]
-        stop = self.llm.args['extra_body']['stop_sequences']
-        self.llm.args['extra_body'].pop('stop_sequences')
-        try:
-            response_message = self.llm.generate(messages, stream=False)
-            content = response_message.content.split('\n')
-            if '```' in content[0]:
-                content = content[1:]
-            if '```' in content[-1]:
-                content = content[:-1]
-            os.makedirs(os.path.dirname(abbr_file), exist_ok=True)
-            with open(abbr_file, 'w') as f:
-                f.write('\n'.join(content))
-            return '\n'.join(content)
-        finally:
-            self.llm.args['extra_body']['stop_sequences'] = stop
+            query = f'原始代码：{file}'
+            messages = [
+                Message(role='system', content=system),
+                Message(role='user', content=query),
+            ]
+            stop = self.llm.args['extra_body']['stop_sequences']
+            self.llm.args['extra_body'].pop('stop_sequences')
+            try:
+                response_message = self.llm.generate(messages, stream=False)
+                content = response_message.content.split('\n')
+                if '```' in content[0]:
+                    content = content[1:]
+                if '```' in content[-1]:
+                    content = content[:-1]
+                os.makedirs(os.path.dirname(abbr_file), exist_ok=True)
+                with open(abbr_file, 'w') as f:
+                    f.write('\n'.join(content))
+                return '\n'.join(content)
+            finally:
+                self.llm.args['extra_body']['stop_sequences'] = stop
 
     def filter_code_files(self):
         code_files = []
@@ -146,7 +180,7 @@ class Programmer(LLMAgent):
 
     async def after_tool_call(self, messages: List[Message]):
         deps_not_exist = False
-        pattern = r'<result>[a-zA-Z]*:([^\n\r`]+)\n(.*?)</result>'
+        pattern = r'<result>[a-zA-Z]*:([^\n\r`]+)\n(.*?)'
         matches = re.findall(pattern, messages[-1].content, re.DOTALL)
         try:
             code_file = next(iter(matches))[0].strip()
@@ -233,21 +267,26 @@ class Programmer(LLMAgent):
                     path = r['filename']
                     code = r['code']
                     path = os.path.join(self.output_dir, path)
-                    if os.path.exists(path):
-                        saving_result += (
-                            f'The target file exists, cannot override. here is the file abbreviation '
-                            f'content: \n{self.generate_abbr_file(r["filename"])}\n'
-                        )
-                    else:
-                        os.makedirs(os.path.dirname(path), exist_ok=True)
-                        with open(path, 'w') as f:
-                            f.write(code)
-                        saving_result += (
-                            f'Save file <{r["filename"]}> successfully\n. here is the file abbreviation '
-                            f'content: \n{self.generate_abbr_file(r["filename"])}\n'
-                        )
+                    
+                    lock_dir = os.path.join(self.output_dir, 'locks')
+                    
+                    with file_lock(lock_dir, r['filename']):
+                        if os.path.exists(path):
+                            saving_result += (
+                                f'The target file exists, cannot override. here is the file abbreviation '
+                                f'content: \n{self.generate_abbr_file(r["filename"])}\n'
+                            )
+                        else:
+                            os.makedirs(os.path.dirname(path), exist_ok=True)
+                            with open(path, 'w') as f:
+                                f.write(code)
+                            saving_result += (
+                                f'Save file <{r["filename"]}> successfully\n. here is the file abbreviation '
+                                f'content: \n{self.generate_abbr_file(r["filename"])}\n'
+                            )
                 messages[-1].content = remaining_text + 'Code generated here. Content removed to condense messages, check save result for details.'
                 messages.append(Message(role='user', content=saving_result))
+                self.llm.args['extra_body']['stop_sequences'] = stop_words
             self.filter_code_files()
             if not self.code_files:
                 self.runtime.should_stop = True
@@ -360,6 +399,8 @@ class CodingAgent(CodeAgent):
         file_orders = self.construct_file_orders()
         file_relation = OrderedDict()
         self.refresh_file_status(file_relation)
+        lock_dir = os.path.join(self.output_dir, 'locks')
+        shutil.rmtree(lock_dir, ignore_errors=True)
 
         max_workers = 5
 
