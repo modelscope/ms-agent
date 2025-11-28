@@ -3,6 +3,7 @@ import dataclasses
 import os
 import re
 import shutil
+import time
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
@@ -22,29 +23,31 @@ logger = get_logger()
 
 
 @contextmanager
-def file_lock(lock_dir: str, filename: str):
-    """Context manager for file-based locking.
-    
-    Args:
-        lock_dir: Directory to store lock files
-        filename: The target filename to lock
-    
-    Yields:
-        None
-    """
+def file_lock(lock_dir: str, filename: str, timeout: float = 15.0):
     os.makedirs(lock_dir, exist_ok=True)
     lock_file_name = filename.replace(os.sep, '_') + '.lock'
     lock_file_path = os.path.join(lock_dir, lock_file_name)
     
-    # Acquire lock
-    lock_fd = os.open(lock_file_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    os.write(lock_fd, f'{os.getpid()}'.encode())
+    # Acquire lock with timeout
+    start_time = time.time()
+    lock_fd = None
+    
+    while True:
+        try:
+            lock_fd = os.open(lock_file_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(lock_fd, f'{os.getpid()}'.encode())
+            break
+        except FileExistsError:
+            if time.time() - start_time >= timeout:
+                raise TimeoutError(f'Failed to acquire lock for {filename} after {timeout} seconds')
+            time.sleep(0.1)  # Wait 100ms before retry
     
     try:
         yield
     finally:
         # Release lock
-        os.close(lock_fd)
+        if lock_fd is not None:
+            os.close(lock_fd)
         try:
             os.remove(lock_file_path)
         except:
@@ -112,7 +115,7 @@ class Programmer(LLMAgent):
         abbr_dir = os.path.join(self.output_dir, 'abbr')
         os.makedirs(abbr_dir, exist_ok=True)
         abbr_file = os.path.join(abbr_dir, file)
-        with file_lock(lock_dir, abbr_file):
+        with file_lock(lock_dir, os.path.join('abbr', file)):
             if os.path.exists(abbr_file):
                 with open(abbr_file, 'r') as f:
                     return f.read()
@@ -270,20 +273,27 @@ class Programmer(LLMAgent):
                     
                     lock_dir = os.path.join(self.output_dir, 'locks')
                     
+                    # Check and write file with lock
                     with file_lock(lock_dir, r['filename']):
-                        if os.path.exists(path):
-                            saving_result += (
-                                f'The target file exists, cannot override. here is the file abbreviation '
-                                f'content: \n{self.generate_abbr_file(r["filename"])}\n'
-                            )
-                        else:
+                        file_exists = os.path.exists(path)
+                        if not file_exists:
                             os.makedirs(os.path.dirname(path), exist_ok=True)
                             with open(path, 'w') as f:
                                 f.write(code)
-                            saving_result += (
-                                f'Save file <{r["filename"]}> successfully\n. here is the file abbreviation '
-                                f'content: \n{self.generate_abbr_file(r["filename"])}\n'
-                            )
+                    
+                    # Generate abbreviation outside the lock to avoid nested locking
+                    abbr_content = self.generate_abbr_file(r["filename"])
+                    
+                    if file_exists:
+                        saving_result += (
+                            f'The target file exists, cannot override. here is the file abbreviation '
+                            f'content: \n{abbr_content}\n'
+                        )
+                    else:
+                        saving_result += (
+                            f'Save file <{r["filename"]}> successfully\n. here is the file abbreviation '
+                            f'content: \n{abbr_content}\n'
+                        )
                 messages[-1].content = remaining_text + 'Code generated here. Content removed to condense messages, check save result for details.'
                 messages.append(Message(role='user', content=saving_result))
                 self.llm.args['extra_body']['stop_sequences'] = stop_words
