@@ -36,14 +36,14 @@ prompt:
       * 注意命名导出或默认导出方式
     6. Output your code with this format:
 
-    ```type: filename
-    text
-    ```
+    <result>type: filename
+    code here
+    </result>
 
     for example:
-    ```javascript: frontend/index.js
+    <result>javascript: frontend/index.js
     your code here
-    ```
+    </result>
 
     The `frontend/index.js` will be used to saving. Therefore, you must generate it strictly in this format.
 

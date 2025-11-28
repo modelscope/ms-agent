@@ -24,7 +24,8 @@ def extract_code_blocks(text: str,
                         ) -> Tuple[List, str]:
     """Extract code blocks from the given text.
 
-    ```py:a.py
+    <result>py:a.py
+    </result>
 
     Args:
         text: The text to extract code blocks from.
@@ -35,31 +36,7 @@ def extract_code_blocks(text: str,
             0: The extracted code blocks.
             1: The left content of the input text.
     """
-    # Check if it's a markdown file
-    md_pattern = r'```(?:markdown|md):([^\n\r`]+)'
-    md_match = re.search(md_pattern, text)
-    
-    if md_match:
-        # For markdown files, parse using the last occurrence of ```
-        filename = md_match.group(1).strip()
-        if target_filename is None or filename == target_filename:
-            start_pos = text.find('```', md_match.start()) + len(md_match.group(0)) + 1
-            last_backtick_pos = text.rfind('```')
-            
-            if last_backtick_pos > start_pos:
-                code = text[start_pos:last_backtick_pos].strip()
-                result = [{'filename': filename, 'code': code}]
-                
-                # Remove the entire markdown block from text
-                if target_filename is not None:
-                    remaining_text = text[:md_match.start()] + text[last_backtick_pos + 3:]
-                else:
-                    remaining_text = text[:md_match.start()] + text[last_backtick_pos + 3:]
-                remaining_text = re.sub(r'\n\s*\n\s*\n', '\n\n', remaining_text).strip()
-                return result, remaining_text
-    
-    # For non-markdown files, use original pattern
-    pattern = r'```[a-zA-Z]*:([^\n\r`]+)\n(.*?)```\n'
+    pattern = r'<result>[a-zA-Z]*:([^\n\r`]+)\n(.*?)</result>'
     matches = re.findall(pattern, text, re.DOTALL)
     result = []
 
@@ -69,7 +46,7 @@ def extract_code_blocks(text: str,
             result.append({'filename': filename, 'code': code.strip()})
 
     if target_filename is not None:
-        remove_pattern = rf'```[a-zA-Z]*:{re.escape(target_filename)}\n.*?```\n'
+        remove_pattern = rf'<result>[a-zA-Z]*:{re.escape(target_filename)}\n.*?</result>'
     else:
         remove_pattern = pattern
 
@@ -169,18 +146,22 @@ class Programmer(LLMAgent):
 
     async def after_tool_call(self, messages: List[Message]):
         deps_not_exist = False
-        coding_finish = '```' in messages[-1].content and self.llm.args[
-            'extra_body']['stop_sequences'] == []
-        import_finish = '```' in messages[-1].content and self.llm.args[
-            'extra_body']['stop_sequences'] == stop_words
-        if coding_finish:
-            messages[-1].content += '\n```\n'
+        pattern = r'<result>[a-zA-Z]*:([^\n\r`]+)\n(.*?)</result>'
+        matches = re.findall(pattern, messages[-1].content, re.DOTALL)
+        try:
+            code_file = next(iter(matches))[0].strip()
+        except StopIteration:
+            code_file = ''
+        is_config = code_file.endswith('.json') or code_file.endswith('.yaml') or code_file.endswith('.md')
+        coding_finish = '<result>' in messages[-1].content and '</result>' in messages[-1].content
+        import_finish = '<result>' in messages[-1].content and self.llm.args[
+            'extra_body']['stop_sequences'] == stop_words and '</result>' not in messages[-1].content and not is_config
         has_tool_call = len(messages[-1].tool_calls
                             or []) > 0 or messages[-1].role != 'assistant'
         if (not has_tool_call) and import_finish:
             contents = messages[-1].content.split('\n')
-            content = [c for c in contents if '```' in c and ':' in c][0]
-            code_file = content.split('```')[1].split(':')[1].split(
+            content = [c for c in contents if '<result>' in c and ':' in c][0]
+            code_file = content.split('<result>')[1].split(':')[1].split(
                 '\n')[0].strip()
             all_files = parse_imports(code_file, messages[-1].content,
                                       self.output_dir) or []
@@ -231,7 +212,7 @@ class Programmer(LLMAgent):
                     dep_content += (
                         f'Some import files are not in the project plans: {wrong_imports}, '
                         f'check the error now.\n')
-                content = messages.pop(-1).content.split('```')[1]
+                content = messages.pop(-1).content.split('<result>')[1]
                 messages.append(
                     Message(
                         role='user',
