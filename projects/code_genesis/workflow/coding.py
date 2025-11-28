@@ -35,6 +35,30 @@ def extract_code_blocks(text: str,
             0: The extracted code blocks.
             1: The left content of the input text.
     """
+    # Check if it's a markdown file
+    md_pattern = r'```(?:markdown|md):([^\n\r`]+)'
+    md_match = re.search(md_pattern, text)
+    
+    if md_match:
+        # For markdown files, parse using the last occurrence of ```
+        filename = md_match.group(1).strip()
+        if target_filename is None or filename == target_filename:
+            start_pos = text.find('```', md_match.start()) + len(md_match.group(0)) + 1
+            last_backtick_pos = text.rfind('```')
+            
+            if last_backtick_pos > start_pos:
+                code = text[start_pos:last_backtick_pos].strip()
+                result = [{'filename': filename, 'code': code}]
+                
+                # Remove the entire markdown block from text
+                if target_filename is not None:
+                    remaining_text = text[:md_match.start()] + text[last_backtick_pos + 3:]
+                else:
+                    remaining_text = text[:md_match.start()] + text[last_backtick_pos + 3:]
+                remaining_text = re.sub(r'\n\s*\n\s*\n', '\n\n', remaining_text).strip()
+                return result, remaining_text
+    
+    # For non-markdown files, use original pattern
     pattern = r'```[a-zA-Z]*:([^\n\r`]+)\n(.*?)```\n'
     matches = re.findall(pattern, text, re.DOTALL)
     result = []
@@ -241,7 +265,7 @@ class Programmer(LLMAgent):
                             f'Save file <{r["filename"]}> successfully\n. here is the file abbreviation '
                             f'content: \n{self.generate_abbr_file(r["filename"])}\n'
                         )
-                messages[-1].content = remaining_text + 'Code content removed.'
+                messages[-1].content = remaining_text + 'Code generated here. Content removed to condense messages, check save result for details.'
                 messages.append(Message(role='user', content=saving_result))
             self.filter_code_files()
             if not self.code_files:
@@ -361,7 +385,6 @@ class CodingAgent(CodeAgent):
         for files in file_orders:
             while True:
                 files = self.filter_done_files(files)
-                files = files[:1]
                 files = self.find_description(files)
                 self.construct_file_information(file_relation)
                 if not files:
