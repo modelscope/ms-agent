@@ -5,6 +5,7 @@ programming languages and extract detailed information about dependencies.
 
 Supported Languages:
 - JavaScript/TypeScript (.js, .ts, .jsx, .tsx, .mjs, .cjs)
+- Vue (.vue)
 - Python (.py)
 - C/C++ (.c, .cpp, .cc, .cxx, .h, .hpp)
 - Rust (.rs)
@@ -52,6 +53,7 @@ Key Features:
 - Filters out external packages (npm, pip, etc.)
 """
 
+import json
 import os
 import re
 from dataclasses import dataclass, field
@@ -122,6 +124,9 @@ def parse_imports_detailed(current_file: str, code_content: str,
     file_ext = os.path.splitext(current_file)[1].lstrip(
         '.').lower() if current_file else ''
 
+    # Load path aliases from config files
+    path_aliases = _load_path_aliases(output_dir)
+
     # Import patterns for different languages with detailed extraction
     # Pattern structure: (regex_pattern, file_extensions, resolver_function, regex_flags)
     patterns = [
@@ -132,22 +137,25 @@ def parse_imports_detailed(current_file: str, code_content: str,
         (r'^\s*import\s+([\w.,\s]+)', ['py'], _extract_python_import_simple,
          re.MULTILINE),
 
-        # JavaScript/TypeScript: import ... from '...'
+        # JavaScript/TypeScript/Vue: import ... from '...'
         # Match: import { A, B } from 'path' or import A from 'path' or import * as A from 'path'
         (r"import\s+(type\s+)?(?:(\{[^}]*\}|\*\s+as\s+\w+|\w+)\s*,?\s*)*from\s+['\"]([^'\"]+)['\"]",
-         ['js', 'ts', 'jsx', 'tsx', 'mjs',
-          'cjs'], partial(_extract_js_import,
-                          output_dir=output_dir), re.MULTILINE | re.DOTALL),
+         ['js', 'ts', 'jsx', 'tsx', 'mjs', 'cjs', 'vue'],
+         partial(_extract_js_import,
+                 output_dir=output_dir,
+                 path_aliases=path_aliases), re.MULTILINE | re.DOTALL),
         # Match: import 'path' (side-effect)
         (r"^\s*import\s+['\"]([^'\"]+)['\"]",
-         ['js', 'ts', 'jsx', 'tsx', 'mjs',
-          'cjs'], partial(_extract_js_side_effect,
-                          output_dir=output_dir), re.MULTILINE),
+         ['js', 'ts', 'jsx', 'tsx', 'mjs', 'cjs', 'vue'],
+         partial(_extract_js_side_effect,
+                 output_dir=output_dir,
+                 path_aliases=path_aliases), re.MULTILINE),
         # Match: export ... from 'path'
         (r"export\s+(type\s+)?(?:(\{[^}]*\}|\*(?:\s+as\s+\w+)?)\s+)?from\s+['\"]([^'\"]+)['\"]",
-         ['js', 'ts', 'jsx', 'tsx', 'mjs',
-          'cjs'], partial(_extract_js_export,
-                          output_dir=output_dir), re.MULTILINE | re.DOTALL),
+         ['js', 'ts', 'jsx', 'tsx', 'mjs', 'cjs', 'vue'],
+         partial(_extract_js_export,
+                 output_dir=output_dir,
+                 path_aliases=path_aliases), re.MULTILINE | re.DOTALL),
 
         # C/C++: #include
         (r'^\s*#include\s+"([^"]+)"', ['c', 'cpp', 'cc', 'cxx', 'h', 'hpp'],
@@ -192,23 +200,138 @@ def parse_imports(current_file: str, code_content: str,
 
 
 # ============================================================================
+# Path Alias Resolution
+# ============================================================================
+
+
+def _load_path_aliases(output_dir: str) -> Dict[str, str]:
+    """Load path aliases from config files (tsconfig.json, vite.config.js, etc.)
+    
+    Uses os.walk to search in output_dir and subdirectories.
+    """
+    aliases = {}
+    config_files_found = []
+    
+    # Excluded directories
+    excluded_dirs = {'node_modules', 'dist', 'build', '.git', '.next', 'out', '__pycache__'}
+    
+    # Walk through directory tree to find config files
+    for root, dirs, files in os.walk(output_dir):
+        # Filter out excluded directories
+        dirs[:] = [d for d in dirs if d not in excluded_dirs]
+        
+        # Look for tsconfig.json
+        if 'tsconfig.json' in files:
+            tsconfig_path = os.path.join(root, 'tsconfig.json')
+            _parse_tsconfig_aliases(tsconfig_path, root, aliases)
+            config_files_found.append(tsconfig_path)
+        
+        # Look for vite config files
+        for config_file in ['vite.config.js', 'vite.config.ts', 'vite.config.mjs']:
+            if config_file in files:
+                config_path = os.path.join(root, config_file)
+                _parse_vite_config_aliases(config_path, root, aliases)
+                config_files_found.append(config_path)
+    
+    # Common default aliases if not found in config
+    if not aliases:
+        # Try common conventions
+        for root, dirs, files in os.walk(output_dir):
+            dirs[:] = [d for d in dirs if d not in excluded_dirs]
+            if 'src' in dirs:
+                src_dir = os.path.join(root, 'src')
+                aliases['@'] = src_dir
+                aliases['~'] = root
+                break
+    
+    return aliases
+
+
+def _parse_tsconfig_aliases(tsconfig_path: str, base_dir: str, aliases: Dict[str, str]):
+    """Parse tsconfig.json and extract path aliases"""
+    try:
+        with open(tsconfig_path, 'r', encoding='utf-8') as f:
+            # Remove comments from JSON (simple approach)
+            content = f.read()
+            content = re.sub(r'//.*?\n|/\*.*?\*/', '', content, flags=re.DOTALL)
+            tsconfig = json.loads(content)
+            
+            if 'compilerOptions' in tsconfig and 'paths' in tsconfig['compilerOptions']:
+                base_url = tsconfig['compilerOptions'].get('baseUrl', '.')
+                for alias, paths in tsconfig['compilerOptions']['paths'].items():
+                    # Remove /* suffix if present
+                    clean_alias = alias.rstrip('/*')
+                    if paths and len(paths) > 0:
+                        # Take first path and remove /* suffix
+                        target = paths[0].rstrip('/*')
+                        # Resolve relative to baseUrl and base_dir
+                        resolved_target = os.path.normpath(
+                            os.path.join(base_dir, base_url, target)
+                        )
+                        # Only add if not already defined (first found wins)
+                        if clean_alias not in aliases:
+                            aliases[clean_alias] = resolved_target
+    except (json.JSONDecodeError, IOError, KeyError):
+        pass
+
+
+def _parse_vite_config_aliases(config_path: str, base_dir: str, aliases: Dict[str, str]):
+    """Parse vite.config.js/ts and extract path aliases"""
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+            # Simple regex to extract alias definitions
+            # Matches: '@': '/src' or '@': path.resolve(__dirname, 'src')
+            alias_pattern = r"['\"]([^'\"]+)['\"]\s*:\s*(?:path\.resolve\([^,]+,\s*['\"]([^'\"]+)['\"]\)|['\"]([^'\"]+)['\"])"
+            for match in re.finditer(alias_pattern, content):
+                alias_key = match.group(1)
+                target = match.group(2) or match.group(3)
+                if target:
+                    # Remove leading slash if present
+                    target = target.lstrip('/')
+                    resolved_target = os.path.join(base_dir, target)
+                    # Only add if not already defined (first found wins)
+                    if alias_key not in aliases:
+                        aliases[alias_key] = resolved_target
+    except IOError:
+        pass
+
+
+def _resolve_alias_path(import_path: str, path_aliases: Dict[str, str]) -> Optional[str]:
+    """Resolve path alias to actual path"""
+    for alias, target in path_aliases.items():
+        # Check if import starts with alias
+        if import_path == alias:
+            return target
+        elif import_path.startswith(alias + '/'):
+            # Replace alias with target path
+            remainder = import_path[len(alias) + 1:]
+            return os.path.join(target, remainder)
+    return None
+
+
+# ============================================================================
 # Detailed Import Extractors (return ImportInfo objects)
 # ============================================================================
 
 
 def _extract_js_import(match, current_dir, current_file, code_content,
-                       output_dir):
+                       output_dir, path_aliases):
     """Extract JavaScript/TypeScript import details"""
     full_match = match.group(0)
     is_type_only = match.group(1) is not None  # 'type' keyword
     import_path = match.group(3)
 
-    # Skip external packages
-    if not import_path.startswith('.') and not import_path.startswith('/'):
+    # Try to resolve path alias first
+    resolved_alias = _resolve_alias_path(import_path, path_aliases)
+    if resolved_alias:
+        source_file = _resolve_js_path_from_absolute(resolved_alias, output_dir)
+    elif import_path.startswith('.') or import_path.startswith('/'):
+        # Relative or absolute path
+        source_file = _resolve_js_path(import_path, current_dir, output_dir)
+    else:
+        # External package, skip
         return None
-
-    # Resolve file path
-    source_file = _resolve_js_path(import_path, current_dir, output_dir)
 
     # Extract imported items
     imported_items = []
@@ -252,14 +375,18 @@ def _extract_js_import(match, current_dir, current_file, code_content,
 
 
 def _extract_js_side_effect(match, current_dir, current_file, code_content,
-                            output_dir):
+                            output_dir, path_aliases):
     """Extract side-effect import: import './file'"""
     import_path = match.group(1)
 
-    if not import_path.startswith('.') and not import_path.startswith('/'):
+    # Try to resolve path alias first
+    resolved_alias = _resolve_alias_path(import_path, path_aliases)
+    if resolved_alias:
+        source_file = _resolve_js_path_from_absolute(resolved_alias, output_dir)
+    elif import_path.startswith('.') or import_path.startswith('/'):
+        source_file = _resolve_js_path(import_path, current_dir, output_dir)
+    else:
         return None
-
-    source_file = _resolve_js_path(import_path, current_dir, output_dir)
 
     return ImportInfo(
         source_file=source_file,
@@ -269,16 +396,20 @@ def _extract_js_side_effect(match, current_dir, current_file, code_content,
 
 
 def _extract_js_export(match, current_dir, current_file, code_content,
-                       output_dir):
+                       output_dir, path_aliases):
     """Extract re-export: export { A } from './file'"""
     is_type_only = match.group(1) is not None
     export_clause = match.group(2)
     import_path = match.group(3)
 
-    if not import_path.startswith('.') and not import_path.startswith('/'):
+    # Try to resolve path alias first
+    resolved_alias = _resolve_alias_path(import_path, path_aliases)
+    if resolved_alias:
+        source_file = _resolve_js_path_from_absolute(resolved_alias, output_dir)
+    elif import_path.startswith('.') or import_path.startswith('/'):
+        source_file = _resolve_js_path(import_path, current_dir, output_dir)
+    else:
         return None
-
-    source_file = _resolve_js_path(import_path, current_dir, output_dir)
 
     imported_items = []
     import_type = 'named'
@@ -318,14 +449,14 @@ def _resolve_js_path(import_path, current_dir, output_dir):
         resolved = os.path.normpath(resolved)
 
     # Try different extensions
-    extensions = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.json', '']
+    extensions = ['.ts', '.tsx', '.js', '.jsx', '.vue', '.mjs', '.cjs', '.json', '']
     for ext in extensions:
         path_with_ext = resolved + ext
         if os.path.exists(path_with_ext):
             return path_with_ext
 
     # Try as directory with index file
-    for index_file in ['index.ts', 'index.tsx', 'index.js', 'index.jsx']:
+    for index_file in ['index.ts', 'index.tsx', 'index.js', 'index.jsx', 'index.vue']:
         index_path = os.path.join(resolved, index_file)
         if os.path.exists(index_path):
             return index_path
@@ -339,6 +470,24 @@ def _resolve_js_path(import_path, current_dir, output_dir):
         return resolved
     else:
         return resolved
+
+
+def _resolve_js_path_from_absolute(resolved_path, output_dir):
+    """Resolve JavaScript/TypeScript path from already-resolved absolute path"""
+    # Try different extensions
+    extensions = ['.ts', '.tsx', '.js', '.jsx', '.vue', '.mjs', '.cjs', '.json', '']
+    for ext in extensions:
+        path_with_ext = resolved_path + ext
+        if os.path.exists(path_with_ext):
+            return path_with_ext
+
+    # Try as directory with index file
+    for index_file in ['index.ts', 'index.tsx', 'index.js', 'index.jsx', 'index.vue']:
+        index_path = os.path.join(resolved_path, index_file)
+        if os.path.exists(index_path):
+            return index_path
+
+    return resolved_path
 
 
 def _extract_python_import(match, current_dir, current_file, code_content):
@@ -526,28 +675,308 @@ def main():
     print('Testing parse_imports_detailed function')
     print('=' * 80)
 
-    # Test TypeScript imports with detailed information
-    print('\n[Test 1] TypeScript Multi-line Imports')
-    ts_code = '''import { v4 as uuidv4 } from 'uuid';
-import * as bcrypt from 'bcryptjs';
+    # Test Vue file imports with detailed information
+    print('\n[Test 1] Vue File Imports')
+    vue_code = '''<template>
+  <div class=\"document-content\">
+    <!-- 文档头部 -->
+    <div class=\"document-content__header\">
+      <!-- 面包屑导航 -->
+      <el-breadcrumb separator=\"/\">
+        <el-breadcrumb-item :to=\"{ path: '/documents' }\">
+          文档库
+        </el-breadcrumb-item>
+        <el-breadcrumb-item v-if=\"document?.category\">
+          {{ getCategoryName(document.category) }}
+        </el-breadcrumb-item>
+        <el-breadcrumb-item>
+          {{ document?.title || '加载中...' }}
+        </el-breadcrumb-item>
+      </el-breadcrumb>
+
+      <!-- 文档标题 -->
+      <h1 class=\"document-content__title\">
+        {{ document?.title }}
+      </h1>
+
+      <!-- 文档元信息 -->
+      <div class=\"document-content__meta\">
+        <div class=\"document-content__meta-left\">
+          <span class=\"document-content__meta-item\">
+            <el-icon><User /></el-icon>
+            {{ document?.authorName }}
+          </span>
+          <span class=\"document-content__meta-item\">
+            <el-icon><Calendar /></el-icon>
+            {{ formatDate(document?.updatedAt) }}
+          </span>
+          <span class=\"document-content__meta-item\">
+            <el-icon><View /></el-icon>
+            {{ document?.views || 0 }} 次浏览
+          </span>
+          <span class=\"document-content__meta-item\">
+            <el-icon><Star /></el-icon>
+            {{ document?.likes || 0 }} 点赞
+          </span>
+        </div>
+
+        <div class=\"document-content__meta-right\">
+          <!-- 点赞按钮 -->
+          <el-button
+            :type=\"isLiked ? 'primary' : 'default'\"
+            :icon=\"isLiked ? StarFilled : Star\"
+            size=\"small\"
+            @click=\"handleLike\"
+          >
+            {{ isLiked ? '已点赞' : '点赞' }}
+          </el-button>
+
+          <!-- 收藏按钮 -->
+          <el-button
+            :type=\"isCollected ? 'warning' : 'default'\"
+            :icon=\"isCollected ? CollectionFilled : Collection\"
+            size=\"small\"
+            @click=\"handleCollect\"
+          >
+            {{ isCollected ? '已收藏' : '收藏' }}
+          </el-button>
+
+          <!-- 分享按钮 -->
+          <el-dropdown trigger=\"click\" @command=\"handleShare\">
+            <el-button :icon=\"Share\" size=\"small\">
+              分享
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command=\"copy\">
+                  <el-icon><Link /></el-icon>
+                  复制链接
+                </el-dropdown-item>
+                <el-dropdown-item command=\"twitter\">
+                  <el-icon><Share /></el-icon>
+                  分享到 Twitter
+                </el-dropdown-item>
+                <el-dropdown-item command=\"facebook\">
+                  <el-icon><Share /></el-icon>
+                  分享到 Facebook
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+
+          <!-- 编辑按钮（仅作者可见） -->
+          <el-button
+            v-if=\"canEdit\"
+            :icon=\"Edit\"
+            size=\"small\"
+            type=\"primary\"
+            @click=\"handleEdit\"
+          >
+            编辑
+          </el-button>
+        </div>
+      </div>
+
+      <!-- 文档标签 -->
+      <div v-if=\"document?.tags && document.tags.length > 0\" class=\"document-content__tags\">
+        <Tag
+          v-for=\"tag in document.tags\"
+          :key=\"tag\"
+          :label=\"tag\"
+          type=\"primary\"
+          size=\"small\"
+          plain
+          clickable
+          @click=\"handleTagClick(tag)\"
+        />
+      </div>
+
+      <!-- 文档描述 -->
+      <div v-if=\"document?.description\" class=\"document-content__description\">
+        {{ document.description }}
+      </div>
+    </div>
+
+    <!-- 文档内容 -->
+    <div class=\"document-content__body\">
+      <MarkdownPreview
+        :content=\"document?.content || ''\"
+        :loading=\"loading\"
+        :show-toolbar=\"true\"
+        :show-copy-button=\"true\"
+        :show-export-button=\"true\"
+        :show-fullscreen-button=\"true\"
+        :show-word-count=\"true\"
+        :enable-code-highlight=\"true\"
+        :enable-table=\"true\"
+        :enable-task-list=\"true\"
+        :enable-emoji=\"true\"
+        :auto-link=\"true\"
+        :scrollable=\"true\"
+        :bordered=\"false\"
+        empty-text=\"暂无内容\"
+        @copy=\"handleCopy\"
+        @export=\"handleExport\"
+        @link-click=\"handleLinkClick\"
+      />
+    </div>
+
+    <!-- 文档底部 -->
+    <div class=\"document-content__footer\">
+      <!-- 改进建议 -->
+      <div class=\"document-content__suggestion\">
+        <el-alert
+          type=\"info\"
+          :closable=\"false\"
+          show-icon
+        >
+          <template #title>
+            <span>发现文档问题？</span>
+            <el-button
+              type=\"primary\"
+              text
+              size=\"small\"
+              @click=\"showSuggestionDialog = true\"
+            >
+              提交改进建议
+            </el-button>
+          </template>
+        </el-alert>
+      </div>
+
+      <!-- 相关文档 -->
+      <div v-if=\"relatedDocuments.length > 0\" class=\"document-content__related\">
+        <h3 class=\"document-content__related-title\">
+          <el-icon><Document /></el-icon>
+          相关文档
+        </h3>
+        <div class=\"document-content__related-list\">
+          <DocumentCard
+            v-for=\"doc in relatedDocuments\"
+            :key=\"doc.id\"
+            :document=\"doc\"
+            @click=\"handleRelatedDocClick(doc)\"
+          />
+        </div>
+      </div>
+
+      <!-- 上一篇/下一篇 -->
+      <div class=\"document-content__navigation\">
+        <el-button
+          v-if=\"prevDocument\"
+          :icon=\"ArrowLeft\"
+          @click=\"handleNavigation(prevDocument.id)\"
+        >
+          上一篇: {{ prevDocument.title }}
+        </el-button>
+        <div class=\"document-content__navigation-spacer\"></div>
+        <el-button
+          v-if=\"nextDocument\"
+          @click=\"handleNavigation(nextDocument.id)\"
+        >
+          下一篇: {{ nextDocument.title }}
+          <el-icon class=\"el-icon--right\"><ArrowRight /></el-icon>
+        </el-button>
+      </div>
+    </div>
+
+    <!-- 改进建议对话框 -->
+    <el-dialog
+      v-model=\"showSuggestionDialog\"
+      title=\"提交改进建议\"
+      width=\"600px\"
+      :close-on-click-modal=\"false\"
+    >
+      <el-form
+        ref=\"suggestionFormRef\"
+        :model=\"suggestionForm\"
+        :rules=\"suggestionRules\"
+        label-width=\"100px\"
+      >
+        <el-form-item label=\"建议类型\" prop=\"type\">
+          <el-select
+            v-model=\"suggestionForm.type\"
+            placeholder=\"请选择建议类型\"
+            style=\"width: 100%\"
+          >
+            <el-option label=\"内容错误\" value=\"error\" />
+            <el-option label=\"内容补充\" value=\"addition\" />
+            <el-option label=\"格式优化\" value=\"format\" />
+            <el-option label=\"其他建议\" value=\"other\" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label=\"建议内容\" prop=\"content\">
+          <el-input
+            v-model=\"suggestionForm.content\"
+            type=\"textarea\"
+            :rows=\"6\"
+            placeholder=\"请详细描述您的建议...\"
+            maxlength=\"500\"
+            show-word-limit
+          />
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click=\"showSuggestionDialog = false\">
+          取消
+        </el-button>
+        <el-button
+          type=\"primary\"
+          :loading=\"submittingSuggestion\"
+          @click=\"handleSubmitSuggestion\"
+        >
+          提交
+        </el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup lang=\"ts\">
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import {
   User,
-  UserRole,
-  OAuthProvider,
-  DEFAULT_USER_PREFERENCES
-} from '../models/User';
+  Calendar,
+  View,
+  Star,
+  StarFilled,
+  Collection,
+  CollectionFilled,
+  Share,
+  Link,
+  Edit,
+  Document,
+  ArrowLeft,
+  ArrowRight,
+} from '@element-plus/icons-vue';
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus';
+import { useAuthStore } from '../../stores/auth.ts';
+import { useCollectionStore } from '../../stores/collection.ts';
+import MarkdownPreview from '../../components/editor/MarkdownPreview.vue';
+import Tag from '../../components/common/Tag.vue';
+import DocumentCard from './DocumentCard.vue';
 import {
-  Model,
-  ModelCategory,
-  Framework
-} from '../models/Model';
-import type { Dataset } from '../models/Dataset';
-import './styles.css';
-export { Button } from './components/Button';
+  getDocument,
+  likeDocument,
+  unlikeDocument,
+  getRelatedDocuments,
+  submitDocumentSuggestion,
+  checkDocumentPermission,
+  getDocumentCategories,
+} from '../../api/document.ts';
+import type { Document as DocumentType, DocumentCategory } from '../../api/document.ts';
+import { addCollection, removeCollection, checkCollection } from '../../api/collection.ts';
+
+/**
+ * 文档内容组件属性
+ */
 '''
-    result = parse_imports_detailed('backend/scripts/initData.ts', ts_code,
+    result = parse_imports_detailed('frontend/src/views/documents/DocumentContent.vue', vue_code,
                                     'output')
-    print('Current file: backend/scripts/initData.ts')
+    print('Current file: frontend/src/views/documents/DocumentContent.vue')
     print(f'\nDetected {len(result)} imports:')
     for imp in result:
         print(f'\n  File: {imp.source_file}')
@@ -559,12 +988,18 @@ export { Button } from './components/Button';
 
     # Test backward compatibility
     print('\n' + '=' * 80)
-    print('[Test 2] Backward Compatibility Test')
-    simple_result = parse_imports('backend/scripts/initData.ts', ts_code,
-                                  'output')
-    print('parse_imports() returns list of file paths:')
-    for path in simple_result:
-        print(f'  - {path}')
+    print('[Test 2] TypeScript File Imports')
+    ts_code = '''
+import { User, Profile } from '../models/User';
+import type { Config } from './config';
+import * as utils from '@/utils/helper';
+import './styles.css';
+export { Button } from '../components/Button';
+'''
+    simple_result = parse_imports('src/index.ts', ts_code, 'output')
+    print('parse_imports() returns list of ImportInfo objects:')
+    for info in simple_result:
+        print(f'  - {info}')
 
     print('\n' + '=' * 80)
     print('All tests completed!')

@@ -11,7 +11,7 @@ generation_config:
   stream: true
   extra_body:
     dashscope_extend_params:
-      provider: d
+      provider: b
 
 
 prompt:
@@ -29,11 +29,17 @@ prompt:
     5. 编写代码
       * 如果你需要编写的组件或功能在文件列表中不存在，你应当在你负责的文件中冗余编写，而不要指定引用一个不存在的其他文件
       * 始终使用绝对导入或明确的相对导入规则，并始终使用类型提示
+      * 如果你需要mock初始化数据，除非显示要求，否则不要超过5条
+      * 注意命名导出或默认导出方式
+      对文件import的要求：
       * 任何你用到的数据结构都需要在文件顶引用来源对应文件
+      * 对vue、react等文件，你应当优先编写script部分，后编写template和style等标签部分
       * 你的import/#include不要截止到文件夹，而应该指定到具体文件来源
       * 引用文件时带有扩展名，不要省略扩展名
+      * 不要使用`@`式的引用，使用相对路径(../或./)或绝对路径引用
       * 不要使用动态引用或局部方法引用，所有import都应该在文件顶部完成
-      * 注意命名导出或默认导出方式
+      * 总之，如果你需要在一个文件中引入其他文件，在保证逻辑可用的条件下，所有引用都应尽量在文件顶部
+      
     6. Output your code with this format:
 
     <result>type: filename

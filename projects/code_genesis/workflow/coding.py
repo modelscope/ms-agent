@@ -124,18 +124,46 @@ class Programmer(LLMAgent):
 
 需要保留的信息：
 1. 代码框架：类名、方法名、方法参数类型，返回值类型
+    * 如果无法找到参数和返回值类型，则分析函数实现，给出该参数或输出结构需要/具有哪些字段
 2. 导入信息：imports依赖
-3. 输出信息：exports导出及导出类型
+3. 输出信息：exports导出及导出类型，注意不要忽略`default`这类关键字，注意命名导出或默认导出方式
 4. 结构体信息：不要缩略任何类或数据结构的名称、字段，如果一个文件包含很多数据结构定义，全部保留
 5. 样式信息：如果是css样式代码，保留每个样式名称
 6. json格式：如果是json，保留结构即可
 7. 仅返回满足要求的缩略信息，不要返回其他无关信息
 
+* 例子：
+    ```xx.ts原始文件
+    import {...} from ...
+    async function func(a: Record<string, any>): Promise<any> {
+        const b = a['some-key'];
+        return b;
+    }
+    export default func;
+    ```
+    
+    缩略：
+    ```xx.ts缩略文件
+    ... imports here ...
+    async func(a: Record<string, any>) -> Promise<any>
+        Args: a(Record): keys: some-key, ...
+    
+    export default func;
+    ```
+
 你的优化目标：
 1. 【优先】保留充足的信息供其它代码使用
 2. 【其次】保留尽量少的token数量
 """
-            query = f'原始代码：{file}'
+            # Read the actual file content
+            source_file_path = os.path.join(self.output_dir, file)
+            if not os.path.exists(source_file_path):
+                return ''
+            
+            with open(source_file_path, 'r') as f:
+                file_content = f.read()
+            
+            query = f'原始代码文件 {file}:\n{file_content}'
             messages = [
                 Message(role='system', content=system),
                 Message(role='user', content=query),
@@ -257,8 +285,10 @@ class Programmer(LLMAgent):
                         f'We break your generation to import more relative information. '
                         f'According to your imports, some extra contents manually given here:\n'
                         f'\n{dep_content or "No extra dependencies needed"}\n'
-                        f'Here is the few start lines of your code: {content}\n\n'
-                        f'Now rewrite the full code of {code_file} based on the start lines:\n'
+                        f'Here is the a few start lines of your code: {content}\n\n'
+                        f'Now review your imports in it, correct any error according to the dependencies, '
+                        f'if any data structure undefined/not found, you can go on reading any code files you need, '
+                        f'then rewrite the full code of {code_file} based on the start lines:\n'
                     ))
                 if not wrong_imports:
                     self.llm.args['extra_body']['stop_sequences'] = []
