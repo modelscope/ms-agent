@@ -53,7 +53,7 @@ def file_lock(lock_dir: str, filename: str, timeout: float = 15.0):
             os.close(lock_fd)
         try:
             os.remove(lock_file_path)
-        except:  # noqa
+        except OSError:
             pass
 
 
