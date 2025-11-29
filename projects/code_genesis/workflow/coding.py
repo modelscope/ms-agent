@@ -27,21 +27,24 @@ def file_lock(lock_dir: str, filename: str, timeout: float = 15.0):
     os.makedirs(lock_dir, exist_ok=True)
     lock_file_name = filename.replace(os.sep, '_') + '.lock'
     lock_file_path = os.path.join(lock_dir, lock_file_name)
-    
+
     # Acquire lock with timeout
     start_time = time.time()
     lock_fd = None
-    
+
     while True:
         try:
-            lock_fd = os.open(lock_file_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            lock_fd = os.open(lock_file_path,
+                              os.O_CREAT | os.O_EXCL | os.O_WRONLY)
             os.write(lock_fd, f'{os.getpid()}'.encode())
             break
         except FileExistsError:
             if time.time() - start_time >= timeout:
-                raise TimeoutError(f'Failed to acquire lock for {filename} after {timeout} seconds')
+                raise TimeoutError(
+                    f'Failed to acquire lock for {filename} after {timeout} seconds'
+                )
             time.sleep(0.1)  # Wait 100ms before retry
-    
+
     try:
         yield
     finally:
@@ -141,13 +144,13 @@ class Programmer(LLMAgent):
     }
     export default func;
     ```
-    
+
     缩略：
     ```xx.ts缩略文件
     ... imports here ...
     async func(a: Record<string, any>) -> Promise<any>
         Args: a(Record): keys: some-key, ...
-    
+
     export default func;
     ```
 
@@ -159,10 +162,10 @@ class Programmer(LLMAgent):
             source_file_path = os.path.join(self.output_dir, file)
             if not os.path.exists(source_file_path):
                 return ''
-            
+
             with open(source_file_path, 'r') as f:
                 file_content = f.read()
-            
+
             query = f'原始代码文件 {file}:\n{file_content}'
             messages = [
                 Message(role='system', content=system),
@@ -217,10 +220,14 @@ class Programmer(LLMAgent):
             code_file = next(iter(matches))[0].strip()
         except StopIteration:
             code_file = ''
-        is_config = code_file.endswith('.json') or code_file.endswith('.yaml') or code_file.endswith('.md')
-        coding_finish = '<result>' in messages[-1].content and '</result>' in messages[-1].content
+        is_config = code_file.endswith('.json') or code_file.endswith(
+            '.yaml') or code_file.endswith('.md')
+        coding_finish = '<result>' in messages[
+            -1].content and '</result>' in messages[-1].content
         import_finish = '<result>' in messages[-1].content and self.llm.args[
-            'extra_body']['stop_sequences'] == stop_words and '</result>' not in messages[-1].content and not is_config
+            'extra_body'][
+                'stop_sequences'] == stop_words and '</result>' not in messages[
+                    -1].content and not is_config
         has_tool_call = len(messages[-1].tool_calls
                             or []) > 0 or messages[-1].role != 'assistant'
         if (not has_tool_call) and import_finish:
@@ -300,9 +307,9 @@ class Programmer(LLMAgent):
                     path = r['filename']
                     code = r['code']
                     path = os.path.join(self.output_dir, path)
-                    
+
                     lock_dir = os.path.join(self.output_dir, 'locks')
-                    
+
                     # Check and write file with lock
                     with file_lock(lock_dir, r['filename']):
                         file_exists = os.path.exists(path)
@@ -310,21 +317,20 @@ class Programmer(LLMAgent):
                             os.makedirs(os.path.dirname(path), exist_ok=True)
                             with open(path, 'w') as f:
                                 f.write(code)
-                    
+
                     # Generate abbreviation outside the lock to avoid nested locking
-                    abbr_content = self.generate_abbr_file(r["filename"])
-                    
+                    abbr_content = self.generate_abbr_file(r['filename'])
+
                     if file_exists:
                         saving_result += (
                             f'The target file exists, cannot override. here is the file abbreviation '
-                            f'content: \n{abbr_content}\n'
-                        )
+                            f'content: \n{abbr_content}\n')
                     else:
                         saving_result += (
                             f'Save file <{r["filename"]}> successfully\n. here is the file abbreviation '
-                            f'content: \n{abbr_content}\n'
-                        )
-                messages[-1].content = remaining_text + 'Code generated here. Content removed to condense messages, check save result for details.'
+                            f'content: \n{abbr_content}\n')
+                messages[
+                    -1].content = remaining_text + 'Code generated here. Content removed to condense messages, check save result for details.'
                 messages.append(Message(role='user', content=saving_result))
                 self.llm.args['extra_body']['stop_sequences'] = stop_words
             self.filter_code_files()

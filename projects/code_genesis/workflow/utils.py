@@ -53,12 +53,13 @@ Key Features:
 - Filters out external packages (npm, pip, etc.)
 """
 
-import json
 import os
 import re
 from dataclasses import dataclass, field
 from functools import partial
 from typing import Dict, List, Optional, Set
+
+import json
 
 
 @dataclass
@@ -141,21 +142,24 @@ def parse_imports_detailed(current_file: str, code_content: str,
         # Match: import { A, B } from 'path' or import A from 'path' or import * as A from 'path'
         (r"import\s+(type\s+)?(?:(\{[^}]*\}|\*\s+as\s+\w+|\w+)\s*,?\s*)*from\s+['\"]([^'\"]+)['\"]",
          ['js', 'ts', 'jsx', 'tsx', 'mjs', 'cjs', 'vue'],
-         partial(_extract_js_import,
-                 output_dir=output_dir,
-                 path_aliases=path_aliases), re.MULTILINE | re.DOTALL),
+         partial(
+             _extract_js_import,
+             output_dir=output_dir,
+             path_aliases=path_aliases), re.MULTILINE | re.DOTALL),
         # Match: import 'path' (side-effect)
         (r"^\s*import\s+['\"]([^'\"]+)['\"]",
          ['js', 'ts', 'jsx', 'tsx', 'mjs', 'cjs', 'vue'],
-         partial(_extract_js_side_effect,
-                 output_dir=output_dir,
-                 path_aliases=path_aliases), re.MULTILINE),
+         partial(
+             _extract_js_side_effect,
+             output_dir=output_dir,
+             path_aliases=path_aliases), re.MULTILINE),
         # Match: export ... from 'path'
         (r"export\s+(type\s+)?(?:(\{[^}]*\}|\*(?:\s+as\s+\w+)?)\s+)?from\s+['\"]([^'\"]+)['\"]",
          ['js', 'ts', 'jsx', 'tsx', 'mjs', 'cjs', 'vue'],
-         partial(_extract_js_export,
-                 output_dir=output_dir,
-                 path_aliases=path_aliases), re.MULTILINE | re.DOTALL),
+         partial(
+             _extract_js_export,
+             output_dir=output_dir,
+             path_aliases=path_aliases), re.MULTILINE | re.DOTALL),
 
         # C/C++: #include
         (r'^\s*#include\s+"([^"]+)"', ['c', 'cpp', 'cc', 'cxx', 'h', 'hpp'],
@@ -206,33 +210,37 @@ def parse_imports(current_file: str, code_content: str,
 
 def _load_path_aliases(output_dir: str) -> Dict[str, str]:
     """Load path aliases from config files (tsconfig.json, vite.config.js, etc.)
-    
+
     Uses os.walk to search in output_dir and subdirectories.
     """
     aliases = {}
     config_files_found = []
-    
+
     # Excluded directories
-    excluded_dirs = {'node_modules', 'dist', 'build', '.git', '.next', 'out', '__pycache__'}
-    
+    excluded_dirs = {
+        'node_modules', 'dist', 'build', '.git', '.next', 'out', '__pycache__'
+    }
+
     # Walk through directory tree to find config files
     for root, dirs, files in os.walk(output_dir):
         # Filter out excluded directories
         dirs[:] = [d for d in dirs if d not in excluded_dirs]
-        
+
         # Look for tsconfig.json
         if 'tsconfig.json' in files:
             tsconfig_path = os.path.join(root, 'tsconfig.json')
             _parse_tsconfig_aliases(tsconfig_path, root, aliases)
             config_files_found.append(tsconfig_path)
-        
+
         # Look for vite config files
-        for config_file in ['vite.config.js', 'vite.config.ts', 'vite.config.mjs']:
+        for config_file in [
+                'vite.config.js', 'vite.config.ts', 'vite.config.mjs'
+        ]:
             if config_file in files:
                 config_path = os.path.join(root, config_file)
                 _parse_vite_config_aliases(config_path, root, aliases)
                 config_files_found.append(config_path)
-    
+
     # Common default aliases if not found in config
     if not aliases:
         # Try common conventions
@@ -243,22 +251,26 @@ def _load_path_aliases(output_dir: str) -> Dict[str, str]:
                 aliases['@'] = src_dir
                 aliases['~'] = root
                 break
-    
+
     return aliases
 
 
-def _parse_tsconfig_aliases(tsconfig_path: str, base_dir: str, aliases: Dict[str, str]):
+def _parse_tsconfig_aliases(tsconfig_path: str, base_dir: str,
+                            aliases: Dict[str, str]):
     """Parse tsconfig.json and extract path aliases"""
     try:
         with open(tsconfig_path, 'r', encoding='utf-8') as f:
             # Remove comments from JSON (simple approach)
             content = f.read()
-            content = re.sub(r'//.*?\n|/\*.*?\*/', '', content, flags=re.DOTALL)
+            content = re.sub(
+                r'//.*?\n|/\*.*?\*/', '', content, flags=re.DOTALL)
             tsconfig = json.loads(content)
-            
-            if 'compilerOptions' in tsconfig and 'paths' in tsconfig['compilerOptions']:
+
+            if 'compilerOptions' in tsconfig and 'paths' in tsconfig[
+                    'compilerOptions']:
                 base_url = tsconfig['compilerOptions'].get('baseUrl', '.')
-                for alias, paths in tsconfig['compilerOptions']['paths'].items():
+                for alias, paths in tsconfig['compilerOptions']['paths'].items(
+                ):
                     # Remove /* suffix if present
                     clean_alias = alias.rstrip('/*')
                     if paths and len(paths) > 0:
@@ -266,8 +278,7 @@ def _parse_tsconfig_aliases(tsconfig_path: str, base_dir: str, aliases: Dict[str
                         target = paths[0].rstrip('/*')
                         # Resolve relative to baseUrl and base_dir
                         resolved_target = os.path.normpath(
-                            os.path.join(base_dir, base_url, target)
-                        )
+                            os.path.join(base_dir, base_url, target))
                         # Only add if not already defined (first found wins)
                         if clean_alias not in aliases:
                             aliases[clean_alias] = resolved_target
@@ -275,7 +286,8 @@ def _parse_tsconfig_aliases(tsconfig_path: str, base_dir: str, aliases: Dict[str
         pass
 
 
-def _parse_vite_config_aliases(config_path: str, base_dir: str, aliases: Dict[str, str]):
+def _parse_vite_config_aliases(config_path: str, base_dir: str,
+                               aliases: Dict[str, str]):
     """Parse vite.config.js/ts and extract path aliases"""
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
@@ -297,7 +309,8 @@ def _parse_vite_config_aliases(config_path: str, base_dir: str, aliases: Dict[st
         pass
 
 
-def _resolve_alias_path(import_path: str, path_aliases: Dict[str, str]) -> Optional[str]:
+def _resolve_alias_path(import_path: str,
+                        path_aliases: Dict[str, str]) -> Optional[str]:
     """Resolve path alias to actual path"""
     for alias, target in path_aliases.items():
         # Check if import starts with alias
@@ -325,7 +338,8 @@ def _extract_js_import(match, current_dir, current_file, code_content,
     # Try to resolve path alias first
     resolved_alias = _resolve_alias_path(import_path, path_aliases)
     if resolved_alias:
-        source_file = _resolve_js_path_from_absolute(resolved_alias, output_dir)
+        source_file = _resolve_js_path_from_absolute(resolved_alias,
+                                                     output_dir)
     elif import_path.startswith('.') or import_path.startswith('/'):
         # Relative or absolute path
         source_file = _resolve_js_path(import_path, current_dir, output_dir)
@@ -382,7 +396,8 @@ def _extract_js_side_effect(match, current_dir, current_file, code_content,
     # Try to resolve path alias first
     resolved_alias = _resolve_alias_path(import_path, path_aliases)
     if resolved_alias:
-        source_file = _resolve_js_path_from_absolute(resolved_alias, output_dir)
+        source_file = _resolve_js_path_from_absolute(resolved_alias,
+                                                     output_dir)
     elif import_path.startswith('.') or import_path.startswith('/'):
         source_file = _resolve_js_path(import_path, current_dir, output_dir)
     else:
@@ -405,7 +420,8 @@ def _extract_js_export(match, current_dir, current_file, code_content,
     # Try to resolve path alias first
     resolved_alias = _resolve_alias_path(import_path, path_aliases)
     if resolved_alias:
-        source_file = _resolve_js_path_from_absolute(resolved_alias, output_dir)
+        source_file = _resolve_js_path_from_absolute(resolved_alias,
+                                                     output_dir)
     elif import_path.startswith('.') or import_path.startswith('/'):
         source_file = _resolve_js_path(import_path, current_dir, output_dir)
     else:
@@ -449,14 +465,18 @@ def _resolve_js_path(import_path, current_dir, output_dir):
         resolved = os.path.normpath(resolved)
 
     # Try different extensions
-    extensions = ['.ts', '.tsx', '.js', '.jsx', '.vue', '.mjs', '.cjs', '.json', '']
+    extensions = [
+        '.ts', '.tsx', '.js', '.jsx', '.vue', '.mjs', '.cjs', '.json', ''
+    ]
     for ext in extensions:
         path_with_ext = resolved + ext
         if os.path.exists(path_with_ext):
             return path_with_ext
 
     # Try as directory with index file
-    for index_file in ['index.ts', 'index.tsx', 'index.js', 'index.jsx', 'index.vue']:
+    for index_file in [
+            'index.ts', 'index.tsx', 'index.js', 'index.jsx', 'index.vue'
+    ]:
         index_path = os.path.join(resolved, index_file)
         if os.path.exists(index_path):
             return index_path
@@ -475,14 +495,18 @@ def _resolve_js_path(import_path, current_dir, output_dir):
 def _resolve_js_path_from_absolute(resolved_path, output_dir):
     """Resolve JavaScript/TypeScript path from already-resolved absolute path"""
     # Try different extensions
-    extensions = ['.ts', '.tsx', '.js', '.jsx', '.vue', '.mjs', '.cjs', '.json', '']
+    extensions = [
+        '.ts', '.tsx', '.js', '.jsx', '.vue', '.mjs', '.cjs', '.json', ''
+    ]
     for ext in extensions:
         path_with_ext = resolved_path + ext
         if os.path.exists(path_with_ext):
             return path_with_ext
 
     # Try as directory with index file
-    for index_file in ['index.ts', 'index.tsx', 'index.js', 'index.jsx', 'index.vue']:
+    for index_file in [
+            'index.ts', 'index.tsx', 'index.js', 'index.jsx', 'index.vue'
+    ]:
         index_path = os.path.join(resolved_path, index_file)
         if os.path.exists(index_path):
             return index_path
@@ -967,15 +991,15 @@ import {
   checkDocumentPermission,
   getDocumentCategories,
 } from '../../api/document.ts';
-import type { Document as DocumentType, DocumentCategory } from '../../api/document.ts';
+import type { Document as DocumentType, DocumentCategory } from '@/api/document.ts';
 import { addCollection, removeCollection, checkCollection } from '../../api/collection.ts';
 
 /**
  * 文档内容组件属性
  */
 '''
-    result = parse_imports_detailed('frontend/src/views/documents/DocumentContent.vue', vue_code,
-                                    'output')
+    result = parse_imports_detailed(
+        'frontend/src/views/documents/DocumentContent.vue', vue_code, 'output')
     print('Current file: frontend/src/views/documents/DocumentContent.vue')
     print(f'\nDetected {len(result)} imports:')
     for imp in result:
