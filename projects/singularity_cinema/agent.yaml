@@ -116,6 +116,11 @@ bg_audio_path: bg_audio.mp3
 
 bg_audio_volume: 0.3
 
+extra_requirement: |
+  Pay Attention:
+  1. Text animation layout should be neat and organized, using top-bottom style, left-right style, or grid layout, symmetrically distributed on the screen, with each scene having a title
+  2. Avoid truncation and animation overlap
+
 # image/'#000000'/BLACK/WHITE
 background: '#fcfbf9'
 
@@ -158,7 +163,7 @@ output_dir: output_video
 
 slogan: ['知识元气弹', '梯度爆炸']
 
-slogan_subtitle_color: '#FFFFFF'
+slogan_subtitle_color: '#000000'
 
 fonts:
   - Alibaba PuHuiTi
