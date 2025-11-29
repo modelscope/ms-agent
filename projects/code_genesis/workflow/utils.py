@@ -294,7 +294,7 @@ def _parse_vite_config_aliases(config_path: str, base_dir: str,
             content = f.read()
             # Simple regex to extract alias definitions
             # Matches: '@': '/src' or '@': path.resolve(__dirname, 'src')
-            alias_pattern = r"['\"]([^'\"]+)['\"]\s*:\s*(?:path\.resolve\([^,]+,\s*['\"]([^'\"]+)['\"]\)|['\"]([^'\"]+)['\"])"
+            alias_pattern = r"['\"]([^'\"]+)['\"]\s*:\s*(?:path\.resolve\([^,]+,\s*['\"]([^'\"]+)['\"]\)|['\"]([^'\"]+)['\"])"  # noqa
             for match in re.finditer(alias_pattern, content):
                 alias_key = match.group(1)
                 target = match.group(2) or match.group(3)

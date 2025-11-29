@@ -53,7 +53,7 @@ def file_lock(lock_dir: str, filename: str, timeout: float = 15.0):
             os.close(lock_fd)
         try:
             os.remove(lock_file_path)
-        except:
+        except:  # noqa
             pass
 
 
@@ -329,8 +329,9 @@ class Programmer(LLMAgent):
                         saving_result += (
                             f'Save file <{r["filename"]}> successfully\n. here is the file abbreviation '
                             f'content: \n{abbr_content}\n')
-                messages[
-                    -1].content = remaining_text + 'Code generated here. Content removed to condense messages, check save result for details.'
+                messages[-1].content = remaining_text + (
+                    'Code generated here. Content removed to condense messages, '
+                    'check save result for details.')
                 messages.append(Message(role='user', content=saving_result))
                 self.llm.args['extra_body']['stop_sequences'] = stop_words
             self.filter_code_files()
