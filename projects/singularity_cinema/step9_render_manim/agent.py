@@ -487,7 +487,7 @@ Manim instructions:
 * Use a cohesive color palette of 2-4 colors for the entire video. Avoid cluttered colors, bright blue, and bright yellow. Prefer deep, dark tones
 * Low-quality animations such as stick figures are forbidden
 * Do not use any matchstick-style or pixel-style animations. Use charts, images, industrial/academic-style animations
-* The text must have a text box, the text box needs to have a background color, and the background must be opaque, with high contrast between the text color and the background.
+* Text box needs to have a background color, and the background must be opaque, with high contrast between the text color and the background.
 * The text box should large enough to contain the text
 * Do not create multi-track complex manim animations. One object per segment, or two to three(NO MORE THAN three!) object arranged in a simple manner, manim layout rules:
     1. One object in the middle

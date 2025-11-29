@@ -41,7 +41,7 @@ class Segment(LLMAgent):
     * Consider the synchronization between animations and content. When read at a normal speaking pace, the content should align with the animation's progression.
     * Specify the language of the manim texts, it should be the same with the script and the storyboard content(Chinese/English for example)
     * Do not use any matchstick-style or pixel-style animations. Use charts, images, industrial/academic-style animations
-    * The text must have a text box, the text box needs to have a background color, and the background must be opaque, with high contrast between the text color and the background.
+    * Text box needs to have a background color, and the background must be opaque, with high contrast between the text color and the background.
     * The text box should large enough to contain the text
     * Do not create multi-track complex manim animations. One object per segment, or two to three(NO MORE THAN three!) object arranged in a simple manner, manim layout rules:
         1. One object in the middle
@@ -106,7 +106,7 @@ Now begin:""" # noqa
     * Consider the synchronization between animations and content. When read at a normal speaking pace, the content should align with the animation's progression.
     * Specify the language of the manim texts, it should be the same with the script and the storyboard content(Chinese/English for example)
     * Do not use any matchstick-style or pixel-style animations. Use charts, images, industrial/academic-style animations
-    * The text must have a text box, the text box needs to have a background color, and the background must be opaque, with high contrast between the text color and the background.
+    * Text box needs to have a background color, and the background must be opaque, with high contrast between the text color and the background.
     * The text box should large enough to contain the text
     * Do not create multi-track complex manim animations. One object per segment, or two to three(NO MORE THAN three!) object arranged in a simple manner, manim layout rules:
         1. One object in the middle
