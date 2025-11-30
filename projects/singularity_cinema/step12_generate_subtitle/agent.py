@@ -41,8 +41,8 @@ class GenerateSubtitle(CodeAgent):
             text_chunks = self.split_text_to_chunks(text)         
             for j, chunk_text in enumerate(text_chunks):
                 subtitle = None
-                if self.subtitle_lang:
-                    subtitle = await self.translate_text(chunk_text, self.subtitle_lang)
+                if self.subtitle_translate:
+                    subtitle = await self.translate_text(chunk_text, self.subtitle_translate)
                 
                 output_file = os.path.join(self.subtitle_dir,
                                            f'bilingual_subtitle_{i + 1}_{j}.png')
