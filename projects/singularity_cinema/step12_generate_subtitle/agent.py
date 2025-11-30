@@ -38,21 +38,85 @@ class GenerateSubtitle(CodeAgent):
         logger.info('Generating subtitles.')
         for i, seg in enumerate(segments):
             text = seg.get('content', '')
-            subtitle = None
-            if self.subtitle_translate:
-                subtitle = await self.translate_text(text,
-                                                     self.subtitle_translate)
-            output_file = os.path.join(self.subtitle_dir,
-                                       f'bilingual_subtitle_{i + 1}.png')
-            if os.path.exists(output_file):
-                continue
-            self.create_bilingual_subtitle_image(
-                source=text,
-                target=subtitle,
-                output_file=output_file,
-                width=1720,
-                height=180)
+            text_chunks = self.split_text_to_chunks(text)         
+            for j, chunk_text in enumerate(text_chunks):
+                subtitle = None
+                if self.subtitle_lang:
+                    subtitle = await self.translate_text(chunk_text, self.subtitle_lang)
+                
+                output_file = os.path.join(self.subtitle_dir,
+                                           f'bilingual_subtitle_{i + 1}_{j}.png')
+                if os.path.exists(output_file):
+                    continue
+                
+                self.create_bilingual_subtitle_image(
+                    source=chunk_text,
+                    target=subtitle,
+                    output_file=output_file,
+                    width=1720,
+                    height=180)
         return messages
+
+    def split_text_to_chunks(self, text, max_len: int = 30):
+        punct_chars = '。！？；，、,.!?;:：；，、…—-“”""\'()[]{}<>《》【】'
+        if not text:
+            return []
+        
+        tokens = re.split(r'(\s+|[' + re.escape(punct_chars) + r'])', text)
+        tokens = [t for t in tokens if t and t.strip() != '']
+
+        def is_punct(t: str) -> bool:
+            return len(t) == 1 and t in punct_chars
+
+        chunks: List[str] = []
+        cur = ''
+
+        for t in tokens:
+            if len(t) > max_len:
+                if cur:
+                    chunks.append(cur.strip())
+                    cur = ''
+                
+                for i in range(0, len(t), max_len):
+                    sub_chunk = t[i:i + max_len]
+                    if len(sub_chunk) < max_len and i + max_len >= len(t):
+                        cur = sub_chunk
+                    else:
+                        chunks.append(sub_chunk)
+                continue
+
+            candidate = cur + t
+            
+            if len(candidate) <= max_len:
+                cur = candidate
+                continue
+
+            if is_punct(t) and cur and len(cur) + len(t) <= max_len + 2:
+                chunks.append((cur + t).strip())
+                cur = ''
+                continue
+
+            if cur.strip():
+                chunks.append(cur.strip())
+            cur = t
+
+            if is_punct(cur) and chunks and len(chunks[-1]) + len(cur) <= max_len + 2:
+                chunks[-1] += cur
+                cur = ''
+
+        if cur.strip():
+            chunks.append(cur.strip())
+
+        cleaned: List[str] = []
+        for c in chunks:
+            c = c.strip()
+            if c and is_punct(c[0]) and cleaned and len(cleaned[-1]) + 1 <= max_len + 2:
+                cleaned[-1] += c[0]
+                c = c[1:].lstrip()
+            if c:
+                cleaned.append(c)
+
+        return cleaned
 
     async def translate_text(self, text, to_lang):
 
