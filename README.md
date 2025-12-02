@@ -32,6 +32,9 @@
 
 ## Introduction
 
+[![Run in Smithery](https://smithery.ai/badge/skills/modelscope)](https://smithery.ai/skills?ns=modelscope&utm_source=github&utm_medium=badge)
+
+
 MS-Agent is a lightweight framework designed to empower agents with autonomous exploration capabilities. It provides a flexible and extensible architecture that allows developers to create agents capable of performing complex tasks, such as code generation, data analysis, and tool calling for general purposes with MCP (Model Calling Protocol) support.
 
 ### Features
