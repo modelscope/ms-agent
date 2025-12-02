@@ -1,13 +1,16 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import asyncio
 import os
+import shutil
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from typing import List, Union
 
 import aiohttp
 import json
 from ms_agent.agent import CodeAgent
 from ms_agent.llm import Message
+from ms_agent.tools.video_generator import VideoGenerator
 from ms_agent.utils import get_logger
 from omegaconf import DictConfig
 
@@ -90,11 +93,6 @@ class GenerateVideo(CodeAgent):
             return
 
         logger.info(f'Generating video for segment {i + 1}: {prompt}')
-
-        # Extract configuration
-        api_key = config.text2video.t2v_api_key
-        model = config.text2video.t2v_model
-        size = getattr(config.text2video, 't2v_size', '1280x720')
         work_dir = os.path.dirname(videos_dir)
         with open(os.path.join(work_dir, 'audio_info.txt'), 'r') as f:
             audio_infos = json.load(f)
@@ -106,173 +104,9 @@ class GenerateVideo(CodeAgent):
             if duration > audio_duration:
                 break
 
-        assert api_key is not None, 'Video generation API key is required'
-        provider_config = config.text2video.t2v_provider
-        video_url = await GenerateVideo._generate_video(
-            provider_config, api_key, model, prompt, size, fit_duration)
+        _config = deepcopy(config)
+        _config.tools.video_generator = _config.video_generator
+        video_generator = VideoGenerator(_config)
 
-        logger.info(f'Downloading video from: {video_url}')
-        max_retries = 3
-        retry_count = 0
-
-        async with aiohttp.ClientSession() as session:
-            # Add auth header for OpenAI content endpoint
-            headers = {}
-            if video_url.startswith(provider_config.base_url) and hasattr(
-                    provider_config, 'content_endpoint'):
-                headers['Authorization'] = f'Bearer {api_key}'
-
-            while retry_count < max_retries:
-                try:
-                    async with session.get(
-                            video_url, headers=headers) as video_resp:
-                        video_resp.raise_for_status()
-                        video_content = await video_resp.read()
-                        with open(output_path, 'wb') as f:
-                            f.write(video_content)
-                        logger.info(f'Video saved to: {output_path}')
-                        break  # Success, exit retry loop
-                except Exception as e:
-                    retry_count += 1
-                    if retry_count >= max_retries:
-                        logger.error(
-                            f'Failed to download video after {max_retries} attempts: {str(e)}'
-                        )
-                        raise
-                    else:
-                        logger.warning(
-                            f'Download attempt {retry_count} failed: {str(e)}. Retrying...'
-                        )
-                        await asyncio.sleep(2**retry_count)
-
-    @staticmethod
-    def _get_nested_value(data, path):
-        """Get value from nested dict using path list"""
-        value = data
-        for key in path:
-            if isinstance(value, dict):
-                value = value.get(key)
-            else:
-                return None
-            if value is None:
-                return None
-        return value
-
-    @staticmethod
-    def _build_request_payload(provider_config, model, prompt, size, seconds):
-        return {
-            'model': model,
-            'input': {
-                'prompt': prompt,
-                'size': size,
-                'seconds': seconds,
-            },
-            'parameters': {}
-        }
-
-    @staticmethod
-    async def _generate_video(provider_config, api_key, model, prompt, size,
-                              seconds):
-        """Unified video generation method for all providers"""
-        base_url = provider_config.base_url.strip('/')
-        create_endpoint = provider_config.create_endpoint
-
-        headers = {
-            'Authorization': f'Bearer {api_key}',
-            'Content-Type': 'application/json',
-        }
-
-        # Add async header if configured
-        if hasattr(provider_config,
-                   'async_header') and provider_config.async_header:
-            headers[provider_config.async_header] = 'enable'
-
-        payload = GenerateVideo._build_request_payload(provider_config, model,
-                                                       prompt, size, seconds)
-
-        async with aiohttp.ClientSession() as session:
-            try:
-                # Create video generation task/job
-                async with session.post(
-                        f'{base_url}{create_endpoint}',
-                        headers=headers,
-                        json=payload) as resp:
-                    resp.raise_for_status()
-                    response_data = await resp.json()
-
-                    # Extract task/video ID using configured path
-                    task_id = GenerateVideo._get_nested_value(
-                        response_data, provider_config.task_id_path)
-
-                    if not task_id:
-                        raise RuntimeError(
-                            f'No task ID in response: {response_data}')
-
-                    logger.info(f'Video generation task created: {task_id}')
-
-                    # Poll for completion
-                    return await GenerateVideo._poll_video_task(
-                        session, provider_config, task_id, headers, api_key)
-
-            except Exception as e:
-                logger.error(f'Failed to generate video: {str(e)}')
-                raise
-
-    @staticmethod
-    async def _poll_video_task(session, provider_config, task_id, headers,
-                               api_key):
-        """Unified polling method for all providers"""
-        max_wait_time = 1800  # 30 minutes
-        poll_interval = 5
-        max_poll_interval = 30
-        elapsed_time = 0
-
-        base_url = provider_config.base_url.strip('/')
-        poll_endpoint = provider_config.poll_endpoint.replace(
-            '{task_id}', task_id).replace('{video_id}', task_id)
-        success_statuses = provider_config.success_status
-        failed_statuses = provider_config.failed_status
-
-        while elapsed_time < max_wait_time:
-            await asyncio.sleep(poll_interval)
-            elapsed_time += poll_interval
-
-            async with session.get(
-                    f'{base_url}{poll_endpoint}', headers=headers) as result:
-                result.raise_for_status()
-                data = await result.json()
-
-                # Extract status using configured path
-                status = GenerateVideo._get_nested_value(
-                    data, provider_config.status_path)
-                logger.info(
-                    f'Task {task_id} status: {status}, defailed message: {str(data)}'
-                )
-
-                if status in success_statuses:
-                    # Check if provider uses content endpoint (like OpenAI)
-                    if hasattr(provider_config, 'content_endpoint'
-                               ) and provider_config.content_endpoint:
-                        content_endpoint = provider_config.content_endpoint.replace(
-                            '{video_id}', task_id)
-                        return f'{base_url}{content_endpoint}'
-
-                    # Otherwise extract video URL from response
-                    video_url = GenerateVideo._get_nested_value(
-                        data, provider_config.video_url_path)
-                    if not video_url:
-                        raise RuntimeError(
-                            f'Video URL not found in response: {data}')
-                    return video_url
-
-                elif status in failed_statuses:
-                    error_msg = data['output'].get(
-                        'message') or 'Unknown error'
-                    raise RuntimeError(f'Video generation failed: {error_msg}')
-
-            # Exponential backoff for polling interval
-            poll_interval = min(poll_interval * 1.2, max_poll_interval)
-
-        raise TimeoutError(
-            f'Video generation task {task_id} timed out after {max_wait_time} seconds'
-        )
+        _temp_file = await video_generator.generate_video(prompt, seconds=fit_duration)
+        shutil.move(_temp_file, output_path)

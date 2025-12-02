@@ -14,7 +14,7 @@ class MSImageGenerator:
         self.temp_dir = temp_dir
         os.makedirs(self.temp_dir, exist_ok=True)
 
-    async def generate_image(self, positive_prompt, negative_prompt=None, size=None):
+    async def generate_image(self, positive_prompt, negative_prompt=None, size=None, **kwargs):
         image_generator = self.config.tools.image_generator
         base_url = (getattr(image_generator, 'base_url') or 'https://api-inference.modelscope.cn').strip('/')
         api_key = image_generator.api_key

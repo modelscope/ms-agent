@@ -119,8 +119,7 @@ image_generator:
   model: gemini-3-pro-image-preview
   base_url: https://dashscope.aliyuncs.com/compatible-mode
   api_key:
-  ratio: 16:9
-  size: 2k
+  ratio: '16:9'
 
 audio_generator:
   type: edge_tts

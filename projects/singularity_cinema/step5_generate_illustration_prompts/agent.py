@@ -46,7 +46,6 @@ Only return the prompt itself, do not add any other explainations or marks."""  
         super().__init__(config, tag, trust_remote_code, **kwargs)
         self.work_dir = getattr(self.config, 'output_dir', 'output')
         self.num_parallel = getattr(self.config, 'llm_num_parallel', 10)
-        self.style = getattr(self.config.text2image, 't2i_style', 'realistic')
         self.illustration_prompts_dir = os.path.join(self.work_dir,
                                                      'illustration_prompts')
         os.makedirs(self.illustration_prompts_dir, exist_ok=True)
@@ -62,7 +61,7 @@ Only return the prompt itself, do not add any other explainations or marks."""  
         with ThreadPoolExecutor(max_workers=self.num_parallel) as executor:
             futures = {
                 executor.submit(self._generate_illustration_prompts_static, i,
-                                segment, self.config, self.style, self.system,
+                                segment, self.config, self.system,
                                 self.illustration_prompts_dir): i
                 for i, segment in tasks
             }
@@ -71,20 +70,20 @@ Only return the prompt itself, do not add any other explainations or marks."""  
         return messages
 
     @staticmethod
-    def _generate_illustration_prompts_static(i, segment, config, style,
+    def _generate_illustration_prompts_static(i, segment, config,
                                               system,
                                               illustration_prompts_dir):
         """Static method for multiprocessing"""
         llm = LLM.from_config(config)
         if config.background == 'image':
             GenerateIllustrationPrompts._generate_illustration_impl(
-                llm, i, segment, style, system, illustration_prompts_dir)
+                llm, i, segment, system, illustration_prompts_dir)
         if config.foreground == 'image':
             GenerateIllustrationPrompts._generate_foreground_impl(
                 llm, i, segment, system, illustration_prompts_dir)
 
     @staticmethod
-    def _generate_illustration_impl(llm, i, segment, style, system,
+    def _generate_illustration_impl(llm, i, segment, system,
                                     illustration_prompts_dir):
         if os.path.exists(
                 os.path.join(illustration_prompts_dir, f'segment_{i+1}.txt')):
@@ -98,8 +97,7 @@ Only return the prompt itself, do not add any other explainations or marks."""  
                 f'There is a manim animation at the front of the generated image: {segment["manim"]}, '
                 f'you need to make the image background not steal the focus from the manim animation.'
             )
-        query = (f'The style required from user is: {style}, '
-                 f'illustration based on: {segment["content"]}, '
+        query = (f'illustration based on: {segment["content"]}, '
                  f'{manim_query}, '
                  f'Requirements from the storyboard designer: {background}')
         logger.info(

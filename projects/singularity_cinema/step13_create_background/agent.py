@@ -25,7 +25,6 @@ class CreateBackground(CodeAgent):
         self.llm: OpenAI = LLM.from_config(self.config)
         self.fonts = self.config.fonts
         self.slogan = getattr(self.config, 'slogan', [])
-        self.style = getattr(self.config.text2image, 't2i_style', 'realistic')
 
     def get_font(self, size):
         import matplotlib.font_manager as fm

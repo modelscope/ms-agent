@@ -75,7 +75,7 @@ class GenerateAudio(CodeAgent):
         audio.write_audiofile(output_path, verbose=False, logger=None)
         audio.close()
 
-    async def edge_tts_generate(self, text, output_file, speaker='male'):
+    async def audio_generate(self, text, output_file, speaker='male'):
         voice_dict = self.voices.get(speaker)
         voice = voice_dict.voice
         rate = voice_dict.get('rate', '+0%')
@@ -101,7 +101,7 @@ class GenerateAudio(CodeAgent):
         if os.path.exists(audio_path):
             return self.get_audio_duration(audio_path)
         if tts_text:
-            await self.edge_tts_generate(tts_text, audio_path,
+            await self.audio_generate(tts_text, audio_path,
                                          self.config.voice)
             return self.get_audio_duration(audio_path)
         else:

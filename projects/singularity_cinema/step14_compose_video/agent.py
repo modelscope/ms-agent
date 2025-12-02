@@ -21,7 +21,7 @@ class ComposeVideo(CodeAgent):
                  **kwargs):
         super().__init__(config, tag, trust_remote_code, **kwargs)
         self.work_dir = getattr(self.config, 'output_dir', 'output')
-        self.transition = getattr(self.config.text2image, 't2i_transition',
+        self.background_effect = getattr(self.config, 'background_effect',
                                   None)
         self.bg_path = os.path.join(self.work_dir, 'background.png')
         self.render_dir = os.path.join(self.work_dir, 'manim_render')
@@ -183,7 +183,7 @@ class ComposeVideo(CodeAgent):
                 exit_duration = 1.0
                 start_animation_time = max(duration - exit_duration, 0)
 
-                if self.transition == 'ken-burns-effect':
+                if self.background_effect == 'ken-burns-effect':
                     # Ken Burns effect: smooth zoom-in with stable center position
                     zoom_start = 1.0  # Initial scale
                     zoom_end = 1.15  # Final scale (15% zoom)
@@ -222,7 +222,7 @@ class ComposeVideo(CodeAgent):
                     illustration_clip = illustration_clip.with_position(
                         'center')
 
-                elif self.transition == 'slide':
+                elif self.background_effect == 'slide':
                     # TODO legacy code, untested
                     # Default slide left animation
                     def illustration_pos_factory(idx, start_x, end_x, bg_h,
