@@ -210,6 +210,10 @@ Now begin:"""  # noqa
                 assert 'background' in segment or 'video' in segment
             else:
                 segment['background'] = self.config.background
+            if 'video' in segment:
+                segment.pop('background', None)
+                segment.pop('manim', None)
+                segment.pop('foreground', None)
             logger.info(
                 f'\nScene {i}\n'
                 f'Content: {segment["content"]}\n'

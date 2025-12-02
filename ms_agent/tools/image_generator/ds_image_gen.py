@@ -15,7 +15,7 @@ class DSImageGenerator:
 
     async def generate_image(self, positive_prompt, negative_prompt=None, size=None, ratio=None, **kwargs):
         image_generator = self.config.tools.image_generator
-        base_url = (getattr(image_generator, 'base_url') or 'https://dashscope.aliyuncs.com/compatible-mode').strip('/')
+        base_url = (getattr(image_generator, 'base_url', None) or 'https://dashscope.aliyuncs.com/compatible-mode').strip('/')
         api_key = image_generator.api_key
         model_id = image_generator.model
         assert api_key is not None

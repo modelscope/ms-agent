@@ -1,8 +1,10 @@
 import asyncio
 import os
 import uuid
-
+from ms_agent.utils import get_logger
 import aiohttp
+
+logger = get_logger()
 
 
 class DSVideoGenerator:
@@ -14,13 +16,13 @@ class DSVideoGenerator:
 
     async def generate_video(self, positive_prompt, size='1280x720', seconds=4):
         video_generator = self.config.tools.video_generator
-        base_url = (getattr(video_generator, 'base_url') or 'https://dashscope.aliyuncs.com/compatible-mode').strip('/')
+        base_url = (getattr(video_generator, 'base_url', None) or 'https://dashscope.aliyuncs.com').strip('/')
         api_key = video_generator.api_key
         model_id = video_generator.model
         assert api_key is not None
         task_id = str(uuid.uuid4())[:8]
         output_file = os.path.join(self.temp_dir, f'{task_id}.mp4')
-        video_url = self._generate_video(base_url, api_key, model_id, positive_prompt, size, seconds)
+        video_url = await self._generate_video(base_url, api_key, model_id, positive_prompt, size, seconds)
         await self.download_video(video_url, output_file)
         return output_file
 
@@ -104,6 +106,10 @@ class DSVideoGenerator:
                 result.raise_for_status()
                 data = await result.json()
                 status = data['output']['task_status']
+                logger.info(
+                    f'Task {task_id} status: {status}, defailed message: {str(data)}'
+                )
+
                 if status in success_statuses:
                     video_url = data['output']['video_url']
                     if not video_url:

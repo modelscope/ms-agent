@@ -117,8 +117,7 @@ class GenerateImages(CodeAgent):
             _config.tools.image_generator = _config.image_generator
             image_generator = ImageGenerator(_config)
 
-            _temp_file = await image_generator.generate_image(prompt, size=_config.image_generator.size,
-                                                              ratio=_config.image_generator.ratio)
+            _temp_file = await image_generator.generate_image(prompt, ratio=_config.image_generator.ratio)
             shutil.move(_temp_file, img_path)
             if fusion_name == 'keep_only_black_for_folder':
                 GenerateImages.keep_only_black_for_folder(

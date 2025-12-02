@@ -84,7 +84,7 @@ use_doc_image: true
 
 use_subtitle: false
 
-use_text2video: false
+use_text2video: true
 
 subtitle_translate:
 
@@ -112,12 +112,10 @@ video_generator:
   api_key:
   size: 1280x720 # '720x1280', '1280x720', '1024x1792', '1792x1024'
   seconds: [4, 8, 12]
-  base_url: https://dashscope.aliyuncs.com
 
 image_generator:
   type: dashscope
   model: gemini-3-pro-image-preview
-  base_url: https://dashscope.aliyuncs.com/compatible-mode
   api_key:
   ratio: '16:9'
 

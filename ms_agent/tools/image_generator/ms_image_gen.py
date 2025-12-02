@@ -16,7 +16,7 @@ class MSImageGenerator:
 
     async def generate_image(self, positive_prompt, negative_prompt=None, size=None, **kwargs):
         image_generator = self.config.tools.image_generator
-        base_url = (getattr(image_generator, 'base_url') or 'https://api-inference.modelscope.cn').strip('/')
+        base_url = (getattr(image_generator, 'base_url', None) or 'https://api-inference.modelscope.cn').strip('/')
         api_key = image_generator.api_key
         model_id = image_generator.model
         assert api_key is not None

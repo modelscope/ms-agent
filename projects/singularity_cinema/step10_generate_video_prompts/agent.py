@@ -80,8 +80,8 @@ class GenerateVideoPrompts(CodeAgent):
             audio_infos = json.load(f)
 
         audio_duration = audio_infos[i]['audio_duration']
-        fit_duration = config.text2video.t2v_seconds[0]
-        for duration in config.text2video.t2v_seconds:
+        fit_duration = config.video_generator.seconds[0]
+        for duration in config.video_generator.seconds:
             if duration > audio_duration:
                 fit_duration = duration
                 break
