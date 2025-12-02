@@ -68,19 +68,12 @@ prompt:
 
     Now begin:
 
-text2image:
-  t2i_model: MusePublic/Qwen-image
-  t2i_api_key:
-  t2i_base_url: https://api-inference.modelscope.cn
-  t2i_transition:
-  t2i_style:
-
 t2i_num_parallel: 1
 t2v_num_parallel: 1
 llm_num_parallel: 10
 
 code_fix_round: 5
-mllm_fix_round: 1
+mllm_fix_round: 0
 
 video:
   bitrate: 2500k
@@ -91,24 +84,7 @@ use_doc_image: true
 
 use_subtitle: false
 
-use_text2video: true
-
-text2video:
-  t2v_model: sora-2-2025-10-06
-  t2v_api_key:
-  # '720x1280', '1280x720', '1024x1792', '1792x1024'
-  t2v_size: 1280x720
-  t2v_seconds: [4, 8, 12]
-  t2v_provider:
-    base_url: https://dashscope.aliyuncs.com
-    create_endpoint: /api/v1/services/aigc/model-evaluation/async-inference/
-    poll_endpoint: /api/v1/tasks/{task_id}
-    async_header: X-DashScope-Async
-    task_id_path: [output, task_id]  # JSON path to extract task_id
-    status_path: [output, task_status]  # JSON path to extract status
-    video_url_path: [output, video_url]  # JSON path to extract video URL
-    success_status: [SUCCEEDED, SUCCEED]
-    failed_status: [FAILED, failed]
+use_text2video: false
 
 subtitle_translate:
 
@@ -117,15 +93,37 @@ bg_audio_path: bg_audio.mp3
 bg_audio_volume: 0.3
 
 extra_requirement: |
-  Pay Attention:
-  1. Text animation layout should be neat and organized, using top-bottom style, left-right style, or grid layout, symmetrically distributed on the screen, with each scene having a title
-  2. Avoid truncation and animation overlap
+  布局要求:
+  1. 文字动画布局工整,采用左右式或者田字格式，多利用横向空间，在屏幕上对称分布，每个分镜有一个title 
+  2. 不要有截断和动画重叠 
+  3. 文字颜色和背景有高对比度 
+  4. 不要使用火柴风格动画 
+  5. 所有分镜背景和前景均使用一种主要配色
 
-# image/'#000000'/BLACK/WHITE
-background: '#fcfbf9'
+# image/'#fcfbf9'/BLACK/WHITE
+background: image
 
 # image/blank value
 foreground:
+
+video_generator:
+  type: dashscope
+  model: sora-2-2025-10-06
+  api_key:
+  size: 1280x720 # '720x1280', '1280x720', '1024x1792', '1792x1024'
+  seconds: [4, 8, 12]
+  base_url: https://dashscope.aliyuncs.com
+
+image_generator:
+  type: dashscope
+  model: gemini-3-pro-image-preview
+  base_url: https://dashscope.aliyuncs.com/compatible-mode
+  api_key:
+  ratio: 16:9
+  size: 2k
+
+audio_generator:
+  type: edge_tts
 
 voice: male
 

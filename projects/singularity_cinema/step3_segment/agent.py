@@ -15,10 +15,11 @@ class Segment(LLMAgent):
 
     system = """You are an animation storyboard designer. Now there is a short video scene that needs storyboard design. The storyboard needs to meet the following conditions:
 
-- Each storyboard panel will carry a piece of narration, one manim technical animation, one image background, and one subtitle, even one video
+- Each storyboard panel will carry a piece of narration, one manim animation(optional), one image background, and one subtitle, even one video(optional)
     * Use clear, high-contrast font colors to prevent text from blending with the background
     * Use a cohesive color palette of 2-4 colors for the entire video. Avoid cluttered colors, bright blue, and bright yellow. Prefer deep, dark tones
     * Low-quality animations such as stick figures are forbidden
+    * If no manim needed, do not output the manim key
 
 - Each of your storyboard panels should take about 5~8 seconds to read at normal speaking speed. Avoid the feeling of frequent switching and static
     * Pay attention to the color and content coordination between the background image and the manim animation.
@@ -82,10 +83,11 @@ Now begin:""" # noqa
 
     pure_color_system = """You are an animation storyboard designer. Now there is a short video scene that needs storyboard design. The storyboard needs to meet the following conditions:
 
-- Each storyboard panel will carry a piece of narration, one manim technical animation, and one subtitle, even one video
+- Each storyboard panel will carry a piece of narration, one manim animation(optional), and one subtitle, even one video(optional)
     * Use clear, high-contrast font colors to prevent text from blending with the background
     * Use a cohesive color palette of 2-4 colors for the entire video. Avoid cluttered colors, bright blue, and bright yellow. Prefer deep, dark tones
     * Low-quality animations such as stick figures are forbidden
+    * If no manim needed, do not output the manim key
 
 - Each of your storyboard panels should take about 5~8 seconds to read at normal speaking speed. Avoid the feeling of frequent switching and static
     * Pay attention to the color and content coordination between the background image and the manim animation.
@@ -241,7 +243,8 @@ Now begin:"""  # noqa
 
     * Important: Use smaller image sizes for generated images and larger image sizes for user doc images. DO NOT crop image to circular**
 
-2. The manim field is used as guidance for subsequent manim animation generation. Read the manim field content, **recreate/refine the animation/manim**, and perfectly integrate/add the images into it
+2. The manim field is a guidance for subsequent manim animation generation
+    * Ignore the input manim, completely rewrite the manim field to ensure that images and other manim animations are neatly arranged. Images should be a reasonable part of the overall manim layout, appearing in reasonable positions.
     * No more than 2 images in a segment, 0 image in one segment is allowed
     * When 2 images, each image should be smaller
     * One image can only use once(one segment and one position)
