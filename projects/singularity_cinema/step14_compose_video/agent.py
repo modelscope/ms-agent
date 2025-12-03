@@ -350,7 +350,7 @@ class ComposeVideo(CodeAgent):
                 segment_audio = None
                 
                 # Check if this segment has generated video audio
-                if i < len(segment_video_audios) and segment_video_audios[i] is not None:
+                if i < len(segment_video_audios) and segment_video_audios[i] is not None and self.config.use_video_soundtrack:
                     logger.info(f'Using audio from generated video for segment {i + 1}')
                     segment_audio = segment_video_audios[i]
                 elif audio_path and os.path.exists(audio_path):
@@ -411,8 +411,7 @@ class ComposeVideo(CodeAgent):
                 if final_video.audio:
                     tts_audio = final_video.audio.with_duration(
                         final_video.duration).with_volume_scaled(1.0)
-                    bg_audio = bg_music.with_duration(
-                        final_video.duration).with_volume_scaled(0.4 if self.config.use_video_soundtrack else 0.0)
+                    bg_audio = bg_music.with_duration(final_video.duration)
                     mixed_audio = mp.CompositeAudioClip(
                         [tts_audio,
                          bg_audio]).with_duration(final_video.duration)

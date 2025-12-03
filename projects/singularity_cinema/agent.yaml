@@ -30,7 +30,7 @@ prompt:
 
     - Word count between 600~800 words(Normal reading speed: approximately 180~240 seconds), with fluent language and coherent content.
         * Consider the history, future, and significance of the query topic, and narrate it like telling a story.
-        * Mention less of "You", "Me", "Hi", to avoid "the teathing vibe", make the watchers feel playing toys.
+        * Mention less of "You", "Me", "Hi", to avoid "the teaching vibe", make the watchers feel playing toys.
 
     - **Core Style Requirements**: Use relatable, accessible language, combining vivid metaphors, cases, fun interactions, light humor, and moderate use of internet culture. For example:
        - Use everyday examples to explain complex concepts (like using "finding a parking spot" to explain search algorithms)
@@ -90,7 +90,7 @@ use_video_soundtrack: false
 
 subtitle_translate:
 
-bg_audio_path: bg_audio.mp3
+bg_audio_path: bg.mp3
 
 bg_audio_volume: 0.3
 
@@ -99,7 +99,7 @@ extra_requirement: |
   1. 文字动画布局工整,采用左右式或者田字格式，多利用横向空间，在屏幕上对称分布，每个分镜有一个title
   2. 不要有截断和动画重叠
   3. 文字颜色和背景有高对比度
-  4. 不要使用火柴风格动画
+  4. 不要用manim线条模拟人物或物体，如果表达人物或物体，用前景图片
   5. 所有分镜背景和前景均使用一种主要配色
   6. 背景图片中间纯色留空，防止前景混乱
 

@@ -157,8 +157,7 @@ class GenerateImages(CodeAgent):
             _config.tools.image_generator = _config.image_generator
             image_generator = ImageGenerator(_config)
 
-            _temp_file = await image_generator.generate_image(prompt, size=_config.image_generator.size,
-                                                              ratio=_config.image_generator.ratio)
+            _temp_file = await image_generator.generate_image(prompt, ratio=_config.image_generator.ratio)
             shutil.move(_temp_file, foreground_image)
 
     @staticmethod
