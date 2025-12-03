@@ -274,7 +274,7 @@ Now begin:"""  # noqa
     * The image size on the canvas depend on its importance, important image occupies more spaces
     * Use 1/8 to 1/4 space of the canvas for your images
 
-6. Your return length should be the same as the source storyboard length. If images are not needed, return empty user_image and foreground lists.
+6. Your return length should be the same as the source storyboard length, do not miss any segment. If images are not needed, return empty user_image and foreground lists.
 
 7. DO NOT print the `content` information in the animation; `content` will be added separately as subtitle to the video
 
