@@ -86,6 +86,8 @@ use_subtitle: false
 
 use_text2video: true
 
+use_soundtrack: true
+
 subtitle_translate:
 
 bg_audio_path: bg_audio.mp3
