@@ -86,7 +86,7 @@ use_subtitle: false
 
 use_text2video: true
 
-use_soundtrack: true
+use_video_soundtrack: true
 
 subtitle_translate:
 
@@ -94,13 +94,13 @@ bg_audio_path: bg_audio.mp3
 
 bg_audio_volume: 0.3
 
-extra_requirement: |
-  布局要求:
-  1. 文字动画布局工整,采用左右式或者田字格式，多利用横向空间，在屏幕上对称分布，每个分镜有一个title 
-  2. 不要有截断和动画重叠 
-  3. 文字颜色和背景有高对比度 
-  4. 不要使用火柴风格动画 
-  5. 所有分镜背景和前景均使用一种主要配色
+#extra_requirement: |
+#  布局要求:
+#  1. 文字动画布局工整,采用左右式或者田字格式，多利用横向空间，在屏幕上对称分布，每个分镜有一个title
+#  2. 不要有截断和动画重叠
+#  3. 文字颜色和背景有高对比度
+#  4. 不要使用火柴风格动画
+#  5. 所有分镜背景和前景均使用一种主要配色
 
 # image/'#fcfbf9'/BLACK/WHITE
 background: image
