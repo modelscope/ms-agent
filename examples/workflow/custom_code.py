@@ -1,10 +1,10 @@
 from typing import List, Union
 
-from ms_agent.agent.code_agent import Code
+from ms_agent.agent.code_agent import CodeAgent
 from ms_agent.llm import Message
 
 
-class CustomCodeAgent(Code):
+class CustomCodeAgent(CodeAgent):
 
     async def run(self, inputs: Union[str, List[Message]],
                   **kwargs) -> List[Message]:
