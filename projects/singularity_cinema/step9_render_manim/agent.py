@@ -451,7 +451,7 @@ These images must be used.
 * Important: Use smaller image sizes for generated images and larger image sizes for user doc images. DO NOT crop image to circular**
 * Scale the images. Do not use the original size, carefully rescale the images to match the requirements below:
     * The image size on the canvas depend on its importance, important image occupies more spaces
-    * Use 1/8 to 1/4 space of the canvas for your images
+    * Use 1/4 space of the canvas for each image
 """ # noqa
         else:
             image_prompt = ''

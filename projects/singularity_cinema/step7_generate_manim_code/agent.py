@@ -135,7 +135,7 @@ DO NOT let the image and the manim element overlap. Reorganize them in your anim
     a. The image size on the canvas depend on its importance, important image occupies more spaces
         * Consider the image placement in the manim requirements, resize the image until it will not be cut off by the edge(within x∈(-6.0, 6.0), y∈(-3.4, 3.4) with minimum buff=0.5)
         * Resize generated images by scale(<0.4), if 2 images, resize by scale(<0.3)
-    b. Recommended size is **from 1/8 to 1/4** on the canvas""" # noqa
+    b. Use 1/4 space of the canvas for each image""" # noqa
         else:
             image_usage = ''
 

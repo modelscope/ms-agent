@@ -272,7 +272,7 @@ Now begin:"""  # noqa
 
 5. Scale the images. Do not use the original size, carefully rescale the images to match the requirements below:
     * The image size on the canvas depend on its importance, important image occupies more spaces
-    * Use 1/8 to 1/4 space of the canvas for your images
+    * Use 1/4 space of the canvas for each image
 
 6. Your return length should be the same as the source storyboard length, do not miss any segment. If images are not needed, return empty user_image and foreground lists.
 
