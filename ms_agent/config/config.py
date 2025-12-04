@@ -144,14 +144,12 @@ class Config:
                                 f'Replacing {current_path} with extra value.')
                             setattr(_config, name, extra[current_path])
                         # Find the key in extra that matches name (case-insensitive)
-                        elif any(key.lower() == name.lower() for key in extra):
-                            key_match = next((key for key in extra
-                                              if key.lower() == name.lower()),
-                                             None)
-                            if key_match is not None:
-                                logger.info(
-                                    f'Replacing {name} with extra value.')
-                                setattr(_config, name, extra[key_match])
+                        elif (key_match := next(
+                            (key
+                             for key in extra if key.lower() == name.lower()),
+                                None)) is not None:
+                            logger.info(f'Replacing {name} with extra value.')
+                            setattr(_config, name, extra[key_match])
                         # Handle placeholder replacement like <api_key>
                         elif (isinstance(value, str) and value.startswith('<')
                               and value.endswith('>')

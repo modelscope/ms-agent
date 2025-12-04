@@ -27,12 +27,12 @@ class EdgeTTSGenerator:
             text=text, voice=speaker, rate=rate, pitch=pitch)
 
         audio_data = b''
-        chunk_count = 0
         async for chunk in communicate.stream():
             if chunk['type'] == 'audio':
                 audio_data += chunk['data']
-                chunk_count += 1
 
-        assert len(audio_data) > 0
+        assert len(
+            audio_data
+        ) > 0, 'Audio generation failed: no data received from edge_tts.'
         with open(output_file, 'wb') as f:
             f.write(audio_data)

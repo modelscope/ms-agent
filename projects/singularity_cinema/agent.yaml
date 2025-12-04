@@ -90,7 +90,7 @@ use_video_soundtrack: false
 
 subtitle_translate:
 
-bg_audio_path: bg.mp3
+bg_audio_path: bg_audio.mp3
 
 bg_audio_volume: 0.3
 

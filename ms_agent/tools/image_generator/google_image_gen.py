@@ -21,11 +21,7 @@ class GoogleImageGenerator:
         assert api_key is not None
         task_id = str(uuid.uuid4())[:8]
         output_file = os.path.join(self.temp_dir, f'{task_id}.png')
-        if api_key:
-            client = genai.Client(api_key=api_key)
-        else:
-            client = genai.Client()
-
+        client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
             model=model_id,
             contents=[positive_prompt],
