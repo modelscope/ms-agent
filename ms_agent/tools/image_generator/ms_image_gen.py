@@ -84,7 +84,3 @@ class MSImageGenerator:
             return (
                 f'Retrieval timeout, consider retry the task, or waiting for '
                 f'longer time(current is {max_wait_time}s).')
-
-    async def call_tool(self, server_name: str, *, tool_name: str,
-                        tool_args: dict) -> str:
-        return await self.generate_image(**tool_args)

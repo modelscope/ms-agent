@@ -111,7 +111,7 @@ class DSVideoGenerator:
                 data = await result.json()
                 status = data['output']['task_status']
                 logger.info(
-                    f'Task {task_id} status: {status}, defailed message: {str(data)}'
+                    f'Task {task_id} status: {status}, detailed message: {str(data)}'
                 )
 
                 if status in success_statuses:
