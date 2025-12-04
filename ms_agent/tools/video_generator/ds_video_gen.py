@@ -1,8 +1,9 @@
 import asyncio
 import os
 import uuid
-from ms_agent.utils import get_logger
+
 import aiohttp
+from ms_agent.utils import get_logger
 
 logger = get_logger()
 
@@ -14,15 +15,20 @@ class DSVideoGenerator:
         self.temp_dir = temp_dir
         os.makedirs(self.temp_dir, exist_ok=True)
 
-    async def generate_video(self, positive_prompt, size='1280x720', seconds=4):
+    async def generate_video(self,
+                             positive_prompt,
+                             size='1280x720',
+                             seconds=4):
         video_generator = self.config.tools.video_generator
-        base_url = (getattr(video_generator, 'base_url', None) or 'https://dashscope.aliyuncs.com').strip('/')
+        base_url = (getattr(video_generator, 'base_url', None)
+                    or 'https://dashscope.aliyuncs.com').strip('/')
         api_key = video_generator.api_key
         model_id = video_generator.model
         assert api_key is not None
         task_id = str(uuid.uuid4())[:8]
         output_file = os.path.join(self.temp_dir, f'{task_id}.mp4')
-        video_url = await self._generate_video(base_url, api_key, model_id, positive_prompt, size, seconds)
+        video_url = await self._generate_video(base_url, api_key, model_id,
+                                               positive_prompt, size, seconds)
         await self.download_video(video_url, output_file)
         return output_file
 
@@ -47,11 +53,10 @@ class DSVideoGenerator:
                     if retry_count >= max_retries:
                         raise e
                     else:
-                        await asyncio.sleep(2 ** retry_count)
+                        await asyncio.sleep(2**retry_count)
 
     @staticmethod
-    async def _generate_video(base_url, api_key, model, prompt, size,
-                              seconds):
+    async def _generate_video(base_url, api_key, model, prompt, size, seconds):
         base_url = base_url.strip('/')
         create_endpoint = '/api/v1/services/aigc/model-evaluation/async-inference/'
 
@@ -72,8 +77,7 @@ class DSVideoGenerator:
 
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                    f'{base_url}{create_endpoint}',
-                    headers=headers,
+                    f'{base_url}{create_endpoint}', headers=headers,
                     json=payload) as resp:
                 resp.raise_for_status()
                 response_data = await resp.json()

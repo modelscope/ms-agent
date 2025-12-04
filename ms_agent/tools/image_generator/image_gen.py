@@ -1,5 +1,5 @@
 import os
-from typing import Dict, Any
+from typing import Any, Dict
 
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
@@ -9,7 +9,8 @@ class ImageGenerator(ToolBase):
 
     def __init__(self, config):
         super().__init__(config)
-        self.temp_dir = os.path.join(self.output_dir, '.temp', 'image_generator')
+        self.temp_dir = os.path.join(self.output_dir, '.temp',
+                                     'image_generator')
         os.makedirs(self.temp_dir, exist_ok=True)
         image_generator = self.config.image_generator
         if image_generator.type == 'modelscope':
@@ -39,10 +40,9 @@ class ImageGenerator(ToolBase):
                         'type': 'object',
                         'properties': {
                             'positive_prompt': {
-                                'type':
-                                    'string',
+                                'type': 'string',
                                 'description':
-                                    'The prompt to generate the image.'
+                                'The prompt to generate the image.'
                             }
                         },
                         'required': ['positive_prompt'],
@@ -51,8 +51,13 @@ class ImageGenerator(ToolBase):
             ]
         }
 
-    async def generate_image(self, positive_prompt, negative_prompt=None, **kwargs):
-        return await self.generator.generate_image(positive_prompt, negative_prompt, **kwargs)
+    async def generate_image(self,
+                             positive_prompt,
+                             negative_prompt=None,
+                             **kwargs):
+        return await self.generator.generate_image(positive_prompt,
+                                                   negative_prompt, **kwargs)
 
-    async def call_tool(self, server_name: str, *, tool_name: str, tool_args: dict) -> str:
+    async def call_tool(self, server_name: str, *, tool_name: str,
+                        tool_args: dict) -> str:
         return await self.generate_image(**tool_args)

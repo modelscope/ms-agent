@@ -70,8 +70,7 @@ Only return the prompt itself, do not add any other explainations or marks."""  
         return messages
 
     @staticmethod
-    def _generate_illustration_prompts_static(i, segment, config,
-                                              system,
+    def _generate_illustration_prompts_static(i, segment, config, system,
                                               illustration_prompts_dir):
         """Static method for multiprocessing"""
         llm = LLM.from_config(config)

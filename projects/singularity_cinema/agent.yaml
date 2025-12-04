@@ -102,8 +102,6 @@ extra_requirement: |
   4. 不要用manim绘制人物或物体，也不要用manim绘制复杂图像，多利用前景图片
   5. 所有分镜背景和前景均使用一种主要配色
   6. 生成的背景图片中间留空方便展示manim动画，防止前景混乱
-  7. 多利用前景或者背景图片以及视频生成达芬奇时期的画面、手稿、画作等，尽量不使用文字表述
-  8. 阐述清楚达芬奇和文艺复兴时代的关联
 
 # image/'#fcfbf9'/BLACK/WHITE
 background: image
@@ -119,10 +117,8 @@ video_generator:
   seconds: [4, 8, 12]
 
 image_generator:
-  # type: dashscope
-  type: modelscope
-  model: MusePublic/Qwen-image
-  # model: gemini-3-pro-image-preview
+  type: dashscope
+  model: gemini-3-pro-image-preview
   api_key:
   ratio: '16:9'
 

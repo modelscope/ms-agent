@@ -76,7 +76,6 @@ class GenerateImages(CodeAgent):
     def _process_single_illustration_static(i, segment, prompt, config,
                                             images_dir, fusion_name):
         """Static method for thread pool execution"""
-        import asyncio
         # Create new event loop for this thread
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -117,7 +116,12 @@ class GenerateImages(CodeAgent):
             _config.tools.image_generator = _config.image_generator
             image_generator = ImageGenerator(_config)
 
-            _temp_file = await image_generator.generate_image(prompt, ratio=_config.image_generator.ratio)
+            kwargs = {}
+            if hasattr(_config.image_generator, 'ratio'):
+                kwargs['ratio'] = _config.image_generator.ratio
+            elif hasattr(_config.image_generator, 'size'):
+                kwargs['size'] = _config.image_generator.size
+            _temp_file = await image_generator.generate_image(prompt, **kwargs)
             shutil.move(_temp_file, img_path)
             if fusion_name == 'keep_only_black_for_folder':
                 GenerateImages.keep_only_black_for_folder(
@@ -157,7 +161,14 @@ class GenerateImages(CodeAgent):
             _config.tools.image_generator = _config.image_generator
             image_generator = ImageGenerator(_config)
 
-            _temp_file = await image_generator.generate_image(prompt, ratio=_config.image_generator.ratio)
+            kwargs = {}
+            if hasattr(_config.image_generator, 'ratio'):
+                kwargs['ratio'] = _config.image_generator.ratio
+            elif hasattr(_config.image_generator, 'size'):
+                kwargs['size'] = _config.image_generator.size
+            _temp_file = await image_generator.generate_image(prompt, **kwargs)
+            if not os.path.exists(_temp_file):
+                raise RuntimeError(f'Failed to generate image: {_temp_file}')
             shutil.move(_temp_file, foreground_image)
 
     @staticmethod

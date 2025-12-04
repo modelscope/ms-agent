@@ -66,7 +66,6 @@ class GenerateVideo(CodeAgent):
     @staticmethod
     def _process_single_video_static(i, segment, prompt, config, videos_dir):
         """Static method for thread pool execution of video generation"""
-        import asyncio
         # Create new event loop for this thread
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -108,5 +107,6 @@ class GenerateVideo(CodeAgent):
         _config.tools.video_generator = _config.video_generator
         video_generator = VideoGenerator(_config)
 
-        _temp_file = await video_generator.generate_video(prompt, seconds=fit_duration)
+        _temp_file = await video_generator.generate_video(
+            prompt, seconds=fit_duration)
         shutil.move(_temp_file, output_path)

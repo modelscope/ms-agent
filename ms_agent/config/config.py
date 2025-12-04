@@ -130,30 +130,32 @@ class Config:
         if not extra:
             return config
 
-        def traverse_config(_config: Union[DictConfig, ListConfig, Any], path: str = ''):
+        def traverse_config(_config: Union[DictConfig, ListConfig, Any],
+                            path: str = ''):
             if isinstance(_config, DictConfig):
                 for name, value in _config.items():
                     current_path = f'{path}.{name}' if path else name
-                    
+
                     if isinstance(value, BaseContainer):
                         traverse_config(value, current_path)
                     else:
                         if current_path in extra:
-                            logger.info(f'Replacing {current_path} with extra value.')
+                            logger.info(
+                                f'Replacing {current_path} with extra value.')
                             setattr(_config, name, extra[current_path])
                         # Find the key in extra that matches name (case-insensitive)
                         elif any(key.lower() == name.lower() for key in extra):
-                            key_match = next(
-                                (key
-                                 for key in extra if key.lower() == name.lower()),
-                                None)
+                            key_match = next((key for key in extra
+                                              if key.lower() == name.lower()),
+                                             None)
                             if key_match is not None:
-                                logger.info(f'Replacing {name} with extra value.')
+                                logger.info(
+                                    f'Replacing {name} with extra value.')
                                 setattr(_config, name, extra[key_match])
                         # Handle placeholder replacement like <api_key>
                         elif (isinstance(value, str) and value.startswith('<')
-                                and value.endswith('>')
-                                and value[1:-1] in extra):
+                              and value.endswith('>')
+                              and value[1:-1] in extra):
                             logger.info(f'Replacing {value} with extra value.')
                             setattr(_config, name, extra[value[1:-1]])
 

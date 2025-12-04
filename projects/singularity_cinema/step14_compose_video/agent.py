@@ -22,7 +22,7 @@ class ComposeVideo(CodeAgent):
         super().__init__(config, tag, trust_remote_code, **kwargs)
         self.work_dir = getattr(self.config, 'output_dir', 'output')
         self.background_effect = getattr(self.config, 'background_effect',
-                                  None)
+                                         None)
         self.bg_path = os.path.join(self.work_dir, 'background.png')
         self.render_dir = os.path.join(self.work_dir, 'manim_render')
         self.tts_dir = os.path.join(self.work_dir, 'audio')
@@ -38,7 +38,7 @@ class ComposeVideo(CodeAgent):
                             video_paths, segments, output_path):
         segment_durations = []
         logger.info('Composing the final video.')
-        
+
         # Track which segments use generated video audio
         segment_video_audios = []
 
@@ -48,7 +48,8 @@ class ComposeVideo(CodeAgent):
             is_video_frame = 'video' in segment
             use_video_soundtrack = self.config.use_video_soundtrack and is_video_frame
 
-            if audio_path and os.path.exists(audio_path) and not use_video_soundtrack:
+            if audio_path and os.path.exists(
+                    audio_path) and not use_video_soundtrack:
                 try:
                     audio_clip = mp.AudioFileClip(audio_path)
                     # Use actual audio duration + small pause, no minimum enforcement
@@ -127,10 +128,12 @@ class ComposeVideo(CodeAgent):
                             # Extract and preserve video audio before adjusting duration
                             video_audio = None
                             if video_clip.audio is not None:
-                                logger.info(f'Extracting audio from generated video {i + 1}')
+                                logger.info(
+                                    f'Extracting audio from generated video {i + 1}'
+                                )
                                 video_audio = video_clip.audio
                             segment_video_audios.append(video_audio)
-                            
+
                             if self.config.use_video_soundtrack:
                                 duration = video_clip.duration
                             else:
@@ -140,12 +143,14 @@ class ComposeVideo(CodeAgent):
                                     logger.info(
                                         f'Video {i + 1} is shorter than segment, extending to {duration:.1f}s'
                                     )
-                                    video_clip = video_clip.with_duration(duration)
+                                    video_clip = video_clip.with_duration(
+                                        duration)
                                 elif video_clip.duration > duration:
                                     logger.info(
                                         f'Video {i + 1} is longer than segment, trimming to {duration:.1f}s'
                                     )
-                                    video_clip = video_clip.subclipped(0, duration)
+                                    video_clip = video_clip.subclipped(
+                                        0, duration)
 
                             current_video_clips.append(video_clip)
                         else:
@@ -348,10 +353,13 @@ class ComposeVideo(CodeAgent):
             for i, (audio_path, duration, segment) in enumerate(
                     zip(audio_paths, segment_durations, segments)):
                 segment_audio = None
-                
+
                 # Check if this segment has generated video audio
-                if i < len(segment_video_audios) and segment_video_audios[i] is not None and self.config.use_video_soundtrack:
-                    logger.info(f'Using audio from generated video for segment {i + 1}')
+                if i < len(segment_video_audios) and segment_video_audios[
+                        i] is not None and self.config.use_video_soundtrack:
+                    logger.info(
+                        f'Using audio from generated video for segment {i + 1}'
+                    )
                     segment_audio = segment_video_audios[i]
                 elif audio_path and os.path.exists(audio_path):
                     # Use TTS audio if no video audio available
@@ -370,7 +378,7 @@ class ComposeVideo(CodeAgent):
                         audio_clip = mp.concatenate_audioclips(
                             [audio_clip, silence])
                     segment_audio = audio_clip
-                
+
                 if segment_audio is not None:
                     valid_audio_clips.append(segment_audio)
 
@@ -396,7 +404,8 @@ class ComposeVideo(CodeAgent):
             else:
                 bg_music_path = os.path.join(self.config.local_dir,
                                              self.config.bg_audio_path)
-            if os.path.exists(bg_music_path) and not self.config.use_video_soundtrack:
+            if os.path.exists(
+                    bg_music_path) and not self.config.use_video_soundtrack:
                 bg_music = mp.AudioFileClip(bg_music_path)
                 if bg_music.duration < final_video.duration:
                     repeat_times = int(

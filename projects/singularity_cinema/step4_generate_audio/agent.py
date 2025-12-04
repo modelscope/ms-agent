@@ -85,7 +85,8 @@ class GenerateAudio(CodeAgent):
         from ms_agent.tools.audio_generator import AudioGenerator
         _config = deepcopy(self.config)
         _config.tools.audio_generator = _config.audio_generator
-        _temp_file = await AudioGenerator(self.config).generate_audio(text, speaker=voice, rate=rate, pitch=pitch)
+        _temp_file = await AudioGenerator(self.config).generate_audio(
+            text, speaker=voice, rate=rate, pitch=pitch)
         shutil.move(_temp_file, output_file)
 
     @staticmethod
@@ -101,8 +102,7 @@ class GenerateAudio(CodeAgent):
         if os.path.exists(audio_path):
             return self.get_audio_duration(audio_path)
         if tts_text:
-            await self.audio_generate(tts_text, audio_path,
-                                         self.config.voice)
+            await self.audio_generate(tts_text, audio_path, self.config.voice)
             return self.get_audio_duration(audio_path)
         else:
             await self.create_silent_audio(audio_path, duration=2.0)

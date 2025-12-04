@@ -1,5 +1,5 @@
 import os
-from typing import Dict, Any
+from typing import Any, Dict
 
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
@@ -9,7 +9,8 @@ class AudioGenerator(ToolBase):
 
     def __init__(self, config):
         super().__init__(config)
-        self.temp_dir = os.path.join(self.output_dir, '.temp', 'audio_generator')
+        self.temp_dir = os.path.join(self.output_dir, '.temp',
+                                     'audio_generator')
         os.makedirs(self.temp_dir, exist_ok=True)
         audio_generator = self.config.audio_generator
         if audio_generator.type == 'edge_tts':
@@ -33,10 +34,8 @@ class AudioGenerator(ToolBase):
                         'type': 'object',
                         'properties': {
                             'text': {
-                                'type':
-                                    'string',
-                                'description':
-                                    'The text to generate speech'
+                                'type': 'string',
+                                'description': 'The text to generate speech'
                             },
                         },
                         'required': ['text'],
@@ -48,5 +47,6 @@ class AudioGenerator(ToolBase):
     async def generate_audio(self, text, **kwargs):
         return await self.generator.generate_audio(text, **kwargs)
 
-    async def call_tool(self, server_name: str, *, tool_name: str, tool_args: dict) -> str:
+    async def call_tool(self, server_name: str, *, tool_name: str,
+                        tool_args: dict) -> str:
         return await self.generate_audio(**tool_args)

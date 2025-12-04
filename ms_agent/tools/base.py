@@ -2,9 +2,8 @@
 from abc import abstractmethod
 from typing import Any, Dict
 
-from omegaconf import DictConfig
-
 from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR
+from omegaconf import DictConfig
 
 
 class ToolBase:

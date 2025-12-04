@@ -15,7 +15,11 @@ class EdgeTTSGenerator:
         return output_file
 
     @staticmethod
-    async def edge_tts_generate(text, output_file, speaker='zh-CN-YunjianNeural', rate='+0%', pitch='+0Hz'):
+    async def edge_tts_generate(text,
+                                output_file,
+                                speaker='zh-CN-YunjianNeural',
+                                rate='+0%',
+                                pitch='+0Hz'):
         import edge_tts
         output_dir = os.path.dirname(output_file) or '.'
         os.makedirs(output_dir, exist_ok=True)

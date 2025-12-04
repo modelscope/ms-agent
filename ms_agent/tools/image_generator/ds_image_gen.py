@@ -13,9 +13,16 @@ class DSImageGenerator:
         self.temp_dir = temp_dir
         os.makedirs(self.temp_dir, exist_ok=True)
 
-    async def generate_image(self, positive_prompt, negative_prompt=None, size=None, ratio=None, **kwargs):
+    async def generate_image(self,
+                             positive_prompt,
+                             negative_prompt=None,
+                             size=None,
+                             ratio=None,
+                             **kwargs):
         image_generator = self.config.tools.image_generator
-        base_url = (getattr(image_generator, 'base_url', None) or 'https://dashscope.aliyuncs.com/compatible-mode').strip('/')
+        base_url = (
+            getattr(image_generator, 'base_url', None)
+            or 'https://dashscope.aliyuncs.com/compatible-mode').strip('/')
         api_key = image_generator.api_key
         model_id = image_generator.model
         assert api_key is not None
@@ -44,23 +51,21 @@ class DSImageGenerator:
             },
             'generationConfig': {
                 'responseModalities': ['TEXT', 'IMAGE'],
-                "image_config": {
-                    "aspect_ratio": ratio,
+                'image_config': {
+                    'aspect_ratio': ratio,
                 },
             }
         }
 
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                    base_url,
-                    headers=headers,
-                    json=request_body
-            ) as resp:
+                    base_url, headers=headers, json=request_body) as resp:
                 resp.raise_for_status()
                 data = await resp.json()
 
                 try:
-                    image_url = data['candidates'][0]['content']['parts'][-1]['inlineData']['data']
+                    image_url = data['candidates'][0]['content']['parts'][-1][
+                        'inlineData']['data']
                     async with session.get(image_url) as img_resp:
                         img_content = await img_resp.read()
                         image = Image.open(BytesIO(img_content))

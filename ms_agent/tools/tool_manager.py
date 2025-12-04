@@ -47,9 +47,11 @@ class ToolManager:
         self.has_split_task_tool = False
         if hasattr(config, 'tools') and hasattr(config.tools, 'split_task'):
             self.extra_tools.append(SplitTask(config))
-        if hasattr(config, 'tools') and hasattr(config.tools, 'image_generator'):
+        if hasattr(config, 'tools') and hasattr(config.tools,
+                                                'image_generator'):
             self.extra_tools.append(ImageGenerator(config))
-        if hasattr(config, 'tools') and hasattr(config.tools, 'video_generator'):
+        if hasattr(config, 'tools') and hasattr(config.tools,
+                                                'video_generator'):
             self.extra_tools.append(VideoGenerator(config))
         if hasattr(config, 'tools') and hasattr(config.tools, 'shell'):
             self.extra_tools.append(Shell(config))

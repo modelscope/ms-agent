@@ -9,7 +9,10 @@ class GoogleImageGenerator:
         self.temp_dir = temp_dir
         os.makedirs(self.temp_dir, exist_ok=True)
 
-    async def generate_image(self, positive_prompt, negative_prompt=None, **kwargs):
+    async def generate_image(self,
+                             positive_prompt,
+                             negative_prompt=None,
+                             **kwargs):
         # TODO not tested
         from google import genai
         image_generator = self.config.tools.image_generator
