@@ -146,8 +146,7 @@ class Retriever:
             # Calculate similarity score
             score = self._calculate_similarity(query_terms, combined_text)
 
-            if score > 0:
-                results.append((skill_key, skill, score))
+            results.append((skill_key, skill, score))
 
         # Sort by score (descending) and return top_k
         results.sort(key=lambda x: x[2], reverse=True)
