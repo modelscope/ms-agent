@@ -375,7 +375,7 @@ def load_image_from_url_to_pil(url: str) -> 'Image.Image':
     """
     from PIL import Image
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=(10, 25))
         # Raise an HTTPError for bad responses (4xx or 5xx)
         response.raise_for_status()
         image_bytes = BytesIO(response.content)
