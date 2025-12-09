@@ -13,6 +13,71 @@ from PIL import Image, ImageDraw, ImageFont
 
 logger = get_logger()
 
+PUNCTUATION_OVERFLOW_ALLOWANCE = 2
+PUNCT_CHARS = r'，。！？;:,.!?;:、()[]{}"\'——“”《》<>—'
+
+
+def _is_punct(tok: str) -> bool:
+    return len(tok) == 1 and tok in PUNCT_CHARS
+
+
+def _tokenize_text(text: str) -> List[str]:
+    if not text:
+        return []
+    # Split by whitespace or punctuation, keeping single-char punctuation as tokens
+    tokens = re.split(r'(\s+|[' + re.escape(PUNCT_CHARS) + r'])', text)
+    tokens = [t for t in tokens if t and not t.isspace()]
+    return tokens
+
+
+def _chunk_tokens(tokens: List[str], max_len: int) -> List[str]:
+    chunks = []
+    cur = ''
+    for t in tokens:
+        if len(t) > max_len:
+            # If a single token exceeds max_len, split it
+            for i in range(0, len(t), max_len):
+                sub = t[i:i + max_len]
+                if cur:
+                    chunks.append(cur.strip())
+                    cur = ''
+                chunks.append(sub)
+            continue
+
+        candidate = (cur + t).strip() if cur else t
+        if len(candidate) <= max_len:
+            cur = candidate + ' '
+            continue
+
+        # If t is punctuation and can be merged with previous chunk (allowing slight overflow)
+        if _is_punct(t) and cur and len(cur) + len(
+                t) <= max_len + PUNCTUATION_OVERFLOW_ALLOWANCE:
+            cur = (cur + t).strip() + ' '
+            continue
+
+        if cur:
+            chunks.append(cur.strip())
+        cur = t + ' '
+
+    if cur.strip():
+        chunks.append(cur.strip())
+    return chunks
+
+
+def _clean_chunks(chunks: List[str], max_len: int) -> List[str]:
+    cleaned = []
+    for c in chunks:
+        c = c.strip()
+        while c and _is_punct(c[0]) and cleaned:
+            if len(cleaned[-1]) + 1 > max_len + PUNCTUATION_OVERFLOW_ALLOWANCE:
+                break
+            cleaned[-1] += c[0]
+            c = c[1:].lstrip()
+
+        if c:
+            cleaned.append(c)
+    return cleaned
+
 
 class GenerateSubtitle(CodeAgent):
 
@@ -38,21 +103,33 @@ class GenerateSubtitle(CodeAgent):
         logger.info('Generating subtitles.')
         for i, seg in enumerate(segments):
             text = seg.get('content', '')
-            subtitle = None
-            if self.subtitle_translate:
-                subtitle = await self.translate_text(text,
-                                                     self.subtitle_translate)
-            output_file = os.path.join(self.subtitle_dir,
-                                       f'bilingual_subtitle_{i + 1}.png')
-            if os.path.exists(output_file):
-                continue
-            self.create_bilingual_subtitle_image(
-                source=text,
-                target=subtitle,
-                output_file=output_file,
-                width=1720,
-                height=180)
+            text_chunks = self.split_text_to_chunks(text)
+            for j, chunk_text in enumerate(text_chunks):
+                subtitle = None
+                if self.subtitle_translate:
+                    subtitle = await self.translate_text(
+                        chunk_text, self.subtitle_translate)
+
+                output_file = os.path.join(
+                    self.subtitle_dir, f'bilingual_subtitle_{i + 1}_{j}.png')
+                if os.path.exists(output_file):
+                    continue
+
+                self.create_bilingual_subtitle_image(
+                    source=chunk_text,
+                    target=subtitle,
+                    output_file=output_file,
+                    width=1720,
+                    height=180)
         return messages
+
+    def split_text_to_chunks(self, text, max_len: int = 30):
+        """
+        Split text into chunks of max_len, prioritizing splits at punctuation.
+        """
+        tokens = _tokenize_text(text)
+        chunks = _chunk_tokens(tokens, max_len)
+        return _clean_chunks(chunks, max_len)
 
     async def translate_text(self, text, to_lang):
 
