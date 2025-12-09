@@ -1,8 +1,10 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import glob
 import os
+import re
+from typing import Union
 
 import json
-import glob
 import moviepy as mp
 from moviepy import AudioClip
 from ms_agent.agent import CodeAgent
@@ -11,6 +13,24 @@ from omegaconf import DictConfig
 from PIL import Image
 
 logger = get_logger()
+
+_SUBTITLE_INDEX_RE = re.compile(
+    r'(\d+)(?=[^\d]*$)')  # Match the last sequence of digits in the filename
+
+
+def _get_subtitle_index_from_filename(path: str) -> Union[int, float]:
+    """
+    Extract the trailing numeric index from a file path or filename.
+    Returns an int index; if parsing fails, returns float('inf') to sort invalid files to the end.
+    """
+    name = os.path.basename(path)
+    m = _SUBTITLE_INDEX_RE.search(name)
+    if not m:
+        return float('inf')
+    try:
+        return int(m.group(1))
+    except (ValueError, TypeError):
+        return float('inf')
 
 
 class ComposeVideo(CodeAgent):
@@ -286,7 +306,8 @@ class ComposeVideo(CodeAgent):
                 fg_clip = fg_clip.with_position(('center', 'center'))
                 fg_clip = fg_clip.with_duration(duration)
                 current_video_clips.append(fg_clip)
-            if self.config.use_subtitle and i < len(subtitle_paths) and subtitle_paths[i]:
+            if self.config.use_subtitle and i < len(
+                    subtitle_paths) and subtitle_paths[i]:
                 current_segment_subs = subtitle_paths[i]
                 num_subs = len(current_segment_subs)
                 if num_subs > 0:
@@ -313,11 +334,12 @@ class ComposeVideo(CodeAgent):
                                     sub_path, duration=sub_duration)
                                 subtitle_clip = subtitle_clip.resized(
                                     (new_w, new_h))
-                                
+
                                 subtitle_y = 900
                                 subtitle_clip = subtitle_clip.with_position(
                                     ('center', subtitle_y))
-                                subtitle_clip = subtitle_clip.with_start(j * sub_duration)
+                                subtitle_clip = subtitle_clip.with_start(
+                                    j * sub_duration)
                                 current_video_clips.append(subtitle_clip)
 
             # Add background as top layer (transparent PNG with decorative elements)
@@ -457,7 +479,8 @@ class ComposeVideo(CodeAgent):
                 os.path.join(self.tts_dir, f'segment_{i + 1}.mp3'))
             pattern = os.path.join(self.subtitle_dir,
                                    f'bilingual_subtitle_{i + 1}_*.png')
-            sub_files = sorted(glob.glob(pattern), key=lambda x: int(os.path.splitext(x)[0].split('_')[-1]))
+            sub_files = sorted(
+                glob.glob(pattern), key=_get_subtitle_index_from_filename)
             subtitle_paths.append(sub_files)
             video_paths.append(
                 os.path.join(self.videos_dir, f'video_{i + 1}.mp4'))

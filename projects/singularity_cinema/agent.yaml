@@ -258,7 +258,7 @@ voices:
     voice: en-US-EmmaNeural
     rate: '+0%'
     pitch: '+0Hz'
-  
+
   ana:
     voice: en-US-AnaNeural
     rate: '+0%'
