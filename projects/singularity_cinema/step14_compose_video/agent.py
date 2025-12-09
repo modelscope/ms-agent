@@ -301,11 +301,11 @@ class ComposeVideo(CodeAgent):
                                     f'Invalid subtitle dimensions: {subtitle_w}x{subtitle_h} for {sub_path}'
                                 )
                             else:
-                                target_h = 180
-                                if subtitle_h > target_h and subtitle_h > 0:
-                                    scale = target_h / float(subtitle_h)
+                                target_h = 180  # TODO: Define as a class constant
+                                if subtitle_h > target_h:
+                                    scale = target_h / subtitle_h
                                     new_w = max(1, int(subtitle_w * scale))
-                                    new_h = max(1, int(subtitle_h * scale))
+                                    new_h = target_h
                                 else:
                                     new_w, new_h = subtitle_w, subtitle_h
 
