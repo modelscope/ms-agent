@@ -58,7 +58,7 @@ class GenerateSubtitle(CodeAgent):
         return messages
 
     def split_text_to_chunks(self, text, max_len: int = 30):
-        punct_chars = '。！？；，、,.!?;:：；，、…—-“”""\'()[]{}<>《》【】'
+        punct_chars = '。！？；，、,.!?;:：；，、…—-“”"\'()[]{}<>《》【】'
         if not text:
             return []
         
