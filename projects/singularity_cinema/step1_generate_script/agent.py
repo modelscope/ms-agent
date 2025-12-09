@@ -20,6 +20,7 @@ class GenerateScript(LLMAgent):
                  **kwargs):
         super().__init__(config, tag, trust_remote_code, **kwargs)
         self.work_dir = getattr(self.config, 'output_dir', 'output')
+        self.extra_req = getattr(self.config, 'extra_requirement', '')
         os.makedirs(self.work_dir, exist_ok=True)
 
     def prepare_llm(self):
@@ -37,6 +38,7 @@ class GenerateScript(LLMAgent):
         return super().on_task_end(messages)
 
     async def run(self, query: str, **kwargs):
+        query += self.extra_req
         messages = [
             Message(role='system', content=self.system),
             Message(role='user', content=query),

@@ -9,7 +9,7 @@ from ms_agent.utils import get_logger
 from omegaconf import DictConfig
 from PIL import Image, ImageDraw, ImageFont
 
-logger = get_logger(__name__)
+logger = get_logger()
 
 
 class CreateBackground(CodeAgent):
@@ -21,11 +21,10 @@ class CreateBackground(CodeAgent):
                  **kwargs):
         super().__init__(config, tag, trust_remote_code, **kwargs)
         self.work_dir = getattr(self.config, 'output_dir', 'output')
-        self.bg_path = os.path.join(self.work_dir, 'background.jpg')
+        self.bg_path = os.path.join(self.work_dir, 'background.png')
         self.llm: OpenAI = LLM.from_config(self.config)
         self.fonts = self.config.fonts
         self.slogan = getattr(self.config, 'slogan', [])
-        self.style = getattr(self.config.text2image, 't2i_style', 'realistic')
 
     def get_font(self, size):
         import matplotlib.font_manager as fm
@@ -42,14 +41,14 @@ class CreateBackground(CodeAgent):
         with open(os.path.join(self.work_dir, 'title.txt'), 'r') as f:
             title = f.read()
         width, height = 1920, 1080
-        background_color = (255, 255, 255)
-        title_color = (0, 0, 0)
+        # Use transparent background
+        slogan_subtitle_color = self.config.slogan_subtitle_color
 
         config = {
             'title_font_size': 50,
             'subtitle_font_size': 54,
             'title_max_width': 15,
-            'subtitle_color': (0, 0, 0),
+            'subtitle_color': slogan_subtitle_color,
             'line_spacing': 15,
             'padding': 50,
             'line_width': 8,
@@ -57,7 +56,8 @@ class CreateBackground(CodeAgent):
             'line_position_offset': 140
         }
 
-        image = Image.new('RGB', (width, height), background_color)
+        # Create image with transparent background (RGBA mode)
+        image = Image.new('RGBA', (width, height), (255, 255, 255, 0))
         draw = ImageDraw.Draw(image)
 
         title_font = self.get_font(config['title_font_size'])
@@ -70,7 +70,7 @@ class CreateBackground(CodeAgent):
             draw.text((config['padding'], y_position),
                       line,
                       font=title_font,
-                      fill=title_color)
+                      fill=slogan_subtitle_color)
             y_position += (bbox[3] - bbox[1]) + config['line_spacing']
         subtitle_lines = self.slogan
         y_position = config['padding']
@@ -81,12 +81,13 @@ class CreateBackground(CodeAgent):
             draw.text((x_offset, y_position),
                       line,
                       font=subtitle_font,
-                      fill=config['subtitle_color'])
+                      fill=slogan_subtitle_color)
             y_position += bbox[3] - bbox[1] + 5
 
         line_y = height - config['padding'] - config['line_position_offset']
-        draw.line([(0, line_y), (width, line_y)],
-                  fill=(0, 0, 0),
-                  width=config['line_width'])
+        if self.config.use_subtitle:
+            draw.line([(0, line_y), (width, line_y)],
+                      fill=slogan_subtitle_color,
+                      width=config['line_width'])
         image.save(self.bg_path)
         return messages

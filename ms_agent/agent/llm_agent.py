@@ -213,6 +213,8 @@ class LLMAgent(Agent):
         await self.loop_callback('on_tool_call', messages)
 
     async def after_tool_call(self, messages: List[Message]):
+        if messages[-1].role == 'assistant' and not messages[-1].tool_calls:
+            self.runtime.should_stop = True
         await self.loop_callback('after_tool_call', messages)
 
     async def loop_callback(self, point, messages: List[Message]):
@@ -490,8 +492,6 @@ class LLMAgent(Agent):
 
         if _response_message.tool_calls:
             messages = await self.parallel_tool_call(messages)
-        else:
-            self.runtime.should_stop = True
 
         await self.after_tool_call(messages)
         self.log_output(

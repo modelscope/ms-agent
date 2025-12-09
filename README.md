@@ -70,7 +70,7 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
   - 🔥 Support Sandbox Framework [ms-enclave](https://github.com/modelscope/ms-enclave)
 
 * 🚀 Sep 22, 2025: Release MS-Agent v1.3.0, which includes the following updates:
-  - 🔥 Support [Code Scratch](projects/code_scratch/README.md)
+  - 🔥 Support [Code Scratch](projects/code_genesis/README.md)
   - Support `Memory` for building agents with long-term and short-term memory
   - Enhance the DeepResearch workflow
   - Support RAY for accelerating document information extraction
@@ -421,7 +421,7 @@ The generated code will be output to the `output` folder in the current director
 - **Coding Phase**: Execute coding tasks in intelligent file groups → Generate complete code structure
 - **Refine Phase**: Auto-compilation → Error analysis → Iterative bug fixing → Human evaluation loop
 
-For more details, refer to [Code Scratch](projects/code_scratch/README.md).
+For more details, refer to [Code Scratch](projects/code_genesis/README.md).
 
 <br>
 

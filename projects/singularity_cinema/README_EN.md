@@ -144,6 +144,6 @@ Some important parameters are listed below:
 - llm_num_parallel: LLM call parallelism, default is 10
 - video: Video generation bitrate and other parameters
 - voice/voices: edge_tts voice settings, if you have other voice options, you can add them here
-- subtitle_lang: Multilingual subtitle language, if not set, no translation is performed
+- subtitle_translate: Multilingual subtitle language, if not set, no translation is performed
 - slogan: Displayed on the right side of the screen, generally shows producer name and short video collection
 - fonts: The recommended fonts list

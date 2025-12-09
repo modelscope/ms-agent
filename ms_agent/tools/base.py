@@ -2,6 +2,7 @@
 from abc import abstractmethod
 from typing import Any, Dict
 
+from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR
 from omegaconf import DictConfig
 
 
@@ -14,12 +15,18 @@ class ToolBase:
     def __init__(self, config):
         self.config = config
         self.exclude_functions = []
+        self.include_functions = []
+        self.output_dir = getattr(self.config, 'output_dir',
+                                  DEFAULT_OUTPUT_DIR)
 
     def exclude_func(self, tool_config: DictConfig):
         if tool_config is not None:
             self.exclude_functions = getattr(tool_config, 'exclude', [])
-        else:
-            self.exclude_functions = []
+            self.include_functions = getattr(tool_config, 'include', [])
+
+        assert (not self.exclude_functions) or (
+            not self.include_functions
+        ), 'Set either `include` or `exclude` in tools config.'
 
     @abstractmethod
     async def connect(self) -> None:
@@ -42,13 +49,30 @@ class ToolBase:
         """
         pass
 
-    @abstractmethod
     async def get_tools(self) -> Dict[str, Any]:
         """List tools available.
 
         Returns:
             A Dict of {server_name: tools}
         """
+        tools = await self._get_tools_inner()
+        output = {}
+        for server, tool_list in tools.items():
+            available_tools = []
+            for tool in tool_list:
+                if self.include_functions:
+                    if tool['tool_name'] in self.include_functions:
+                        available_tools.append(tool)
+                elif self.exclude_functions:
+                    if tool['tool_name'] not in self.exclude_functions:
+                        available_tools.append(tool)
+                else:
+                    available_tools.append(tool)
+            output[server] = available_tools
+        return output
+
+    @abstractmethod
+    async def _get_tools_inner(self) -> Dict[str, Any]:
         pass
 
     @abstractmethod

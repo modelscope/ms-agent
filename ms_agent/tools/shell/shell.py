@@ -19,7 +19,7 @@ class Shell(ToolBase):
     async def connect(self) -> None:
         pass
 
-    async def get_tools(self) -> Dict[str, Any]:
+    async def _get_tools_inner(self) -> Dict[str, Any]:
         tools = {
             'shell': [
                 Tool(
@@ -52,12 +52,7 @@ class Shell(ToolBase):
                     }),
             ]
         }
-        return {
-            'file_system': [
-                t for t in tools['file_system']
-                if t['tool_name'] not in self.exclude_functions
-            ]
-        }
+        return tools
 
     def check_safe(self, command, work_dir):
         # 1. Check work_dir
@@ -135,9 +130,9 @@ class Shell(ToolBase):
 
         # 4. Check dangerous redirections
         redirect_patterns = [
-            r'>+\s*/(?!tmp/|var/tmp/)',  # redirect to root directory (except /tmp/ or /var/tmp/)
+            r'>+\s*/(?!tmp/|var/tmp/|dev/null)',  # redirect to root directory (except /tmp/, /var/tmp/, /dev/null)
             r'<\s*/etc/',  # read from /etc
-            r'>+\s*/dev/',  # redirect to device files
+            r'>+\s*/dev/(?!null)',  # redirect to device files (except /dev/null)
         ]
 
         for pattern in redirect_patterns:
@@ -192,10 +187,11 @@ class Shell(ToolBase):
         except Exception as e:
             result = f'Run failed with an exception: {e}.'
 
-        output = (f'Shell command status:\n'
-                  f'Command line: {command}\n'
-                  f'Workdir: {work_dir}\n'
-                  f'Result: {result}')
+        output = (
+            f'Shell command status:\n'
+            f'Command line: {command}\n'
+            f'Workdir: {work_dir}\n'
+            f'Result: {result or "The command does not give any responses."}')
         return output
 
     async def call_tool(self, server_name: str, *, tool_name: str,

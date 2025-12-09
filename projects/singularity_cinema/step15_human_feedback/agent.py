@@ -1,4 +1,6 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import os
+
 import json
 from ms_agent.agent import LLMAgent
 from ms_agent.llm import Message
@@ -25,6 +27,7 @@ First, there is a root directory folder for storing all files. All files describ
     * memory: memory/segment.json memory/segment.yaml
     * Input: topic.txt, script.txt
     * Output: segments.txt, describing a list of shots including narration, background image generation requirements, and foreground Manim animation requirements
+    * Some are video segments, which do not have manim or images, only content and video. Either video, or manim/images
 
 4. Generate audio narration for segments
     * memory: memory/generate_audio.json memory/generate_audio.yaml
@@ -34,17 +37,17 @@ First, there is a root directory folder for storing all files. All files describ
 5. Generate text-to-image prompts
     * memory: memory/generate_illustration_prompts.json memory/generate_illustration_prompts.yaml
     * Input: segments.txt
-    * Output: illustration_prompts/segment_N.txt for background images, where N is segment number starting from 1, illustration_prompts/segment_N_foreground_M.txt for forground images, M for foreground image indexes, starting from 1
+    * Output: illustration_prompts/segment_N.txt for background images, where N is segment number starting from 1, illustration_prompts/segment_N_foreground_M.txt for forground images, M for foreground image indexes, starting from 1, not every segment has image
 
 6. Text-to-image generation
     * memory: memory/generate_images.json memory/generate_images.yaml
     * Input: list of illustration_prompts/segment_N.txt, list of illustration_prompts/segment_N_foreground_M.txt
-    * Output: list of images/illustration_N.png, where N is segment number starting from 1, illustration_N_foreground_M.png, same M with above
+    * Output: list of images/illustration_N.png, where N is segment number starting from 1, illustration_N_foreground_M.png, same M with above, not every segment has image
 
 7. Generate Manim animation code based on audio duration
     * memory: memory/generate_manim_code.json memory/generate_manim_code.yaml
     * Input: segments.txt, audio_info.txt, image_info.txt
-    * Output: list of Manim code files manim_code/segment_N.py, where N starts from 1
+    * Output: list of Manim code files manim_code/segment_N.py, where N starts from 1, not every segment has manim
 
 8. Fix Manim code
     * memory: memory/fix_manim_code.json memory/fix_manim_code.yaml
@@ -57,17 +60,27 @@ First, there is a root directory folder for storing all files. All files describ
     * Input: manim_code/segment_N.py
     * Output: list of manim_render/scene_N folders. If segments.txt contains Manim requirements for a certain step, the corresponding folder will have a manim.mov file
 
-10. Generate subtitles
+10. Generate text-2-video prompts
+    * memory: memory/generate_video_prompts.json memory/generate_video_prompts.yaml
+    * Input: segments.txt
+    * Output: video_prompts/segment_N.txt, not every segment has video prompt
+
+11. Generate text-2-video
+    * memory: memory/generate_video.json memory/generate_video.yaml
+    * Input: segments.txt, video_prompts/segment_N.txt
+    * Output: videos/video_N.txt, not every segment has video
+
+12. Generate subtitles
     * memory: memory/generate_subtitle.json memory/generate_subtitle.yaml
     * Input: segments.txt
     * Output: list of subtitles/bilingual_subtitle_N.png, where N is segment number starting from 1
 
-11. Create background, a solid color image with video title and slogans
+13. Create background, a solid color image with video title and slogans
     * memory: memory/create_background.json memory/create_background.yaml
     * Input: title.txt
     * Output: background.jpg
 
-12. Compose final video
+14. Compose final video
     * memory: memory/compose_video.json memory/compose_video.yaml
     * Input: all file information from previous steps
     * Output: final_video.mp4
@@ -87,7 +100,7 @@ Notes:
 2. When re-executing a step, if the corresponding output file exists, execution will be skipped. For example, if segment_N.png for a certain segment has already been generated, only the generation operations for other segments without local files will be executed
 
 Requirements for you:
-1. After receiving the user's reported issue, you should read segments.txt and topic.txt to gain basic understanding of the task
+1. After receiving the user's reported issue, you should read segments.txt and topic.txt to gain basic understanding of the task, understand the image/manim/video settings in each segment
 2. Analyze which segment numbers and which steps the user-described problem occurs in
     * [Very Important] After reading segments.txt, you need to read the corresponding files based on the approximate steps where the issue occurred, such as manim code (manim_code/segment_N.py), image prompts, etc., to ensure you have a 100% understanding of the user's feedback. You don't need to fix the code yourself. When providing feedback to previous steps, you should be as specific as possible to prevent ineffective fixes from occurring.
 3. If there's a Manim animation issue, you can construct code_fix/code_fix_N.txt, where N starts from 1
@@ -173,6 +186,7 @@ return format:
                 continue
             else:
                 self.need_fix = True
+                os.remove(os.path.join(self.work_dir, 'final_video.mp4'))
                 messages = await super().run(self._query, **kwargs)
                 response = messages[-1].content
                 if '```json' in response:

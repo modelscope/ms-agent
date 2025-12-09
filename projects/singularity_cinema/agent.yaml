@@ -6,7 +6,7 @@ llm:
 
 mllm:
   mllm_service: openai
-  mllm_model: gemini-2.5-flash-thinking
+  mllm_model: claude-sonnet-4-5-20250929
   mllm_openai_api_key:
   mllm_openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 
@@ -28,9 +28,9 @@ prompt:
 
     - Strictly prohibited: any form of section headers, structural prompts, column names, easter egg hints, interaction prompts, P.S., completion notes, AI assistant self-descriptions, AI identity declarations, AI writing explanations, AI completion notes, "hope you enjoy", acknowledgments, postscripts, footnotes, author's remarks, AI hints, AI supplements, AI notes, AI explanations, AI summaries, AI conclusions, AI postscripts, "continuing from above", "to be continued", casual interactive endings, interactive endings, etc.
 
-    - Word count between 200 words words(Normal reading speed: approximately 60 seconds), with fluent language and coherent content.
+    - Word count between 600~800 words(Normal reading speed: approximately 180~240 seconds), with fluent language and coherent content.
         * Consider the history, future, and significance of the query topic, and narrate it like telling a story.
-        * Mention less of "You", "Me", "Hi", to avoid "the teathing vibe", make the watchers feel playing toys.
+        * Mention less of "You", "Me", "Hi", to avoid "the teaching vibe", make the watchers feel playing toys.
 
     - **Core Style Requirements**: Use relatable, accessible language, combining vivid metaphors, cases, fun interactions, light humor, and moderate use of internet culture. For example:
        - Use everyday examples to explain complex concepts (like using "finding a parking spot" to explain search algorithms)
@@ -68,25 +68,63 @@ prompt:
 
     Now begin:
 
-text2image:
-  t2i_model: MusePublic/Qwen-image
-  t2i_api_key:
-  t2i_base_url: https://api-inference.modelscope.cn
-  t2i_transition: ken-burns-effect
-  t2i_style: Simple hand drawn style, with several clear object
-
 t2i_num_parallel: 1
+t2v_num_parallel: 1
 llm_num_parallel: 10
 
 code_fix_round: 5
-mllm_fix_round: 1
+mllm_fix_round: 0
 
 video:
   bitrate: 2500k
   preset: ultrafast
   fps: 24
 
-subtitle_lang:
+use_doc_image: true
+
+use_subtitle: false
+
+use_text2video: true
+
+use_video_soundtrack: false
+
+subtitle_translate:
+
+bg_audio_path: bg_audio.mp3
+
+bg_audio_volume: 0.3
+
+extra_requirement: |
+  布局要求:
+  1. 文字动画布局工整,采用左右式或者田字格式，多利用横向空间，在屏幕上对称分布，每个分镜有一个title
+  2. 不要有截断和动画重叠
+  3. 文字颜色和背景有高对比度
+  4. 不要用manim绘制人物或物体，也不要用manim绘制复杂图像，多利用前景图片
+  5. 所有分镜背景和前景均使用一种主要配色
+  6. 生成的背景图片中间留空方便展示manim动画，防止前景混乱
+
+# image/'#fcfbf9'/BLACK/WHITE
+background: image
+
+# image/blank value
+foreground: image
+
+video_generator:
+  type: dashscope
+  model: sora-2-2025-10-06
+  api_key:
+  size: 1280x720 # '720x1280', '1280x720', '1024x1792', '1792x1024'
+  seconds: [4, 8, 12]
+
+image_generator:
+  type: dashscope
+  model: gemini-3-pro-image-preview
+  api_key:
+  ratio: '16:9'
+
+audio_generator:
+  type: edge_tts
+
 voice: male
 
 voices:
@@ -119,9 +157,11 @@ max_chat_round: 20
 
 manim_render_timeout: 120
 
-output_dir: output
+output_dir: output_video
 
-slogan: ['History Story', 'Talk Radio']
+slogan: ['知识元气弹', '梯度爆炸']
+
+slogan_subtitle_color: '#000000'
 
 fonts:
   - Alibaba PuHuiTi
@@ -137,6 +177,9 @@ tools:
     allow_read_all_files: true
     exclude:
       - list_files
+      - search_file_content
+      - search_file_name
+      - replace_file_lines
 
 memory:
   - name: diversity

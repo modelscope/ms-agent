@@ -11,7 +11,7 @@ from ms_agent.utils import get_logger
 from omegaconf import DictConfig
 from PIL import Image, ImageDraw, ImageFont
 
-logger = get_logger(__name__)
+logger = get_logger()
 
 
 class GenerateSubtitle(CodeAgent):
@@ -24,20 +24,24 @@ class GenerateSubtitle(CodeAgent):
         super().__init__(config, tag, trust_remote_code, **kwargs)
         self.work_dir = getattr(self.config, 'output_dir', 'output')
         self.llm: OpenAI = LLM.from_config(self.config)
-        self.subtitle_lang = getattr(self.config, 'subtitle_lang', None)
+        self.subtitle_translate = getattr(self.config, 'subtitle_translate',
+                                          None)
         self.subtitle_dir = os.path.join(self.work_dir, 'subtitles')
         os.makedirs(self.subtitle_dir, exist_ok=True)
         self.fonts = self.config.fonts
 
     async def execute_code(self, messages, **kwargs):
+        if not self.config.use_subtitle:
+            return messages
         with open(os.path.join(self.work_dir, 'segments.txt'), 'r') as f:
             segments = json.load(f)
         logger.info('Generating subtitles.')
         for i, seg in enumerate(segments):
             text = seg.get('content', '')
             subtitle = None
-            if self.subtitle_lang:
-                subtitle = await self.translate_text(text, self.subtitle_lang)
+            if self.subtitle_translate:
+                subtitle = await self.translate_text(text,
+                                                     self.subtitle_translate)
             output_file = os.path.join(self.subtitle_dir,
                                        f'bilingual_subtitle_{i + 1}.png')
             if os.path.exists(output_file):

@@ -213,12 +213,7 @@ class CustomTool(ToolBase):
                     }),
             ]
         }
-        return {
-            'custom_tool': [
-                t for t in tools['custom_tool']
-                if t['tool_name'] not in self.exclude_functions
-            ]
-        }
+        return tools
 
     async def foo(self, foo_arg1) -> str:
         ...

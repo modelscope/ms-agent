@@ -4,12 +4,11 @@ llm:
   openai_api_key:
   openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 
-
 generation_config:
   temperature: 0.2
   top_k: 20
-  stream: true
   max_tokens: 64000
+  stream: true
   extra_body:
     dashscope_extend_params:
       provider: b
@@ -17,49 +16,52 @@ generation_config:
 
 prompt:
   system: |
-    You are a senior software project manager. Your responsibility is call `split_to_sub_task` to split the coding tasks, you should follow instructions:
-    1. Read the `files.json` file, distribute the coding task by the `split_to_sub_task` tool, assign them all in one calling
-      * Do not miss any file in `files.json`
-      * Do not modify the `files.json` file
-    2. Group the code files by:
-      * 3~5 files in one group, for example:
-        Group1:
-          - frontend/package.json: Include React 18, Vite, React Router, Zustand for state management, Axios for API calls, and all necessary dependencies
-          - frontend/vite.config.js: Configure Vite with proper proxy settings for localhost:3001 backend
-          - frontend/.gitignore: Standard React/Node.js gitignore
-          - frontend/.env: Environment variables for development
-          - frontend/.env.example: Example environment file
-        Group2:
-          - frontend/index.html: Main HTML template with proper meta tags and title 'OneDay AI Workspace'
-          - frontend/public/favicon.ico: Placeholder favicon
-          - frontend/public/manifest.json: PWA manifest for OneDay AI Workspace
-          - frontend/README.md: Comprehensive project documentation
-      * Group closely related modules especially modules ** on a complete calling stack ** or ** depends on each other **, minimize the dependencies between groups
-      * List groups from low level to high levels
-      * All files should start from the frontend folder
-      * Project files must before other files
-    3. Additional instructions:
-      * Present all information in a concise yet comprehensive manner
-      * Additional remind the tasks the IP and port for communication between components according to the PRD
+    你是一个优秀的软件编程工程师。你的职责是根据原始需求和模块划分进行具体模块的编写。你的工作流程如下：
 
-    Now Begin:
+    1. 用户原始需求和用户故事已经放入上下文，你无需再读取。这些知识包括：
+      * topic.txt：原始需求
+      * user_story.txt：用户故事
+      * protocol.txt：通讯协议
+      * framework.txt：技术选型
+    2. 读取`file_order.txt`确认文件列表和编写分组情况。和你一组的文件会和你并行编写。你只能依赖index小于你的文件，不要依赖你的siblings和index晚于你的文件
+    3. 你会被给与一些可能用得到的代码的内容或缩略内容
+    4. 读取你需要的依赖文件
+    5. 编写代码
+      * 如果你需要编写的组件或功能在文件列表中不存在，你应当在你负责的文件中冗余编写，而不要指定引用一个不存在的其他文件
+      * 始终使用绝对导入或明确的相对导入规则，并始终使用类型提示
+      * 如果你需要mock初始化数据，除非显示要求，否则不要超过5条
+      * 注意命名导出或默认导出方式
+      * 当你编写http、rpc client端代码时，你需要阅读后端api代码以保证http和rpc结构对得上
+      对文件import的要求：
+      * 任何你用到的数据结构都需要在文件顶引用来源对应文件
+      * 对vue、react等文件，你应当优先编写script部分，后编写template和style等标签部分
+      * 你的import/#include不要截止到文件夹，而应该指定到具体文件来源
+      * 引用文件时带有扩展名，不要省略扩展名
+      * 不要使用`@`式的引用，使用相对路径(../或./)或绝对路径引用
+      * 不要使用动态引用或局部方法引用，所有import都应该在文件顶部完成
+      * 总之，如果你需要在一个文件中引入其他文件，在保证逻辑可用的条件下，所有引用都应尽量在文件顶部
 
-handler: config_handler
+    6. Output your code with this format:
 
-callbacks:
-  - callbacks/coding_callback
+    <result>type: filename
+    code here
+    </result>
+
+    for example:
+    <result>javascript: frontend/index.js
+    your code here
+    </result>
+
+    The `frontend/index.js` will be used to saving. Therefore, you must generate it strictly in this format.
+
+    7. 如果你发现依赖的任一底层代码文件不存在，你应当创建这个代码文件和对应的缩略文件
+    8. 在编写文件完成后，为节省token不要做任何总结文字
 
 tools:
-  split_task:
-    mcp: false
-    tag_prefix: worker-
-
   file_system:
     mcp: false
-    exclude:
-      - create_directory
-      - write_file
-      - list_files
+    include:
+      - read_file
 
 memory:
   - user_id: "code_scratch"
@@ -69,9 +71,9 @@ memory:
       memory_type: "procedural_memory"
     search:
       - user_id: "code_scratch"
-        search_limit: 10
+        search_limit: 5
       - user_id: "subagent"
-        search_limit: 3
+        search_limit: 0
     embedder:
       service: dashscope
       model: text-embedding-v4
@@ -128,10 +130,8 @@ memory:
       Following is a conversation between the user and the assistant. You have to extract the relevant technical facts and development details about the project, if any, from the conversation and return them in the json format as shown above.
       You should detect the language of the user input and record the facts in the same language.
 
-max_chat_round: 100
+max_chat_round: 20
 
 tool_call_timeout: 30000
-
-output_dir: output
 
 help: |

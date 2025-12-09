@@ -68,7 +68,7 @@ MS-Agent是一个轻量级框架，旨在为智能体提供自主探索能力。
   - 🔥 支持沙箱框架 [ms-enclave](https://github.com/modelscope/ms-enclave)
 
 * 🚀 2025.9.22：发布MS-Agent v1.3.0，包含以下更新：
-  - 🔥 支持[Code Scratch](projects/code_scratch/README.md)
+  - 🔥 支持[Code Scratch](projects/code_genesis/README.md)
   - 支持`Memory`用于构建具有长期和短期记忆的智能体
   - 增强DeepResearch工作流
   - 支持RAY加速文档信息提取
@@ -417,7 +417,7 @@ PYTHONPATH=. openai_api_key=your-api-key openai_base_url=your-api-url python ms_
 - **编码阶段**：在智能文件组中执行编码任务 → 生成完整的代码结构
 - **完善阶段**：自动编译 → 错误分析 → 迭代错误修复 → 人工评估循环
 
-更多详情，请参考 [Code Scratch](projects/code_scratch/README.md)。
+更多详情，请参考 [Code Scratch](projects/code_genesis/README.md)。
 
 <br>
 

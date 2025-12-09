@@ -54,6 +54,7 @@ class MCPClient(ToolBase):
             self.mcp_config['mcpServers'].update(
                 config_from_file.get('mcpServers', {}))
         self.exclude_functions = {}
+        self.include_functions = {}
         if mcp_config is not None:
             self.mcp_config['mcpServers'].update(
                 mcp_config.get('mcpServers', {}))
@@ -90,11 +91,20 @@ class MCPClient(ToolBase):
                 raise new_eg from e
             _session_tools = response.tools
             exclude = []
-            if key in self.exclude_functions:
-                exclude = self.exclude_functions[key]
+            include = []
+            if self.include_functions:
+                if key in self.include_functions:
+                    include = self.include_functions[key]
+            elif self.exclude_functions:
+                if key in self.exclude_functions:
+                    exclude = self.exclude_functions[key]
             _session_tools = [
                 t for t in _session_tools if t.name not in exclude
             ]
+            if include:
+                _session_tools = [
+                    t for t in _session_tools if t.name in include
+                ]
             _session_tools = [
                 Tool(
                     tool_name=t.name,
@@ -238,6 +248,11 @@ class MCPClient(ToolBase):
                 }
                 if 'exclude' in server:
                     self.exclude_functions[name] = server.pop('exclude')
+                if 'include' in server:
+                    self.include_functions[name] = server.pop('include')
+                assert (not self.include_functions.get(name)) or (
+                    not self.exclude_functions.get(name)
+                ), 'Set either `include` or `exclude` in tools config.'
                 timeout = server.pop('timeout', timeout)
                 await self.connect_to_server(
                     server_name=name, env=env_dict, timeout=timeout, **server)

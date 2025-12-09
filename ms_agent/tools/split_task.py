@@ -1,5 +1,6 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import asyncio
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
@@ -25,7 +26,7 @@ class SplitTask(ToolBase):
     async def cleanup(self):
         pass
 
-    async def get_tools(self):
+    async def _get_tools_inner(self):
         return {
             'split_task': [
                 Tool(
@@ -67,8 +68,8 @@ class SplitTask(ToolBase):
         execution_mode = tool_args.get(
             'execution_mode', 'sequential')  # 'parallel' or 'sequential'
 
-        sub_tasks = []
-        for i, task in enumerate(tasks):
+        def run_agent_sync(i, task):
+            """Synchronous wrapper for agent execution"""
             system = task['system']
             query = task['query']
             config = DictConfig(self.config)
@@ -80,21 +81,42 @@ class SplitTask(ToolBase):
                 config=config,
                 trust_remote_code=trust_remote_code,
                 tag=f'{config.tag}-r{self.round}-{self.tag_prefix}{i}',
-                load_cache=config.load_cache)
-            sub_tasks.append(agent.run(query))
+                load_cache=getattr(config, 'load_cache', False))
+
+            # Run async agent.run() in sync context
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(agent.run(query))
+            finally:
+                loop.close()
 
         result = []
         if execution_mode == 'parallel':
-            results = await asyncio.gather(*sub_tasks, return_exceptions=True)
-            for i, r in enumerate(results):
-                if isinstance(r, Exception):
-                    result.append(f'Subtask{i} failed with error: {r}')
-                else:
-                    result.append(r)
+            # Use ThreadPoolExecutor for parallel execution
+            with ThreadPoolExecutor() as executor:
+                futures = {
+                    executor.submit(run_agent_sync, i, task): i
+                    for i, task in enumerate(tasks)
+                }
+
+                # Collect results as they complete
+                for future in as_completed(futures):
+                    i = futures[future]
+                    try:
+                        r = future.result()
+                        result.append((i, r))
+                    except Exception as e:
+                        result.append(
+                            (i, f'Subtask{i} failed with error: {e}'))
+
+                # Sort by task index to maintain order
+                result.sort(key=lambda x: x[0])
+                result = [r[1] for r in result]
         else:  # sequential
-            for i, t in enumerate(sub_tasks):
+            for i, task in enumerate(tasks):
                 try:
-                    r = await t
+                    r = run_agent_sync(i, task)
                     result.append(r)
                 except Exception as e:
                     result.append(f'Subtask{i} failed with error: {e}')

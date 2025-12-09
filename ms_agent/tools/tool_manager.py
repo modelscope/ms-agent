@@ -15,8 +15,11 @@ from ms_agent.tools.base import ToolBase
 from ms_agent.tools.code import CodeExecutionTool, LocalCodeExecutionTool
 from ms_agent.tools.filesystem_tool import FileSystemTool
 from ms_agent.tools.findata.findata_fetcher import FinancialDataFetcher
+from ms_agent.tools.image_generator import ImageGenerator
 from ms_agent.tools.mcp_client import MCPClient
+from ms_agent.tools.shell.shell import Shell
 from ms_agent.tools.split_task import SplitTask
+from ms_agent.tools.video_generator import VideoGenerator
 from ms_agent.utils import get_logger
 from ms_agent.utils.constants import TOOL_PLUGIN_NAME
 
@@ -45,6 +48,14 @@ class ToolManager:
         self.has_split_task_tool = False
         if hasattr(config, 'tools') and hasattr(config.tools, 'split_task'):
             self.extra_tools.append(SplitTask(config))
+        if hasattr(config, 'tools') and hasattr(config.tools,
+                                                'image_generator'):
+            self.extra_tools.append(ImageGenerator(config))
+        if hasattr(config, 'tools') and hasattr(config.tools,
+                                                'video_generator'):
+            self.extra_tools.append(VideoGenerator(config))
+        if hasattr(config, 'tools') and hasattr(config.tools, 'shell'):
+            self.extra_tools.append(Shell(config))
         if hasattr(config, 'tools') and hasattr(config.tools, 'file_system'):
             self.extra_tools.append(
                 FileSystemTool(

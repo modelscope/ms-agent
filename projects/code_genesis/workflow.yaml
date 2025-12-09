@@ -1,0 +1,45 @@
+user_story:
+  agent_config: user_story.yaml
+  agent:
+    kwargs:
+      code_file: workflow/user_story.py
+  next:
+    - split_module
+
+split_module:
+  agent_config: split_module.yaml
+  agent:
+    kwargs:
+      code_file: workflow/split_module.py
+  next:
+    - file_design
+
+file_design:
+  agent:
+    kwargs:
+      code_file: workflow/file_design.py
+  agent_config: file_design.yaml
+  next:
+    - file_order
+
+file_order:
+  agent:
+    kwargs:
+      code_file: workflow/file_order.py
+  agent_config: file_order.yaml
+  next:
+    - coding
+
+coding:
+  agent_config: coding.yaml
+  agent:
+    kwargs:
+      code_file: workflow/coding.py
+  next:
+    - refine
+
+refine:
+  agent:
+    kwargs:
+      code_file: workflow/refine.py
+  agent_config: refine.yaml
