@@ -1,4 +1,5 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import asyncio
 import importlib
 import inspect
 import os.path
@@ -572,13 +573,13 @@ class LLMAgent(Agent):
         memory_type = memory_type or None
         return user_id, agent_id, run_id, memory_type
 
-    async def add_memory(self, messages: List[Message], **kwargs):
+    async def add_memory(self, messages: List[Message], add_type, **kwargs):
         if hasattr(self.config, 'memory') and self.config.memory:
             tools_num = len(
                 self.memory_tools
             ) if self.memory_tools else 0  # Check index bounds before access to avoid IndexError
             for idx, memory_config in enumerate(self.config.memory):
-                if self.runtime.should_stop:
+                if add_type == 'add_after_task':
                     user_id, agent_id, run_id, memory_type = self._get_run_memory_info(
                         memory_config)
                 else:
@@ -658,7 +659,8 @@ class LLMAgent(Agent):
                     yield messages
                 self.runtime.round += 1
                 # save memory and history
-                await self.add_memory(messages, **kwargs)
+                await self.add_memory(
+                    messages, add_type='add_after_step', **kwargs)
                 self.save_history(messages)
 
                 # +1 means the next round the assistant may give a conclusion
@@ -674,11 +676,17 @@ class LLMAgent(Agent):
                     yield messages
 
             # save memory
-            await self.add_memory(messages, **kwargs)
-
             await self.on_task_end(messages)
             await self.cleanup_tools()
             yield messages
+
+            def _add_memory():
+                asyncio.run(
+                    self.add_memory(
+                        messages, add_type='add_after_task', **kwargs))
+
+            loop = asyncio.get_running_loop()
+            loop.run_in_executor(None, _add_memory)
         except Exception as e:
             import traceback
             logger.warning(traceback.format_exc())

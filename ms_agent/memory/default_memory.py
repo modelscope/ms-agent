@@ -438,6 +438,7 @@ class DefaultMemory(Memory):
                     logger.info(item[1])
         if should_add_messages:
             for messages in should_add_messages:
+                messages = self.parse_messages(messages)
                 await self.add_single(
                     messages,
                     user_id=user_id,
@@ -445,6 +446,23 @@ class DefaultMemory(Memory):
                     run_id=run_id,
                     memory_type=memory_type)
         self.save_cache()
+
+    def parse_messages(self, messages: List[Message]) -> List[Message]:
+        new_messages = []
+        for msg in messages:
+            role = getattr(msg, 'role', None)
+            content = getattr(msg, 'content', None)
+
+            if 'system' not in self.ignore_roles and role == 'system':
+                new_messages.append(msg)
+            if role == 'user':
+                new_messages.append(msg)
+            if 'assistant' not in self.ignore_roles and role == 'assistant' and content is not None:
+                new_messages.append(msg)
+            if 'tool' not in self.ignore_roles and role == 'tool':
+                new_messages.append(msg)
+
+        return new_messages
 
     def delete(self,
                user_id: Optional[str] = None,
@@ -482,7 +500,6 @@ class DefaultMemory(Memory):
                 user_id=user_id or self.user_id,
                 agent_id=agent_id,
                 run_id=run_id)
-            print(res['results'])
             return res['results']
         except Exception:
             return []
@@ -556,33 +573,13 @@ class DefaultMemory(Memory):
             )
             raise
 
-        parse_messages_origin = mem0.memory.main.parse_messages
         capture_event_origin = mem0.memory.main.capture_event
-
-        @wraps(parse_messages_origin)
-        def patched_parse_messages(messages, ignore_roles):
-            response = ''
-            for msg in messages:
-                if 'system' not in ignore_roles and msg['role'] == 'system':
-                    response += f"system: {msg['content']}\n"
-                if msg['role'] == 'user':
-                    response += f"user: {msg['content']}\n"
-                if msg['role'] == 'assistant' and msg['content'] is not None:
-                    response += f"assistant: {msg['content']}\n"
-                if 'tool' not in ignore_roles and msg['role'] == 'tool':
-                    response += f"tool: {msg['content']}\n"
-            return response
 
         @wraps(capture_event_origin)
         def patched_capture_event(event_name,
                                   memory_instance,
                                   additional_data=None):
             pass
-
-        mem0.memory.main.parse_messages = partial(
-            patched_parse_messages,
-            ignore_roles=self.ignore_roles,
-        )
 
         mem0.memory.main.capture_event = partial(patched_capture_event, )
 
@@ -703,9 +700,12 @@ class DefaultMemory(Memory):
             mem0_config['llm'] = llm
         logger.info(f'Memory config: {mem0_config}')
         # Prompt content is too long, default logging reduces readability
-        mem0_config['custom_fact_extraction_prompt'] = getattr(
-            self.config, 'fact_retrieval_prompt', get_fact_retrieval_prompt()
-        ) + f'Today\'s date is {datetime.now().strftime("%Y-%m-%d")}.'
+        custom_fact_extraction_prompt = getattr(self.config,
+                                                'fact_retrieval_prompt', None)
+        if custom_fact_extraction_prompt is not None:
+            mem0_config['custom_fact_extraction_prompt'] = (
+                custom_fact_extraction_prompt
+                + f'Today\'s date is {datetime.now().strftime("%Y-%m-%d")}.')
         try:
             memory = mem0.Memory.from_config(mem0_config)
             memory._telemetry_vector_store = None
