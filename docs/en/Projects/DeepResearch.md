@@ -1,3 +1,9 @@
+---
+slug: DeepResearch
+title: Deep Research
+description: Ms-Agent Deep Research Project for in-depth multimodal research reports
+---
+
 # Deep Research
 
 The DeepResearch project of MS-Agent provides an Agent workflow with complex task-solving capabilities, designed to generate in-depth, multimodal research reports for domains such as scientific research. Two versions are currently available: one for lightweight, efficient, low-cost investigation, and another for deep, comprehensive, large-scale research.

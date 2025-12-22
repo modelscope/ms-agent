@@ -60,6 +60,9 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
   - Support financial data collection via [Akshare](https://github.com/akfamily/akshare) and [Baostock](http://baostock.com/mainContent?file=home.md)
   - Support DagWorkflow for workflow orchestration
   - Optimize the DeepResearch workflow for stability and efficiency
+  - FinResearch official documentation: [FinResearch Doc](https://ms-agent-en.readthedocs.io/en/latest/Projects/FinResearch.html)
+  - DEMO: [FinResearchStudio](https://modelscope.cn/studios/ms-agent/FinResearch)
+  - Examples: [FinResearchExamples](https://www.modelscope.cn/models/ms-agent/fin_research_examples)
 
 * 🚀 Nov 07, 2025: Release MS-Agent v1.4.0, which includes the following updates:
   - 🔥 We present [**MS-Agent Skills**](projects/agent_skills/README.md), an **Implementation** of [Anthropic-Agent-Skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills) Protocol.
@@ -67,7 +70,7 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
   - 🔥 Support Sandbox Framework [ms-enclave](https://github.com/modelscope/ms-enclave)
 
 * 🚀 Sep 22, 2025: Release MS-Agent v1.3.0, which includes the following updates:
-  - 🔥 Support [Code Scratch](projects/code_scratch/README.md)
+  - 🔥 Support [Code Scratch](projects/code_genesis/README.md)
   - Support `Memory` for building agents with long-term and short-term memory
   - Enhance the DeepResearch workflow
   - Support RAY for accelerating document information extraction
@@ -408,7 +411,7 @@ This project provides a framework for **Code Scratch**, enabling agents to auton
 Generate a complete ai workspace homepage with the following command:
 
 ```shell
-PYTHONPATH=. openai_api_key=your-api-key openai_base_url=your-api-url python ms_agent/cli/cli.py run --config projects/code_scratch --query 'Build a comprehensive AI workspace homepage' --trust_remote_code true
+PYTHONPATH=. openai_api_key=your-api-key openai_base_url=your-api-url python ms_agent/cli/cli.py run --config projects/code_genesis --query 'Build a comprehensive AI workspace homepage' --trust_remote_code true
 ```
 
 The generated code will be output to the `output` folder in the current directory.
@@ -418,7 +421,7 @@ The generated code will be output to the `output` folder in the current director
 - **Coding Phase**: Execute coding tasks in intelligent file groups → Generate complete code structure
 - **Refine Phase**: Auto-compilation → Error analysis → Iterative bug fixing → Human evaluation loop
 
-For more details, refer to [Code Scratch](projects/code_scratch/README.md).
+For more details, refer to [Code Scratch](projects/code_genesis/README.md).
 
 <br>
 
@@ -523,7 +526,7 @@ OPENAI_API_KEY=xxx-xxx T2I_API_KEY=ms-xxx-xxx MANIM_TEST_API_KEY=xxx-xxx ms-agen
 
 #### References
 
-- [Complete Documentation](./docs/zh/Projects/短视频生成.md)
+- [Complete Documentation](./docs/zh/Projects/video-generation)
 
 
 <br>
@@ -546,7 +549,7 @@ We are committed to continuously improving and expanding the MS-Agent framework 
   - [ ] Improve stabilises
 - [ ] **Multimodal Agentic Search** – Supporting large-scale multimodal document retrieval and generation of search results combining text and images.
 - [ ] Enhanced **Agent Skills** – Providing a richer set of predefined skills and tools to expand agent capabilities and enabling multi-skill collaboration for complex task execution.
-- [ ] **Agent-Workstation** - An unified WebUI with one-click local deployment support with combining all agent capabilities of MS-Agent, such as AgentChat, MCP, AgentSkills, DeepResearch, DocResearch, CodeScratch, etc.
+- [ ] **Agent-Workstation** - An unified WebUI with one-click local deployment support with combining all agent capabilities of MS-Agent, such as AgentChat, MCP, AgentSkills, DeepResearch, DocResearch, CodeGenesis, etc.
 
 
 ## License

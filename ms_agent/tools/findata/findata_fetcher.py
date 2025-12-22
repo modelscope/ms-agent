@@ -351,7 +351,7 @@ class FinancialDataFetcher(ToolBase):
         return json.dumps(
             response, ensure_ascii=False, indent=2, cls=DateTimeEncoder)
 
-    async def get_tools(self) -> Dict[str, Any]:
+    async def _get_tools_inner(self) -> Dict[str, Any]:
         """Return tool definitions"""
         tools = {
             'financial_data_fetcher': [
@@ -696,14 +696,6 @@ class FinancialDataFetcher(ToolBase):
         if self.data_source is not None and hasattr(self.data_source,
                                                     'get_extra_tools'):
             tools.update(self.data_source.get_extra_tools())
-
-        # Filter excluded functions
-        if hasattr(self, 'exclude_functions') and self.exclude_functions:
-            tools['financial_data_fetcher'] = [
-                t for t in tools['financial_data_fetcher']
-                if t.tool_name not in self.exclude_functions
-            ]
-
         return tools
 
     async def call_tool(self, server_name: str, *, tool_name: str,

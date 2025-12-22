@@ -19,7 +19,7 @@ class Shell(ToolBase):
     async def connect(self) -> None:
         pass
 
-    async def get_tools(self) -> Dict[str, Any]:
+    async def _get_tools_inner(self) -> Dict[str, Any]:
         tools = {
             'shell': [
                 Tool(
@@ -52,12 +52,7 @@ class Shell(ToolBase):
                     }),
             ]
         }
-        return {
-            'file_system': [
-                t for t in tools['file_system']
-                if t['tool_name'] not in self.exclude_functions
-            ]
-        }
+        return tools
 
     def check_safe(self, command, work_dir):
         # 1. Check work_dir
@@ -135,9 +130,9 @@ class Shell(ToolBase):
 
         # 4. Check dangerous redirections
         redirect_patterns = [
-            r'>+\s*/(?!tmp/|var/tmp/)',  # redirect to root directory (except /tmp/ or /var/tmp/)
+            r'>+\s*/(?!tmp/|var/tmp/|dev/null)',  # redirect to root directory (except /tmp/, /var/tmp/, /dev/null)
             r'<\s*/etc/',  # read from /etc
-            r'>+\s*/dev/',  # redirect to device files
+            r'>+\s*/dev/(?!null)',  # redirect to device files (except /dev/null)
         ]
 
         for pattern in redirect_patterns:
@@ -172,6 +167,9 @@ class Shell(ToolBase):
     async def execute_shell(self, command: str, work_dir: str):
         try:
             self.check_safe(command, work_dir)
+            if work_dir == '.' or work_dir == '.' + os.sep:
+                work_dir = ''
+            work_dir = os.path.join(self.output_dir, work_dir)
             Path(work_dir).mkdir(parents=True, exist_ok=True)
             ret = subprocess.run(
                 command,
@@ -179,7 +177,7 @@ class Shell(ToolBase):
                 cwd=work_dir,
                 capture_output=True,
                 text=True,
-                timeout=30,
+                timeout=getattr(self.config.tools.shell, 'timeout', 5),
             )
 
             if ret.returncode == 0:
@@ -188,14 +186,15 @@ class Shell(ToolBase):
                 result = f'Command executed failed. return_code={ret.returncode}, error message: {ret.stderr.strip()}'
 
         except subprocess.TimeoutExpired:
-            result = 'Run timed out after 30 seconds.'
+            result = f'Run timed out after {getattr(self.config.tools.shell, "timeout", 5)} seconds.'
         except Exception as e:
             result = f'Run failed with an exception: {e}.'
 
-        output = (f'Shell command status:\n'
-                  f'Command line: {command}\n'
-                  f'Workdir: {work_dir}\n'
-                  f'Result: {result}')
+        output = (
+            f'Shell command status:\n'
+            f'Command line: {command}\n'
+            f'Workdir: {work_dir}\n'
+            f'Result: {result or "The command does not give any responses."}')
         return output
 
     async def call_tool(self, server_name: str, *, tool_name: str,

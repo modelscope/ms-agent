@@ -58,6 +58,9 @@ MS-Agent是一个轻量级框架，旨在为智能体提供自主探索能力。
   - 支持基于[Akshare](https://github.com/akfamily/akshare)和[Baostock](http://baostock.com/mainContent?file=home.md)的金融数据获取工具
   - 支持以Dag形式编排工作流
   - 优化DeepResearch稳定性与效率
+  - 官方文档： [金融深度研究](https://ms-agent.readthedocs.io/zh-cn/latest/Projects/fin-research.html)
+  - 魔搭创空间DEMO: [FinResearchStudio](https://modelscope.cn/studios/ms-agent/FinResearch)
+  - 报告样例: [FinResearchExamples](https://www.modelscope.cn/models/ms-agent/fin_research_examples)
 
 * 🚀 2025.11.07：发布MS-Agent v1.4.0，包含以下更新：
   - 🔥 新增 [**MS-Agent Skills**](projects/agent_skills/README.md), 基于 [**Anthropic-Agent-Skills**](https://docs.claude.com/en/docs/agents-and-tools/agent-skills) 协议实现.
@@ -65,7 +68,7 @@ MS-Agent是一个轻量级框架，旨在为智能体提供自主探索能力。
   - 🔥 支持沙箱框架 [ms-enclave](https://github.com/modelscope/ms-enclave)
 
 * 🚀 2025.9.22：发布MS-Agent v1.3.0，包含以下更新：
-  - 🔥 支持[Code Scratch](projects/code_scratch/README.md)
+  - 🔥 支持[Code Scratch](projects/code_genesis/README.md)
   - 支持`Memory`用于构建具有长期和短期记忆的智能体
   - 增强DeepResearch工作流
   - 支持RAY加速文档信息提取
@@ -404,7 +407,7 @@ pip install ms-agent
 使用以下命令生成完整的 AI 工作空间主页：
 
 ```shell
-PYTHONPATH=. openai_api_key=your-api-key openai_base_url=your-api-url python ms_agent/cli/cli.py run --config projects/code_scratch --query 'Build a comprehensive AI workspace homepage' --trust_remote_code true
+PYTHONPATH=. openai_api_key=your-api-key openai_base_url=your-api-url python ms_agent/cli/cli.py run --config projects/code_genesis --query 'Build a comprehensive AI workspace homepage' --trust_remote_code true
 ```
 
 生成的代码将输出到当前目录的 `output` 文件夹中。
@@ -414,7 +417,7 @@ PYTHONPATH=. openai_api_key=your-api-key openai_base_url=your-api-url python ms_
 - **编码阶段**：在智能文件组中执行编码任务 → 生成完整的代码结构
 - **完善阶段**：自动编译 → 错误分析 → 迭代错误修复 → 人工评估循环
 
-更多详情，请参考 [Code Scratch](projects/code_scratch/README.md)。
+更多详情，请参考 [Code Scratch](projects/code_genesis/README.md)。
 
 <br>
 
@@ -521,7 +524,7 @@ OPENAI_API_KEY=xxx-xxx T2I_API_KEY=ms-xxx-xxx MANIM_TEST_API_KEY=xxx-xxx ms-agen
 
 #### 3) 参考文档
 
-- [完整文档](./docs/zh/Projects/短视频生成.md)
+- [完整文档](./docs/zh/Projects/video-generation)
 
 <br>
 
@@ -543,7 +546,7 @@ OPENAI_API_KEY=xxx-xxx T2I_API_KEY=ms-xxx-xxx MANIM_TEST_API_KEY=xxx-xxx ms-agen
   - [ ] 提升稳定度
 - [ ] 多模态检索增强生成 **Multimodal Agentic Search** - 支持大规模多模态文档检索和图文检索结果生成。
 - [ ] 增强的 **Agent Skills** - 提供更多预定义的技能和工具，提升智能体技能边界，并支持多技能协作，完成复杂任务执行。
-- [ ] 统一的WebUI **Agent-Workstation**，支持本地一键部署，集成了 MS-Agent 的所有智能体能力，如 AgentChat、MCP、AgentSkills、DeepResearch、DocResearch、CodeScratch 等。
+- [ ] 统一的WebUI **Agent-Workstation**，支持本地一键部署，集成了 MS-Agent 的所有智能体能力，如 AgentChat、MCP、AgentSkills、DeepResearch、DocResearch、CodeGenesis 等。
 
 
 ## 许可证

@@ -144,5 +144,5 @@ ms-agent run --config "projects/singularity_cinema" --query "你的自定义主�
 - llm_num_parallel: 大模型调用并行度，默认为10
 - video: 视频生成的比特率等参数
 - voice/voices: edge_tts的声音设置，如果你有其他声音选项，可以添加到这里
-- subtitle_lang: 多语言字幕的语种，如果不设置则不进行翻译
+- subtitle_translate: 多语言字幕的语种，如果不设置则不进行翻译
 - slogan: 展示在屏幕右侧，一般展示出品人名字和短视频集合

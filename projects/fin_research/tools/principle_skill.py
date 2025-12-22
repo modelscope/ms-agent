@@ -108,8 +108,8 @@ class PrincipleSkill(ToolBase):
                 f'Configure tools.principle_skill.principle_dir or ensure default exists.'
             )
 
-    async def get_tools(self) -> Dict[str, Any]:
-        tools: List[Tool] = {
+    async def _get_tools_inner(self) -> Dict[str, Any]:
+        tools = {
             'principle_skill': [
                 Tool(
                     tool_name='load_principles',
@@ -182,13 +182,6 @@ class PrincipleSkill(ToolBase):
                 )
             ]
         }
-
-        if hasattr(self, 'exclude_functions') and self.exclude_functions:
-            tools['principle_skill'] = [
-                t for t in tools['principle_skill']
-                if t.tool_name not in self.exclude_functions
-            ]
-
         return tools
 
     async def call_tool(self, server_name: str, *, tool_name: str,

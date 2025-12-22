@@ -1,6 +1,8 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import asyncio
 import os
+import shutil
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import List
 
@@ -13,7 +15,7 @@ from ms_agent.llm.openai_llm import OpenAI
 from ms_agent.utils import get_logger
 from omegaconf import DictConfig
 
-logger = get_logger(__name__)
+logger = get_logger()
 
 
 @dataclass
@@ -73,26 +75,19 @@ class GenerateAudio(CodeAgent):
         audio.write_audiofile(output_path, verbose=False, logger=None)
         audio.close()
 
-    async def edge_tts_generate(self, text, output_file, speaker='male'):
+    async def audio_generate(self, text, output_file, speaker='male'):
         voice_dict = self.voices.get(speaker)
         voice = voice_dict.voice
         rate = voice_dict.get('rate', '+0%')
         pitch = voice_dict.get('pitch', '+0Hz')
         output_dir = os.path.dirname(output_file) or '.'
         os.makedirs(output_dir, exist_ok=True)
-        communicate = edge_tts.Communicate(
-            text=text, voice=voice, rate=rate, pitch=pitch)
-
-        audio_data = b''
-        chunk_count = 0
-        async for chunk in communicate.stream():
-            if chunk['type'] == 'audio':
-                audio_data += chunk['data']
-                chunk_count += 1
-
-        assert len(audio_data) > 0
-        with open(output_file, 'wb') as f:
-            f.write(audio_data)
+        from ms_agent.tools.audio_generator import AudioGenerator
+        _config = deepcopy(self.config)
+        _config.tools.audio_generator = _config.audio_generator
+        _temp_file = await AudioGenerator(self.config).generate_audio(
+            text, speaker=voice, rate=rate, pitch=pitch)
+        shutil.move(_temp_file, output_file)
 
     @staticmethod
     def get_audio_duration(audio_path):
@@ -107,8 +102,7 @@ class GenerateAudio(CodeAgent):
         if os.path.exists(audio_path):
             return self.get_audio_duration(audio_path)
         if tts_text:
-            await self.edge_tts_generate(tts_text, audio_path,
-                                         self.config.voice)
+            await self.audio_generate(tts_text, audio_path, self.config.voice)
             return self.get_audio_duration(audio_path)
         else:
             await self.create_silent_audio(audio_path, duration=2.0)

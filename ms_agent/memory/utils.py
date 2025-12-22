@@ -1,12 +1,16 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 from omegaconf import DictConfig, OmegaConf
 
+from .condenser.code_condenser import CodeCondenser
+from .condenser.refine_condenser import RefineCondenser
 from .default_memory import DefaultMemory
 from .diversity import Diversity
 
 memory_mapping = {
     'default_memory': DefaultMemory,
     'diversity': Diversity,
+    'code_condenser': CodeCondenser,
+    'refine_condenser': RefineCondenser,
 }
 
 

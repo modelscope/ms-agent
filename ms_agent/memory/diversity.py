@@ -57,14 +57,10 @@ Here are the original query and the keywords:
 
     def __init__(self, config):
         super().__init__(config)
-        config.llm.service = config.llm.provider
         self.llm = None
         self.split_task = None
         self.num_split = 5
         self.memory_called = False
-
-    def set_base_config(self, config: DictConfig):
-        super().set_base_config(config)
         _config = deepcopy(config)
         _config.save_history = False
         delattr(_config, 'memory')

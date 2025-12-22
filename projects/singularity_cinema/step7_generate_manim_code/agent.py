@@ -67,7 +67,7 @@ class GenerateManimCode(CodeAgent):
         llm = LLM.from_config(config)
         return GenerateManimCode._generate_manim_impl(llm, segment,
                                                       audio_duration, i,
-                                                      image_dir)
+                                                      image_dir, config)
 
     @staticmethod
     def get_image_size(filename):
@@ -102,7 +102,8 @@ class GenerateManimCode(CodeAgent):
         return all_images_info
 
     @staticmethod
-    def _generate_manim_impl(llm, segment, audio_duration, i, image_dir):
+    def _generate_manim_impl(llm, segment, audio_duration, i, image_dir,
+                             config):
         class_name = f'Scene{i + 1}'
         content = segment['content']
         manim_requirement = segment['manim']
@@ -112,6 +113,31 @@ class GenerateManimCode(CodeAgent):
             images_info = json.dumps(images_info, indent=4, ensure_ascii=False)
         else:
             images_info = 'No images offered.'
+
+        if config.foreground == 'image':
+            image_usage = f"""**Image usage**
+- You'll receive an actual image list with three fields per image: filename, size, and description，consider deeply how to resize and use them in your animation
+- Pay attention to the size field, write Manim code that respects the image's aspect ratio, size it.
+- Consider the image integration with the background and overall animation. Use blending/glow effects, frames, movements, borders etc. to make it more beautiful and gorgeous
+    * You can more freely consider the integration of images to achieve a better presentation
+    * Image sizes should be **medium OR small** to prevent them from occupying the entire screen or most of the screen, **huge image is strictly forbidden**
+    * Ensure aspect ratios of non-square images remain correct
+    * DO NOT crop image to circular
+    * Images must be decorated with frames
+    * IMPORTANT: **Use smaller image sizes for generated images and larger image sizes for user doc images. DO NOT crop image to circular**
+- IMPORTANT: If images files are not empty, **you must use them all at the appropriate time and position in your animation**. Here is the image files list:
+
+{images_info}
+
+DO NOT let the image and the manim element overlap. Reorganize them in your animation.
+
+* Scale the images. Do not use the original size, carefully rescale the images to match the requirements below:
+    a. The image size on the canvas depend on its importance, important image occupies more spaces
+        * Consider the image placement in the manim requirements, resize the image until it will not be cut off by the edge(within x∈(-6.0, 6.0), y∈(-3.4, 3.4) with minimum buff=0.5)
+        * Resize generated images by scale(<0.4), if 2 images, resize by scale(<0.3)
+    b. Use 1/4 space of the canvas for each image""" # noqa
+        else:
+            image_usage = ''
 
         prompt = f"""You are a professional Manim animation expert, creating clear and beautiful educational animations.
 
@@ -123,32 +149,29 @@ class GenerateManimCode(CodeAgent):
 - Duration: {audio_duration} seconds
 - Code language: **Python**
 
-**Image usage**
-- You'll receive an actual image list with three fields per image: filename, size, and description，consider deeply how to use them in your animation
-- Pay attention to the size field, write Manim code that respects the image's aspect ratio, size it if it's too big
-- Consider the image integration with the background and overall animation. Use blending/glow effects, frames, movements, borders etc. to make it more beautiful and gorgeous
-    * You can more freely consider the integration of images to achieve a better presentation
-    * Images size should be medium or small to prevent them from occupying the entire screen or most of the screen, big image is not cool
-    * Ensure aspect ratios of non-square images remain correct
-    * When using circular frames around images in Manim, you MUST crop the image to a circle using PIL before loading it. A square image inside a circular frame looks unprofessional. Create a helper function that uses PIL's ImageDraw to create a circular mask, applies it to the image, saves it temporarily, then loads it with ImageMobject - simply creating a Circle object does NOT crop the image.
-    * If using any image, decorate it with a gorgeous frame
-- [IMPORTANT] If images files is not empty, **you must use them all at the appropriate time and position in your animation**. Here is the image files list:
+{image_usage}
 
-{images_info}
-
-* Canvas size: (1250, 700) (width x height) which is the top 3/4 of screen, bottom is left for subtitles
+* Canvas size ratio: 16:9
 * Ensure all content stays within safe bounds x∈(-6.0, 6.0), y∈(-3.4, 3.4) with minimum buff=0.5 from any edge to prevent cropping.
 * [CRITICAL]Absolutely prevent **element spatial overlap** or **elements going out of bounds** or **elements not aligned**.
 * [CRITICAL]Connection lines between boxes/text are of proper length, with **both endpoints attached to the objects**.
 * All boxes must have thick strokes for clear visibility
 * Keep text within frame by controlling font sizes. Use smaller fonts for Latin script than Chinese due to longer length.
-* Ensure all pie chart pieces share the same center coordinates. Previous pie charts were drawn incorrectly.
 * Use clear, high-contrast font colors to prevent text from blending with the background
 * Use a cohesive color palette of 2-4 colors for the entire video. Avoid cluttered colors, bright blue, and bright yellow. Prefer deep, dark tones
 * Low-quality animations such as stick figures are forbidden
-* Scale the images
-    a. The image size on the canvas depend on its importance, important image occupies more spaces
-    b. Recommended size is from 1/8 to 1/4 on the canvas. If the image if the one unique element, the size can reach 1/2 or more
+* Do not use any matchstick-style or pixel-style animations. Use charts, images, industrial/academic-style animations
+* Text box needs to have a background color, and the background must be opaque, with high contrast between the text color and the background.
+* The text box should large enough to contain the text
+* Do not create multi-track complex manim animations. One object per segment, or two to three(NO MORE THAN three!) object arranged in a simple manner, manim layout rules:
+    1. One object in the middle
+    2. Two objects, left-right structure, same y axis, same size, for example, text left, chart right
+    3. Three objects, left-middle-right structure, same y axis, same size. No more than 3 elements in one segment
+    4. Split complex animation into several segments
+    5. Less text boxes in the animation, only titles/definitions/formulas
+    6. Use black fonts, **no gray fonts**
+    7. CRITICAL: **NEVER put an element to a corner, do use horizonal/vertical grid**
+    8. No pie charts should be used, the LLM costs many bugs
 
 Please create Manim animation code that meets the above requirements.""" # noqa
 

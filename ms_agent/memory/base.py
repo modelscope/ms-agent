@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from typing import List
 
 from ms_agent.llm.utils import Message
+from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR
 from omegaconf import DictConfig
 
 
@@ -11,6 +12,8 @@ class Memory(ABC):
 
     def __init__(self, config):
         self.config = config
+        self.output_dir = getattr(self.config, 'output_dir',
+                                  DEFAULT_OUTPUT_DIR)
         self.base_config = None
 
     @abstractmethod
@@ -24,11 +27,3 @@ class Memory(ABC):
             The output messages
         """
         pass
-
-    def set_base_config(self, config: DictConfig):
-        """Set the config containing all information
-
-        Args:
-            config(`DictConfig`): The config containing all information
-        """
-        self.base_config = config

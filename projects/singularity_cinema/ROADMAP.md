@@ -18,8 +18,9 @@
 - [ ] 默认支持更多的tts语音 P0
 - [ ] 支持更多LLM模型，例如Qwen系列、DeepSeek系列等 P0
 - [ ] 支持一个segment中多个字幕切换，防止文字超长 P0
-- [ ] 支持文生视频 P1
+- [x] 支持文生视频 P1
 - [ ] 支持更复杂的前景设计和背景特效 P0
+  - [ ] 上/下/左/右镜头移动 P0
 
 ### 稳定性
 
@@ -35,7 +36,7 @@
 
 ### Bug修复
 
-- [ ] title和slogan需要始终展示，目前在没有manim动画时看不到
+- [x] title和slogan需要始终展示，目前在没有manim动画时看不到
 
 ## English
 
@@ -55,8 +56,9 @@ This ROADMAP is to be completed by the end of S4 2025, i.e., December 31st.
 - [ ] Support more TTS voices by default P0
 - [ ] Support more LLM models, such as Qwen series, DeepSeek series, etc. P0
 - [ ] Support multiple subtitles in one segment P0
-- [ ] Support text-to-video generation P1
+- [x] Support text-to-video generation P1
 - [ ] Support more complex foreground design and background effects P0
+    * [ ] Camera moves up/down/left/right P0
 
 ### Stability
 
@@ -72,4 +74,4 @@ This ROADMAP is to be completed by the end of S4 2025, i.e., December 31st.
 
 ### BugFix
 
-- [ ] title and slogan need to show all the time
+- [x] title and slogan need to show all the time

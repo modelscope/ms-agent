@@ -1,3 +1,9 @@
+---
+slug: Tools
+title: Tools
+description: Ms-Agent Tools
+---
+
 # Tools
 
 ## Tool List
@@ -145,7 +151,7 @@ ms-agent run --config xxx/xxx --mcp_server_file ./mcp.json
 
 ### Configuring yaml file
 
-Additional tools can be added in tools within yaml. Refer to [Configuration and Parameters](./Config.md#Tool%20Configuration)
+Additional tools can be added in tools within yaml. Refer to [Configuration and Parameters](./Config.md) for details.
 
 ### Writing new tools
 
@@ -207,12 +213,7 @@ class CustomTool(ToolBase):
                     }),
             ]
         }
-        return {
-            'custom_tool': [
-                t for t in tools['custom_tool']
-                if t['tool_name'] not in self.exclude_functions
-            ]
-        }
+        return tools
 
     async def foo(self, foo_arg1) -> str:
         ...

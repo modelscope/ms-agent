@@ -16,6 +16,15 @@ This project provides a multi-agent framework for financial research, combining 
 
 - **Sandboxed Code Execution** - Safe data processing and analysis in isolated Docker containers.
 
+
+**Related Website:**
+
+- FinResearch official documentation: [FinResearch Doc](https://ms-agent-en.readthedocs.io/en/latest/Projects/FinResearch.html)
+- FinResearch中文文档： [金融深度研究](https://ms-agent.readthedocs.io/zh-cn/latest/Projects/fin-research.html)
+- DEMO: [FinResearchStudio](https://modelscope.cn/studios/ms-agent/FinResearch)
+- Examples: [FinResearchExamples](https://www.modelscope.cn/models/ms-agent/fin_research_examples)
+
+
 ## 📋 Architecture
 
 The workflow consists of five specialized agents orchestrated in a DAG structure:

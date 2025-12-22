@@ -30,6 +30,8 @@ class RenderManim(CodeAgent):
                  trust_remote_code: bool = False,
                  **kwargs):
         super().__init__(config, tag, trust_remote_code, **kwargs)
+        if not self.config.use_subtitle:
+            self.window_size = (1450, 800)
         self.work_dir = getattr(self.config, 'output_dir', 'output')
         self.num_parallel = getattr(self.config, 'llm_num_parallel', 10)
         self.manim_render_timeout = getattr(self.config,
@@ -265,7 +267,7 @@ You are a Manim animation layout inspection expert, responsible for checking lay
 
 **Background Information**
 - The images you receive are video frames rendered by Manim (intermediate frames or final frames)
-- Video dimensions: 1250×700
+- Video dimensions: 1920*1080(16:9)
 
 **Inspection Focus**
 
@@ -275,6 +277,8 @@ You are a Manim animation layout inspection expert, responsible for checking lay
 3. Pay extra attention to components at canvas edges, especially whether title components are being cut off
 4. Parent-child component inconsistency (child elements exceeding parent container boundaries)
 5. Chart element misalignment (pie chart center offset, incorrect bar chart/line chart positioning)
+6. Text out of text-box
+7. The chart has positioning errors in its axes, gridlines, line segments, etc
 
 **Secondary issues that should be reported:**
 1. Components with the same function not aligned
@@ -435,6 +439,23 @@ The right component is squeezed to the edge. Fix suggestion: Reduce the width of
                              audio_duration, segment, i, work_dir):
         image_dir = os.path.join(work_dir, 'images')
         images_info = RenderManim.get_all_images_info(segment, i, image_dir)
+
+        if images_info:
+            image_prompt = f"""
+- ImageInfo:
+
+{images_info}
+
+These images must be used.
+
+* Important: Use smaller image sizes for generated images and larger image sizes for user doc images. DO NOT crop image to circular**
+* Scale the images. Do not use the original size, carefully rescale the images to match the requirements below:
+    * The image size on the canvas depend on its importance, important image occupies more spaces
+    * Use 1/4 space of the canvas for each image
+""" # noqa
+        else:
+            image_prompt = ''
+
         fix_request = f"""You are a professional code debugging specialist. You need to help me fix issues in the code. Error messages will be passed directly to you. You need to carefully examine the problems and provide the correct, complete code.
 {error_log}
 
@@ -443,6 +464,8 @@ The right component is squeezed to the edge. Fix suggestion: Reduce the width of
 {manim_code}
 ```
 
+{image_prompt}
+
 {fix_history}
 
 **Original code task**: Create manim animation
@@ -450,27 +473,31 @@ The right component is squeezed to the edge. Fix suggestion: Reduce the width of
 - Content: {content}
 - Duration: {audio_duration} seconds
 - Code language: **Python**
-- ImageInfo:
 
-{images_info}
-
-These images must be used.
 
 Manim instructions:
 
-* Canvas size: (1250, 700) (width x height) which is the top 3/4 of screen, bottom is left for subtitles
+* Canvas size ratio: 16:9
 * Ensure all content stays within safe bounds x∈(-6.0, 6.0), y∈(-3.4, 3.4) with minimum buff=0.5 from any edge to prevent cropping.
 * [CRITICAL]Absolutely prevent **element spatial overlap** or **elements going out of bounds** or **elements not aligned**.
 * [CRITICAL]Connection lines between boxes/text are of proper length, with **both endpoints attached to the objects**.
 * All boxes must have thick strokes for clear visibility
 * Keep text within frame by controlling font sizes. Use smaller fonts for Latin script than Chinese due to longer length.
-* Ensure all pie chart pieces share the same center coordinates. Previous pie charts were drawn incorrectly.
 * Use clear, high-contrast font colors to prevent text from blending with the background
 * Use a cohesive color palette of 2-4 colors for the entire video. Avoid cluttered colors, bright blue, and bright yellow. Prefer deep, dark tones
 * Low-quality animations such as stick figures are forbidden
-* Scale the images
-    a. The image size on the canvas depend on its importance, important image occupies more spaces
-    b. Recommended size is from 1/8 to 1/4 on the canvas. If the image if the one unique element, the size can reach 1/2 or more
+* Do not use any matchstick-style or pixel-style animations. Use charts, images, industrial/academic-style animations
+* Text box needs to have a background color, and the background must be opaque, with high contrast between the text color and the background.
+* The text box should large enough to contain the text
+* Do not create multi-track complex manim animations. One object per segment, or two to three(NO MORE THAN three!) object arranged in a simple manner, manim layout rules:
+    1. One object in the middle
+    2. Two objects, left-right structure, same y axis, same size, for example, text left, chart right
+    3. Three objects, left-middle-right structure, same y axis, same size. No more than 3 elements in one segment
+    4. Split complex animation into several segments
+    5. Less text boxes in the animation, only titles/definitions/formulas
+    6. Use black fonts, **no gray fonts**
+    7. CRITICAL: **NEVER put an element to a corner, do use horizonal/vertical grid**
+    8. No pie charts should be used, the LLM costs many bugs
 
 **Color Suggestions**:
 * You need to explicitly specify element colors and make these colors coordinated and elegant in style.

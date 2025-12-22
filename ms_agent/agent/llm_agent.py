@@ -19,8 +19,7 @@ from ms_agent.rag.base import RAG
 from ms_agent.rag.utils import rag_mapping
 from ms_agent.tools import ToolManager
 from ms_agent.utils import async_retry, read_history, save_history
-from ms_agent.utils.constants import (DEFAULT_OUTPUT_DIR, DEFAULT_TAG,
-                                      DEFAULT_USER)
+from ms_agent.utils.constants import DEFAULT_TAG, DEFAULT_USER
 from ms_agent.utils.logger import logger
 from omegaconf import DictConfig, OmegaConf
 
@@ -213,6 +212,8 @@ class LLMAgent(Agent):
         await self.loop_callback('on_tool_call', messages)
 
     async def after_tool_call(self, messages: List[Message]):
+        if messages[-1].role == 'assistant' and not messages[-1].tool_calls:
+            self.runtime.should_stop = True
         await self.loop_callback('after_tool_call', messages)
 
     async def loop_callback(self, point, messages: List[Message]):
@@ -328,42 +329,14 @@ class LLMAgent(Agent):
         """
         self.config: DictConfig
         if hasattr(self.config, 'memory'):
-            for _memory in (self.config.memory or []):
-                mem_instance_type = getattr(_memory, 'name', None)
-                if mem_instance_type is None:
-                    mem_instance_type = 'default_memory'
-                    setattr(_memory, 'name', 'default_memory')
+            for mem_instance_type, _memory in self.config.memory.items():
                 assert mem_instance_type in memory_mapping, (
                     f'{mem_instance_type} not in memory_mapping, '
                     f'which supports: {list(memory_mapping.keys())}')
 
-                # Use LLM config if no memory llm configuration is specified
-                llm_config = getattr(_memory, 'llm', None)
-                if llm_config is None:
-                    service = self.config.llm.service
-                    config_dict = {
-                        'model':
-                        self.config.llm.model,
-                        'service':
-                        service,
-                        'openai_base_url':
-                        getattr(self.config.llm, f'{service}_base_url', None),
-                        'api_key':
-                        getattr(self.config.llm, f'{service}_api_key', None),
-                        'max_tokens':
-                        getattr(self.config.generation_config, 'max_tokens',
-                                None),
-                    }
-                    llm_config_obj = OmegaConf.create(config_dict)
-                    setattr(_memory, 'llm', llm_config_obj)
-
                 shared_memory = await SharedMemoryManager.get_shared_memory(
-                    _memory)
+                    self.config, mem_instance_type)
                 self.memory_tools.append(shared_memory)
-
-                for memory in self.memory_tools:
-                    # In case any memory tool need other information
-                    memory.set_base_config(self.config)
 
     async def prepare_rag(self):
         """Load and initialize the RAG component from the config."""
@@ -396,6 +369,8 @@ class LLMAgent(Agent):
         Args:
             content (str): Content to log.
         """
+        if len(content) > 1024:
+            content = content[:512] + '\n...\n' + content[-512:]
         for line in content.split('\n'):
             for _line in line.split('\\n'):
                 logger.info(f'[{self.tag}] {_line}')
@@ -490,8 +465,6 @@ class LLMAgent(Agent):
 
         if _response_message.tool_calls:
             messages = await self.parallel_tool_call(messages)
-        else:
-            self.runtime.should_stop = True
 
         await self.after_tool_call(messages)
         self.log_output(

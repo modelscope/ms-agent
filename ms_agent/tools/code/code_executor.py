@@ -331,7 +331,7 @@ class CodeExecutionTool(ToolBase):
         except Exception as e:
             logger.error(f'Error during sandbox cleanup: {e}', exc_info=True)
 
-    async def get_tools(self) -> Dict[str, Any]:
+    async def _get_tools_inner(self) -> Dict[str, Any]:
         """Return tool definitions for LLM"""
         tools = {
             'code_executor': [
@@ -492,12 +492,7 @@ class CodeExecutionTool(ToolBase):
             ]
         }
 
-        return {
-            'code_executor': [
-                t for t in tools['code_executor']
-                if t['tool_name'] not in self.exclude_functions
-            ]
-        }
+        return tools
 
     async def call_tool(self, server_name: str, *, tool_name: str,
                         tool_args: dict) -> str:

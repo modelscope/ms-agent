@@ -1,3 +1,9 @@
+---
+slug: Introduction
+title: Introduction
+description: Ms-Agent Introduction
+---
+
 # Quick Start
 
 MS-Agent is the official Agent framework launched by the ModelScope community. This framework is committed to using a clear and simple universal capability framework to solve proprietary problems in several domains.
@@ -5,7 +11,7 @@ MS-Agent is the official Agent framework launched by the ModelScope community. T
 Currently, the domains we are exploring include:
 
 - DeepResearch: Generate in-depth research reports in the scientific research field
-- CodeScratch: Generate runnable software project code from requirements
+- CodeGenesis: Generate runnable software project code from requirements
 - General domain: MS-Agent adapts to general LLM conversation scenarios and is compatible with MCP tool calling
 
 MS-Agent is also the backend agent framework for [mcp-playground](https://modelscope.cn/mcp/playground) on the ModelScope official website. If developers are interested in the above domains, or hope to learn Agent technology principles and conduct secondary development, welcome to use MS-Agent.
@@ -56,4 +62,4 @@ The above two examples have the same effect and both can conduct multi-turn conv
 
 - A [more comprehensive example](https://github.com/modelscope/ms-agent/tree/main/examples)
 - DeepResearch [example](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research)
-- CodeScratch [example](https://github.com/modelscope/ms-agent/blob/main/projects/code_scratch/README.md)
+- CodeGenesis [example](https://github.com/modelscope/ms-agent/blob/main/projects/code_genesis/README.md)
