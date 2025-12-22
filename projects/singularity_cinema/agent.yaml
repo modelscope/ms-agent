@@ -128,6 +128,8 @@ audio_generator:
 voice: male
 
 voices:
+  # Only partial Chinese and English voice are provided. If you have more voice requirements, please execute the "edge-tts --list-voices" command to view
+  # Chinese voices - Mandarin
   male:
     voice: zh-CN-YunjianNeural
     rate: '+0%'
@@ -148,8 +150,115 @@ voices:
     rate: '-5%'
     pitch: '-50Hz'
 
+  xiaoyi:
+    voice: zh-CN-XiaoyiNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  yunjie:
+    voice: zh-CN-YunjieNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  yunxi:
+    voice: zh-CN-YunxiNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  yunxia:
+    voice: zh-CN-YunxiaNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  # Chinese voices - Dialect
+  hsiaochen:
+    voice: zh-TW-HsiaoChenNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  yunjhe:
+    voice: zh-TW-YunJheNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  xiaoni:
+    voice: zh-CN-shaanxi-XiaoniNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  xiaobei:
+    voice: zh-CN-liaoning-XiaobeiNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  wanlung:
+    voice: zh-HK-WanLungNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  hiugaai:
+    voice: zh-HK-HiuGaaiNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  # English voices
+  aria:
+    voice: en-US-AriaNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  sonia:
+    voice: en-GB-SoniaNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  guy:
+    voice: en-US-GuyNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  jenny:
+    voice: en-US-JennyNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  natasha:
+    voice: en-AU-NatashaNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  william:
+    voice: en-AU-WilliamMultilingualNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  clara:
+    voice: en-CA-ClaraNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  liam:
+    voice: en-CA-LiamNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  ava:
+    voice: en-US-AvaNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  andrew:
+    voice: en-US-AndrewNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
   emma:
-    voice: en-US-EmmaMultilingualNeural
+    voice: en-US-EmmaNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  ana:
+    voice: en-US-AnaNeural
     rate: '+0%'
     pitch: '+0Hz'
 
