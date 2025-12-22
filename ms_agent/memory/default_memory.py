@@ -312,7 +312,6 @@ class DefaultMemory(Memory):
             agent_id = meta_info.get('agent_id', None)
             run_id = meta_info.get('run_id', None)
             limit = meta_info.get('limit', self.search_limit)
-
             relevant_memories = self.memory.search(
                 query,
                 user_id=user_id or self.user_id,
@@ -553,6 +552,8 @@ class DefaultMemory(Memory):
         query = self._get_latest_user_message(messages)
         if not query:
             return messages
+        if meta_infos is None:
+            meta_infos = [{'user_id': self.user_id}]
         async with self._lock:
             try:
                 memories = self.search(query, meta_infos)
@@ -700,8 +701,8 @@ class DefaultMemory(Memory):
             mem0_config['llm'] = llm
         logger.info(f'Memory config: {mem0_config}')
         # Prompt content is too long, default logging reduces readability
-        custom_fact_extraction_prompt = getattr(self.config,
-                                                'fact_retrieval_prompt', None)
+        custom_fact_extraction_prompt = getattr(self.config, 'fact_retrieval_prompt',
+                                                getattr(self.config, 'custom_fact_extraction_prompt', None))
         if custom_fact_extraction_prompt is not None:
             mem0_config['custom_fact_extraction_prompt'] = (
                 custom_fact_extraction_prompt
