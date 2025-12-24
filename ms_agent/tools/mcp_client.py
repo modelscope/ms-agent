@@ -65,6 +65,7 @@ class MCPClient(ToolBase):
             tool_name, tool_args)
 
         texts = []
+        resources = []
         if response.isError:
             sep = '\n\n'
             if all(isinstance(item, str) for item in response.content):
@@ -77,6 +78,13 @@ class MCPClient(ToolBase):
         for content in response.content:
             if content.type == 'text':
                 texts.append(content.text)
+            elif content.type == 'resource':
+                texts.append(str(content.resource))
+                resources.append(content.resource)
+
+        if resources:
+            return {'text': '\n\n'.join(texts), 'resources': resources}
+
         return '\n\n'.join(texts)
 
     async def get_tools(self) -> Dict:
