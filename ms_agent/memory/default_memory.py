@@ -388,21 +388,36 @@ class DefaultMemory(Memory):
         """
         new_blocks = self._split_into_blocks(messages)
         self.cache_messages = dict(sorted(self.cache_messages.items()))
-
         cache_messages = [(key, value)
                           for key, value in self.cache_messages.items()]
+
         first_unmatched_idx = -1
+
         for idx in range(len(new_blocks)):
             block_hash = self._hash_block(new_blocks[idx])
-            if idx < len(cache_messages) - 1 and str(block_hash) == str(
+
+            # Must allow comparison up to the last cache entry
+            if idx < len(cache_messages) and str(block_hash) == str(
                     cache_messages[idx][1][1]):
                 continue
+
+            # mismatch
             first_unmatched_idx = idx
             break
+
+        # If all new_blocks match but the cache has extra entries → delete the extra cache entries
+        if first_unmatched_idx == -1:
+            should_add_messages = []
+            should_delete = [
+                item[0] for item in cache_messages[len(new_blocks):]
+            ]
+            return should_add_messages, should_delete
+
+        # On mismatch: add all new blocks and delete all cache entries starting from the mismatch index
+        should_add_messages = new_blocks[first_unmatched_idx:]
         should_delete = [
             item[0] for item in cache_messages[first_unmatched_idx:]
-        ] if first_unmatched_idx != -1 else []
-        should_add_messages = new_blocks[first_unmatched_idx:]
+        ]
 
         return should_add_messages, should_delete
 
@@ -701,8 +716,9 @@ class DefaultMemory(Memory):
             mem0_config['llm'] = llm
         logger.info(f'Memory config: {mem0_config}')
         # Prompt content is too long, default logging reduces readability
-        custom_fact_extraction_prompt = getattr(self.config, 'fact_retrieval_prompt',
-                                                getattr(self.config, 'custom_fact_extraction_prompt', None))
+        custom_fact_extraction_prompt = getattr(
+            self.config, 'fact_retrieval_prompt',
+            getattr(self.config, 'custom_fact_extraction_prompt', None))
         if custom_fact_extraction_prompt is not None:
             mem0_config['custom_fact_extraction_prompt'] = (
                 custom_fact_extraction_prompt
