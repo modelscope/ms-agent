@@ -3,96 +3,54 @@ import dataclasses
 import os
 import re
 import shutil
-import time
 from collections import OrderedDict
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import contextmanager
 from copy import deepcopy
-from typing import List, Optional, Set, Tuple
+from pathlib import Path
+from typing import List, Optional, Set
 
 import json
 from ms_agent import LLMAgent
 from ms_agent.agent import CodeAgent
 from ms_agent.llm import Message
+from ms_agent.memory.condenser.code_condenser import CodeCondenser
+from ms_agent.tools.code_server import LSPCodeServer
 from ms_agent.utils import get_logger
-from ms_agent.utils.constants import DEFAULT_TAG
+from ms_agent.utils.constants import (DEFAULT_INDEX_DIR, DEFAULT_LOCK_DIR,
+                                      DEFAULT_TAG)
+from ms_agent.utils.parser_utils import ImportInfo, parse_imports
+from ms_agent.utils.utils import extract_code_blocks, file_lock
 from omegaconf import DictConfig
-from utils import parse_imports, stop_words
 
 logger = get_logger()
 
-
-@contextmanager
-def file_lock(lock_dir: str, filename: str, timeout: float = 15.0):
-    os.makedirs(lock_dir, exist_ok=True)
-    lock_file_name = filename.replace(os.sep, '_') + '.lock'
-    lock_file_path = os.path.join(lock_dir, lock_file_name)
-
-    # Acquire lock with timeout
-    start_time = time.time()
-    lock_fd = None
-
-    while True:
-        try:
-            lock_fd = os.open(lock_file_path,
-                              os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            os.write(lock_fd, f'{os.getpid()}'.encode())
-            break
-        except FileExistsError:
-            if time.time() - start_time >= timeout:
-                raise TimeoutError(
-                    f'Failed to acquire lock for {filename} after {timeout} seconds'
-                )
-            time.sleep(0.1)  # Wait 100ms before retry
-
-    try:
-        yield
-    finally:
-        # Release lock
-        if lock_fd is not None:
-            os.close(lock_fd)
-        try:
-            os.remove(lock_file_path)
-        except OSError:
-            pass
-
-
-def extract_code_blocks(text: str,
-                        target_filename: Optional[str] = None
-                        ) -> Tuple[List, str]:
-    """Extract code blocks from the given text.
-
-    <result>py:a.py
-    </result>
-
-    Args:
-        text: The text to extract code blocks from.
-        target_filename: The filename target to extract.
-
-    Returns:
-        Tuple:
-            0: The extracted code blocks.
-            1: The left content of the input text.
-    """
-    pattern = r'<result>[a-zA-Z]*:([^\n\r`]+)\n(.*?)</result>'
-    matches = re.findall(pattern, text, re.DOTALL)
-    result = []
-
-    for filename, code in matches:
-        filename = filename.strip()
-        if target_filename is None or filename == target_filename:
-            result.append({'filename': filename, 'code': code.strip()})
-
-    if target_filename is not None:
-        remove_pattern = rf'<result>[a-zA-Z]*:{re.escape(target_filename)}\n.*?</result>'
-    else:
-        remove_pattern = pattern
-
-    remaining_text = re.sub(remove_pattern, '', text, flags=re.DOTALL)
-    remaining_text = re.sub(r'\n\s*\n\s*\n', '\n\n', remaining_text)
-    remaining_text = remaining_text.strip()
-
-    return result, remaining_text
+stop_words = [
+    '\nclass ',
+    '\ndef ',
+    '\nfunc ',
+    '\nfunction ',
+    '\npub fn ',
+    '\nfn ',
+    '\nstruct ',
+    '\nenum ',
+    '\nexport ',
+    '\ninterface ',
+    '\ntrait ',
+    '\nimpl ',
+    '\nmodule ',
+    '\ntype ',
+    '\npublic class ',
+    '\nprivate class ',
+    '\nprotected class ',
+    '\npublic interface ',
+    '\npublic enum ',
+    '\npublic struct ',
+    '\nabstract class ',
+    '\nconst ',
+    '\nlet ',
+    '\nvar ',
+    '\nasync def ',
+    '\n@',
+]
 
 
 class Programmer(LLMAgent):
@@ -105,87 +63,294 @@ class Programmer(LLMAgent):
                  **kwargs):
         super().__init__(config, tag, trust_remote_code, **kwargs)
         self.code_file = code_file
+        index_dir: str = getattr(config, 'index_cache_dir', DEFAULT_INDEX_DIR)
+        self.pre_import_check = getattr(config, 'pre_import_check', True)
+        self.post_import_check = getattr(config, 'post_import_check', True)
+        self.lsp_check = getattr(config, 'lsp_check', True)
+        self.index_dir = os.path.join(self.output_dir, index_dir)
+        self.lock_dir = os.path.join(self.output_dir, DEFAULT_LOCK_DIR)
+        self.code_condenser = CodeCondenser(config)
+        self.code_files = []
+        self.shared_lsp_context = kwargs.get('shared_lsp_context', {})
+        self.unchecked_files = {}
+        self.unchecked_issues = {}
+        self.stop_words = [stop_words, []]
+        self.find_all_files()
+        self.error_counter = 0
+
+    async def condense_memory(self, messages):
+        return messages
+
+    async def add_memory(self, messages, **kwargs):
+        return
 
     async def on_task_begin(self, messages: List[Message]):
-        if 'extra_body' not in self.llm.args:
-            self.llm.args['extra_body'] = DictConfig({})
-        self.llm.args['extra_body']['stop_sequences'] = stop_words
         self.code_files = [self.code_file]
-        self.find_all_files()
+        self.stop_imports()
 
-    def generate_abbr_file(self, file):
-        lock_dir = os.path.join(self.output_dir, 'locks')
-        abbr_dir = os.path.join(self.output_dir, 'abbr')
-        os.makedirs(abbr_dir, exist_ok=True)
-        abbr_file = os.path.join(abbr_dir, file)
-        with file_lock(lock_dir, os.path.join('abbr', file)):
-            if os.path.exists(abbr_file):
-                with open(abbr_file, 'r') as f:
+    def stop_imports(self):
+        if self.pre_import_check:
+            self.llm.args['extra_body']['stop_sequences'] = self.stop_words[0]
+        else:
+            self.llm.args['extra_body']['stop_sequences'] = self.stop_words[1]
+
+    def stop_nothing(self):
+        self.llm.args['extra_body']['stop_sequences'] = self.stop_words[1]
+
+    def is_stop_imports(self):
+        return self.llm.args['extra_body'][
+            'stop_sequences'] == self.stop_words[0]
+
+    def find_all_files(self):
+        self.all_code_files = []
+        with open(os.path.join(self.output_dir, 'file_order.txt'), 'r') as f:
+            for group in json.load(f):
+                self.all_code_files.extend(group['files'])
+
+    def _before_import_check(self, messages):
+        content = messages[-1].content
+        pattern = r'<result>[a-zA-Z]*:([^\n\r`]+)\n(.*)'
+        matches = re.findall(pattern, content, re.DOTALL)
+        try:
+            code_file = next(iter(matches))[0].strip()
+            code = next(iter(matches))[1].strip()
+        except StopIteration:
+            code_file = ''
+            code = ''
+
+        if not code_file:
+            messages.pop(-1)
+            self.stop_nothing()
+            return
+
+        def find_all_read_files():
+            files = []
+            for message in messages:
+                if message.tool_calls:
+                    for tool_call in message.tool_calls:
+                        if 'read_file' in tool_call[
+                                'tool_name'] or 'read_abbreviation_file' in tool_call[
+                                    'tool_name']:
+                            arguments = tool_call['arguments']
+                            if isinstance(arguments, str):
+                                try:
+                                    arguments = json.loads(arguments)
+                                    files.extend(arguments['paths'])
+                                except json.decoder.JSONDecodeError:
+                                    pass
+            return set(files)
+
+        def read_file(path):
+            if os.path.exists(os.path.join(self.index_dir, path)):
+                with open(os.path.join(self.index_dir, path), 'r') as f:
+                    return f.read()
+            else:
+                with open(os.path.join(self.output_dir, path), 'r') as f:
                     return f.read()
 
-            system = """你是一个帮我简化代码并返回缩略的机器人。你缩略的文件会给与另一个LLM用来编写代码，因此你生成的缩略文件需要具有充足的供其他文件依赖的信息。
+        contents = content.split('\n')
+        comments = ['*', '#', '-', '%', '/']
+        contents = [
+            c for c in contents
+            if not any(c.strip().startswith(cm) for cm in comments)
+        ]
+        all_files = parse_imports(code_file, '\n'.join(contents),
+                                  self.output_dir) or []
+        all_read_files = find_all_read_files()
+        all_notes = []
+        for file in all_files:
+            if 'react' in file.source_file or 'vue' in file.source_file:
+                continue
+            if file.source_file == code_file:
+                all_notes.append(
+                    f'You should not import the file itself: {code_file}')
+                continue
 
-需要保留的信息：
-1. 代码框架：类名、方法名、方法参数类型，返回值类型
-    * 如果无法找到参数和返回值类型，则分析函数实现，给出该参数或输出结构需要/具有哪些字段
-2. 导入信息：imports依赖
-3. 输出信息：exports导出及导出类型，注意不要忽略`default`这类关键字，注意命名导出或默认导出方式
-4. 结构体信息：不要缩略任何类或数据结构的名称、字段，如果一个文件包含很多数据结构定义，全部保留
-5. 样式信息：如果是css样式代码，保留每个样式名称
-6. json格式：如果是json，保留结构即可
-7. 仅返回满足要求的缩略信息，不要返回其他无关信息
+            file.imported_items = [
+                item for item in file.imported_items
+                if item not in ('*', 'default')
+            ]
+            filename = os.path.join(self.output_dir, file.source_file)
+            if not os.path.exists(filename):
+                if file.source_file in self.all_code_files:
+                    all_notes.append(
+                        f'The dependency you import: {file.source_file} does not exist, '
+                        f'the order may be incorrect.')
+                else:
+                    all_notes.append(
+                        f'The dependency you import: {file.source_file} is not in the code plan, '
+                        f'stop importing it.')
+            elif os.path.isfile(filename):
+                if file.source_file not in all_read_files:
+                    all_notes.append(
+                        f'Extra file {file.source_file} content in imports:\n{read_file(file.source_file)}'
+                    )
+            elif os.path.isdir(filename):
+                index_file_path = self.find_index_file(filename)
+                if index_file_path:
+                    index_file_path = str(
+                        Path(index_file_path).relative_to(self.output_dir))
+                    if index_file_path not in all_read_files:
+                        all_notes.append(
+                            f'Extra file {index_file_path} content in imports:\n{read_file(index_file_path)}'
+                        )
 
-* 例子：
-    ```xx.ts原始文件
-    import {...} from ...
-    async function func(a: Record<string, any>): Promise<any> {
-        const b = a['some-key'];
-        return b;
-    }
-    export default func;
-    ```
+        if all_notes:
+            all_notes = '\n'.join(all_notes)
+            user_content = (f'Problems found in your imports:\n'
+                            f'\n{all_notes}\n'
+                            f'Correct the errors and regenerate the code:\n')
+            messages.append(Message(role='user', content=user_content))
+        else:
+            messages.pop(-1)
+            user_content = f'Generate the code based on the beginning:\n{code}'
+            messages.append(Message(role='user', content=user_content))
+        self.stop_nothing()
 
-    缩略：
-    ```xx.ts缩略文件
-    ... imports here ...
-    async func(a: Record<string, any>) -> Promise<any>
-        Args: a(Record): keys: some-key, ...
+    async def _incremental_check(self, code_file: str, partial_code: str):
+        if self.lsp_check:
+            lsp_result = await self._incremental_lsp_check(
+                code_file, partial_code)
+        else:
+            lsp_result = None
 
-    export default func;
-    ```
+        if self.post_import_check:
+            import_result = await self._after_import_check(
+                code_file, partial_code)
+        else:
+            import_result = None
+        return (lsp_result or '') + '\n' + (import_result or '')
 
-你的优化目标：
-1. 【优先】保留充足的信息供其它代码使用
-2. 【其次】保留尽量少的token数量
-"""
-            # Read the actual file content
-            source_file_path = os.path.join(self.output_dir, file)
-            if not os.path.exists(source_file_path):
-                return ''
+    @staticmethod
+    def find_index_file(full_path):
+        if not os.path.isdir(full_path):
+            return None
+        else:
+            result = None
+            for index_file in [
+                    'index.ts', 'index.tsx', 'index.js', 'index.jsx',
+                    'index.vue', '__init__.py'
+            ]:
+                index_path = os.path.join(full_path, index_file)
+                if os.path.exists(index_path):
+                    result = index_path
+                    break
+            return result
 
-            with open(source_file_path, 'r') as f:
+    async def _after_import_check(self, code_file: str,
+                                  partial_code: str) -> Optional[str]:
+        errors = []
+        partial_code = partial_code.split('\n')
+        comments = ['*', '#', '-', '%', '/']
+        contents = [
+            c for c in partial_code
+            if not any(c.strip().startswith(cm) for cm in comments)
+        ]
+        partial_code = '\n'.join(contents)
+        all_imports: List[ImportInfo] = parse_imports(code_file, partial_code,
+                                                      self.output_dir)
+
+        for info in all_imports:
+            source_file = info.source_file
+            if not source_file or 'react' in source_file or 'vue' in source_file:
+                continue
+
+            info.imported_items = [
+                item for item in info.imported_items
+                if item not in ('*', 'default')
+            ]
+
+            if not os.path.isabs(source_file):
+                full_path = os.path.join(self.output_dir, source_file)
+            else:
+                full_path = source_file
+
+            # 1. Check file existence
+            if not os.path.isfile(full_path):
+                if os.path.isdir(full_path):
+                    index_file_path = self.find_index_file(full_path)
+                    index_found = index_file_path is not None
+
+                    if not index_found:
+                        errors.append(
+                            f'Import error in {code_file}:\n'
+                            f"  Directory '{source_file}' exists but has no index file (__init__.py, index.ts, etc.)\n"
+                            f'  Statement: {info.raw_statement}\n')
+                        continue
+                    else:
+                        full_path = index_file_path
+                else:
+                    errors.append(f'Import error in {code_file}:\n'
+                                  f"  File '{source_file}' does not exist\n"
+                                  f'  Statement: {info.raw_statement}\n')
+                    continue
+
+            # 2. Check if imported symbols exist in the file
+            if info.import_type in ('side-effect', 'default', 'namespace'):
+                continue
+
+            if not info.imported_items or info.imported_items == ['*']:
+                continue
+
+            with open(full_path, 'r', encoding='utf-8') as f:
                 file_content = f.read()
 
-            query = f'原始代码文件 {file}:\n{file_content}'
-            messages = [
-                Message(role='system', content=system),
-                Message(role='user', content=query),
-            ]
-            stop = self.llm.args['extra_body']['stop_sequences']
-            self.llm.args['extra_body'].pop('stop_sequences')
-            try:
-                response_message = self.llm.generate(messages, stream=False)
-                content = response_message.content.split('\n')
-                if '```' in content[0]:
-                    content = content[1:]
-                if '```' in content[-1]:
-                    content = content[:-1]
-                os.makedirs(os.path.dirname(abbr_file), exist_ok=True)
-                with open(abbr_file, 'w') as f:
-                    f.write('\n'.join(content))
-                return '\n'.join(content)
-            finally:
-                self.llm.args['extra_body']['stop_sequences'] = stop
+            missing_items = []
+            for item in info.imported_items:
+                if item not in file_content:
+                    missing_items.append(item)
+
+            if missing_items:
+                errors.append(
+                    f'Import error in {code_file}:\n'
+                    f"  Items {missing_items} not found in '{source_file}'\n"
+                    f'  Statement: {info.raw_statement}\n')
+
+        return '\n'.join(errors) if errors else None
+
+    async def _incremental_lsp_check(self, code_file: str,
+                                     partial_code: str) -> Optional[str]:
+        lsp_servers = self.shared_lsp_context.get('lsp_servers', {})
+        if not lsp_servers:
+            return None
+
+        file_basename = os.path.basename(code_file)
+        if file_basename in LSPCodeServer.skip_files:
+            logger.debug(f'Skipping LSP check for config file: {code_file}')
+            return None
+
+        if code_file.endswith('.vue'):
+            return None
+
+        lsp_lock = self.shared_lsp_context.get('lsp_lock')
+        if lsp_lock is None:
+            lsp_lock = asyncio.Lock()
+            self.shared_lsp_context['lsp_lock'] = lsp_lock
+
+        async with lsp_lock:
+            file_ext = os.path.splitext(code_file)[1].lower()
+            lang = None
+            for key, value in LSPCodeServer.language_mapping.items():
+                if file_ext in value:
+                    lang = key
+                    break
+
+            if lang is None:
+                return None
+
+            lsp_server = lsp_servers.get(lang)
+            if not lsp_server:
+                logger.debug(f'No LSP server initialized for {lang}')
+                return None
+
+            return await lsp_server.call_tool(
+                'lsp_code_server',
+                tool_name='update_and_check',
+                tool_args={
+                    'file_path': code_file,
+                    'content': partial_code,
+                    'language': lang
+                })
 
     def filter_code_files(self):
         code_files = []
@@ -194,152 +359,123 @@ class Programmer(LLMAgent):
                 code_files.append(code_file)
         self.code_files = code_files
 
-    def find_all_files(self):
-        self.all_code_files = []
-        with open(os.path.join(self.output_dir, 'file_order.txt'), 'r') as f:
-            for group in json.load(f):
-                self.all_code_files.extend(group['files'])
+    def add_unchecked_file(self, untrack_file):
+        if self.post_import_check or self.lsp_check:
+            self.unchecked_files[untrack_file] = 0
 
-    def find_all_read_files(self, messages):
-        files = []
-        for message in messages:
-            if message.tool_calls:
-                for tool_call in message.tool_calls:
-                    if 'read_file' in tool_call['tool_name']:
-                        arguments = tool_call['arguments']
-                        if isinstance(arguments, str):
-                            arguments = json.loads(arguments)
-                        files.extend(arguments['paths'])
-        return set(files)
+    def increment_unchecked_file(self):
+        for key in list(self.unchecked_files.keys()):
+            self.unchecked_files[key] = self.unchecked_files[key] + 1
+            if self.unchecked_files[key] > 99:  # no limit
+                self.unchecked_files.pop(key)
+                logger.error(
+                    f"Unchecked file {key} still have problem:\n{self.unchecked_issues.get('key')}\n"
+                    f'But the checking limit has reached.')
 
     async def after_tool_call(self, messages: List[Message]):
-        deps_not_exist = False
-        pattern = r'<result>[a-zA-Z]*:([^\n\r`]+)\n(.*?)'
-        matches = re.findall(pattern, messages[-1].content, re.DOTALL)
-        try:
-            code_file = next(iter(matches))[0].strip()
-        except StopIteration:
-            code_file = ''
-        is_config = code_file.endswith('.json') or code_file.endswith(
-            '.yaml') or code_file.endswith('.md')
-        coding_finish = '<result>' in messages[
-            -1].content and '</result>' in messages[-1].content
-        import_finish = '<result>' in messages[-1].content and self.llm.args[
-            'extra_body'][
-                'stop_sequences'] == stop_words and '</result>' not in messages[
-                    -1].content and not is_config
-        has_tool_call = len(messages[-1].tool_calls
-                            or []) > 0 or messages[-1].role != 'assistant'
-        if (not has_tool_call) and import_finish:
-            contents = messages[-1].content.split('\n')
-            content = [c for c in contents if '<result>' in c and ':' in c][0]
-            code_file = content.split('<result>')[1].split(':')[1].split(
-                '\n')[0].strip()
-            all_files = parse_imports(code_file, messages[-1].content,
-                                      self.output_dir) or []
-            all_read_files = self.find_all_read_files(messages)
-            deps = []
-            definitions = []
-            folders = []
-            wrong_imports = []
-            for file in all_files:
-                filename = os.path.join(self.output_dir, file.source_file)
-                if not os.path.exists(filename):
-                    if file.source_file in self.all_code_files:
-                        deps_not_exist = True
-                        self.code_files.append(file.source_file)
-                    else:
-                        wrong_imports.append(file.source_file)
-                elif os.path.isfile(filename):
-                    if file.source_file not in all_read_files:
-                        deps.append(file.source_file)
-                        definitions.extend(file.imported_items)
-                else:
-                    folders.append(
-                        f'You are importing {file.imported_items} from {file.source_file} folder'
-                    )
+        is_prepare = len(messages[-1].tool_calls
+                         or []) > 0 or messages[-1].role != 'assistant'
+        is_code_finish = '<result>' in messages[
+            -1].content and '</result>' in messages[
+                -1].content and not is_prepare
+        is_import = (
+            self.is_stop_imports() and not is_code_finish and not is_prepare
+            and '<result>' in messages[-1].content
+            and '</result>' not in messages[-1].content)
+        is_check = messages[-1].role == 'assistant' and len(
+            messages[-1].tool_calls or []) == 0 and not is_import
+        message = messages[-1]
+        all_issues = []
 
-            if not deps_not_exist:
-                dep_content = ''
-                for dep in deps:
-                    content = self.generate_abbr_file(dep)
-                    need_detail = False
-                    for definition in definitions:
-                        if definition not in content:
-                            need_detail = True
-                            break
-                    if need_detail:
-                        detail_file = os.path.join(self.output_dir, dep)
-                        with open(detail_file, 'r') as f:
-                            content = f.read()
-                    dep_content += f'File content {dep}:\n{content}\n\n'
-                if folders:
-                    folders = '\n'.join(folders)
-                    dep_content += (
-                        f'Some definitions come from folders:\n{folders}\nYou need to check the definition '
-                        f'file with `read_file` tool if they are not in your context.\n'
-                    )
-                if wrong_imports:
-                    wrong_imports = '\n'.join(wrong_imports)
-                    dep_content += (
-                        f'Some import files are not in the project plans: {wrong_imports}, '
-                        f'check the error now.\n')
-                content = messages.pop(-1).content.split('<result>')[1]
-                messages.append(
-                    Message(
-                        role='user',
-                        content=
-                        f'We break your generation to import more relative information. '
-                        f'According to your imports, some extra contents manually given here:\n'
-                        f'\n{dep_content or "No extra dependencies needed"}\n'
-                        f'Here is the a few start lines of your code: {content}\n\n'
-                        f'Now review your imports in it, correct any error according to the dependencies, '
-                        f'if any data structure undefined/not found, you can go on reading any code files you need, '
-                        f'then rewrite the full code of {code_file} based on the start lines:\n'
-                    ))
-                if not wrong_imports:
-                    self.llm.args['extra_body']['stop_sequences'] = []
-        elif (not has_tool_call) and coding_finish:
-            result, remaining_text = extract_code_blocks(messages[-1].content)
+        if is_import:
+            self._before_import_check(messages)
+
+        if is_code_finish:
+
+            # Saving code
+            result, remaining_text = extract_code_blocks(message.content)
             if result:
+                _response = remaining_text
                 saving_result = ''
                 for r in result:
                     path = r['filename']
                     code = r['code']
+
                     path = os.path.join(self.output_dir, path)
 
-                    lock_dir = os.path.join(self.output_dir, 'locks')
+                    lock_dir = os.path.join(self.output_dir, DEFAULT_LOCK_DIR)
 
-                    # Check and write file with lock
                     with file_lock(lock_dir, r['filename']):
-                        file_exists = os.path.exists(path)
-                        if not file_exists:
+                        new_file = not os.path.exists(path)
+                        if new_file:
                             os.makedirs(os.path.dirname(path), exist_ok=True)
                             with open(path, 'w') as f:
                                 f.write(code)
-
-                    # Generate abbreviation outside the lock to avoid nested locking
-                    abbr_content = self.generate_abbr_file(r['filename'])
-
-                    if file_exists:
-                        saving_result += (
-                            f'The target file exists, cannot override. here is the file abbreviation '
-                            f'content: \n{abbr_content}\n')
-                    else:
-                        saving_result += (
-                            f'Save file <{r["filename"]}> successfully\n. here is the file abbreviation '
-                            f'content: \n{abbr_content}\n')
-                messages[-1].content = remaining_text + (
-                    'Code generated here. Content removed to condense messages, '
-                    'check save result for details.')
+                            self.add_unchecked_file(r['filename'])
+                        else:
+                            with open(path, 'r') as f:
+                                code = f.read()
+                        _response += f'\n<result>{path.split(".")[-1]}: {r["filename"]}\n{code}\n</result>\n'
+                    saving_result += f'Save file <{r["filename"]}> successfully\n'
+                message.content = _response
                 messages.append(Message(role='user', content=saving_result))
-                self.llm.args['extra_body']['stop_sequences'] = stop_words
-            self.filter_code_files()
-            if not self.code_files:
-                self.runtime.should_stop = True
 
-        new_task = coding_finish and self.code_files
-        if not has_tool_call and (deps_not_exist or new_task):
+        if is_check:
+            # After checking when fix ended or write ended
+            for uncheck_file in list(self.unchecked_files.keys()):
+                with open(os.path.join(self.output_dir, uncheck_file),
+                          'r') as f:
+                    _code = f.read()
+                lsp_feedback = await self._incremental_check(
+                    uncheck_file, _code)
+                lsp_feedback = lsp_feedback.strip()
+                if lsp_feedback:
+                    all_issues.append(f'❎Issues in {uncheck_file}:'
+                                      + lsp_feedback)
+                    self.unchecked_issues[uncheck_file] = lsp_feedback
+                else:
+                    logger.info(f'✅No issues found in {uncheck_file}.')
+                    self.unchecked_files.pop(uncheck_file)
+            self.increment_unchecked_file()
+
+            if all_issues:
+                all_issues = '\n'.join(all_issues)
+                logger.warning(f'Compile error in {self.tag}:')
+                logger.warning(all_issues)
+                all_issues = (
+                    f'We check the code with LSP server and regex matching, here are the issues found:\n'
+                    f'{all_issues}\n'
+                    f'You can read related file to find the root cause if needed\n'
+                    f'Then fix the file with `replace_file_contents`\n'
+                    f'Some tips:\n'
+                    f'1. Check any code file not in your dependencies and not in the `file_design.txt`\n'
+                    f'2. Consider the relative path mistakes to your current writing file location\n'
+                    f'3. Do not rewrite the code with <result></result> after fixing with `replace_file_contents`\n'
+                )
+                messages.append(Message(role='user', content=all_issues))
+                messages[0].content = self.config.prompt.system
+
+        # Now only one file
+        # if is_code_finish and not all_issues:
+        # Code done, stop imports
+        #     self.stop_imports()
+
+        self.filter_code_files()
+        if not self.code_files and not self.unchecked_files:
+            self.runtime.should_stop = True
+
+        if not message.content:
+            message.content = 'I should continue to solve the problem.'
+            self.error_counter += 1
+        else:
+            self.error_counter = 0
+
+        if self.error_counter > 2:
+            raise RuntimeError('The model does not output any response!')
+
+        new_task = is_code_finish and self.code_files and (
+            not self.unchecked_files)
+        if new_task:
             last_file = self.code_files[-1]
             messages.append(
                 Message(
@@ -347,54 +483,9 @@ class Programmer(LLMAgent):
                     content=
                     f'\nA code file in your imports not found, you should write it first: {last_file}\n'
                 ))
-            self.llm.args['extra_body']['stop_sequences'] = stop_words
 
-    async def condense_memory(self, messages):
-        return messages
-        if not getattr(self, '_memory_fetched', False):
-            for memory_tool in self.memory_tools:
-                messages = await memory_tool.run(messages)
-            self._memory_fetched = True
-        return messages
-
-    async def add_memory(self, messages, **kwargs):
-        return
-        if not self.runtime.should_stop:
-            return
-        all_written_files = []
-        for idx, message in enumerate(messages):
-            if message.role == 'assistant' and message.tool_calls:
-                if message.tool_calls[0][
-                        'tool_name'] == 'file_system---write_file':
-                    arguments = message.tool_calls[0]['arguments']
-                    arguments = json.loads(arguments)
-                    if not arguments.get(
-                            'abbreviation', False
-                    ) and not arguments['path'].startswith('abbr'):
-                        all_written_files.append(arguments['content'])
-
-        if all_written_files:
-            for file_content in all_written_files:
-                file_len = len(file_content)
-                chunk_size = 2048
-                overlap = 256
-                chunks = []
-
-                if file_len <= chunk_size:
-                    chunks.append(file_content)
-                else:
-                    start = 0
-                    while start < file_len:
-                        end = min(start + chunk_size, file_len)
-                        chunks.append(file_content[start:end])
-                        if end >= file_len:
-                            break
-                        start += (chunk_size - overlap)
-
-                # Add each chunk to memory
-                for chunk in chunks:
-                    _messages = [Message(role='assistant', content=chunk)]
-                    await super().add_memory(_messages, **kwargs)
+        # Condense code block and prepare index files
+        await self.code_condenser.run(messages)
 
 
 @dataclasses.dataclass
@@ -408,8 +499,83 @@ class FileRelation:
 
 class CodingAgent(CodeAgent):
 
+    def __init__(self, config, tag, trust_remote_code, **kwargs):
+        super().__init__(config, tag, trust_remote_code, **kwargs)
+        # Shared LSP context across all Programmers
+        self.shared_lsp_context = {}
+
+    async def _init_lsp_servers(self):
+        framework_file = os.path.join(self.output_dir, 'framework.txt')
+        if not os.path.exists(framework_file):
+            logger.info('framework.txt not found, skipping LSP initialization')
+            return
+
+        with open(framework_file, 'r') as f:
+            framework = f.read().lower()
+
+        # Detect all languages in the project
+        detected_languages = set()
+
+        if any(kw in framework for kw in
+               ['typescript', 'javascript', 'react', 'node', 'npm', 'html']):
+            detected_languages.add('typescript')
+
+        if any(kw in framework
+               for kw in ['python', 'django', 'flask', 'fastapi']):
+            detected_languages.add('python')
+
+        if any(kw in framework
+               for kw in ['java ', 'java\n', 'spring', 'maven', 'gradle']):
+            detected_languages.add('java')
+
+        if not detected_languages:
+            logger.info('No supported languages detected in framework.txt')
+            return
+
+        logger.info(
+            f"Initializing LSP servers for languages: {', '.join(detected_languages)}"
+        )
+
+        # Initialize LSP server for each detected language
+        lsp_config = DictConfig({
+            'workspace_dir': self.output_dir,
+            'output_dir': self.output_dir
+        })
+
+        lsp_servers = {}
+        for lang in detected_languages:
+            lsp_server = LSPCodeServer(lsp_config)
+            await lsp_server.connect()
+            lsp_servers[lang] = lsp_server
+            logger.info(f'LSP Code Server created for {lang}')
+
+        for lang, lsp_server in lsp_servers.items():
+            logger.info(f'Building LSP index for {lang}...')
+            await lsp_server.call_tool(
+                'lsp_code_server',
+                tool_name='check_directory',
+                tool_args={
+                    'directory': '',
+                    'language': lang
+                })
+            logger.info(f'LSP index built for {lang}')
+
+        self.shared_lsp_context['lsp_servers'] = lsp_servers
+        self.shared_lsp_context['project_languages'] = detected_languages
+        logger.info('LSP servers ready for use')
+
+    async def _cleanup_lsp_servers(self):
+        lsp_servers = self.shared_lsp_context.get('lsp_servers', {})
+        if lsp_servers:
+            for lang, lsp_server in lsp_servers.items():
+                try:
+                    await lsp_server.cleanup()
+                    lsp_server.cleanup_lsp_index_dirs()
+                except Exception:  # noqa
+                    pass
+
     async def write_code(self, topic, user_story, framework, protocol, name,
-                         description, fast_fail):
+                         description, index, last_batch, siblings, next_batch):
         logger.info(f'Writing {name}')
         _config = deepcopy(self.config)
         messages = [
@@ -420,7 +586,12 @@ class CodingAgent(CodeAgent):
                 f'LLM规划的用户故事(user_story.txt): {user_story}\n'
                 f'技术栈(framework.txt): {framework}\n'
                 f'通讯协议(protocol.txt): {protocol}\n'
-                f'你需要编写的文件: {name}\n文件描述: {description}\n'),
+                f'你需要编写的文件: {name}\n'
+                f'文件编写index: {index}\n'
+                f'文件描述: {description}\n'
+                f'上一批编写的代码:{last_batch}\n'
+                f'其他workers在并行编写:{siblings}\n'
+                f'下一批编写的代码:{next_batch}\n'),
         ]
 
         _config = deepcopy(self.config)
@@ -430,10 +601,12 @@ class CodingAgent(CodeAgent):
             _config,
             tag=f'programmer-{name.replace(os.sep, "-")}',
             trust_remote_code=True,
-            code_file=name)
+            code_file=name,
+            shared_lsp_context=self.shared_lsp_context)  # Pass shared context
         await programmer.run(messages)
 
     async def execute_code(self, inputs, **kwargs):
+        await self._init_lsp_servers()
         with open(os.path.join(self.output_dir, 'topic.txt')) as f:
             topic = f.read()
         with open(os.path.join(self.output_dir, 'user_story.txt')) as f:
@@ -446,12 +619,10 @@ class CodingAgent(CodeAgent):
         file_orders = self.construct_file_orders()
         file_relation = OrderedDict()
         self.refresh_file_status(file_relation)
-        lock_dir = os.path.join(self.output_dir, 'locks')
-        shutil.rmtree(lock_dir, ignore_errors=True)
+        shutil.rmtree(
+            os.path.join(self.output_dir, 'locks'), ignore_errors=True)
 
-        max_workers = 5
-
-        for files in file_orders:
+        for idx, files in enumerate(file_orders):
             while True:
                 files = self.filter_done_files(files)
                 files = self.find_description(files)
@@ -459,38 +630,39 @@ class CodingAgent(CodeAgent):
                 if not files:
                     break
 
-                # Convert async tasks to sync wrapper for thread pool
-                def write_code_sync(name, description):
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    try:
-                        return loop.run_until_complete(
-                            self.write_code(
-                                topic,
-                                user_story,
-                                framework,
-                                protocol,
-                                name,
-                                description,
-                                fast_fail=False))
-                    finally:
-                        loop.close()
+                if idx == 0:
+                    last_batch = 'You are the first batch.'
+                    next_batch = '\n'.join(file_orders[idx + 1])
+                if idx == len(file_orders) - 1:
+                    last_batch = '\n'.join(file_orders[idx - 1])
+                    next_batch = 'You are the last batch.'
+                else:
+                    last_batch = '\n'.join(file_orders[idx - 1])
+                    next_batch = '\n'.join(file_orders[idx + 1])
 
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    futures = [
-                        executor.submit(write_code_sync, name, description)
-                        for name, description in files.items()
-                    ]
-                    # Wait for all tasks to complete
-                    for future in as_completed(futures):
-                        try:
-                            future.result()
-                        except Exception as e:
-                            logger.error(f'Error writing code: {e}')
+                tasks = [
+                    self.write_code(
+                        topic,
+                        user_story,
+                        framework,
+                        protocol,
+                        name,
+                        description,
+                        index=idx,
+                        last_batch=last_batch,
+                        siblings='\n'.join(set(files) - {name}),
+                        next_batch=next_batch)
+                    for name, description in files.items()
+                ]
+
+                # for task in tasks:
+                #     await task
+                await asyncio.gather(*tasks, return_exceptions=True)
 
             self.refresh_file_status(file_relation)
 
         self.construct_file_information(file_relation)
+        await self._cleanup_lsp_servers()
         return inputs
 
     def construct_file_orders(self):

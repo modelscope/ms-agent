@@ -15,11 +15,10 @@ import json5
 from ms_agent.llm.utils import Message
 from ms_agent.memory import Memory
 from ms_agent.utils import get_fact_retrieval_prompt
-from ms_agent.utils.constants import get_service_config
+from ms_agent.utils.constants import (DEFAULT_OUTPUT_DIR, DEFAULT_SEARCH_LIMIT,
+                                      DEFAULT_USER, get_service_config)
 from ms_agent.utils.logger import logger
 from omegaconf import DictConfig, OmegaConf
-
-DEFAULT_SEARCH_LIMIT = 3
 
 
 class MemoryMapping:
@@ -82,19 +81,22 @@ class DefaultMemory(Memory):
 
     def __init__(self, config: DictConfig):
         super().__init__(config)
-        self.user_id: Optional[str] = getattr(self.config, 'user_id',
-                                              'default_user')
-        self.agent_id: Optional[str] = getattr(self.config, 'agent_id', None)
-        self.run_id: Optional[str] = getattr(self.config, 'run_id', None)
+        memory_config = config.default_memory
+        self.user_id: Optional[str] = getattr(memory_config, 'user_id',
+                                              DEFAULT_USER)
+        self.agent_id: Optional[str] = getattr(memory_config, 'agent_id', None)
+        self.run_id: Optional[str] = getattr(memory_config, 'run_id', None)
         self.compress: Optional[bool] = getattr(config, 'compress', True)
         self.is_retrieve: Optional[bool] = getattr(config, 'is_retrieve', True)
-        self.path: Optional[str] = getattr(self.config, 'path', 'output')
-        self.history_mode = getattr(config, 'history_mode', 'add')
-        self.ignore_roles: List[str] = getattr(config, 'ignore_roles',
+        self.path: Optional[str] = getattr(
+            memory_config, 'path',
+            os.path.join(DEFAULT_OUTPUT_DIR, '.default_memory'))
+        self.history_mode = getattr(memory_config, 'history_mode', 'add')
+        self.ignore_roles: List[str] = getattr(memory_config, 'ignore_roles',
                                                ['tool', 'system'])
-        self.ignore_fields: List[str] = getattr(config, 'ignore_fields',
+        self.ignore_fields: List[str] = getattr(memory_config, 'ignore_fields',
                                                 ['reasoning_content'])
-        self.search_limit: int = getattr(config, 'search_limit',
+        self.search_limit: int = getattr(memory_config, 'search_limit',
                                          DEFAULT_SEARCH_LIMIT)
         # Add lock for thread safety in shared usage
         self._lock = asyncio.Lock()

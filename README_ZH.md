@@ -407,7 +407,7 @@ pip install ms-agent
 使用以下命令生成完整的 AI 工作空间主页：
 
 ```shell
-PYTHONPATH=. openai_api_key=your-api-key openai_base_url=your-api-url python ms_agent/cli/cli.py run --config projects/code_scratch --query 'Build a comprehensive AI workspace homepage' --trust_remote_code true
+PYTHONPATH=. openai_api_key=your-api-key openai_base_url=your-api-url python ms_agent/cli/cli.py run --config projects/code_genesis --query 'Build a comprehensive AI workspace homepage' --trust_remote_code true
 ```
 
 生成的代码将输出到当前目录的 `output` 文件夹中。
@@ -546,7 +546,7 @@ OPENAI_API_KEY=xxx-xxx T2I_API_KEY=ms-xxx-xxx MANIM_TEST_API_KEY=xxx-xxx ms-agen
   - [ ] 提升稳定度
 - [ ] 多模态检索增强生成 **Multimodal Agentic Search** - 支持大规模多模态文档检索和图文检索结果生成。
 - [ ] 增强的 **Agent Skills** - 提供更多预定义的技能和工具，提升智能体技能边界，并支持多技能协作，完成复杂任务执行。
-- [ ] 统一的WebUI **Agent-Workstation**，支持本地一键部署，集成了 MS-Agent 的所有智能体能力，如 AgentChat、MCP、AgentSkills、DeepResearch、DocResearch、CodeScratch 等。
+- [ ] 统一的WebUI **Agent-Workstation**，支持本地一键部署，集成了 MS-Agent 的所有智能体能力，如 AgentChat、MCP、AgentSkills、DeepResearch、DocResearch、CodeGenesis 等。
 
 
 ## 许可证

@@ -11,7 +11,7 @@ MS-Agent是魔搭社区官方推出的Agent智能体框架。本框架致力于�
 目前我们在探索的领域有：
 
 - DeepResearch：生成科研领域的深度调研报告
-- CodeScratch： 从需求生成可运行的软件项目代码
+- CodeGenesis： 从需求生成可运行的软件项目代码
 - 通用领域：MS-Agent适配于通用LLM对话场景，并兼容MCP工具调用
 
 MS-Agent也是魔搭官网的[mcp-playground](https://modelscope.cn/mcp/playground)的后台agent框架，如果开发者对上述领域感兴趣，或者希望学习Agent技术原理并进行二次开发，欢迎使用MS-Agent。
@@ -63,4 +63,4 @@ ms-agent run --config ms-agent/simple_agent --modelscope_api_key xxx
 
 - 一个[更全面的例子](https://github.com/modelscope/ms-agent/tree/main/examples)
 - DeepResearch的[例子](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research)
-- CodeScratch的[例子](https://github.com/modelscope/ms-agent/blob/main/projects/code_scratch/README.md)
+- CodeGenesis的[例子](https://github.com/modelscope/ms-agent/blob/main/projects/code_genesis/README.md)

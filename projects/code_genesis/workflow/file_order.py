@@ -6,7 +6,7 @@ from ms_agent import LLMAgent
 from ms_agent.llm import Message
 
 
-class FileDesignAgent(LLMAgent):
+class FileOrderAgent(LLMAgent):
 
     async def run(self, messages, **kwargs):
         query = '请读取file_design.txt并输出file_order.txt:'

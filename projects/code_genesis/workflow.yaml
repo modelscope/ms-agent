@@ -4,13 +4,13 @@ user_story:
     kwargs:
       code_file: workflow/user_story.py
   next:
-    - split_module
+    - architect
 
-split_module:
-  agent_config: split_module.yaml
+architect:
+  agent_config: architect.yaml
   agent:
     kwargs:
-      code_file: workflow/split_module.py
+      code_file: workflow/architect.py
   next:
     - file_design
 
@@ -27,6 +27,14 @@ file_order:
     kwargs:
       code_file: workflow/file_order.py
   agent_config: file_order.yaml
+  next:
+    - install
+
+install:
+  agent_config: install.yaml
+  agent:
+    kwargs:
+      code_file: workflow/install.py
   next:
     - coding
 

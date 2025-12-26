@@ -4,6 +4,10 @@ from typing import Dict, Optional
 # The default output dir
 DEFAULT_OUTPUT_DIR = './output'
 
+DEFAULT_INDEX_DIR = '.index'
+
+DEFAULT_LOCK_DIR = '.locks'
+
 # The key of user defined tools in the agent.yaml
 TOOL_PLUGIN_NAME = 'plugins'
 
@@ -12,6 +16,9 @@ AGENT_CONFIG_FILE = 'agent.yaml'
 
 # Default agent code file
 DEFAULT_AGENT_FILE = 'agent.py'
+
+# Default memory folder
+DEFAULT_MEMORY_DIR = '.memory'
 
 # DEFAULT_WORKFLOW_YAML
 WORKFLOW_CONFIG_FILE = 'workflow.yaml'
@@ -25,7 +32,11 @@ DEFAULT_TAG = 'Agent-default'
 # The default id of user
 DEFAULT_USER = 'User-default'
 
+DEFAULT_OUTPUT_WRAPPER = ['<result>', '</result>']
+
 DEFAULT_RETRY_COUNT = 3
+
+DEFAULT_SEARCH_LIMIT = 3
 
 MS_AGENT_ASCII = """
 ╔═══════════════════════════════════════════════════════════════════════════╗

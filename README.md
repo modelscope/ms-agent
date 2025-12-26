@@ -411,7 +411,7 @@ This project provides a framework for **Code Scratch**, enabling agents to auton
 Generate a complete ai workspace homepage with the following command:
 
 ```shell
-PYTHONPATH=. openai_api_key=your-api-key openai_base_url=your-api-url python ms_agent/cli/cli.py run --config projects/code_scratch --query 'Build a comprehensive AI workspace homepage' --trust_remote_code true
+PYTHONPATH=. openai_api_key=your-api-key openai_base_url=your-api-url python ms_agent/cli/cli.py run --config projects/code_genesis --query 'Build a comprehensive AI workspace homepage' --trust_remote_code true
 ```
 
 The generated code will be output to the `output` folder in the current directory.
@@ -549,7 +549,7 @@ We are committed to continuously improving and expanding the MS-Agent framework 
   - [ ] Improve stabilises
 - [ ] **Multimodal Agentic Search** – Supporting large-scale multimodal document retrieval and generation of search results combining text and images.
 - [ ] Enhanced **Agent Skills** – Providing a richer set of predefined skills and tools to expand agent capabilities and enabling multi-skill collaboration for complex task execution.
-- [ ] **Agent-Workstation** - An unified WebUI with one-click local deployment support with combining all agent capabilities of MS-Agent, such as AgentChat, MCP, AgentSkills, DeepResearch, DocResearch, CodeScratch, etc.
+- [ ] **Agent-Workstation** - An unified WebUI with one-click local deployment support with combining all agent capabilities of MS-Agent, such as AgentChat, MCP, AgentSkills, DeepResearch, DocResearch, CodeGenesis, etc.
 
 
 ## License

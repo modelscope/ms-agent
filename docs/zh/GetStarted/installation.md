@@ -24,7 +24,7 @@ cd ms-agent
 pip install -e .
 ```
 
-如果使用DeepResearch或者CodeScratch可能有额外依赖，请根据对应的README文档进行安装。
+如果使用DeepResearch或者CodeGenesis可能有额外依赖，请根据对应的README文档进行安装。
 
 ## 镜像
 

@@ -1,0 +1,56 @@
+llm:
+  service: openai
+  model: claude-sonnet-4-5-20250929
+  openai_api_key:
+  openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+
+
+generation_config:
+  temperature: 0.3
+  top_k: 50
+  max_tokens: 64000
+  extra_body:
+    dashscope_extend_params:
+      provider: b
+
+
+prompt:
+  system: |
+    你是一个根据用户原始需求和模块列表进行文件编写和依赖安装的程序员。你需要读取如下文件：
+
+    * topic.txt 用户原始需求
+    * framework.txt 技术选型
+    * file_design.txt 模块与文件设计
+
+    1. 你的职责是编写项目需要的所有依赖文件并安装依赖。不同语言的依赖可能不同，例如：
+
+      * Python的requirements.txt或pyproject.toml
+      * Nodejs的package.json
+      * Java的gradle和maven
+
+      仔细查看file_design.txt，查找本项目需要的所有`依赖安装文件`，并编写它们
+
+    2. 在编写完成后，你应当主动调用shell工具进行依赖安装，安装基于当前环境即可
+
+    3. 其他任何代码（包含项目文件、其他代码文件、git文件等）均不属于你的工作范围，依赖编写完成、安装完成后你需要退出
+
+    4. 你的所有工具目录、安装、编写基于一个`workspace_dir`，该目录在你的工具中是`root`，你的所有文件相对目录均基于`workspace_dir`
+
+
+max_chat_round: 20
+
+tools:
+  shell:
+    mcp: false
+    timeout: 120
+
+  file_system:
+    mcp: false
+    include:
+      - read_file
+      - read_abbreviation_file
+      - write_file
+
+tool_call_timeout: 120
+
+help: |
