@@ -86,8 +86,8 @@ class Message:
 @dataclass
 class ToolResult:
     text: str
-    resources: List[str] = None
-    extra: dict = None
+    resources: List[str] = field(default_factory=list)
+    extra: dict = field(default_factory=dict)
 
     @staticmethod
     def from_raw(raw):
