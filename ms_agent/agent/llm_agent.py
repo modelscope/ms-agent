@@ -478,7 +478,6 @@ class LLMAgent(Agent):
         prompt_tokens = _response_message.prompt_tokens
         completion_tokens = _response_message.completion_tokens
 
-        # 使用全局累积
         global TOTAL_PROMPT_TOKENS, TOTAL_COMPLETION_TOKENS, TOKEN_LOCK
         async with TOKEN_LOCK:
             TOTAL_PROMPT_TOKENS += prompt_tokens
