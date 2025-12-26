@@ -134,7 +134,7 @@ class OpenAI(LLM):
 
         if kwargs.get('stream', False) and self.args.get(
                 'stream_options', {}).get('include_usage', True):
-            kwargs['stream_options'] = {'include_usage': True}
+            kwargs.setdefault('stream_options', {})['include_usage'] = True
 
         return self.client.chat.completions.create(
             model=self.model, messages=messages, tools=tools, **kwargs)
