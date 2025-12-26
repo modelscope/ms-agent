@@ -27,6 +27,11 @@ from omegaconf import DictConfig, OmegaConf
 from ..config.config import Config, ConfigLifecycleHandler
 from .base import Agent
 
+# Current process shared
+TOTAL_PROMPT_TOKENS = 0
+TOTAL_COMPLETION_TOKENS = 0
+TOKEN_LOCK = asyncio.Lock()
+
 
 class LLMAgent(Agent):
     """
@@ -468,9 +473,27 @@ class LLMAgent(Agent):
             messages = await self.parallel_tool_call(messages)
 
         await self.after_tool_call(messages)
+
+        # usage
+
+        prompt_tokens = _response_message.prompt_tokens
+        completion_tokens = _response_message.completion_tokens
+
+        # 使用全局累积
+        global TOTAL_PROMPT_TOKENS, TOTAL_COMPLETION_TOKENS, TOKEN_LOCK
+        async with TOKEN_LOCK:
+            TOTAL_PROMPT_TOKENS += prompt_tokens
+            TOTAL_COMPLETION_TOKENS += completion_tokens
+
+        # tokens in the current step
         self.log_output(
-            f'[usage] prompt_tokens: {_response_message.prompt_tokens}, '
-            f'completion_tokens: {_response_message.completion_tokens}')
+            f'[usage] prompt_tokens: {prompt_tokens}, completion_tokens: {completion_tokens}'
+        )
+        # total tokens for the process so far
+        self.log_output(
+            f'[usage_total] total_prompt_tokens: {TOTAL_PROMPT_TOKENS}, '
+            f'total_completion_tokens: {TOTAL_COMPLETION_TOKENS}')
+
         yield messages
 
     def prepare_llm(self):
