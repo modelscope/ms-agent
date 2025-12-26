@@ -12,7 +12,7 @@ import json
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback, callbacks_mapping
 from ms_agent.llm.llm import LLM
-from ms_agent.llm.utils import Message
+from ms_agent.llm.utils import Message, ToolResult
 from ms_agent.memory import Memory, get_memory_meta_safe, memory_mapping
 from ms_agent.memory.memory_manager import SharedMemoryManager
 from ms_agent.rag.base import RAG
@@ -243,11 +243,14 @@ class LLMAgent(Agent):
         assert len(tool_call_result) == len(messages[-1].tool_calls)
         for tool_call_result, tool_call_query in zip(tool_call_result,
                                                      messages[-1].tool_calls):
+            tool_call_result_format = ToolResult.from_raw(tool_call_result)
             _new_message = Message(
                 role='tool',
-                content=tool_call_result,
+                content=tool_call_result_format.text,
                 tool_call_id=tool_call_query['id'],
-                name=tool_call_query['tool_name'])
+                name=tool_call_query['tool_name'],
+                resources=tool_call_result_format.resources)
+
             if _new_message.tool_call_id is None:
                 # If tool call id is None, add a random one
                 _new_message.tool_call_id = str(uuid.uuid4())[:8]
