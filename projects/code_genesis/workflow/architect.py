@@ -5,7 +5,7 @@ from ms_agent import LLMAgent
 from ms_agent.llm import Message
 
 
-class SplitModuleAgent(LLMAgent):
+class ArchitectureAgent(LLMAgent):
 
     async def run(self, messages, **kwargs):
         query = '请读取对应文件并给出你的设计：'

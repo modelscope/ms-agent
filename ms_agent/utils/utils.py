@@ -9,15 +9,18 @@ import os.path
 import re
 import subprocess
 import sys
+import time
+from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional, Tuple, Union
 
 import json
 import requests
 import yaml
 from omegaconf import DictConfig, OmegaConf
 
+from .constants import DEFAULT_MEMORY_DIR
 from .logger import get_logger
 
 logger = get_logger()
@@ -195,7 +198,7 @@ def save_history(output_dir: str, task: str, config: DictConfig,
         TypeError / ValueError: If the config or messages cannot be serialized properly.
         AttributeError: If any message in the list does not implement the `to_dict()` method.
     """
-    cache_dir = os.path.join(output_dir, 'memory')
+    cache_dir = os.path.join(output_dir, DEFAULT_MEMORY_DIR)
     os.makedirs(cache_dir, exist_ok=True)
     config_file = os.path.join(cache_dir, f'{task}.yaml')
     message_file = os.path.join(cache_dir, f'{task}.json')
@@ -239,7 +242,7 @@ def read_history(output_dir: str, task: str):
     """
     from ms_agent.llm import Message
     from ms_agent.config import Config
-    cache_dir = os.path.join(output_dir, 'memory')
+    cache_dir = os.path.join(output_dir, DEFAULT_MEMORY_DIR)
     os.makedirs(cache_dir, exist_ok=True)
     config_file = os.path.join(cache_dir, f'{task}.yaml')
     message_file = os.path.join(cache_dir, f'{task}.json')
@@ -693,3 +696,81 @@ def valid_repo_id(repo_id: str) -> bool:
         return True
 
     return False
+
+
+def extract_code_blocks(
+    text: str,
+    target_filename: Optional[str] = None,
+    file_wrapper: Optional[List[str]] = None,
+) -> Tuple[List, str]:
+    """Extract code blocks from the given text.
+
+    <result>py:a.py
+    </result>
+
+    Args:
+        text: The text to extract code blocks from.
+        target_filename: The filename target to extract.
+        file_wrapper: The file wrapper
+
+    Returns:
+        Tuple:
+            0: The extracted code blocks.
+            1: The left content of the input text.
+    """
+    if not file_wrapper:
+        file_wrapper = ['<result>', '</result>']
+    assert len(file_wrapper) == 2
+    pattern = rf'{file_wrapper[0]}[a-zA-Z]*:([^\n\r`]+)\n(.*?){file_wrapper[1]}'
+    matches = re.findall(pattern, text, re.DOTALL)
+    result = []
+
+    for filename, code in matches:
+        filename = filename.strip()
+        if target_filename is None or filename == target_filename:
+            result.append({'filename': filename, 'code': code.strip()})
+
+    if target_filename is not None:
+        remove_pattern = rf'{file_wrapper[0]}[a-zA-Z]*:{re.escape(target_filename)}\n.*?{file_wrapper[1]}'
+    else:
+        remove_pattern = pattern
+
+    remaining_text = re.sub(remove_pattern, '', text, flags=re.DOTALL)
+    remaining_text = re.sub(r'\n\s*\n\s*\n', '\n\n', remaining_text)
+    remaining_text = remaining_text.strip()
+
+    return result, remaining_text
+
+
+@contextmanager
+def file_lock(lock_dir: str, filename: str, timeout: float = 120.0):
+    os.makedirs(lock_dir, exist_ok=True)
+    lock_file_name = filename.replace(os.sep, '_') + '.lock'
+    lock_file_path = os.path.join(lock_dir, lock_file_name)
+
+    # Acquire lock with timeout
+    start_time = time.time()
+
+    while True:
+        try:
+            lock_fd = os.open(lock_file_path,
+                              os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(lock_fd, f'{os.getpid()}'.encode())
+            break
+        except FileExistsError:
+            if time.time() - start_time >= timeout:
+                raise TimeoutError(
+                    f'Failed to acquire lock for {filename} after {timeout} seconds'
+                )
+            time.sleep(0.1)  # Wait 100ms before retry
+
+    try:
+        yield
+    finally:
+        # Release lock
+        if lock_fd is not None:
+            os.close(lock_fd)
+        try:
+            os.remove(lock_file_path)
+        except OSError:
+            pass

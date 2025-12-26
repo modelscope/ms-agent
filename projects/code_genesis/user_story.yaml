@@ -23,20 +23,22 @@ prompt:
     3. 完善用户未提及但作为一个完整的项目缺失的功能
     4. 特别注意补充程序运行环境相关的背景。例如分布式、操作系统、部署方式、微服务等
     5. 将你的用户故事存储进user_story.txt，精确、简洁表述，不超过1000个字
-    6. 不要编写任何代码，代码工作会后续由专门的LLM进行
+    6. 不要编写任何代码，也不需要考虑技术实现问题，技术设计和代码工作会后续由专门的LLM进行
+    7. 你的用户故事语言和用户提问语言一致
 
-max_chat_round: 1
+max_chat_round: 20
 
 tools:
   file_system:
     mcp: false
+    allow_read_all_files: true
     include:
       - read_file
+      - read_abbreviation_file
       - write_file
+      - list_files
 
 memory:
-  - name: diversity
+  diversity:
 
 tool_call_timeout: 30
-
-help: |

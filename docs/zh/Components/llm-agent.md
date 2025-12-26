@@ -87,4 +87,4 @@ code_file: custom_agent
 
 1. 一个基本的agent.yaml：https://www.modelscope.cn/models/ms-agent/simple_agent
 2. 外部代码的agent：https://www.modelscope.cn/models/ms-agent/simple_agent_code
-3. 使用callback完成复杂工作流：https://github.com/modelscope/ms-agent/tree/main/projects/code_scratch
+3. 使用callback完成复杂工作流：https://github.com/modelscope/ms-agent/tree/main/projects/code_genesis

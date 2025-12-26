@@ -25,8 +25,8 @@ This project needs to be used together with ms-agent.
 2. Prepare python environment (python>=3.10) with conda:
 
   ```shell
-  conda create -n code_scratch python==3.11
-  conda activate code_scratch
+  conda create -n code_genesis python==3.11
+  conda activate code_genesis
   pip install -r ./requirements.txt
   ```
 
@@ -43,7 +43,7 @@ Make sure the npm installation is successful, or the npm install/build/dev will 
 4. Run:
 
 ```shell
-PYTHONPATH=. openai_api_key=your-api-key openai_base_url=your-api-url python ms_agent/cli/cli.py run --config projects/code_scratch --query 'make a demo website' --trust_remote_code true
+PYTHONPATH=. openai_api_key=your-api-key openai_base_url=your-api-url python ms_agent/cli/cli.py run --config projects/code_genesis --query 'make a demo website' --trust_remote_code true
 ```
 
 The code will be output to the `output` folder in the current directory by default.
