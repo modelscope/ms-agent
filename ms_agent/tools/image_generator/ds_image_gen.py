@@ -2,7 +2,6 @@ import os
 import uuid
 from io import BytesIO
 
-import aiohttp
 from PIL import Image
 
 
@@ -19,6 +18,7 @@ class DSImageGenerator:
                              size=None,
                              ratio=None,
                              **kwargs):
+        import aiohttp
         image_generator = self.config.tools.image_generator
         base_url = (
             getattr(image_generator, 'base_url', None)
