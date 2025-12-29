@@ -81,7 +81,7 @@ class DefaultMemory(Memory):
 
     def __init__(self, config: DictConfig):
         super().__init__(config)
-        memory_config = config.default_memory
+        memory_config = config.memory.default_memory
         self.user_id: Optional[str] = getattr(memory_config, 'user_id',
                                               DEFAULT_USER)
         self.agent_id: Optional[str] = getattr(memory_config, 'agent_id', None)
@@ -603,8 +603,8 @@ class DefaultMemory(Memory):
 
         # emb config
         embedder = None
-        embedder_config = getattr(self.config, 'embedder',
-                                  OmegaConf.create({}))
+        embedder_config = getattr(self.config.memory.default_memory,
+                                  'embedder', OmegaConf.create({}))
         service = getattr(embedder_config, 'service', 'modelscope')
         api_key = getattr(embedder_config, 'api_key', None)
         emb_model = getattr(embedder_config, 'model',
@@ -632,9 +632,11 @@ class DefaultMemory(Memory):
                 service = getattr(llm_config, 'service', 'modelscope')
                 llm_model = getattr(llm_config, 'model',
                                     'Qwen/Qwen3-Coder-30B-A3B-Instruct')
-                api_key = getattr(llm_config, 'api_key', None)
-                openai_base_url = getattr(llm_config, 'openai_base_url', None)
-                max_tokens = getattr(llm_config, 'max_tokens', None)
+                api_key = getattr(llm_config, f'{service}_api_key', None)
+                openai_base_url = getattr(llm_config, f'{service}_base_url',
+                                          None)
+                gen_cfg = getattr(self.config, 'generation_config', None)
+                max_tokens = getattr(gen_cfg, 'max_tokens', None)
 
                 llm = {
                     'provider': 'openai',
@@ -665,8 +667,8 @@ class DefaultMemory(Memory):
                 sanitized = f'col_{sanitized}'
             return sanitized
 
-        vector_store_config = getattr(self.config, 'vector_store',
-                                      OmegaConf.create({}))
+        vector_store_config = getattr(self.config.memory.default_memory,
+                                      'vector_store', OmegaConf.create({}))
         vector_store_provider = getattr(vector_store_config, 'service',
                                         'qdrant')
         on_disk = getattr(vector_store_config, 'on_disk', True)
@@ -719,8 +721,9 @@ class DefaultMemory(Memory):
         logger.info(f'Memory config: {mem0_config}')
         # Prompt content is too long, default logging reduces readability
         custom_fact_extraction_prompt = getattr(
-            self.config, 'fact_retrieval_prompt',
-            getattr(self.config, 'custom_fact_extraction_prompt', None))
+            self.config.memory.default_memory, 'fact_retrieval_prompt',
+            getattr(self.config.memory.default_memory,
+                    'custom_fact_extraction_prompt', None))
         if custom_fact_extraction_prompt is not None:
             mem0_config['custom_fact_extraction_prompt'] = (
                 custom_fact_extraction_prompt
