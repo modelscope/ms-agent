@@ -167,6 +167,9 @@ class Shell(ToolBase):
     async def execute_shell(self, command: str, work_dir: str):
         try:
             self.check_safe(command, work_dir)
+            if work_dir == '.' or work_dir == '.' + os.sep:
+                work_dir = ''
+            work_dir = os.path.join(self.output_dir, work_dir)
             Path(work_dir).mkdir(parents=True, exist_ok=True)
             ret = subprocess.run(
                 command,
@@ -174,7 +177,7 @@ class Shell(ToolBase):
                 cwd=work_dir,
                 capture_output=True,
                 text=True,
-                timeout=30,
+                timeout=getattr(self.config.tools.shell, 'timeout', 5),
             )
 
             if ret.returncode == 0:
@@ -183,7 +186,7 @@ class Shell(ToolBase):
                 result = f'Command executed failed. return_code={ret.returncode}, error message: {ret.stderr.strip()}'
 
         except subprocess.TimeoutExpired:
-            result = 'Run timed out after 30 seconds.'
+            result = f'Run timed out after {getattr(self.config.tools.shell, "timeout", 5)} seconds.'
         except Exception as e:
             result = f'Run failed with an exception: {e}.'
 

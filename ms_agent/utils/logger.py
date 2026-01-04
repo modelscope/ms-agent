@@ -37,7 +37,7 @@ def get_logger(log_file: Optional[str] = None,
 
     Args:
         log_file: Log filename, if specified, file handler will be added to
-            logger
+            logger. If None, defaults to 'ms_agent.log' in current working directory.
         log_level: Logging level.
         file_mode: Specifies the mode to open the file, if filename is
             specified (if filemode is unspecified, it defaults to 'w').
@@ -45,6 +45,10 @@ def get_logger(log_file: Optional[str] = None,
     if log_level is None:
         log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
         log_level = getattr(logging, log_level, logging.INFO)
+
+    # Default log file path: current working directory
+    if log_file is None:
+        log_file = os.path.join(os.getcwd(), 'ms_agent.log')
     logger_name = __name__.split('.')[0]
     logger = logging.getLogger(logger_name)
     logger.propagate = False
@@ -66,9 +70,9 @@ def get_logger(log_file: Optional[str] = None,
     stream_handler = logging.StreamHandler()
     handlers = [stream_handler]
 
-    if log_file is not None:
-        file_handler = logging.FileHandler(log_file, file_mode)
-        handlers.append(file_handler)
+    # Always add file handler since log_file is set to default if None
+    file_handler = logging.FileHandler(log_file, file_mode)
+    handlers.append(file_handler)
 
     for handler in handlers:
         handler.setFormatter(logger_format)
@@ -112,7 +116,10 @@ def add_file_handler_if_needed(logger, log_file, file_mode, log_level):
     else:
         is_worker0 = True
 
-    if is_worker0 and log_file is not None:
+    if is_worker0:
+        # Default log file path if not specified
+        if log_file is None:
+            log_file = os.path.join(os.getcwd(), 'ms_agent.log')
         file_handler = logging.FileHandler(log_file, file_mode)
         file_handler.setFormatter(logger_format)
         file_handler.setLevel(log_level)
