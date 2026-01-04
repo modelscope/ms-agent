@@ -1,4 +1,5 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+from .agent_tool import AgentTool
 from .code import CodeExecutionTool, SandboxManagerFactory
 from .code_server import LSPCodeServer
 from .filesystem_tool import FileSystemTool
