@@ -1,7 +1,9 @@
 # flake8: noqa
+# yapf: disable
 import ast
 import os
 from typing import Dict, Iterator, List, Optional, Tuple, Union
+from unittest.mock import patch as mock_patch
 
 from docling.backend.html_backend import HTMLDocumentBackend
 from docling.datamodel.accelerator_options import AcceleratorOptions
@@ -21,7 +23,8 @@ from ms_agent.tools.docling.patches import (download_models_ms,
                                             download_models_pic_classifier_ms,
                                             html_handle_figure,
                                             html_handle_image,
-                                            patch_easyocr_models)
+                                            patch_easyocr_models,
+                                            requests_get_with_timeout)
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.patcher import patch
 from ms_agent.utils.utils import normalize_url_or_file, txt_to_html
@@ -196,9 +199,10 @@ class DocLoader:
                     return None
 
                 # Try to send a HEAD request to check if the URL is accessible
-                response = requests.head(_url, timeout=10)
+                response = requests.head(_url, timeout=(10, 25))
                 if response.status_code >= 400:
-                    response = requests.get(_url, stream=True, timeout=10)
+                    response = requests.get(
+                        _url, stream=True, timeout=(10, 25))
                     if response.status_code >= 400:
                         logger.warning(
                             f'URL returned error status {response.status_code}: {_url}'
@@ -256,9 +260,10 @@ class DocLoader:
         file_paths = [(i, file) for i, file in enumerate(url_or_files)
                       if file and not file.startswith('http')]
         preprocessed = []
+        max_workers = min(8, (os.cpu_count() or 4))
 
         # Step1: Remove urls that cannot be processed
-        with ThreadPoolExecutor() as executor:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
                 executor.submit(check_url_valid, url) for url in http_urls
             ]
@@ -268,7 +273,7 @@ class DocLoader:
                     preprocessed.append(result)
 
         # Step2: Add file paths that are valid
-        with ThreadPoolExecutor() as executor:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
                 executor.submit(check_file_valid, file) for file in file_paths
             ]
@@ -303,6 +308,8 @@ class DocLoader:
            download_models_pic_classifier_ms)
     @patch(HTMLDocumentBackend, 'handle_image', html_handle_image)
     @patch(HTMLDocumentBackend, 'handle_figure', html_handle_figure)
+    @mock_patch('docling_core.utils.file.requests.get',
+                requests_get_with_timeout)
     def load(
             self,
             urls_or_files: list[str],
