@@ -132,8 +132,11 @@ class OpenAI(LLM):
         """
         messages = self._format_input_message(messages)
 
-        if kwargs.get('stream', False) and self.args.get(
-                'stream_options', {}).get('include_usage', True):
+        is_streaming = kwargs.get('stream', False)
+        stream_options_config = self.args.get('stream_options', {})
+        # For streaming responses, we should request usage statistics by default,
+        # unless it's explicitly disabled in the configuration.
+        if is_streaming and stream_options_config.get('include_usage', True):
             kwargs.setdefault('stream_options', {})['include_usage'] = True
 
         return self.client.chat.completions.create(
