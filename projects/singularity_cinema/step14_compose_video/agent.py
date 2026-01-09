@@ -1,5 +1,8 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import glob
 import os
+import re
+from typing import Union
 
 import json
 import moviepy as mp
@@ -10,6 +13,24 @@ from omegaconf import DictConfig
 from PIL import Image
 
 logger = get_logger()
+
+_SUBTITLE_INDEX_RE = re.compile(
+    r'(\d+)(?=[^\d]*$)')  # Match the last sequence of digits in the filename
+
+
+def _get_subtitle_index_from_filename(path: str) -> Union[int, float]:
+    """
+    Extract the trailing numeric index from a file path or filename.
+    Returns an int index; if parsing fails, returns float('inf') to sort invalid files to the end.
+    """
+    name = os.path.basename(path)
+    m = _SUBTITLE_INDEX_RE.search(name)
+    if not m:
+        return float('inf')
+    try:
+        return int(m.group(1))
+    except (ValueError, TypeError):
+        return float('inf')
 
 
 class ComposeVideo(CodeAgent):
@@ -311,27 +332,41 @@ class ComposeVideo(CodeAgent):
                 fg_clip = fg_clip.with_position(('center', 'center'))
                 fg_clip = fg_clip.with_duration(duration)
                 current_video_clips.append(fg_clip)
-            if self.config.use_subtitle:
-                if i < len(subtitle_paths
-                           ) and subtitle_paths[i] and os.path.exists(
-                               subtitle_paths[i]):
-                    subtitle_img = Image.open(subtitle_paths[i])
-                    subtitle_w, subtitle_h = subtitle_img.size
+            if self.config.use_subtitle and i < len(
+                    subtitle_paths) and subtitle_paths[i]:
+                current_segment_subs = subtitle_paths[i]
+                num_subs = len(current_segment_subs)
+                if num_subs > 0:
+                    sub_duration = duration / num_subs
+                    for j, sub_path in enumerate(current_segment_subs):
+                        if sub_path and os.path.exists(sub_path):
+                            subtitle_img = Image.open(sub_path)
+                            subtitle_w, subtitle_h = subtitle_img.size
 
-                    # Validate subtitle dimensions
-                    if subtitle_w <= 0 or subtitle_h <= 0:
-                        logger.error(
-                            f'Invalid subtitle dimensions: {subtitle_w}x{subtitle_h} for {subtitle_paths[i]}'
-                        )
-                    else:
-                        subtitle_clip = mp.ImageClip(
-                            subtitle_paths[i], duration=duration)
-                        subtitle_clip = subtitle_clip.resized(
-                            (subtitle_w, subtitle_h))
-                        subtitle_y = 900
-                        subtitle_clip = subtitle_clip.with_position(
-                            ('center', subtitle_y))
-                        current_video_clips.append(subtitle_clip)
+                            if subtitle_w <= 0 or subtitle_h <= 0:
+                                logger.error(
+                                    f'Invalid subtitle dimensions: {subtitle_w}x{subtitle_h} for {sub_path}'
+                                )
+                            else:
+                                target_h = 180  # TODO: Define as a class constant
+                                if subtitle_h > target_h:
+                                    scale = target_h / subtitle_h
+                                    new_w = max(1, int(subtitle_w * scale))
+                                    new_h = target_h
+                                else:
+                                    new_w, new_h = subtitle_w, subtitle_h
+
+                                subtitle_clip = mp.ImageClip(
+                                    sub_path, duration=sub_duration)
+                                subtitle_clip = subtitle_clip.resized(
+                                    (new_w, new_h))
+
+                                subtitle_y = 900
+                                subtitle_clip = subtitle_clip.with_position(
+                                    ('center', subtitle_y))
+                                subtitle_clip = subtitle_clip.with_start(
+                                    j * sub_duration)
+                                current_video_clips.append(subtitle_clip)
 
             # Add background as top layer (transparent PNG with decorative elements)
             if background_path and os.path.exists(background_path):
@@ -481,9 +516,11 @@ class ComposeVideo(CodeAgent):
                              f'Scene{i+1}.mov'))
             audio_paths.append(
                 os.path.join(self.tts_dir, f'segment_{i + 1}.mp3'))
-            subtitle_paths.append(
-                os.path.join(self.subtitle_dir,
-                             f'bilingual_subtitle_{i + 1}.png'))
+            pattern = os.path.join(self.subtitle_dir,
+                                   f'bilingual_subtitle_{i + 1}_*.png')
+            sub_files = sorted(
+                glob.glob(pattern), key=_get_subtitle_index_from_filename)
+            subtitle_paths.append(sub_files)
             video_paths.append(
                 os.path.join(self.videos_dir, f'video_{i + 1}.mp4'))
 

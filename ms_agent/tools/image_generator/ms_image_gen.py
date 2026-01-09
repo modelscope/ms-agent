@@ -3,7 +3,6 @@ import os
 import uuid
 from io import BytesIO
 
-import aiohttp
 import json
 from PIL import Image
 
@@ -20,6 +19,7 @@ class MSImageGenerator:
                              negative_prompt=None,
                              size=None,
                              **kwargs):
+        import aiohttp
         image_generator = self.config.tools.image_generator
         base_url = (getattr(image_generator, 'base_url', None)
                     or 'https://api-inference.modelscope.cn').strip('/')

@@ -34,9 +34,6 @@ async def run_query(query: str):
     _content = ''
     generator = await engine.run(query, stream=True)
     async for _response_message in generator:
-        new_content = _response_message[-1].content[len(_content):]
-        sys.stdout.write(new_content)
-        sys.stdout.flush()
         _content = _response_message[-1].content
     sys.stdout.write('\n')
     """
