@@ -569,8 +569,6 @@ class DefaultMemory(Memory):
         query = self._get_latest_user_message(messages)
         if not query:
             return messages
-        if meta_infos is None:
-            meta_infos = [{'user_id': self.user_id}]
         async with self._lock:
             try:
                 memories = self.search(query, meta_infos)

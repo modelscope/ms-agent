@@ -550,21 +550,24 @@ class LLMAgent(Agent):
         if hasattr(self.config, 'memory') and self.config.memory:
             tools_num = len(self.memory_tools) if self.memory_tools else 0
 
-            for idx, (mem_instance_type, memory_config) in enumerate(self.config.memory.items()):
+            for idx, (mem_instance_type,
+                      memory_config) in enumerate(self.config.memory.items()):
                 if add_type == 'add_after_task':
-                    user_id, agent_id, run_id, memory_type = self._get_run_memory_info(memory_config)
+                    user_id, agent_id, run_id, memory_type = self._get_run_memory_info(
+                        memory_config)
                 else:
-                    user_id, agent_id, run_id, memory_type = self._get_step_memory_info(memory_config)
+                    user_id, agent_id, run_id, memory_type = self._get_step_memory_info(
+                        memory_config)
 
                 if idx < tools_num:
-                    if any(v is not None for v in [user_id, agent_id, run_id, memory_type]):
+                    if any(v is not None
+                           for v in [user_id, agent_id, run_id, memory_type]):
                         await self.memory_tools[idx].add(
                             messages,
                             user_id=user_id,
                             agent_id=agent_id,
                             run_id=run_id,
-                            memory_type=memory_type
-                        )
+                            memory_type=memory_type)
 
     def save_history(self, messages: List[Message], **kwargs):
         """
