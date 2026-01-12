@@ -4,6 +4,7 @@ import re
 from typing import List
 
 import json
+import matplotlib.font_manager as fm
 from ms_agent.agent import CodeAgent
 from ms_agent.llm import LLM, Message
 from ms_agent.llm.openai_llm import OpenAI
@@ -157,7 +158,6 @@ Now translate:
 
     def get_font(self, size):
         """Get font using system font manager, same as CreateBackground agent"""
-        import matplotlib.font_manager as fm
         for font_name in self.fonts:
             try:
                 font_path = fm.findfont(fm.FontProperties(family=font_name))

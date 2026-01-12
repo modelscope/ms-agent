@@ -37,7 +37,7 @@ class GenerateManimCode(CodeAgent):
 
         tasks = []
         for i, (segment, audio_info) in enumerate(zip(segments, audio_infos)):
-            manim_requirement = segment.get('manim')
+            manim_requirement = segment.get('manim', segment.get('remotion'))
             if manim_requirement is not None:
                 tasks.append((segment, audio_info['audio_duration'], i))
 
@@ -77,17 +77,52 @@ class GenerateManimCode(CodeAgent):
     @staticmethod
     def get_all_images_info(segment, i, image_dir):
         all_images_info = []
-        foreground = segment.get('foreground', [])
-        for idx, _req in enumerate(foreground):
+
+        # Try to read descriptions from visual_plans first
+        descriptions = []
+        visual_plans_dir = os.path.join(
+            os.path.dirname(image_dir), 'visual_plans')
+        plan_path = os.path.join(visual_plans_dir, f'plan_{i+1}.json')
+
+        if os.path.exists(plan_path):
+            try:
+                with open(plan_path, 'r') as f:
+                    plan = json.load(f)
+                    if 'visual_assets' in plan and isinstance(
+                            plan['visual_assets'], list):
+                        descriptions = [
+                            a.get('description', '')
+                            for a in plan['visual_assets']
+                        ]
+                    elif 'main_visual_asset' in plan:
+                        descriptions = [
+                            plan['main_visual_asset'].get('description', '')
+                        ]
+                    elif 'foreground_assets' in plan:
+                        descriptions = plan.get('foreground_assets', [])
+            except Exception:
+                pass
+
+        # Fallback to segments.txt
+        if not descriptions:
+            descriptions = segment.get('foreground', [])
+
+        # Now check for files corresponding to these descriptions
+        for idx, desc in enumerate(descriptions):
             foreground_image = os.path.join(
                 image_dir, f'illustration_{i + 1}_foreground_{idx + 1}.png')
-            size = GenerateManimCode.get_image_size(foreground_image)
-            image_info = {
-                'filename': foreground_image,
-                'size': size,
-                'description': _req,
-            }
-            all_images_info.append(image_info)
+
+            if os.path.exists(foreground_image):
+                try:
+                    size = GenerateManimCode.get_image_size(foreground_image)
+                    image_info = {
+                        'filename': foreground_image,
+                        'size': size,
+                        'description': desc,
+                    }
+                    all_images_info.append(image_info)
+                except Exception:
+                    pass
 
         image_info_file = os.path.join(
             os.path.dirname(image_dir), 'image_info.txt')
@@ -106,7 +141,19 @@ class GenerateManimCode(CodeAgent):
                              config):
         class_name = f'Scene{i + 1}'
         content = segment['content']
-        manim_requirement = segment['manim']
+        # Try to read the Visual Plan for richer context
+        manim_requirement = segment.get('manim', '')
+        visual_plans_dir = os.path.join(
+            os.path.dirname(image_dir), 'visual_plans')
+        plan_path = os.path.join(visual_plans_dir, f'plan_{i+1}.json')
+
+        if os.path.exists(plan_path):
+            try:
+                with open(plan_path, 'r', encoding='utf-8') as f:
+                    _ = json.load(f)
+            except Exception:
+                pass
+
         images_info = GenerateManimCode.get_all_images_info(
             segment, i, image_dir)
         if images_info:
@@ -135,7 +182,10 @@ DO NOT let the image and the manim element overlap. Reorganize them in your anim
     a. The image size on the canvas depend on its importance, important image occupies more spaces
         * Consider the image placement in the manim requirements, resize the image until it will not be cut off by the edge(within x∈(-6.0, 6.0), y∈(-3.4, 3.4) with minimum buff=0.5)
         * Resize generated images by scale(<0.4), if 2 images, resize by scale(<0.3)
-    b. Use 1/4 space of the canvas for each image""" # noqa
+    b. Use 1/4 space of the canvas for each image
+    c. Do not use SVGMobject("magnifying_glass") or any other built-in SVG names that might not exist. If you need an icon, use a simple geometric shape (like a Circle with a Line handle) or check if an image file is provided.
+    d. Do not use `LineGraph` or `LineChart` classes as they are not available in the current Manim version. Use `Axes` and `plot_line_graph` or construct charts manually using `Axes` and `Line` objects.
+    e. Do not use `AlwaysApplyToMobject`. Use `add_updater` instead if continuous updates are needed.""" # noqa
         else:
             image_usage = ''
 
@@ -172,6 +222,8 @@ DO NOT let the image and the manim element overlap. Reorganize them in your anim
     6. Use black fonts, **no gray fonts**
     7. CRITICAL: **NEVER put an element to a corner, do use horizonal/vertical grid**
     8. No pie charts should be used, the LLM costs many bugs
+    9. [CRITICAL] **Do NOT use `VGroup` for `ImageMobject`**. `ImageMobject` is not a `VMobject`. Use `Group` instead of `VGroup` when grouping images or mixing images with other mobjects.
+    10. [CRITICAL] **Do NOT use `AlwaysApplyToMobject`**. It is not defined. Use `add_updater` for continuous effects.
 
 Please create Manim animation code that meets the above requirements.""" # noqa
 

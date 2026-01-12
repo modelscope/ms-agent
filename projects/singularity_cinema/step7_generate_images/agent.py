@@ -1,6 +1,7 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import asyncio
 import os
+import re
 import shutil
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -42,11 +43,11 @@ class GenerateImages(CodeAgent):
             segments = json.load(f)
         illustration_prompts = []
         for i in range(len(segments)):
-            ilustration_path = os.path.join(self.illustration_prompts_dir,
-                                            f'segment_{i+1}.txt')
+            illustration_path = os.path.join(self.illustration_prompts_dir,
+                                             f'segment_{i+1}.txt')
             if self.config.background == 'image' and os.path.exists(
-                    ilustration_path):
-                with open(ilustration_path, 'r') as f:
+                    illustration_path):
+                with open(illustration_path, 'r') as f:
                     illustration_prompts.append(f.read())
             else:
                 illustration_prompts.append(None)
@@ -60,12 +61,22 @@ class GenerateImages(CodeAgent):
 
         # Use ThreadPoolExecutor for parallel execution
         with ThreadPoolExecutor(max_workers=self.num_parallel) as executor:
-            futures = [
-                executor.submit(self._process_single_illustration_static, i,
-                                segment, prompt, self.config, self.images_dir,
-                                self.fusion.__name__)
-                for i, segment, prompt in tasks
-            ]
+            futures = []
+            for i, segment, prompt_text in tasks:
+                # Clean background prompt too if it exists
+                final_prompt = prompt_text
+                if final_prompt:
+                    # Remove thinking tags if present
+                    final_prompt = re.sub(
+                        r'<think>.*?</think>',
+                        '',
+                        final_prompt,
+                        flags=re.DOTALL).strip()
+
+                futures.append(
+                    executor.submit(self._process_single_illustration_static,
+                                    i, segment, final_prompt, self.config,
+                                    self.images_dir, self.fusion.__name__))
             # Wait for all tasks to complete
             for future in futures:
                 future.result()
@@ -103,6 +114,26 @@ class GenerateImages(CodeAgent):
                 img = Image.new('RGB', (2000, 2000), config.background)
                 img.save(output_path)
         else:
+            # Optimize prompt to avoid timeout.
+            # Remove abstract/ambiguous terms without adding concrete details.
+            if prompt:
+                risky_terms = [
+                    'volumetric lighting', '8k quality', 'ultra realistic',
+                    'cinematic medical-tech atmosphere',
+                    'professional clean aesthetic'
+                ]
+                safe_prompt = prompt
+                for term in risky_terms:
+                    safe_prompt = safe_prompt.replace(term, '')
+
+                # Ensure it's not empty, fallback to original if too aggressive
+                if len(safe_prompt.strip()) < 10:
+                    safe_prompt = prompt
+
+                # Update main prompt variable
+                prompt = safe_prompt.strip()
+            # ---------------------------------------------
+
             logger.info(f'Generating image for: {prompt}.')
             img_path = os.path.join(images_dir,
                                     f'illustration_{i + 1}_origin.png')
@@ -121,7 +152,29 @@ class GenerateImages(CodeAgent):
                 kwargs['ratio'] = _config.image_generator.ratio
             elif hasattr(_config.image_generator, 'size'):
                 kwargs['size'] = _config.image_generator.size
-            _temp_file = await image_generator.generate_image(prompt, **kwargs)
+
+            print(
+                f'DEBUG: Generating image. Prompt: {prompt[:50]}... kwargs: {kwargs}'
+            )
+            try:
+                _temp_file = await image_generator.generate_image(
+                    prompt, **kwargs)
+
+                # Check directly if the return is a valid file path
+                if not _temp_file or not os.path.exists(_temp_file):
+                    logger.error(
+                        f'Background image generation failed for segment {i + 1}. Result: {_temp_file}'
+                    )
+                    return
+
+            except Exception as e:
+                print(f'DEBUG: Image generation failed. Error: {e}')
+                # Log the error but do not crashing the thread
+                logger.error(
+                    f'Exception during background generation for segment {i + 1}: {e}'
+                )
+                return
+
             shutil.move(_temp_file, img_path)
             if fusion_name == 'keep_only_black_for_folder':
                 GenerateImages.keep_only_black_for_folder(
@@ -141,11 +194,46 @@ class GenerateImages(CodeAgent):
         if config.foreground != 'image':
             return
         logger.info(f'Generating foreground image for: segment {i}.')
-        foreground = segment.get('foreground', [])
+
         work_dir = getattr(config, 'output_dir', 'output')
         illustration_prompts_dir = os.path.join(work_dir,
                                                 'illustration_prompts')
-        for idx, _req in enumerate(foreground):
+        visual_plans_dir = os.path.join(work_dir, 'visual_plans')
+
+        # Determine the list of assets to generate
+        # Priority: Visual Plan > Segment Config
+        foreground_assets = []
+        visual_plan_path = os.path.join(visual_plans_dir, f'plan_{i+1}.json')
+
+        if os.path.exists(visual_plan_path):
+            try:
+                with open(visual_plan_path, 'r') as f:
+                    plan = json.load(f)
+                    # Support multiple assets from 'visual_assets' list
+                    if 'visual_assets' in plan and isinstance(
+                            plan['visual_assets'], list):
+                        foreground_assets = [
+                            asset.get('description')
+                            for asset in plan['visual_assets']
+                            if asset.get('description')
+                        ]
+                    # Fallback for legacy keys
+                    elif 'main_visual_asset' in plan:
+                        asset_desc = plan['main_visual_asset'].get(
+                            'description')
+                        if asset_desc:
+                            foreground_assets = [asset_desc]
+                    elif 'foreground_assets' in plan:
+                        foreground_assets = plan.get('foreground_assets', [])
+            except Exception as e:
+                logger.warning(
+                    f'Failed to read visual plan for segment {i+1}: {e}')
+
+        # Fallback if plan is missing or empty (but check if prompts exist to be safe)
+        if not foreground_assets:
+            foreground_assets = segment.get('foreground', [])
+
+        for idx, _req in enumerate(foreground_assets):
             foreground_image = os.path.join(
                 images_dir, f'illustration_{i + 1}_foreground_{idx + 1}.png')
             if os.path.exists(foreground_image):
@@ -154,8 +242,20 @@ class GenerateImages(CodeAgent):
             foreground_prompt_path = os.path.join(
                 illustration_prompts_dir,
                 f'segment_{i+1}_foreground_{idx+1}.txt')
+
+            if not os.path.exists(foreground_prompt_path):
+                logger.warning(
+                    f'Prompt file not found: {foreground_prompt_path}. Skipping.'
+                )
+                continue
+
             with open(foreground_prompt_path, 'r') as f:
-                prompt = f.read()
+                prompt_text = f.read()
+
+            # Clean Prompt from Thinking process
+            prompt = re.sub(
+                r'<think>.*?</think>', '', prompt_text,
+                flags=re.DOTALL).strip()
 
             _config = deepcopy(config)
             _config.tools.image_generator = _config.image_generator
@@ -166,10 +266,48 @@ class GenerateImages(CodeAgent):
                 kwargs['ratio'] = _config.image_generator.ratio
             elif hasattr(_config.image_generator, 'size'):
                 kwargs['size'] = _config.image_generator.size
-            _temp_file = await image_generator.generate_image(prompt, **kwargs)
-            if not os.path.exists(_temp_file):
-                raise RuntimeError(f'Failed to generate image: {_temp_file}')
-            shutil.move(_temp_file, foreground_image)
+
+            try:
+                _temp_file = await image_generator.generate_image(
+                    prompt, **kwargs)
+                if not os.path.exists(_temp_file):
+                    raise RuntimeError(
+                        f'Failed to generate image: {_temp_file}')
+
+                # Apply background removal (simple white keying)
+                GenerateImages.remove_white_background(_temp_file,
+                                                       foreground_image)
+
+                # Cleanup temp file if it still exists (shutil.move inside remove_white might differ)
+                if os.path.exists(_temp_file):
+                    os.remove(_temp_file)
+
+            except Exception as e:
+                logger.error(
+                    f'Failed to generate foreground image {idx+1} for segment {i+1}: {e}'
+                )
+
+    @staticmethod
+    def remove_white_background(input_path, output_path, threshold=240):
+        try:
+            img = Image.open(input_path).convert('RGBA')
+            data = np.array(img)
+
+            # Keying: If R, G, B are all > threshold, make transparent
+            r, g, b, a = data.T
+            white_areas = (r > threshold) & (g > threshold) & (b > threshold)
+
+            # Update Alpha channel: 0 where white, 255 otherwise
+            data[..., 3] = np.where(white_areas.T, 0, 255)
+
+            # Save as PNG
+            result = Image.fromarray(data)
+            result.save(output_path, 'PNG')
+            logger.info(f'Saved transparent asset to {output_path}')
+        except Exception as e:
+            logger.error(f'Failed to remove background: {e}')
+            # Fallback: just copy original
+            shutil.copy(input_path, output_path)
 
     @staticmethod
     def fade(input_image,
@@ -178,12 +316,12 @@ class GenerateImages(CodeAgent):
              fade_factor=0.3,
              brightness_boost=80,
              opacity=1.0):
-        manim = segment.get('manim')
+        # Support both 'manim' and 'remotion' keys for animation detection
+        has_animation = segment.get('manim') or segment.get('remotion')
         img = Image.open(input_image).convert('RGBA')
-        if manim:
+        if has_animation:
             logger.info(
-                'Applying fade effect to background image (Manim animation present)'
-            )
+                'Applying fade effect to background image (Animation present)')
             arr = np.array(img, dtype=np.float32)
             arr[..., :3] = arr[..., :3] * fade_factor + brightness_boost
             arr[..., :3] = np.clip(arr[..., :3], 0, 255)
@@ -192,7 +330,7 @@ class GenerateImages(CodeAgent):
             result.save(output_image, 'PNG')
             logger.info(f'Faded background saved to: {output_image}')
         else:
-            logger.info('No Manim animation - keeping original background')
+            logger.info('No animation - keeping original background')
             shutil.copy(input_image, output_image)
 
     @staticmethod

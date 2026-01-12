@@ -8,10 +8,12 @@ from typing import List
 
 import edge_tts
 import json
+import numpy as np
 from moviepy import AudioClip, AudioFileClip
 from ms_agent.agent import CodeAgent
 from ms_agent.llm import LLM
 from ms_agent.llm.openai_llm import OpenAI
+from ms_agent.tools.audio_generator import AudioGenerator
 from ms_agent.utils import get_logger
 from omegaconf import DictConfig
 
@@ -66,7 +68,6 @@ class GenerateAudio(CodeAgent):
 
     @staticmethod
     async def create_silent_audio(output_path, duration=5.0):
-        import numpy as np
 
         def make_frame(t):
             return np.array([0.0, 0.0])
@@ -82,7 +83,6 @@ class GenerateAudio(CodeAgent):
         pitch = voice_dict.get('pitch', '+0Hz')
         output_dir = os.path.dirname(output_file) or '.'
         os.makedirs(output_dir, exist_ok=True)
-        from ms_agent.tools.audio_generator import AudioGenerator
         _config = deepcopy(self.config)
         _config.tools.audio_generator = _config.audio_generator
         _temp_file = await AudioGenerator(self.config).generate_audio(

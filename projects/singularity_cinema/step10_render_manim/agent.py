@@ -34,8 +34,9 @@ class RenderManim(CodeAgent):
             self.window_size = (1450, 800)
         self.work_dir = getattr(self.config, 'output_dir', 'output')
         self.num_parallel = getattr(self.config, 'llm_num_parallel', 10)
-        self.manim_render_timeout = getattr(self.config,
-                                            'manim_render_timeout', 300)
+        self.manim_render_timeout = getattr(
+            self.config, 'animation_render_timeout',
+            getattr(self.config, 'manim_render_timeout', 300))
         self.render_dir = os.path.join(self.work_dir, 'manim_render')
         self.code_fix_round = getattr(self.config, 'code_fix_round', 5)
         self.mllm_check_round = getattr(self.config, 'mllm_fix_round', 1)
@@ -318,6 +319,9 @@ The right component is squeezed to the edge. Fix suggestion: Reduce the width of
         test_images = RenderManim._extract_preview_frames_static(
             final_file_path, i, work_dir, cur_check_round)
         llm = LLM.from_config(_mm_config)
+        logger.info(
+            f"Using mllm model for manim quality check: {getattr(llm, 'model', None)}"
+        )
 
         frame_names = [
             'the middle frame of the animation',
@@ -381,7 +385,6 @@ The right component is squeezed to the edge. Fix suggestion: Reduce the width of
     @staticmethod
     def _extract_preview_frames_static(video_path, segment_id, work_dir,
                                        cur_check_round):
-        from moviepy import VideoFileClip
 
         test_dir = os.path.join(work_dir, 'manim_test')
         os.makedirs(test_dir, exist_ok=True)
@@ -498,6 +501,13 @@ Manim instructions:
     6. Use black fonts, **no gray fonts**
     7. CRITICAL: **NEVER put an element to a corner, do use horizonal/vertical grid**
     8. No pie charts should be used, the LLM costs many bugs
+    9. Do not use SVGMobject("magnifying_glass") or any other built-in SVG names that might not exist. If you need an icon, use a simple geometric shape (like a Circle with a Line handle) or check if an image file is provided.
+    10. Do not use `LineGraph` or `LineChart` classes as they are not available in the current Manim version. Use `Axes` and `plot_line_graph` or construct charts manually using `Axes` and `Line` objects.
+
+    9. Do not use SVGMobject("magnifying_glass") or any other built-in SVG names that might not exist. If you need an icon, use a simple geometric shape (like a Circle with a Line handle) or check if an image file is provided.
+    10. Do not use `LineGraph` or `LineChart` classes as they are not available in the current Manim version. Use `Axes` and `plot_line_graph` or construct charts manually using `Axes` and `Line` objects.
+
+    9. [CRITICAL] **Do NOT use `VGroup` for `ImageMobject`**. `ImageMobject` is not a `VMobject`. Use `Group` instead of `VGroup` when grouping images or mixing images with other mobjects.
 
 **Color Suggestions**:
 * You need to explicitly specify element colors and make these colors coordinated and elegant in style.
