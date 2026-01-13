@@ -147,10 +147,9 @@ tools:
       max_concurrent: 1  # Maximum concurrent requests (reduced to work with thread semaphore)
   file_system:
     mcp: false
-    exclude:
-      - create_directory
-      - read_file
-      - list_files
+    include:
+      - write_file
+      - delete_file_or_dir
 
 
 handler: time_handler

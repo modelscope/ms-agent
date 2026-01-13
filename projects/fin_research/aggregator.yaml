@@ -129,8 +129,11 @@ prompt:
 tools:
   file_system:
     mcp: false
-    exclude:
-      - create_directory
+    include:
+      - read_file
+      - write_file
+      - list_files
+      - delete_file_or_dir
   spec_loader:
     mcp: false
   plugins:
