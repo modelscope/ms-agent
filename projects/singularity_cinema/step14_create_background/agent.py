@@ -2,6 +2,7 @@
 import os
 import textwrap
 
+import matplotlib.font_manager as fm
 from ms_agent.agent import CodeAgent
 from ms_agent.llm import LLM
 from ms_agent.llm.openai_llm import OpenAI
@@ -27,7 +28,6 @@ class CreateBackground(CodeAgent):
         self.slogan = getattr(self.config, 'slogan', [])
 
     def get_font(self, size):
-        import matplotlib.font_manager as fm
         for font_name in self.fonts:
             try:
                 font_path = fm.findfont(fm.FontProperties(family=font_name))

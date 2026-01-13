@@ -1,10 +1,15 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import base64
+import math
 import os
+import shutil
+from copy import deepcopy
 
 import json
 import moviepy as mp
 from moviepy import AudioClip
 from ms_agent.agent import CodeAgent
+from ms_agent.llm import LLM, Message
 from ms_agent.utils import get_logger
 from omegaconf import DictConfig
 from PIL import Image
@@ -24,7 +29,14 @@ class ComposeVideo(CodeAgent):
         self.background_effect = getattr(self.config, 'background_effect',
                                          None)
         self.bg_path = os.path.join(self.work_dir, 'background.png')
-        self.render_dir = os.path.join(self.work_dir, 'manim_render')
+
+        # Determine render directory based on engine
+        engine = getattr(self.config, 'animation_engine', 'manim')
+        if engine == 'remotion':
+            self.render_dir = os.path.join(self.work_dir, 'remotion_render')
+        else:
+            self.render_dir = os.path.join(self.work_dir, 'manim_render')
+
         self.tts_dir = os.path.join(self.work_dir, 'audio')
         self.images_dir = os.path.join(self.work_dir, 'images')
         self.videos_dir = os.path.join(self.work_dir, 'videos')
@@ -32,6 +44,98 @@ class ComposeVideo(CodeAgent):
         self.bitrate = getattr(self.config.video, 'bitrate', '5000k')
         self.preset = getattr(self.config.video, 'preset', 'ultrafast')
         self.fps = getattr(self.config.video, 'fps', 24)
+        self.mllm_check = getattr(
+            self.config, 'mllm_fix_round',
+            0) > 0  # Enable check if checks are configured
+
+    def check_video_quality(self, video_path):
+        """
+        Extracts frames from the final video and runs an MLLM audit for visual defects.
+        """
+        logger.info(f'Starting MLLM Visual Audit on final video: {video_path}')
+
+        # 1. Extract Frames
+        try:
+            clip = mp.VideoFileClip(video_path)
+            duration = clip.duration
+            # Extract 5 evenly spaced frames to catch issues across the video
+            times = [duration * (i / 6) for i in range(1, 6)]
+
+            frame_dir = os.path.join(self.work_dir, 'quality_check_frames')
+            os.makedirs(frame_dir, exist_ok=True)
+
+            frame_paths = []
+            for i, t in enumerate(times):
+                fpath = os.path.join(frame_dir, f'check_frame_{i}.png')
+                clip.save_frame(fpath, t=t)
+                frame_paths.append(fpath)
+
+            clip.close()
+        except Exception as e:
+            logger.warning(f'Failed to extract frames for quality check: {e}')
+            return
+
+        # 2. Prepare MLLM
+        try:
+            _mm_config = deepcopy(self.config)
+            # If config has mllm section, use it
+            if hasattr(_mm_config, 'mllm'):
+                delattr(_mm_config, 'llm')
+                _mm_config.llm = DictConfig({})
+                for key, value in _mm_config.mllm.items():
+                    key = key[len('mllm_'):]
+                    setattr(_mm_config.llm, key, value)
+
+            llm = LLM.from_config(_mm_config)
+
+            # 3. Prompt
+            system_prompt = """**Role**: Quality Assurance Specialist for Final Video Output.
+**Task**: Inspect these 5 frames from the final generated video.
+**Critical Checks**:
+1.  **Text Safe Zone**: Is any text cut off at the edges?
+2.  **Layering**: Are subtitles blocked by images? (Subtitles should be legible).
+3.  **Layout**: detailed overlap between text and images?
+4.  **Glitchs**: Any black frames or rendering artifacts?
+
+**Output**:
+- If Clean: "PASS"
+- If Issues: "FAIL: [Description of issue]"
+"""
+            user_msg_content = [{
+                'type':
+                'text',
+                'text':
+                'Here are 5 frames sampled from the final video. Please audit.'
+            }]
+
+            for p in frame_paths:
+                with open(p, 'rb') as f:
+                    b64 = base64.b64encode(f.read()).decode('utf-8')
+                    user_msg_content.append({
+                        'type': 'image_url',
+                        'image_url': {
+                            'url': f'data:image/png;base64,{b64}'
+                        }
+                    })
+
+            response = llm.generate([
+                Message(role='system', content=system_prompt),
+                Message(role='user', content=user_msg_content)
+            ])
+
+            result = response.content.strip()
+            logger.info(f'MLLM Audit Result: {result}')
+
+            # Save report
+            report_path = os.path.join(self.work_dir, 'quality_report.txt')
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(result)
+
+            # Cleanup
+            shutil.rmtree(frame_dir, ignore_errors=True)
+
+        except Exception as e:
+            logger.warning(f'MLLM Audit failed to run: {e}')
 
     def compose_final_video(self, background_path, foreground_paths,
                             audio_paths, subtitle_paths, illustration_paths,
@@ -461,6 +565,13 @@ class ComposeVideo(CodeAgent):
             test_clip.close()
             if abs(actual_duration - final_video.duration) >= 1.0:
                 raise RuntimeError('Duration not match')
+
+            # --- Added Visual Audit (Report Only) ---
+            # Even though Step 9 does individual checks, this global check ensures
+            # the final composition (subtitles + overlay) is clean.
+            if self.mllm_check:
+                self.check_video_quality(output_path)
+            # --------------------------
 
     async def execute_code(self, messages, **kwargs):
         final_name = 'final_video.mp4'

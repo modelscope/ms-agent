@@ -14,18 +14,25 @@ logger = get_logger()
 
 class GenerateVideoPrompts(CodeAgent):
 
-    system = """You are an expert in creating scene descriptions for video generation. Based on given knowledge points or storyboard scripts, generate detailed English descriptions for creating text-to-video content that aligns with specified themes and styles. Requirements:
+    system = ("""
+You are an expert in creating scene descriptions for video generation. Based on given knowledge points or
+storyboard scripts, generate detailed English descriptions for creating text-to-video content that align with
+specified themes and styles.
 
-- The generated video must depict only one scene, not multiple scenes
-- Video content needs to be clearly dynamic, avoiding static feelings, and should not have stationary characters with only camera movement
-- You need to set appropriate scene changes based on the specified video length
-- Only add clear, readable text in the image when it's truly necessary to express the knowledge point or scene meaning. Do not force the use of any specific words in every scene. If text is not needed, don't include any text.
-- All text in the video must be clear and readable, not distorted, garbled, or random.
-- All elements should be relevant to the theme and the meaning of the current subtitle segment
-- Video panel size is 1920*1080
-- The video needs to accurately reflect the text requirements
-- Output approximately 200 words in English, only output the scene description, do not include style keywords, only use English text in the image when the scene truly requires it.
-- Only return the prompt itself, without adding any other explanations or markers."""  # noqa
+Requirements:
+- The generated video must depict only one scene, not multiple scenes.
+- Video content needs to be clearly dynamic; avoid static feelings or stationary characters with only camera motion.
+- Set appropriate scene changes based on the specified video length.
+- Only add clear, readable text when it is truly necessary to express the knowledge point or scene meaning.
+    Do not force specific words in every scene. If text is not needed, do not include it.
+- All text in the video must be clear and readable and must not be distorted.
+- All elements should be relevant to the theme and the meaning of the current subtitle segment.
+- Video panel size is 1920*1080.
+- The video needs to accurately reflect the text requirements.
+- Output approximately 200 words in English.
+- Return ONLY the prompt description. Do not include style keywords unless requested, and do not add
+    explanations or markers.
+    """)
 
     def __init__(self,
                  config: DictConfig,

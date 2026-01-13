@@ -72,6 +72,9 @@ t2i_num_parallel: 1
 t2v_num_parallel: 1
 llm_num_parallel: 10
 
+# manim or remotion
+animation_engine: remotion
+
 code_fix_round: 5
 mllm_fix_round: 0
 
@@ -80,11 +83,11 @@ video:
   preset: ultrafast
   fps: 24
 
-use_doc_image: true
+use_doc_image: false
 
 use_subtitle: false
 
-use_text2video: true
+use_text2video: false
 
 use_video_soundtrack: false
 
@@ -99,9 +102,9 @@ extra_requirement: |
   1. 文字动画布局工整,采用左右式或者田字格式，多利用横向空间，在屏幕上对称分布，每个分镜有一个title
   2. 不要有截断和动画重叠
   3. 文字颜色和背景有高对比度
-  4. 不要用manim绘制人物或物体，也不要用manim绘制复杂图像，多利用前景图片
+  4. 不要用代码绘制人物或物体，也不要用代码绘制复杂图像，多利用前景图片
   5. 所有分镜背景和前景均使用一种主要配色
-  6. 生成的背景图片中间留空方便展示manim动画，防止前景混乱
+  6. 生成的背景图片中间留空方便展示动画，防止前景混乱
 
 # image/'#fcfbf9'/BLACK/WHITE
 background: image
@@ -117,10 +120,10 @@ video_generator:
   seconds: [4, 8, 12]
 
 image_generator:
-  type: dashscope
-  model: gemini-3-pro-image-preview
+  type: modelscope
+  model: Qwen/Qwen-Image-2512
   api_key:
-  ratio: '16:9'
+  size: '1280x720'
 
 audio_generator:
   type: edge_tts
@@ -128,6 +131,8 @@ audio_generator:
 voice: male
 
 voices:
+  # Only partial Chinese and English voice are provided. If you have more voice requirements, please execute the "edge-tts --list-voices" command to view
+  # Chinese voices - Mandarin
   male:
     voice: zh-CN-YunjianNeural
     rate: '+0%'
@@ -148,14 +153,121 @@ voices:
     rate: '-5%'
     pitch: '-50Hz'
 
+  xiaoyi:
+    voice: zh-CN-XiaoyiNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  yunjie:
+    voice: zh-CN-YunjieNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  yunxi:
+    voice: zh-CN-YunxiNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  yunxia:
+    voice: zh-CN-YunxiaNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  # Chinese voices - Dialect
+  hsiaochen:
+    voice: zh-TW-HsiaoChenNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  yunjhe:
+    voice: zh-TW-YunJheNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  xiaoni:
+    voice: zh-CN-shaanxi-XiaoniNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  xiaobei:
+    voice: zh-CN-liaoning-XiaobeiNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  wanlung:
+    voice: zh-HK-WanLungNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  hiugaai:
+    voice: zh-HK-HiuGaaiNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  # English voices
+  aria:
+    voice: en-US-AriaNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  sonia:
+    voice: en-GB-SoniaNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  guy:
+    voice: en-US-GuyNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  jenny:
+    voice: en-US-JennyNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  natasha:
+    voice: en-AU-NatashaNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  william:
+    voice: en-AU-WilliamMultilingualNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  clara:
+    voice: en-CA-ClaraNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  liam:
+    voice: en-CA-LiamNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  ava:
+    voice: en-US-AvaNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  andrew:
+    voice: en-US-AndrewNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
   emma:
-    voice: en-US-EmmaMultilingualNeural
+    voice: en-US-EmmaNeural
+    rate: '+0%'
+    pitch: '+0Hz'
+
+  ana:
+    voice: en-US-AnaNeural
     rate: '+0%'
     pitch: '+0Hz'
 
 max_chat_round: 20
 
-manim_render_timeout: 120
+animation_render_timeout: 120
 
 output_dir: output_video
 

@@ -35,6 +35,9 @@ class ParseImages(CodeAgent):
             setattr(_config.llm, key, value)
         _config.generation_config = DictConfig({'temperature': 0.3})
         self.mllm: OpenAI = LLM.from_config(_config)
+        logger.info(
+            f"Using MLLM for image parsing: {getattr(self.mllm, 'model', None)}"
+        )
         self.image_dir = os.path.join(self.work_dir, 'images')
         os.makedirs(self.image_dir, exist_ok=True)
 

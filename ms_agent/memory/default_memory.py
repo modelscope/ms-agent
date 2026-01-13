@@ -81,7 +81,7 @@ class DefaultMemory(Memory):
 
     def __init__(self, config: DictConfig):
         super().__init__(config)
-        memory_config = config.default_memory
+        memory_config = config.memory.default_memory
         self.user_id: Optional[str] = getattr(memory_config, 'user_id',
                                               DEFAULT_USER)
         self.agent_id: Optional[str] = getattr(memory_config, 'agent_id', None)
@@ -314,7 +314,6 @@ class DefaultMemory(Memory):
             agent_id = meta_info.get('agent_id', None)
             run_id = meta_info.get('run_id', None)
             limit = meta_info.get('limit', self.search_limit)
-
             relevant_memories = self.memory.search(
                 query,
                 user_id=user_id or self.user_id,
@@ -391,21 +390,36 @@ class DefaultMemory(Memory):
         """
         new_blocks = self._split_into_blocks(messages)
         self.cache_messages = dict(sorted(self.cache_messages.items()))
-
         cache_messages = [(key, value)
                           for key, value in self.cache_messages.items()]
+
         first_unmatched_idx = -1
+
         for idx in range(len(new_blocks)):
             block_hash = self._hash_block(new_blocks[idx])
-            if idx < len(cache_messages) - 1 and str(block_hash) == str(
+
+            # Must allow comparison up to the last cache entry
+            if idx < len(cache_messages) and str(block_hash) == str(
                     cache_messages[idx][1][1]):
                 continue
+
+            # mismatch
             first_unmatched_idx = idx
             break
+
+        # If all new_blocks match but the cache has extra entries → delete the extra cache entries
+        if first_unmatched_idx == -1:
+            should_add_messages = []
+            should_delete = [
+                item[0] for item in cache_messages[len(new_blocks):]
+            ]
+            return should_add_messages, should_delete
+
+        # On mismatch: add all new blocks and delete all cache entries starting from the mismatch index
+        should_add_messages = new_blocks[first_unmatched_idx:]
         should_delete = [
             item[0] for item in cache_messages[first_unmatched_idx:]
-        ] if first_unmatched_idx != -1 else []
-        should_add_messages = new_blocks[first_unmatched_idx:]
+        ]
 
         return should_add_messages, should_delete
 
@@ -440,6 +454,7 @@ class DefaultMemory(Memory):
                     logger.info(item[1])
         if should_add_messages:
             for messages in should_add_messages:
+                messages = self.parse_messages(messages)
                 await self.add_single(
                     messages,
                     user_id=user_id,
@@ -447,6 +462,23 @@ class DefaultMemory(Memory):
                     run_id=run_id,
                     memory_type=memory_type)
         self.save_cache()
+
+    def parse_messages(self, messages: List[Message]) -> List[Message]:
+        new_messages = []
+        for msg in messages:
+            role = getattr(msg, 'role', None)
+            content = getattr(msg, 'content', None)
+
+            if 'system' not in self.ignore_roles and role == 'system':
+                new_messages.append(msg)
+            if role == 'user':
+                new_messages.append(msg)
+            if 'assistant' not in self.ignore_roles and role == 'assistant' and content is not None:
+                new_messages.append(msg)
+            if 'tool' not in self.ignore_roles and role == 'tool':
+                new_messages.append(msg)
+
+        return new_messages
 
     def delete(self,
                user_id: Optional[str] = None,
@@ -484,7 +516,6 @@ class DefaultMemory(Memory):
                 user_id=user_id or self.user_id,
                 agent_id=agent_id,
                 run_id=run_id)
-            print(res['results'])
             return res['results']
         except Exception:
             return []
@@ -558,22 +589,7 @@ class DefaultMemory(Memory):
             )
             raise
 
-        parse_messages_origin = mem0.memory.main.parse_messages
         capture_event_origin = mem0.memory.main.capture_event
-
-        @wraps(parse_messages_origin)
-        def patched_parse_messages(messages, ignore_roles):
-            response = ''
-            for msg in messages:
-                if 'system' not in ignore_roles and msg['role'] == 'system':
-                    response += f"system: {msg['content']}\n"
-                if msg['role'] == 'user':
-                    response += f"user: {msg['content']}\n"
-                if msg['role'] == 'assistant' and msg['content'] is not None:
-                    response += f"assistant: {msg['content']}\n"
-                if 'tool' not in ignore_roles and msg['role'] == 'tool':
-                    response += f"tool: {msg['content']}\n"
-            return response
 
         @wraps(capture_event_origin)
         def patched_capture_event(event_name,
@@ -581,17 +597,12 @@ class DefaultMemory(Memory):
                                   additional_data=None):
             pass
 
-        mem0.memory.main.parse_messages = partial(
-            patched_parse_messages,
-            ignore_roles=self.ignore_roles,
-        )
-
         mem0.memory.main.capture_event = partial(patched_capture_event, )
 
         # emb config
         embedder = None
-        embedder_config = getattr(self.config, 'embedder',
-                                  OmegaConf.create({}))
+        embedder_config = getattr(self.config.memory.default_memory,
+                                  'embedder', OmegaConf.create({}))
         service = getattr(embedder_config, 'service', 'modelscope')
         api_key = getattr(embedder_config, 'api_key', None)
         emb_model = getattr(embedder_config, 'model',
@@ -619,9 +630,11 @@ class DefaultMemory(Memory):
                 service = getattr(llm_config, 'service', 'modelscope')
                 llm_model = getattr(llm_config, 'model',
                                     'Qwen/Qwen3-Coder-30B-A3B-Instruct')
-                api_key = getattr(llm_config, 'api_key', None)
-                openai_base_url = getattr(llm_config, 'openai_base_url', None)
-                max_tokens = getattr(llm_config, 'max_tokens', None)
+                api_key = getattr(llm_config, f'{service}_api_key', None)
+                openai_base_url = getattr(llm_config, f'{service}_base_url',
+                                          None)
+                gen_cfg = getattr(self.config, 'generation_config', None)
+                max_tokens = getattr(gen_cfg, 'max_tokens', None)
 
                 llm = {
                     'provider': 'openai',
@@ -652,8 +665,8 @@ class DefaultMemory(Memory):
                 sanitized = f'col_{sanitized}'
             return sanitized
 
-        vector_store_config = getattr(self.config, 'vector_store',
-                                      OmegaConf.create({}))
+        vector_store_config = getattr(self.config.memory.default_memory,
+                                      'vector_store', OmegaConf.create({}))
         vector_store_provider = getattr(vector_store_config, 'service',
                                         'qdrant')
         on_disk = getattr(vector_store_config, 'on_disk', True)
@@ -705,9 +718,14 @@ class DefaultMemory(Memory):
             mem0_config['llm'] = llm
         logger.info(f'Memory config: {mem0_config}')
         # Prompt content is too long, default logging reduces readability
-        mem0_config['custom_fact_extraction_prompt'] = getattr(
-            self.config, 'fact_retrieval_prompt', get_fact_retrieval_prompt()
-        ) + f'Today\'s date is {datetime.now().strftime("%Y-%m-%d")}.'
+        custom_fact_extraction_prompt = getattr(
+            self.config.memory.default_memory, 'fact_retrieval_prompt',
+            getattr(self.config.memory.default_memory,
+                    'custom_fact_extraction_prompt', None))
+        if custom_fact_extraction_prompt is not None:
+            mem0_config['custom_fact_extraction_prompt'] = (
+                custom_fact_extraction_prompt
+                + f'Today\'s date is {datetime.now().strftime("%Y-%m-%d")}.')
         try:
             memory = mem0.Memory.from_config(mem0_config)
             memory._telemetry_vector_store = None

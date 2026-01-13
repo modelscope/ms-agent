@@ -14,76 +14,92 @@ workflow = """Workflow Overview:
 First, there is a root directory folder for storing all files. All files described below and all your tool commands are based on this root directory. You don't need to worry about the root directory location, just focus on relative directories.
 
 1. Generate basic script based on user requirements, parse all images from files
-    * memory: memory/generate_script.json memory/generate_script.yaml
+    * memory: output_video/.memory/generate_script.json output_video/.memory/generate_script.yaml
     * Input: user requirements, may read user-specified files
-    * Output: script file script.txt, original requirements file topic.txt, video title file title.txt, user doc list file docs.txt
+    * Output: output_video/script.txt, output_video/topic.txt, output_video/title.txt, output_video/docs.txt
 
 2. Parse and download all images from docs.txt
-    * memory: memory/parse_images.json memory/parse_images.yaml
-    * Input: docs.txt
-    * Output: image_info.txt, contains images in user docs filenames, descriptions, sizes
+    * memory: output_video/.memory/parse_images.json output_video/.memory/parse_images.yaml
+    * Input: output_video/docs.txt
+    * Output: output_video/image_info.txt
 
 3. Segment design based on script
-    * memory: memory/segment.json memory/segment.yaml
-    * Input: topic.txt, script.txt
-    * Output: segments.txt, describing a list of shots including narration, background image generation requirements, and foreground Manim animation requirements
-    * Some are video segments, which do not have manim or images, only content and video. Either video, or manim/images
+    * memory: output_video/.memory/segment.json output_video/.memory/segment.yaml
+    * Input: output_video/topic.txt, output_video/script.txt
+    * Output: output_video/segments.txt
 
 4. Generate audio narration for segments
-    * memory: memory/generate_audio.json memory/generate_audio.yaml
-    * Input: segments.txt
-    * Output: list of audio/audio_N.mp3 files, where N is the segment number starting from 1, and audio_info.txt in root directory containing audio duration
+    * memory: output_video/.memory/generate_audio.json output_video/.memory/generate_audio.yaml
+    * Input: output_video/segments.txt
+    * Output: output_video/audio/audio_N.mp3, output_video/audio_info.txt
 
-5. Generate text-to-image prompts
-    * memory: memory/generate_illustration_prompts.json memory/generate_illustration_prompts.yaml
-    * Input: segments.txt
-    * Output: illustration_prompts/segment_N.txt for background images, where N is segment number starting from 1, illustration_prompts/segment_N_foreground_M.txt for forground images, M for foreground image indexes, starting from 1, not every segment has image
+5. Visual Director - Scene Planning
+    * memory: output_video/.memory/visual_director.json
+    * Input: output_video/segments.txt, output_video/audio_info.txt
+    * Output: output_video/visual_plans/plan_N.json
 
-6. Text-to-image generation
-    * memory: memory/generate_images.json memory/generate_images.yaml
-    * Input: list of illustration_prompts/segment_N.txt, list of illustration_prompts/segment_N_foreground_M.txt
-    * Output: list of images/illustration_N.png, where N is segment number starting from 1, illustration_N_foreground_M.png, same M with above, not every segment has image
+6. Generate text-to-image prompts
+    * memory: output_video/.memory/generate_illustration_prompts.json output_video/.memory/generate_illustration_prompts.yaml
+    * Input: output_video/segments.txt
+    * Output: output_video/illustration_prompts/segment_N.txt, output_video/illustration_prompts/segment_N_foreground_M.txt
 
-7. Generate Manim animation code based on audio duration
-    * memory: memory/generate_manim_code.json memory/generate_manim_code.yaml
-    * Input: segments.txt, audio_info.txt, image_info.txt
-    * Output: list of Manim code files manim_code/segment_N.py, where N starts from 1, not every segment has manim
+7. Text-to-image generation
+    * memory: output_video/.memory/generate_images.json output_video/.memory/generate_images.yaml
+    * Input: output_video/illustration_prompts/segment_N.txt
+    * Output: output_video/images/illustration_N.png, output_video/images/illustration_N_foreground_M.png
 
-8. Fix Manim code
-    * memory: memory/fix_manim_code.json memory/fix_manim_code.yaml
-    * Input: manim_code/segment_N.py where N is segment number starting from 1, code_fix/code_fix_N.txt error description files
-    * Output: updated manim_code/segment_N.py files
-    * Note: If Manim animation has issues, you should create code_fix/code_fix_N.txt and pass it to this step for re-execution
+8. Generate Animation code based on audio duration (Manim or Remotion)
+    * memory: output_video/.memory/generate_animation.json
+    * Input: output_video/segments.txt, output_video/audio_info.txt, output_video/image_info.txt, output_video/visual_plans/plan_N.json
+    * Output: output_video/manim_code/segment_N.py or output_video/remotion_code/segment_N.tsx
 
-9. Render Manim code
-    * memory: memory/render_manim.json memory/render_manim.yaml
-    * Input: manim_code/segment_N.py
-    * Output: list of manim_render/scene_N folders. If segments.txt contains Manim requirements for a certain step, the corresponding folder will have a manim.mov file
+9. Fix Animation code
+    * memory: output_video/.memory/fix_animation.json
+    * Input: Animation code files
+    * Output: Fixed code files
+
+10. Render Animation
+    * memory: output_video/.memory/render_animation.json
+    * Input: code files
+    * Output: output_video/manim_render/ or output_video/remotion_render/
+
+11. Generate Video Prompts (for Runaway/Sora etc)
+    * memory: output_video/.memory/generate_video_prompts.json
+
+8. Fix Animation code
+    * memory: output_video/.memory/fix_animation.json
+    * Input: code file, error logs
+    * Output: updated code file
+
+9. Render Animation
+    * memory: output_video/.memory/render_animation.json
+    * Input: code file
+    * Output: output_video/manim_render/ or output_video/remotion_render/ folders
 
 10. Generate text-2-video prompts
-    * memory: memory/generate_video_prompts.json memory/generate_video_prompts.yaml
-    * Input: segments.txt
-    * Output: video_prompts/segment_N.txt, not every segment has video prompt
+    * memory: output_video/.memory/generate_video_prompts.json output_video/.memory/generate_video_prompts.yaml
+    * Input: output_video/segments.txt
+    * Output: output_video/video_prompts/segment_N.txt
 
 11. Generate text-2-video
-    * memory: memory/generate_video.json memory/generate_video.yaml
-    * Input: segments.txt, video_prompts/segment_N.txt
-    * Output: videos/video_N.txt, not every segment has video
+    * memory: output_video/.memory/generate_video.json output_video/.memory/generate_video.yaml
+    * Input: output_video/segments.txt, output_video/video_prompts/segment_N.txt
+    * Output: output_video/videos/video_N.txt
 
 12. Generate subtitles
-    * memory: memory/generate_subtitle.json memory/generate_subtitle.yaml
-    * Input: segments.txt
-    * Output: list of subtitles/bilingual_subtitle_N.png, where N is segment number starting from 1
+    * memory: output_video/.memory/generate_subtitle.json output_video/.memory/generate_subtitle.yaml
+    * Input: output_video/segments.txt
+    * Output: output_video/subtitles/bilingual_subtitle_N.png
 
-13. Create background, a solid color image with video title and slogans
-    * memory: memory/create_background.json memory/create_background.yaml
-    * Input: title.txt
-    * Output: background.jpg
+13. Create background
+    * memory: output_video/.memory/create_background.json output_video/.memory/create_background.yaml
+    * Input: output_video/title.txt
+    * Output: output_video/background.jpg
 
 14. Compose final video
-    * memory: memory/compose_video.json memory/compose_video.yaml
+    * memory: output_video/.memory/compose_video.json output_video/.memory/compose_video.yaml
     * Input: all file information from previous steps
-    * Output: final_video.mp4
+    * Output: output_video/final_video.mp4
 """ # noqa
 
 
@@ -92,6 +108,8 @@ class HumanFeedback(LLMAgent):
 
 
     system = f"""You are an assistant responsible for helping resolve human feedback issues in short video generation. Your role is to identify which workflow step the reported problem occurs in based on human feedback, and appropriately delete configuration files of prerequisite tasks to trigger task re-execution.
+
+CRITICAL: You are a manager, not a worker. DO NOT try to generate audio, images, or video files yourself using file_system tools. Your ONLY method of fixing issues is to DELETE the corresponding memory files (json/yaml) and local asset files so the workflow can regenerate them automatically.
 
 {workflow}
 
@@ -137,7 +155,12 @@ return format:
                  trust_remote_code: bool = False,
                  **kwargs):
         config.save_history = False
-        config.prompt.system = self.system
+
+        # Fix memory path in system prompt
+        output_dir = getattr(config, 'output_dir', 'output')
+        fixed_system = self.system.replace('memory/', f'{output_dir}/.memory/')
+        config.prompt.system = fixed_system
+
         config.tools = DictConfig({
             'file_system': {
                 'mcp': False,
@@ -145,9 +168,9 @@ return format:
                 'exclude': ['list_files']
             }
         })
-        config.memory = ListConfig([])
+        config.memory = DictConfig({})
         super().__init__(config, tag, trust_remote_code, **kwargs)
-        self.work_dir = getattr(self.config, 'output_dir', 'output')
+        self.work_dir = output_dir
         self.split_task = SplitTask(config)
         self._query = ''
         self.need_fix = False
@@ -185,31 +208,48 @@ return format:
             elif not self._query.strip():
                 continue
             else:
-                self.need_fix = True
-                os.remove(os.path.join(self.work_dir, 'final_video.mp4'))
+                # Process feedback with LLM first; only mark for fix if parsed successfully
+                self.need_fix = False
                 messages = await super().run(self._query, **kwargs)
                 response = messages[-1].content
                 if '```json' in response:
-                    response = response.split('```json')[1].split('```')[0]
+                    json_str = response.split('```json')[1].split('```')[0]
                 elif '```' in response:
-                    response = response.split('```')[1].split('```')[0]
-                segments = json.loads(response)
-                inputs = []
-                for segment in segments:
-                    inputs.append({
-                        'system':
-                        self.system,
-                        'query':
-                        f'All issues happens in segment {segment["id"]}: {segment["issue"]}\n'
-                    })
-                await self.split_task.call_tool(
-                    '',
-                    tool_name='',
-                    tool_args={
-                        'tasks': inputs,
-                        'execution_mode': 'parallel'
-                    })
-                return messages
+                    json_str = response.split('```')[1].split('```')[0]
+                else:
+                    json_str = response
+
+                try:
+                    segments = json.loads(json_str)
+                    inputs = []
+                    for segment in segments:
+                        inputs.append({
+                            'system':
+                            self.system,
+                            'query':
+                            f'All issues happens in segment {segment["id"]}: {segment["issue"]}\n'
+                        })
+
+                    # Run split tasks to apply file/memory deletions
+                    await self.split_task.call_tool(
+                        '',
+                        tool_name='',
+                        tool_args={
+                            'tasks': inputs,
+                            'execution_mode': 'parallel'
+                        })
+
+                    # Mark fix needed and safely remove final video to trigger recomposition
+                    self.need_fix = True
+                    final_video_path = os.path.join(self.work_dir,
+                                                    'final_video.mp4')
+                    if os.path.exists(final_video_path):
+                        os.remove(final_video_path)
+                    return messages
+                except json.JSONDecodeError:
+                    # If parsing fails, show assistant content and keep existing video untouched
+                    print(f'\n[Assistant]: {response}\n')
+                    continue
 
     def next_flow(self, idx: int) -> int:
         if self.need_fix:

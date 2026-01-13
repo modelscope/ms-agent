@@ -1,4 +1,5 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import asyncio
 import importlib
 import inspect
 import os.path
@@ -12,7 +13,7 @@ import json
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback, callbacks_mapping
 from ms_agent.llm.llm import LLM
-from ms_agent.llm.utils import Message
+from ms_agent.llm.utils import Message, ToolResult
 from ms_agent.memory import Memory, get_memory_meta_safe, memory_mapping
 from ms_agent.memory.memory_manager import SharedMemoryManager
 from ms_agent.rag.base import RAG
@@ -52,6 +53,10 @@ class LLMAgent(Agent):
     DEFAULT_SYSTEM = 'You are a helpful assistant.'
 
     DEFAULT_MAX_CHAT_ROUND = 20
+
+    TOTAL_PROMPT_TOKENS = 0
+    TOTAL_COMPLETION_TOKENS = 0
+    TOKEN_LOCK = asyncio.Lock()
 
     def __init__(self,
                  config: DictConfig = DictConfig({}),
@@ -243,11 +248,14 @@ class LLMAgent(Agent):
         assert len(tool_call_result) == len(messages[-1].tool_calls)
         for tool_call_result, tool_call_query in zip(tool_call_result,
                                                      messages[-1].tool_calls):
+            tool_call_result_format = ToolResult.from_raw(tool_call_result)
             _new_message = Message(
                 role='tool',
-                content=tool_call_result,
+                content=tool_call_result_format.text,
                 tool_call_id=tool_call_query['id'],
-                name=tool_call_query['tool_name'])
+                name=tool_call_query['tool_name'],
+                resources=tool_call_result_format.resources)
+
             if _new_message.tool_call_id is None:
                 # If tool call id is None, add a random one
                 _new_message.tool_call_id = str(uuid.uuid4())[:8]
@@ -467,9 +475,24 @@ class LLMAgent(Agent):
             messages = await self.parallel_tool_call(messages)
 
         await self.after_tool_call(messages)
+
+        # usage
+        prompt_tokens = _response_message.prompt_tokens
+        completion_tokens = _response_message.completion_tokens
+
+        async with LLMAgent.TOKEN_LOCK:
+            LLMAgent.TOTAL_PROMPT_TOKENS += prompt_tokens
+            LLMAgent.TOTAL_COMPLETION_TOKENS += completion_tokens
+
+        # tokens in the current step
         self.log_output(
-            f'[usage] prompt_tokens: {_response_message.prompt_tokens}, '
-            f'completion_tokens: {_response_message.completion_tokens}')
+            f'[usage] prompt_tokens: {prompt_tokens}, completion_tokens: {completion_tokens}'
+        )
+        # total tokens for the process so far
+        self.log_output(
+            f'[usage_total] total_prompt_tokens: {LLMAgent.TOTAL_PROMPT_TOKENS}, '
+            f'total_completion_tokens: {LLMAgent.TOTAL_COMPLETION_TOKENS}')
+
         yield messages
 
     def prepare_llm(self):
@@ -545,21 +568,22 @@ class LLMAgent(Agent):
         memory_type = memory_type or None
         return user_id, agent_id, run_id, memory_type
 
-    async def add_memory(self, messages: List[Message], **kwargs):
+    async def add_memory(self, messages: List[Message], add_type, **kwargs):
         if hasattr(self.config, 'memory') and self.config.memory:
-            tools_num = len(
-                self.memory_tools
-            ) if self.memory_tools else 0  # Check index bounds before access to avoid IndexError
-            for idx, memory_config in enumerate(self.config.memory):
-                if self.runtime.should_stop:
+            tools_num = len(self.memory_tools) if self.memory_tools else 0
+
+            for idx, (mem_instance_type,
+                      memory_config) in enumerate(self.config.memory.items()):
+                if add_type == 'add_after_task':
                     user_id, agent_id, run_id, memory_type = self._get_run_memory_info(
                         memory_config)
                 else:
                     user_id, agent_id, run_id, memory_type = self._get_step_memory_info(
                         memory_config)
+
                 if idx < tools_num:
-                    if any(value is not None for value in
-                           [user_id, agent_id, run_id, memory_type]):
+                    if any(v is not None
+                           for v in [user_id, agent_id, run_id, memory_type]):
                         await self.memory_tools[idx].add(
                             messages,
                             user_id=user_id,
@@ -631,7 +655,8 @@ class LLMAgent(Agent):
                     yield messages
                 self.runtime.round += 1
                 # save memory and history
-                await self.add_memory(messages, **kwargs)
+                await self.add_memory(
+                    messages, add_type='add_after_step', **kwargs)
                 self.save_history(messages)
 
                 # +1 means the next round the assistant may give a conclusion
@@ -647,11 +672,17 @@ class LLMAgent(Agent):
                     yield messages
 
             # save memory
-            await self.add_memory(messages, **kwargs)
-
             await self.on_task_end(messages)
             await self.cleanup_tools()
             yield messages
+
+            def _add_memory():
+                asyncio.run(
+                    self.add_memory(
+                        messages, add_type='add_after_task', **kwargs))
+
+            loop = asyncio.get_running_loop()
+            loop.run_in_executor(None, _add_memory)
         except Exception as e:
             import traceback
             logger.warning(traceback.format_exc())

@@ -115,6 +115,7 @@ class FixManimCode(CodeAgent):
 - If some issues are difficult to solve, prioritize the most impactful ones
 - Make minimal code changes to fix the issue while keeping the correct parts unchanged
 - The code may contain images & image effects, such as glowing or frames - **don't remove them when making modifications**
+- Do not use SVGMobject("magnifying_glass") or any other built-in SVG names that might not exist. If you need an icon, use a simple geometric shape (like a Circle with a Line handle) or check if an image file is provided.
 
 Please precisely fix the detected issues while maintaining the richness and creativity of the animation.
 """ # noqa

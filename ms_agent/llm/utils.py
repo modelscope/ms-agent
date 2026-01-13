@@ -34,6 +34,7 @@ class Message:
 
     tool_call_id: Optional[str] = None
 
+    # Also defined in OpenAI message
     name: Optional[str] = None
 
     # needed for output
@@ -45,6 +46,9 @@ class Message:
     # continue generation mode
     partial: bool = False
     prefix: bool = False
+
+    # code block
+    resources: List[str] = field(default_factory=list)
 
     # usage
     completion_tokens: int = 0
@@ -78,3 +82,24 @@ class Message:
             for key, value in raw_dict.items()
             if (value or key in required) and key not in rm
         }
+
+
+@dataclass
+class ToolResult:
+    text: str
+    resources: List[str] = field(default_factory=list)
+    extra: dict = field(default_factory=dict)
+
+    @staticmethod
+    def from_raw(raw):
+        if isinstance(raw, str):
+            return ToolResult(text=raw)
+        if isinstance(raw, dict):
+            return ToolResult(
+                text=str(raw.get('text', '')),
+                resources=raw.get('resources', []),
+                extra={
+                    k: v
+                    for k, v in raw.items() if k not in ['text', 'resources']
+                })
+        raise TypeError('tool_call_result must be str or dict')
