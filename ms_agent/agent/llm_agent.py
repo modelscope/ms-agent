@@ -340,7 +340,23 @@ class LLMAgent(Agent):
 
                 shared_memory = await SharedMemoryManager.get_shared_memory(
                     self.config, mem_instance_type)
+
+                ignore_roles = getattr(_memory, 'ignore_roles', [])
+                shared_memory.should_early_add_after_task = (
+                    'assistant' in ignore_roles and 'tool' in ignore_roles)
+                shared_memory.early_add_after_task_done = False
+
                 self.memory_tools.append(shared_memory)
+
+    def _schedule_add_memory_after_task(self, messages, timestamp=None):
+
+        def _add_memory():
+            asyncio.run(
+                self.add_memory(
+                    messages, add_type='add_after_task', timestamp=timestamp))
+
+        loop = asyncio.get_running_loop()
+        loop.run_in_executor(None, _add_memory)
 
     async def prepare_rag(self):
         """Load and initialize the RAG component from the config."""
@@ -430,7 +446,6 @@ class LLMAgent(Agent):
         """
         messages = deepcopy(messages)
         if (not self.load_cache) or messages[-1].role != 'assistant':
-            messages = await self.condense_memory(messages)
             await self.on_generate_response(messages)
             tools = await self.tool_manager.get_tools()
 
@@ -551,26 +566,39 @@ class LLMAgent(Agent):
 
     async def add_memory(self, messages: List[Message], add_type, **kwargs):
         if hasattr(self.config, 'memory') and self.config.memory:
-            tools_num = len(self.memory_tools) if self.memory_tools else 0
-
-            for idx, (mem_instance_type,
-                      memory_config) in enumerate(self.config.memory.items()):
+            for tool, (_, memory_config) in zip(self.memory_tools,
+                                                self.config.memory.items()):
+                timestamp = kwargs.get('timestamp', '')
                 if add_type == 'add_after_task':
                     user_id, agent_id, run_id, memory_type = self._get_run_memory_info(
                         memory_config)
+                    should_early = getattr(tool, 'should_early_add_after_task',
+                                           False)
+                    early_done = getattr(tool, 'early_add_after_task_done',
+                                         False)
+
+                    if timestamp == 'early':
+                        if not (should_early and not early_done):
+                            # pass memory tool.run
+                            continue
+                        tool.early_add_after_task_done = True
+                    else:
+                        if early_done:
+                            # pass memory tool.run
+                            continue
+
                 else:
                     user_id, agent_id, run_id, memory_type = self._get_step_memory_info(
                         memory_config)
 
-                if idx < tools_num:
-                    if any(v is not None
-                           for v in [user_id, agent_id, run_id, memory_type]):
-                        await self.memory_tools[idx].add(
-                            messages,
-                            user_id=user_id,
-                            agent_id=agent_id,
-                            run_id=run_id,
-                            memory_type=memory_type)
+                if not any([user_id, agent_id, run_id, memory_type]):
+                    continue
+                await tool.add(
+                    messages,
+                    user_id=user_id,
+                    agent_id=agent_id,
+                    run_id=run_id,
+                    memory_type=memory_type)
 
     def save_history(self, messages: List[Message], **kwargs):
         """
@@ -632,6 +660,10 @@ class LLMAgent(Agent):
                     self.log_output('[' + message.role + ']:')
                     self.log_output(message.content)
             while not self.runtime.should_stop:
+                messages = await self.condense_memory(messages)
+                # If assistant and tool content can be ignored, add memory earlier to reduce running time.
+                self._schedule_add_memory_after_task(
+                    messages, timestamp='early')
                 async for messages in self.step(messages):
                     yield messages
                 self.runtime.round += 1
@@ -657,13 +689,8 @@ class LLMAgent(Agent):
             await self.cleanup_tools()
             yield messages
 
-            def _add_memory():
-                asyncio.run(
-                    self.add_memory(
-                        messages, add_type='add_after_task', **kwargs))
+            self._schedule_add_memory_after_task(messages)
 
-            loop = asyncio.get_running_loop()
-            loop.run_in_executor(None, _add_memory)
         except Exception as e:
             import traceback
             logger.warning(traceback.format_exc())
