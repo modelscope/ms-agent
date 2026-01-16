@@ -2,7 +2,6 @@
 import re
 from typing import Any, Dict, List, Optional
 
-import pandas as pd
 from ms_agent.tools.findata.data_source_base import (DataSourceError,
                                                      FinancialDataSource,
                                                      NoDataFoundError)
@@ -67,8 +66,8 @@ class AKShareDataSource(FinancialDataSource):
         """Convert date to AKShare format"""
         return date.replace('-', '')
 
-    def _standardize_columns(self, df: pd.DataFrame,
-                             code: str) -> pd.DataFrame:
+    def _standardize_columns(self, df: 'pandas.DataFrame',
+                             code: str) -> 'pandas.DataFrame':
         """Standardize column names for compatibility with BaoStock format"""
         if df.empty:
             return df
@@ -112,7 +111,7 @@ class AKShareDataSource(FinancialDataSource):
         frequency: str = 'd',
         adjust_flag: str = '3',
         fields: Optional[List[str]] = None,
-    ) -> pd.DataFrame:
+    ) -> 'pandas.DataFrame':
         """Get historical K-line data"""
         logger.info(f'Fetching K-data for {code} ({start_date} to {end_date})')
 
@@ -186,7 +185,7 @@ class AKShareDataSource(FinancialDataSource):
         except Exception as e:
             raise DataSourceError(f'Failed to fetch K-data: {e}')
 
-    def get_stock_basic_info(self, code: str) -> pd.DataFrame:
+    def get_stock_basic_info(self, code: str) -> 'pandas.DataFrame':
         """Get stock basic information"""
         logger.info(f'Fetching basic info for {code}')
 
@@ -205,8 +204,10 @@ class AKShareDataSource(FinancialDataSource):
             # Only wrap unexpected errors
             raise DataSourceError(f'Failed to fetch basic info: {e}')
 
-    def _get_hk_basic_info(self, code: str) -> pd.DataFrame:
+    def _get_hk_basic_info(self, code: str) -> 'pandas.DataFrame':
         """Get HK stock basic information"""
+        import pandas as pd
+
         clean_code = self._convert_code(code, market='HK')
         df_stock_info = pd.DataFrame()
         df_business_info = pd.DataFrame()
@@ -260,8 +261,9 @@ class AKShareDataSource(FinancialDataSource):
 
         return pd.concat([df_stock_info, df_business_info], axis=1)
 
-    def _get_us_basic_info(self, code: str) -> pd.DataFrame:
+    def _get_us_basic_info(self, code: str) -> 'pandas.DataFrame':
         """Get US stock basic information"""
+        import pandas as pd
         symbol = self._convert_code(code, 'US')
 
         try:
@@ -287,8 +289,9 @@ class AKShareDataSource(FinancialDataSource):
             raise DataSourceError(
                 f'Error fetching US stock basic info for {code}: {e}')
 
-    def _get_a_share_basic_info(self, code: str) -> pd.DataFrame:
+    def _get_a_share_basic_info(self, code: str) -> 'pandas.DataFrame':
         """Get A-share stock basic information"""
+        import pandas as pd
         clean_code = self._convert_code(code, 'A')
 
         try:
@@ -338,14 +341,14 @@ class AKShareDataSource(FinancialDataSource):
     def get_dividend_data(self,
                           code: str,
                           year: Optional[str] = None,
-                          year_type: str = 'report') -> pd.DataFrame:
+                          year_type: str = 'report') -> 'pandas.DataFrame':
         """Dividend info is not provided via a unified endpoint across markets in AKShare."""
         raise DataSourceError(
             'get_dividend_data is not supported by AKShareDataSource; use BaoStock or Hybrid'
         )
 
     def get_adjust_factor_data(self, code: str, start_date: str,
-                               end_date: str) -> pd.DataFrame:
+                               end_date: str) -> 'pandas.DataFrame':
         """Adjust factor via AKShare varies by function; not standardized here."""
         raise DataSourceError(
             'get_adjust_factor_data is not supported by AKShareDataSource; use BaoStock or Hybrid'
@@ -359,6 +362,7 @@ class AKShareDataSource(FinancialDataSource):
         logger.info(
             f'Fetching financial data for {code} ({year}Q{quarter}) {data_types}'
         )
+        import pandas as pd
 
         if code.startswith(('hk.', 'us.')):
             logger.warning(
@@ -554,17 +558,18 @@ class AKShareDataSource(FinancialDataSource):
 
         return result
 
-    def get_report(self,
-                   code: str,
-                   start_date: str,
-                   end_date: str,
-                   report_type: str = 'performance_express') -> pd.DataFrame:
+    def get_report(
+            self,
+            code: str,
+            start_date: str,
+            end_date: str,
+            report_type: str = 'performance_express') -> 'pandas.DataFrame':
         """Report data is not supported by AKShare."""
         raise DataSourceError(
             'get_report is not supported by AKShareDataSource; use BaoStock or Hybrid'
         )
 
-    def get_stock_industry(self, code: str, date: str) -> pd.DataFrame:
+    def get_stock_industry(self, code: str, date: str) -> 'pandas.DataFrame':
         """Industry classification is not supported by AKShare."""
         raise DataSourceError(
             'get_stock_industry is not supported by AKShareDataSource; use BaoStock or Hybrid'
@@ -572,7 +577,7 @@ class AKShareDataSource(FinancialDataSource):
 
     def get_stock_list(self,
                        date: str,
-                       data_type: str = 'all_a_share') -> pd.DataFrame:
+                       data_type: str = 'all_a_share') -> 'pandas.DataFrame':
         """Get stock list (A-shares only, index constituents not supported)."""
         logger.info(
             f'Fetching stock list for {data_type}, only support a_share and latest data'
@@ -598,7 +603,7 @@ class AKShareDataSource(FinancialDataSource):
 
     def get_trade_dates(self,
                         start_date: Optional[str] = None,
-                        end_date: Optional[str] = None) -> pd.DataFrame:
+                        end_date: Optional[str] = None) -> 'pandas.DataFrame':
         """Get trading calendar"""
         logger.info(f'Fetching trade dates ({start_date} to {end_date})')
 
@@ -624,9 +629,10 @@ class AKShareDataSource(FinancialDataSource):
         start_date: str,
         end_date: str,
         data_types: Optional[List[str]] = None,
-        extra_kwargs: Optional[Dict[str,
-                                    Any]] = None) -> Dict[str, pd.DataFrame]:
+        extra_kwargs: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, 'pandas.DataFrame']:
         """Macroeconomic data."""
+        import pandas as pd
         if data_types is None:
             data_types = []
         if extra_kwargs is None:
@@ -669,7 +675,8 @@ class AKShareDataSource(FinancialDataSource):
     def _get_money_supply_data_month(
             self,
             start_date: Optional[str] = None,
-            end_date: Optional[str] = None) -> pd.DataFrame:
+            end_date: Optional[str] = None) -> 'pandas.DataFrame':
+        import pandas as pd
         try:
             df = akshare.macro_china_money_supply()  # from 2008-01 to now
             df['月份'] = pd.to_datetime(df['月份'].str.replace('月份',
@@ -690,7 +697,8 @@ class AKShareDataSource(FinancialDataSource):
     def _get_money_supply_data_year(
             self,
             start_date: Optional[str] = None,
-            end_date: Optional[str] = None) -> pd.DataFrame:
+            end_date: Optional[str] = None) -> 'pandas.DataFrame':
+        import pandas as pd
         month_df = self._get_money_supply_data_month()
         # Take the last issue of each year (usually December; if missing, take the last available entry of that year).
         month_df['年'] = month_df['月份'].dt.year
