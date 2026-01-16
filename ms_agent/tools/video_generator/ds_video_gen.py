@@ -2,6 +2,7 @@ import asyncio
 import os
 import uuid
 
+import aiohttp
 from ms_agent.utils import get_logger
 
 logger = get_logger()
@@ -33,7 +34,6 @@ class DSVideoGenerator:
 
     @staticmethod
     async def download_video(video_url, output_file):
-        import aiohttp
         max_retries = 3
         retry_count = 0
 
@@ -57,7 +57,6 @@ class DSVideoGenerator:
 
     @staticmethod
     async def _generate_video(base_url, api_key, model, prompt, size, seconds):
-        import aiohttp
         base_url = base_url.strip('/')
         create_endpoint = '/api/v1/services/aigc/model-evaluation/async-inference/'
 
