@@ -50,10 +50,10 @@ const LogViewer: React.FC<LogViewerProps> = ({ logs, onClear }) => {
   };
 
   const handleDownload = () => {
-    const content = logs.map((log) => 
+    const content = logs.map((log) =>
       `[${log.timestamp}] [${log.level.toUpperCase()}] ${log.message}`
     ).join('\n');
-    
+
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -86,13 +86,13 @@ const LogViewer: React.FC<LogViewerProps> = ({ logs, onClear }) => {
         <Typography variant="subtitle2" sx={{ flex: 1, fontWeight: 600 }}>
           Logs
         </Typography>
-        
+
         <Tooltip title="Download Logs">
           <IconButton size="small" onClick={handleDownload}>
             <DownloadIcon fontSize="small" />
           </IconButton>
         </Tooltip>
-        
+
         {onClear && (
           <Tooltip title="Clear Logs">
             <IconButton size="small" onClick={onClear}>
@@ -119,7 +119,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ logs, onClear }) => {
             ),
           }}
         />
-        
+
         <Box sx={{ display: 'flex', gap: 0.5 }}>
           {['info', 'warning', 'error', 'debug'].map((level) => (
             <Chip

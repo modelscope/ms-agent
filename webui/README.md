@@ -52,7 +52,7 @@ def _analyze_project(self, name: str, path: str):
     workflow_file = os.path.join(path, 'workflow.yaml')
     agent_file = os.path.join(path, 'agent.yaml')
     run_file = os.path.join(path, 'run.py')
-    
+
     if os.path.exists(workflow_file):
         project_type = 'workflow'      # 工作流项目
         config_file = workflow_file
@@ -79,7 +79,7 @@ def _analyze_project(self, name: str, path: str):
 @router.websocket("/session/{session_id}")
 async def websocket_session(websocket: WebSocket, session_id: str):
     await connection_manager.connect(websocket, session_id)
-    
+
     try:
         while True:
             data = await websocket.receive_json()
@@ -104,10 +104,10 @@ async def websocket_session(websocket: WebSocket, session_id: str):
 async def start_agent(session_id: str, data: Dict[str, Any], websocket: WebSocket):
     # 1. 获取会话信息
     session = session_manager.get_session(session_id)
-    
+
     # 2. 获取项目信息
     project = project_discovery.get_project(session['project_id'])
-    
+
     # 3. 创建AgentRunner
     runner = AgentRunner(
         session_id=session_id,
@@ -119,7 +119,7 @@ async def start_agent(session_id: str, data: Dict[str, Any], websocket: WebSocke
         on_complete=lambda result: asyncio.create_task(on_agent_complete(session_id, result)),
         on_error=lambda err: asyncio.create_task(on_agent_error(session_id, err))
     )
-    
+
     # 4. 启动代理
     task = asyncio.create_task(runner.start(data.get('query', '')))
 ```
@@ -134,7 +134,7 @@ async def start_agent(session_id: str, data: Dict[str, Any], websocket: WebSocke
 def _build_command(self, query: str) -> list:
     project_type = self.project.get('type')
     config_file = self.project.get('config_file', '')
-    
+
     if project_type == 'workflow' or project_type == 'agent':
         # workflow/agent类型：使用ms-agent CLI
         cmd = [
@@ -142,15 +142,15 @@ def _build_command(self, query: str) -> list:
             '--config', config_file,           # workflow.yaml 或 agent.yaml
             '--trust_remote_code', 'true'
         ]
-        
+
         if query:
             cmd.extend(['--query', query])
-        
+
         # 添加MCP服务器配置
         mcp_file = self.config_manager.get_mcp_file_path()
         if os.path.exists(mcp_file):
             cmd.extend(['--mcp_server_file', mcp_file])
-        
+
         # 添加LLM配置
         llm_config = self.config_manager.get_llm_config()
         if llm_config.get('api_key'):
@@ -159,11 +159,11 @@ def _build_command(self, query: str) -> list:
                 cmd.extend(['--modelscope_api_key', llm_config['api_key']])
             elif provider == 'openai':
                 cmd.extend(['--openai_api_key', llm_config['api_key']])
-    
+
     elif project_type == 'script':
         # script类型：直接运行Python脚本
         cmd = [python, self.project['config_file']]  # run.py
-    
+
     return cmd
 ```
 

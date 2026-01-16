@@ -143,7 +143,7 @@ if [ "$MODE" = "dev" ]; then
     npm run dev &
     FRONTEND_PID=$!
     cd "$SCRIPT_DIR"
-    
+
     echo -e "\n${GREEN}✓ Development servers are running!${NC}"
     echo -e "  Backend:  ${BLUE}http://localhost:$PORT${NC}"
     echo -e "  Frontend: ${BLUE}http://localhost:5173${NC}"

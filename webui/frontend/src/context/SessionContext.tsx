@@ -125,7 +125,7 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ project_id: projectId }),
       });
-      
+
       if (response.ok) {
         const session = await response.json();
         setSessions(prev => [...prev, session]);
@@ -149,14 +149,14 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
 
     const socket = new WebSocket(`${WS_BASE}/session/${sessionId}`);
-    
+
     socket.onopen = () => {
       console.log('WebSocket connected');
       // Send pending query if exists
       if (pendingQueryRef.current && socket.readyState === WebSocket.OPEN) {
         const query = pendingQueryRef.current;
         pendingQueryRef.current = null;
-        
+
         // Add user message locally
         setMessages(prev => [...prev, {
           id: Date.now().toString(),
@@ -165,36 +165,36 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
           type: 'text',
           timestamp: new Date().toISOString(),
         }]);
-        
+
         socket.send(JSON.stringify({
           action: 'start',
           query: query,
         }));
-        
+
         setIsLoading(true);
       }
     };
-    
+
     socket.onmessage = (event) => {
       const data = JSON.parse(event.data);
       handleWebSocketMessage(data);
     };
-    
+
     socket.onclose = () => {
       console.log('WebSocket disconnected');
     };
-    
+
     socket.onerror = (error) => {
       console.error('WebSocket error:', error);
     };
-    
+
     setWs(socket);
   }, [ws]);
 
   // Handle WebSocket messages
   const handleWebSocketMessage = useCallback((data: Record<string, unknown>) => {
     const type = data.type as string;
-    
+
     switch (type) {
       case 'message':
         setMessages(prev => [...prev, {
@@ -206,7 +206,7 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
           metadata: data.metadata as Record<string, unknown>,
         }]);
         break;
-        
+
       case 'stream':
         setStreamingContent(data.content as string);
         setIsStreaming(!data.done);
@@ -221,7 +221,7 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
           setStreamingContent('');
         }
         break;
-        
+
       case 'log':
         setLogs(prev => [...prev, {
           level: data.level as LogEntry['level'],
@@ -230,11 +230,11 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
           session_id: currentSession?.id,
         }]);
         break;
-        
+
       case 'progress':
         setCurrentSession(prev => {
           if (!prev) return prev;
-          
+
           const progressType = data.type as string;
           if (progressType === 'workflow') {
             return {
@@ -258,7 +258,7 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
           return prev;
         });
         break;
-        
+
       case 'status':
         {
           const nextStatus = (data.status as Session['status'] | undefined) ?? ((data as any)?.session?.status as Session['status'] | undefined);
@@ -279,7 +279,7 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
           }
         }
         break;
-        
+
       case 'complete':
         setCurrentSession(prev => {
           if (!prev) return prev;
@@ -288,7 +288,7 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
         setSessions(prev => prev.map(s => (s.id === currentSession?.id ? { ...s, status: 'completed' } : s)));
         setIsLoading(false);
         break;
-        
+
       case 'error':
         setCurrentSession(prev => {
           if (!prev) return prev;
@@ -326,7 +326,7 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
   // Send message
   const sendMessage = useCallback((content: string) => {
     if (!currentSession || !ws || ws.readyState !== WebSocket.OPEN) return;
-    
+
     // Add user message locally
     setMessages(prev => [...prev, {
       id: Date.now().toString(),
@@ -335,13 +335,13 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
       type: 'text',
       timestamp: new Date().toISOString(),
     }]);
-    
+
     // Send to server
     ws.send(JSON.stringify({
       action: 'start',
       query: content,
     }));
-    
+
     setIsLoading(true);
   }, [currentSession, ws]);
 
@@ -350,7 +350,7 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ action: 'stop' }));
     }
-    
+
     // Optimistic UI update: reflect stop immediately without waiting for backend
     setCurrentSession(prev => {
       if (!prev) return prev;

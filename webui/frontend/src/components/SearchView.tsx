@@ -48,7 +48,7 @@ const SearchView: React.FC = () => {
 
   const handleSubmit = useCallback(async () => {
     if (!selectedProject || !query.trim()) return;
-    
+
     console.log('[SearchView] Submitting with project:', selectedProject.id, 'query:', query);
     setIsSubmitting(true);
     try {
@@ -194,7 +194,7 @@ const SearchView: React.FC = () => {
               ),
             }}
           />
-          
+
           {/* Selected Project Badge */}
           <AnimatePresence>
             {selectedProject && (
@@ -243,7 +243,7 @@ const SearchView: React.FC = () => {
         >
           Select a Project
         </Typography>
-        
+
         <Grid container spacing={2} justifyContent="center">
           {projects.map((project, index) => (
             <Grid item xs={12} sm={6} md={4} key={project.id}>
@@ -310,13 +310,13 @@ const SearchView: React.FC = () => {
                             height: 20,
                             fontSize: '0.65rem',
                             backgroundColor: alpha(
-                              project.type === 'workflow' 
-                                ? theme.palette.info.main 
+                              project.type === 'workflow'
+                                ? theme.palette.info.main
                                 : theme.palette.success.main,
                               0.1
                             ),
-                            color: project.type === 'workflow' 
-                              ? theme.palette.info.main 
+                            color: project.type === 'workflow'
+                              ? theme.palette.info.main
                               : theme.palette.success.main,
                           }}
                         />

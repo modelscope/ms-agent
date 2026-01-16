@@ -16,7 +16,7 @@ const MessageContent: React.FC<MessageContentProps> = ({ content }) => {
     code({ node, inline, className, children, ...props }: any) {
       const match = /language-(\w+)/.exec(className || '');
       const language = match ? match[1] : '';
-      
+
       if (!inline && language) {
         return (
           <Box sx={{ my: 1.5, borderRadius: 2, overflow: 'hidden' }}>

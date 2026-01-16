@@ -29,19 +29,19 @@ const App: React.FC = () => {
           {!currentSession ? (
             <SearchView key="search" />
           ) : (
-            <ConversationView 
-              key="conversation" 
+            <ConversationView
+              key="conversation"
               showLogs={showLogs}
             />
           )}
         </AnimatePresence>
       </Box>
-      
+
       {showSettings && (
         <React.Suspense fallback={null}>
           <SettingsDialogLazy
-            open={showSettings} 
-            onClose={() => setShowSettings(false)} 
+            open={showSettings}
+            onClose={() => setShowSettings(false)}
           />
         </React.Suspense>
       )}

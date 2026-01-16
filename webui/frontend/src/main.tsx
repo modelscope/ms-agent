@@ -7,7 +7,7 @@ import { SessionProvider } from './context/SessionContext'
 
 const ThemedApp: React.FC = () => {
   const { theme } = useThemeContext();
-  
+
   return (
     <MuiThemeProvider theme={theme}>
       <CssBaseline />

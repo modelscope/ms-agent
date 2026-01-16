@@ -12,7 +12,7 @@ const FileProgress: React.FC<FileProgressProps> = ({ progress }) => {
   const theme = useTheme();
   const { file, status } = progress;
   const isWriting = status === 'writing';
-  
+
   // Extract filename from path
   const filename = file.split('/').pop() || file;
 

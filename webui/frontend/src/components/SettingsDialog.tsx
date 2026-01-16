@@ -92,12 +92,12 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
         fetch('/api/config/llm'),
         fetch('/api/config/mcp'),
       ]);
-      
+
       if (llmRes.ok) {
         const data = await llmRes.json();
         setLlmConfig(data);
       }
-      
+
       if (mcpRes.ok) {
         const data = await mcpRes.json();
         setMcpServers(data.mcpServers || {});
@@ -115,13 +115,13 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(llmConfig),
       });
-      
+
       const mcpRes = await fetch('/api/config/mcp', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mcpServers: mcpServers }),
       });
-      
+
       if (llmRes.ok && mcpRes.ok) {
         setSaveStatus('saved');
         setTimeout(() => setSaveStatus('idle'), 2000);
@@ -135,7 +135,7 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
 
   const handleAddMCPServer = () => {
     if (!newServerName.trim()) return;
-    
+
     setMcpServers((prev) => ({
       ...prev,
       [newServerName]: { type: 'sse', url: '' },
@@ -193,9 +193,9 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
           <CloseIcon />
         </IconButton>
       </DialogTitle>
-      
+
       <Divider />
-      
+
       <DialogContent sx={{ minHeight: 400 }}>
         <Tabs
           value={tabValue}
@@ -308,7 +308,7 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
             <Alert severity="info" sx={{ mb: 1 }}>
               Configure MCP (Model Context Protocol) servers to extend agent capabilities with additional tools.
             </Alert>
-            
+
             {/* Add new server */}
             <Box sx={{ display: 'flex', gap: 1 }}>
               <TextField
@@ -410,9 +410,9 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
           </Box>
         </TabPanel>
       </DialogContent>
-      
+
       <Divider />
-      
+
       <DialogActions sx={{ p: 2, gap: 1 }}>
         {saveStatus === 'saved' && (
           <Chip label="Saved!" color="success" size="small" />

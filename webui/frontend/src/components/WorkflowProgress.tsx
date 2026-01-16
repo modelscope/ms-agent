@@ -11,7 +11,7 @@ interface WorkflowProgressProps {
 const WorkflowProgress: React.FC<WorkflowProgressProps> = ({ progress }) => {
   const theme = useTheme();
   const { steps, step_status } = progress;
-  
+
   // Calculate progress based on completed steps
   const completedCount = steps.filter(s => step_status[s] === 'completed').length;
   const runningCount = steps.filter(s => step_status[s] === 'running').length;
@@ -22,13 +22,13 @@ const WorkflowProgress: React.FC<WorkflowProgressProps> = ({ progress }) => {
       <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
         Workflow:
       </Typography>
-      
+
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
         {steps.map((step, index) => {
           const status = step_status[step] || 'pending';
           const isCompleted = status === 'completed';
           const isCurrent = status === 'running';
-          
+
           return (
             <motion.div
               key={step}
@@ -63,7 +63,7 @@ const WorkflowProgress: React.FC<WorkflowProgressProps> = ({ progress }) => {
           );
         })}
       </Box>
-      
+
       <Box sx={{ width: 100, ml: 1 }}>
         <LinearProgress
           variant="determinate"

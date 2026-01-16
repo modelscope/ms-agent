@@ -204,26 +204,26 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
               currentSession?.status === 'completed' ? 'success' :
               currentSession?.status === 'error' ? 'error' : 'default'
             }
-            sx={{ 
+            sx={{
               textTransform: 'capitalize',
               borderRadius: '8px',
               '& .MuiChip-icon': { ml: 0.5 },
             }}
           />
         </Box>
-        
+
         {/* Workflow Progress */}
         {currentSession?.workflow_progress && (
           <Box sx={{ flex: 1, minWidth: 200 }}>
             <WorkflowProgress progress={currentSession.workflow_progress} />
           </Box>
         )}
-        
+
         {/* File Progress */}
         {currentSession?.file_progress && (
           <FileProgress progress={currentSession.file_progress} />
         )}
-        
+
         {/* View Output Files Button */}
         <Tooltip title="View generated files">
           <Chip
@@ -265,7 +265,7 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
         <DialogContent sx={{ p: 0, display: 'flex' }}>
           {/* File Tree */}
           <Box sx={{ width: 280, borderRight: `1px solid ${theme.palette.divider}`, overflowY: 'auto', maxHeight: '60vh' }}>
-            <FileTreeView 
+            <FileTreeView
               tree={outputTree}
               path=""
               expandedFolders={expandedFolders}
@@ -346,7 +346,7 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
                   completedSteps={completedSteps}
                 />
               ))}
-              
+
               {/* Streaming Content */}
               {isStreaming && streamingContent && (
                 <motion.div
@@ -367,16 +367,16 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
                   />
                 </motion.div>
               )}
-              
+
               {/* Loading Indicator */}
               {isLoading && !isStreaming && messages.length > 0 && (() => {
                 // Find current running step
                 const runningSteps = messages.filter(m => m.type === 'step_start');
                 const completedSteps = messages.filter(m => m.type === 'step_complete');
-                const currentStep = runningSteps.length > completedSteps.length 
+                const currentStep = runningSteps.length > completedSteps.length
                   ? runningSteps[runningSteps.length - 1]?.content?.replace(/_/g, ' ')
                   : null;
-                
+
                 return (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
@@ -546,7 +546,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreaming, ses
 
   // Skip empty messages
   if (!message.content?.trim()) return null;
-  
+
   // Skip old format system messages
   if (isSystem && message.content.startsWith('Starting step:')) return null;
   if (isSystem && message.content.startsWith('Completed step:')) return null;
@@ -566,7 +566,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreaming, ses
       : isStopped
       ? theme.palette.warning.main
       : theme.palette.info.main;
-    
+
     return (
       <motion.div
         initial={{ opacity: 0, x: -20 }}
@@ -704,7 +704,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreaming, ses
           }}
         >
           <MessageContent content={message.content} />
-          
+
           {isStreaming && (
             <Box
               component="span"
@@ -757,7 +757,7 @@ const FileTreeView: React.FC<FileTreeViewProps> = ({
     return stripped.length > 0 ? stripped : name;
   };
   const hasContent = Object.keys(tree.folders).length > 0 || tree.files.length > 0;
-  
+
   if (!hasContent && depth === 0) {
     return (
       <Box sx={{ p: 3, textAlign: 'center' }}>
@@ -765,14 +765,14 @@ const FileTreeView: React.FC<FileTreeViewProps> = ({
       </Box>
     );
   }
-  
+
   return (
     <>
       {/* Folders */}
       {Object.entries(tree.folders).map(([folderName, subtree]) => {
         const folderPath = path ? `${path}/${folderName}` : folderName;
         const isExpanded = expandedFolders.has(folderPath);
-        
+
         return (
           <Box key={folderPath}>
             <Box
@@ -816,7 +816,7 @@ const FileTreeView: React.FC<FileTreeViewProps> = ({
           </Box>
         );
       })}
-      
+
       {/* Files */}
       {tree.files.map((file) => (
         <Box
@@ -873,19 +873,19 @@ const FileOutputChip: React.FC<{ filename: string }> = ({ filename }) => {
     setDialogOpen(true);
     setFileLoading(true);
     setFileError(null);
-    
+
     try {
       const response = await fetch('/api/files/read', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: filename }),
       });
-      
+
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.detail || 'Failed to load file');
       }
-      
+
       const data = await response.json();
       setFileContent(data.content);
       setFileLang(data.language || 'text');
@@ -934,7 +934,7 @@ const FileOutputChip: React.FC<{ filename: string }> = ({ filename }) => {
           </Typography>
         </Box>
       </motion.div>
-      
+
       {/* File Viewer Dialog */}
       <Dialog
         open={dialogOpen}

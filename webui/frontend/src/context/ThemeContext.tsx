@@ -92,7 +92,7 @@ const lightPalette = {
 
 const createAppTheme = (mode: PaletteMode): Theme => {
   const palette = mode === 'dark' ? darkPalette : lightPalette;
-  
+
   return createTheme({
     palette: {
       mode,
@@ -176,7 +176,7 @@ const createAppTheme = (mode: PaletteMode): Theme => {
             backgroundImage: 'none',
           },
           elevation1: {
-            boxShadow: mode === 'dark' 
+            boxShadow: mode === 'dark'
               ? '0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2)'
               : '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)',
           },
@@ -256,15 +256,15 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const stored = localStorage.getItem('theme-mode');
     return (stored as PaletteMode) || 'dark';
   });
-  
+
   const theme = useMemo(() => createAppTheme(mode), [mode]);
-  
+
   const toggleTheme = () => {
     const newMode = mode === 'dark' ? 'light' : 'dark';
     setMode(newMode);
     localStorage.setItem('theme-mode', newMode);
   };
-  
+
   return (
     <ThemeContext.Provider value={{ mode, theme, toggleTheme }}>
       {children}
