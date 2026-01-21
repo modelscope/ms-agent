@@ -4,22 +4,25 @@
 
 ## 安装
 
-1. 克隆代码
-```shell
-git clone https://github.com/modelscope/ms-agent.git
-cd ms-agent
-```
+这个项目需要 Python 和 Node.js 环境。
 
-2. 安装依赖
-```shell
-pip install .
-cd projects/singularity_cinema
-pip install -r requirements.txt
-```
+1. **环境准备**
+   - **Python**: 版本需要 >= 3.10。建议使用 [Conda](https://docs.conda.io/projects/conda/en/stable/user-guide/install/index.html) 创建虚拟环境。
+   - **Node.js**: 如果你使用默认的 Remotion 引擎生成视频，必须安装 [Node.js](https://nodejs.org/) (建议版本 >= 16)。
+   - **FFmpeg**: 安装 [ffmpeg](https://www.ffmpeg.org/download.html#build-windows) 并加入环境变量。
 
-安装[ffmpeg](https://www.ffmpeg.org/download.html#build-windows).
+2. **获取代码**
+   ```shell
+   git clone https://github.com/modelscope/ms-agent.git
+   cd ms-agent
+   ```
 
-在执行上面的安装命令之前，请确保你的Python>=3.10。安装Python可以参考[Conda](https://docs.conda.io/projects/conda/en/stable/user-guide/install/index.html)
+3. **安装 Python 依赖**
+   ```shell
+   pip install .
+   cd projects/singularity_cinema
+   pip install -r requirements.txt
+   ```
 
 ## 适配性和局限性
 

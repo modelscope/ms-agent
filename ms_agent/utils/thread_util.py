@@ -1,4 +1,4 @@
-# Copyright (c) Alibaba, Inc. and its affiliates.
+# Copyright (c) ModelScope Contributors. All rights reserved.
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import wraps

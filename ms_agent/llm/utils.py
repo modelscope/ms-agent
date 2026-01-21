@@ -1,4 +1,4 @@
-# Copyright (c) Alibaba, Inc. and its affiliates.
+# Copyright (c) ModelScope Contributors. All rights reserved.
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Union
 
@@ -34,6 +34,7 @@ class Message:
 
     tool_call_id: Optional[str] = None
 
+    # Also defined in OpenAI message
     name: Optional[str] = None
 
     # needed for output

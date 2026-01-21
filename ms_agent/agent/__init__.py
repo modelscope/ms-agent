@@ -1,4 +1,4 @@
-# Copyright (c) Alibaba, Inc. and its affiliates.
+# Copyright (c) ModelScope Contributors. All rights reserved.
 from .agent_skill import AgentSkill, create_agent_skill
 from .base import Agent
 from .code_agent import CodeAgent

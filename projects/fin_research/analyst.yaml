@@ -7,6 +7,8 @@ llm:
 
 generation_config:
   stream: true
+  stream_options:
+    include_usage: true
 
 
 prompt:
@@ -74,17 +76,16 @@ prompt:
     assumptions (frequency, annualization, risk-free rate, etc.), conclusions, limitations, and next steps.
       - You must output all file paths as relative paths to the <DATA_ROOT>/ directory in this phase, \
       for example: "./sessions/session_b5e8d412/profitability_trends.png".
+      - You MUST output the final report in natural language before you stop.
     </Task_Workflow>
 
     <Tool_Calling_Protocol>
-    - Use standard OpenAI function calling to invoke tools. \
-    Do NOT output code in assistant's natural language output.
-    - Every turn MUST include at least one tool call, unless you're providing the FINAL summary.
+    - Use standard OpenAI function calling to invoke tools. Do NOT output code in assistant's natural language output.
+    - If you use [ACT=code], [ACT=collect], or [ACT=fix], you MUST include at least one tool call in that turn.
+    - If you use [ACT=report], you MUST output the comprehensive summary in markdown format and MUST NOT call any tools in that turn.
     - After each tool call, carefully review the output.
     - State explicitly what you learned and what comes next.
     - Continue calling tools until you have sufficient evidence to conclude.
-    - When analysis is complete and you need to provide a comprehensive summary, \
-    you can use [ACT=report] without tools and stop.
     </Tool_Calling_Protocol>
 
     <Session_Output_Directory>
@@ -123,6 +124,7 @@ prompt:
     - If a read fails: rotate encodings; if a column is missing: print df.columns and adjust; if time parsing fails: print sample bad rows and fix.
     - Keep outputs reproducible and auditable (print what changed and why).
     - Use shell_executor only for non-destructive tasks (e.g., mkdir -p <DATA_ROOT>/sessions/..., ls -l) if shell_executor is AVAILABLE.
+    - NEVER invent data or results. Only use values from retrieved data or executed code. If data is missing or non-computable, say so explicitly.
     </Safety_Constraints>
 
     <Error_Handling>
@@ -153,6 +155,7 @@ prompt:
     [ACT=report]
     Purpose: Delivering the final synthesis: data & cleaning summary, key figures (absolute paths), \
     metrics & assumptions, conclusions, limitations, next steps.
+    // Note: This final report MUST appear exactly once in natural language output before the conversation ends.
     // Note: This is the ONLY case where no tool call follows - final summary only.
 
     Example 4 - Error handling:

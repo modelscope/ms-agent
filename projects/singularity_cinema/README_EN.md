@@ -4,22 +4,25 @@ A lightweight and excellent short video generator
 
 ## Installation
 
-1. Clone the code
-```shell
-git clone https://github.com/modelscope/ms-agent.git
-cd ms-agent
-```
+This project requires Python and Node.js environments.
 
-2. Install dependencies
-```shell
-pip install .
-cd projects/singularity_cinema
-pip install -r requirements.txt
-```
+1. **Prerequisites**
+   - **Python**: Version >= 3.10 is required. Using [Conda](https://docs.conda.io/projects/conda/en/stable/user-guide/install/index.html) is recommended.
+   - **Node.js**: Required if you use the default Remotion engine. Install [Node.js](https://nodejs.org/) (Version >= 16 recommended).
+   - **FFmpeg**: Install [ffmpeg](https://www.ffmpeg.org/download.html#build-windows) and add it to your PATH.
 
-Install [ffmpeg](https://www.ffmpeg.org/download.html#build-windows).
+2. **Clone Code**
+   ```shell
+   git clone https://github.com/modelscope/ms-agent.git
+   cd ms-agent
+   ```
 
-Before executing the above installation commands, please ensure your Python>=3.10. For Python installation, refer to [Conda](https://docs.conda.io/projects/conda/en/stable/user-guide/install/index.html)
+3. **Install Python Dependencies**
+   ```shell
+   pip install .
+   cd projects/singularity_cinema
+   pip install -r requirements.txt
+   ```
 
 ## Compatibility and Limitations
 

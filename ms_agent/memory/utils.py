@@ -1,4 +1,4 @@
-# Copyright (c) Alibaba, Inc. and its affiliates.
+# Copyright (c) ModelScope Contributors. All rights reserved.
 from omegaconf import DictConfig, OmegaConf
 
 from .condenser.code_condenser import CodeCondenser

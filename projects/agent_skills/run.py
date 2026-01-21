@@ -1,6 +1,6 @@
 # flake8: noqa
 # yapf: disable
-# Copyright (c) Alibaba, Inc. and its affiliates.
+# Copyright (c) ModelScope Contributors. All rights reserved.
 import os
 from pathlib import Path
 
