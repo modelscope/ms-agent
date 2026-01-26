@@ -7,6 +7,10 @@ export interface Message {
   type: 'text' | 'tool_call' | 'tool_result' | 'error' | 'log' | 'file_output' | 'step_start' | 'step_complete';
   timestamp: string;
   metadata?: Record<string, unknown>;
+
+  client_request_id?: string;
+  retry_of?: string;
+  status?: 'sent' | 'running' | 'error' | 'completed'; // 给 UI 用
 }
 
 export interface Project {
@@ -60,7 +64,7 @@ interface SessionContextType {
   loadProjects: () => Promise<void>;
   createSession: (projectId: string) => Promise<Session | null>;
   selectSession: (sessionId: string, initialQuery?: string, sessionObj?: Session) => void;
-  sendMessage: (content: string) => void;
+  sendMessage: (content: string, opts?: { reuseMessageId?: string }) => void;
   stopAgent: () => void;
   clearLogs: () => void;
 }
@@ -137,6 +141,35 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
     return null;
   }, []);
 
+  const endRunningState = useCallback((nextStatus: Session['status'], errMsg?: string) => {
+    setIsLoading(false);
+    setIsStreaming(false);
+    setStreamingContent('');
+
+    setCurrentSession(prev => {
+      if (!prev) return prev;
+      return { ...prev, status: nextStatus, workflow_progress: undefined, file_progress: undefined, current_step: undefined };
+    });
+
+    setSessions(prev =>
+      prev.map(s => (s.id === currentSession?.id ? { ...s, status: nextStatus } : s))
+    );
+
+    if (errMsg) {
+      setMessages(prev => {
+        const last = prev[prev.length - 1];
+        if (last && last.type === 'error' && last.content === errMsg) return prev;
+        return [...prev, {
+          id: Date.now().toString(),
+          role: 'system',
+          content: errMsg,
+          type: 'error',
+          timestamp: new Date().toISOString(),
+        }];
+      });
+    }
+  }, [currentSession?.id]);
+
   // Connect WebSocket for session
   const connectWebSocket = useCallback((sessionId: string, initialQuery?: string) => {
     if (ws) {
@@ -176,20 +209,39 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
     };
 
     socket.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      handleWebSocketMessage(data);
+      try {
+        const data = JSON.parse(event.data);
+        handleWebSocketMessage(data);
+      } catch (e) {
+        console.error('[WS] Non-JSON message:', event.data, e);
+
+        // Fallback: stop the loading state to avoid being stuck in "Processing".
+        endRunningState('error', typeof event.data === 'string'
+          ? event.data
+          : 'Agent failed with non-JSON output');
+
+        // Don't throw again to avoid a blank screen.
+      }
     };
 
     socket.onclose = () => {
       console.log('WebSocket disconnected');
+
+      // If it's still running and the connection drops: end with an error
+      // to avoid the frontend being stuck in "Processing...".
+      setWs(null);
+      endRunningState('error', 'Connection closed unexpectedly. Please retry.');
     };
 
     socket.onerror = (error) => {
       console.error('WebSocket error:', error);
+
+      // onerror may sometimes be followed by onclose, but adding a fallback here doesn't hurt.
+      endRunningState('error', 'WebSocket error occurred. Please retry.');
     };
 
     setWs(socket);
-  }, [ws]);
+  }, [ws, endRunningState]);
 
   // Handle WebSocket messages
   const handleWebSocketMessage = useCallback((data: Record<string, unknown>) => {
@@ -235,7 +287,10 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
         setCurrentSession(prev => {
           if (!prev) return prev;
 
-          const progressType = data.type as string;
+          const progressType =
+            (data.progress_type as string | undefined) ??
+            (data.progressType as string | undefined) ??
+            (data.kind as string | undefined);
           if (progressType === 'workflow') {
             return {
               ...prev,
@@ -259,26 +314,22 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
         });
         break;
 
-      case 'status':
-        {
-          const nextStatus = (data.status as Session['status'] | undefined) ?? ((data as any)?.session?.status as Session['status'] | undefined);
-          if (nextStatus) {
-            setCurrentSession(prev => {
-              if (!prev) return prev;
-              if (nextStatus !== 'running') {
-                return { ...prev, status: nextStatus, workflow_progress: undefined, file_progress: undefined, current_step: undefined };
-              }
-              return { ...prev, status: nextStatus };
-            });
-            setSessions(prev => prev.map(s => (s.id === currentSession?.id ? { ...s, status: nextStatus } : s)));
-            setIsLoading(nextStatus === 'running');
-            if (nextStatus !== 'running') {
-              setIsStreaming(false);
-              setStreamingContent('');
-            }
-          }
+      case 'status': {
+        const nextStatus =
+          (data.status as Session['status'] | undefined) ??
+          ((data as any)?.session?.status as Session['status'] | undefined);
+
+        if (!nextStatus) break;
+
+        if (nextStatus === 'running') {
+          setCurrentSession(prev => (prev ? { ...prev, status: 'running' } : prev));
+          setSessions(prev => prev.map(s => (s.id === currentSession?.id ? { ...s, status: 'running' } : s)));
+          setIsLoading(true);
+        } else {
+          endRunningState(nextStatus);
         }
         break;
+      }
 
       case 'complete':
         setCurrentSession(prev => {
@@ -286,7 +337,7 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
           return { ...prev, status: 'completed' };
         });
         setSessions(prev => prev.map(s => (s.id === currentSession?.id ? { ...s, status: 'completed' } : s)));
-        setIsLoading(false);
+        endRunningState('completed');
         break;
 
       case 'error':
@@ -302,10 +353,10 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
           type: 'error',
           timestamp: new Date().toISOString(),
         }]);
-        setIsLoading(false);
+        endRunningState('error', (data.message as string) || 'Unknown error');
         break;
     }
-  }, [currentSession?.id]);
+  }, [currentSession?.id, endRunningState]);
 
   // Select session (can pass session object directly for newly created sessions)
   const selectSession = useCallback((sessionId: string, initialQuery?: string, sessionObj?: Session) => {
@@ -324,26 +375,45 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
   }, [sessions, connectWebSocket]);
 
   // Send message
-  const sendMessage = useCallback((content: string) => {
-    if (!currentSession || !ws || ws.readyState !== WebSocket.OPEN) return;
+const sendMessage = useCallback((content: string, opts?: { reuseMessageId?: string }) => {
+  if (!currentSession || !ws || ws.readyState !== WebSocket.OPEN) return;
 
-    // Add user message locally
+  const clientRequestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  // Reuse mode: update the existing message instead of adding a new one.
+  if (opts?.reuseMessageId) {
+    setMessages(prev => prev.map(m => {
+      if (m.id !== opts.reuseMessageId) return m;
+      return {
+        ...m,
+        content,
+        status: 'running',
+        client_request_id: clientRequestId,
+      };
+    }));
+  } else {
+    // Default: add a new user message.
     setMessages(prev => [...prev, {
       id: Date.now().toString(),
       role: 'user',
       content,
       type: 'text',
       timestamp: new Date().toISOString(),
+      status: 'running',
+      client_request_id: clientRequestId,
     }]);
+  }
 
-    // Send to server
-    ws.send(JSON.stringify({
-      action: 'start',
-      query: content,
-    }));
+  ws.send(JSON.stringify({
+    action: 'start',
+    query: content,
+    client_request_id: clientRequestId, // If the backend can pass it back unchanged, that would be better.
+  }));
 
-    setIsLoading(true);
-  }, [currentSession, ws]);
+  setIsStreaming(false);
+  setStreamingContent('');
+  setIsLoading(true);
+}, [currentSession, ws]);
 
   // Stop agent
   const stopAgent = useCallback(() => {

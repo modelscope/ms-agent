@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
+  Refresh as RetryIcon,
+} from '@mui/icons-material';
+import {
   Box,
   TextField,
   IconButton,
@@ -60,6 +63,13 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
     logs,
   } = useSession();
 
+  const lastUserMessageId = React.useMemo(() => {
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') return messages[i].id;
+      }
+      return null;
+    }, [messages]);
+
   const completedSteps = React.useMemo(() => {
     const set = new Set<string>();
     for (const m of messages) {
@@ -102,19 +112,24 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
     }
   };
 
-  const loadOutputFiles = async () => {
-    try {
-      const response = await fetch('/api/files/list');
-      if (response.ok) {
-        const data = await response.json();
-        setOutputTree(data.tree || {folders: {}, files: []});
-        // Expand root level by default
-        setExpandedFolders(new Set(['']));
+    const loadOutputFiles = async (outputDir: string) => {
+      try {
+        if (!currentSession?.id) return;
+
+        const url = new URL('/api/files/list', window.location.origin);
+        url.searchParams.set('output_dir', outputDir);
+        url.searchParams.set('session_id', currentSession.id);
+
+        const response = await fetch(url.toString());
+        if (response.ok) {
+          const data = await response.json();
+          setOutputTree(data.tree || { folders: {}, files: [] });
+          setExpandedFolders(new Set(['']));
+        }
+      } catch (err) {
+        console.error('Failed to load output files:', err);
       }
-    } catch (err) {
-      console.error('Failed to load output files:', err);
-    }
-  };
+    };
 
   const toggleFolder = (folder: string) => {
     setExpandedFolders(prev => {
@@ -129,31 +144,33 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
   };
 
   const handleOpenOutputFiles = () => {
-    loadOutputFiles();
+    loadOutputFiles('output');
     setOutputFilesOpen(true);
     setSelectedFile(null);
     setFileContent(null);
   };
 
-  const handleViewFile = async (path: string) => {
-    setSelectedFile(path);
-    setFileLoading(true);
-    try {
-      const response = await fetch('/api/files/read', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path }),
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setFileContent(data.content);
+    const handleViewFile = async (path: string) => {
+      if (!currentSession?.id) return;
+
+      setSelectedFile(path);
+      setFileLoading(true);
+      try {
+        const response = await fetch('/api/files/read', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path, session_id: currentSession.id }),
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setFileContent(data.content);
+        }
+      } catch (err) {
+        console.error('Failed to load file:', err);
+      } finally {
+        setFileLoading(false);
       }
-    } catch (err) {
-      console.error('Failed to load file:', err);
-    } finally {
-      setFileLoading(false);
-    }
-  };
+    };
 
   return (
     <Box
@@ -344,6 +361,13 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
                   message={message}
                   sessionStatus={currentSession?.status}
                   completedSteps={completedSteps}
+
+                 showRetry={
+                  message.role === 'user' &&
+                  message.id === lastUserMessageId &&
+                  !isLoading && !isStreaming
+                 }
+                 onRetry={(content) => sendMessage(content, { reuseMessageId: message.id })}
                 />
               ))}
 
@@ -532,9 +556,15 @@ interface MessageBubbleProps {
   isStreaming?: boolean;
   sessionStatus?: Session['status'];
   completedSteps?: Set<string>;
+
+  showRetry?: boolean;
+  onRetry?: (content: string) => void;
 }
 
-const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreaming, sessionStatus, completedSteps }) => {
+const MessageBubble: React.FC<MessageBubbleProps> = ({
+  message, isStreaming, sessionStatus, completedSteps,
+  showRetry, onRetry
+}) => {
   const theme = useTheme();
   const isUser = message.role === 'user';
   const isError = message.type === 'error';
@@ -704,7 +734,19 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreaming, ses
           }}
         >
           <MessageContent content={message.content} />
-
+            {showRetry && (
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
+                  <Tooltip title="Retry">
+                    <IconButton
+                      size="small"
+                      onClick={() => onRetry?.(message.content)}
+                      sx={{ opacity: 0.75, '&:hover': { opacity: 1 } }}
+                    >
+                      <RetryIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+              )}
           {isStreaming && (
             <Box
               component="span"
@@ -854,6 +896,24 @@ const FileOutputChip: React.FC<{ filename: string }> = ({ filename }) => {
   const [fileLoading, setFileLoading] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const [fileLang, setFileLang] = useState('text');
+  const { currentSession } = useSession();
+    const [fileUrl, setFileUrl] = useState<string | null>(null);
+    const [fileKind, setFileKind] = useState<'text' | 'image' | 'video'>('text');
+
+    const getFileKind = (fname: string): 'text' | 'image' | 'video' => {
+      const ext = fname.split('.').pop()?.toLowerCase() || '';
+      if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext)) return 'image';
+      if (['mp4', 'webm', 'ogg', 'mov', 'm4v'].includes(ext)) return 'video';
+      return 'text';
+    };
+
+    useEffect(() => {
+      if (!dialogOpen) {
+        setFileContent(null);
+        setFileUrl(null);
+        setFileLang('text');
+      }
+    }, [dialogOpen]);
 
   const getFileIcon = (fname: string) => {
     const ext = fname.split('.').pop()?.toLowerCase();
@@ -870,31 +930,46 @@ const FileOutputChip: React.FC<{ filename: string }> = ({ filename }) => {
   };
 
   const handleViewFile = async () => {
-    setDialogOpen(true);
-    setFileLoading(true);
-    setFileError(null);
+      setDialogOpen(true);
+      setFileLoading(true);
+      setFileError(null);
 
-    try {
-      const response = await fetch('/api/files/read', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: filename }),
-      });
+      const kind = getFileKind(filename);
+      setFileKind(kind);
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Failed to load file');
+      try {
+        if (kind === 'text') {
+          const response = await fetch('/api/files/read', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: filename, session_id: currentSession?.id }),
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to load file');
+          }
+
+          const data = await response.json();
+          setFileContent(data.content);
+          setFileLang(data.language || 'text');
+          setFileUrl(null);
+          return;
+        }
+
+        const sid = currentSession?.id;
+        const streamUrl =
+          `/api/files/stream?path=${encodeURIComponent(filename)}&session_id=${encodeURIComponent(sid || '')}`;
+        setFileUrl(streamUrl);
+        setFileContent(null);
+        setFileLang(kind);
+      } catch (err) {
+        setFileError(err instanceof Error ? err.message : 'Failed to load file');
+      } finally {
+        setFileLoading(false);
       }
+    };
 
-      const data = await response.json();
-      setFileContent(data.content);
-      setFileLang(data.language || 'text');
-    } catch (err) {
-      setFileError(err instanceof Error ? err.message : 'Failed to load file');
-    } finally {
-      setFileLoading(false);
-    }
-  };
 
   const handleCopy = () => {
     if (fileContent) {
@@ -966,7 +1041,7 @@ const FileOutputChip: React.FC<{ filename: string }> = ({ filename }) => {
           </Box>
           <Box>
             <Tooltip title="Copy to clipboard">
-              <IconButton size="small" onClick={handleCopy} disabled={!fileContent}>
+              <IconButton size="small" onClick={handleCopy} disabled={!fileContent || fileKind !== 'text'}>
                 <CopyIcon fontSize="small" />
               </IconButton>
             </Tooltip>
@@ -984,28 +1059,41 @@ const FileOutputChip: React.FC<{ filename: string }> = ({ filename }) => {
             <Box sx={{ p: 3, textAlign: 'center' }}>
               <Typography color="error">{fileError}</Typography>
             </Box>
-          ) : (
-            <Box
-              component="pre"
-              sx={{
-                m: 0,
-                p: 2,
-                overflow: 'auto',
-                maxHeight: '60vh',
-                fontFamily: 'monospace',
-                fontSize: '0.85rem',
-                lineHeight: 1.6,
-                backgroundColor: alpha(theme.palette.background.default, 0.5),
-                '&::-webkit-scrollbar': { width: 8, height: 8 },
-                '&::-webkit-scrollbar-thumb': {
-                  backgroundColor: alpha(theme.palette.primary.main, 0.2),
-                  borderRadius: 4,
-                },
-              }}
-            >
-              <code>{fileContent}</code>
-            </Box>
-          )}
+          ) : fileKind === 'image' && fileUrl ? (
+              <Box sx={{ p: 2, display: 'flex', justifyContent: 'center' }}>
+                <Box
+                  component="img"
+                  src={fileUrl}
+                  alt={shortName}
+                  sx={{ maxWidth: '100%', maxHeight: '60vh', objectFit: 'contain' }}
+                />
+              </Box>
+            ) : fileKind === 'video' && fileUrl ? (
+              <Box sx={{ p: 2 }}>
+                <Box component="video" src={fileUrl} controls sx={{ width: '100%', maxHeight: '60vh' }} />
+              </Box>
+            ) : (
+              <Box
+                component="pre"
+                sx={{
+                  m: 0,
+                  p: 2,
+                  overflow: 'auto',
+                  maxHeight: '60vh',
+                  fontFamily: 'monospace',
+                  fontSize: '0.85rem',
+                  lineHeight: 1.6,
+                  backgroundColor: alpha(theme.palette.background.default, 0.5),
+                  '&::-webkit-scrollbar': { width: 8, height: 8 },
+                  '&::-webkit-scrollbar-thumb': {
+                    backgroundColor: alpha(theme.palette.primary.main, 0.2),
+                    borderRadius: 4,
+                  },
+                }}
+              >
+                <code>{fileContent}</code>
+              </Box>
+            )}
         </DialogContent>
       </Dialog>
     </>
