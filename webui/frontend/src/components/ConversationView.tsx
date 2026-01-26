@@ -88,7 +88,18 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
   const [fileLoading, setFileLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [fileLang, setFileLang] = useState('text');
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [fileKind, setFileKind] = useState<'text' | 'image' | 'video' | 'audio'>('text');
 
+  const getFileKind = (fname: string): 'text' | 'image' | 'video' | 'audio' => {
+      const ext = fname.split('.').pop()?.toLowerCase() || '';
+      if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext)) return 'image';
+      if (['mp4', 'webm', 'ogg', 'mov', 'm4v'].includes(ext)) return 'video';
+      if (['mp3', 'wav', 'aac', 'flac', 'm4a', 'opus'].includes(ext)) return 'audio';
+      return 'text';
+    };
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -143,7 +154,7 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
     });
   };
 
-  const handleOpenOutputFiles = () => {
+  const handleOpenOutputFiles =  () => {
     loadOutputFiles('output');
     setOutputFilesOpen(true);
     setSelectedFile(null);
@@ -155,18 +166,37 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
 
       setSelectedFile(path);
       setFileLoading(true);
+      const kind = getFileKind(path);
+      setFileKind(kind);
+
       try {
-        const response = await fetch('/api/files/read', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path, session_id: currentSession.id }),
-        });
-        if (response.ok) {
+        if (kind === 'text') {
+          const response = await fetch('/api/files/read', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: path, session_id: currentSession?.id }),
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to load file');
+          }
+
           const data = await response.json();
           setFileContent(data.content);
+          setFileLang(data.language || 'text');
+          setFileUrl(null);
+          return;
         }
+
+        const sid = currentSession?.id;
+        const streamUrl =
+          `/api/files/stream?path=${encodeURIComponent(path)}&session_id=${encodeURIComponent(sid || '')}`;
+        setFileUrl(streamUrl);
+        setFileContent(null);
+        setFileLang(kind);
       } catch (err) {
-        console.error('Failed to load file:', err);
+        setFileError(err instanceof Error ? err.message : 'Failed to load file');
       } finally {
         setFileLoading(false);
       }
@@ -291,33 +321,73 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
               onSelectFile={handleViewFile}
             />
           </Box>
-          {/* File Content */}
-          <Box sx={{ flex: 1, overflow: 'auto', p: 0 }}>
-            {fileLoading ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                <CircularProgress size={32} />
-              </Box>
-            ) : fileContent ? (
-              <Box
-                component="pre"
-                sx={{
-                  m: 0,
-                  p: 2,
-                  fontFamily: 'monospace',
-                  fontSize: '0.85rem',
-                  lineHeight: 1.6,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-all',
-                }}
-              >
-                <code>{fileContent}</code>
-              </Box>
-            ) : (
-              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                <Typography color="text.secondary">Select a file to view</Typography>
-              </Box>
-            )}
-          </Box>
+            {/* File Content */}
+            <Box sx={{ flex: 1, overflow: 'auto', p: 0 }}>
+              {fileLoading ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                  <CircularProgress size={32} />
+                </Box>
+              ) : fileError ? (
+                <Box sx={{ p: 2 }}>
+                  <Typography color="error">{fileError}</Typography>
+                </Box>
+              ) : fileContent ? (
+                <Box
+                  component="pre"
+                  sx={{
+                    m: 0,
+                    p: 2,
+                    fontFamily: 'monospace',
+                    fontSize: '0.85rem',
+                    lineHeight: 1.6,
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-all',
+                  }}
+                >
+                  <code>{fileContent}</code>
+                </Box>
+              ) : fileUrl ? (
+                <Box sx={{ p: 2 }}>
+                  {fileKind === 'image' && (
+                    <Box
+                      component="img"
+                      src={fileUrl}
+                      alt={selectedFile ?? 'image'}
+                      sx={{ maxWidth: '100%', height: 'auto', display: 'block' }}
+                    />
+                  )}
+
+                  {fileKind === 'video' && (
+                    <Box
+                      component="video"
+                      src={fileUrl}
+                      controls
+                      sx={{ width: '100%', maxHeight: '60vh', display: 'block' }}
+                    />
+                  )}
+
+                  {fileKind === 'audio' && (
+                    <Box
+                      component="audio"
+                      src={fileUrl}
+                      controls
+                      style={{ width: '100%' }}
+                    />
+                  )}
+
+                  {/* Fallback: in case kind doesn't match */}
+                  {!['image', 'video', 'audio'].includes(fileKind) && (
+                    <Typography color="text.secondary">
+                      Unsupported preview type. <a href={fileUrl} target="_blank" rel="noreferrer">Open</a>
+                    </Typography>
+                  )}
+                </Box>
+              ) : (
+                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                  <Typography color="text.secondary">Select a file to view</Typography>
+                </Box>
+              )}
+            </Box>
         </DialogContent>
       </Dialog>
 

@@ -259,9 +259,9 @@ class FileReadRequest(BaseModel):
 
 @router.get('/files/list')
 async def list_output_files(
-    output_dir: Optional[str] = Query(default=None),  # 你前端现在传 output_dir
+    output_dir: Optional[str] = Query(default='output'),
     session_id: Optional[str] = Query(default=None),
-    root_dir: Optional[str] = Query(default=None),        # 兼容老参数
+    root_dir: Optional[str] = Query(default=None),
 ):
     """List all files under root_dir as a tree structure.
     root_dir: optional. If not provided, defaults to ms-agent/output.
@@ -427,10 +427,9 @@ def resolve_file_path(root_dir_abs: str, file_path: str) -> str:
 async def read_file_content(request: FileReadRequest):
     if request.session_id:
         session_root = get_session_root(request.session_id)
-        root_abs = os.path.normpath(os.path.abspath(os.path.join(session_root, "output")))
+        root_abs = os.path.normpath(os.path.abspath(str(session_root)))
     else:
         root_abs = resolve_root_dir(request.root_dir)
-
     full_path = resolve_file_path(root_abs, request.path)
 
     if not os.path.exists(full_path):
@@ -438,7 +437,6 @@ async def read_file_content(request: FileReadRequest):
 
     if not os.path.isfile(full_path):
         raise HTTPException(status_code=400, detail=f'Path {full_path} is not a file')
-    print(f'full_path: {full_path}')
     # limit 1MB
     file_size = os.path.getsize(full_path)
     if file_size > 1024 * 1024:
@@ -502,7 +500,7 @@ def resolve_and_check_path(file_path: str) -> str:
 async def stream_file(path: str, session_id: Optional[str] = Query(default=None)):
     if session_id:
         session_root = get_session_root(session_id)
-        root_abs = str((session_root / "output").resolve())
+        root_abs = str(session_root.resolve())
         full_path = resolve_file_path(root_abs, path)
     else:
         full_path = resolve_and_check_path(path)
