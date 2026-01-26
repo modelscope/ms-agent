@@ -2,10 +2,11 @@
 """
 API endpoints for the MS-Agent Web UI
 """
-import os
 import mimetypes
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -16,16 +17,19 @@ router = APIRouter()
 
 
 def get_backend_root() -> Path:
-    return Path(__file__).resolve().parents[1]  # equal to dirname(dirname(__file__))
+    return Path(__file__).resolve().parents[
+        1]  # equal to dirname(dirname(__file__))
+
 
 def get_session_root(session_id: str) -> Path:
     if not session_id or not str(session_id).strip():
-        raise HTTPException(status_code=400, detail="session_id is required")
+        raise HTTPException(status_code=400, detail='session_id is required')
 
     backend_root = get_backend_root()
-    work_dir = (backend_root / "work_dir" / str(session_id)).resolve()
+    work_dir = (backend_root / 'work_dir' / str(session_id)).resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
     return work_dir
+
 
 # Request/Response Models
 class ProjectInfo(BaseModel):
@@ -80,7 +84,9 @@ class GlobalConfig(BaseModel):
 @router.get('/projects', response_model=List[ProjectInfo])
 async def list_projects():
     """List all available projects"""
-    print(f'project_discovery.discover_projects(): {project_discovery.discover_projects()}')
+    print(
+        f'project_discovery.discover_projects(): {project_discovery.discover_projects()}'
+    )
     return project_discovery.discover_projects()
 
 
@@ -259,9 +265,9 @@ class FileReadRequest(BaseModel):
 
 @router.get('/files/list')
 async def list_output_files(
-    output_dir: Optional[str] = Query(default='output'),
-    session_id: Optional[str] = Query(default=None),
-    root_dir: Optional[str] = Query(default=None),
+        output_dir: Optional[str] = Query(default='output'),
+        session_id: Optional[str] = Query(default=None),
+        root_dir: Optional[str] = Query(default=None),
 ):
     """List all files under root_dir as a tree structure.
     root_dir: optional. If not provided, defaults to ms-agent/output.
@@ -274,16 +280,15 @@ async def list_output_files(
 
     # Base directories (same way as read_file_content)
     base_dir = os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    )
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     projects_dir = os.path.join(base_dir, 'ms-agent', 'projects')
 
     if session_id:
 
         session_root = get_session_root(session_id)
-        resolved_root = (session_root / "").resolve()
+        resolved_root = (session_root / '').resolve()
 
-    elif not root_dir or root_dir.strip() == "":
+    elif not root_dir or root_dir.strip() == '':
         resolved_root = output_dir
     else:
         root_dir = root_dir.strip()
@@ -303,9 +308,9 @@ async def list_output_files(
             else:
                 # If user passes "output" or "projects" explicitly (common case)
                 # allow interpreting it as those roots even if not exist check above
-                if root_dir in ("output", "output/"):
+                if root_dir in ('output', 'output/'):
                     resolved_root = output_dir
-                elif root_dir in ("projects", "projects/"):
+                elif root_dir in ('projects', 'projects/'):
                     resolved_root = projects_dir
                 else:
                     # fall back to output + root_dir (but it likely doesn't exist)
@@ -343,7 +348,8 @@ async def list_output_files(
                 result['files'].append({
                     'name': item,
                     'path': rel_path,  # <-- relative path
-                    'abs_path': full_path,  # optional: if you still want absolute for debugging
+                    'abs_path':
+                    full_path,  # optional: if you still want absolute for debugging
                     'size': os.path.getsize(full_path),
                     'modified': os.path.getmtime(full_path)
                 })
@@ -351,17 +357,19 @@ async def list_output_files(
         result['files'].sort(key=lambda x: x['modified'], reverse=True)
         return result
 
-    print("resolved_root =", resolved_root)
+    print('resolved_root =', resolved_root)
     tree = build_tree(resolved_root)
     return {'tree': tree, 'root_dir': resolved_root}
 
+
 def get_allowed_roots():
     base_dir = os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    )
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     output_dir = os.path.join(base_dir, 'ms-agent', 'output')
     projects_dir = os.path.join(base_dir, 'ms-agent', 'projects')
-    return base_dir, os.path.normpath(output_dir), os.path.normpath(projects_dir)
+    return base_dir, os.path.normpath(output_dir), os.path.normpath(
+        projects_dir)
+
 
 def resolve_root_dir(root_dir: Optional[str]) -> str:
     """
@@ -373,9 +381,8 @@ def resolve_root_dir(root_dir: Optional[str]) -> str:
       - absolute path (must still be under allowed roots)
     """
     _, output_dir, projects_dir = get_allowed_roots()
-    allowed_roots = [output_dir, projects_dir]
 
-    if not root_dir or root_dir.strip() == "":
+    if not root_dir or root_dir.strip() == '':
         resolved = output_dir
     else:
         rd = root_dir.strip()
@@ -384,15 +391,16 @@ def resolve_root_dir(root_dir: Optional[str]) -> str:
             resolved = rd
         else:
             # Allow explicit "output"/"projects"
-            if rd in ("output", "output/"):
+            if rd in ('output', 'output/'):
                 resolved = output_dir
-            elif rd in ("projects", "projects/"):
+            elif rd in ('projects', 'projects/'):
                 resolved = projects_dir
             else:
                 cand1 = os.path.join(output_dir, rd)
                 cand2 = os.path.join(projects_dir, rd)
                 # choose existing one if possible, otherwise default to cand1
-                resolved = cand1 if os.path.exists(cand1) else (cand2 if os.path.exists(cand2) else cand1)
+                resolved = cand1 if os.path.exists(cand1) else (
+                    cand2 if os.path.exists(cand2) else cand1)
 
     resolved = os.path.normpath(os.path.abspath(resolved))
 
@@ -406,6 +414,7 @@ def resolve_root_dir(root_dir: Optional[str]) -> str:
 
     return resolved
 
+
 def resolve_file_path(root_dir_abs: str, file_path: str) -> str:
     """
     Resolve file_path against root_dir_abs.
@@ -417,11 +426,13 @@ def resolve_file_path(root_dir_abs: str, file_path: str) -> str:
     if os.path.isabs(file_path):
         full_path = os.path.normpath(os.path.abspath(file_path))
     else:
-        full_path = os.path.normpath(os.path.abspath(os.path.join(root_dir_abs, file_path)))
+        full_path = os.path.normpath(
+            os.path.abspath(os.path.join(root_dir_abs, file_path)))
 
     # TODO: Security: file must be within root_dir_abs
 
     return full_path
+
 
 @router.post('/files/read')
 async def read_file_content(request: FileReadRequest):
@@ -433,10 +444,12 @@ async def read_file_content(request: FileReadRequest):
     full_path = resolve_file_path(root_abs, request.path)
 
     if not os.path.exists(full_path):
-        raise HTTPException(status_code=404, detail=f'File not found: {full_path}')
+        raise HTTPException(
+            status_code=404, detail=f'File not found: {full_path}')
 
     if not os.path.isfile(full_path):
-        raise HTTPException(status_code=400, detail=f'Path {full_path} is not a file')
+        raise HTTPException(
+            status_code=400, detail=f'Path {full_path} is not a file')
     # limit 1MB
     file_size = os.path.getsize(full_path)
     if file_size > 1024 * 1024:
@@ -448,10 +461,22 @@ async def read_file_content(request: FileReadRequest):
 
         ext = os.path.splitext(full_path)[1].lower()
         lang_map = {
-            '.py': 'python', '.js': 'javascript', '.ts': 'typescript', '.tsx': 'typescript',
-            '.jsx': 'javascript', '.json': 'json', '.yaml': 'yaml', '.yml': 'yaml',
-            '.md': 'markdown', '.html': 'html', '.css': 'css', '.txt': 'text',
-            '.sh': 'bash', '.java': 'java', '.go': 'go', '.rs': 'rust',
+            '.py': 'python',
+            '.js': 'javascript',
+            '.ts': 'typescript',
+            '.tsx': 'typescript',
+            '.jsx': 'javascript',
+            '.json': 'json',
+            '.yaml': 'yaml',
+            '.yml': 'yaml',
+            '.md': 'markdown',
+            '.html': 'html',
+            '.css': 'css',
+            '.txt': 'text',
+            '.sh': 'bash',
+            '.java': 'java',
+            '.go': 'go',
+            '.rs': 'rust',
         }
         language = lang_map.get(ext, 'text')
 
@@ -470,10 +495,13 @@ async def read_file_content(request: FileReadRequest):
     except UnicodeDecodeError:
         raise HTTPException(status_code=400, detail='File is not a text file')
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Error reading file: {str(e)}')
+        raise HTTPException(
+            status_code=500, detail=f'Error reading file: {str(e)}')
+
 
 def resolve_and_check_path(file_path: str) -> str:
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    base_dir = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     output_dir = os.path.join(base_dir, 'ms-agent', 'output')
     projects_dir = os.path.join(base_dir, 'ms-agent', 'projects')
 
@@ -489,15 +517,18 @@ def resolve_and_check_path(file_path: str) -> str:
     # TODO: security path check
 
     if not os.path.exists(full_path):
-        raise HTTPException(status_code=404, detail=f'File not found: {full_path}')
+        raise HTTPException(
+            status_code=404, detail=f'File not found: {full_path}')
     if not os.path.isfile(full_path):
-        raise HTTPException(status_code=400, detail=f'Path {full_path} is not a file')
+        raise HTTPException(
+            status_code=400, detail=f'Path {full_path} is not a file')
 
     return full_path
 
 
-@router.get("/files/stream")
-async def stream_file(path: str, session_id: Optional[str] = Query(default=None)):
+@router.get('/files/stream')
+async def stream_file(path: str,
+                      session_id: Optional[str] = Query(default=None)):
     if session_id:
         session_root = get_session_root(session_id)
         root_abs = str(session_root.resolve())
@@ -506,10 +537,13 @@ async def stream_file(path: str, session_id: Optional[str] = Query(default=None)
         full_path = resolve_and_check_path(path)
 
     media_type, _ = mimetypes.guess_type(full_path)
-    media_type = media_type or "application/octet-stream"
+    media_type = media_type or 'application/octet-stream'
     return FileResponse(
         full_path,
         media_type=media_type,
         filename=os.path.basename(full_path),
-        headers={"Content-Disposition": f'inline; filename="{os.path.basename(full_path)}"'},
+        headers={
+            'Content-Disposition':
+            f'inline; filename="{os.path.basename(full_path)}"'
+        },
     )

@@ -9,9 +9,8 @@ import re
 import signal
 import subprocess
 import sys
-from pathlib import Path
-
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 
@@ -43,8 +42,9 @@ class AgentRunner:
         self._workflow_steps = []
         self._stop_requested = False
 
-        base_dir = Path(__file__).resolve().parents[1]  # equal to dirname(dirname(__file__))
-        work_dir = base_dir / "work_dir" / str(session_id)
+        base_dir = Path(__file__).resolve().parents[
+            1]  # equal to dirname(dirname(__file__))
+        work_dir = base_dir / 'work_dir' / str(session_id)
         work_dir.mkdir(parents=True, exist_ok=True)
         self.work_dir = work_dir
 
@@ -71,8 +71,7 @@ class AgentRunner:
                 stdin=asyncio.subprocess.PIPE,
                 env=env,
                 cwd=self.project['path'],
-                start_new_session=True
-            )
+                start_new_session=True)
 
             read_exc = None
             try:
@@ -83,9 +82,9 @@ class AgentRunner:
                 read_exc = e
                 if self.on_log:
                     self.on_log({
-                        "level": "error",
-                        "message": f"Read output failed: {repr(e)}",
-                        "timestamp": datetime.now().isoformat()
+                        'level': 'error',
+                        'message': f'Read output failed: {repr(e)}',
+                        'timestamp': datetime.now().isoformat()
                     })
 
             rc = await self.process.wait()
@@ -93,7 +92,10 @@ class AgentRunner:
 
             if self._stop_requested:
                 if self.on_error:
-                    self.on_error({'message': 'Stopped by user', 'returncode': rc})
+                    self.on_error({
+                        'message': 'Stopped by user',
+                        'returncode': rc
+                    })
                     sent_terminal_event = True
                 return
 
@@ -116,13 +118,20 @@ class AgentRunner:
             tb = traceback.format_exc()
             print(tb)
             if self.on_error:
-                self.on_error({'message': tb, 'type': 'startup_error', 'returncode': -1})
+                self.on_error({
+                    'message': tb,
+                    'type': 'startup_error',
+                    'returncode': -1
+                })
                 sent_terminal_event = True
 
         finally:
             # Fallback: ensure the frontend always receives the completion signal under all circumstances.
             if not sent_terminal_event and self.on_error:
-                self.on_error({'message': 'Agent terminated unexpectedly', 'returncode': -1})
+                self.on_error({
+                    'message': 'Agent terminated unexpectedly',
+                    'returncode': -1
+                })
 
     async def stop(self):
         """Stop the agent"""
@@ -250,16 +259,19 @@ class AgentRunner:
                         if len(buf) >= MAX_LINE_BUFFER:
                             part = bytes(buf[:MAX_LINE_BUFFER])
                             del buf[:MAX_LINE_BUFFER]
-                            text = part.decode('utf-8', errors='replace').rstrip()
+                            text = part.decode(
+                                'utf-8', errors='replace').rstrip()
                             print(f'[Runner] Output(partial): {text[:200]}'
-                                  if len(text) > 200 else f'[Runner] Output(partial): {text}')
+                                  if len(text) > 200 else
+                                  f'[Runner] Output(partial): {text}')
                             await self._process_line(text)
                         break
 
                     line_bytes = bytes(buf[:nl + 1])
                     del buf[:nl + 1]
 
-                    text = line_bytes.decode('utf-8', errors='replace').rstrip()
+                    text = line_bytes.decode(
+                        'utf-8', errors='replace').rstrip()
                     print(f'[Runner] Output: {text[:200]}'
                           if len(text) > 200 else f'[Runner] Output: {text}')
                     await self._process_line(text)
@@ -312,7 +324,8 @@ class AgentRunner:
                             # so the frontend can reach a terminal state.
                             if self.on_error:
                                 self.on_error({
-                                    'message': f'Agent exited with code {return_code}',
+                                    'message':
+                                    f'Agent exited with code {return_code}',
                                     'type': 'exit_error',
                                     'code': return_code
                                 })
@@ -322,7 +335,11 @@ class AgentRunner:
                 traceback.print_exc()
                 if not self._stop_requested and self.on_error:
                     # Provide a fallback error code if `wait` fails as well.
-                    self.on_error({'message': str(e), 'type': 'finalize_error', 'code': -1})
+                    self.on_error({
+                        'message': str(e),
+                        'type': 'finalize_error',
+                        'code': -1
+                    })
             finally:
                 self.is_running = False
                 print('[Runner] Finished reading output')
