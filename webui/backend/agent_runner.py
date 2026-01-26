@@ -12,6 +12,8 @@ import sys
 from datetime import datetime
 from typing import Any, Callable, Dict, Optional
 
+import yaml
+
 
 class AgentRunner:
     """Runs ms-agent as a subprocess with output streaming"""
@@ -24,7 +26,8 @@ class AgentRunner:
                  on_log: Callable[[Dict[str, Any]], None] = None,
                  on_progress: Callable[[Dict[str, Any]], None] = None,
                  on_complete: Callable[[Dict[str, Any]], None] = None,
-                 on_error: Callable[[Dict[str, Any]], None] = None):
+                 on_error: Callable[[Dict[str, Any]], None] = None,
+                 workflow_type: str = 'standard'):
         self.session_id = session_id
         self.project = project
         self.config_manager = config_manager
@@ -33,6 +36,7 @@ class AgentRunner:
         self.on_progress = on_progress
         self.on_complete = on_complete
         self.on_error = on_error
+        self._workflow_type = workflow_type
 
         self.process: Optional[asyncio.subprocess.Process] = None
         self.is_running = False
@@ -132,6 +136,16 @@ class AgentRunner:
         project_path = self.project['path']
         config_file = self.project.get('config_file', '')
 
+        # Get workflow_type from session if available
+        # This allows switching between standard and simple workflow for code_genesis
+        workflow_type = getattr(self, '_workflow_type', 'standard')
+        if workflow_type == 'simple' and project_type == 'workflow':
+            # For code_genesis with simple workflow, use simple_workflow.yaml
+            simple_config_file = os.path.join(project_path,
+                                              'simple_workflow.yaml')
+            if os.path.exists(simple_config_file):
+                config_file = simple_config_file
+
         # Get python executable
         python = sys.executable
 
@@ -151,7 +165,7 @@ class AgentRunner:
             if os.path.exists(mcp_file):
                 cmd.extend(['--mcp_server_file', mcp_file])
 
-            # Add LLM config
+            # Add LLM config from user settings
             llm_config = self.config_manager.get_llm_config()
             if llm_config.get('api_key'):
                 provider = llm_config.get('provider', 'modelscope')
@@ -159,6 +173,74 @@ class AgentRunner:
                     cmd.extend(['--modelscope_api_key', llm_config['api_key']])
                 elif provider == 'openai':
                     cmd.extend(['--openai_api_key', llm_config['api_key']])
+                    # Set llm.service to openai to ensure the correct service is used
+                    cmd.extend(['--llm.service', 'openai'])
+                    # Pass base_url if set by user
+                    if llm_config.get('base_url'):
+                        cmd.extend(
+                            ['--llm.openai_base_url', llm_config['base_url']])
+                    # Pass model if set by user
+                    if llm_config.get('model'):
+                        cmd.extend(['--llm.model', llm_config['model']])
+                    # Pass temperature if set by user (in generation_config)
+                    if llm_config.get('temperature') is not None:
+                        cmd.extend([
+                            '--generation_config.temperature',
+                            str(llm_config['temperature'])
+                        ])
+                    # Pass max_tokens if set by user (in generation_config)
+                    if llm_config.get('max_tokens'):
+                        cmd.extend([
+                            '--generation_config.max_tokens',
+                            str(llm_config['max_tokens'])
+                        ])
+
+            # Add edit_file_config from user settings
+            edit_file_config = self.config_manager.get_edit_file_config()
+            if edit_file_config.get('api_key'):
+                # If API key is provided, pass edit_file_config
+                cmd.extend([
+                    '--tools.file_system.edit_file_config.api_key',
+                    edit_file_config['api_key']
+                ])
+                if edit_file_config.get('base_url'):
+                    cmd.extend([
+                        '--tools.file_system.edit_file_config.base_url',
+                        edit_file_config['base_url']
+                    ])
+                if edit_file_config.get('diff_model'):
+                    cmd.extend([
+                        '--tools.file_system.edit_file_config.diff_model',
+                        edit_file_config['diff_model']
+                    ])
+            else:
+                # If no API key, exclude edit_file from tools
+                # Read the current include list from config file and remove edit_file
+                try:
+                    with open(config_file, 'r', encoding='utf-8') as f:
+                        config_data = yaml.safe_load(f)
+                    if config_data and 'tools' in config_data and 'file_system' in config_data[
+                            'tools']:
+                        include_list = config_data['tools']['file_system'].get(
+                            'include', [])
+                        if isinstance(include_list,
+                                      list) and 'edit_file' in include_list:
+                            # Remove edit_file from the list
+                            filtered_include = [
+                                tool for tool in include_list
+                                if tool != 'edit_file'
+                            ]
+                            # Pass the filtered list as comma-separated string
+                            cmd.extend([
+                                '--tools.file_system.include',
+                                ','.join(filtered_include)
+                            ])
+                except Exception as e:
+                    print(
+                        f'[Runner] Warning: Could not read config file to exclude edit_file: {e}'
+                    )
+                    # Fallback: explicitly exclude edit_file
+                    cmd.extend(['--tools.file_system.exclude', 'edit_file'])
 
         elif project_type == 'script':
             # Run the script directly
@@ -263,6 +345,88 @@ class AgentRunner:
 
     async def _detect_patterns(self, line: str):
         """Detect special patterns in output"""
+        # Detect OpenAI API errors and other API errors
+        # Check for OpenAI error patterns
+        if 'openai.' in line.lower() and ('error' in line.lower()
+                                          or 'Error' in line):
+            error_message = line.strip()
+            # Try to extract error details from the line
+            # Pattern: openai.NotFoundError: Error code: 404 - {'error': {'message': '...', ...}}
+            json_match = re.search(r'\{.*?\}', error_message, re.DOTALL)
+            if json_match:
+                try:
+                    import json
+                    error_data = json.loads(json_match.group(0))
+                    if 'error' in error_data and 'message' in error_data[
+                            'error']:
+                        error_msg = error_data['error']['message']
+                        error_type = error_data['error'].get(
+                            'type', 'API Error')
+                        error_message = f'**{error_type}**: {error_msg}'
+                except Exception:
+                    pass
+
+            print(f'[Runner] Detected API error: {error_message}')
+            if self.on_error:
+                self.on_error({'message': error_message, 'type': 'api_error'})
+            # Also send as output message so it appears in the conversation
+            if self.on_output:
+                self.on_output({
+                    'type': 'error',
+                    'content': error_message,
+                    'role': 'system',
+                    'metadata': {
+                        'error_type': 'api_error'
+                    }
+                })
+            return
+
+        # Detect other error patterns
+        error_patterns = [
+            r'Error code:\s*(\d+)\s*-\s*({.*?})',
+        ]
+
+        for pattern in error_patterns:
+            error_match = re.search(pattern, line, re.IGNORECASE | re.DOTALL)
+            if error_match:
+                error_message = line.strip()
+                # Try to extract JSON error details if available
+                json_match = re.search(r'\{.*?\}', error_message, re.DOTALL)
+                if json_match:
+                    try:
+                        import json
+                        error_data = json.loads(json_match.group(0))
+                        if 'error' in error_data and 'message' in error_data[
+                                'error']:
+                            error_msg = error_data['error']['message']
+                            error_type = error_data['error'].get(
+                                'type', 'API Error')
+                            error_message = f'**{error_type}**: {error_msg}'
+                    except Exception:
+                        pass
+
+                print(f'[Runner] Detected API error: {error_message}')
+                if self.on_error:
+                    self.on_error({
+                        'message':
+                        error_message,
+                        'type':
+                        'api_error',
+                        'code':
+                        error_match.group(1) if error_match.groups() else None
+                    })
+                # Also send as output message so it appears in the conversation
+                if self.on_output:
+                    self.on_output({
+                        'type': 'error',
+                        'content': error_message,
+                        'role': 'system',
+                        'metadata': {
+                            'error_type': 'api_error'
+                        }
+                    })
+                return
+
         # Detect workflow step beginning: "[tag] Agent tag task beginning."
         begin_match = re.search(
             r'\[([^\]]+)\]\s*Agent\s+\S+\s+task\s+beginning', line)

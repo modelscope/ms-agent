@@ -31,11 +31,11 @@ else
     exit 1
 fi
 
-PY_VERSION=$($PYTHON_CMD -c "import sys; print(sys.version_info[:2] >= (3, 10))")
-if [ "$PY_VERSION" != "True" ]; then
-    echo -e "${RED}Error: Python 3.10+ required.${NC}"
-    exit 1
-fi
+# PY_VERSION=$($PYTHON_CMD -c "import sys; print(sys.version_info[:2] >= (3, 10))")
+# if [ "$PY_VERSION" != "True" ]; then
+#     echo -e "${RED}Error: Python 3.10+ required.${NC}"
+#     exit 1
+# fi
 
 echo -e "${GREEN}Using Python: $PYTHON_CMD ($($PYTHON_CMD --version))${NC}"
 
@@ -61,10 +61,9 @@ echo -e "${YELLOW}Installing Python dependencies...${NC}"
 pip install -q -r "$SCRIPT_DIR/requirements.txt"
 
 # Install ms-agent in development mode if not installed
-if ! python -c "import ms_agent" 2>/dev/null; then
-    echo -e "${YELLOW}Installing ms-agent...${NC}"
-    pip install -q -e "$SCRIPT_DIR/../ms-agent"
-fi
+# Always reinstall to ensure entry point is correct
+echo -e "${YELLOW}Installing/Updating ms-agent...${NC}"
+pip install -q -e "$SCRIPT_DIR/.."
 
 
 # Install frontend dependencies if needed

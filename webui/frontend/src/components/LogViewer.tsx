@@ -69,8 +69,11 @@ const LogViewer: React.FC<LogViewerProps> = ({ logs, onClear }) => {
         width: 400,
         display: 'flex',
         flexDirection: 'column',
+        height: '100%',
+        maxHeight: '100%',
         backgroundColor: alpha(theme.palette.background.paper, 0.5),
         borderLeft: `1px solid ${theme.palette.divider}`,
+        overflow: 'hidden',
       }}
     >
       {/* Header */}
@@ -142,14 +145,30 @@ const LogViewer: React.FC<LogViewerProps> = ({ logs, onClear }) => {
         </Box>
       </Box>
 
-      {/* Log List */}
+      {/* Log List - Scrollable Container */}
       <Box
         sx={{
           flex: 1,
           overflowY: 'auto',
+          overflowX: 'hidden',
           fontFamily: "'JetBrains Mono', monospace",
           fontSize: '0.75rem',
           p: 1,
+          minHeight: 0, // Important for flex scrolling
+          maxHeight: '100%', // Ensure it doesn't exceed parent
+          '&::-webkit-scrollbar': {
+            width: 6,
+          },
+          '&::-webkit-scrollbar-track': {
+            backgroundColor: 'transparent',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            backgroundColor: alpha(theme.palette.primary.main, 0.2),
+            borderRadius: 3,
+            '&:hover': {
+              backgroundColor: alpha(theme.palette.primary.main, 0.3),
+            },
+          },
         }}
       >
         <AnimatePresence>

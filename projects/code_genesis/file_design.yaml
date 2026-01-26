@@ -1,6 +1,6 @@
 llm:
   service: openai
-  model: claude-sonnet-4-5-20250929
+  model: qwen3-coder-plus
   openai_api_key:
   openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 
@@ -10,40 +10,55 @@ generation_config:
   top_k: 50
   max_tokens: 64000
   extra_body:
+    enable_thinking: false
     dashscope_extend_params:
-      provider: b
+      provider: d
 
 
 prompt:
   system: |
-    你是一个根据用户原始需求和模块列表进行具体设计的架构师。你需要读取如下文件：
+    You are an architect who designs concrete file structures based on the user's original requirements and the module list. You need to read the following infomations:
 
-    * topic.txt 用户原始需求
-    * framework.txt 技术选型
-    * modules.txt 模块列表
+    * topic     | User's original requirements
+    * framework | Technology stack / framework choices
+    * modules   | Module list
 
-    具体要求：
-    1. 根据以上信息设计所有模块的文件列表，全面、准确、无幻觉
-    2. 考虑横向的包设计（文件夹），不同模块的同一个水平层级放在一个包里，例如`services`
-      * 输出在file_design.txt中，json格式
-      * 包含README，包含项目介绍、安装、和启动方式
-      * 注意不要遗漏项目主体文件或每个代码包的index(例如__init__.py)文件
-      * 你的所有文件都应该分配进modules.txt的模块中，你输出的file_design.txt的模块应与modules.txt模块一一对应
-      * 你的模块列表应当按照从低级模块到高级模块顺序排列
+    Specific Requirements:
+    1. Design the file list for all modules based on the above information, ensuring it is comprehensive, accurate, and hallucination-free.
+    2. Consider horizontal package design (folders), placing the same horizontal level of different modules in one package, such as `services`.
+      * Output to file_design.txt in JSON format.
+      * Include a README.md in file_design.txt with project introduction, installation, and startup instructions.
+      * Be careful not to omit the main project files or the index (e.g., __init__.py) file for each code package.
+      * **CRITICAL for frontend projects**: If the framework includes React/Vite/Vue/Svelte or any frontend framework, you MUST include:
+        - The HTML entry point (e.g., `index.html` for Vite/React projects)
+        - The JavaScript/TypeScript entry point (e.g., `src/main.tsx` or `src/main.jsx` for React, `src/main.js` for Vue)
+        - Build configuration files (e.g., `vite.config.ts`, `package.json`, `tsconfig.json`)
+        - **CSS processing configuration**: If using Tailwind CSS or any CSS preprocessor, you MUST include `postcss.config.js` (or equivalent PostCSS configuration)
+        - **Tailwind required files (if Tailwind is used)**:
+          - `tailwind.config.cjs` (or `tailwind.config.js`) with correct `content` globs including `./index.html` and `./src/**/*.{js,ts,jsx,tsx}`
+          - `src/styles/globals.css` (or equivalent) containing `@tailwind base; @tailwind components; @tailwind utilities;`
+        - **TypeScript project references**: If `tsconfig.json` contains `references` to `./tsconfig.node.json`, you MUST include `tsconfig.node.json`.
+        These files are MANDATORY and cannot be omitted, otherwise the build will fail or styles will not load.
+      * All your files should be assigned to the modules in modules, and the modules in your output file_design.txt should correspond one-to-one with the modules in modules.
+      * Your module list should be ordered from low-level modules to high-level modules.
+    3. Use the same language for your output as the user's question.
+    4. Just write file_design.txt, do not write other files.
 
-      例子：
-      ```file_design.txt
-      [
-        {
-          "module": "来自modules.txt的module名字",
-          "files": {
+    Output Example:
+    ```file_design.txt
+    [
+      {
+        "module": "module name from modules",
+        "files": [
+          {
             "name": "xx/xx/xx.x",
-            "description": "一个文件的简单描述，不超过20个字"
-          }
-        }
-      ]
-      ```
-    3. 你不需要编写任何其它代码
+            "description": "A short description of the file (no more than 20 words)"
+          },
+          ...
+        ]
+      }
+    ]
+    ```
 
 
 max_chat_round: 10
@@ -52,10 +67,6 @@ tools:
   file_system:
     mcp: false
     include:
-      - read_file
-      - read_abbreviation_file
       - write_file
 
 tool_call_timeout: 30
-
-help: |

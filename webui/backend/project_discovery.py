@@ -43,6 +43,7 @@ class ProjectDiscovery:
         """Analyze a project directory and extract its information"""
         # Check for workflow.yaml or agent.yaml
         workflow_file = os.path.join(path, 'workflow.yaml')
+        simple_workflow_file = os.path.join(path, 'simple_workflow.yaml')
         agent_file = os.path.join(path, 'agent.yaml')
         run_file = os.path.join(path, 'run.py')
         readme_file = os.path.join(path, 'README.md')
@@ -61,6 +62,12 @@ class ProjectDiscovery:
             # Skip directories without valid config
             return None
 
+        # Check if project supports workflow switching (e.g., code_genesis)
+        supports_workflow_switch = False
+        if project_type == 'workflow' and name == 'code_genesis' and os.path.exists(
+                simple_workflow_file):
+            supports_workflow_switch = True
+
         # Generate display name from directory name
         display_name = self._format_display_name(name)
 
@@ -76,7 +83,8 @@ class ProjectDiscovery:
             'type': project_type,
             'path': path,
             'has_readme': os.path.exists(readme_file),
-            'config_file': config_file
+            'config_file': config_file,
+            'supports_workflow_switch': supports_workflow_switch
         }
 
     def _format_display_name(self, name: str) -> str:

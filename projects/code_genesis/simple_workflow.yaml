@@ -1,0 +1,29 @@
+orchestrator:
+  agent_config: orchestrator.yaml
+  agent:
+    kwargs:
+      code_file: workflow/orchestrator.py
+  next:
+    - install
+
+install:
+  agent_config: install.yaml
+  agent:
+    kwargs:
+      code_file: workflow/install.py
+  next:
+    - coding
+
+coding:
+  agent_config: coding.yaml
+  agent:
+    kwargs:
+      code_file: workflow/coding.py
+  next:
+    - refine
+
+refine:
+  agent:
+    kwargs:
+      code_file: workflow/refine.py
+  agent_config: refine.yaml

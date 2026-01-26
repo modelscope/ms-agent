@@ -22,6 +22,7 @@ import {
   Alert,
   Chip,
   Tooltip,
+  Autocomplete,
 } from '@mui/material';
 import {
   Close as CloseIcon,
@@ -42,6 +43,12 @@ interface LLMConfig {
   base_url: string;
   temperature: number;
   max_tokens: number;
+}
+
+interface EditFileConfig {
+  api_key: string;
+  base_url: string;
+  diff_model: string;
 }
 
 interface MCPServer {
@@ -75,6 +82,11 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
     temperature: 0.7,
     max_tokens: 4096,
   });
+  const [editFileConfig, setEditFileConfig] = useState<EditFileConfig>({
+    api_key: '',
+    base_url: 'https://api.morphllm.com/v1',
+    diff_model: 'morph-v3-fast',
+  });
   const [mcpServers, setMcpServers] = useState<Record<string, MCPServer>>({});
   const [newServerName, setNewServerName] = useState('');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -88,19 +100,29 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
 
   const loadConfig = async () => {
     try {
-      const [llmRes, mcpRes] = await Promise.all([
+      const [llmRes, mcpRes, editFileRes] = await Promise.all([
         fetch('/api/config/llm'),
         fetch('/api/config/mcp'),
+        fetch('/api/config/edit_file'),
       ]);
 
       if (llmRes.ok) {
         const data = await llmRes.json();
+        // Ensure temperature is between 0 and 1
+        if (data.temperature !== undefined) {
+          data.temperature = Math.max(0, Math.min(1, data.temperature));
+        }
         setLlmConfig(data);
       }
 
       if (mcpRes.ok) {
         const data = await mcpRes.json();
         setMcpServers(data.mcpServers || {});
+      }
+
+      if (editFileRes.ok) {
+        const data = await editFileRes.json();
+        setEditFileConfig(data);
       }
     } catch (error) {
       console.error('Failed to load config:', error);
@@ -122,7 +144,13 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
         body: JSON.stringify({ mcpServers: mcpServers }),
       });
 
-      if (llmRes.ok && mcpRes.ok) {
+      const editFileRes = await fetch('/api/config/edit_file', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editFileConfig),
+      });
+
+      if (llmRes.ok && mcpRes.ok && editFileRes.ok) {
         setSaveStatus('saved');
         setTimeout(() => setSaveStatus('idle'), 2000);
       } else {
@@ -231,30 +259,30 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
               </Select>
             </FormControl>
 
-            <FormControl fullWidth>
-              <InputLabel>Model</InputLabel>
-              <Select
-                value={llmConfig.model}
-                label="Model"
-                onChange={(e) => setLlmConfig((prev) => ({ ...prev, model: e.target.value }))}
-              >
-                {models[llmConfig.provider]?.map((m) => (
-                  <MenuItem key={m} value={m}>{m}</MenuItem>
-                ))}
-                {llmConfig.provider === 'custom' && (
-                  <MenuItem value={llmConfig.model}>{llmConfig.model || 'Enter custom model'}</MenuItem>
-                )}
-              </Select>
-            </FormControl>
-
-            {llmConfig.provider === 'custom' && (
-              <TextField
-                fullWidth
-                label="Custom Model Name"
-                value={llmConfig.model}
-                onChange={(e) => setLlmConfig((prev) => ({ ...prev, model: e.target.value }))}
-              />
-            )}
+            <Autocomplete
+              freeSolo
+              options={models[llmConfig.provider] || []}
+              value={llmConfig.model}
+              onInputChange={(_, newValue, reason) => {
+                // 只在用户输入时更新（不是选择时）
+                if (reason === 'input') {
+                  setLlmConfig((prev) => ({ ...prev, model: newValue }));
+                }
+              }}
+              onChange={(_, newValue) => {
+                // 处理从下拉列表选择的情况
+                const modelValue = typeof newValue === 'string' ? newValue : (newValue || '');
+                setLlmConfig((prev) => ({ ...prev, model: modelValue }));
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Model"
+                  placeholder="选择或输入模型名称"
+                  helperText="可以从列表中选择，也可以直接输入自定义模型名称"
+                />
+              )}
+            />
 
             <TextField
               fullWidth
@@ -277,17 +305,22 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
             />
 
             <Box>
-              <Typography gutterBottom>Temperature: {llmConfig.temperature}</Typography>
+              <Typography gutterBottom>Temperature: {llmConfig.temperature.toFixed(1)}</Typography>
               <Slider
                 value={llmConfig.temperature}
-                onChange={(_, v) => setLlmConfig((prev) => ({ ...prev, temperature: v as number }))}
+                onChange={(_, v) => {
+                  const tempValue = v as number;
+                  // Ensure temperature is between 0 and 1
+                  const clampedValue = Math.max(0, Math.min(1, tempValue));
+                  setLlmConfig((prev) => ({ ...prev, temperature: clampedValue }));
+                }}
                 min={0}
-                max={2}
+                max={1}
                 step={0.1}
                 marks={[
                   { value: 0, label: '0' },
+                  { value: 0.5, label: '0.5' },
                   { value: 1, label: '1' },
-                  { value: 2, label: '2' },
                 ]}
               />
             </Box>
@@ -296,8 +329,58 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
               fullWidth
               label="Max Tokens"
               type="number"
-              value={llmConfig.max_tokens}
-              onChange={(e) => setLlmConfig((prev) => ({ ...prev, max_tokens: parseInt(e.target.value) || 4096 }))}
+              value={llmConfig.max_tokens || ''}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value === '') {
+                  setLlmConfig((prev) => ({ ...prev, max_tokens: 0 }));
+                } else {
+                  const numValue = parseInt(value, 10);
+                  if (!isNaN(numValue) && numValue >= 0) {
+                    setLlmConfig((prev) => ({ ...prev, max_tokens: numValue }));
+                  }
+                }
+              }}
+              onBlur={(e) => {
+                // If empty on blur, set to default
+                if (e.target.value === '' || parseInt(e.target.value, 10) === 0) {
+                  setLlmConfig((prev) => ({ ...prev, max_tokens: 4096 }));
+                }
+              }}
+            />
+
+            {/* Edit File Config Section */}
+            <Divider sx={{ my: 2 }} />
+            <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+              Edit File Configuration
+            </Typography>
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Configure the API for the edit_file tool. If no API key is provided, the edit_file tool will be disabled.
+            </Alert>
+
+            <TextField
+              fullWidth
+              label="API Key"
+              type="password"
+              value={editFileConfig.api_key}
+              onChange={(e) => setEditFileConfig((prev) => ({ ...prev, api_key: e.target.value }))}
+              helperText="API key for MorphLLM service (required to enable edit_file tool)"
+            />
+
+            <TextField
+              fullWidth
+              label="Base URL"
+              value={editFileConfig.base_url}
+              onChange={(e) => setEditFileConfig((prev) => ({ ...prev, base_url: e.target.value }))}
+              helperText="Base URL for MorphLLM API"
+            />
+
+            <TextField
+              fullWidth
+              label="Diff Model"
+              value={editFileConfig.diff_model}
+              onChange={(e) => setEditFileConfig((prev) => ({ ...prev, diff_model: e.target.value }))}
+              helperText="Model name for code diff generation (e.g., morph-v3-fast)"
             />
           </Box>
         </TabPanel>

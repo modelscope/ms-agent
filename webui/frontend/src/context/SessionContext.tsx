@@ -17,6 +17,7 @@ export interface Project {
   type: 'workflow' | 'agent' | 'script';
   path: string;
   has_readme: boolean;
+  supports_workflow_switch?: boolean;
 }
 
 export interface WorkflowProgress {
@@ -58,11 +59,12 @@ interface SessionContextType {
   isStreaming: boolean;
   isLoading: boolean;
   loadProjects: () => Promise<void>;
-  createSession: (projectId: string) => Promise<Session | null>;
+  createSession: (projectId: string, workflowType?: string) => Promise<Session | null>;
   selectSession: (sessionId: string, initialQuery?: string, sessionObj?: Session) => void;
   sendMessage: (content: string) => void;
   stopAgent: () => void;
   clearLogs: () => void;
+  clearSession: () => void;
 }
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
@@ -118,12 +120,15 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
   }, []);
 
   // Create session
-  const createSession = useCallback(async (projectId: string): Promise<Session | null> => {
+  const createSession = useCallback(async (projectId: string, workflowType: string = 'standard'): Promise<Session | null> => {
     try {
       const response = await fetch(`${API_BASE}/sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project_id: projectId }),
+        body: JSON.stringify({
+          project_id: projectId,
+          workflow_type: workflowType
+        }),
       });
 
       if (response.ok) {
@@ -367,6 +372,19 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
     setLogs([]);
   }, []);
 
+  // Clear session (return to home)
+  const clearSession = useCallback(() => {
+    if (ws) {
+      ws.close();
+    }
+    setCurrentSession(null);
+    setMessages([]);
+    setLogs([]);
+    setStreamingContent('');
+    setIsLoading(false);
+    setIsStreaming(false);
+  }, [ws]);
+
   // Initial load
   useEffect(() => {
     loadProjects();
@@ -398,6 +416,7 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
         sendMessage,
         stopAgent,
         clearLogs,
+        clearSession,
       }}
     >
       {children}

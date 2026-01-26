@@ -43,14 +43,14 @@ class RefineAgent(LLMAgent):
             Message(role='system', content=self.config.prompt.system),
             Message(
                 role='user',
-                content=f'原始需求(topic.txt): {topic}\n'
-                f'技术栈(framework.txt): {framework}\n'
-                f'通讯协议(protocol.txt): {protocol}\n'
-                f'文件列表:{file_info}\n'
-                f'你的shell工具的workspace_dir是{self.output_dir},'
-                f'你使用的工具均以该目录作为当前目录.\n'
-                f'python环境是: {sys.executable}\n'
-                f'请针对项目进行refine:'),
+                content=f'Original requirements (topic.txt): {topic}\n'
+                f'Tech stack (framework.txt): {framework}\n'
+                f'Communication protocol (protocol.txt): {protocol}\n'
+                f'File list:\n{file_info}\n'
+                f'Your shell tool workspace_dir is {self.output_dir}; '
+                f'all tools should use this directory as the current working directory.\n'
+                f'Python executable: {sys.executable}\n'
+                f'Please refine the project and deploy it to EdgeOne Pages:'),
         ]
         return await super().run(messages, **kwargs)
 

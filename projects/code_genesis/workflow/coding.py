@@ -69,7 +69,7 @@ class Programmer(LLMAgent):
         self.lsp_check = getattr(config, 'lsp_check', True)
         self.index_dir = os.path.join(self.output_dir, index_dir)
         self.lock_dir = os.path.join(self.output_dir, DEFAULT_LOCK_DIR)
-        self.code_condenser = CodeCondenser(config)
+        # self.code_condenser = CodeCondenser(config)
         self.code_files = []
         self.shared_lsp_context = kwargs.get('shared_lsp_context', {})
         self.unchecked_files = {}
@@ -78,8 +78,8 @@ class Programmer(LLMAgent):
         self.find_all_files()
         self.error_counter = 0
 
-    async def condense_memory(self, messages):
-        return messages
+    # async def condense_memory(self, messages):
+    #     return messages
 
     async def add_memory(self, messages, **kwargs):
         return
@@ -446,11 +446,11 @@ class Programmer(LLMAgent):
                     f'We check the code with LSP server and regex matching, here are the issues found:\n'
                     f'{all_issues}\n'
                     f'You can read related file to find the root cause if needed\n'
-                    f'Then fix the file with `replace_file_contents`\n'
+                    f'Then fix the file with `edit_file`\n'
                     f'Some tips:\n'
                     f'1. Check any code file not in your dependencies and not in the `file_design.txt`\n'
                     f'2. Consider the relative path mistakes to your current writing file location\n'
-                    f'3. Do not rewrite the code with <result></result> after fixing with `replace_file_contents`\n'
+                    f'3. Do not rewrite the code with <result></result> after fixing with `edit_file`\n'
                 )
                 messages.append(Message(role='user', content=all_issues))
                 messages[0].content = self.config.prompt.system
@@ -485,7 +485,7 @@ class Programmer(LLMAgent):
                 ))
 
         # Condense code block and prepare index files
-        await self.code_condenser.run(messages)
+        # await self.code_condenser.run(messages)
 
 
 @dataclasses.dataclass
@@ -574,24 +574,26 @@ class CodingAgent(CodeAgent):
                 except Exception:  # noqa
                     pass
 
-    async def write_code(self, topic, user_story, framework, protocol, name,
-                         description, index, last_batch, siblings, next_batch):
+    async def write_code(self, topic, user_story, framework, protocol,
+                         file_order, name, description, index, last_batch,
+                         siblings, next_batch):
         logger.info(f'Writing {name}')
         _config = deepcopy(self.config)
         messages = [
             Message(role='system', content=self.config.prompt.system),
             Message(
                 role='user',
-                content=f'原始需求(topic.txt): {topic}\n'
-                f'LLM规划的用户故事(user_story.txt): {user_story}\n'
-                f'技术栈(framework.txt): {framework}\n'
-                f'通讯协议(protocol.txt): {protocol}\n'
-                f'你需要编写的文件: {name}\n'
-                f'文件编写index: {index}\n'
-                f'文件描述: {description}\n'
-                f'上一批编写的代码:{last_batch}\n'
-                f'其他workers在并行编写:{siblings}\n'
-                f'下一批编写的代码:{next_batch}\n'),
+                content=f'Original requirements (topic.txt): {topic}\n'
+                f'User story planned by LLM (user_story.txt): {user_story}\n'
+                f'Tech stack (framework.txt): {framework}\n'
+                f'Communication protocol (protocol.txt): {protocol}\n'
+                f'File Order: {file_order}\n'
+                f'File to implement: {name}\n'
+                f'Batch index: {index}\n'
+                f'File description: {description}\n'
+                f'Previous batch output:\n{last_batch}\n'
+                f'Other workers writing in parallel:\n{siblings}\n'
+                f'Next batch planned:\n{next_batch}\n'),
         ]
 
         _config = deepcopy(self.config)
@@ -615,6 +617,8 @@ class CodingAgent(CodeAgent):
             framework = f.read()
         with open(os.path.join(self.output_dir, 'protocol.txt')) as f:
             protocol = f.read()
+        with open(os.path.join(self.output_dir, 'file_order.txt')) as f:
+            file_order = f.read()
 
         file_orders = self.construct_file_orders()
         file_relation = OrderedDict()
@@ -646,6 +650,7 @@ class CodingAgent(CodeAgent):
                         user_story,
                         framework,
                         protocol,
+                        file_order,
                         name,
                         description,
                         index=idx,
@@ -655,8 +660,6 @@ class CodingAgent(CodeAgent):
                     for name, description in files.items()
                 ]
 
-                # for task in tasks:
-                #     await task
                 await asyncio.gather(*tasks, return_exceptions=True)
 
             self.refresh_file_status(file_relation)
@@ -718,13 +721,13 @@ class CodingAgent(CodeAgent):
                 file_relation[file_name].done = os.path.exists(file_path)
 
     def construct_file_information(self, file_relation, add_output_dir=False):
-        file_info = '以下文件按架构设计编写顺序排序：\n'
+        file_info = 'Files in architectural build order:\n'
         for file, relation in file_relation.items():
             if add_output_dir:
                 file = os.path.join(self.output_dir, file)
             if relation.done:
-                file_info += f'{file}: ✅已构建\n'
+                file_info += f'{file}: ✅Built\n'
             else:
-                file_info += f'{file}: ❌未构建\n'
+                file_info += f'{file}: ❌Not built\n'
         with open(os.path.join(self.output_dir, 'tasks.txt'), 'w') as f:
             f.write(file_info)

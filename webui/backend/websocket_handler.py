@@ -147,9 +147,11 @@ async def start_agent(session_id: str, data: Dict[str, Any],
         })
         return
 
-    print(
-        f"[Agent] Project: {project['id']}, type: {project['type']}, config: {project['config_file']}"
-    )
+    # Get workflow_type from session (default to 'standard')
+    workflow_type = session.get('workflow_type', 'standard')
+
+    print(f"[Agent] Project: {project['id']}, type: {project['type']}, "
+          f"config: {project['config_file']}, workflow_type: {workflow_type}")
 
     query = data.get('query', '')
     print(f'[Agent] Query: {query[:100]}...'
@@ -158,7 +160,7 @@ async def start_agent(session_id: str, data: Dict[str, Any],
     # Add user message to session (but don't broadcast - frontend already has it)
     session_manager.add_message(session_id, 'user', query, 'text')
 
-    # Create agent runner
+    # Create agent runner with workflow_type
     runner = AgentRunner(
         session_id=session_id,
         project=project,
@@ -171,7 +173,8 @@ async def start_agent(session_id: str, data: Dict[str, Any],
         on_complete=lambda result: asyncio.create_task(
             on_agent_complete(session_id, result)),
         on_error=lambda err: asyncio.create_task(
-            on_agent_error(session_id, err)))
+            on_agent_error(session_id, err)),
+        workflow_type=workflow_type)
 
     agent_runners[session_id] = runner
     session_manager.update_session(session_id, {'status': 'running'})

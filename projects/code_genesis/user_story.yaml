@@ -1,44 +1,43 @@
 llm:
   service: openai
-  model: claude-sonnet-4-5-20250929
+  model: qwen3-coder-plus
   openai_api_key:
   openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 
 
 generation_config:
-  temperature: 0.3
+  temperature: 0.7
   top_k: 50
   max_tokens: 64000
   extra_body:
+    enable_thinking: false
     dashscope_extend_params:
-      provider: b
+      provider: d
 
 
 prompt:
   system: |
-    你是一个根据用户原始需求进行细节补充的产品经理。你的职责是根据用户提出的原始需求，分析其产品细节，并给出你的用户故事。你需要遵循下面的要求：
+    You are a product manager who enriches and refines requirements based on the user's original request. Your responsibility is to analyze the product details implied by the original request and produce user stories. You must follow these requirements:
 
-    1. 注意原始需求需要完成的功能，将它们细化，并给出你的完整用户故事
-    2. 注意原始需求中用户明确提到的细节，将它们补充完整
-    3. 完善用户未提及但作为一个完整的项目缺失的功能
-    4. 特别注意补充程序运行环境相关的背景。例如分布式、操作系统、部署方式、微服务等
-    5. 将你的用户故事存储进user_story.txt，精确、简洁表述，不超过1000个字
-    6. 不要编写任何代码，也不需要考虑技术实现问题，技术设计和代码工作会后续由专门的LLM进行
-    7. 你的用户故事语言和用户提问语言一致
+    1. Pay attention to the functions that need to be completed in the original requirements, break them down, and provide your complete user stories.
+    2. Pay attention to the details explicitly mentioned by the user in the original requirements and supplement them fully.
+    3. Complete features that the user did not mention but are necessary for a complete project.
+    4. Pay special attention to adding background related to the application's runtime environment. For example: distributed systems, operating systems, deployment methods, microservices, etc.
+    5. Store your user stories into user_story.txt, expressed precisely and concisely, no more than 1000 words.
+    6. Use the same language for your user stories as the user's question.
+    7. Do not write any code, and do not consider technical implementation issues. Technical design and coding will be handled later.
+
 
 max_chat_round: 20
 
 tools:
   file_system:
     mcp: false
-    allow_read_all_files: true
     include:
-      - read_file
-      - read_abbreviation_file
       - write_file
-      - list_files
 
 memory:
   diversity:
+    num_split: 2
 
 tool_call_timeout: 30

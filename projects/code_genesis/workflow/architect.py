@@ -8,7 +8,13 @@ from ms_agent.llm import Message
 class ArchitectureAgent(LLMAgent):
 
     async def run(self, messages, **kwargs):
-        query = '请读取对应文件并给出你的设计：'
+        with open(os.path.join(self.output_dir, 'topic.txt'), 'r') as f:
+            topic = f.read()
+
+        with open(os.path.join(self.output_dir, 'user_story.txt'), 'r') as f:
+            user_story = f.read()
+
+        query = f'Topic: {topic}\nUser Story: {user_story}\nPlease give your design.'
 
         messages = [
             Message(role='system', content=self.config.prompt.system),

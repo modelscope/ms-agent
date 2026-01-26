@@ -22,15 +22,21 @@ class ConfigManager:
             'temperature': 0.7,
             'max_tokens': 4096
         },
+        'edit_file_config': {
+            'api_key': '',
+            'base_url': 'https://api.morphllm.com/v1',
+            'diff_model': 'morph-v3-fast'
+        },
         'mcp_servers': {},
         'theme': 'dark',
         'output_dir': './output'
     }
 
     def __init__(self, config_dir: str):
-        self.config_dir = config_dir
-        self.config_file = os.path.join(config_dir, 'settings.json')
-        self.mcp_file = os.path.join(config_dir, 'mcp_servers.json')
+        # Expand user path to handle ~ notation
+        self.config_dir = os.path.expanduser(config_dir)
+        self.config_file = os.path.join(self.config_dir, 'settings.json')
+        self.mcp_file = os.path.join(self.config_dir, 'mcp_servers.json')
         self._lock = Lock()
         self._config: Optional[Dict[str, Any]] = None
         self._ensure_config_dir()
@@ -116,6 +122,18 @@ class ConfigManager:
             self._config['mcp_servers'] = mcp_config['mcpServers']
         else:
             self._config['mcp_servers'] = mcp_config
+        self._save_config()
+
+    def get_edit_file_config(self) -> Dict[str, Any]:
+        """Get edit_file_config configuration"""
+        config = self._load_config()
+        return config.get('edit_file_config',
+                          self.DEFAULT_CONFIG['edit_file_config'])
+
+    def update_edit_file_config(self, edit_file_config: Dict[str, Any]):
+        """Update edit_file_config configuration"""
+        self._load_config()
+        self._config['edit_file_config'] = edit_file_config
         self._save_config()
 
     def add_mcp_server(self, name: str, server_config: Dict[str, Any]):

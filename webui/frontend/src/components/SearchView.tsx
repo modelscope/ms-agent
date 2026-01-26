@@ -12,6 +12,8 @@ import {
   alpha,
   Grid,
   Tooltip,
+  ToggleButton,
+  ToggleButtonGroup,
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -41,18 +43,26 @@ const SearchView: React.FC = () => {
   const [query, setQuery] = useState('');
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [workflowType, setWorkflowType] = useState<'standard' | 'simple'>('standard');
 
   const handleProjectSelect = (project: Project) => {
     setSelectedProject(project);
+    // Reset workflow type when switching projects
+    if (project.supports_workflow_switch) {
+      setWorkflowType('standard');
+    }
   };
 
   const handleSubmit = useCallback(async () => {
     if (!selectedProject || !query.trim()) return;
 
-    console.log('[SearchView] Submitting with project:', selectedProject.id, 'query:', query);
+    console.log('[SearchView] Submitting with project:', selectedProject.id, 'query:', query, 'workflow_type:', workflowType);
     setIsSubmitting(true);
     try {
-      const session = await createSession(selectedProject.id);
+      const session = await createSession(
+        selectedProject.id,
+        selectedProject.supports_workflow_switch ? workflowType : 'standard'
+      );
       console.log('[SearchView] Session created:', session);
       if (session) {
         // Pass the session object directly to avoid race condition
@@ -63,7 +73,7 @@ const SearchView: React.FC = () => {
     } finally {
       setIsSubmitting(false);
     }
-  }, [selectedProject, query, createSession, selectSession]);
+  }, [selectedProject, query, workflowType, createSession, selectSession]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -195,7 +205,7 @@ const SearchView: React.FC = () => {
             }}
           />
 
-          {/* Selected Project Badge */}
+          {/* Selected Project Badge and Workflow Selector */}
           <AnimatePresence>
             {selectedProject && (
               <motion.div
@@ -203,7 +213,7 @@ const SearchView: React.FC = () => {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
               >
-                <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
+                <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                   <Chip
                     icon={projectIcons[selectedProject.id] ?? <WorkflowIcon />}
                     label={selectedProject.display_name}
@@ -217,6 +227,80 @@ const SearchView: React.FC = () => {
                     }}
                     variant="outlined"
                   />
+
+                  {/* Workflow Type Selector for code_genesis */}
+                  {selectedProject.supports_workflow_switch && (
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: 1,
+                        p: 2,
+                        borderRadius: 2,
+                        backgroundColor: alpha(theme.palette.background.paper, 0.6),
+                        border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
+                      }}
+                    >
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          color: theme.palette.text.secondary,
+                          fontWeight: 500,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em',
+                          fontSize: '0.7rem',
+                        }}
+                      >
+                        Select Workflow Type
+                      </Typography>
+                      <ToggleButtonGroup
+                        value={workflowType}
+                        exclusive
+                        onChange={(_, newValue) => {
+                          if (newValue !== null) {
+                            setWorkflowType(newValue);
+                          }
+                        }}
+                        size="small"
+                        sx={{
+                          '& .MuiToggleButton-root': {
+                            px: 2,
+                            py: 0.5,
+                            fontSize: '0.75rem',
+                            borderColor: alpha(theme.palette.primary.main, 0.3),
+                            '&.Mui-selected': {
+                              backgroundColor: theme.palette.primary.main,
+                              color: theme.palette.primary.contrastText,
+                              '&:hover': {
+                                backgroundColor: theme.palette.primary.dark,
+                              },
+                            },
+                          },
+                        }}
+                      >
+                        <ToggleButton value="standard">
+                          Standard Workflow
+                        </ToggleButton>
+                        <ToggleButton value="simple">
+                          Simple Workflow
+                        </ToggleButton>
+                      </ToggleButtonGroup>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          color: theme.palette.text.secondary,
+                          fontSize: '0.65rem',
+                          textAlign: 'center',
+                          maxWidth: 300,
+                        }}
+                      >
+                        {workflowType === 'standard'
+                          ? 'Full design process: user story, architecture, file design, etc.'
+                          : 'Simplified process: directly proceed to coding'}
+                      </Typography>
+                    </Box>
+                  )}
                 </Box>
               </motion.div>
             )}

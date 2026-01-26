@@ -1,4 +1,4 @@
-# Copyright (c) ModelScope Contributors. All rights reserved.
+# Copyright (c) Alibaba, Inc. and its affiliates.
 import argparse
 import os.path
 from abc import abstractmethod
@@ -108,7 +108,10 @@ class Config:
     @staticmethod
     def is_workflow(config: DictConfig) -> bool:
         assert config.name is not None, 'Cannot find a valid name in this config'
-        return config.name in ['workflow.yaml', 'workflow.yml']
+        return config.name in [
+            'workflow.yaml', 'workflow.yml', 'simple_workflow.yaml',
+            'simple_workflow.yml'
+        ]
 
     @staticmethod
     def parse_args() -> Dict[str, Any]:
@@ -123,15 +126,6 @@ class Config:
                     '--'), f'Parameter not correct: {unknown}'
                 _dict_config[key[2:]] = value
         return _dict_config
-
-    @staticmethod
-    def safe_get_config(config: DictConfig, keys: str) -> Any:
-        node = config
-        for key in keys.split('.'):
-            if not hasattr(node, key):
-                return None
-            node = getattr(node, key)
-        return node
 
     @staticmethod
     def _update_config(config: Union[DictConfig, ListConfig],
@@ -151,14 +145,42 @@ class Config:
                         if current_path in extra:
                             logger.info(
                                 f'Replacing {current_path} with extra value.')
-                            setattr(_config, name, extra[current_path])
+                            # Convert temperature to float and max_tokens to int if they're numeric strings
+                            value_to_set = extra[current_path]
+                            if name == 'temperature' and isinstance(
+                                    value_to_set, str):
+                                try:
+                                    value_to_set = float(value_to_set)
+                                except (ValueError, TypeError):
+                                    pass
+                            elif name == 'max_tokens' and isinstance(
+                                    value_to_set, str):
+                                try:
+                                    value_to_set = int(value_to_set)
+                                except (ValueError, TypeError):
+                                    pass
+                            setattr(_config, name, value_to_set)
                         # Find the key in extra that matches name (case-insensitive)
                         elif (key_match := next(
                             (key
                              for key in extra if key.lower() == name.lower()),
                                 None)) is not None:
                             logger.info(f'Replacing {name} with extra value.')
-                            setattr(_config, name, extra[key_match])
+                            # Convert temperature to float and max_tokens to int if they're numeric strings
+                            value_to_set = extra[key_match]
+                            if name == 'temperature' and isinstance(
+                                    value_to_set, str):
+                                try:
+                                    value_to_set = float(value_to_set)
+                                except (ValueError, TypeError):
+                                    pass
+                            elif name == 'max_tokens' and isinstance(
+                                    value_to_set, str):
+                                try:
+                                    value_to_set = int(value_to_set)
+                                except (ValueError, TypeError):
+                                    pass
+                            setattr(_config, name, value_to_set)
                         # Handle placeholder replacement like <api_key>
                         elif (isinstance(value, str) and value.startswith('<')
                               and value.endswith('>')
