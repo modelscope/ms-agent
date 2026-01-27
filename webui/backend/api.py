@@ -318,7 +318,10 @@ async def list_output_files(
 
     resolved_root = os.path.normpath(os.path.abspath(resolved_root))
 
-    # TODO: Security check: root must be within allowed roots
+    # Warning: Web UI is for local-only convenience (frontend/backend assumed localhost).
+    # For production, enforce strict backend file-access validation and authorization
+    # to prevent arbitrary path read/write (e.g., path traversal).
+    # TODO: Security check: ensure `resolved_root` is within configured allowed roots.
 
     def build_tree(dir_path: str) -> dict:
         result = {'folders': {}, 'files': []}
@@ -404,13 +407,10 @@ def resolve_root_dir(root_dir: Optional[str]) -> str:
 
     resolved = os.path.normpath(os.path.abspath(resolved))
 
-    # Security: resolved root must be within allowed roots
-    def within(child: str, parent: str) -> bool:
-        parent = os.path.normpath(os.path.abspath(parent))
-        child = os.path.normpath(os.path.abspath(child))
-        return child == parent or child.startswith(parent + os.sep)
-
-    # TODO: security dir check
+    # Warning: Web UI is for local-only convenience (frontend/backend assumed localhost).
+    # For production, enforce strict backend file-access validation and authorization
+    # to prevent arbitrary path read/write (e.g., path traversal).
+    # TODO: Security check: ensure `resolved` is within configured allowed roots.
 
     return resolved
 
@@ -429,7 +429,10 @@ def resolve_file_path(root_dir_abs: str, file_path: str) -> str:
         full_path = os.path.normpath(
             os.path.abspath(os.path.join(root_dir_abs, file_path)))
 
-    # TODO: Security: file must be within root_dir_abs
+    # Warning: Web UI is for local-only convenience (frontend/backend assumed localhost).
+    # For production, enforce strict backend file-access validation and authorization
+    # to prevent arbitrary path read/write (e.g., path traversal).
+    # TODO: Security check: ensure `full_path` is within configured allowed roots.
 
     return full_path
 
@@ -514,7 +517,10 @@ def resolve_and_check_path(file_path: str) -> str:
 
     full_path = os.path.normpath(full_path)
 
-    # TODO: security path check
+    # Warning: Web UI is for local-only convenience (frontend/backend assumed localhost).
+    # For production, enforce strict backend file-access validation and authorization
+    # to prevent arbitrary path read/write (e.g., path traversal).
+    # TODO: Security check: ensure `full_path` is within configured allowed roots.
 
     if not os.path.exists(full_path):
         raise HTTPException(
