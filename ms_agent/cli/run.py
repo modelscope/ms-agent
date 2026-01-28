@@ -17,6 +17,26 @@ def subparser_func(args):
     return RunCMD(args)
 
 
+def list_builtin_projects():
+    try:
+        root = importlib_resources.files('ms_agent').joinpath('projects')
+        if not root.exists():
+            return []
+        return sorted([p.name for p in root.iterdir() if p.is_dir()])
+    except Exception:
+        # 兜底：help 不要因为资源不可用而崩
+        return []
+
+
+def project_help_text():
+    projects = list_builtin_projects()
+    if projects:
+        return (
+            'Built-in bundled project name under package ms_agent/projects. '
+            f'Available: {", ".join(projects)}')
+    return 'Built-in bundled project name under package ms_agent/projects.'
+
+
 class RunCMD(CLICommand):
     name = 'run'
 
@@ -26,6 +46,8 @@ class RunCMD(CLICommand):
     @staticmethod
     def define_args(parsers: argparse.ArgumentParser):
         """Define args for run command."""
+        projects = list_builtin_projects()
+
         parser: argparse.ArgumentParser = parsers.add_parser(RunCMD.name)
         parser.add_argument(
             '--query',
@@ -45,7 +67,8 @@ class RunCMD(CLICommand):
             required=False,
             type=str,
             default=None,
-            help='Built-in bundled project name under package ms_agent/projects, e.g. singularity_cinema'
+            choices=projects if projects else None,
+            help=project_help_text(),
         )
         parser.add_argument(
             '--trust_remote_code',
@@ -99,17 +122,23 @@ class RunCMD(CLICommand):
     def execute(self):
         if getattr(self.args, 'project', None):
             if self.args.config:
-                raise ValueError('Please specify only one of --config or --project')
+                raise ValueError(
+                    'Please specify only one of --config or --project')
 
             project = self.args.project
-            project_trav = importlib_resources.files('ms_agent').joinpath('projects', project)
+            project_trav = importlib_resources.files('ms_agent').joinpath(
+                'projects', project)
 
             if not project_trav.exists():
-                projects_root = importlib_resources.files('ms_agent').joinpath('projects')
+                projects_root = importlib_resources.files('ms_agent').joinpath(
+                    'projects')
                 available = []
                 if projects_root.exists():
-                    available = [p.name for p in projects_root.iterdir() if p.is_dir()]
-                raise ValueError(f'Unknown project: {project}. Available: {available}')
+                    available = [
+                        p.name for p in projects_root.iterdir() if p.is_dir()
+                    ]
+                raise ValueError(
+                    f'Unknown project: {project}. Available: {available}')
 
             # as_file ensures we get a real filesystem path even if installed as zip
             with importlib_resources.as_file(project_trav) as project_dir:

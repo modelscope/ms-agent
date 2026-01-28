@@ -1,10 +1,11 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 # !/usr/bin/env python
 import os
-from setuptools import find_packages, setup
-from typing import List
 import shutil
+from setuptools import find_packages, setup
 from setuptools.command.build_py import build_py as _build_py
+from typing import List
+
 
 def readme():
     with open('README.md', encoding='utf-8') as f:
@@ -119,6 +120,7 @@ def parse_requirements(fname='requirements.txt', with_version=True):
 
 
 class build_py(_build_py):
+
     def run(self):
         super().run()
 
