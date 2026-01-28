@@ -3,7 +3,8 @@
 import os
 from setuptools import find_packages, setup
 from typing import List
-
+import shutil
+from setuptools.command.build_py import build_py as _build_py
 
 def readme():
     with open('README.md', encoding='utf-8') as f:
@@ -117,6 +118,24 @@ def parse_requirements(fname='requirements.txt', with_version=True):
     return gen_packages_items()
 
 
+class build_py(_build_py):
+    def run(self):
+        super().run()
+
+        # 将仓库根目录的 projects/ 拷贝到构建目录的 ms_agent/projects/
+        src = os.path.join(os.path.dirname(__file__), 'projects')
+        if not os.path.isdir(src):
+            return
+
+        dst = os.path.join(self.build_lib, 'ms_agent', 'projects')
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+
+        if os.path.exists(dst):
+            shutil.rmtree(dst)
+
+        shutil.copytree(src, dst)
+
+
 if __name__ == '__main__':
     print(
         'Usage: `python setup.py sdist bdist_wheel` or `pip install .[framework]` from source code'
@@ -148,7 +167,9 @@ if __name__ == '__main__':
         url='https://github.com/modelscope/ms-agent',
         packages=find_packages(exclude=('configs', 'demo')),
         include_package_data=True,
+        cmdclass={'build_py': build_py},
         package_data={
+            'ms_agent': ['projects/**/*'],
             '': ['*.h', '*.cpp', '*.cu'],
         },
         classifiers=[

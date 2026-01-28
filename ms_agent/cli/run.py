@@ -2,6 +2,7 @@
 import argparse
 import asyncio
 import os
+from importlib import resources as importlib_resources
 
 from ms_agent.config import Config
 from ms_agent.utils import strtobool
@@ -39,6 +40,13 @@ class RunCMD(CLICommand):
             type=str,
             default=None,
             help='The directory or the repo id of the config file')
+        parser.add_argument(
+            '--project',
+            required=False,
+            type=str,
+            default=None,
+            help='Built-in bundled project name under package ms_agent/projects, e.g. singularity_cinema'
+        )
         parser.add_argument(
             '--trust_remote_code',
             required=False,
@@ -89,6 +97,27 @@ class RunCMD(CLICommand):
         parser.set_defaults(func=subparser_func)
 
     def execute(self):
+        if getattr(self.args, 'project', None):
+            if self.args.config:
+                raise ValueError('Please specify only one of --config or --project')
+
+            project = self.args.project
+            project_trav = importlib_resources.files('ms_agent').joinpath('projects', project)
+
+            if not project_trav.exists():
+                projects_root = importlib_resources.files('ms_agent').joinpath('projects')
+                available = []
+                if projects_root.exists():
+                    available = [p.name for p in projects_root.iterdir() if p.is_dir()]
+                raise ValueError(f'Unknown project: {project}. Available: {available}')
+
+            # as_file ensures we get a real filesystem path even if installed as zip
+            with importlib_resources.as_file(project_trav) as project_dir:
+                self.args.config = str(project_dir)
+                return self._execute_with_config()
+        return self._execute_with_config()
+
+    def _execute_with_config(self):
         if not self.args.config:
             current_dir = os.getcwd()
             if os.path.exists(os.path.join(current_dir, AGENT_CONFIG_FILE)):
