@@ -7,6 +7,9 @@ import json
 from arxiv import SortCriterion, SortOrder
 from ms_agent.tools.search.search_base import (BaseResult, SearchRequest,
                                                SearchResponse, SearchResult)
+from ms_agent.utils.logger import get_logger
+
+logger = get_logger()
 
 
 class ArxivSearchRequest(SearchRequest):
@@ -19,6 +22,9 @@ class ArxivSearchRequest(SearchRequest):
                  num_results: Optional[int] = 10,
                  sort_strategy: SortCriterion = SortCriterion.Relevance,
                  sort_order: SortOrder = SortOrder.Descending,
+                 categories: Optional[List[str]] = None,
+                 date_from: Optional[str] = None,
+                 date_to: Optional[str] = None,
                  **kwargs: Any):
         """
         Initialize ArxivSearchRequest with search parameters.
@@ -28,10 +34,16 @@ class ArxivSearchRequest(SearchRequest):
             num_results: Number of results to return, default is 10
             sort_strategy: The strategy to sort results, default is relevance
             sort_order: The order of sorting, default is descending
+            categories: Optional arXiv category filter list (e.g., ["cs.AI", "cs.LG"])
+            date_from: Optional start date (YYYY-MM-DD), applied client-side
+            date_to: Optional end date (YYYY-MM-DD), applied client-side
         """
         super().__init__(query=query, num_results=num_results, **kwargs)
         self.sort_strategy = sort_strategy
         self.sort_order = sort_order
+        self.categories = categories
+        self.date_from = date_from
+        self.date_to = date_to
         self.sort_strategy_map = {
             'relevance': SortCriterion.Relevance,
             'lastUpdatedDate': SortCriterion.LastUpdatedDate,
@@ -96,6 +108,7 @@ class ArxivSearchResult(SearchResult):
             response: The raw results returned by the search
         """
         super().__init__(query, arguments, response)
+        self.raw_response = response
         self.arguments = self._process_arguments()
         self.response = self._process_results()
 
@@ -106,10 +119,12 @@ class ArxivSearchResult(SearchResult):
         Returns:
             SearchResponse: Processed search results
         """
-        if isinstance(self.response, Generator):
-            self.response = list(self.response)
+        if isinstance(self.raw_response, Generator):
+            self.raw_response = list(self.raw_response)
+        if self.raw_response is None:
+            self.raw_response = []
 
-        if not self.response:
+        if not self.raw_response:
             print(
                 '***Warning: No search results found. This may happen because '
                 'Arxiv\'s search functionality relies on precise metadata matching (e.g., title, '
@@ -123,7 +138,7 @@ class ArxivSearchResult(SearchResult):
             return SearchResponse(results=[])
 
         processed = []
-        for res in self.response:
+        for res in self.raw_response:
             if not isinstance(res, arxiv.Result):
                 print(
                     f'***Warning: Result {res} is not an instance of arxiv.Result.'
@@ -145,13 +160,99 @@ class ArxivSearchResult(SearchResult):
 
     def _process_arguments(self) -> Dict[str, Any]:
         """Process the search arguments to be JSON serializable."""
-        return {
-            'query':
-            self.query,
-            'max_results':
-            self.arguments.get('max_results', None),
-            'sort_strategy':
-            self.arguments.get('sort_strategy', SortCriterion.Relevance).value,
-            'sort_order':
-            self.arguments.get('sort_order', SortOrder.Descending).value
+        sort_strategy = self.arguments.get('sort_strategy', None)
+        if sort_strategy is None:
+            sort_strategy = self.arguments.get('sort_by',
+                                               SortCriterion.Relevance)
+        sort_order = self.arguments.get('sort_order', SortOrder.Descending)
+
+        if isinstance(sort_strategy, SortCriterion):
+            sort_strategy_val = sort_strategy.value
+        elif isinstance(sort_strategy, str):
+            sort_strategy_val = sort_strategy
+        else:
+            sort_strategy_val = SortCriterion.Relevance.value
+
+        if isinstance(sort_order, SortOrder):
+            sort_order_val = sort_order.value
+        elif isinstance(sort_order, str):
+            sort_order_val = sort_order
+        else:
+            sort_order_val = SortOrder.Descending.value
+
+        out = {
+            'query': self.query,
+            'max_results': self.arguments.get('max_results', None),
+            'sort_strategy': sort_strategy_val,
+            'sort_order': sort_order_val,
         }
+
+        # Only include optional filters if they were explicitly provided
+        if 'date_from' in self.arguments:
+            out['date_from'] = self.arguments.get('date_from', None)
+        if 'date_to' in self.arguments:
+            out['date_to'] = self.arguments.get('date_to', None)
+        if 'categories' in self.arguments:
+            out['categories'] = self.arguments.get('categories', None)
+
+        return out
+
+    def to_list(self) -> List[Dict[str, Any]]:
+        """
+        Convert the search results to a list of dictionaries.
+
+        This overrides the base implementation to include arXiv-specific metadata
+        (published_date/authors/categories/resource_uri) similar to arxiv-mcp-server.
+        """
+        if not self.raw_response:
+            logger.info('***Warning: No search results found.')
+            return []
+
+        if not self.query:
+            print('***Warning: No query provided for search results.')
+            return []
+
+        res_list: List[Dict[str, Any]] = []
+        for res in self.raw_response:
+            short_id = getattr(res, 'get_short_id', None)
+            short_id = short_id() if callable(short_id) else None
+
+            published = getattr(res, 'published', None)
+            published_date = published.isoformat() if published else ''
+
+            authors = getattr(res, 'authors', None)
+            if authors:
+                authors = [getattr(a, 'name', str(a)) for a in authors]
+            else:
+                authors = []
+
+            categories = getattr(res, 'categories', None) or []
+
+            res_list.append({
+                'url': (getattr(res, 'pdf_url', None)
+                        or getattr(res, 'entry_id', None) or ''),
+                'id':
+                getattr(res, 'entry_id', None) or '',
+                'title':
+                getattr(res, 'title', None) or '',
+                'published_date':
+                published_date,
+                'summary':
+                getattr(res, 'summary', None) or '',
+                'highlights':
+                None,
+                'highlight_scores':
+                None,
+                'markdown':
+                None,
+                'authors':
+                authors,
+                'categories':
+                categories,
+                'arxiv_id':
+                short_id or '',
+                'resource_uri':
+                f'arxiv://{short_id}' if short_id else '',
+            })
+
+        return res_list

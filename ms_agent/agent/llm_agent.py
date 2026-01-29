@@ -56,6 +56,8 @@ class LLMAgent(Agent):
 
     TOTAL_PROMPT_TOKENS = 0
     TOTAL_COMPLETION_TOKENS = 0
+    TOTAL_CACHED_TOKENS = 0
+    TOTAL_CACHE_CREATION_INPUT_TOKENS = 0
     TOKEN_LOCK = asyncio.Lock()
 
     def __init__(self,
@@ -479,19 +481,33 @@ class LLMAgent(Agent):
         # usage
         prompt_tokens = _response_message.prompt_tokens
         completion_tokens = _response_message.completion_tokens
+        cached_tokens = getattr(_response_message, 'cached_tokens', 0) or 0
+        cache_creation_input_tokens = getattr(
+            _response_message, 'cache_creation_input_tokens', 0) or 0
 
         async with LLMAgent.TOKEN_LOCK:
             LLMAgent.TOTAL_PROMPT_TOKENS += prompt_tokens
             LLMAgent.TOTAL_COMPLETION_TOKENS += completion_tokens
+            LLMAgent.TOTAL_CACHED_TOKENS += cached_tokens
+            LLMAgent.TOTAL_CACHE_CREATION_INPUT_TOKENS += cache_creation_input_tokens
 
         # tokens in the current step
         self.log_output(
             f'[usage] prompt_tokens: {prompt_tokens}, completion_tokens: {completion_tokens}'
         )
+        if cached_tokens or cache_creation_input_tokens:
+            self.log_output(
+                f'[usage_cache] cache_hit: {cached_tokens}, cache_created: {cache_creation_input_tokens}'
+            )
         # total tokens for the process so far
         self.log_output(
             f'[usage_total] total_prompt_tokens: {LLMAgent.TOTAL_PROMPT_TOKENS}, '
             f'total_completion_tokens: {LLMAgent.TOTAL_COMPLETION_TOKENS}')
+        if LLMAgent.TOTAL_CACHED_TOKENS or LLMAgent.TOTAL_CACHE_CREATION_INPUT_TOKENS:
+            self.log_output(
+                f'[usage_cache_total] total_cache_hit: {LLMAgent.TOTAL_CACHED_TOKENS}, '
+                f'total_cache_created: {LLMAgent.TOTAL_CACHE_CREATION_INPUT_TOKENS}'
+            )
 
         yield messages
 

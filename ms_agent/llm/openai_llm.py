@@ -30,6 +30,9 @@ class OpenAI(LLM):
         'role', 'content', 'tool_calls', 'partial', 'prefix', 'tool_call_id'
     }
 
+    # Providers that support cache_control in structured content blocks
+    CACHE_CONTROL_PROVIDERS = ['dashscope', 'anthropic']
+
     def __init__(
         self,
         config: DictConfig,
@@ -50,8 +53,84 @@ class OpenAI(LLM):
             api_key=api_key,
             base_url=base_url,
         )
+        self.base_url = base_url or ''
         self.args: Dict = OmegaConf.to_container(
             getattr(config, 'generation_config', DictConfig({})))
+
+        # Prefix cache configuration
+        # - force_prefix_cache: enable structured content with cache_control for explicit caching
+        # - prefix_cache_roles: which messages to cache (only these are converted to structured format)
+        #   Supports:
+        #     - Role names: 'system', 'user', 'assistant', 'tool'
+        #     - Special values: 'last_message' (only cache the last message in the list)
+        #   Default: ['system'] - system prompt is usually the longest stable prefix
+        self._prefix_cache_enabled = self.args.get('force_prefix_cache', False)
+        self._prefix_cache_roles = set(
+            self.args.get('prefix_cache_roles', ['system']))
+        self._prefix_cache_provider = self._detect_cache_provider()
+
+    def _detect_cache_provider(self) -> Optional[str]:
+        """
+        Detect which provider-specific cache_control format to use based on base_url.
+
+        Returns:
+            Provider name (e.g. 'dashscope', 'anthropic') or None for native OpenAI
+            (which uses automatic prefix caching without explicit cache_control).
+        """
+        if not self._prefix_cache_enabled:
+            return None
+        base_url_lower = self.base_url.lower()
+        for provider in self.CACHE_CONTROL_PROVIDERS:
+            if provider in base_url_lower:
+                return provider
+        # Native OpenAI: automatic prefix caching, no need for cache_control
+        return None
+
+    @staticmethod
+    def _to_structured_content(
+        content: Any,
+        add_cache_control: bool = False,
+        provider: Optional[str] = None,
+    ) -> Any:
+        """
+        Convert message content to structured content blocks for prefix caching.
+
+        This method is idempotent: already-structured content is returned as-is
+        (with optional cache_control addition for dashscope/anthropic).
+
+        Args:
+            content: Original content (str or list)
+            add_cache_control: Whether to add cache_control to text blocks
+
+        Returns:
+            Structured content list or original content if not applicable
+        """
+        if not add_cache_control:
+            return content
+
+        # Case 1: plain string -> wrap in structured block
+        if isinstance(content, str):
+            block: Dict[str, Any] = {'type': 'text', 'text': content}
+            if provider in {'dashscope', 'anthropic'}:
+                block['cache_control'] = {'type': 'ephemeral'}
+            return [block]
+
+        # Case 2: already a list (multimodal or pre-structured)
+        if isinstance(content, list):
+            # Add cache_control to text blocks that don't have it
+            new_list = []
+            for item in content:
+                if (isinstance(item, dict) and item.get('type') == 'text'
+                        and 'cache_control' not in item):
+                    new_item = dict(item)
+                    new_item['cache_control'] = {'type': 'ephemeral'}
+                    new_list.append(new_item)
+                else:
+                    new_list.append(item)
+            return new_list
+
+        # Other types: return as-is
+        return content
 
     def format_tools(self,
                      tools: Optional[List[Tool]] = None
@@ -142,6 +221,34 @@ class OpenAI(LLM):
         return self.client.chat.completions.create(
             model=self.model, messages=messages, tools=tools, **kwargs)
 
+    @staticmethod
+    def _extract_cache_info(usage_obj: Any) -> tuple:
+        """
+        Extract cache info from an OpenAI-compatible usage object.
+
+        Returns:
+            tuple: (cached_tokens, cache_creation_input_tokens)
+            - cached_tokens: tokens that hit existing cache
+            - cache_creation_input_tokens: tokens used to create new cache (explicit cache only)
+
+        OpenAI/DashScope format: usage.prompt_tokens_details.{cached_tokens, cache_creation_input_tokens}
+        """
+        if not usage_obj:
+            return 0, 0
+        details = getattr(usage_obj, 'prompt_tokens_details', None)
+        if details is None and isinstance(usage_obj, dict):
+            details = usage_obj.get('prompt_tokens_details')
+        if details is None:
+            return 0, 0
+        if isinstance(details, dict):
+            cached = int(details.get('cached_tokens', 0) or 0)
+            created = int(details.get('cache_creation_input_tokens', 0) or 0)
+        else:
+            cached = int(getattr(details, 'cached_tokens', 0) or 0)
+            created = int(
+                getattr(details, 'cache_creation_input_tokens', 0) or 0)
+        return cached, created
+
     def _merge_stream_message(self, pre_message_chunk: Optional[Message],
                               message_chunk: Message) -> Optional[Message]:
         """Merges a new chunk of message into the previous chunks during streaming.
@@ -226,6 +333,10 @@ class OpenAI(LLM):
                 try:
                     next_chunk = next(completion)
                     message.prompt_tokens += next_chunk.usage.prompt_tokens
+                    cached, created = self._extract_cache_info(
+                        getattr(next_chunk, 'usage', None))
+                    message.cached_tokens += cached
+                    message.cache_creation_input_tokens += created
                     message.completion_tokens += next_chunk.usage.completion_tokens
                 except (StopIteration, AttributeError):
                     # The stream may end without a final usage chunk, which is acceptable.
@@ -322,6 +433,8 @@ class OpenAI(LLM):
                     tool_name=tool_call.function.name) for idx, tool_call in
                 enumerate(completion.choices[0].message.tool_calls)
             ]
+        cached, created = OpenAI._extract_cache_info(
+            getattr(completion, 'usage', None))
         return Message(
             role='assistant',
             content=content,
@@ -329,6 +442,8 @@ class OpenAI(LLM):
             tool_calls=tool_calls,
             id=completion.id,
             prompt_tokens=completion.usage.prompt_tokens,
+            cached_tokens=cached,
+            cache_creation_input_tokens=created,
             completion_tokens=completion.usage.completion_tokens)
 
     @staticmethod
@@ -342,6 +457,9 @@ class OpenAI(LLM):
         messages[-1].reasoning_content += new_message.reasoning_content
         messages[-1].content += new_message.content
         messages[-1].prompt_tokens += new_message.prompt_tokens
+        messages[-1].cached_tokens += new_message.cached_tokens
+        messages[
+            -1].cache_creation_input_tokens += new_message.cache_creation_input_tokens
         messages[-1].completion_tokens += new_message.completion_tokens
         if new_message.tool_calls:
             if messages[-1].tool_calls:
@@ -431,12 +549,46 @@ class OpenAI(LLM):
         Returns:
             List[Dict[str, Any]]: List of dictionaries compatible with OpenAI's input format.
         """
+        # Determine if we need to add cache_control (for dashscope/anthropic)
+        add_cache_control = self._prefix_cache_provider is not None
+
+        # Determine which message index should have cache_control (the last matching one)
+        cache_indice = None
+        if self._prefix_cache_enabled and add_cache_control:
+            cache_indices = set()
+            # Check for 'last_message' special value
+            if 'last_message' in self._prefix_cache_roles and messages:
+                cache_indices.add(len(messages) - 1)
+            # Check for role-based caching
+            role_cache = self._prefix_cache_roles - {'last_message'}
+            for idx, msg in enumerate(messages):
+                msg_role = msg.role if isinstance(msg, Message) else msg.get(
+                    'role', '')
+                if msg_role in role_cache:
+                    cache_indices.add(idx)
+            cache_indice = max(max(cache_indices),
+                               len(messages)
+                               - 1) if cache_indices else cache_indice
+
         openai_messages = []
-        for message in messages:
+        for idx, message in enumerate(messages):
             if isinstance(message, Message):
                 if isinstance(message.content, str):
                     message.content = message.content.strip()
                 message = message.to_dict_clean()
+            else:
+                message = dict(message)
+
+            content = message.get('content', '')
+            if isinstance(content, str):
+                content = content.strip()
+
+            # Apply prefix cache structured content transformation
+            if cache_indice is not None and idx == cache_indice:
+                content = self._to_structured_content(
+                    content,
+                    add_cache_control=True,
+                    provider=self._prefix_cache_provider)
 
             message = {
                 key: value.strip() if isinstance(value, str) else value
@@ -445,6 +597,7 @@ class OpenAI(LLM):
             }
             if 'content' not in message:
                 message['content'] = ''
+            message['content'] = content if content else ''
 
             openai_messages.append(message)
 

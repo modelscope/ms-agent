@@ -13,7 +13,7 @@ class SerpApiSearchRequest(SearchRequest):
 
     def __init__(self,
                  query: str,
-                 num_results: Optional[int] = 25,
+                 num_results: Optional[int] = 5,
                  location: Optional[str] = None,
                  **kwargs: Any):
         """
@@ -21,7 +21,7 @@ class SerpApiSearchRequest(SearchRequest):
 
         Args:
             query: The search query string
-            num_results: Number of results to return, default is 25
+            num_results: Number of results to return, default is 5
             location: Search location, e.g., 'Austin,Texas'
         """
         super().__init__(query=query, num_results=num_results, **kwargs)

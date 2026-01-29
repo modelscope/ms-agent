@@ -10,6 +10,9 @@ from ms_agent.agent.loader import AgentLoader
 from ms_agent.llm.utils import Message, Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils import get_logger
+from ms_agent.utils.stats import (append_stats, build_timing_record,
+                                  get_stats_path, monotonic, now_iso,
+                                  summarize_usage)
 from omegaconf import DictConfig, ListConfig, OmegaConf
 
 logger = get_logger()
@@ -49,6 +52,7 @@ class AgentTool(ToolBase):
     def __init__(self, config: DictConfig, **kwargs):
         super().__init__(config)
         self._trust_remote_code = kwargs.get('trust_remote_code', True)
+        self._enable_stats = False
         self._specs: Dict[str, _AgentToolSpec] = {}
         self._server_tools: Dict[str, List[Tool]] = {}
         self._load_specs()
@@ -68,6 +72,8 @@ class AgentTool(ToolBase):
             definitions = agent_tools_cfg.definitions
             server_name = getattr(agent_tools_cfg, 'server_name',
                                   self.DEFAULT_SERVER)
+            self._enable_stats = bool(
+                getattr(agent_tools_cfg, 'enable_stats', False))
         else:
             definitions = agent_tools_cfg
             server_name = self.DEFAULT_SERVER
@@ -149,7 +155,7 @@ class AgentTool(ToolBase):
         input_template = getattr(cfg, 'input_template', None)
         input_mode = getattr(cfg, 'input_mode', 'text')
         output_mode = getattr(cfg, 'output_mode', 'final_message')
-        max_chars = int(getattr(cfg, 'max_output_chars', 5000))
+        max_chars = int(getattr(cfg, 'max_output_chars', 100000))
         server_name = getattr(cfg, 'server_name', default_server)
         trust_remote_code = getattr(cfg, 'trust_remote_code', None)
 
@@ -212,7 +218,7 @@ class AgentTool(ToolBase):
 
         payload = self._build_payload(tool_args, spec)
         agent = self._build_agent(spec)
-        messages = await self._run_agent(agent, payload)
+        messages = await self._run_agent(agent, payload, spec)
         return self._format_output(messages, spec)
 
     def _build_agent(self, spec: _AgentToolSpec):
@@ -245,14 +251,56 @@ class AgentTool(ToolBase):
         agent.config.generation_config = generation_cfg
         return agent
 
-    async def _run_agent(self, agent, payload):
-        result = await agent.run(payload)
-        if hasattr(result, '__aiter__'):
-            history = None
-            async for chunk in result:
-                history = chunk
-            result = history
-        return result
+    async def _run_agent(self, agent, payload, spec: _AgentToolSpec):
+        if not self._enable_stats:
+            result = await agent.run(payload)
+            if hasattr(result, '__aiter__'):
+                history = None
+                async for chunk in result:
+                    history = chunk
+                result = history
+            return result
+
+        start_ts = now_iso()
+        start_time = monotonic()
+        status = 'completed'
+        result = None
+        try:
+            result = await agent.run(payload)
+            if hasattr(result, '__aiter__'):
+                history = None
+                async for chunk in result:
+                    history = chunk
+                result = history
+            return result
+        except Exception:
+            status = 'error'
+            raise
+        finally:
+            end_ts = now_iso()
+            duration_s = monotonic() - start_time
+            usage = summarize_usage(result if isinstance(result, list) else [])
+            record = build_timing_record(
+                event='agent_tool',
+                agent_tag=getattr(agent, 'tag', None),
+                agent_type=getattr(agent, 'AGENT_NAME', None),
+                started_at=start_ts,
+                ended_at=end_ts,
+                duration_s=duration_s,
+                status=status,
+                usage=usage,
+                extra={
+                    'tool_name': spec.tool_name,
+                    'server_name': spec.server_name,
+                    'caller_tag': getattr(self.config, 'tag', None),
+                },
+            )
+            try:
+                await append_stats(get_stats_path(self.config), record)
+            except Exception as exc:
+                logger.warning(
+                    f'Failed to write agent tool stats for {spec.tool_name}: {exc}'
+                )
 
     def _build_payload(self, tool_args: dict, spec: _AgentToolSpec):
         if spec.input_mode == 'messages':

@@ -387,9 +387,10 @@ class FileSystemTool(ToolBase):
         try:
             if not os.path.exists(self.output_dir):
                 os.makedirs(self.output_dir, exist_ok=True)
+            original_path = path  # Preserve original path for error messages
             path = self.get_real_path(path)
             if path is None:
-                return f'<{path}> is out of the valid project path: {self.output_dir}'
+                return f'<{original_path}> is out of the valid project path: {self.output_dir}'
             dirname = os.path.dirname(path)
             if dirname:
                 os.makedirs(
@@ -553,7 +554,12 @@ class FileSystemTool(ToolBase):
             return f'Replace lines in file <{path}> failed, error: ' + str(e)
 
     def get_real_path(self, path):
-        if os.path.isabs(path) or os.path.basename(self.output_dir) in path:
+        # Check if path is absolute or already starts with output_dir
+        if os.path.isabs(path):
+            target_path = path
+        elif path.startswith(self.output_dir + os.sep) or path.startswith(
+                self.output_dir):
+            # Path already includes output_dir as prefix
             target_path = path
         else:
             target_path = os.path.join(self.output_dir, path)

@@ -19,7 +19,7 @@ class ExaSearchRequest:
     type: Optional[str] = 'auto'
 
     # Number of results to return, default is 25
-    num_results: Optional[int] = 25
+    num_results: Optional[int] = 5
 
     # Date filters for search results, formatted as 'YYYY-MM-DD'
     start_published_date: Optional[str] = None
