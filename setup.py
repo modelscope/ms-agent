@@ -124,7 +124,7 @@ class build_py(_build_py):
     def run(self):
         super().run()
 
-        # 将仓库根目录的 projects/ 拷贝到构建目录的 ms_agent/projects/
+        # Copy the repository root's `projects/` into the build directory's `ms_agent/projects/`
         src = os.path.join(os.path.dirname(__file__), 'projects')
         if not os.path.isdir(src):
             return

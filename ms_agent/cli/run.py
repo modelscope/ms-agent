@@ -5,7 +5,7 @@ import os
 from importlib import resources as importlib_resources
 
 from ms_agent.config import Config
-from ms_agent.utils import strtobool, get_logger
+from ms_agent.utils import get_logger, strtobool
 from ms_agent.utils.constants import AGENT_CONFIG_FILE, MS_AGENT_ASCII
 
 from .base import CLICommand
