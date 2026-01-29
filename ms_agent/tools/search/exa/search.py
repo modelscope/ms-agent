@@ -115,7 +115,7 @@ class ExaSearch(SearchEngine):
             query=kwargs['query'],
             num_results=kwargs.get('num_results', 5),
             type=kwargs.get('type', 'auto'),
-            text=True,
+            text=False,
             start_published_date=kwargs.get('start_published_date'),
             end_published_date=kwargs.get('end_published_date'),
         )
