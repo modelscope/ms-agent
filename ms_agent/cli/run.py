@@ -5,10 +5,12 @@ import os
 from importlib import resources as importlib_resources
 
 from ms_agent.config import Config
-from ms_agent.utils import strtobool
+from ms_agent.utils import strtobool, get_logger
 from ms_agent.utils.constants import AGENT_CONFIG_FILE, MS_AGENT_ASCII
 
 from .base import CLICommand
+
+logger = get_logger()
 
 
 def subparser_func(args):
@@ -23,8 +25,9 @@ def list_builtin_projects():
         if not root.exists():
             return []
         return sorted([p.name for p in root.iterdir() if p.is_dir()])
-    except Exception:
-        # 兜底：help 不要因为资源不可用而崩
+    except Exception as e:
+        # Fallback: don't let help crash just because a resource is unavailable.
+        logger.warning(f'Could not list built-in projects: {e}')
         return []
 
 
@@ -67,7 +70,7 @@ class RunCMD(CLICommand):
             required=False,
             type=str,
             default=None,
-            choices=projects if projects else None,
+            choices=projects,
             help=project_help_text(),
         )
         parser.add_argument(
