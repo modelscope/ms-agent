@@ -199,7 +199,9 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
 
     setWorkflowLoading(true);
     try {
-      const response = await fetch(`/api/projects/${currentSession.project_id}/workflow`);
+      // Include session_id in query params so backend can determine workflow_type
+      const url = `/api/projects/${currentSession.project_id}/workflow${currentSession?.id ? `?session_id=${currentSession.id}` : ''}`;
+      const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
         setWorkflowData(data.workflow || {});
@@ -650,7 +652,7 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
               )}
 
               {/* Loading Indicator - Shows current step in progress */}
-              {!isStreaming && messages.length > 0 && (() => {
+              {!isStreaming && messages.length > 0 && currentSession?.status === 'running' && (() => {
                 // If waiting for input, don't show "in progress" indicator
                 // The "Refine completed" message will be shown instead
                 if (isWaitingForInput) {

@@ -1,0 +1,4 @@
+aiohttp
+fastapi
+pandas
+uvicorn

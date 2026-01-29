@@ -40,6 +40,7 @@ export interface Session {
   workflow_progress?: WorkflowProgress;
   file_progress?: FileProgress;
   current_step?: string;
+  workflow_type?: 'standard' | 'simple';
 }
 
 export interface LogEntry {

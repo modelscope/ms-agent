@@ -103,13 +103,35 @@ async def get_project_readme(project_id: str):
 
 
 @router.get('/projects/{project_id}/workflow')
-async def get_project_workflow(project_id: str):
-    """Get the workflow configuration for a project"""
+async def get_project_workflow(project_id: str,
+                               session_id: Optional[str] = None):
+    """Get the workflow configuration for a project
+
+    If session_id is provided, returns the workflow based on the session's workflow_type.
+    For code_genesis project, 'simple' workflow_type will return simple_workflow.yaml.
+    """
     project = project_discovery.get_project(project_id)
     if not project:
         raise HTTPException(status_code=404, detail='Project not found')
 
-    workflow_file = os.path.join(project['path'], 'workflow.yaml')
+    # Determine workflow_type from session if session_id is provided
+    workflow_type = 'standard'  # default
+    if session_id:
+        session = session_manager.get_session(session_id)
+        if session and session.get('workflow_type'):
+            workflow_type = session['workflow_type']
+
+    # Determine which workflow file to use
+    if workflow_type == 'simple' and project.get('supports_workflow_switch'):
+        # For simple workflow, try simple_workflow.yaml first
+        workflow_file = os.path.join(project['path'], 'simple_workflow.yaml')
+        if not os.path.exists(workflow_file):
+            # Fallback to standard workflow.yaml if simple_workflow.yaml doesn't exist
+            workflow_file = os.path.join(project['path'], 'workflow.yaml')
+    else:
+        # Standard workflow
+        workflow_file = os.path.join(project['path'], 'workflow.yaml')
+
     if not os.path.exists(workflow_file):
         raise HTTPException(status_code=404, detail='Workflow file not found')
 
@@ -117,7 +139,7 @@ async def get_project_workflow(project_id: str):
         import yaml
         with open(workflow_file, 'r', encoding='utf-8') as f:
             workflow_data = yaml.safe_load(f)
-        return {'workflow': workflow_data}
+        return {'workflow': workflow_data, 'workflow_type': workflow_type}
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f'Error reading workflow file: {str(e)}')
