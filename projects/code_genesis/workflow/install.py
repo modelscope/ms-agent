@@ -18,7 +18,7 @@ class InstallAgent(LLMAgent):
 
         query = (
             f'Topic: {topic}\nFramework: {framework}\nFile Design: {file_design}\n'
-            f'Your `workflow_dir` is {self.output_dir}, '
+            f'Your `workflow_dir` is "./", '
             'Please write dependency files and install dependencies.')
 
         messages = [

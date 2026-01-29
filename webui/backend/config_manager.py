@@ -27,6 +27,10 @@ class ConfigManager:
             'base_url': 'https://api.morphllm.com/v1',
             'diff_model': 'morph-v3-fast'
         },
+        'edgeone_pages': {
+            'api_token': '',
+            'project_name': ''
+        },
         'mcp_servers': {},
         'theme': 'dark',
         'output_dir': './output'
@@ -134,6 +138,19 @@ class ConfigManager:
         """Update edit_file_config configuration"""
         self._load_config()
         self._config['edit_file_config'] = edit_file_config
+        self._save_config()
+
+    def get_edgeone_pages_config(self) -> Dict[str, Any]:
+        """Get EdgeOne Pages configuration"""
+        config = self._load_config()
+        return config.get('edgeone_pages',
+                          self.DEFAULT_CONFIG['edgeone_pages'])
+
+    def update_edgeone_pages_config(self, edgeone_pages_config: Dict[str,
+                                                                     Any]):
+        """Update EdgeOne Pages configuration"""
+        self._load_config()
+        self._config['edgeone_pages'] = edgeone_pages_config
         self._save_config()
 
     def add_mcp_server(self, name: str, server_config: Dict[str, Any]):

@@ -51,6 +51,11 @@ interface EditFileConfig {
   diff_model: string;
 }
 
+interface EdgeOnePagesConfig {
+  api_token: string;
+  project_name?: string;
+}
+
 interface MCPServer {
   type: 'stdio' | 'sse';
   command?: string;
@@ -87,6 +92,10 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
     base_url: 'https://api.morphllm.com/v1',
     diff_model: 'morph-v3-fast',
   });
+  const [edgeOnePagesConfig, setEdgeOnePagesConfig] = useState<EdgeOnePagesConfig>({
+    api_token: '',
+    project_name: '',
+  });
   const [mcpServers, setMcpServers] = useState<Record<string, MCPServer>>({});
   const [newServerName, setNewServerName] = useState('');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -100,10 +109,11 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
 
   const loadConfig = async () => {
     try {
-      const [llmRes, mcpRes, editFileRes] = await Promise.all([
+      const [llmRes, mcpRes, editFileRes, edgeOnePagesRes] = await Promise.all([
         fetch('/api/config/llm'),
         fetch('/api/config/mcp'),
         fetch('/api/config/edit_file'),
+        fetch('/api/config/edgeone_pages'),
       ]);
 
       if (llmRes.ok) {
@@ -123,6 +133,11 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
       if (editFileRes.ok) {
         const data = await editFileRes.json();
         setEditFileConfig(data);
+      }
+
+      if (edgeOnePagesRes.ok) {
+        const data = await edgeOnePagesRes.json();
+        setEdgeOnePagesConfig(data);
       }
     } catch (error) {
       console.error('Failed to load config:', error);
@@ -150,7 +165,13 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
         body: JSON.stringify(editFileConfig),
       });
 
-      if (llmRes.ok && mcpRes.ok && editFileRes.ok) {
+      const edgeOnePagesRes = await fetch('/api/config/edgeone_pages', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(edgeOnePagesConfig),
+      });
+
+      if (llmRes.ok && mcpRes.ok && editFileRes.ok && edgeOnePagesRes.ok) {
         setSaveStatus('saved');
         setTimeout(() => setSaveStatus('idle'), 2000);
       } else {
@@ -381,6 +402,33 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
               value={editFileConfig.diff_model}
               onChange={(e) => setEditFileConfig((prev) => ({ ...prev, diff_model: e.target.value }))}
               helperText="Model name for code diff generation (e.g., morph-v3-fast)"
+            />
+
+            {/* EdgeOne Pages Config Section */}
+            <Divider sx={{ my: 2 }} />
+            <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+              EdgeOne Pages Configuration
+            </Typography>
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Configure EdgeOne Pages for automatic deployment. If no API token is provided, the deployment feature will be disabled.
+            </Alert>
+
+            <TextField
+              fullWidth
+              label="API Token"
+              type="password"
+              value={edgeOnePagesConfig.api_token}
+              onChange={(e) => setEdgeOnePagesConfig((prev) => ({ ...prev, api_token: e.target.value }))}
+              helperText="Get your API token from https://edgeone.ai/"
+            />
+
+            <TextField
+              fullWidth
+              label="Project Name"
+              value={edgeOnePagesConfig.project_name || ''}
+              onChange={(e) => setEdgeOnePagesConfig((prev) => ({ ...prev, project_name: e.target.value }))}
+              helperText="Optional: Specify a custom project name for EdgeOne Pages deployment"
+              sx={{ mt: 2 }}
             />
           </Box>
         </TabPanel>

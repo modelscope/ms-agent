@@ -61,6 +61,8 @@ class Programmer(LLMAgent):
                  trust_remote_code: bool = False,
                  code_file: str = None,
                  **kwargs):
+        # Validate and adjust config before passing to parent
+        config = self._validate_config(config)
         super().__init__(config, tag, trust_remote_code, **kwargs)
         self.code_file = code_file
         index_dir: str = getattr(config, 'index_cache_dir', DEFAULT_INDEX_DIR)
@@ -77,6 +79,39 @@ class Programmer(LLMAgent):
         self.stop_words = [stop_words, []]
         self.find_all_files()
         self.error_counter = 0
+
+    def _validate_config(self, config: DictConfig) -> DictConfig:
+        """Validate config and disable edit_file if credentials are missing."""
+        from omegaconf import OmegaConf
+
+        # Make config mutable for modifications
+        config = OmegaConf.to_container(config, resolve=True)
+
+        # Check edit_file_config.api_key
+        edit_file_api_key = None
+        try:
+            edit_file_api_key = config.get('tools', {}).get(
+                'file_system', {}).get('edit_file_config', {}).get('api_key')
+        except Exception:
+            pass
+
+        if not edit_file_api_key:
+            # Remove edit_file from include list
+            try:
+                include_list = config.get('tools',
+                                          {}).get('file_system',
+                                                  {}).get('include', [])
+                if include_list and 'edit_file' in include_list:
+                    include_list.remove('edit_file')
+                    logger.warning(
+                        '[coding] edit_file_config.api_key not set, removing edit_file from tools'
+                    )
+            except Exception:
+                pass
+        else:
+            logger.info('[coding] edit_file_config.api_key is configured')
+
+        return OmegaConf.create(config)
 
     # async def condense_memory(self, messages):
     #     return messages

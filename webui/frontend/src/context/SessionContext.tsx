@@ -4,7 +4,7 @@ export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
-  type: 'text' | 'tool_call' | 'tool_result' | 'error' | 'log' | 'file_output' | 'step_start' | 'step_complete';
+  type: 'text' | 'tool_call' | 'tool_result' | 'error' | 'log' | 'file_output' | 'step_start' | 'step_complete' | 'deployment_url' | 'waiting_input';
   timestamp: string;
   metadata?: Record<string, unknown>;
 }
@@ -58,6 +58,7 @@ interface SessionContextType {
   streamingContent: string;
   isStreaming: boolean;
   isLoading: boolean;
+  ws: WebSocket | null;
   loadProjects: () => Promise<void>;
   createSession: (projectId: string, workflowType?: string) => Promise<Session | null>;
   selectSession: (sessionId: string, initialQuery?: string, sessionObj?: Session) => void;
@@ -202,14 +203,21 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
 
     switch (type) {
       case 'message':
-        setMessages(prev => [...prev, {
-          id: Date.now().toString(),
-          role: data.role as Message['role'],
-          content: data.content as string,
-          type: (data.message_type as Message['type']) || 'text',
-          timestamp: new Date().toISOString(),
-          metadata: data.metadata as Record<string, unknown>,
-        }]);
+        {
+          const messageType = (data.message_type as Message['type']) || 'text';
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: data.role as Message['role'],
+            content: data.content as string,
+            type: messageType,
+            timestamp: new Date().toISOString(),
+            metadata: data.metadata as Record<string, unknown>,
+          }]);
+          // If waiting for input, enable input field
+          if (messageType === 'waiting_input') {
+            setIsLoading(false);
+          }
+        }
         break;
 
       case 'stream':
@@ -410,6 +418,7 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
         streamingContent,
         isStreaming,
         isLoading,
+        ws,
         loadProjects,
         createSession,
         selectSession,

@@ -10,6 +10,7 @@ generation_config:
   top_k: 20
   max_tokens: 64000
   extra_body:
+    enable_thinking: false
     dashscope_extend_params:
       provider: b
 
@@ -48,7 +49,6 @@ prompt:
 
     3. Use your tools effectively
       * Use `read_file` to read the original file. When using `read_file`, specify `start_line` and `end_line` to reduce token usage
-      * When modifying files, prefer `edit_file` for partial edits; if you must rewrite an entire file, use `write_file`
       * If an HTTP API is unclear, use `workflow/api_search` to locate the implementation
       * Use `search_file_content` to search the project for keywords you care about
       * Shell commands must not use system directories (except `/dev/null`)
@@ -58,11 +58,12 @@ prompt:
       * Check available tools by looking for tools prefixed with `edgeone-pages-mcp`
 
       Your workflow:
-      * You need to create a workspace_dir in the current working directory, and move necessary materials to the workspace_dir in the current working directory, filtering out unnecessary files like node_modules, dist, build, etc.
-      * Compress the workspace_dir into a zip file and name it workspace_dir.zip
+      * The workspace_dir mentioned in the context is your current working directory (where all generated files are located)
+      * You need to create a subdirectory called "workspace" inside workspace_dir, and copy necessary materials to it, filtering out unnecessary files like node_modules, dist, build, .npm-cache, etc.
+      * Compress the workspace subdirectory into a zip file and name it workspace.zip in the workspace_dir
       * Once the project is working, use the EdgeOne Pages MCP tools to deploy it
       * Follow the deployment documentation provided in the user message
-      * Upload the workspace_dir.zip to EdgeOne Pages and deploy it
+      * When calling the deployment tool, first use the shell command `pwd` to get the current working directory path, then use "<current_path>/workspace.zip" as the builtFolderPath parameter
 
     5. If everything is OK, you may exit
       * Ignore warnings like unused variables; they don't affect runtime behavior
@@ -75,6 +76,7 @@ prompt:
 tools:
   shell:
     mcp: false
+    timeout: 10
   file_system:
     mcp: false
     include:
@@ -94,6 +96,8 @@ tools:
     args: ["edgeone-pages-mcp"]
     env:
       EDGEONE_PAGES_API_TOKEN: ""
+      EDGEONE_PAGES_PROJECT_NAME: ""
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
     timeout: 600
     sse_read_timeout: 600
 

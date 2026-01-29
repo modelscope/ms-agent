@@ -30,14 +30,6 @@ file_order:
   next:
     - install
 
-orchestrator:
-  agent:
-    kwargs:
-      code_file: workflow/orchestrator.py
-  agent_config: orchestrator.yaml
-  next:
-    - install
-
 install:
   agent_config: install.yaml
   agent:

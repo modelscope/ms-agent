@@ -44,6 +44,7 @@ class AgentRunner:
         self._current_step = None
         self._workflow_steps = []
         self._stop_requested = False
+        self._waiting_for_input = False  # Track if agent is waiting for user input
 
     async def start(self, query: str):
         """Start the agent"""
@@ -126,9 +127,60 @@ class AgentRunner:
 
     async def send_input(self, text: str):
         """Send input to the agent"""
-        if self.process and self.process.stdin:
+        # Check if process is still alive and stdin is available
+        if not self.process:
+            print('[Runner] ERROR: Process is None, cannot send input')
+            if self.on_error:
+                self.on_error({
+                    'message':
+                    'Agent process is not running. Please start a new conversation.',
+                    'type': 'input_error'
+                })
+            return
+
+        # Check if process has exited
+        if self.process.returncode is not None:
+            print(
+                f'[Runner] ERROR: Process has exited with code {self.process.returncode}, cannot send input'
+            )
+            if self.on_error:
+                self.on_error({
+                    'message':
+                    'Agent process has terminated. Please start a new conversation.',
+                    'type': 'input_error'
+                })
+            return
+
+        # Check if stdin is available
+        if not self.process.stdin:
+            print('[Runner] ERROR: Process stdin is None, cannot send input')
+            if self.on_error:
+                self.on_error({
+                    'message':
+                    'Cannot send input: process stdin is not available.',
+                    'type': 'input_error'
+                })
+            return
+
+        print(f'[Runner] Sending input to agent: {text[:100]}...')
+        self._waiting_for_input = False  # Reset waiting flag when sending input
+        self.is_running = True  # Ensure process is marked as running
+
+        try:
             self.process.stdin.write((text + '\n').encode())
             await self.process.stdin.drain()
+            print('[Runner] Input sent successfully')
+        except (BrokenPipeError, RuntimeError, OSError) as e:
+            print(f'[Runner] ERROR: Failed to send input: {e}')
+            if self.on_error:
+                self.on_error({
+                    'message':
+                    f'Failed to send input: Process may have terminated. Error: {str(e)}',
+                    'type': 'input_error'
+                })
+            # Mark process as not running
+            self.is_running = False
+            self._waiting_for_input = False
 
     def _build_command(self, query: str) -> list:
         """Build the command to run the agent"""
@@ -242,6 +294,22 @@ class AgentRunner:
                     # Fallback: explicitly exclude edit_file
                     cmd.extend(['--tools.file_system.exclude', 'edit_file'])
 
+            # Add EdgeOne Pages API token and project name from user settings
+            edgeone_pages_config = self.config_manager.get_edgeone_pages_config(
+            )
+            if edgeone_pages_config.get('api_token'):
+                # If API token is provided, pass it to the MCP server config
+                cmd.extend([
+                    '--tools.edgeone-pages-mcp.env.EDGEONE_PAGES_API_TOKEN',
+                    edgeone_pages_config['api_token']
+                ])
+            if edgeone_pages_config.get('project_name'):
+                # If project name is provided, pass it to the MCP server config
+                cmd.extend([
+                    '--tools.edgeone-pages-mcp.env.EDGEONE_PAGES_PROJECT_NAME',
+                    edgeone_pages_config['project_name']
+                ])
+
         elif project_type == 'script':
             # Run the script directly
             cmd = [python, self.project['config_file']]
@@ -266,9 +334,65 @@ class AgentRunner:
         """Read and process output from the subprocess"""
         print('[Runner] Starting to read output...')
         try:
-            while self.is_running and self.process and self.process.stdout:
-                line = await self.process.stdout.readline()
+            while self.is_running and self.process:
+                # Check if process has exited
+                if self.process.returncode is not None:
+                    print(
+                        f'[Runner] Process exited with code: {self.process.returncode}'
+                    )
+                    # If waiting for input but process exited, that's an error
+                    if self._waiting_for_input:
+                        print(
+                            '[Runner] ERROR: Process exited while waiting for input'
+                        )
+                        if self.on_error:
+                            self.on_error({
+                                'message':
+                                ('Agent process terminated unexpectedly while '
+                                 'waiting for input. The workflow may have completed.'
+                                 ),
+                                'type':
+                                'process_exit_error'
+                            })
+                        self._waiting_for_input = False
+                    break
+
+                # Check if stdout is still available
+                if not self.process.stdout:
+                    print('[Runner] Process stdout is closed')
+                    break
+
+                try:
+                    # Use timeout to periodically check process status
+                    line = await asyncio.wait_for(
+                        self.process.stdout.readline(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    # Timeout - check if we're waiting for input
+                    if self._waiting_for_input:
+                        # Process is still alive (checked above), continue waiting
+                        continue
+                    # Not waiting for input, check if process is still alive
+                    if self.process.returncode is not None:
+                        break
+                    continue
+
                 if not line:
+                    # Check if agent is waiting for input before breaking
+                    if self._waiting_for_input:
+                        # Check if process is still alive
+                        if self.process.returncode is None:
+                            print(
+                                '[Runner] Agent is waiting for user input, keeping process alive...'
+                            )
+                            # Keep process alive and wait for input
+                            await asyncio.sleep(
+                                0.5)  # Small delay to avoid busy waiting
+                            continue
+                        else:
+                            print(
+                                '[Runner] Process exited while waiting for input'
+                            )
+                            break
                     print('[Runner] No more output, breaking...')
                     break
 
@@ -277,8 +401,8 @@ class AgentRunner:
                       if len(text) > 200 else f'[Runner] Output: {text}')
                 await self._process_line(text)
 
-            # Wait for process to complete
-            if self.process:
+            # Wait for process to complete only if not waiting for input
+            if self.process and not self._waiting_for_input:
                 return_code = await self.process.wait()
                 print(f'[Runner] Process exited with code: {return_code}')
 
@@ -307,6 +431,12 @@ class AgentRunner:
                             'type': 'exit_error',
                             'code': return_code
                         })
+            elif self._waiting_for_input:
+                print(
+                    '[Runner] Process is waiting for user input, keeping alive...'
+                )
+                # Don't mark as completed, keep process running
+                # The process will continue when user sends input via send_input
 
         except Exception as e:
             print(f'[Runner] Read error: {e}')
@@ -315,8 +445,11 @@ class AgentRunner:
             if not self._stop_requested and self.on_error:
                 self.on_error({'message': str(e), 'type': 'read_error'})
         finally:
-            self.is_running = False
-            print('[Runner] Finished reading output')
+            if not self._waiting_for_input:
+                self.is_running = False
+                print('[Runner] Finished reading output')
+            else:
+                print('[Runner] Process waiting for input, keeping alive...')
 
     async def _process_line(self, line: str):
         """Process a line of output"""
@@ -502,6 +635,28 @@ class AgentRunner:
 
             print(f'[Runner] Detected step finished: {step_name}')
 
+            # If refine step finished, check if it's waiting for input
+            if step_name.lower() == 'refine':
+                # Check if there's a waiting input message in recent output
+                # The refine agent will log "Waiting for user feedback" when should_stop is True
+                # We'll detect this pattern and mark as waiting for input
+                # This will be detected by the "Initial refinement completed" pattern above
+                pass
+
+            # Try to match step name - remove 'programmer-' prefix if needed
+            if step_name not in self._workflow_steps:
+                # Try removing 'programmer-' prefix to match actual step name
+                if step_name.startswith('programmer-'):
+                    base_name = step_name.replace('programmer-', '', 1)
+                    if base_name in self._workflow_steps:
+                        step_name = base_name
+                    else:
+                        # Add the original step name if base name not found
+                        self._workflow_steps.append(step_name)
+                else:
+                    # Add step if not in list
+                    self._workflow_steps.append(step_name)
+
             # Build step status dict - all steps up to current are completed
             step_status = {}
             for s in self._workflow_steps:
@@ -566,26 +721,34 @@ class AgentRunner:
         ]
         if any(keyword in line.lower() for keyword in file_keywords):
             # Try to extract filename with extension
+            # More strict pattern: must have a proper filename with extension, not just numbers
             file_match = re.search(
-                r'["\']?([^\s"\'\[\]]+\.[a-zA-Z0-9]+)["\']?', line)
+                r'["\']?([a-zA-Z0-9_\-][^\s"\'\/\[\]]*\.[a-zA-Z0-9]+)["\']?',
+                line)
             if file_match and self.on_progress:
                 filename = file_match.group(1)
-                print(f'[Runner] Detected file output: {filename}')
-                # Send as output file
-                if self.on_output:
-                    self.on_output({
-                        'type': 'file_output',
-                        'content': filename,
-                        'role': 'assistant',
-                        'metadata': {
-                            'filename': filename
-                        }
+                # Validate filename: must not be just numbers or version numbers like "0.0"
+                if filename and not re.match(r'^\d+\.\d+$',
+                                             filename) and len(filename) > 2:
+                    # Strip 'programmer-' prefix from filename
+                    if filename.startswith('programmer-'):
+                        filename = filename[len('programmer-'):]
+                    print(f'[Runner] Detected file output: {filename}')
+                    # Send as output file
+                    if self.on_output:
+                        self.on_output({
+                            'type': 'file_output',
+                            'content': filename,
+                            'role': 'assistant',
+                            'metadata': {
+                                'filename': filename
+                            }
+                        })
+                    self.on_progress({
+                        'type': 'file',
+                        'file': filename,
+                        'status': 'completed'
                     })
-                self.on_progress({
-                    'type': 'file',
-                    'file': filename,
-                    'status': 'completed'
-                })
             return
 
         # Detect output file paths (e.g., "output/user_story.txt" standalone)
@@ -594,6 +757,15 @@ class AgentRunner:
             line)
         if output_path_match and self.on_progress:
             filename = output_path_match.group(1)
+            # Strip 'programmer-' prefix from basename only (not from path)
+            # Split path and filename
+            if '/' in filename:
+                parts = filename.rsplit('/', 1)
+                if len(parts) == 2 and parts[1].startswith('programmer-'):
+                    parts[1] = parts[1][len('programmer-'):]
+                    filename = '/'.join(parts)
+            elif filename.startswith('programmer-'):
+                filename = filename[len('programmer-'):]
             print(f'[Runner] Detected output path: {filename}')
             if self.on_output:
                 self.on_output({
@@ -609,4 +781,52 @@ class AgentRunner:
                 'file': filename,
                 'status': 'completed'
             })
+            return
+
+        # Detect EdgeOne deployment URL
+        # Pattern 1: "url": "https://..."
+        url_match = re.search(r'"url":\s*"(https?://[^"]+)"', line)
+        # Pattern 2: Direct URL like "https://mcp.edgeone.site/share/..."
+        if not url_match:
+            url_match = re.search(r'(https?://mcp\.edgeone\.site/[^\s]+)',
+                                  line)
+        # Pattern 3: EdgeOne Pages URL like "https://...edgeone.cool?..."
+        if not url_match:
+            url_match = re.search(r'(https?://[^\s]*edgeone\.cool[^\s]*)',
+                                  line)
+        if url_match:
+            deployment_url = url_match.group(1)
+            print(f'[Runner] Detected deployment URL: {deployment_url}')
+            if self.on_output:
+                self.on_output({
+                    'type': 'deployment_url',
+                    'content': deployment_url,
+                    'role': 'assistant',
+                    'metadata': {
+                        'url': deployment_url
+                    }
+                })
+            return
+
+        # Detect agent waiting for user input
+        # Pattern: "✅ Initial refinement completed. You can now provide..."
+        # Also detect: "Agent completed initial refinement. Waiting for user feedback."
+        # Also detect: "Waiting for user input from stdin..."
+        if ('Initial refinement completed' in line
+                or 'provide additional feedback' in line
+                or 'Waiting for user feedback' in line
+                or 'Agent completed initial refinement' in line
+                or 'Waiting for user input from stdin' in line):
+            print('[Runner] Agent waiting for user input')
+            self._waiting_for_input = True  # Mark that agent is waiting for input
+            if self.on_output:
+                self.on_output({
+                    'type': 'waiting_input',
+                    'content':
+                    '✅ Initial refinement completed. You can now provide additional feedback or modifications.',
+                    'role': 'system',
+                    'metadata': {
+                        'waiting': True
+                    }
+                })
             return

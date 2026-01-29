@@ -55,6 +55,7 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
     sendMessage,
     stopAgent,
     logs,
+    ws,
   } = useSession();
 
   const [input, setInput] = useState('');
@@ -71,6 +72,11 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Check if agent is waiting for input
+  const isWaitingForInput = messages.some(m => m.type === 'waiting_input');
+  // Input should be enabled if waiting for input, even if isLoading is true
+  const inputEnabled = !isLoading || isWaitingForInput;
+
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -82,10 +88,23 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
   }, []);
 
   const handleSend = useCallback(() => {
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || (!isWaitingForInput && isLoading)) return;
+
+    // If waiting for input, send input to existing agent
+    if (isWaitingForInput && ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        action: 'send_input',
+        input: input.trim(),
+      }));
+      setInput('');
+      // Loading state will be set by backend when it starts processing
+      return;
+    }
+
+    // Otherwise, start new agent
     sendMessage(input);
     setInput('');
-  }, [input, isLoading, sendMessage]);
+  }, [input, isLoading, isWaitingForInput, sendMessage, ws]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -131,17 +150,45 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
     setSelectedFile(path);
     setFileLoading(true);
     try {
-      const response = await fetch('/api/files/read', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path }),
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setFileContent(data.content);
+      // Try multiple path formats
+      const pathVariants = [
+        path, // Original path
+        path.replace(/^output\//, ''), // Remove output/ prefix
+        path.replace(/^projects\//, ''), // Remove projects/ prefix
+        path.split('/').pop() || path, // Just filename
+      ];
+
+      let lastError: Error | null = null;
+
+      for (const pathVariant of pathVariants) {
+        try {
+          const response = await fetch('/api/files/read', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: pathVariant }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            setFileContent(data.content);
+            return; // Success, exit early
+          } else {
+            const errorData = await response.json().catch(() => ({ detail: `HTTP ${response.status}` }));
+            lastError = new Error(errorData.detail || `Failed to load file: ${pathVariant}`);
+          }
+        } catch (err) {
+          lastError = err instanceof Error ? err : new Error('Unknown error');
+        }
+      }
+
+      // If all attempts failed, show the last error
+      if (lastError) {
+        console.error('Failed to load file with all path variants:', lastError);
+        setFileContent(`Error: ${lastError.message}\n\nTried paths:\n${pathVariants.join('\n')}`);
       }
     } catch (err) {
       console.error('Failed to load file:', err);
+      setFileContent(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setFileLoading(false);
     }
@@ -411,12 +458,177 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
             }}
           >
             <AnimatePresence>
-              {messages.map((message) => (
-                <MessageBubble
-                  key={message.id}
-                  message={message}
-                />
-              ))}
+              {(() => {
+                // Collect all deployment URLs, but only keep the latest one
+                const allDeploymentUrls = messages.filter(m => m.type === 'deployment_url');
+                // Only show the latest deployment URL (replace previous ones)
+                const latestDeploymentUrl = allDeploymentUrls.length > 0
+                  ? [allDeploymentUrls[allDeploymentUrls.length - 1]]
+                  : [];
+
+                return messages.map((message, index) => {
+                  // Check if we need to inject "Coding completed" before Refine step
+                  const isRefineStart = message.type === 'step_start' &&
+                    message.content.toLowerCase() === 'refine';
+
+                  // Check if any Programmer steps exist before this message
+                  const hasProgrammerSteps = messages.slice(0, index).some(
+                    m => (m.type === 'step_start' || m.type === 'step_complete') &&
+                         m.content.toLowerCase().startsWith('programmer')
+                  );
+
+                  // Check if Coding completed was already shown
+                  const codingCompletedShown = messages.slice(0, index).some(
+                    m => m.type === 'step_complete' && m.content.toLowerCase() === 'coding'
+                  );
+
+                  // Check if this is Refine completed
+                  const isRefineComplete = message.type === 'step_complete' &&
+                    message.content.toLowerCase() === 'refine';
+
+                  // Hide file_output messages (we'll show them grouped after Coding completed)
+                  if (message.type === 'file_output') {
+                    return null;
+                  }
+
+                  // Hide deployment_url messages here; we'll only show the latest one
+                  // once after Refine completed via latestDeploymentUrl injection.
+                  if (message.type === 'deployment_url') {
+                    return null;
+                  }
+
+                  // Hide waiting_input messages that appear before Refine completed or before deployment URLs
+                  // (they will be shown after Deployment URLs)
+                  if (message.type === 'waiting_input') {
+                    // Check if Refine has been completed
+                    const refineCompleted = messages.slice(0, index).some(
+                      m => m.type === 'step_complete' && m.content.toLowerCase() === 'refine'
+                    );
+                    if (!refineCompleted) {
+                      return null; // Hide if Refine not completed yet
+                    }
+                    // Check if there are deployment URLs that haven't been shown yet
+                    const hasDeploymentUrls = latestDeploymentUrl.length > 0;
+                    if (hasDeploymentUrls) {
+                      // Hide this waiting_input message, it will be shown after deployment URLs
+                      return null;
+                    }
+                  }
+
+                  // Hide the second "Install completed" (the one after Programmer steps)
+                  if (message.type === 'step_complete' &&
+                      message.content.toLowerCase() === 'install' &&
+                      hasProgrammerSteps) {
+                    return null;
+                  }
+
+                  return (
+                    <React.Fragment key={message.id}>
+                      {/* Inject "Coding completed" + files before Refine starts */}
+                      {isRefineStart && hasProgrammerSteps && !codingCompletedShown && (
+                        <>
+                          {/* Coding completed message */}
+                          <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                          >
+                            <Box
+                              sx={{
+                                display: 'flex',
+                                alignItems: 'flex-start',
+                                justifyContent: 'flex-start',
+                                mb: 1.5,
+                                px: 2,
+                              }}
+                            >
+                              <Paper
+                                elevation={0}
+                                sx={{
+                                  maxWidth: '75%',
+                                  minWidth: 60,
+                                  px: 2,
+                                  py: 1.25,
+                                  borderRadius: '20px',
+                                  backgroundColor: theme.palette.background.paper,
+                                  border: 'none',
+                                  position: 'relative',
+                                  boxShadow: 'none',
+                                  display: 'flex',
+                                  alignItems: 'flex-start',
+                                  gap: 1.5,
+                                }}
+                              >
+                                <motion.div
+                                  initial={{ scale: 0 }}
+                                  animate={{ scale: 1 }}
+                                  transition={{
+                                    type: 'spring',
+                                    stiffness: 200,
+                                    damping: 15,
+                                    delay: 0.1
+                                  }}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    flexShrink: 0,
+                                    marginTop: '2px',
+                                  }}
+                                >
+                                  <CheckCircleIcon
+                                    sx={{
+                                      color: theme.palette.success.main,
+                                      fontSize: 22,
+                                      filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))',
+                                    }}
+                                  />
+                                </motion.div>
+                                <Box sx={{ flex: 1, lineHeight: 1.5 }}>
+                                  <MessageContent content="Coding completed" />
+                                </Box>
+                              </Paper>
+                            </Box>
+                          </motion.div>
+
+                          {/* All file outputs grouped together - only show unique files */}
+                          {(() => {
+                            const seenFiles = new Set<string>();
+                            return messages
+                              .filter(m => m.type === 'file_output' && !seenFiles.has(m.content) && (seenFiles.add(m.content), true))
+                              .map((fileMsg, fileIndex) => (
+                                <FileOutputChip key={`file-${fileIndex}-${fileMsg.content}`} filename={fileMsg.content} />
+                              ));
+                          })()}
+                        </>
+                      )}
+
+                      {/* Show the message */}
+                      <MessageBubble message={message} />
+
+                      {/* Inject latest deployment URL after Refine completed */}
+                      {isRefineComplete && latestDeploymentUrl.length > 0 && (
+                        <>
+                          {/* Show only the latest deployment URL (replaces previous ones) */}
+                          {latestDeploymentUrl.map((deployMsg, deployIndex) => (
+                            <MessageBubble key={`deploy-${deployIndex}-${deployMsg.id || deployMsg.content}`} message={deployMsg} />
+                          ))}
+
+                          {/* Show waiting input message after deployment if it exists */}
+                          {(() => {
+                            const waitingInputMsg = messages.find(m => m.type === 'waiting_input');
+                            if (waitingInputMsg) {
+                              return <MessageBubble key={`waiting-${waitingInputMsg.id}`} message={waitingInputMsg} />;
+                            }
+                            return null;
+                          })()}
+                        </>
+                      )}
+                    </React.Fragment>
+                  );
+                });
+              })()}
 
               {/* Streaming Content */}
               {isStreaming && streamingContent && (
@@ -438,20 +650,161 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
               )}
 
               {/* Loading Indicator - Shows current step in progress */}
-              {isLoading && !isStreaming && messages.length > 0 && (() => {
-                // Find current running step (step_start without corresponding step_complete)
-                const runningSteps = messages.filter(m => m.type === 'step_start');
-                const completedStepsSet = new Set(
-                  messages.filter(m => m.type === 'step_complete').map(m => m.content)
+              {!isStreaming && messages.length > 0 && (() => {
+                // If waiting for input, don't show "in progress" indicator
+                // The "Refine completed" message will be shown instead
+                if (isWaitingForInput) {
+                  return null;
+                }
+
+                // Simple fallback: if Install completed but Refine not started/completed yet,
+                // treat it as Coding in progress (even if we don't see Programmer logs).
+                const hasInstallCompleted = messages.some(
+                  m => m.type === 'step_complete' && m.content.toLowerCase() === 'install'
+                );
+                const hasRefineStartedOrCompleted = messages.some(
+                  m =>
+                    (m.type === 'step_start' || m.type === 'step_complete') &&
+                    m.content.toLowerCase() === 'refine'
                 );
 
-                // Find the last step_start that hasn't been completed yet
-                const currentRunningStep = runningSteps
-                  .slice()
-                  .reverse()
-                  .find(step => !completedStepsSet.has(step.content));
+                if (hasInstallCompleted && !hasRefineStartedOrCompleted) {
+                  return (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                    >
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          justifyContent: 'flex-start',
+                          mb: 1.5,
+                          px: 2,
+                        }}
+                      >
+                        <Paper
+                          elevation={0}
+                          sx={{
+                            px: 2,
+                            py: 1.25,
+                            borderRadius: '20px',
+                            backgroundColor: theme.palette.background.paper,
+                            border: 'none',
+                            boxShadow: 'none',
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Box sx={{ display: 'flex', gap: 0.5 }}>
+                              {[0, 1, 2].map((i) => (
+                                <motion.div
+                                  key={i}
+                                  animate={{
+                                    y: [0, -4, 0],
+                                    opacity: [0.4, 1, 0.4],
+                                  }}
+                                  transition={{
+                                    duration: 0.8,
+                                    repeat: Infinity,
+                                    delay: i * 0.15,
+                                  }}
+                                >
+                                  <Box
+                                    sx={{
+                                      width: 6,
+                                      height: 6,
+                                      borderRadius: '50%',
+                                      backgroundColor: theme.palette.primary.main,
+                                    }}
+                                  />
+                                </motion.div>
+                              ))}
+                            </Box>
+                            <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }}>
+                              <Box component="span" sx={{ textTransform: 'capitalize' }}>
+                                Coding
+                              </Box>
+                              <Box component="span" sx={{ opacity: 0.7 }}> in progress...</Box>
+                            </Typography>
+                          </Box>
+                        </Paper>
+                      </Box>
+                    </motion.div>
+                  );
+                }
 
-                const currentStepName = currentRunningStep?.content?.replace(/_/g, ' ') || null;
+                // Otherwise, check if any Programmer step is running (even without step_start message)
+                // First check currentSession.current_step for programmer
+                let currentStepName: string | null = null;
+                if (currentSession?.current_step) {
+                  const currentStep = currentSession.current_step.toLowerCase();
+                  if (currentStep.includes('programmer')) {
+                    currentStepName = 'Coding';
+                  } else {
+                    currentStepName = currentSession.current_step.replace(/_/g, ' ');
+                  }
+                }
+
+                // If not found, check messages for step_start
+                if (!currentStepName) {
+                  const runningSteps = messages.filter(m => m.type === 'step_start');
+                  const completedStepsSet = new Set(
+                    messages.filter(m => m.type === 'step_complete').map(m => {
+                      const content = m.content.toLowerCase();
+                      // Normalize Programmer-xxx steps to 'coding' for comparison
+                      if (content.startsWith('programmer')) {
+                        return 'coding';
+                      }
+                      return content;
+                    })
+                  );
+
+                  // Find the last step_start that hasn't been completed yet
+                  const currentRunningStep = runningSteps
+                    .slice()
+                    .reverse()
+                    .find(step => {
+                      const stepContent = step.content.toLowerCase();
+                      // Normalize Programmer-xxx steps to 'coding' for comparison
+                      const normalizedContent = stepContent.startsWith('programmer') ? 'coding' : stepContent;
+                      return !completedStepsSet.has(normalizedContent);
+                    });
+
+                  currentStepName = currentRunningStep?.content?.replace(/_/g, ' ') || null;
+                }
+
+                // Also check if any Programmer step exists in messages (even if no step_start)
+                if (!currentStepName) {
+                  const hasProgrammerStep = messages.some(m =>
+                    (m.type === 'step_start' || m.type === 'step_complete') &&
+                    m.content.toLowerCase().includes('programmer')
+                  );
+                  if (hasProgrammerStep) {
+                    // Check if any Programmer step is still running (not completed)
+                    const programmerSteps = messages.filter(m =>
+                      m.type === 'step_start' &&
+                      m.content.toLowerCase().includes('programmer')
+                    );
+                    const completedProgrammerSteps = new Set(
+                      messages.filter(m =>
+                        m.type === 'step_complete' &&
+                        m.content.toLowerCase().includes('programmer')
+                      ).map(m => m.content.toLowerCase())
+                    );
+                    const runningProgrammerStep = programmerSteps.find(step =>
+                      !completedProgrammerSteps.has(step.content.toLowerCase())
+                    );
+                    if (runningProgrammerStep || programmerSteps.length > completedProgrammerSteps.size) {
+                      currentStepName = 'Coding';
+                    }
+                  }
+                }
+
+                // Show "Coding" instead of individual "Programmer-xxx" steps
+                if (currentStepName && currentStepName.toLowerCase().includes('programmer')) {
+                  currentStepName = 'Coding';
+                }
 
                 if (!currentStepName) {
                   return null; // No step in progress, don't show indicator
@@ -539,37 +892,41 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
               fullWidth
               multiline
               maxRows={4}
-              placeholder="Type your message..."
+              placeholder={isWaitingForInput ? "Please provide your feedback or modification suggestions..." : "Type your message..."}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              disabled={isLoading}
+              disabled={!inputEnabled}
               sx={{
                 '& .MuiOutlinedInput-root': {
                   borderRadius: '12px',
                   backgroundColor: theme.palette.background.paper,
+                  ...(isWaitingForInput && {
+                    border: `2px solid ${alpha(theme.palette.info.main, 0.5)}`,
+                    boxShadow: `0 0 0 3px ${alpha(theme.palette.info.main, 0.1)}`,
+                  }),
                 },
               }}
               InputProps={{
                 endAdornment: (
                   <InputAdornment position="end">
-                    {isLoading ? (
+                    {isLoading && !isWaitingForInput ? (
                       <IconButton onClick={stopAgent} color="error">
                         <StopIcon />
                       </IconButton>
                     ) : (
                       <IconButton
                         onClick={handleSend}
-                        disabled={!input.trim()}
+                        disabled={!input.trim() || (!isWaitingForInput && isLoading)}
                         sx={{
-                          backgroundColor: input.trim()
+                          backgroundColor: input.trim() && inputEnabled
                             ? theme.palette.primary.main
                             : 'transparent',
-                          color: input.trim()
+                          color: input.trim() && inputEnabled
                             ? theme.palette.primary.contrastText
                             : theme.palette.text.secondary,
                           '&:hover': {
-                            backgroundColor: input.trim()
+                            backgroundColor: input.trim() && inputEnabled
                               ? theme.palette.primary.dark
                               : 'transparent',
                           },
@@ -611,6 +968,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreaming }) =
   const isStepStart = message.type === 'step_start';
   const isStepComplete = message.type === 'step_complete';
   const isToolCall = message.type === 'tool_call';
+  const isDeploymentUrl = message.type === 'deployment_url';
+  const isWaitingInput = message.type === 'waiting_input';
 
   // Skip empty messages
   if (!message.content?.trim()) return null;
@@ -626,7 +985,19 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreaming }) =
 
   // Convert step_complete to regular assistant message bubble with checkmark
   if (isStepComplete) {
-    const stepName = message.content.replace(/_/g, ' ');
+    const stepNameRaw = message.content;
+
+    // Hide individual Programmer-xxx completed messages
+    // (they are part of Coding phase, we show "Coding completed" separately)
+    if (stepNameRaw.toLowerCase().startsWith('programmer')) {
+      return null;
+    }
+
+    // Hide the second "Install" completed message (the one after Coding)
+    // We detect this by checking the message id pattern or position
+    // For now, mark it to be filtered at render time
+
+    const stepName = stepNameRaw.replace(/_/g, ' ');
     const completedText = `${stepName.charAt(0).toUpperCase() + stepName.slice(1)} completed`;
 
     // Render as regular assistant message with checkmark icon
@@ -697,7 +1068,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreaming }) =
     );
   }
 
-  // Tool call - skip display (we show step progress instead)
+  // Tool call - hide (too verbose)
   if (isToolCall) {
     return null;
   }
@@ -705,6 +1076,156 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreaming }) =
   // File output display as compact chip
   if (isFileOutput) {
     return <FileOutputChip filename={message.content} />;
+  }
+
+  // Waiting for user input - show prominent info message
+  if (isWaitingInput) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.3 }}
+      >
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'flex-start',
+            mb: 2,
+            px: 2,
+          }}
+        >
+          <Paper
+            elevation={2}
+            sx={{
+              maxWidth: '85%',
+              px: 3,
+              py: 2,
+              borderRadius: '16px',
+              backgroundColor: alpha(theme.palette.info.main, 0.12),
+              border: `2px solid ${alpha(theme.palette.info.main, 0.4)}`,
+              boxShadow: `0 4px 12px ${alpha(theme.palette.info.main, 0.2)}`,
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+              <Box
+                sx={{
+                  fontSize: 28,
+                  lineHeight: 1,
+                  mt: 0.25,
+                  animation: 'pulse 2s infinite',
+                  '@keyframes pulse': {
+                    '0%, 100%': { opacity: 1, transform: 'scale(1)' },
+                    '50%': { opacity: 0.7, transform: 'scale(1.1)' },
+                  },
+                }}
+              >
+                💬
+              </Box>
+              <Box sx={{ flex: 1 }}>
+                <Typography
+                  variant="body1"
+                  sx={{
+                    color: theme.palette.info.main,
+                    fontWeight: 600,
+                    lineHeight: 1.6,
+                    mb: 0.5,
+                  }}
+                >
+                  Waiting for Your Feedback
+                </Typography>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: theme.palette.info.main,
+                    fontWeight: 400,
+                    lineHeight: 1.6,
+                    opacity: 0.9,
+                  }}
+                >
+                  {message.content}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    color: theme.palette.info.main,
+                    fontWeight: 400,
+                    lineHeight: 1.6,
+                    opacity: 0.7,
+                    mt: 1,
+                    display: 'block',
+                    fontStyle: 'italic',
+                  }}
+                >
+                  Please provide your feedback or modification suggestions in the input box below
+                </Typography>
+              </Box>
+            </Box>
+          </Paper>
+        </Box>
+      </motion.div>
+    );
+  }
+
+  // Deployment URL display as clickable link
+  if (isDeploymentUrl) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
+      >
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'flex-start',
+            mb: 1.5,
+            px: 2,
+          }}
+        >
+          <Paper
+            elevation={0}
+            sx={{
+              maxWidth: '75%',
+              minWidth: 60,
+              px: 2,
+              py: 1.25,
+              borderRadius: '20px',
+              backgroundColor: alpha(theme.palette.success.main, 0.08),
+              border: `1px solid ${alpha(theme.palette.success.main, 0.3)}`,
+              position: 'relative',
+              boxShadow: 'none',
+            }}
+          >
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              <Typography variant="body2" sx={{ fontWeight: 600, color: theme.palette.success.main }}>
+                🚀 Deployment Successful!
+              </Typography>
+              <Typography
+                component="a"
+                href={message.content}
+                target="_blank"
+                rel="noopener noreferrer"
+                sx={{
+                  color: theme.palette.primary.main,
+                  textDecoration: 'none',
+                  wordBreak: 'break-all',
+                  fontSize: '0.875rem',
+                  '&:hover': {
+                    textDecoration: 'underline',
+                  },
+                }}
+              >
+                {message.content}
+              </Typography>
+            </Box>
+          </Paper>
+        </Box>
+      </motion.div>
+    );
   }
 
   return (
@@ -1274,20 +1795,43 @@ const FileOutputChip: React.FC<{ filename: string }> = ({ filename }) => {
     setFileError(null);
 
     try {
-      const response = await fetch('/api/files/read', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: filename }),
-      });
+      // Try multiple path formats
+      const pathVariants = [
+        filename, // Original path
+        filename.replace(/^output\//, ''), // Remove output/ prefix
+        filename.replace(/^projects\//, ''), // Remove projects/ prefix
+        filename.split('/').pop() || filename, // Just filename
+      ];
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Failed to load file');
+      let lastError: Error | null = null;
+      let success = false;
+
+      for (const pathVariant of pathVariants) {
+        try {
+          const response = await fetch('/api/files/read', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: pathVariant }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            setFileContent(data.content);
+            setFileLang(data.language || 'text');
+            success = true;
+            break; // Success, exit loop
+          } else {
+            const errorData = await response.json().catch(() => ({ detail: `HTTP ${response.status}` }));
+            lastError = new Error(errorData.detail || `Failed to load file: ${pathVariant}`);
+          }
+        } catch (err) {
+          lastError = err instanceof Error ? err : new Error('Unknown error');
+        }
       }
 
-      const data = await response.json();
-      setFileContent(data.content);
-      setFileLang(data.language || 'text');
+      if (!success && lastError) {
+        throw lastError;
+      }
     } catch (err) {
       setFileError(err instanceof Error ? err.message : 'Failed to load file');
     } finally {
@@ -1309,7 +1853,7 @@ const FileOutputChip: React.FC<{ filename: string }> = ({ filename }) => {
         exit={{ opacity: 0 }}
         transition={{ duration: 0.2 }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 6, py: 0.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, ml: 4, py: 0.5 }}>
           <Chip
             icon={getFileIcon(filename)}
             label={displayName || shortName}

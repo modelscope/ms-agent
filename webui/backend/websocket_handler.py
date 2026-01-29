@@ -5,6 +5,7 @@ Handles agent execution, log streaming, and progress updates.
 """
 import asyncio
 import os
+from datetime import datetime
 from typing import Any, Dict, Set
 
 import json
@@ -147,6 +148,26 @@ async def start_agent(session_id: str, data: Dict[str, Any],
         })
         return
 
+    # Clean up output directory for code_genesis before starting
+    if project['id'] == 'code_genesis':
+        output_dir = os.path.join(project['path'], 'output')
+        if os.path.exists(output_dir):
+            try:
+                import shutil
+                shutil.rmtree(output_dir)
+                print(f'[Agent] Cleaned up output directory: {output_dir}')
+                await connection_manager.send_to_session(
+                    session_id, {
+                        'type': 'log',
+                        'level': 'info',
+                        'message': 'Cleaned up previous output directory',
+                        'timestamp': datetime.now().isoformat()
+                    })
+            except Exception as e:
+                print(
+                    f'[Agent] WARNING: Failed to clean output directory: {e}')
+                # Don't fail if cleanup fails, just log it
+
     # Get workflow_type from session (default to 'standard')
     workflow_type = session.get('workflow_type', 'standard')
 
@@ -213,8 +234,60 @@ async def stop_agent(session_id: str):
 
 async def send_input(session_id: str, data: Dict[str, Any]):
     """Send input to a running agent"""
-    if session_id in agent_runners:
-        await agent_runners[session_id].send_input(data.get('input', ''))
+    if session_id not in agent_runners:
+        print(f'[WS] ERROR: Agent runner not found for session: {session_id}')
+        await connection_manager.send_to_session(
+            session_id, {
+                'type':
+                'error',
+                'message':
+                ('Agent is not running. The workflow may have completed. '
+                 'Please start a new conversation or restart the agent.')
+            })
+        return
+
+    input_text = data.get('input', '')
+    print(f'[WS] Sending input to agent: {input_text[:100]}...')
+
+    # Check if process is still alive
+    runner = agent_runners[session_id]
+    if runner.process and runner.process.returncode is not None:
+        print(
+            f'[WS] ERROR: Process has exited with code {runner.process.returncode}'
+        )
+        await connection_manager.send_to_session(
+            session_id, {
+                'type':
+                'error',
+                'message':
+                'Agent process has terminated. The workflow completed. Please start a new conversation to continue.'
+            })
+        # Clean up the runner
+        del agent_runners[session_id]
+        return
+
+    # Update session status to running
+    session_manager.update_session(session_id, {'status': 'running'})
+    await connection_manager.send_to_session(session_id, {
+        'type': 'status',
+        'status': 'running'
+    })
+
+    # Add user message to session
+    session_manager.add_message(session_id, 'user', input_text, 'text')
+
+    # Send input to agent
+    try:
+        await runner.send_input(input_text)
+    except Exception as e:
+        print(f'[WS] ERROR: Failed to send input: {e}')
+        await connection_manager.send_to_session(
+            session_id, {
+                'type':
+                'error',
+                'message':
+                f'Failed to send input: {str(e)}. The process may have terminated.'
+            })
 
 
 async def send_status(session_id: str, websocket: WebSocket):

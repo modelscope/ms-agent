@@ -56,6 +56,11 @@ class EditFileConfig(BaseModel):
     diff_model: str = 'morph-v3-fast'
 
 
+class EdgeOnePagesConfig(BaseModel):
+    api_token: Optional[str] = None
+    project_name: Optional[str] = None
+
+
 class MCPServer(BaseModel):
     name: str
     type: str  # 'stdio' or 'sse'
@@ -227,6 +232,19 @@ async def update_edit_file_config(config: EditFileConfig):
     return {'status': 'updated'}
 
 
+@router.get('/config/edgeone_pages')
+async def get_edgeone_pages_config():
+    """Get EdgeOne Pages configuration"""
+    return config_manager.get_edgeone_pages_config()
+
+
+@router.put('/config/edgeone_pages')
+async def update_edgeone_pages_config(config: EdgeOnePagesConfig):
+    """Update EdgeOne Pages configuration"""
+    config_manager.update_edgeone_pages_config(config.model_dump())
+    return {'status': 'updated'}
+
+
 @router.post('/config/mcp/servers')
 async def add_mcp_server(server: MCPServer):
     """Add a new MCP server"""
@@ -300,7 +318,7 @@ async def list_output_files():
     """List all files in the output directory as a tree structure"""
     base_dir = os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    output_dir = os.path.join(base_dir, 'ms-agent', 'output')
+    output_dir = os.path.join(base_dir, 'output')
 
     # Folders to exclude
     exclude_dirs = {
@@ -357,35 +375,129 @@ async def read_file_content(request: FileReadRequest):
     # Get base directories for security check
     base_dir = os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    output_dir = os.path.join(base_dir, 'ms-agent', 'output')
-    projects_dir = os.path.join(base_dir, 'ms-agent', 'projects')
+    output_dir = os.path.join(base_dir, 'output')
+    projects_dir = os.path.join(base_dir, 'projects')
 
-    # Resolve the file path
-    if not os.path.isabs(file_path):
-        # Try output dir first
-        full_path = os.path.join(output_dir, file_path)
-        if not os.path.exists(full_path):
-            # Try projects dir
-            full_path = os.path.join(projects_dir, file_path)
+    print(f'[API] Reading file: {file_path}')
+    print(f'[API] Output dir: {output_dir}')
+    print(f'[API] Projects dir: {projects_dir}')
+
+    # Normalize the input path
+    file_path = file_path.strip()
+
+    # Try multiple path resolution strategies
+    candidate_paths = []
+
+    if os.path.isabs(file_path):
+        # Absolute path - use as-is (but still check security)
+        candidate_paths.append(file_path)
     else:
-        full_path = file_path
+        # Relative path - try different combinations
+        # Remove leading slashes
+        normalized = file_path.lstrip('/')
 
-    # Normalize path
-    full_path = os.path.normpath(full_path)
+        # Strategy 1: Path already contains output/ or projects/ prefix
+        if normalized.startswith('output/'):
+            # Remove 'output/' prefix and try in output_dir
+            candidate_paths.append(os.path.join(output_dir, normalized[7:]))
+            # Also try in project-specific output directories
+            if os.path.exists(projects_dir):
+                try:
+                    for project_name in os.listdir(projects_dir):
+                        project_path = os.path.join(projects_dir, project_name)
+                        if os.path.isdir(project_path):
+                            project_output = os.path.join(
+                                project_path, 'output')
+                            if os.path.exists(project_output):
+                                candidate_paths.append(
+                                    os.path.join(project_output,
+                                                 normalized[7:]))
+                except (OSError, PermissionError):
+                    pass  # Skip if can't list directory
+        elif normalized.startswith('projects/'):
+            # Remove 'projects/' prefix and try in projects_dir
+            candidate_paths.append(os.path.join(projects_dir, normalized[9:]))
+        else:
+            # Strategy 2: Try as-is in output dir (most common case)
+            candidate_paths.append(os.path.join(output_dir, normalized))
+            # Strategy 3: Try as-is in projects dir
+            candidate_paths.append(os.path.join(projects_dir, normalized))
+            # Strategy 4: Try in project-specific output directories
+            if os.path.exists(projects_dir):
+                try:
+                    for project_name in os.listdir(projects_dir):
+                        project_path = os.path.join(projects_dir, project_name)
+                        if os.path.isdir(project_path):
+                            project_output = os.path.join(
+                                project_path, 'output')
+                            if os.path.exists(project_output):
+                                candidate_paths.append(
+                                    os.path.join(project_output, normalized))
+                                # Strategy 4a: Try converting hyphenated names to directory structure
+                                # e.g., "css-style.css" -> "css/style.css"
+                                if '-' in normalized and '.' in normalized:
+                                    parts = normalized.rsplit('.', 1)
+                                    if len(parts) == 2:
+                                        name, ext = parts
+                                        # Try splitting on first hyphen: "css-style" -> "css/style"
+                                        if '-' in name:
+                                            dir_name, file_name = name.split(
+                                                '-', 1)
+                                            alt_path = os.path.join(
+                                                project_output, dir_name,
+                                                f'{file_name}.{ext}')
+                                            candidate_paths.append(alt_path)
+                except (OSError, PermissionError):
+                    pass  # Skip if can't list directory
 
-    # Security check: ensure file is within allowed directories
-    allowed_dirs = [output_dir, projects_dir]
-    is_allowed = any(
-        full_path.startswith(os.path.normpath(d)) for d in allowed_dirs)
+        # Strategy 5: Try original path (with leading slash) in both directories
+        if file_path != normalized:
+            candidate_paths.append(os.path.join(output_dir, file_path))
+            candidate_paths.append(os.path.join(projects_dir, file_path))
+            # Also try in project-specific output directories
+            if os.path.exists(projects_dir):
+                try:
+                    for project_name in os.listdir(projects_dir):
+                        project_path = os.path.join(projects_dir, project_name)
+                        if os.path.isdir(project_path):
+                            project_output = os.path.join(
+                                project_path, 'output')
+                            if os.path.exists(project_output):
+                                candidate_paths.append(
+                                    os.path.join(project_output, file_path))
+                except (OSError, PermissionError):
+                    pass  # Skip if can't list directory
 
-    if not is_allowed:
-        raise HTTPException(
-            status_code=403,
-            detail='Access denied: file outside allowed directories')
+    # Find the first existing file
+    full_path = None
+    for candidate in candidate_paths:
+        normalized_candidate = os.path.normpath(candidate)
+        # Security check: ensure file is within allowed directories
+        allowed_dirs = [
+            os.path.normpath(output_dir),
+            os.path.normpath(projects_dir)
+        ]
+        is_allowed = any(
+            normalized_candidate.startswith(d) for d in allowed_dirs)
 
-    if not os.path.exists(full_path):
-        raise HTTPException(
-            status_code=404, detail=f'File not found: {file_path}')
+        if is_allowed and os.path.exists(
+                normalized_candidate) and os.path.isfile(normalized_candidate):
+            full_path = normalized_candidate
+            print(f'[API] Found file at: {full_path}')
+            break
+        else:
+            if len(candidate_paths) <= 10:  # Only print if not too many paths
+                exists = os.path.exists(normalized_candidate)
+                print(f'[API] Tried: {normalized_candidate} '
+                      f'(exists: {exists}, allowed: {is_allowed})')
+
+    if not full_path:
+        # Provide detailed error message
+        tried_paths = '\n'.join(
+            [f'  - {os.path.normpath(p)}' for p in candidate_paths])
+        error_msg = f'File not found: {file_path}\nTried paths:\n{tried_paths}'
+        print(f'[API] {error_msg}')
+        raise HTTPException(status_code=404, detail=error_msg)
 
     if not os.path.isfile(full_path):
         raise HTTPException(status_code=400, detail='Path is not a file')
