@@ -7,3 +7,12 @@ numpy
 omegaconf
 openai
 pillow
+requests
+pyyaml
+dotenv
+typing_extensions
+pandas
+aiohttp
+edge_tts
+moviepy
+matplotlib
