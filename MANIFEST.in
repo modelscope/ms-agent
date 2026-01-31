@@ -4,3 +4,4 @@ recursive-include ms_agent/utils/nltk *.zip
 recursive-include ms_agent/ *.yaml
 recursive-include webui/backend *.py
 recursive-include webui/frontend/dist *
+recursive-include projects *

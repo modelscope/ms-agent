@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
+  Refresh as RetryIcon,
+} from '@mui/icons-material';
+import {
   Box,
   TextField,
   IconButton,
@@ -58,6 +61,21 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
     ws,
   } = useSession();
 
+  const lastUserMessageId = React.useMemo(() => {
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') return messages[i].id;
+      }
+      return null;
+    }, [messages]);
+
+  const completedSteps = React.useMemo(() => {
+    const set = new Set<string>();
+    for (const m of messages) {
+      if (m.type === 'step_complete' && m.content) set.add(m.content);
+    }
+    return set;
+  }, [messages]);
+
   const [input, setInput] = useState('');
   const [outputFilesOpen, setOutputFilesOpen] = useState(false);
   const [workflowOpen, setWorkflowOpen] = useState(false);
@@ -71,12 +89,18 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
   const [fileLoading, setFileLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [fileLang, setFileLang] = useState('text');
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [fileKind, setFileKind] = useState<'text' | 'image' | 'video' | 'audio'>('text');
 
-  // Check if agent is waiting for input
-  const isWaitingForInput = messages.some(m => m.type === 'waiting_input');
-  // Input should be enabled if waiting for input, even if isLoading is true
-  const inputEnabled = !isLoading || isWaitingForInput;
-
+  const getFileKind = (fname: string): 'text' | 'image' | 'video' | 'audio' => {
+      const ext = fname.split('.').pop()?.toLowerCase() || '';
+      if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext)) return 'image';
+      if (['mp4', 'webm', 'ogg', 'mov', 'm4v'].includes(ext)) return 'video';
+      if (['mp3', 'wav', 'aac', 'flac', 'm4a', 'opus'].includes(ext)) return 'audio';
+      return 'text';
+    };
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -113,19 +137,24 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
     }
   };
 
-  const loadOutputFiles = async () => {
-    try {
-      const response = await fetch('/api/files/list');
-      if (response.ok) {
-        const data = await response.json();
-        setOutputTree(data.tree || {folders: {}, files: []});
-        // Expand root level by default
-        setExpandedFolders(new Set(['']));
+    const loadOutputFiles = async (outputDir: string) => {
+      try {
+        if (!currentSession?.id) return;
+
+        const url = new URL('/api/files/list', window.location.origin);
+        url.searchParams.set('output_dir', outputDir);
+        url.searchParams.set('session_id', currentSession.id);
+
+        const response = await fetch(url.toString());
+        if (response.ok) {
+          const data = await response.json();
+          setOutputTree(data.tree || { folders: {}, files: [] });
+          setExpandedFolders(new Set(['']));
+        }
+      } catch (err) {
+        console.error('Failed to load output files:', err);
       }
-    } catch (err) {
-      console.error('Failed to load output files:', err);
-    }
-  };
+    };
 
   const toggleFolder = (folder: string) => {
     setExpandedFolders(prev => {
@@ -139,60 +168,53 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
     });
   };
 
-  const handleOpenOutputFiles = () => {
-    loadOutputFiles();
+  const handleOpenOutputFiles =  () => {
+    loadOutputFiles('output');
     setOutputFilesOpen(true);
     setSelectedFile(null);
     setFileContent(null);
   };
 
-  const handleViewFile = async (path: string) => {
-    setSelectedFile(path);
-    setFileLoading(true);
-    try {
-      // Try multiple path formats
-      const pathVariants = [
-        path, // Original path
-        path.replace(/^output\//, ''), // Remove output/ prefix
-        path.replace(/^projects\//, ''), // Remove projects/ prefix
-        path.split('/').pop() || path, // Just filename
-      ];
+    const handleViewFile = async (path: string) => {
+      if (!currentSession?.id) return;
 
-      let lastError: Error | null = null;
+      setSelectedFile(path);
+      setFileLoading(true);
+      const kind = getFileKind(path);
+      setFileKind(kind);
 
-      for (const pathVariant of pathVariants) {
-        try {
+      try {
+        if (kind === 'text') {
           const response = await fetch('/api/files/read', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path: pathVariant }),
+            body: JSON.stringify({ path: path, session_id: currentSession?.id }),
           });
 
-          if (response.ok) {
-            const data = await response.json();
-            setFileContent(data.content);
-            return; // Success, exit early
-          } else {
-            const errorData = await response.json().catch(() => ({ detail: `HTTP ${response.status}` }));
-            lastError = new Error(errorData.detail || `Failed to load file: ${pathVariant}`);
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to load file');
           }
-        } catch (err) {
-          lastError = err instanceof Error ? err : new Error('Unknown error');
-        }
-      }
 
-      // If all attempts failed, show the last error
-      if (lastError) {
-        console.error('Failed to load file with all path variants:', lastError);
-        setFileContent(`Error: ${lastError.message}\n\nTried paths:\n${pathVariants.join('\n')}`);
+          const data = await response.json();
+          setFileContent(data.content);
+          setFileLang(data.language || 'text');
+          setFileUrl(null);
+          return;
+        }
+
+        const sid = currentSession?.id;
+        const streamUrl =
+          `/api/files/stream?path=${encodeURIComponent(path)}&session_id=${encodeURIComponent(sid || '')}`;
+        setFileUrl(streamUrl);
+        setFileContent(null);
+        setFileLang(kind);
+      } catch (err) {
+        setFileError(err instanceof Error ? err.message : 'Failed to load file');
+      } finally {
+        setFileLoading(false);
       }
-    } catch (err) {
-      console.error('Failed to load file:', err);
-      setFileContent(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally {
-      setFileLoading(false);
-    }
-  };
+    };
 
   const loadWorkflow = async () => {
     if (!currentSession?.project_id) return;
@@ -355,33 +377,73 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
               onSelectFile={handleViewFile}
             />
           </Box>
-          {/* File Content */}
-          <Box sx={{ flex: 1, overflow: 'auto', p: 0 }}>
-            {fileLoading ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                <CircularProgress size={32} />
-              </Box>
-            ) : fileContent ? (
-              <Box
-                component="pre"
-                sx={{
-                  m: 0,
-                  p: 2,
-                  fontFamily: 'monospace',
-                  fontSize: '0.85rem',
-                  lineHeight: 1.6,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-all',
-                }}
-              >
-                <code>{fileContent}</code>
-              </Box>
-            ) : (
-              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                <Typography color="text.secondary">Select a file to view</Typography>
-              </Box>
-            )}
-          </Box>
+            {/* File Content */}
+            <Box sx={{ flex: 1, overflow: 'auto', p: 0 }}>
+              {fileLoading ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                  <CircularProgress size={32} />
+                </Box>
+              ) : fileError ? (
+                <Box sx={{ p: 2 }}>
+                  <Typography color="error">{fileError}</Typography>
+                </Box>
+              ) : fileContent ? (
+                <Box
+                  component="pre"
+                  sx={{
+                    m: 0,
+                    p: 2,
+                    fontFamily: 'monospace',
+                    fontSize: '0.85rem',
+                    lineHeight: 1.6,
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-all',
+                  }}
+                >
+                  <code>{fileContent}</code>
+                </Box>
+              ) : fileUrl ? (
+                <Box sx={{ p: 2 }}>
+                  {fileKind === 'image' && (
+                    <Box
+                      component="img"
+                      src={fileUrl}
+                      alt={selectedFile ?? 'image'}
+                      sx={{ maxWidth: '100%', height: 'auto', display: 'block' }}
+                    />
+                  )}
+
+                  {fileKind === 'video' && (
+                    <Box
+                      component="video"
+                      src={fileUrl}
+                      controls
+                      sx={{ width: '100%', maxHeight: '60vh', display: 'block' }}
+                    />
+                  )}
+
+                  {fileKind === 'audio' && (
+                    <Box
+                      component="audio"
+                      src={fileUrl}
+                      controls
+                      style={{ width: '100%' }}
+                    />
+                  )}
+
+                  {/* Fallback: in case kind doesn't match */}
+                  {!['image', 'video', 'audio'].includes(fileKind) && (
+                    <Typography color="text.secondary">
+                      Unsupported preview type. <a href={fileUrl} target="_blank" rel="noreferrer">Open</a>
+                    </Typography>
+                  )}
+                </Box>
+              ) : (
+                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                  <Typography color="text.secondary">Select a file to view</Typography>
+                </Box>
+              )}
+            </Box>
         </DialogContent>
       </Dialog>
 
@@ -460,177 +522,21 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
             }}
           >
             <AnimatePresence>
-              {(() => {
-                // Collect all deployment URLs, but only keep the latest one
-                const allDeploymentUrls = messages.filter(m => m.type === 'deployment_url');
-                // Only show the latest deployment URL (replace previous ones)
-                const latestDeploymentUrl = allDeploymentUrls.length > 0
-                  ? [allDeploymentUrls[allDeploymentUrls.length - 1]]
-                  : [];
+              {messages.map((message) => (
+                <MessageBubble
+                  key={message.id}
+                  message={message}
+                  sessionStatus={currentSession?.status}
+                  completedSteps={completedSteps}
 
-                return messages.map((message, index) => {
-                  // Check if we need to inject "Coding completed" before Refine step
-                  const isRefineStart = message.type === 'step_start' &&
-                    message.content.toLowerCase() === 'refine';
-
-                  // Check if any Programmer steps exist before this message
-                  const hasProgrammerSteps = messages.slice(0, index).some(
-                    m => (m.type === 'step_start' || m.type === 'step_complete') &&
-                         m.content.toLowerCase().startsWith('programmer')
-                  );
-
-                  // Check if Coding completed was already shown
-                  const codingCompletedShown = messages.slice(0, index).some(
-                    m => m.type === 'step_complete' && m.content.toLowerCase() === 'coding'
-                  );
-
-                  // Check if this is Refine completed
-                  const isRefineComplete = message.type === 'step_complete' &&
-                    message.content.toLowerCase() === 'refine';
-
-                  // Hide file_output messages (we'll show them grouped after Coding completed)
-                  if (message.type === 'file_output') {
-                    return null;
-                  }
-
-                  // Hide deployment_url messages here; we'll only show the latest one
-                  // once after Refine completed via latestDeploymentUrl injection.
-                  if (message.type === 'deployment_url') {
-                    return null;
-                  }
-
-                  // Hide waiting_input messages that appear before Refine completed or before deployment URLs
-                  // (they will be shown after Deployment URLs)
-                  if (message.type === 'waiting_input') {
-                    // Check if Refine has been completed
-                    const refineCompleted = messages.slice(0, index).some(
-                      m => m.type === 'step_complete' && m.content.toLowerCase() === 'refine'
-                    );
-                    if (!refineCompleted) {
-                      return null; // Hide if Refine not completed yet
-                    }
-                    // Check if there are deployment URLs that haven't been shown yet
-                    const hasDeploymentUrls = latestDeploymentUrl.length > 0;
-                    if (hasDeploymentUrls) {
-                      // Hide this waiting_input message, it will be shown after deployment URLs
-                      return null;
-                    }
-                  }
-
-                  // Hide the second "Install completed" (the one after Programmer steps)
-                  if (message.type === 'step_complete' &&
-                      message.content.toLowerCase() === 'install' &&
-                      hasProgrammerSteps) {
-                    return null;
-                  }
-
-                  return (
-                    <React.Fragment key={message.id}>
-                      {/* Inject "Coding completed" + files before Refine starts */}
-                      {isRefineStart && hasProgrammerSteps && !codingCompletedShown && (
-                        <>
-                          {/* Coding completed message */}
-                          <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0 }}
-                            transition={{ duration: 0.2 }}
-                          >
-                            <Box
-                              sx={{
-                                display: 'flex',
-                                alignItems: 'flex-start',
-                                justifyContent: 'flex-start',
-                                mb: 1.5,
-                                px: 2,
-                              }}
-                            >
-                              <Paper
-                                elevation={0}
-                                sx={{
-                                  maxWidth: '75%',
-                                  minWidth: 60,
-                                  px: 2,
-                                  py: 1.25,
-                                  borderRadius: '20px',
-                                  backgroundColor: theme.palette.background.paper,
-                                  border: 'none',
-                                  position: 'relative',
-                                  boxShadow: 'none',
-                                  display: 'flex',
-                                  alignItems: 'flex-start',
-                                  gap: 1.5,
-                                }}
-                              >
-                                <motion.div
-                                  initial={{ scale: 0 }}
-                                  animate={{ scale: 1 }}
-                                  transition={{
-                                    type: 'spring',
-                                    stiffness: 200,
-                                    damping: 15,
-                                    delay: 0.1
-                                  }}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    flexShrink: 0,
-                                    marginTop: '2px',
-                                  }}
-                                >
-                                  <CheckCircleIcon
-                                    sx={{
-                                      color: theme.palette.success.main,
-                                      fontSize: 22,
-                                      filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))',
-                                    }}
-                                  />
-                                </motion.div>
-                                <Box sx={{ flex: 1, lineHeight: 1.5 }}>
-                                  <MessageContent content="Coding completed" />
-                                </Box>
-                              </Paper>
-                            </Box>
-                          </motion.div>
-
-                          {/* All file outputs grouped together - only show unique files */}
-                          {(() => {
-                            const seenFiles = new Set<string>();
-                            return messages
-                              .filter(m => m.type === 'file_output' && !seenFiles.has(m.content) && (seenFiles.add(m.content), true))
-                              .map((fileMsg, fileIndex) => (
-                                <FileOutputChip key={`file-${fileIndex}-${fileMsg.content}`} filename={fileMsg.content} />
-                              ));
-                          })()}
-                        </>
-                      )}
-
-                      {/* Show the message */}
-                      <MessageBubble message={message} />
-
-                      {/* Inject latest deployment URL after Refine completed */}
-                      {isRefineComplete && latestDeploymentUrl.length > 0 && (
-                        <>
-                          {/* Show only the latest deployment URL (replaces previous ones) */}
-                          {latestDeploymentUrl.map((deployMsg, deployIndex) => (
-                            <MessageBubble key={`deploy-${deployIndex}-${deployMsg.id || deployMsg.content}`} message={deployMsg} />
-                          ))}
-
-                          {/* Show waiting input message after deployment if it exists */}
-                          {(() => {
-                            const waitingInputMsg = messages.find(m => m.type === 'waiting_input');
-                            if (waitingInputMsg) {
-                              return <MessageBubble key={`waiting-${waitingInputMsg.id}`} message={waitingInputMsg} />;
-                            }
-                            return null;
-                          })()}
-                        </>
-                      )}
-                    </React.Fragment>
-                  );
-                });
-              })()}
+                 showRetry={
+                  message.role === 'user' &&
+                  message.id === lastUserMessageId &&
+                  !isLoading && !isStreaming
+                 }
+                 onRetry={(content) => sendMessage(content, { reuseMessageId: message.id })}
+                />
+              ))}
 
               {/* Streaming Content */}
               {isStreaming && streamingContent && (
@@ -959,9 +865,17 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
 interface MessageBubbleProps {
   message: Message;
   isStreaming?: boolean;
+  sessionStatus?: Session['status'];
+  completedSteps?: Set<string>;
+
+  showRetry?: boolean;
+  onRetry?: (content: string) => void;
 }
 
-const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreaming }) => {
+const MessageBubble: React.FC<MessageBubbleProps> = ({
+  message, isStreaming, sessionStatus, completedSteps,
+  showRetry, onRetry
+}) => {
   const theme = useTheme();
   const isUser = message.role === 'user';
   const isError = message.type === 'error';
@@ -1266,7 +1180,19 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreaming }) =
           }}
         >
           <MessageContent content={message.content} />
-
+            {showRetry && (
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
+                  <Tooltip title="Retry">
+                    <IconButton
+                      size="small"
+                      onClick={() => onRetry?.(message.content)}
+                      sx={{ opacity: 0.75, '&:hover': { opacity: 1 } }}
+                    >
+                      <RetryIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+              )}
           {isStreaming && (
             <Box
               component="span"
@@ -1776,6 +1702,24 @@ const FileOutputChip: React.FC<{ filename: string }> = ({ filename }) => {
   const [fileLoading, setFileLoading] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const [fileLang, setFileLang] = useState('text');
+  const { currentSession } = useSession();
+    const [fileUrl, setFileUrl] = useState<string | null>(null);
+    const [fileKind, setFileKind] = useState<'text' | 'image' | 'video'>('text');
+
+    const getFileKind = (fname: string): 'text' | 'image' | 'video' => {
+      const ext = fname.split('.').pop()?.toLowerCase() || '';
+      if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext)) return 'image';
+      if (['mp4', 'webm', 'ogg', 'mov', 'm4v'].includes(ext)) return 'video';
+      return 'text';
+    };
+
+    useEffect(() => {
+      if (!dialogOpen) {
+        setFileContent(null);
+        setFileUrl(null);
+        setFileLang('text');
+      }
+    }, [dialogOpen]);
 
   const getFileIcon = (fname: string) => {
     const ext = fname.split('.').pop()?.toLowerCase();
@@ -1792,54 +1736,46 @@ const FileOutputChip: React.FC<{ filename: string }> = ({ filename }) => {
   };
 
   const handleViewFile = async () => {
-    setDialogOpen(true);
-    setFileLoading(true);
-    setFileError(null);
+      setDialogOpen(true);
+      setFileLoading(true);
+      setFileError(null);
 
-    try {
-      // Try multiple path formats
-      const pathVariants = [
-        filename, // Original path
-        filename.replace(/^output\//, ''), // Remove output/ prefix
-        filename.replace(/^projects\//, ''), // Remove projects/ prefix
-        filename.split('/').pop() || filename, // Just filename
-      ];
+      const kind = getFileKind(filename);
+      setFileKind(kind);
 
-      let lastError: Error | null = null;
-      let success = false;
-
-      for (const pathVariant of pathVariants) {
-        try {
+      try {
+        if (kind === 'text') {
           const response = await fetch('/api/files/read', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path: pathVariant }),
+            body: JSON.stringify({ path: filename, session_id: currentSession?.id }),
           });
 
-          if (response.ok) {
-            const data = await response.json();
-            setFileContent(data.content);
-            setFileLang(data.language || 'text');
-            success = true;
-            break; // Success, exit loop
-          } else {
-            const errorData = await response.json().catch(() => ({ detail: `HTTP ${response.status}` }));
-            lastError = new Error(errorData.detail || `Failed to load file: ${pathVariant}`);
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to load file');
           }
-        } catch (err) {
-          lastError = err instanceof Error ? err : new Error('Unknown error');
-        }
-      }
 
-      if (!success && lastError) {
-        throw lastError;
+          const data = await response.json();
+          setFileContent(data.content);
+          setFileLang(data.language || 'text');
+          setFileUrl(null);
+          return;
+        }
+
+        const sid = currentSession?.id;
+        const streamUrl =
+          `/api/files/stream?path=${encodeURIComponent(filename)}&session_id=${encodeURIComponent(sid || '')}`;
+        setFileUrl(streamUrl);
+        setFileContent(null);
+        setFileLang(kind);
+      } catch (err) {
+        setFileError(err instanceof Error ? err.message : 'Failed to load file');
+      } finally {
+        setFileLoading(false);
       }
-    } catch (err) {
-      setFileError(err instanceof Error ? err.message : 'Failed to load file');
-    } finally {
-      setFileLoading(false);
-    }
-  };
+    };
+
 
   const handleCopy = () => {
     if (fileContent) {
@@ -1911,7 +1847,7 @@ const FileOutputChip: React.FC<{ filename: string }> = ({ filename }) => {
           </Box>
           <Box>
             <Tooltip title="Copy to clipboard">
-              <IconButton size="small" onClick={handleCopy} disabled={!fileContent}>
+              <IconButton size="small" onClick={handleCopy} disabled={!fileContent || fileKind !== 'text'}>
                 <CopyIcon fontSize="small" />
               </IconButton>
             </Tooltip>
@@ -1929,28 +1865,41 @@ const FileOutputChip: React.FC<{ filename: string }> = ({ filename }) => {
             <Box sx={{ p: 3, textAlign: 'center' }}>
               <Typography color="error">{fileError}</Typography>
             </Box>
-          ) : (
-            <Box
-              component="pre"
-              sx={{
-                m: 0,
-                p: 2,
-                overflow: 'auto',
-                maxHeight: '60vh',
-                fontFamily: 'monospace',
-                fontSize: '0.85rem',
-                lineHeight: 1.6,
-                backgroundColor: alpha(theme.palette.background.default, 0.5),
-                '&::-webkit-scrollbar': { width: 8, height: 8 },
-                '&::-webkit-scrollbar-thumb': {
-                  backgroundColor: alpha(theme.palette.primary.main, 0.2),
-                  borderRadius: 4,
-                },
-              }}
-            >
-              <code>{fileContent}</code>
-            </Box>
-          )}
+          ) : fileKind === 'image' && fileUrl ? (
+              <Box sx={{ p: 2, display: 'flex', justifyContent: 'center' }}>
+                <Box
+                  component="img"
+                  src={fileUrl}
+                  alt={shortName}
+                  sx={{ maxWidth: '100%', maxHeight: '60vh', objectFit: 'contain' }}
+                />
+              </Box>
+            ) : fileKind === 'video' && fileUrl ? (
+              <Box sx={{ p: 2 }}>
+                <Box component="video" src={fileUrl} controls sx={{ width: '100%', maxHeight: '60vh' }} />
+              </Box>
+            ) : (
+              <Box
+                component="pre"
+                sx={{
+                  m: 0,
+                  p: 2,
+                  overflow: 'auto',
+                  maxHeight: '60vh',
+                  fontFamily: 'monospace',
+                  fontSize: '0.85rem',
+                  lineHeight: 1.6,
+                  backgroundColor: alpha(theme.palette.background.default, 0.5),
+                  '&::-webkit-scrollbar': { width: 8, height: 8 },
+                  '&::-webkit-scrollbar-thumb': {
+                    backgroundColor: alpha(theme.palette.primary.main, 0.2),
+                    borderRadius: 4,
+                  },
+                }}
+              >
+                <code>{fileContent}</code>
+              </Box>
+            )}
         </DialogContent>
       </Dialog>
     </>
