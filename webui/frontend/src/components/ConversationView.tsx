@@ -63,6 +63,13 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
   const [workflowOpen, setWorkflowOpen] = useState(false);
   const [workflowData, setWorkflowData] = useState<Record<string, any> | null>(null);
   const [workflowLoading, setWorkflowLoading] = useState(false);
+  const [toolDetailOpen, setToolDetailOpen] = useState(false);
+  const [selectedToolDetail, setSelectedToolDetail] = useState<{
+    toolName: string;
+    toolArgs: any;
+    toolResult?: any;
+    agent?: string;
+  } | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [outputTree, setOutputTree] = useState<any>({folders: {}, files: []});
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
@@ -385,6 +392,130 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
         </DialogContent>
       </Dialog>
 
+      {/* Tool Detail Dialog */}
+      <Dialog
+        open={toolDetailOpen}
+        onClose={() => setToolDetailOpen(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: { backgroundColor: theme.palette.background.paper }
+        }}
+      >
+        <DialogTitle sx={{ borderBottom: `1px solid ${theme.palette.divider}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <CodeIcon color="secondary" />
+            <Typography variant="h6">工具详情</Typography>
+            {selectedToolDetail?.agent && (
+              <Chip
+                label={selectedToolDetail.agent}
+                size="small"
+                sx={{
+                  height: 24,
+                  fontSize: '0.75rem',
+                  backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                  color: theme.palette.primary.main,
+                }}
+              />
+            )}
+          </Box>
+          <IconButton size="small" onClick={() => setToolDetailOpen(false)}>
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ p: 3 }}>
+          {selectedToolDetail && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {/* Tool Name */}
+              <Box>
+                <Typography variant="subtitle2" sx={{ mb: 1, color: theme.palette.text.secondary }}>
+                  工具名称
+                </Typography>
+                <Typography variant="body1" sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
+                  {selectedToolDetail.toolName}
+                </Typography>
+              </Box>
+
+              {/* Tool Arguments */}
+              {selectedToolDetail.toolArgs && (
+                <Box>
+                  <Typography variant="subtitle2" sx={{ mb: 1, color: theme.palette.text.secondary }}>
+                    调用参数
+                  </Typography>
+                  <Paper
+                    elevation={0}
+                    sx={{
+                      p: 2,
+                      backgroundColor: alpha(theme.palette.background.default, 0.5),
+                      borderRadius: 1,
+                      maxHeight: 300,
+                      overflow: 'auto',
+                    }}
+                  >
+                    <Typography
+                      component="pre"
+                      sx={{
+                        fontFamily: 'monospace',
+                        fontSize: '0.85rem',
+                        margin: 0,
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-all',
+                        color: theme.palette.text.primary,
+                      }}
+                    >
+                      {typeof selectedToolDetail.toolArgs === 'string'
+                        ? selectedToolDetail.toolArgs
+                        : JSON.stringify(selectedToolDetail.toolArgs, null, 2)}
+                    </Typography>
+                  </Paper>
+                </Box>
+              )}
+
+              {/* Tool Result */}
+              {selectedToolDetail.toolResult && (
+                <Box>
+                  <Typography variant="subtitle2" sx={{ mb: 1, color: theme.palette.text.secondary }}>
+                    执行结果
+                  </Typography>
+                  <Paper
+                    elevation={0}
+                    sx={{
+                      p: 2,
+                      backgroundColor: alpha(theme.palette.success.main, 0.05),
+                      borderRadius: 1,
+                      maxHeight: 300,
+                      overflow: 'auto',
+                    }}
+                  >
+                    <Typography
+                      component="pre"
+                      sx={{
+                        fontFamily: 'monospace',
+                        fontSize: '0.85rem',
+                        margin: 0,
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-all',
+                        color: theme.palette.text.primary,
+                      }}
+                    >
+                      {typeof selectedToolDetail.toolResult === 'string'
+                        ? selectedToolDetail.toolResult
+                        : JSON.stringify(selectedToolDetail.toolResult, null, 2)}
+                    </Typography>
+                  </Paper>
+                </Box>
+              )}
+
+              {!selectedToolDetail.toolArgs && !selectedToolDetail.toolResult && (
+                <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                  暂无详细信息
+                </Typography>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Workflow Dialog */}
       <Dialog
         open={workflowOpen}
@@ -468,6 +599,9 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
                   ? [allDeploymentUrls[allDeploymentUrls.length - 1]]
                   : [];
 
+                // Track if we've already injected deployment URL + waiting input after Refine
+                let refineDeploymentInjected = false;
+
                 return messages.map((message, index) => {
                   // Check if we need to inject "Coding completed" before Refine step
                   const isRefineStart = message.type === 'step_start' &&
@@ -516,6 +650,9 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
                       return null;
                     }
                   }
+
+                  // Don't hide tool_call messages - we'll show them below their corresponding assistant messages
+                  // Show all assistant messages (don't hide intermediate ones)
 
                   // Hide the second "Install completed" (the one after Programmer steps)
                   if (message.type === 'step_complete' &&
@@ -609,24 +746,137 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
                       {/* Show the message */}
                       <MessageBubble message={message} />
 
-                      {/* Inject latest deployment URL after Refine completed */}
-                      {isRefineComplete && latestDeploymentUrl.length > 0 && (
-                        <>
-                          {/* Show only the latest deployment URL (replaces previous ones) */}
-                          {latestDeploymentUrl.map((deployMsg, deployIndex) => (
-                            <MessageBubble key={`deploy-${deployIndex}-${deployMsg.id || deployMsg.content}`} message={deployMsg} />
-                          ))}
+                      {/* Show tool calls for this assistant message */}
+                      {(message.type === 'text' || message.type === 'agent_output') && message.role === 'assistant' && (() => {
+                        const agent = message.metadata?.agent;
+                        console.log('[ConversationView] Checking tool calls for agent:', agent, 'message index:', index, 'type:', message.type);
+                        if (!agent) return null;
 
-                          {/* Show waiting input message after deployment if it exists */}
-                          {(() => {
-                            const waitingInputMsg = messages.find(m => m.type === 'waiting_input');
-                            if (waitingInputMsg) {
-                              return <MessageBubble key={`waiting-${waitingInputMsg.id}`} message={waitingInputMsg} />;
+                        // Find tool calls from the same agent that happened AFTER this message
+                        // Tool calls come after the assistant's initial response
+                        const searchRange = 30;
+                        const endIdx = Math.min(messages.length, index + searchRange);
+
+                        // Normalize agent name for comparison
+                        const normalizedAgent = typeof agent === 'string'
+                          ? agent.toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_')
+                          : '';
+
+                        // Find tool calls from this agent after this message, STOP at next assistant message
+                        const relatedToolCalls: Message[] = [];
+                        for (let i = index + 1; i < endIdx; i++) {
+                          const m = messages[i];
+
+                          // Stop if we hit another assistant message from same agent
+                          if ((m.type === 'text' || m.type === 'agent_output') &&
+                              m.role === 'assistant' &&
+                              m.metadata?.agent) {
+                            const msgAgent = typeof m.metadata.agent === 'string'
+                              ? m.metadata.agent.toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_')
+                              : '';
+                            if (msgAgent === normalizedAgent ||
+                                normalizedAgent.includes(msgAgent) ||
+                                msgAgent.includes(normalizedAgent)) {
+                              break; // Stop at next assistant message from same agent
                             }
-                            return null;
-                          })()}
-                        </>
-                      )}
+                          }
+
+                          // Collect tool calls from same agent
+                          if (m.type === 'tool_call' && m.metadata?.tool_name) {
+                            const toolAgent = m.metadata?.agent;
+                            if (toolAgent) {
+                              const normalizedToolAgent = typeof toolAgent === 'string'
+                                ? toolAgent.toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_')
+                                : '';
+                              if (normalizedToolAgent === normalizedAgent ||
+                                  normalizedAgent.includes(normalizedToolAgent) ||
+                                  normalizedToolAgent.includes(normalizedAgent)) {
+                                relatedToolCalls.push(m);
+                              }
+                            }
+                          }
+                        }
+
+                        console.log('[ConversationView] Found related tool calls:', relatedToolCalls.length, relatedToolCalls);
+                        if (relatedToolCalls.length === 0) return null;
+
+                        // Build list of all tool calls (no deduplication - show each one)
+                        const toolDetails: Array<{name: string; args: any; result?: any}> = [];
+                        for (const toolCall of relatedToolCalls) {
+                          const toolName = toolCall.metadata?.tool_name;
+                          if (toolName && typeof toolName === 'string') {
+                            toolDetails.push({
+                              name: toolName,
+                              args: toolCall.metadata?.tool_args,
+                              result: toolCall.metadata?.tool_result,
+                            });
+                          }
+                        }
+
+                        if (toolDetails.length === 0) return null;
+
+                        const handleToolClick = (toolDetail: {name: string; args: any; result?: any}) => {
+                          setSelectedToolDetail({
+                            toolName: toolDetail.name,
+                            toolArgs: toolDetail.args,
+                            toolResult: toolDetail.result,
+                            agent: typeof agent === 'string' ? agent : String(agent),
+                          });
+                          setToolDetailOpen(true);
+                        };
+
+                        return (
+                          <Box sx={{ px: 2, mb: 1, mt: -0.5 }}>
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, ml: 1 }}>
+                              {toolDetails.map((toolDetail, idx) => (
+                                <Chip
+                                  key={`${message.id}-tool-${idx}`}
+                                  label={toolDetail.name}
+                                  size="small"
+                                  icon={<CodeIcon sx={{ fontSize: 12 }} />}
+                                  onClick={() => handleToolClick(toolDetail)}
+                                  sx={{
+                                    height: 20,
+                                    fontSize: '0.65rem',
+                                    backgroundColor: alpha(theme.palette.secondary.main, 0.1),
+                                    color: theme.palette.secondary.main,
+                                    cursor: 'pointer',
+                                    width: 'fit-content',
+                                    '&:hover': {
+                                      backgroundColor: alpha(theme.palette.secondary.main, 0.2),
+                                    },
+                                    '& .MuiChip-icon': {
+                                      marginLeft: '4px',
+                                    },
+                                  }}
+                                />
+                              ))}
+                            </Box>
+                          </Box>
+                        );
+                      })()}
+
+                      {/* Inject latest deployment URL after Refine completed */}
+                      {isRefineComplete && latestDeploymentUrl.length > 0 && !refineDeploymentInjected && (() => {
+                        refineDeploymentInjected = true;
+                        return (
+                          <>
+                            {/* Show only the latest deployment URL (replaces previous ones) */}
+                            {latestDeploymentUrl.map((deployMsg, deployIndex) => (
+                              <MessageBubble key={`deploy-${deployIndex}-${deployMsg.id || deployMsg.content}`} message={deployMsg} />
+                            ))}
+
+                            {/* Show waiting input message after deployment if it exists */}
+                            {(() => {
+                              const waitingInputMsg = messages.find(m => m.type === 'waiting_input');
+                              if (waitingInputMsg) {
+                                return <MessageBubble key={`waiting-${waitingInputMsg.id}`} message={waitingInputMsg} />;
+                              }
+                              return null;
+                            })()}
+                          </>
+                        );
+                      })()}
                     </React.Fragment>
                   );
                 });
@@ -838,38 +1088,122 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
                           boxShadow: 'none',
                         }}
                       >
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Box sx={{ display: 'flex', gap: 0.5 }}>
-                            {[0, 1, 2].map((i) => (
-                              <motion.div
-                                key={i}
-                                animate={{
-                                  y: [0, -4, 0],
-                                  opacity: [0.4, 1, 0.4],
-                                }}
-                                transition={{
-                                  duration: 0.8,
-                                  repeat: Infinity,
-                                  delay: i * 0.15,
-                                }}
-                              >
-                                <Box
-                                  sx={{
-                                    width: 6,
-                                    height: 6,
-                                    borderRadius: '50%',
-                                    backgroundColor: theme.palette.primary.main,
+                        <Box>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Box sx={{ display: 'flex', gap: 0.5 }}>
+                              {[0, 1, 2].map((i) => (
+                                <motion.div
+                                  key={i}
+                                  animate={{
+                                    y: [0, -4, 0],
+                                    opacity: [0.4, 1, 0.4],
                                   }}
-                                />
-                              </motion.div>
-                            ))}
-                          </Box>
-                          <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }}>
-                            <Box component="span" sx={{ textTransform: 'capitalize' }}>
-                              {currentStepName}
+                                  transition={{
+                                    duration: 0.8,
+                                    repeat: Infinity,
+                                    delay: i * 0.15,
+                                  }}
+                                >
+                                  <Box
+                                    sx={{
+                                      width: 6,
+                                      height: 6,
+                                      borderRadius: '50%',
+                                      backgroundColor: theme.palette.primary.main,
+                                    }}
+                                  />
+                                </motion.div>
+                              ))}
                             </Box>
-                            <Box component="span" sx={{ opacity: 0.7 }}> in progress...</Box>
-                          </Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }}>
+                              <Box component="span" sx={{ textTransform: 'capitalize' }}>
+                                {currentStepName}
+                              </Box>
+                              <Box component="span" sx={{ opacity: 0.7 }}> in progress...</Box>
+                            </Typography>
+                          </Box>
+                          {/* Show tool calls below the progress indicator */}
+                          {(() => {
+                            // Normalize current step name for matching
+                            const normalizedStepName = currentStepName?.toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_');
+
+                            // Collect recent tool calls - prioritize current step's tools
+                            const allToolCalls = messages.filter(m => m.type === 'tool_call' && m.metadata?.tool_name);
+
+                            // First, try to find tools from current step
+                            let recentToolCalls = allToolCalls.filter(m => {
+                              if (!normalizedStepName) return false;
+
+                              const toolAgent = m.metadata?.agent;
+                              if (!toolAgent) return false;
+
+                              // Normalize agent name for comparison
+                              const normalizedToolAgent = typeof toolAgent === 'string'
+                                ? toolAgent.toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_')
+                                : '';
+
+                              // Match exact agent name or check if it's part of the current step
+                              return normalizedToolAgent === normalizedStepName ||
+                                     normalizedStepName.includes(normalizedToolAgent) ||
+                                     normalizedToolAgent.includes(normalizedStepName);
+                            });
+
+                            // If no tools from current step, show recent tools from last 20 messages
+                            if (recentToolCalls.length === 0) {
+                              recentToolCalls = allToolCalls.slice(-20);
+                            } else {
+                              // Limit to last 20 even if matched
+                              recentToolCalls = recentToolCalls.slice(-20);
+                            }
+
+                            // Get unique tool names
+                            const toolNames = [...new Set(
+                              recentToolCalls
+                                .map(m => m.metadata?.tool_name)
+                                .filter(Boolean)
+                            )] as string[];
+
+                            if (toolNames.length === 0) return null;
+
+                            return (
+                              <Box sx={{ mt: 1.5, pt: 1.5, borderTop: `1px solid ${alpha(theme.palette.divider, 0.2)}` }}>
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, alignItems: 'center' }}>
+                                  <Typography variant="caption" sx={{ color: theme.palette.text.secondary, fontSize: '0.7rem', mr: 0.5 }}>
+                                    工具:
+                                  </Typography>
+                                  {toolNames.slice(0, 8).map((toolName, idx) => (
+                                    <Chip
+                                      key={idx}
+                                      label={toolName}
+                                      size="small"
+                                      icon={<CodeIcon sx={{ fontSize: 12 }} />}
+                                      sx={{
+                                        height: 20,
+                                        fontSize: '0.65rem',
+                                        backgroundColor: alpha(theme.palette.secondary.main, 0.1),
+                                        color: theme.palette.secondary.main,
+                                        '& .MuiChip-icon': {
+                                          marginLeft: '4px',
+                                        },
+                                      }}
+                                    />
+                                  ))}
+                                  {toolNames.length > 8 && (
+                                    <Chip
+                                      label={`+${toolNames.length - 8}`}
+                                      size="small"
+                                      sx={{
+                                        height: 20,
+                                        fontSize: '0.65rem',
+                                        backgroundColor: alpha(theme.palette.text.secondary, 0.1),
+                                        color: theme.palette.text.secondary,
+                                      }}
+                                    />
+                                  )}
+                                </Box>
+                              </Box>
+                            );
+                          })()}
                         </Box>
                       </Paper>
                     </Box>
@@ -970,6 +1304,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreaming }) =
   const isStepStart = message.type === 'step_start';
   const isStepComplete = message.type === 'step_complete';
   const isToolCall = message.type === 'tool_call';
+  const isToolResult = message.type === 'tool_result';
   const isDeploymentUrl = message.type === 'deployment_url';
   const isWaitingInput = message.type === 'waiting_input';
 
@@ -1070,8 +1405,15 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreaming }) =
     );
   }
 
-  // Tool call - hide (too verbose)
+  // Tool call - show as compact chip below assistant messages
   if (isToolCall) {
+    // Tool calls are now shown below their corresponding assistant messages
+    // So we hide standalone tool call messages
+    return null;
+  }
+
+  // Tool result - hidden (tools are shown in Loading Indicator instead)
+  if (isToolResult) {
     return null;
   }
 
@@ -1230,6 +1572,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreaming }) =
     );
   }
 
+  // Show agent tag for assistant messages if available
+  const agentTag = !isUser && message.metadata?.agent
+    ? (typeof message.metadata.agent === 'string' ? message.metadata.agent : String(message.metadata.agent))
+    : null;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -1265,6 +1612,20 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreaming }) =
             boxShadow: 'none',
           }}
         >
+          {agentTag && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+              <Chip
+                label={agentTag}
+                size="small"
+                sx={{
+                  height: 20,
+                  fontSize: '0.7rem',
+                  backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                  color: theme.palette.primary.main,
+                }}
+              />
+            </Box>
+          )}
           <MessageContent content={message.content} />
 
           {isStreaming && (

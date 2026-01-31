@@ -45,6 +45,14 @@ class AgentRunner:
         self._workflow_steps = []
         self._stop_requested = False
         self._waiting_for_input = False  # Track if agent is waiting for user input
+        self._waiting_input_sent = False  # Track if waiting_input message was already sent
+        self._collecting_assistant_output = False  # Track if we're collecting assistant output
+        self._collecting_tool_call = False  # Track if we're collecting tool call info
+        self._collecting_tool_result = False  # Track if we're collecting tool result
+        self._current_tool_name = None  # Current tool being called
+        self._current_tool_args = None  # Current tool arguments
+        self._current_tool_result = None  # Current tool result
+        self._tool_call_json_buffer = ''  # Buffer for collecting multi-line JSON tool call info
 
     async def start(self, query: str):
         """Start the agent"""
@@ -164,6 +172,7 @@ class AgentRunner:
 
         print(f'[Runner] Sending input to agent: {text[:100]}...')
         self._waiting_for_input = False  # Reset waiting flag when sending input
+        self._waiting_input_sent = False  # Reset so it can be sent again after next completion
         self.is_running = True  # Ensure process is marked as running
 
         try:
@@ -333,29 +342,24 @@ class AgentRunner:
     async def _read_output(self):
         """Read and process output from the subprocess"""
         print('[Runner] Starting to read output...')
+        process_exited = False
+        empty_line_count = 0  # Track consecutive empty lines after process exit
         try:
-            while self.is_running and self.process:
+            # Continue reading even after process exits to catch all remaining output
+            while (self.is_running or process_exited) and self.process:
                 # Check if process has exited
-                if self.process.returncode is not None:
+                if self.process.returncode is not None and not process_exited:
+                    process_exited = True
                     print(
                         f'[Runner] Process exited with code: {self.process.returncode}'
                     )
-                    # If waiting for input but process exited, that's an error
-                    if self._waiting_for_input:
-                        print(
-                            '[Runner] ERROR: Process exited while waiting for input'
-                        )
-                        if self.on_error:
-                            self.on_error({
-                                'message':
-                                ('Agent process terminated unexpectedly while '
-                                 'waiting for input. The workflow may have completed.'
-                                 ),
-                                'type':
-                                'process_exit_error'
-                            })
-                        self._waiting_for_input = False
-                    break
+                    # Continue reading remaining output even after process exits
+                    # This ensures we don't miss any URLs or important messages
+                    if not self.process.stdout:
+                        # If stdout is closed, we can't read more
+                        if self._waiting_for_input:
+                            self._waiting_for_input = False
+                        break
 
                 # Check if stdout is still available
                 if not self.process.stdout:
@@ -363,20 +367,43 @@ class AgentRunner:
                     break
 
                 try:
-                    # Use timeout to periodically check process status
+                    # Use shorter timeout after process exits to read remaining data faster
+                    timeout = 0.1 if process_exited else 1.0
                     line = await asyncio.wait_for(
-                        self.process.stdout.readline(), timeout=1.0)
+                        self.process.stdout.readline(), timeout=timeout)
                 except asyncio.TimeoutError:
                     # Timeout - check if we're waiting for input
                     if self._waiting_for_input:
-                        # Process is still alive (checked above), continue waiting
-                        continue
+                        # Check if process is still alive
+                        if self.process.returncode is None:
+                            # Process is still alive, continue waiting
+                            continue
+                        else:
+                            # Process exited, but continue reading remaining output
+                            # Try a few more times before giving up
+                            if empty_line_count < 3:
+                                continue
+                            break
                     # Not waiting for input, check if process is still alive
                     if self.process.returncode is not None:
+                        # Process exited, try a few more times before giving up
+                        if empty_line_count < 3:
+                            continue
                         break
                     continue
 
                 if not line:
+                    # Empty line - check context
+                    if process_exited:
+                        # After process exit, count consecutive empty lines
+                        empty_line_count += 1
+                        # If we get 3 consecutive empty lines/timeouts, assume no more data
+                        if empty_line_count >= 3:
+                            print('[Runner] No more output after process exit')
+                            break
+                        # Continue trying to read more
+                        continue
+
                     # Check if agent is waiting for input before breaking
                     if self._waiting_for_input:
                         # Check if process is still alive
@@ -392,19 +419,55 @@ class AgentRunner:
                             print(
                                 '[Runner] Process exited while waiting for input'
                             )
-                            break
+                            # Process exited, but continue reading any remaining output
+                            # Don't break yet - there might be more data in stdout buffer
+                            process_exited = True
+                            continue
                     print('[Runner] No more output, breaking...')
                     break
 
+                # Reset empty line count when we get actual data
+                empty_line_count = 0
                 text = line.decode('utf-8', errors='replace').rstrip()
                 print(f'[Runner] Output: {text[:200]}'
                       if len(text) > 200 else f'[Runner] Output: {text}')
-                await self._process_line(text)
+                try:
+                    await self._process_line(text)
+                except Exception as e:
+                    print(f'[Runner] ERROR processing line: {e}')
+                    import traceback
+                    traceback.print_exc()
 
-            # Wait for process to complete only if not waiting for input
-            if self.process and not self._waiting_for_input:
-                return_code = await self.process.wait()
+            # Wait for process to complete and handle completion
+            if self.process:
+                # Get return code if not already available
+                if self.process.returncode is None:
+                    return_code = await self.process.wait()
+                else:
+                    return_code = self.process.returncode
+
                 print(f'[Runner] Process exited with code: {return_code}')
+
+                # Flush any accumulated assistant output before handling completion
+                if self._collecting_assistant_output and self._accumulated_output.strip(
+                ):
+                    cleaned = re.sub(r'\[INFO:ms_agent\]\s*', '',
+                                     self._accumulated_output.strip())
+                    cleaned = re.sub(r'\[([^\]]+)\]\s*', '', cleaned, count=1)
+                    print(
+                        f'[Runner] Flushing accumulated output on process exit: {cleaned[:200]}...'
+                    )
+                    if cleaned and self.on_output:
+                        self.on_output({
+                            'type': 'agent_output',
+                            'content': cleaned,
+                            'role': 'assistant',
+                            'metadata': {
+                                'agent': self._current_step or 'agent'
+                            }
+                        })
+                    self._accumulated_output = ''
+                    self._collecting_assistant_output = False
 
                 # If stop was requested, do not report as completion/error
                 if self._stop_requested:
@@ -416,7 +479,63 @@ class AgentRunner:
                         })
                     return
 
-                if return_code == 0:
+                # Complete current step if any before handling exit
+                if self._current_step and self.on_output:
+                    self.on_output({
+                        'type': 'step_complete',
+                        'content': self._current_step,
+                        'role': 'assistant',
+                        'metadata': {
+                            'step': self._current_step,
+                            'status': 'completed'
+                        }
+                    })
+                    # If Refine step completes successfully, it should be waiting for input
+                    if return_code == 0 and self._current_step.lower(
+                    ) == 'refine':
+                        self._waiting_for_input = True
+                    self._current_step = None
+
+                # If was waiting for input but process exited, clear waiting state
+                if self._waiting_for_input:
+                    self._waiting_for_input = False
+                    # If process completed successfully, send completion message
+                    if return_code == 0:
+                        # Send waiting_input message if not already sent
+                        if self.on_output and not self._waiting_input_sent:
+                            self.on_output({
+                                'type':
+                                'waiting_input',
+                                'content':
+                                ('✅ Initial refinement completed. '
+                                 'You can now provide additional feedback or modifications.'
+                                 ),
+                                'role':
+                                'system',
+                                'metadata': {
+                                    'waiting': True
+                                }
+                            })
+                            self._waiting_input_sent = True
+                        if self.on_complete:
+                            self.on_complete({
+                                'status':
+                                'success',
+                                'message':
+                                'Agent completed successfully'
+                            })
+                    else:
+                        if self.on_error:
+                            self.on_error({
+                                'message':
+                                ('Agent process terminated while waiting for input. '
+                                 f'Exit code: {return_code}'),
+                                'type':
+                                'process_exit_error',
+                                'code':
+                                return_code
+                            })
+                elif return_code == 0:
                     if self.on_complete:
                         self.on_complete({
                             'status':
@@ -431,12 +550,6 @@ class AgentRunner:
                             'type': 'exit_error',
                             'code': return_code
                         })
-            elif self._waiting_for_input:
-                print(
-                    '[Runner] Process is waiting for user input, keeping alive...'
-                )
-                # Don't mark as completed, keep process running
-                # The process will continue when user sends input via send_input
 
         except Exception as e:
             print(f'[Runner] Read error: {e}')
@@ -451,18 +564,43 @@ class AgentRunner:
             else:
                 print('[Runner] Process waiting for input, keeping alive...')
 
+    @staticmethod
+    def _clean_log_prefix(text: str) -> str:
+        """Remove log prefixes like [INFO:ms_agent] [agent_name]"""
+        # Remove [INFO:ms_agent] prefix
+        text = re.sub(r'\[INFO:ms_agent\]\s*', '', text)
+        # Remove [agent_name] prefix (e.g., [orchestrator])
+        text = re.sub(r'^\[([^\]]+)\]\s*', '', text)
+        return text.strip()
+
     async def _process_line(self, line: str):
         """Process a line of output"""
-        # Log the line
+        # Skip usage statistics lines
+        if '[usage]' in line or '[usage_total]' in line:
+            return
+
+        # Skip lines without agent name (generic system messages)
+        # Pattern: [INFO:ms_agent] without [agent_name] afterwards
+        if '[INFO:ms_agent]' in line:
+            # Check if there's an agent name tag [xxx] after [INFO:ms_agent]
+            import re
+            if not re.search(r'\[INFO:ms_agent\]\s*\[([^\]]+)\]', line):
+                return
+
+        # Log the cleaned line
         if self.on_log:
             log_level = self._detect_log_level(line)
+            cleaned_message = self._clean_log_prefix(line)
             await self.on_log({
-                'level': log_level,
-                'message': line,
-                'timestamp': datetime.now().isoformat()
+                'level':
+                log_level,
+                'message':
+                cleaned_message if cleaned_message else line,
+                'timestamp':
+                datetime.now().isoformat()
             })
 
-        # Parse for special patterns
+        # Parse for special patterns (use original line for pattern matching)
         await self._detect_patterns(line)
 
     def _detect_log_level(self, line: str) -> str:
@@ -478,6 +616,43 @@ class AgentRunner:
 
     async def _detect_patterns(self, line: str):
         """Detect special patterns in output"""
+        # IMPORTANT: Check for deployment URL FIRST, before any other patterns that might return early
+        # This ensures URLs are always detected even if other patterns match
+        url_match = None
+        # Pattern 1: "url": "https://..."
+        url_match = re.search(r'"url":\s*"(https?://[^"]+)"', line)
+        # Pattern 2: Direct URL like "https://mcp.edgeone.site/share/..."
+        if not url_match:
+            url_match = re.search(r'(https?://mcp\.edgeone\.site/[^\s]+)',
+                                  line)
+        # Pattern 3: EdgeOne Pages URL like "https://...edgeone.cool?..."
+        # BUT skip if this is a curl command line (testing command, not actual deployment URL)
+        if not url_match and 'curl -s' not in line and 'curl ' not in line:
+            url_match = re.search(r'(https?://[^\s]*edgeone\.cool[^\s]*)',
+                                  line)
+        # Pattern 4: Also check for edgeone.site URLs in any format (fallback)
+        # BUT skip if this is a curl command line
+        if not url_match and 'curl -s' not in line and 'curl ' not in line:
+            url_match = re.search(r'(https?://[^\s]*edgeone\.site[^\s]*)',
+                                  line)
+        if url_match:
+            deployment_url = url_match.group(1)
+            # Clean up escaped characters in URL (e.g., \& -> &)
+            deployment_url = deployment_url.replace('\\&', '&')
+            print(
+                f'[Runner] Detected deployment URL (early): {deployment_url} from line: {line[:100]}'
+            )
+            if self.on_output:
+                self.on_output({
+                    'type': 'deployment_url',
+                    'content': deployment_url,
+                    'role': 'assistant',
+                    'metadata': {
+                        'url': deployment_url
+                    }
+                })
+            # Continue processing - don't return yet, other patterns might also match
+
         # Detect OpenAI API errors and other API errors
         # Check for OpenAI error patterns
         if 'openai.' in line.lower() and ('error' in line.lower()
@@ -566,41 +741,51 @@ class AgentRunner:
         if begin_match:
             step_name = begin_match.group(1)
 
-            # Skip sub-steps (contain -r0-, -diversity-, etc.)
-            if '-r' in step_name and '-' in step_name.split('-r')[-1]:
-                print(f'[Runner] Skipping sub-step: {step_name}')
+            # Skip sub-steps and programmer agents (handled separately)
+            if (('-r' in step_name and '-' in step_name.split('-r')[-1])
+                    or step_name.startswith('programmer-')):
                 return
 
-            print(f'[Runner] Detected step beginning: {step_name}')
+            print(f'[Runner] Step beginning: {step_name}')
 
-            # If there's a previous step running, mark it as completed first
-            if self._current_step and self._current_step != step_name:
-                prev_step = self._current_step
-                print(f'[Runner] Auto-completing previous step: {prev_step}')
-                if self.on_output:
+            # Flush previous step if exists
+            if self._current_step and self._accumulated_output.strip():
+                cleaned = re.sub(r'\[INFO:ms_agent\]\s*', '',
+                                 self._accumulated_output.strip())
+                cleaned = re.sub(r'\[([^\]]+)\]\s*', '', cleaned, count=1)
+                if cleaned and self.on_output:
                     self.on_output({
-                        'type': 'step_complete',
-                        'content': prev_step,
+                        'type': 'agent_output',
+                        'content': cleaned,
                         'role': 'assistant',
                         'metadata': {
-                            'step': prev_step,
-                            'status': 'completed'
+                            'agent': self._current_step
                         }
                     })
+                self._accumulated_output = ''
+                self._collecting_assistant_output = False
 
+            if self._current_step and self.on_output:
+                self.on_output({
+                    'type': 'step_complete',
+                    'content': self._current_step,
+                    'role': 'assistant',
+                    'metadata': {
+                        'step': self._current_step,
+                        'status': 'completed'
+                    }
+                })
+
+            # Start new step
             self._current_step = step_name
             if step_name not in self._workflow_steps:
                 self._workflow_steps.append(step_name)
 
-            # Build step status - all previous steps completed, current running
-            step_status = {}
-            for i, s in enumerate(self._workflow_steps):
-                if s == step_name:
-                    step_status[s] = 'running'
-                elif i < self._workflow_steps.index(step_name):
-                    step_status[s] = 'completed'
-                else:
-                    step_status[s] = 'pending'
+            step_status = {
+                s: ('completed' if i < self._workflow_steps.index(step_name)
+                    else 'running' if s == step_name else 'pending')
+                for i, s in enumerate(self._workflow_steps)
+            }
 
             if self.on_progress:
                 self.on_progress({
@@ -610,7 +795,6 @@ class AgentRunner:
                     'step_status': step_status
                 })
 
-            # Send step start message
             if self.on_output:
                 self.on_output({
                     'type': 'step_start',
@@ -623,17 +807,137 @@ class AgentRunner:
                 })
             return
 
+        # Detect programmer-xxx pattern (first occurrence signals coding start)
+        programmer_match = re.search(r'\[programmer-([^\]]+)\]', line)
+        if programmer_match:
+            programmer_agent = f'programmer-{programmer_match.group(1)}'
+
+            # If this is FIRST programmer agent, trigger coding step start
+            if not self._current_step.startswith('programmer-'):
+                print(
+                    f'[Runner] First programmer agent detected: {programmer_agent} - starting coding step'
+                )
+
+                # Flush previous step's output
+                if self._current_step and self._accumulated_output.strip():
+                    cleaned = re.sub(r'\[INFO:ms_agent\]\s*', '',
+                                     self._accumulated_output.strip())
+                    cleaned = re.sub(r'\[([^\]]+)\]\s*', '', cleaned, count=1)
+                    if cleaned and self.on_output:
+                        self.on_output({
+                            'type': 'agent_output',
+                            'content': cleaned,
+                            'role': 'assistant',
+                            'metadata': {
+                                'agent': self._current_step
+                            }
+                        })
+                    self._accumulated_output = ''
+                    self._collecting_assistant_output = False
+
+                # Mark previous step complete
+                if self._current_step and self.on_output:
+                    self.on_output({
+                        'type': 'step_complete',
+                        'content': self._current_step,
+                        'role': 'assistant',
+                        'metadata': {
+                            'step': self._current_step,
+                            'status': 'completed'
+                        }
+                    })
+
+                # Start coding step
+                self._current_step = programmer_agent
+                if 'coding' not in self._workflow_steps:
+                    self._workflow_steps.append('coding')
+
+                step_status = {
+                    s: ('completed' if i < self._workflow_steps.index('coding')
+                        else 'running' if s == 'coding' else 'pending')
+                    for i, s in enumerate(self._workflow_steps)
+                }
+
+                if self.on_progress:
+                    self.on_progress({
+                        'type': 'workflow',
+                        'current_step': 'coding',
+                        'steps': self._workflow_steps.copy(),
+                        'step_status': step_status
+                    })
+
+                if self.on_output:
+                    self.on_output({
+                        'type': 'step_start',
+                        'content': 'coding',
+                        'role': 'assistant',
+                        'metadata': {
+                            'step': 'coding',
+                            'status': 'running'
+                        }
+                    })
+
+            # Update current programmer agent
+            elif programmer_agent != self._current_step:
+                self._current_step = programmer_agent
+
+        # Helper to flush accumulated assistant output
+        def flush_accumulated_output():
+            print(f'[Runner] flush_accumulated_output called: '
+                  f'collecting={self._collecting_assistant_output}, '
+                  f'buffer_len={len(self._accumulated_output)}')
+            print(
+                f'[Runner] Buffer content: {self._accumulated_output[:200]}...'
+                if len(self._accumulated_output) > 200 else
+                f'[Runner] Buffer content: {self._accumulated_output}')
+            if self._collecting_assistant_output and self._accumulated_output.strip(
+            ):
+                # Clean log prefixes
+                cleaned_content = re.sub(r'\[INFO:ms_agent\]\s*', '',
+                                         self._accumulated_output.strip())
+                cleaned_content = re.sub(
+                    r'\[([^\]]+)\]\s*', '', cleaned_content, count=1)
+                print(
+                    f'[Runner] Flushing assistant output: {cleaned_content[:100]}...'
+                )
+
+                # Map agent name for display
+                agent_name = self._current_step or 'agent'
+                display_agent = agent_name
+                if agent_name.startswith('programmer-'):
+                    display_agent = 'coding'
+
+                if cleaned_content and self.on_output:
+                    self.on_output({
+                        'type': 'agent_output',
+                        'content': cleaned_content,
+                        'role': 'assistant',
+                        'metadata': {
+                            'agent': display_agent
+                        }
+                    })
+                self._accumulated_output = ''
+                self._collecting_assistant_output = False
+            else:
+                print(f'[Runner] flush_accumulated_output skipped: '
+                      f'collecting={self._collecting_assistant_output}, '
+                      f'has_content={bool(self._accumulated_output.strip())}')
+
         # Detect workflow step finished: "[tag] Agent tag task finished."
         end_match = re.search(r'\[([^\]]+)\]\s*Agent\s+\S+\s+task\s+finished',
                               line)
         if end_match:
             step_name = end_match.group(1)
 
-            # Skip sub-steps
-            if '-r' in step_name and '-' in step_name.split('-r')[-1]:
+            # Skip install (handled by programmer detection) and sub-steps
+            if step_name == 'install' or ('-r' in step_name and '-'
+                                          in step_name.split('-r')[-1]):
                 return
 
-            print(f'[Runner] Detected step finished: {step_name}')
+            # Skip flush for refine (already flushed during collection)
+            if step_name.lower() != 'refine':
+                flush_accumulated_output()
+            print(f'[Runner] Step finished: {step_name}')
 
             # If refine step finished, check if it's waiting for input
             if step_name.lower() == 'refine':
@@ -682,21 +986,356 @@ class AgentRunner:
                         'status': 'completed'
                     }
                 })
+            # Clear current step since it's completed
+            self._current_step = None
             return
 
+        # Clean log prefixes from line
         # Detect assistant output: "[tag] [assistant]:"
         if '[assistant]:' in line:
-            self._accumulated_output = ''
-            return
+            in_coding = self._current_step and self._current_step.startswith(
+                'programmer-')
+
+            if not in_coding:
+                # Start collecting (don't send first line immediately)
+                self._accumulated_output = ''
+                self._collecting_assistant_output = True
+                # Extract content after [assistant]: if any on same line
+                parts = line.split('[assistant]:', 1)
+                if len(parts) > 1 and parts[1].strip():
+                    content = self._clean_log_prefix(parts[1].strip())
+                    if content:
+                        self._accumulated_output = content + '\n'
+            else:
+                # In coding phase: don't collect
+                self._collecting_assistant_output = False
+                self._accumulated_output = ''
+            # Don't return - continue to process line for file_output detection
+
+        # Continue collecting assistant output
+        elif self._collecting_assistant_output:
+            # Skip if in coding phase
+            if self._current_step and self._current_step.startswith(
+                    'programmer-'):
+                self._collecting_assistant_output = False
+                self._accumulated_output = ''
+                # Don't return - continue processing
+            else:
+                # Check if new pattern starts
+                if '[tool_calling]:' in line or ('[assistant]:' in line
+                                                 and 'Agent' not in line):
+                    if self._accumulated_output.strip():
+                        cleaned = self._clean_log_prefix(
+                            self._accumulated_output.strip())
+                        if cleaned and self.on_output:
+                            self.on_output({
+                                'type': 'agent_output',
+                                'content': cleaned,
+                                'role': 'assistant',
+                                'metadata': {
+                                    'agent': self._current_step or 'agent'
+                                }
+                            })
+                    self._accumulated_output = ''
+                    self._collecting_assistant_output = False
+                else:
+                    # Accumulate line but also check for deployment URL and waiting_input
+                    if line.strip():
+                        cleaned_line = self._clean_log_prefix(line)
+                        if cleaned_line:
+                            self._accumulated_output += cleaned_line + '\n'
+                            # Check for EdgeOne deployment URL in this line
+                            url_match = re.search(
+                                r'(https?://[^\s]*edgeone\.cool[^\s]*)',
+                                cleaned_line)
+                            if url_match:
+                                deployment_url = url_match.group(1)
+                                # Clean up escaped characters in URL (e.g., \& -> &)
+                                deployment_url = deployment_url.replace(
+                                    '\\&', '&')
+                                print(
+                                    f'[Runner] Detected deployment URL in assistant: {deployment_url}'
+                                )
+                                if self.on_output:
+                                    self.on_output({
+                                        'type': 'deployment_url',
+                                        'content': deployment_url,
+                                        'role': 'assistant',
+                                        'metadata': {
+                                            'url': deployment_url
+                                        }
+                                    })
+                            # Check for waiting for input pattern
+                            if ('Waiting for user feedback' in line
+                                    or 'Waiting for user input from stdin'
+                                    in line):
+                                print('[Runner] Agent waiting for user input')
+                                self._waiting_for_input = True
+                                if self.on_output and not self._waiting_input_sent:
+                                    self.on_output({
+                                        'type':
+                                        'waiting_input',
+                                        'content':
+                                        ('✅ Initial refinement completed. '
+                                         'You can now provide additional feedback or modifications.'
+                                         ),
+                                        'role':
+                                        'system',
+                                        'metadata': {
+                                            'waiting': True
+                                        }
+                                    })
+                                    self._waiting_input_sent = True
+                    return
 
         # Detect tool calls: "[tag] [tool_calling]:"
         if '[tool_calling]:' in line:
-            if self.on_output:
-                self.on_output({
-                    'type': 'tool_call',
-                    'content': 'Calling tool...',
-                    'role': 'assistant'
-                })
+            self._collecting_tool_call = True
+            self._current_tool_name = None
+            self._current_tool_args = None
+            self._tool_call_json_buffer = ''
+
+            # Check if JSON starts on the same line after [tool_calling]:
+            parts = line.split('[tool_calling]:', 1)
+            if len(parts) > 1:
+                json_part = parts[1].strip()
+                if json_part.startswith('{'):
+                    self._tool_call_json_buffer = json_part
+                elif json_part:
+                    # Try to extract tool name directly if it's not JSON format
+                    tool_match = re.search(r'([\w\-]+(?:---[\w\-]+)?)',
+                                           json_part)
+                    if tool_match:
+                        self._current_tool_name = tool_match.group(1)
+            return
+
+        # Continue collecting tool call info
+        if self._collecting_tool_call:
+            # Extract agent name from line if available (for better matching)
+            agent_name_from_line = None
+            if '[INFO:ms_agent]' in line:
+                agent_match = re.search(r'\[INFO:ms_agent\]\s*\[([^\]]+)\]',
+                                        line)
+                if agent_match:
+                    agent_name_from_line = agent_match.group(1)
+
+            # Clean log prefixes from line before processing
+            cleaned_line = self._clean_log_prefix(line)
+
+            # Accumulate JSON lines
+            if cleaned_line.strip():
+                # Remove agent tag prefix if present (e.g., [programmer-config.json])
+                cleaned_line = re.sub(r'^\[[^\]]+\]\s*', '', cleaned_line)
+
+                # Skip truncation marker lines (just "...")
+                if cleaned_line.strip() == '...':
+                    return
+
+                # Skip lines that are just a trailing backslash (truncated escape sequence)
+                if cleaned_line.strip() == '\\':
+                    return
+
+                if self._tool_call_json_buffer:
+                    self._tool_call_json_buffer += cleaned_line  # Don't add newline, keep JSON compact
+                elif cleaned_line.strip().startswith('{'):
+                    self._tool_call_json_buffer = cleaned_line.strip()
+                else:
+                    self._tool_call_json_buffer += cleaned_line
+
+            # Only try to parse when buffer contains tool_name and ends with }
+            if (self._tool_call_json_buffer
+                    and '"tool_name"' in self._tool_call_json_buffer
+                    and self._tool_call_json_buffer.strip().endswith('}')):
+                try:
+                    import json
+                    tool_info = json.loads(self._tool_call_json_buffer)
+                    print('[Runner] Parsed tool JSON successfully')
+                    tool_name = tool_info.get('tool_name') or tool_info.get(
+                        'name', 'unknown')
+                    tool_args = tool_info.get('arguments', {})
+                    print(f'[Runner] Extracted tool_name: {tool_name}')
+                    if tool_name and tool_name != 'unknown':
+                        self._current_tool_name = tool_name
+                        self._current_tool_args = tool_args
+                        agent_name = agent_name_from_line or self._current_step or 'agent'
+                        print(
+                            f'[Runner] Sending tool call: {tool_name}, agent: {agent_name}'
+                        )
+                        if self.on_output:
+                            self.on_output({
+                                'type': 'tool_call',
+                                'content': f'调用工具: {tool_name}',
+                                'role': 'assistant',
+                                'metadata': {
+                                    'tool_name': tool_name,
+                                    'tool_args': tool_args,
+                                    'agent': agent_name
+                                }
+                            })
+                        # Clear buffer but KEEP collecting - there may be more tool calls
+                        self._tool_call_json_buffer = ''
+                        # Don't return or stop collecting - next line might be another tool call JSON
+                    else:
+                        print(
+                            f'[Runner] WARNING: Invalid tool_name: {tool_name}'
+                        )
+                except json.JSONDecodeError as e:
+                    # JSON not complete yet, keep collecting
+                    # Only log if we have tool_name - helps debug parsing issues
+                    if '"tool_name"' in self._tool_call_json_buffer:
+                        print(
+                            f'[Runner] JSON incomplete, continuing... (error: {str(e)[:50]})'
+                        )
+                except Exception as e:
+                    print(f'[Runner] Error parsing tool JSON: {e}')
+
+            # Check if we hit a new pattern, stop collecting
+            if '[assistant]:' in line or 'Agent' in line and 'task' in line or '[tool_result]:' in line:
+                # If we have partial data, try to send it
+                if self._tool_call_json_buffer:
+                    tool_name_match = re.search(r'"tool_name"\s*:\s*"([^"]+)"',
+                                                self._tool_call_json_buffer)
+                    if tool_name_match:
+                        tool_name = tool_name_match.group(1)
+                        # Try to extract arguments - handle nested JSON objects
+                        args_start = self._tool_call_json_buffer.find(
+                            '"arguments"')
+                        tool_args = {}
+                        if args_start != -1:
+                            brace_start = self._tool_call_json_buffer.find(
+                                '{', args_start)
+                            if brace_start != -1:
+                                brace_count = 0
+                                brace_end = brace_start
+                                for i in range(
+                                        brace_start,
+                                        len(self._tool_call_json_buffer)):
+                                    if self._tool_call_json_buffer[i] == '{':
+                                        brace_count += 1
+                                    elif self._tool_call_json_buffer[i] == '}':
+                                        brace_count -= 1
+                                        if brace_count == 0:
+                                            brace_end = i + 1
+                                            break
+
+                                if brace_end > brace_start:
+                                    args_str = self._tool_call_json_buffer[
+                                        brace_start:brace_end]
+                                    try:
+                                        tool_args = json.loads(args_str)
+                                    except Exception:
+                                        pass
+
+                        # Determine agent name - prefer extracted from line, then current step
+                        agent_name = agent_name_from_line or self._current_step or 'agent'
+                        print(
+                            f'[Runner] Sending tool call (pattern end): '
+                            f'{tool_name}, agent: {agent_name}, args: {tool_args}'
+                        )
+                        if self.on_output:
+                            self.on_output({
+                                'type': 'tool_call',
+                                'content': f'调用工具: {tool_name}',
+                                'role': 'assistant',
+                                'metadata': {
+                                    'tool_name': tool_name,
+                                    'tool_args': tool_args,
+                                    'agent': agent_name
+                                }
+                            })
+                self._collecting_tool_call = False
+                self._tool_call_json_buffer = ''
+            return
+
+        # Detect tool results: "[tag] [tool_result]:"
+        if '[tool_result]:' in line:
+            self._collecting_tool_result = True
+            # Extract result content
+            parts = line.split('[tool_result]:', 1)
+            if len(parts) > 1:
+                result_content = parts[1].strip()
+                if result_content:
+                    self._current_tool_result = result_content
+                    # Send tool result immediately if we have tool name
+                    if self._current_tool_name and self.on_output:
+                        self.on_output({
+                            'type': 'tool_result',
+                            'content': f'工具 {self._current_tool_name} 执行完成',
+                            'role': 'assistant',
+                            'metadata': {
+                                'tool_name': self._current_tool_name,
+                                'tool_result': result_content,
+                                'agent': self._current_step or 'agent'
+                            }
+                        })
+                        # Reset tool info
+                        self._current_tool_name = None
+                        self._current_tool_result = None
+                        self._collecting_tool_result = False
+            return
+
+        # Continue collecting tool result
+        if self._collecting_tool_result:
+            # Accumulate result content
+            if line.strip() and not line.strip().startswith('['):
+                if self._current_tool_result:
+                    self._current_tool_result += '\n' + line
+                else:
+                    self._current_tool_result = line
+
+                # Check for EdgeOne deployment URL in tool result
+                url_match = re.search(
+                    r'"url":\s*"(https?://[^"]+edgeone\.cool[^"]+)"', line)
+                if url_match:
+                    deployment_url = url_match.group(1)
+                    # Clean up escaped characters in URL (e.g., \& -> &)
+                    deployment_url = deployment_url.replace('\\&', '&')
+                    print(
+                        f'[Runner] Detected deployment URL in tool result: {deployment_url}'
+                    )
+                    if self.on_output:
+                        self.on_output({
+                            'type': 'deployment_url',
+                            'content': deployment_url,
+                            'role': 'assistant',
+                            'metadata': {
+                                'url': deployment_url
+                            }
+                        })
+
+                # Send result if we have tool name and accumulated enough content
+                if self._current_tool_name and len(
+                        self._current_tool_result) > 100 and self.on_output:
+                    self.on_output({
+                        'type': 'tool_result',
+                        'content': f'工具 {self._current_tool_name} 执行完成',
+                        'role': 'assistant',
+                        'metadata': {
+                            'tool_name': self._current_tool_name,
+                            'tool_result': self._current_tool_result,
+                            'agent': self._current_step or 'agent'
+                        }
+                    })
+                    # Reset
+                    self._current_tool_name = None
+                    self._current_tool_result = None
+                    self._collecting_tool_result = False
+            elif '[assistant]:' in line or '[tool_calling]:' in line or 'Agent' in line and 'task' in line:
+                # Hit a new pattern, send accumulated result
+                if self._current_tool_name and self._current_tool_result and self.on_output:
+                    self.on_output({
+                        'type': 'tool_result',
+                        'content': f'工具 {self._current_tool_name} 执行完成',
+                        'role': 'assistant',
+                        'metadata': {
+                            'tool_name': self._current_tool_name,
+                            'tool_result': self._current_tool_result,
+                            'agent': self._current_step or 'agent'
+                        }
+                    })
+                self._current_tool_name = None
+                self._current_tool_result = None
+                self._collecting_tool_result = False
             return
 
         # Detect file writing
@@ -783,30 +1422,8 @@ class AgentRunner:
             })
             return
 
-        # Detect EdgeOne deployment URL
-        # Pattern 1: "url": "https://..."
-        url_match = re.search(r'"url":\s*"(https?://[^"]+)"', line)
-        # Pattern 2: Direct URL like "https://mcp.edgeone.site/share/..."
-        if not url_match:
-            url_match = re.search(r'(https?://mcp\.edgeone\.site/[^\s]+)',
-                                  line)
-        # Pattern 3: EdgeOne Pages URL like "https://...edgeone.cool?..."
-        if not url_match:
-            url_match = re.search(r'(https?://[^\s]*edgeone\.cool[^\s]*)',
-                                  line)
-        if url_match:
-            deployment_url = url_match.group(1)
-            print(f'[Runner] Detected deployment URL: {deployment_url}')
-            if self.on_output:
-                self.on_output({
-                    'type': 'deployment_url',
-                    'content': deployment_url,
-                    'role': 'assistant',
-                    'metadata': {
-                        'url': deployment_url
-                    }
-                })
-            return
+        # Deployment URL detection moved to the beginning of _detect_patterns
+        # to ensure it's always checked before any early returns
 
         # Detect agent waiting for user input
         # Pattern: "✅ Initial refinement completed. You can now provide..."
@@ -819,7 +1436,7 @@ class AgentRunner:
                 or 'Waiting for user input from stdin' in line):
             print('[Runner] Agent waiting for user input')
             self._waiting_for_input = True  # Mark that agent is waiting for input
-            if self.on_output:
+            if self.on_output and not self._waiting_input_sent:
                 self.on_output({
                     'type': 'waiting_input',
                     'content':
@@ -829,4 +1446,5 @@ class AgentRunner:
                         'waiting': True
                     }
                 })
+                self._waiting_input_sent = True
             return

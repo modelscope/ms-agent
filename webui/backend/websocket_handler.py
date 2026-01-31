@@ -255,6 +255,14 @@ async def send_input(session_id: str, data: Dict[str, Any]):
         print(
             f'[WS] ERROR: Process has exited with code {runner.process.returncode}'
         )
+        # If process exited while waiting for input, clear the waiting flag
+        if runner._waiting_for_input:
+            runner._waiting_for_input = False
+            runner.is_running = False
+
+        # Update session status to completed
+        session_manager.update_session(session_id, {'status': 'completed'})
+
         await connection_manager.send_to_session(
             session_id, {
                 'type':
@@ -262,6 +270,11 @@ async def send_input(session_id: str, data: Dict[str, Any]):
                 'message':
                 'Agent process has terminated. The workflow completed. Please start a new conversation to continue.'
             })
+        # Also send status update to ensure frontend knows the session is completed
+        await connection_manager.send_to_session(session_id, {
+            'type': 'status',
+            'status': 'completed'
+        })
         # Clean up the runner
         del agent_runners[session_id]
         return

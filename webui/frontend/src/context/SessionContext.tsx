@@ -4,7 +4,7 @@ export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
-  type: 'text' | 'tool_call' | 'tool_result' | 'error' | 'log' | 'file_output' | 'step_start' | 'step_complete' | 'deployment_url' | 'waiting_input';
+  type: 'text' | 'tool_call' | 'tool_result' | 'error' | 'log' | 'file_output' | 'step_start' | 'step_complete' | 'deployment_url' | 'waiting_input' | 'agent_output';
   timestamp: string;
   metadata?: Record<string, unknown>;
 }
@@ -206,6 +206,7 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
       case 'message':
         {
           const messageType = (data.message_type as Message['type']) || 'text';
+          console.log('[SessionContext] Received message:', { type: messageType, content: data.content, metadata: data.metadata });
           setMessages(prev => [...prev, {
             id: Date.now().toString(),
             role: data.role as Message['role'],
@@ -304,19 +305,28 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
         break;
 
       case 'error':
-        setCurrentSession(prev => {
-          if (!prev) return prev;
-          return { ...prev, status: 'error' };
-        });
-        setSessions(prev => prev.map(s => (s.id === currentSession?.id ? { ...s, status: 'error' } : s)));
-        setMessages(prev => [...prev, {
-          id: Date.now().toString(),
-          role: 'system',
-          content: data.message as string,
-          type: 'error',
-          timestamp: new Date().toISOString(),
-        }]);
-        setIsLoading(false);
+        {
+          const errorMessage = data.message as string;
+          // Check if error indicates process termination/completion
+          const isProcessTerminated = errorMessage.includes('process has terminated') ||
+                                       errorMessage.includes('workflow completed') ||
+                                       errorMessage.includes('not running');
+
+          setCurrentSession(prev => {
+            if (!prev) return prev;
+            // If process terminated, mark as completed instead of error
+            return { ...prev, status: isProcessTerminated ? 'completed' : 'error' };
+          });
+          setSessions(prev => prev.map(s => (s.id === currentSession?.id ? { ...s, status: isProcessTerminated ? 'completed' : 'error' } : s)));
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'system',
+            content: errorMessage,
+            type: 'error',
+            timestamp: new Date().toISOString(),
+          }]);
+          setIsLoading(false);
+        }
         break;
     }
   }, [currentSession?.id]);
