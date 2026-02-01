@@ -20,7 +20,8 @@ class SessionManager:
     def create_session(self,
                        project_id: str,
                        project_name: str,
-                       workflow_type: str = 'standard') -> Dict[str, Any]:
+                       workflow_type: str = 'standard',
+                       session_type: str = 'project') -> Dict[str, Any]:
         """Create a new session"""
         session_id = str(uuid.uuid4())
         session = {
@@ -32,7 +33,8 @@ class SessionManager:
             'workflow_progress': None,
             'file_progress': None,
             'current_step': None,
-            'workflow_type': workflow_type  # 'standard' or 'simple'
+            'workflow_type': workflow_type,  # 'standard' or 'simple'
+            'session_type': session_type  # 'project' or 'chat'
         }
 
         with self._lock:

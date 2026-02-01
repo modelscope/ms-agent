@@ -2,18 +2,42 @@
 import argparse
 import asyncio
 import os
+from importlib import resources as importlib_resources
 
 from ms_agent.config import Config
-from ms_agent.utils import strtobool
+from ms_agent.utils import get_logger, strtobool
 from ms_agent.utils.constants import AGENT_CONFIG_FILE, MS_AGENT_ASCII
 
 from .base import CLICommand
+
+logger = get_logger()
 
 
 def subparser_func(args):
     """ Function which will be called for a specific sub parser.
     """
     return RunCMD(args)
+
+
+def list_builtin_projects():
+    try:
+        root = importlib_resources.files('ms_agent').joinpath('projects')
+        if not root.exists():
+            return []
+        return sorted([p.name for p in root.iterdir() if p.is_dir()])
+    except Exception as e:
+        # Fallback: don't let help crash just because a resource is unavailable.
+        logger.warning(f'Could not list built-in projects: {e}')
+        return []
+
+
+def project_help_text():
+    projects = list_builtin_projects()
+    if projects:
+        return (
+            'Built-in bundled project name under package ms_agent/projects. '
+            f'Available: {", ".join(projects)}')
+    return 'Built-in bundled project name under package ms_agent/projects.'
 
 
 class RunCMD(CLICommand):
@@ -25,6 +49,8 @@ class RunCMD(CLICommand):
     @staticmethod
     def define_args(parsers: argparse.ArgumentParser):
         """Define args for run command."""
+        projects = list_builtin_projects()
+
         parser: argparse.ArgumentParser = parsers.add_parser(RunCMD.name)
         parser.add_argument(
             '--query',
@@ -39,6 +65,14 @@ class RunCMD(CLICommand):
             type=str,
             default=None,
             help='The directory or the repo id of the config file')
+        parser.add_argument(
+            '--project',
+            required=False,
+            type=str,
+            default=None,
+            choices=projects,
+            help=project_help_text(),
+        )
         parser.add_argument(
             '--trust_remote_code',
             required=False,
@@ -89,6 +123,33 @@ class RunCMD(CLICommand):
         parser.set_defaults(func=subparser_func)
 
     def execute(self):
+        if getattr(self.args, 'project', None):
+            if self.args.config:
+                raise ValueError(
+                    'Please specify only one of --config or --project')
+
+            project = self.args.project
+            project_trav = importlib_resources.files('ms_agent').joinpath(
+                'projects', project)
+
+            if not project_trav.exists():
+                projects_root = importlib_resources.files('ms_agent').joinpath(
+                    'projects')
+                available = []
+                if projects_root.exists():
+                    available = [
+                        p.name for p in projects_root.iterdir() if p.is_dir()
+                    ]
+                raise ValueError(
+                    f'Unknown project: {project}. Available: {available}')
+
+            # as_file ensures we get a real filesystem path even if installed as zip
+            with importlib_resources.as_file(project_trav) as project_dir:
+                self.args.config = str(project_dir)
+                return self._execute_with_config()
+        return self._execute_with_config()
+
+    def _execute_with_config(self):
         if not self.args.config:
             current_dir = os.getcwd()
             if os.path.exists(os.path.join(current_dir, AGENT_CONFIG_FILE)):

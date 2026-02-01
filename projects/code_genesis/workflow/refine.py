@@ -126,12 +126,13 @@ class RefineAgent(LLMAgent):
                     '[refine] Agent completed initial refinement. Waiting for user feedback.'
                 )
 
-                # Add a system message to notify the user
-                messages.append(
-                    Message(
-                        role='system',
-                        content='✅ Initial refinement completed.',
-                    ))
+                # # Add a system message to notify the user
+                # messages.append(
+                #     Message(
+                #         role='system',
+                #         content=
+                #         '✅ Initial refinement completed.',
+                #     ))
 
                 logger.info('[refine] Waiting for user input from stdin...')
                 try:

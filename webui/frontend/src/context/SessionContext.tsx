@@ -41,6 +41,7 @@ export interface Session {
   file_progress?: FileProgress;
   current_step?: string;
   workflow_type?: 'standard' | 'simple';
+  session_type?: 'project' | 'chat';
 }
 
 export interface LogEntry {
@@ -62,6 +63,7 @@ interface SessionContextType {
   ws: WebSocket | null;
   loadProjects: () => Promise<void>;
   createSession: (projectId: string, workflowType?: string) => Promise<Session | null>;
+  createChatSession: (initialQuery: string) => Promise<void>;
   selectSession: (sessionId: string, initialQuery?: string, sessionObj?: Session) => void;
   sendMessage: (content: string) => void;
   stopAgent: () => void;
@@ -129,7 +131,8 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           project_id: projectId,
-          workflow_type: workflowType
+          workflow_type: workflowType,
+          session_type: 'project'
         }),
       });
 
@@ -206,17 +209,18 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
       case 'message':
         {
           const messageType = (data.message_type as Message['type']) || 'text';
-          console.log('[SessionContext] Received message:', { type: messageType, content: data.content, metadata: data.metadata });
+          const metadata = data.metadata as Record<string, unknown> | undefined;
+          console.log('[SessionContext] Received message:', { type: messageType, content: data.content, metadata });
           setMessages(prev => [...prev, {
             id: Date.now().toString(),
             role: data.role as Message['role'],
             content: data.content as string,
             type: messageType,
             timestamp: new Date().toISOString(),
-            metadata: data.metadata as Record<string, unknown>,
+            metadata,
           }]);
-          // If waiting for input, enable input field
-          if (messageType === 'waiting_input') {
+          // Enable input after chat response completes or when waiting for input
+          if (messageType === 'waiting_input' || metadata?.chat_complete) {
             setIsLoading(false);
           }
         }
@@ -234,6 +238,8 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
             timestamp: new Date().toISOString(),
           }]);
           setStreamingContent('');
+          // Enable input after stream completes
+          setIsLoading(false);
         }
         break;
 
@@ -347,6 +353,31 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   }, [sessions, connectWebSocket]);
 
+  // Create chat session
+  const createChatSession = useCallback(async (initialQuery: string): Promise<void> => {
+    try {
+      const response = await fetch(`${API_BASE}/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_type: 'chat'
+        }),
+      });
+
+      if (response.ok) {
+        const session: Session = await response.json();
+        session.session_type = 'chat';  // Ensure session_type is set
+        setSessions(prev => [...prev, session]);
+        // Select session and send initial query
+        selectSession(session.id, initialQuery, session);
+      } else {
+        console.error('Failed to create chat session:', await response.text());
+      }
+    } catch (error) {
+      console.error('Failed to create chat session:', error);
+    }
+  }, [selectSession]);
+
   // Send message
   const sendMessage = useCallback((content: string) => {
     if (!currentSession || !ws || ws.readyState !== WebSocket.OPEN) return;
@@ -360,11 +391,19 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
       timestamp: new Date().toISOString(),
     }]);
 
-    // Send to server
-    ws.send(JSON.stringify({
-      action: 'start',
-      query: content,
-    }));
+    // For chat mode, send as input to existing process
+    // For project mode, start a new agent
+    if (currentSession.session_type === 'chat') {
+      ws.send(JSON.stringify({
+        action: 'send_input',
+        input: content,
+      }));
+    } else {
+      ws.send(JSON.stringify({
+        action: 'start',
+        query: content,
+      }));
+    }
 
     setIsLoading(true);
   }, [currentSession, ws]);
@@ -432,6 +471,7 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
         ws,
         loadProjects,
         createSession,
+        createChatSession,
         selectSession,
         sendMessage,
         stopAgent,

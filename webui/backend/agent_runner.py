@@ -53,6 +53,9 @@ class AgentRunner:
         self._current_tool_args = None  # Current tool arguments
         self._current_tool_result = None  # Current tool result
         self._tool_call_json_buffer = ''  # Buffer for collecting multi-line JSON tool call info
+        self._is_chat_mode = project.get(
+            'id') == '__chat__'  # Simple chat mode flag
+        self._chat_response_buffer = ''  # Buffer for chat mode responses
 
     async def start(self, query: str):
         """Start the agent"""
@@ -174,6 +177,9 @@ class AgentRunner:
         self._waiting_for_input = False  # Reset waiting flag when sending input
         self._waiting_input_sent = False  # Reset so it can be sent again after next completion
         self.is_running = True  # Ensure process is marked as running
+        # Reset chat mode collection state for next response
+        self._collecting_assistant_output = False
+        self._chat_response_buffer = ''
 
         try:
             self.process.stdin.write((text + '\n').encode())
@@ -233,7 +239,7 @@ class AgentRunner:
                 if provider == 'modelscope':
                     cmd.extend(['--modelscope_api_key', llm_config['api_key']])
                 elif provider == 'openai':
-                    cmd.extend(['--openai_api_key', llm_config['api_key']])
+                    cmd.extend(['--llm.openai_api_key', llm_config['api_key']])
                     # Set llm.service to openai to ensure the correct service is used
                     cmd.extend(['--llm.service', 'openai'])
                     # Pass base_url if set by user
@@ -256,68 +262,71 @@ class AgentRunner:
                             str(llm_config['max_tokens'])
                         ])
 
-            # Add edit_file_config from user settings
-            edit_file_config = self.config_manager.get_edit_file_config()
-            if edit_file_config.get('api_key'):
-                # If API key is provided, pass edit_file_config
-                cmd.extend([
-                    '--tools.file_system.edit_file_config.api_key',
-                    edit_file_config['api_key']
-                ])
-                if edit_file_config.get('base_url'):
+            # Add edit_file_config from user settings (skip for chat mode)
+            if self.project.get('id') != '__chat__':
+                edit_file_config = self.config_manager.get_edit_file_config()
+                if edit_file_config.get('api_key'):
+                    # If API key is provided, pass edit_file_config
                     cmd.extend([
-                        '--tools.file_system.edit_file_config.base_url',
-                        edit_file_config['base_url']
+                        '--tools.file_system.edit_file_config.api_key',
+                        edit_file_config['api_key']
                     ])
-                if edit_file_config.get('diff_model'):
-                    cmd.extend([
-                        '--tools.file_system.edit_file_config.diff_model',
-                        edit_file_config['diff_model']
-                    ])
-            else:
-                # If no API key, exclude edit_file from tools
-                # Read the current include list from config file and remove edit_file
-                try:
-                    with open(config_file, 'r', encoding='utf-8') as f:
-                        config_data = yaml.safe_load(f)
-                    if config_data and 'tools' in config_data and 'file_system' in config_data[
-                            'tools']:
-                        include_list = config_data['tools']['file_system'].get(
-                            'include', [])
-                        if isinstance(include_list,
-                                      list) and 'edit_file' in include_list:
-                            # Remove edit_file from the list
-                            filtered_include = [
-                                tool for tool in include_list
-                                if tool != 'edit_file'
-                            ]
-                            # Pass the filtered list as comma-separated string
-                            cmd.extend([
-                                '--tools.file_system.include',
-                                ','.join(filtered_include)
-                            ])
-                except Exception as e:
-                    print(
-                        f'[Runner] Warning: Could not read config file to exclude edit_file: {e}'
-                    )
-                    # Fallback: explicitly exclude edit_file
-                    cmd.extend(['--tools.file_system.exclude', 'edit_file'])
+                    if edit_file_config.get('base_url'):
+                        cmd.extend([
+                            '--tools.file_system.edit_file_config.base_url',
+                            edit_file_config['base_url']
+                        ])
+                    if edit_file_config.get('diff_model'):
+                        cmd.extend([
+                            '--tools.file_system.edit_file_config.diff_model',
+                            edit_file_config['diff_model']
+                        ])
+                else:
+                    # If no API key, exclude edit_file from tools
+                    # Read the current include list from config file and remove edit_file
+                    try:
+                        with open(config_file, 'r', encoding='utf-8') as f:
+                            config_data = yaml.safe_load(f)
+                        if config_data and 'tools' in config_data and 'file_system' in config_data[
+                                'tools']:
+                            include_list = config_data['tools'][
+                                'file_system'].get('include', [])
+                            if isinstance(
+                                    include_list,
+                                    list) and 'edit_file' in include_list:
+                                # Remove edit_file from the list
+                                filtered_include = [
+                                    tool for tool in include_list
+                                    if tool != 'edit_file'
+                                ]
+                                # Pass the filtered list as comma-separated string
+                                cmd.extend([
+                                    '--tools.file_system.include',
+                                    ','.join(filtered_include)
+                                ])
+                    except Exception as e:
+                        print(
+                            f'[Runner] Warning: Could not read config file to exclude edit_file: {e}'
+                        )
+                        # Fallback: explicitly exclude edit_file
+                        cmd.extend(
+                            ['--tools.file_system.exclude', 'edit_file'])
 
-            # Add EdgeOne Pages API token and project name from user settings
-            edgeone_pages_config = self.config_manager.get_edgeone_pages_config(
-            )
-            if edgeone_pages_config.get('api_token'):
-                # If API token is provided, pass it to the MCP server config
-                cmd.extend([
-                    '--tools.edgeone-pages-mcp.env.EDGEONE_PAGES_API_TOKEN',
-                    edgeone_pages_config['api_token']
-                ])
-            if edgeone_pages_config.get('project_name'):
-                # If project name is provided, pass it to the MCP server config
-                cmd.extend([
-                    '--tools.edgeone-pages-mcp.env.EDGEONE_PAGES_PROJECT_NAME',
-                    edgeone_pages_config['project_name']
-                ])
+                # Add EdgeOne Pages API token and project name from user settings
+                edgeone_pages_config = self.config_manager.get_edgeone_pages_config(
+                )
+                if edgeone_pages_config.get('api_token'):
+                    # If API token is provided, pass it to the MCP server config
+                    cmd.extend([
+                        '--tools.edgeone-pages-mcp.env.EDGEONE_PAGES_API_TOKEN',
+                        edgeone_pages_config['api_token']
+                    ])
+                if edgeone_pages_config.get('project_name'):
+                    # If project name is provided, pass it to the MCP server config
+                    cmd.extend([
+                        '--tools.edgeone-pages-mcp.env.EDGEONE_PAGES_PROJECT_NAME',
+                        edgeone_pages_config['project_name']
+                    ])
 
         elif project_type == 'script':
             # Run the script directly
@@ -448,6 +457,9 @@ class AgentRunner:
 
                 print(f'[Runner] Process exited with code: {return_code}')
 
+                # Flush chat response for chat mode
+                self._flush_chat_response()
+
                 # Flush any accumulated assistant output before handling completion
                 if self._collecting_assistant_output and self._accumulated_output.strip(
                 ):
@@ -573,10 +585,61 @@ class AgentRunner:
         text = re.sub(r'^\[([^\]]+)\]\s*', '', text)
         return text.strip()
 
+    async def _process_chat_line(self, line: str):
+        """Simple chat mode - send response and wait for next input"""
+        # Detect [assistant]: marker - next lines will be the response
+        if '[assistant]:' in line:
+            self._collecting_assistant_output = True
+            self._chat_response_buffer = ''
+            return
+
+        # If collecting, send content immediately as complete
+        if self._collecting_assistant_output:
+            cleaned = self._clean_log_prefix(line)
+            if cleaned:
+                if self._chat_response_buffer:
+                    self._chat_response_buffer += '\n' + cleaned
+                else:
+                    self._chat_response_buffer = cleaned
+                # Send immediately with done=true (non-streaming mode)
+                print(
+                    f'[Runner] Chat response: {len(self._chat_response_buffer)} chars'
+                )
+                if self.on_output:
+                    self.on_output({
+                        'type': 'stream',
+                        'content': self._chat_response_buffer,
+                        'role': 'assistant',
+                        'done': True
+                    })
+                # Mark as waiting for input - process is still running
+                self._waiting_for_input = True
+
+    def _flush_chat_response(self):
+        """Send final chat response with done=True"""
+        if self._is_chat_mode and self._chat_response_buffer.strip(
+        ) and self.on_output:
+            print(
+                f'[Runner] Chat complete: {len(self._chat_response_buffer)} chars'
+            )
+            self.on_output({
+                'type': 'stream',
+                'content': self._chat_response_buffer.strip(),
+                'role': 'assistant',
+                'done': True
+            })
+            self._chat_response_buffer = ''
+            self._collecting_assistant_output = False
+
     async def _process_line(self, line: str):
         """Process a line of output"""
         # Skip usage statistics lines
         if '[usage]' in line or '[usage_total]' in line:
+            return
+
+        # Simple chat mode: just capture assistant output
+        if self._is_chat_mode:
+            await self._process_chat_line(line)
             return
 
         # Skip lines without agent name (generic system messages)
@@ -613,6 +676,60 @@ class AgentRunner:
         elif '[debug' in line_lower:
             return 'debug'
         return 'info'
+
+    def _scan_and_send_output_files(self, programmer_step=None):
+        """Read tasks.txt to get all generated files with their completion status"""
+        try:
+            project_path = self.project.get('path')
+            if not project_path:
+                return
+
+            # tasks.txt path: projects/code_genesis/output/tasks.txt
+            tasks_file = os.path.join(project_path, 'output', 'tasks.txt')
+
+            if not os.path.exists(tasks_file):
+                print(f'[Runner] tasks.txt not found: {tasks_file}')
+                return
+
+            print(f'[Runner] Reading tasks.txt: {tasks_file}')
+
+            # Read and parse tasks.txt
+            with open(tasks_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+
+            generated_files = []
+
+            for line in lines:
+                line = line.strip()
+                # Skip header line and empty lines
+                if not line or line.startswith('Files in'):
+                    continue
+
+                # Parse format: "css/styles.css: ✅Built"
+                if ':' in line and '✅' in line:
+                    file_path = line.split(':')[0].strip()
+                    generated_files.append(file_path)
+
+            print(
+                f'[Runner] Found {len(generated_files)} files in tasks.txt: {generated_files}'
+            )
+
+            # Send all files in one batch
+            if generated_files and self.on_output:
+                self.on_output({
+                    'type': 'file_output',
+                    'content': generated_files,  # Send as array
+                    'role': 'assistant',
+                    'metadata': {
+                        'files': generated_files,
+                        'source': 'tasks.txt'
+                    }
+                })
+
+        except Exception as e:
+            print(f'[Runner] Error reading tasks.txt: {e}')
+            import traceback
+            traceback.print_exc()
 
     async def _detect_patterns(self, line: str):
         """Detect special patterns in output"""
@@ -805,6 +922,12 @@ class AgentRunner:
                         'status': 'running'
                     }
                 })
+
+            # If Refine step is starting, scan tasks.txt for all generated files
+            # This ensures files are detected after Coding phase completes
+            if step_name.lower() == 'refine':
+                self._scan_and_send_output_files()
+
             return
 
         # Detect programmer-xxx pattern (first occurrence signals coding start)
@@ -813,7 +936,8 @@ class AgentRunner:
             programmer_agent = f'programmer-{programmer_match.group(1)}'
 
             # If this is FIRST programmer agent, trigger coding step start
-            if not self._current_step.startswith('programmer-'):
+            if not self._current_step or not self._current_step.startswith(
+                    'programmer-'):
                 print(
                     f'[Runner] First programmer agent detected: {programmer_agent} - starting coding step'
                 )
@@ -986,6 +1110,7 @@ class AgentRunner:
                         'status': 'completed'
                     }
                 })
+
             # Clear current step since it's completed
             self._current_step = None
             return
@@ -1284,8 +1409,14 @@ class AgentRunner:
                     self._current_tool_result = line
 
                 # Check for EdgeOne deployment URL in tool result
+                # Pattern 1: JSON format with edgeone.cool or edgeone.site
                 url_match = re.search(
-                    r'"url":\s*"(https?://[^"]+edgeone\.cool[^"]+)"', line)
+                    r'"url":\s*"(https?://[^"]+edgeone\.(cool|site)[^"]+)"',
+                    line)
+                # Pattern 2: Direct URL with edgeone.cool or edgeone.site
+                if not url_match:
+                    url_match = re.search(
+                        r'(https?://[^\s]*edgeone\.(cool|site)[^\s]*)', line)
                 if url_match:
                     deployment_url = url_match.group(1)
                     # Clean up escaped characters in URL (e.g., \& -> &)
@@ -1302,6 +1433,20 @@ class AgentRunner:
                                 'url': deployment_url
                             }
                         })
+                        # After deployment success, prompt user for further input
+                        self._waiting_for_input = True
+                        if not self._waiting_input_sent:
+                            self.on_output({
+                                'type': 'waiting_input',
+                                'content':
+                                'You can now provide additional feedback or visit the deployed site.',
+                                'role': 'system',
+                                'metadata': {
+                                    'waiting': True,
+                                    'deployment_complete': True
+                                }
+                            })
+                            self._waiting_input_sent = True
 
                 # Send result if we have tool name and accumulated enough content
                 if self._current_tool_name and len(
@@ -1373,16 +1518,7 @@ class AgentRunner:
                     if filename.startswith('programmer-'):
                         filename = filename[len('programmer-'):]
                     print(f'[Runner] Detected file output: {filename}')
-                    # Send as output file
-                    if self.on_output:
-                        self.on_output({
-                            'type': 'file_output',
-                            'content': filename,
-                            'role': 'assistant',
-                            'metadata': {
-                                'filename': filename
-                            }
-                        })
+                    # Only send progress update (file_output will be sent from tasks.txt)
                     self.on_progress({
                         'type': 'file',
                         'file': filename,
@@ -1406,15 +1542,7 @@ class AgentRunner:
             elif filename.startswith('programmer-'):
                 filename = filename[len('programmer-'):]
             print(f'[Runner] Detected output path: {filename}')
-            if self.on_output:
-                self.on_output({
-                    'type': 'file_output',
-                    'content': filename,
-                    'role': 'assistant',
-                    'metadata': {
-                        'filename': filename
-                    }
-                })
+            # Only send progress update (file_output will be sent from tasks.txt)
             self.on_progress({
                 'type': 'file',
                 'file': filename,

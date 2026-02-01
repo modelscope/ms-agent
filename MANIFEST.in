@@ -1,6 +1,19 @@
-recursive-include ms_agent/tools/code_interpreter *.ttf
-recursive-include ms_agent/utils *.tiktoken
-recursive-include ms_agent/utils/nltk *.zip
-recursive-include ms_agent/ *.yaml
+include README.md
+include LICENSE
+include requirements.txt
+recursive-include requirements *.txt
+
+# Include projects
+recursive-include projects *
+
+# Include webui backend
 recursive-include webui/backend *.py
+
+# Include webui frontend dist (will be built during setup)
 recursive-include webui/frontend/dist *
+
+# Exclude development files
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude .DS_Store
+global-exclude *.so

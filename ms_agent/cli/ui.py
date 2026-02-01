@@ -59,7 +59,7 @@ class UICMD(CLICommand):
 
         if not webui_dir.exists():
             import ms_agent
-            ms_agent_path = Path(ms_agent.__file__).parent.parent
+            ms_agent_path = Path(ms_agent.__file__).parent
             webui_dir = ms_agent_path / 'webui'
 
         if not webui_dir.exists():

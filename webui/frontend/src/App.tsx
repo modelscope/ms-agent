@@ -4,6 +4,7 @@ import { AnimatePresence } from 'framer-motion';
 import { useSession } from './context/SessionContext';
 import SearchView from './components/SearchView';
 import ConversationView from './components/ConversationView';
+import { ChatView } from './components/ChatView';
 import Layout from './components/Layout';
 
 const App: React.FC = () => {
@@ -26,13 +27,17 @@ const App: React.FC = () => {
         }}
       >
         <AnimatePresence mode="wait">
-          {!currentSession ? (
-            <SearchView key="search" />
+          {currentSession ? (
+            currentSession.session_type === 'chat' ? (
+              <ChatView key="chat" />
+            ) : (
+              <ConversationView
+                key="conversation"
+                showLogs={showLogs}
+              />
+            )
           ) : (
-            <ConversationView
-              key="conversation"
-              showLogs={showLogs}
-            />
+            <SearchView key="search" />
           )}
         </AnimatePresence>
       </Box>

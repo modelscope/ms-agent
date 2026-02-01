@@ -122,12 +122,22 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
 
   const loadOutputFiles = async () => {
     try {
-      const response = await fetch('/api/files/list');
+      if (!currentSession?.project_id) {
+        console.error('No project_id in current session');
+        return;
+      }
+
+      // Load files from project's output directory
+      const projectPath = `projects/${currentSession.project_id}/output`;
+      const url = `/api/files/list?root_dir=${encodeURIComponent(projectPath)}`;
+      const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
         setOutputTree(data.tree || {folders: {}, files: []});
         // Expand root level by default
         setExpandedFolders(new Set(['']));
+      } else {
+        console.error('Failed to load files:', await response.text());
       }
     } catch (err) {
       console.error('Failed to load output files:', err);
@@ -157,13 +167,19 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
     setSelectedFile(path);
     setFileLoading(true);
     try {
-      // Try multiple path formats
+      // Build path variants - add project-specific paths
       const pathVariants = [
-        path, // Original path
-        path.replace(/^output\//, ''), // Remove output/ prefix
-        path.replace(/^projects\//, ''), // Remove projects/ prefix
-        path.split('/').pop() || path, // Just filename
+        path, // Original path from file tree
       ];
+
+      // If we have a project, try project-specific paths
+      if (currentSession?.project_id) {
+        pathVariants.push(`projects/${currentSession.project_id}/output/${path}`);
+      }
+
+      // Also try without prefix
+      pathVariants.push(path.replace(/^output\//, ''));
+      pathVariants.push(path.split('/').pop() || path);
 
       let lastError: Error | null = null;
 
@@ -731,14 +747,37 @@ const ConversationView: React.FC<ConversationViewProps> = ({ showLogs }) => {
                             </Box>
                           </motion.div>
 
-                          {/* All file outputs grouped together - only show unique files */}
+                          {/* All generated files from tasks.txt */}
                           {(() => {
-                            const seenFiles = new Set<string>();
-                            return messages
-                              .filter(m => m.type === 'file_output' && !seenFiles.has(m.content) && (seenFiles.add(m.content), true))
-                              .map((fileMsg, fileIndex) => (
-                                <FileOutputChip key={`file-${fileIndex}-${fileMsg.content}`} filename={fileMsg.content} />
-                              ));
+                            // Find file_output message (now contains array of files from tasks.txt)
+                            const fileOutputMsg = messages.find(m => m.type === 'file_output');
+
+                            if (!fileOutputMsg) return null;
+
+                            // Handle both old format (single file) and new format (array of files)
+                            let generatedFiles: string[] = [];
+
+                            if (Array.isArray(fileOutputMsg.content)) {
+                              // New format: array of files from tasks.txt
+                              generatedFiles = fileOutputMsg.content;
+                            } else if (fileOutputMsg.metadata?.files && Array.isArray(fileOutputMsg.metadata.files)) {
+                              // Alternative: files in metadata
+                              generatedFiles = fileOutputMsg.metadata.files as string[];
+                            } else if (typeof fileOutputMsg.content === 'string') {
+                              // Old format: single file
+                              generatedFiles = [fileOutputMsg.content];
+                            }
+
+                            if (generatedFiles.length === 0) return null;
+
+                            return (
+                              <Box sx={{ ml: 4, mb: 1 }}>
+                                {/* Files list */}
+                                {generatedFiles.map((filename, idx) => (
+                                  <FileOutputChip key={`file-${idx}-${filename}`} filename={filename} />
+                                ))}
+                              </Box>
+                            );
                           })()}
                         </>
                       )}
@@ -2130,6 +2169,7 @@ const FileTreeView: React.FC<FileTreeViewProps> = ({
 // Separate component for file output with dialog
 const FileOutputChip: React.FC<{ filename: string }> = ({ filename }) => {
   const theme = useTheme();
+  const { currentSession } = useSession();
   const shortName = filename.split('/').pop() || filename;
   const displayName = shortName.startsWith('programmer-') ? shortName.slice('programmer-'.length) : shortName;
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -2158,13 +2198,19 @@ const FileOutputChip: React.FC<{ filename: string }> = ({ filename }) => {
     setFileError(null);
 
     try {
-      // Try multiple path formats
+      // Build path variants to try - include project-specific output path
       const pathVariants = [
         filename, // Original path
+        `output/${filename}`, // Add output/ prefix
         filename.replace(/^output\//, ''), // Remove output/ prefix
-        filename.replace(/^projects\//, ''), // Remove projects/ prefix
         filename.split('/').pop() || filename, // Just filename
       ];
+
+      // If we have a session with project info, also try project-specific paths
+      if (currentSession?.project_id) {
+        pathVariants.push(`projects/${currentSession.project_id}/output/${filename}`);
+        pathVariants.push(`projects/${currentSession.project_id}/output/${filename.replace(/^output\//, '')}`);
+      }
 
       let lastError: Error | null = null;
       let success = false;

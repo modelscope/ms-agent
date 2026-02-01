@@ -201,6 +201,23 @@ class Config:
                             _config[idx] = extra[value[1:-1]]
 
         traverse_config(config)
+
+        for key, value in extra.items():
+            if '.' in key and not key.startswith('tools.'):
+                parts = key.split('.')
+                current = config
+                # Navigate/create nested structure
+                for i, part in enumerate(parts[:-1]):
+                    if not hasattr(current,
+                                   part) or getattr(current, part) is None:
+                        setattr(current, part, DictConfig({}))
+                    current = getattr(current, part)
+                final_key = parts[-1]
+                if not hasattr(current, final_key) or getattr(
+                        current, final_key) is None:
+                    logger.info(f'Adding new config key: {key}')
+                    setattr(current, final_key, value)
+
         return None
 
     @staticmethod

@@ -16,7 +16,7 @@ generation_config:
   max_tokens: 64000
   extra_body:
     dashscope_extend_params:
-      provider: b
+      provider: d
 
 prompt:
   system: |

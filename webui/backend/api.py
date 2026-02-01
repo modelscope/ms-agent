@@ -2,16 +2,33 @@
 """
 API endpoints for the MS-Agent Web UI
 """
+import mimetypes
 import os
-import uuid
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 # Import shared instances
 from shared import config_manager, project_discovery, session_manager
 
 router = APIRouter()
+
+
+def get_backend_root() -> Path:
+    return Path(__file__).resolve().parents[
+        1]  # equal to dirname(dirname(__file__))
+
+
+def get_session_root(session_id: str) -> Path:
+    if not session_id or not str(session_id).strip():
+        raise HTTPException(status_code=400, detail='session_id is required')
+
+    backend_root = get_backend_root()
+    work_dir = (backend_root / 'work_dir' / str(session_id)).resolve()
+    work_dir.mkdir(parents=True, exist_ok=True)
+    return work_dir
 
 
 # Request/Response Models
@@ -27,10 +44,11 @@ class ProjectInfo(BaseModel):
 
 
 class SessionCreate(BaseModel):
-    project_id: str
+    project_id: Optional[str] = None  # Optional for chat mode
     query: Optional[str] = None
     workflow_type: Optional[
         str] = 'standard'  # 'standard' or 'simple' for code_genesis
+    session_type: Optional[str] = 'project'  # 'project' or 'chat'
 
 
 class SessionInfo(BaseModel):
@@ -39,6 +57,7 @@ class SessionInfo(BaseModel):
     project_name: str
     status: str
     created_at: str
+    session_type: Optional[str] = 'project'  # 'project' or 'chat'
 
 
 class LLMConfig(BaseModel):
@@ -81,6 +100,9 @@ class GlobalConfig(BaseModel):
 @router.get('/projects', response_model=List[ProjectInfo])
 async def list_projects():
     """List all available projects"""
+    print(
+        f'project_discovery.discover_projects(): {project_discovery.discover_projects()}'
+    )
     return project_discovery.discover_projects()
 
 
@@ -148,7 +170,18 @@ async def get_project_workflow(project_id: str,
 # Session Endpoints
 @router.post('/sessions', response_model=SessionInfo)
 async def create_session(session_data: SessionCreate):
-    """Create a new session for a project"""
+    """Create a new session for a project or chat mode"""
+    # Check if this is a chat mode session
+    if session_data.session_type == 'chat':
+        # Create chat session without requiring a project
+        session = session_manager.create_session(
+            project_id='__chat__',
+            project_name='Chat Assistant',
+            workflow_type='standard',
+            session_type='chat')
+        return session
+
+    # For project mode, validate project exists
     project = project_discovery.get_project(session_data.project_id)
     if not project:
         raise HTTPException(status_code=404, detail='Project not found')
@@ -164,7 +197,8 @@ async def create_session(session_data: SessionCreate):
     session = session_manager.create_session(
         project_id=session_data.project_id,
         project_name=project['name'],
-        workflow_type=workflow_type)
+        workflow_type=workflow_type,
+        session_type='project')
     return session
 
 
@@ -333,22 +367,72 @@ async def list_available_models():
 class FileReadRequest(BaseModel):
     path: str
     session_id: Optional[str] = None
+    root_dir: Optional[str] = None
 
 
 @router.get('/files/list')
-async def list_output_files():
-    """List all files in the output directory as a tree structure"""
-    base_dir = os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    output_dir = os.path.join(base_dir, 'output')
-
-    # Folders to exclude
+async def list_output_files(
+        output_dir: Optional[str] = Query(default='output'),
+        session_id: Optional[str] = Query(default=None),
+        root_dir: Optional[str] = Query(default=None),
+):
+    """List all files under root_dir as a tree structure.
+    root_dir: optional. If not provided, defaults to ms-agent/output.
+              Also supports 'projects' or 'projects/xxx' etc.
+    """
+    # Excluded folders
     exclude_dirs = {
         'node_modules', '__pycache__', '.git', '.venv', 'venv', 'dist', 'build'
     }
 
+    # Base directories (same way as read_file_content)
+    base_dir = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    projects_dir = os.path.join(base_dir, 'projects')
+
+    if session_id:
+
+        session_root = get_session_root(session_id)
+        resolved_root = (session_root / '').resolve()
+
+    elif not root_dir or root_dir.strip() == '':
+        resolved_root = output_dir
+    else:
+        root_dir = root_dir.strip()
+
+        # If absolute, use as-is
+        if os.path.isabs(root_dir):
+            resolved_root = root_dir
+        # If starts with 'projects/', join with base_dir
+        elif root_dir.startswith('projects/'):
+            resolved_root = os.path.join(base_dir, root_dir)
+        else:
+            # Try relative to output first, then projects
+            cand1 = os.path.join(output_dir, root_dir)
+            cand2 = os.path.join(projects_dir, root_dir)
+
+            if os.path.exists(cand1):
+                resolved_root = cand1
+            elif os.path.exists(cand2):
+                resolved_root = cand2
+            else:
+                # If user passes "output" or "projects" explicitly
+                if root_dir in ('output', 'output/'):
+                    resolved_root = output_dir
+                elif root_dir in ('projects', 'projects/'):
+                    resolved_root = projects_dir
+                else:
+                    # fall back to output + root_dir (but it likely doesn't exist)
+                    resolved_root = cand1
+
+    resolved_root = os.path.normpath(os.path.abspath(resolved_root))
+
+    # Warning: Web UI is for local-only convenience (frontend/backend assumed localhost).
+    # For production, enforce strict backend file-access validation and authorization
+    # to prevent arbitrary path read/write (e.g., path traversal).
+    # TODO: Security check: ensure `resolved_root` is within configured allowed roots.
+
     def build_tree(dir_path: str) -> dict:
-        """Recursively build a tree structure"""
         result = {'folders': {}, 'files': []}
 
         if not os.path.exists(dir_path):
@@ -360,171 +444,164 @@ async def list_output_files():
             return result
 
         for item in sorted(items):
-            # Skip hidden files/folders and excluded directories
             if item.startswith('.') or item in exclude_dirs:
                 continue
 
             full_path = os.path.join(dir_path, item)
 
             if os.path.isdir(full_path):
-                # Recursively build subtree
                 subtree = build_tree(full_path)
-                # Only include folder if it has content
                 if subtree['folders'] or subtree['files']:
                     result['folders'][item] = subtree
             else:
+                # Return RELATIVE path to resolved_root (better for frontend + read API)
+                rel_path = os.path.relpath(full_path, resolved_root)
+
                 result['files'].append({
                     'name': item,
-                    'path': full_path,
+                    'path': rel_path,  # <-- relative path
+                    'abs_path':
+                    full_path,  # optional: if you still want absolute for debugging
                     'size': os.path.getsize(full_path),
                     'modified': os.path.getmtime(full_path)
                 })
 
-        # Sort files by modification time (newest first)
         result['files'].sort(key=lambda x: x['modified'], reverse=True)
-
         return result
 
-    tree = build_tree(output_dir)
-    return {'tree': tree, 'output_dir': output_dir}
+    print('resolved_root =', resolved_root)
+    tree = build_tree(resolved_root)
+    return {'tree': tree, 'root_dir': resolved_root}
 
 
-@router.post('/files/read')
-async def read_file_content(request: FileReadRequest):
-    """Read content of a generated file"""
-    file_path = request.path
-
-    # Get base directories for security check
+def get_allowed_roots():
     base_dir = os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     output_dir = os.path.join(base_dir, 'output')
     projects_dir = os.path.join(base_dir, 'projects')
+    return base_dir, os.path.normpath(output_dir), os.path.normpath(
+        projects_dir)
 
-    print(f'[API] Reading file: {file_path}')
-    print(f'[API] Output dir: {output_dir}')
-    print(f'[API] Projects dir: {projects_dir}')
 
-    # Normalize the input path
-    file_path = file_path.strip()
+def resolve_root_dir(root_dir: Optional[str]) -> str:
+    """
+    Resolve optional root_dir to an absolute normalized path within allowed roots.
+    Default: output_dir
+    Supports:
+      - None/"" => output_dir
+      - "output", "projects", "projects/xxx"
+      - absolute path (must still be under allowed roots)
+    """
+    _, output_dir, projects_dir = get_allowed_roots()
 
-    # Try multiple path resolution strategies
-    candidate_paths = []
+    if not root_dir or root_dir.strip() == '':
+        resolved = output_dir
+    else:
+        rd = root_dir.strip()
+
+        if os.path.isabs(rd):
+            resolved = rd
+        else:
+            # Allow explicit "output"/"projects"
+            if rd in ('output', 'output/'):
+                resolved = output_dir
+            elif rd in ('projects', 'projects/'):
+                resolved = projects_dir
+            else:
+                cand1 = os.path.join(output_dir, rd)
+                cand2 = os.path.join(projects_dir, rd)
+                # choose existing one if possible, otherwise default to cand1
+                resolved = cand1 if os.path.exists(cand1) else (
+                    cand2 if os.path.exists(cand2) else cand1)
+
+    resolved = os.path.normpath(os.path.abspath(resolved))
+
+    # Warning: Web UI is for local-only convenience (frontend/backend assumed localhost).
+    # For production, enforce strict backend file-access validation and authorization
+    # to prevent arbitrary path read/write (e.g., path traversal).
+    # TODO: Security check: ensure `resolved` is within configured allowed roots.
+
+    return resolved
+
+
+def resolve_file_path(root_dir_abs: str, file_path: str) -> str:
+    """
+    Resolve file_path against root_dir_abs.
+    - if file_path starts with 'projects/', resolve from ms-agent base dir
+    - if file_path is absolute, use as-is
+    - if relative, join(root_dir_abs, file_path)
+    """
+    root_dir_abs = os.path.normpath(os.path.abspath(root_dir_abs))
 
     if os.path.isabs(file_path):
-        # Absolute path - use as-is (but still check security)
-        candidate_paths.append(file_path)
+        full_path = os.path.normpath(os.path.abspath(file_path))
+    elif file_path.startswith('projects/'):
+        # Special case: if path starts with 'projects/', resolve from base_dir
+        # This handles: projects/code_genesis/output/config.js
+        base_dir = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        full_path = os.path.normpath(
+            os.path.abspath(os.path.join(base_dir, file_path)))
     else:
-        # Relative path - try different combinations
-        # Remove leading slashes
-        normalized = file_path.lstrip('/')
+        # Try multiple locations
+        base_dir = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-        # Strategy 1: Path already contains output/ or projects/ prefix
-        if normalized.startswith('output/'):
-            # Remove 'output/' prefix and try in output_dir
-            candidate_paths.append(os.path.join(output_dir, normalized[7:]))
-            # Also try in project-specific output directories
-            if os.path.exists(projects_dir):
-                try:
-                    for project_name in os.listdir(projects_dir):
-                        project_path = os.path.join(projects_dir, project_name)
-                        if os.path.isdir(project_path):
-                            project_output = os.path.join(
-                                project_path, 'output')
-                            if os.path.exists(project_output):
-                                candidate_paths.append(
-                                    os.path.join(project_output,
-                                                 normalized[7:]))
-                except (OSError, PermissionError):
-                    pass  # Skip if can't list directory
-        elif normalized.startswith('projects/'):
-            # Remove 'projects/' prefix and try in projects_dir
-            candidate_paths.append(os.path.join(projects_dir, normalized[9:]))
-        else:
-            # Strategy 2: Try as-is in output dir (most common case)
-            candidate_paths.append(os.path.join(output_dir, normalized))
-            # Strategy 3: Try as-is in projects dir
-            candidate_paths.append(os.path.join(projects_dir, normalized))
-            # Strategy 4: Try in project-specific output directories
-            if os.path.exists(projects_dir):
-                try:
-                    for project_name in os.listdir(projects_dir):
-                        project_path = os.path.join(projects_dir, project_name)
-                        if os.path.isdir(project_path):
-                            project_output = os.path.join(
-                                project_path, 'output')
-                            if os.path.exists(project_output):
-                                candidate_paths.append(
-                                    os.path.join(project_output, normalized))
-                                # Strategy 4a: Try converting hyphenated names to directory structure
-                                # e.g., "css-style.css" -> "css/style.css"
-                                if '-' in normalized and '.' in normalized:
-                                    parts = normalized.rsplit('.', 1)
-                                    if len(parts) == 2:
-                                        name, ext = parts
-                                        # Try splitting on first hyphen: "css-style" -> "css/style"
-                                        if '-' in name:
-                                            dir_name, file_name = name.split(
-                                                '-', 1)
-                                            alt_path = os.path.join(
-                                                project_output, dir_name,
-                                                f'{file_name}.{ext}')
-                                            candidate_paths.append(alt_path)
-                except (OSError, PermissionError):
-                    pass  # Skip if can't list directory
-
-        # Strategy 5: Try original path (with leading slash) in both directories
-        if file_path != normalized:
-            candidate_paths.append(os.path.join(output_dir, file_path))
-            candidate_paths.append(os.path.join(projects_dir, file_path))
-            # Also try in project-specific output directories
-            if os.path.exists(projects_dir):
-                try:
-                    for project_name in os.listdir(projects_dir):
-                        project_path = os.path.join(projects_dir, project_name)
-                        if os.path.isdir(project_path):
-                            project_output = os.path.join(
-                                project_path, 'output')
-                            if os.path.exists(project_output):
-                                candidate_paths.append(
-                                    os.path.join(project_output, file_path))
-                except (OSError, PermissionError):
-                    pass  # Skip if can't list directory
-
-    # Find the first existing file
-    full_path = None
-    for candidate in candidate_paths:
-        normalized_candidate = os.path.normpath(candidate)
-        # Security check: ensure file is within allowed directories
-        allowed_dirs = [
-            os.path.normpath(output_dir),
-            os.path.normpath(projects_dir)
+        candidates = [
+            # First try with root_dir_abs (for session-based access)
+            os.path.join(root_dir_abs, file_path),
+            # Then try in each project's output directory
         ]
-        is_allowed = any(
-            normalized_candidate.startswith(d) for d in allowed_dirs)
 
-        if is_allowed and os.path.exists(
-                normalized_candidate) and os.path.isfile(normalized_candidate):
-            full_path = normalized_candidate
-            print(f'[API] Found file at: {full_path}')
-            break
-        else:
-            if len(candidate_paths) <= 10:  # Only print if not too many paths
-                exists = os.path.exists(normalized_candidate)
-                print(f'[API] Tried: {normalized_candidate} '
-                      f'(exists: {exists}, allowed: {is_allowed})')
+        # Search in project output directories
+        projects_dir = os.path.join(base_dir, 'projects')
+        if os.path.exists(projects_dir):
+            try:
+                for project_name in os.listdir(projects_dir):
+                    project_path = os.path.join(projects_dir, project_name)
+                    if os.path.isdir(project_path):
+                        candidates.append(
+                            os.path.join(project_path, 'output', file_path))
+            except (OSError, PermissionError):
+                pass
 
-    if not full_path:
-        # Provide detailed error message
-        tried_paths = '\n'.join(
-            [f'  - {os.path.normpath(p)}' for p in candidate_paths])
-        error_msg = f'File not found: {file_path}\nTried paths:\n{tried_paths}'
-        print(f'[API] {error_msg}')
-        raise HTTPException(status_code=404, detail=error_msg)
+        # Find first existing file
+        full_path = None
+        for candidate in candidates:
+            candidate = os.path.normpath(candidate)
+            if os.path.exists(candidate) and os.path.isfile(candidate):
+                full_path = candidate
+                break
+
+        if not full_path:
+            # Default to first candidate if none found
+            full_path = os.path.normpath(candidates[0])
+
+    # Warning: Web UI is for local-only convenience (frontend/backend assumed localhost).
+    # For production, enforce strict backend file-access validation and authorization
+    # to prevent arbitrary path read/write (e.g., path traversal).
+    # TODO: Security check: ensure `full_path` is within configured allowed roots.
+
+    return full_path
+
+
+@router.post('/files/read')
+async def read_file_content(request: FileReadRequest):
+    if request.session_id:
+        session_root = get_session_root(request.session_id)
+        root_abs = os.path.normpath(os.path.abspath(str(session_root)))
+    else:
+        root_abs = resolve_root_dir(request.root_dir)
+    full_path = resolve_file_path(root_abs, request.path)
+
+    if not os.path.exists(full_path):
+        raise HTTPException(
+            status_code=404, detail=f'File not found: {full_path}')
 
     if not os.path.isfile(full_path):
-        raise HTTPException(status_code=400, detail='Path is not a file')
-
-    # Check file size (limit to 1MB)
+        raise HTTPException(
+            status_code=400, detail=f'Path {full_path} is not a file')
+    # limit 1MB
     file_size = os.path.getsize(full_path)
     if file_size > 1024 * 1024:
         raise HTTPException(status_code=400, detail='File too large (max 1MB)')
@@ -533,7 +610,6 @@ async def read_file_content(request: FileReadRequest):
         with open(full_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        # Detect language from extension
         ext = os.path.splitext(full_path)[1].lower()
         lang_map = {
             '.py': 'python',
@@ -555,9 +631,14 @@ async def read_file_content(request: FileReadRequest):
         }
         language = lang_map.get(ext, 'text')
 
+        # Return a relative path (relative to root_dir) for consistent handling on the frontend.
+        rel_path = os.path.relpath(full_path, root_abs)
+
         return {
             'content': content,
-            'path': full_path,
+            'path': rel_path,
+            'abs_path': full_path,
+            'root_dir': root_abs,
             'filename': os.path.basename(full_path),
             'language': language,
             'size': file_size
@@ -567,3 +648,95 @@ async def read_file_content(request: FileReadRequest):
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f'Error reading file: {str(e)}')
+
+
+def resolve_and_check_path(file_path: str) -> str:
+    """Resolve file path, trying multiple locations"""
+    base_dir = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+    if os.path.isabs(file_path):
+        full_path = file_path
+    else:
+        # Smart path resolution:
+        # If path already starts with 'projects/', use it directly under base_dir
+        # Otherwise try output_dir first, then search in project outputs
+
+        candidates = []
+
+        # If path starts with 'projects/', join directly with base_dir
+        if file_path.startswith('projects/'):
+            candidates.append(os.path.join(base_dir, file_path))
+        else:
+            # Try base_dir/output first
+            output_dir = os.path.join(base_dir, 'output')
+            candidates.append(os.path.join(output_dir, file_path))
+
+            # Try base_dir directly
+            candidates.append(os.path.join(base_dir, file_path))
+
+            # Search in each project's output directory
+            projects_dir = os.path.join(base_dir, 'projects')
+            if os.path.exists(projects_dir):
+                try:
+                    for project_name in os.listdir(projects_dir):
+                        project_path = os.path.join(projects_dir, project_name)
+                        if os.path.isdir(project_path):
+                            # Try project/output/filename
+                            candidates.append(
+                                os.path.join(project_path, 'output',
+                                             file_path))
+                except (OSError, PermissionError):
+                    pass
+
+        # Find first existing file
+        full_path = None
+        for candidate in candidates:
+            candidate = os.path.normpath(candidate)
+            if os.path.exists(candidate) and os.path.isfile(candidate):
+                full_path = candidate
+                break
+
+        if not full_path:
+            # If not found, use the first candidate for error message
+            full_path = os.path.normpath(
+                candidates[0] if candidates else file_path)
+
+    full_path = os.path.normpath(full_path)
+
+    # Warning: Web UI is for local-only convenience (frontend/backend assumed localhost).
+    # For production, enforce strict backend file-access validation and authorization
+    # to prevent arbitrary path read/write (e.g., path traversal).
+    # TODO: Security check: ensure `full_path` is within configured allowed roots.
+
+    if not os.path.exists(full_path):
+        raise HTTPException(
+            status_code=404, detail=f'File not found: {full_path}')
+    if not os.path.isfile(full_path):
+        raise HTTPException(
+            status_code=400, detail=f'Path {full_path} is not a file')
+
+    return full_path
+
+
+@router.get('/files/stream')
+async def stream_file(path: str,
+                      session_id: Optional[str] = Query(default=None)):
+    if session_id:
+        session_root = get_session_root(session_id)
+        root_abs = str(session_root.resolve())
+        full_path = resolve_file_path(root_abs, path)
+    else:
+        full_path = resolve_and_check_path(path)
+
+    media_type, _ = mimetypes.guess_type(full_path)
+    media_type = media_type or 'application/octet-stream'
+    return FileResponse(
+        full_path,
+        media_type=media_type,
+        filename=os.path.basename(full_path),
+        headers={
+            'Content-Disposition':
+            f'inline; filename="{os.path.basename(full_path)}"'
+        },
+    )

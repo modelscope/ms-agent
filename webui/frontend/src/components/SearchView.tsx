@@ -39,7 +39,7 @@ const projectIcons: Record<string, React.ReactElement> = {
 
 const SearchView: React.FC = () => {
   const theme = useTheme();
-  const { projects, createSession, selectSession } = useSession();
+  const { projects, createSession, createChatSession, selectSession } = useSession();
   const [query, setQuery] = useState('');
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -54,26 +54,33 @@ const SearchView: React.FC = () => {
   };
 
   const handleSubmit = useCallback(async () => {
-    if (!selectedProject || !query.trim()) return;
+    if (!query.trim()) return;
 
-    console.log('[SearchView] Submitting with project:', selectedProject.id, 'query:', query, 'workflow_type:', workflowType);
     setIsSubmitting(true);
     try {
-      const session = await createSession(
-        selectedProject.id,
-        selectedProject.supports_workflow_switch ? workflowType : 'standard'
-      );
-      console.log('[SearchView] Session created:', session);
-      if (session) {
-        // Pass the session object directly to avoid race condition
-        selectSession(session.id, query, session);
+      // If no project selected, start a chat session
+      if (!selectedProject) {
+        console.log('[SearchView] No project selected, starting chat session');
+        await createChatSession(query);
+      } else {
+        // If project selected, create project session
+        console.log('[SearchView] Submitting with project:', selectedProject.id, 'query:', query, 'workflow_type:', workflowType);
+        const session = await createSession(
+          selectedProject.id,
+          selectedProject.supports_workflow_switch ? workflowType : 'standard'
+        );
+        console.log('[SearchView] Session created:', session);
+        if (session) {
+          // Pass the session object directly to avoid race condition
+          selectSession(session.id, query, session);
+        }
       }
     } catch (error) {
       console.error('[SearchView] Error creating session:', error);
     } finally {
       setIsSubmitting(false);
     }
-  }, [selectedProject, query, workflowType, createSession, selectSession]);
+  }, [selectedProject, query, workflowType, createSession, createChatSession, selectSession]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -148,11 +155,10 @@ const SearchView: React.FC = () => {
             fullWidth
             multiline
             maxRows={4}
-            placeholder="What would you like to accomplish today?"
+            placeholder={selectedProject ? "What would you like to accomplish today?" : "Chat directly or select a project below..."}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={!selectedProject}
             sx={{
               '& .MuiOutlinedInput-root': {
                 borderRadius: '16px',
@@ -180,11 +186,11 @@ const SearchView: React.FC = () => {
               ),
               endAdornment: (
                 <InputAdornment position="end">
-                  <Tooltip title={selectedProject ? 'Start' : 'Select a project first'}>
+                  <Tooltip title={selectedProject ? 'Start with project' : (query.trim() ? 'Start chat' : 'Type a message')}>
                     <span>
                       <IconButton
                         onClick={handleSubmit}
-                        disabled={!selectedProject || !query.trim() || isSubmitting}
+                        disabled={!query.trim() || isSubmitting}
                         sx={{
                           backgroundColor: theme.palette.primary.main,
                           color: theme.palette.primary.contrastText,
@@ -325,7 +331,7 @@ const SearchView: React.FC = () => {
             textAlign: 'center',
           }}
         >
-          Select a Project
+          Or Select a Project for Specific Tasks
         </Typography>
 
         <Grid container spacing={2} justifyContent="center">

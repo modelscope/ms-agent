@@ -479,6 +479,8 @@ class ComposeVideo(CodeAgent):
             preset=self.preset,
             write_logfile=False)
 
+        logger.info(f'file saved: {output_path}')
+
         if os.path.exists(output_path) and os.path.getsize(output_path) > 1024:
             test_clip = mp.VideoFileClip(output_path)
             actual_duration = test_clip.duration
@@ -490,6 +492,7 @@ class ComposeVideo(CodeAgent):
         final_name = 'final_video.mp4'
         final_video_path = os.path.join(self.work_dir, final_name)
         if os.path.exists(final_video_path):
+            logger.info(f'output: {final_video_path}')
             return messages
         with open(os.path.join(self.work_dir, 'segments.txt'), 'r') as f:
             segments = json.load(f)
