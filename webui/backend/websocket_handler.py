@@ -147,7 +147,14 @@ async def start_agent(session_id: str, data: Dict[str, Any],
         import ms_agent
         from pathlib import Path
         # Get ms_agent package installation path
-        ms_agent_package_path = Path(ms_agent.__file__).parent
+        # Use __path__ which is always available for packages and gives real filesystem paths
+        if hasattr(ms_agent, '__path__') and ms_agent.__path__:
+            ms_agent_package_path = Path(ms_agent.__path__[0])
+        elif ms_agent.__file__ is not None:
+            ms_agent_package_path = Path(ms_agent.__file__).parent
+        else:
+            raise RuntimeError('Cannot determine ms_agent package path. '
+                               'Please ensure ms_agent is properly installed.')
         chat_config_path = ms_agent_package_path / 'agent' / 'agent.yaml'
 
         project = {

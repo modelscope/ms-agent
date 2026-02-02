@@ -15,6 +15,9 @@ import {
   Stop as StopIcon,
   Chat as ChatIcon,
   PlayArrow as RunningIcon,
+  Build as ToolIcon,
+  CheckCircle as SuccessIcon,
+  Error as ErrorIcon,
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSession, Message } from '../context/SessionContext';
@@ -62,12 +65,9 @@ export const ChatView: React.FC = () => {
       return;
     }
 
-    // If waiting for input, send input to existing agent
-    if (isWaitingForInput && ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        action: 'send_input',
-        input: input.trim(),
-      }));
+    // If waiting for input, send input to existing agent (use sendMessage which adds locally)
+    if (isWaitingForInput) {
+      sendMessage(input.trim());
       setInput('');
       return;
     }
@@ -382,14 +382,140 @@ const ChatMessageBubble: React.FC<ChatMessageBubbleProps> = ({ message }) => {
   const theme = useTheme();
   const isUser = message.role === 'user';
   const isError = message.type === 'error';
+  const isToolCall = message.type === 'tool_call';
+  const isToolResult = message.type === 'tool_result';
 
-  // Skip empty messages
-  if (!message.content?.trim()) return null;
+  // Skip empty messages (but not tool calls which may have empty content)
+  if (!message.content?.trim() && !isToolCall) return null;
 
-  // Skip tool calls and other non-display message types
-  if (message.type === 'tool_call' || message.type === 'tool_result') return null;
+  // Skip non-display message types
   if (message.type === 'step_start' || message.type === 'step_complete') return null;
   if (message.type === 'file_output' || message.type === 'deployment_url') return null;
+
+  // Render tool call
+  if (isToolCall) {
+    const toolName = String(message.metadata?.tool_name || 'Unknown Tool');
+    const args = message.metadata?.arguments || {};
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
+      >
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'flex-start',
+            mb: 1.5,
+            px: 2,
+          }}
+        >
+          <Paper
+            elevation={0}
+            sx={{
+              maxWidth: '75%',
+              minWidth: 60,
+              px: 2,
+              py: 1.25,
+              borderRadius: '12px',
+              backgroundColor: alpha(theme.palette.info.main, 0.1),
+              border: `1px solid ${alpha(theme.palette.info.main, 0.3)}`,
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+              <ToolIcon sx={{ fontSize: 16, color: theme.palette.info.main }} />
+              <Typography variant="caption" sx={{ fontWeight: 600, color: theme.palette.info.main }}>
+                Calling Tool: {toolName.replace('---', ' / ')}
+              </Typography>
+            </Box>
+            {Object.keys(args).length > 0 && (
+              <Typography
+                variant="caption"
+                sx={{
+                  display: 'block',
+                  color: theme.palette.text.secondary,
+                  fontFamily: 'monospace',
+                  fontSize: '0.75rem',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-all',
+                }}
+              >
+                {JSON.stringify(args, null, 2)}
+              </Typography>
+            )}
+          </Paper>
+        </Box>
+      </motion.div>
+    );
+  }
+
+  // Render tool result
+  if (isToolResult) {
+    const isToolError = message.metadata?.is_error;
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
+      >
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'flex-start',
+            mb: 1.5,
+            px: 2,
+          }}
+        >
+          <Paper
+            elevation={0}
+            sx={{
+              maxWidth: '75%',
+              minWidth: 60,
+              px: 2,
+              py: 1.25,
+              borderRadius: '12px',
+              backgroundColor: isToolError
+                ? alpha(theme.palette.error.main, 0.1)
+                : alpha(theme.palette.success.main, 0.1),
+              border: `1px solid ${alpha(isToolError ? theme.palette.error.main : theme.palette.success.main, 0.3)}`,
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+              {isToolError ? (
+                <ErrorIcon sx={{ fontSize: 16, color: theme.palette.error.main }} />
+              ) : (
+                <SuccessIcon sx={{ fontSize: 16, color: theme.palette.success.main }} />
+              )}
+              <Typography
+                variant="caption"
+                sx={{
+                  fontWeight: 600,
+                  color: isToolError ? theme.palette.error.main : theme.palette.success.main,
+                }}
+              >
+                {isToolError ? 'Tool Error' : 'Tool Result'}
+              </Typography>
+            </Box>
+            <Typography
+              variant="caption"
+              sx={{
+                display: 'block',
+                color: theme.palette.text.secondary,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}
+            >
+              {message.content}
+            </Typography>
+          </Paper>
+        </Box>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div
