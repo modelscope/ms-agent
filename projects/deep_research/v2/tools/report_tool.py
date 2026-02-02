@@ -166,7 +166,8 @@ class ReportTool(ToolBase):
                                 'type': 'array',
                                 'description': 'List of chapter definitions.',
                                 'items': {
-                                    'type': 'object',
+                                    'type':
+                                    'object',
                                     'properties': {
                                         'title': {
                                             'type': 'string',
@@ -185,7 +186,16 @@ class ReportTool(ToolBase):
                                             'type':
                                             'string',
                                             'description':
-                                            'Description of the planned sections in this chapter.',
+                                            ('Detailed section-by-section plan for this chapter '
+                                             '(NOT a single-sentence summary). '
+                                             'Write subsections as a numbered list in markdown. '
+                                             'For EACH subsection include: '
+                                             '(a) subsection title, (b) 2-5 bullet key '
+                                             'points / questions to answer, '
+                                             '(c) expected output form: narrative synthesis is required; '
+                                             'optionally add an artifact '
+                                             '(e.g., table/checklist) to support the narrative.'
+                                             ),
                                         },
                                         'candidate_evidence': {
                                             'type':
@@ -197,8 +207,11 @@ class ReportTool(ToolBase):
                                             'List of note_ids relevant to this chapter.',
                                         },
                                     },
-                                    'required':
-                                    ['title', 'candidate_evidence'],
+                                    'required': [
+                                        'title', 'goals',
+                                        'sections_description',
+                                        'candidate_evidence'
+                                    ],
                                 },
                             },
                         },
@@ -387,7 +400,16 @@ class ReportTool(ToolBase):
                                         'type':
                                         'string',
                                         'description':
-                                        'Description of the planned sections in this chapter.',
+                                        ('Detailed section-by-section plan for '
+                                         'this chapter (NOT a single-sentence summary). '
+                                         'Write subsections as a numbered list in markdown. '
+                                         'For EACH subsection include: '
+                                         '(a) subsection title, (b) 2-5 bullet key '
+                                         'points / questions to answer, '
+                                         '(c) expected output form: narrative synthesis '
+                                         'is required; optionally add an artifact '
+                                         '(e.g., table/checklist) to support the narrative.'
+                                         ),
                                     },
                                     'candidate_evidence': {
                                         'type':

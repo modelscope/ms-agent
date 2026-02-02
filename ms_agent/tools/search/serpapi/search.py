@@ -87,7 +87,7 @@ class SerpApiSearch(SearchEngine):
                         'maximum':
                         10,
                         'description':
-                        'Number of results to return. Default is 3.',
+                        'Number of results to return. Default is 5.',
                     },
                     'location': {
                         'type':

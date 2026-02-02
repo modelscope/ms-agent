@@ -22,12 +22,18 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple
 
 import json
+
+try:
+    import select  # Unix-only; dr_bench_runner is used on mac/linux
+except Exception:  # pragma: no cover
+    select = None  # type: ignore
 
 
 def _read_jsonl(path: str) -> List[Dict]:
@@ -84,13 +90,79 @@ def _find_report_md(workdir: str) -> Optional[str]:
     candidates = [
         os.path.join(workdir, 'final_report.md'),
         os.path.join(workdir, 'report.md'),
-        os.path.join(workdir, 'reports', 'report.md'),
-        os.path.join(workdir, 'reports', 'draft.md'),
+        # os.path.join(workdir, 'reports', 'report.md'),
+        # os.path.join(workdir, 'reports', 'draft.md'),
     ]
     for p in candidates:
         if os.path.exists(p) and os.path.isfile(p):
             return p
     return None
+
+
+def _is_direct_final_report_path(workdir: str, report_path: str) -> bool:
+    """
+    Only accept top-level final report files in `workdir`:
+    - <workdir>/final_report.md
+    - <workdir>/report.md
+
+    We intentionally ignore files under <workdir>/reports/ (e.g. reports/report.md),
+    because those are intermediate artifacts and the user explicitly asked to
+    not backfill from the reports subdir.
+    """
+    try:
+        wd = os.path.abspath(workdir)
+        rp = os.path.abspath(report_path)
+        if os.path.dirname(rp) != wd:
+            return False
+        base = os.path.basename(rp)
+        return base in ('final_report.md', 'report.md')
+    except Exception:
+        return False
+
+
+def _try_backfill_from_existing_workdir(
+    task: Task,
+    *,
+    model_name: str,
+    work_root: str,
+    output_jsonl: str,
+    write_lock: Optional[threading.Lock] = None,
+) -> Tuple[bool, Optional[str]]:
+    """
+    Try to backfill a missing jsonl entry from an existing workdir on disk.
+
+    Returns:
+        (backfilled, error)
+    """
+    workdir = os.path.join(work_root, model_name, task.task_id)
+    if not os.path.exists(workdir) or not os.path.isdir(workdir):
+        return False, None
+
+    report_path = _find_report_md(workdir)
+    if not report_path:
+        return False, None
+    if not _is_direct_final_report_path(workdir, report_path):
+        return False, None
+
+    try:
+        with open(report_path, 'r', encoding='utf-8') as f:
+            article = f.read()
+    except Exception as e:
+        return False, f'failed to read report for backfill: {e} (path={report_path})'
+
+    if not article.strip():
+        return False, f'empty report content for backfill (path={report_path})'
+
+    _append_jsonl(
+        output_jsonl,
+        {
+            'id': task.task_id,
+            'prompt': task.prompt,
+            'article': article,
+        },
+        lock=write_lock,
+    )
+    return True, None
 
 
 def _tail_text_from_file(path: str, *, max_chars: int = 20000) -> str:
@@ -115,6 +187,77 @@ def _tail_text_from_file(path: str, *, max_chars: int = 20000) -> str:
 class Task:
     task_id: str
     prompt: str
+
+
+def _terminate_process(
+    proc: subprocess.Popen,
+    *,
+    terminate_timeout_s: float = 5.0,
+    kill_timeout_s: float = 2.0,
+) -> None:
+    """
+    Best-effort terminate/kill a subprocess without raising.
+
+    We intentionally keep this conservative: first SIGTERM, then SIGKILL if needed.
+    """
+    try:
+        if proc.poll() is not None:
+            return
+    except Exception:
+        # If poll fails, still try to terminate/kill.
+        pass
+
+    try:
+        proc.terminate()
+    except Exception:
+        pass
+
+    try:
+        proc.wait(timeout=max(0.0, terminate_timeout_s))
+        return
+    except Exception:
+        pass
+
+    try:
+        proc.kill()
+    except Exception:
+        pass
+
+    try:
+        proc.wait(timeout=max(0.0, kill_timeout_s))
+    except Exception:
+        pass
+
+
+def _report_is_stable(
+    report_path: str,
+    *,
+    stable_window_s: float,
+    last_sig: Optional[Tuple[float, int]],
+    stable_since: Optional[float],
+    now_s: float,
+) -> Tuple[bool, Optional[Tuple[float, int]], Optional[float]]:
+    """
+    Track whether a report file has been stable (mtime,size) for stable_window_s.
+    Returns: (is_stable, new_last_sig, new_stable_since)
+    """
+    try:
+        st = os.stat(report_path)
+        if st.st_size <= 0:
+            return False, last_sig, None
+        sig = (float(st.st_mtime), int(st.st_size))
+    except Exception:
+        return False, last_sig, None
+
+    if last_sig is None or sig != last_sig:
+        return False, sig, None
+
+    if stable_since is None:
+        stable_since = now_s
+        return False, sig, stable_since
+
+    return (now_s - stable_since) >= max(0.0,
+                                         stable_window_s), sig, stable_since
 
 
 def _run_one_task(
@@ -158,6 +301,28 @@ def _run_one_task(
         env = dict(os.environ)
         env.setdefault('PYTHONUNBUFFERED', '1')
 
+        # Safety net for rare "subprocess produced final_report.md but never exits".
+        # This happens when the child Python process is stuck at shutdown (e.g. a
+        # non-daemon thread blocked in I/O). If the final report is already stable
+        # on disk, force-reap the child so the batch runner can continue.
+        post_report_exit_grace_s = float(
+            os.getenv('DR_BENCH_POST_REPORT_EXIT_GRACE_S', '15') or 15.0)
+        report_stable_window_s = float(
+            os.getenv('DR_BENCH_REPORT_STABLE_WINDOW_S', '2') or 2.0)
+        poll_interval_s = float(
+            os.getenv('DR_BENCH_SUBPROCESS_POLL_INTERVAL_S', '0.5') or 0.5)
+        terminate_timeout_s = float(
+            os.getenv('DR_BENCH_SUBPROCESS_TERMINATE_TIMEOUT_S', '5') or 5.0)
+        kill_timeout_s = float(
+            os.getenv('DR_BENCH_SUBPROCESS_KILL_TIMEOUT_S', '2') or 2.0)
+
+        # We consider a task "already done" if it produced a top-level
+        # final report file (final_report.md or report.md) with non-empty content.
+        report_seen_stable_at: Optional[float] = None
+        report_last_sig: Optional[Tuple[float, int]] = None
+        report_stable_since: Optional[float] = None
+        force_reaped = False
+
         if stream_subprocess_output:
             tail_lines: deque[str] = deque(maxlen=2000)
             with open(log_path, 'w', encoding='utf-8') as logf:
@@ -171,15 +336,80 @@ def _run_one_task(
                     env=env,
                 )
                 assert proc.stdout is not None
-                for line in proc.stdout:
-                    logf.write(line)
-                    tail_lines.append(line)
-                    if print_lock is None:
-                        print(f'[{task.task_id}] {line}', end='')
+                # Avoid `for line in proc.stdout`: it blocks forever if the child
+                # is hung but keeps stdout open. Use select+poll instead.
+                while True:
+                    now_s = time.time()
+
+                    # If final report exists and is stable, start a grace timer.
+                    report_path_hint = _find_report_md(workdir)
+                    if report_path_hint and _is_direct_final_report_path(
+                            workdir, report_path_hint):
+                        stable, report_last_sig, report_stable_since = _report_is_stable(
+                            report_path_hint,
+                            stable_window_s=report_stable_window_s,
+                            last_sig=report_last_sig,
+                            stable_since=report_stable_since,
+                            now_s=now_s,
+                        )
+                        if stable and report_seen_stable_at is None:
+                            report_seen_stable_at = now_s
+                        if (report_seen_stable_at is not None
+                                and proc.poll() is None
+                                and (now_s - report_seen_stable_at) >= max(
+                                    0.0, post_report_exit_grace_s)):
+                            _terminate_process(
+                                proc,
+                                terminate_timeout_s=terminate_timeout_s,
+                                kill_timeout_s=kill_timeout_s,
+                            )
+                            force_reaped = True
+                            break
+
+                    # Drain available stdout without blocking.
+                    if select is not None:
+                        try:
+                            r, _, _ = select.select([proc.stdout], [], [],
+                                                    poll_interval_s)
+                        except Exception:
+                            r = []
+                        if r:
+                            try:
+                                line = proc.stdout.readline()
+                            except Exception:
+                                line = ''
+                            if line:
+                                logf.write(line)
+                                tail_lines.append(line)
+                                if print_lock is None:
+                                    print(f'[{task.task_id}] {line}', end='')
+                                else:
+                                    with print_lock:
+                                        print(
+                                            f'[{task.task_id}] {line}', end='')
+                                continue
                     else:
-                        with print_lock:
-                            print(f'[{task.task_id}] {line}', end='')
-                returncode = proc.wait()
+                        # No select available; degrade to polling only.
+                        time.sleep(max(0.0, poll_interval_s))
+
+                    if proc.poll() is not None:
+                        # Best-effort drain remainder to log
+                        try:
+                            rest = proc.stdout.read()
+                            if rest:
+                                logf.write(rest)
+                                tail_lines.append(rest)
+                        except Exception:
+                            pass
+                        break
+
+                # Ensure a return code is available
+                try:
+                    returncode = proc.wait(timeout=1.0)
+                except Exception:
+                    returncode = proc.returncode if proc.returncode is not None else 0
+                if force_reaped:
+                    returncode = 0
             if returncode != 0:
                 tail = ''.join(tail_lines)[-20000:]
                 return task.task_id, None, (
@@ -187,19 +417,54 @@ def _run_one_task(
                     f'log={log_path}. output tail:\n{tail}')
         else:
             with open(log_path, 'w', encoding='utf-8') as logf:
-                proc2 = subprocess.run(
+                # Use Popen+poll so we can force-reap hung-at-exit children once
+                # a stable final report is already on disk.
+                proc2 = subprocess.Popen(
                     cmd,
                     cwd=ms_agent_repo_root,
                     stdout=logf,
                     stderr=subprocess.STDOUT,
                     text=True,
-                    check=False,
                     env=env,
                 )
-            if proc2.returncode != 0:
+                while True:
+                    now_s = time.time()
+
+                    report_path_hint = _find_report_md(workdir)
+                    if report_path_hint and _is_direct_final_report_path(
+                            workdir, report_path_hint):
+                        stable, report_last_sig, report_stable_since = _report_is_stable(
+                            report_path_hint,
+                            stable_window_s=report_stable_window_s,
+                            last_sig=report_last_sig,
+                            stable_since=report_stable_since,
+                            now_s=now_s,
+                        )
+                        if stable and report_seen_stable_at is None:
+                            report_seen_stable_at = now_s
+                        if (report_seen_stable_at is not None
+                                and proc2.poll() is None
+                                and (now_s - report_seen_stable_at) >= max(
+                                    0.0, post_report_exit_grace_s)):
+                            _terminate_process(
+                                proc2,
+                                terminate_timeout_s=terminate_timeout_s,
+                                kill_timeout_s=kill_timeout_s,
+                            )
+                            force_reaped = True
+                            break
+
+                    if proc2.poll() is not None:
+                        break
+                    time.sleep(max(0.0, poll_interval_s))
+
+            returncode = proc2.returncode if proc2.returncode is not None else 0
+            if force_reaped:
+                returncode = 0
+            if returncode != 0:
                 tail = _tail_text_from_file(log_path, max_chars=20000)
                 return task.task_id, None, (
-                    f'ms-agent exited with code={proc2.returncode}. '
+                    f'ms-agent exited with code={returncode}. '
                     f'log={log_path}. output tail:\n{tail}')
     except Exception as e:
         return task.task_id, None, f'subprocess failed: {e}'
@@ -325,12 +590,36 @@ def main() -> None:
         tasks = tasks[:args.limit]
 
     done_ids = _load_existing_ids(output_jsonl)
+    # Backfill: if a workdir already has a top-level final report file but the
+    # jsonl doesn't have this id (e.g. previous run hung during process exit),
+    # append it now and skip re-running the task.
+    write_lock = threading.Lock()
+    backfilled = 0
+    for t in tasks:
+        if t.task_id in done_ids:
+            continue
+        ok, err = _try_backfill_from_existing_workdir(
+            t,
+            model_name=args.model_name,
+            work_root=work_root,
+            output_jsonl=output_jsonl,
+            write_lock=write_lock,
+        )
+        if err:
+            print(f'[{t.task_id}] BACKFILL ERROR: {err}', file=sys.stderr)
+            continue
+        if ok:
+            done_ids.add(t.task_id)
+            backfilled += 1
+            print(f'[{t.task_id}] BACKFILL OK')
+
     tasks = [t for t in tasks if t.task_id not in done_ids]
 
     if not tasks:
-        print(
-            f'Nothing to do. output already contains all requested tasks: {output_jsonl}'
-        )
+        msg = f'Nothing to do. output already contains all requested tasks: {output_jsonl}'
+        if backfilled:
+            msg += f' (backfilled={backfilled})'
+        print(msg)
         return
 
     print(
@@ -344,7 +633,6 @@ def main() -> None:
             f'ms_agent_root seems wrong: {ms_agent_root} (missing ms_agent/)')
 
     extra_args = args.extra or []
-    write_lock = threading.Lock()
     print_lock = threading.Lock()
 
     if args.workers <= 1:

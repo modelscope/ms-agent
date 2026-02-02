@@ -1,5 +1,7 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import os
+import threading
+import weakref
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import wraps
 
@@ -71,3 +73,44 @@ def thread_executor(max_workers: int = DEFAULT_MAX_WORKERS,
         return wrapper
 
     return decorator
+
+
+class DaemonThreadPoolExecutor(ThreadPoolExecutor):
+    """
+    A ThreadPoolExecutor whose worker threads are daemon threads.
+
+    Why:
+    - In this repo, we run synchronous network calls in `run_in_executor`.
+    - When the outer coroutine times out/cancels, the underlying thread keeps running.
+    - Non-daemon worker threads then block process shutdown (Python waits for them).
+
+    Using daemon threads ensures a finished CLI process can exit cleanly even if
+    some background executor work is still blocked in I/O.
+    """
+
+    def _adjust_thread_count(self) -> None:  # pragma: no cover
+        # Based on CPython ThreadPoolExecutor._adjust_thread_count, but mark
+        # threads as daemon before starting.
+        if self._idle_semaphore.acquire(timeout=0):
+            return
+
+        def weakref_cb(_, q=self._work_queue):
+            q.put(None)
+
+        num_threads = len(self._threads)
+        if num_threads < self._max_workers:
+            thread_name = '%s_%d' % (self._thread_name_prefix
+                                     or self, num_threads)
+            # Import internal helpers from stdlib to keep behavior consistent.
+            from concurrent.futures.thread import _worker, _threads_queues  # type: ignore
+
+            t = threading.Thread(
+                name=thread_name,
+                target=_worker,
+                args=(weakref.ref(self, weakref_cb), self._work_queue,
+                      self._initializer, self._initargs),
+            )
+            t.daemon = True
+            t.start()
+            self._threads.add(t)
+            _threads_queues[t] = self._work_queue

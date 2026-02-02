@@ -263,7 +263,7 @@ class ArxivSearch(SearchEngine):
     @classmethod
     def build_request_from_args(cls, **kwargs) -> ArxivSearchRequest:
         """Build ArxivSearchRequest from tool call arguments."""
-        num_results = kwargs.get('num_results', 10)
+        num_results = kwargs.get('num_results', 5)
 
         categories = kwargs.get('categories') or None
         if categories:

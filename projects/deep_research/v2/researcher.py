@@ -59,3 +59,14 @@ class ResearcherAgent(LLMAgent):
                 await append_stats(get_stats_path(self.config), record)
             except Exception as exc:
                 logger.warning(f'Failed to write workflow stats: {exc}')
+
+    async def on_task_end(self, messages: List[Message]):
+        # Keep default behavior (callbacks + agent finished log), then dump
+        # process-wide web_search summarization usage (separate from LLMAgent usage).
+        await super().on_task_end(messages)
+        try:
+            from ms_agent.tools.search.websearch_tool import WebSearchTool
+            WebSearchTool.log_global_summarization_usage()
+        except Exception as exc:
+            logger.warning(
+                f'Failed to log web search summarization usage: {exc}')

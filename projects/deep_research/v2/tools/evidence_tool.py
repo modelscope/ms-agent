@@ -588,9 +588,9 @@ class EvidenceTool(ToolBase):
         note_path = os.path.join(paths['notes_dir'], f'note_{note_id}.md')
         note_content = _render_note_card(note)
 
-        with file_lock(paths['lock_dir'], 'evidence_index'):
-            _write_text(note_path, note_content)
+        _write_text(note_path, note_content)
 
+        with file_lock(paths['lock_dir'], 'evidence_index'):
             # Update index
             index = self._load_index_locked(paths)
             self._add_to_index(index, note)

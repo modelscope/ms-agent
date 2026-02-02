@@ -2,6 +2,7 @@
 import asyncio
 import os
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -10,8 +11,12 @@ from typing import Any, Dict, List, Optional, Tuple, Type
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.tools.jina_reader import JinaReaderConfig, fetch_single_text
+from ms_agent.tools.search.content_optimizer import (ContentOptimizer,
+                                                     ContentOptimizerConfig,
+                                                     SearchResultReranker)
 from ms_agent.tools.search.search_base import ENGINE_TOOL_NAMES, SearchEngine
 from ms_agent.utils.logger import get_logger
+from ms_agent.utils.thread_util import DaemonThreadPoolExecutor
 
 logger = get_logger()
 
@@ -293,6 +298,69 @@ class WebSearchTool(ToolBase):
     # Registry of supported search engines
     SUPPORTED_ENGINES = ('exa', 'serpapi', 'arxiv')
 
+    # Process-wide (class-level) usage tracking for summarization calls.
+    # This is intentionally separate from LLMAgent usage totals.
+    _GLOBAL_SUMMARY_USAGE_LOCK = threading.Lock()
+    _GLOBAL_SUMMARY_USAGE_TOTAL: Dict[str, int] = {
+        'api_calls': 0,
+        'prompt_tokens': 0,
+        'completion_tokens': 0,
+        'cached_tokens': 0,
+        'cache_creation_input_tokens': 0,
+        'pages': 0,
+    }
+    _GLOBAL_SUMMARY_USAGE_BY_MODEL: Dict[str, Dict[str, int]] = {}
+
+    @classmethod
+    def get_global_summarization_usage(cls) -> Dict[str, Any]:
+        """Get process-wide summarization usage totals (best-effort)."""
+        with cls._GLOBAL_SUMMARY_USAGE_LOCK:
+            total = dict(cls._GLOBAL_SUMMARY_USAGE_TOTAL)
+            by_model = {
+                k: dict(v)
+                for k, v in cls._GLOBAL_SUMMARY_USAGE_BY_MODEL.items()
+            }
+        total['total_tokens'] = total.get('prompt_tokens', 0) + total.get(
+            'completion_tokens', 0)
+        return {
+            'total': total,
+            'by_model': by_model,
+        }
+
+    @classmethod
+    def log_global_summarization_usage(cls) -> None:
+        """Log process-wide summarization totals once at end-of-run."""
+        usage = cls.get_global_summarization_usage()
+        total = usage.get('total', {}) or {}
+        if not (total.get('prompt_tokens', 0) or total.get(
+                'completion_tokens', 0) or total.get('api_calls', 0)):
+            return
+        logger.info(
+            '[web_search_summarization_usage_process_total] '
+            f"pages={total.get('pages', 0)} "
+            f"api_calls={total.get('api_calls', 0)} "
+            f"prompt_tokens={total.get('prompt_tokens', 0)} "
+            f"completion_tokens={total.get('completion_tokens', 0)} "
+            f"total_tokens={total.get('total_tokens', 0)} "
+            f"cached_tokens={total.get('cached_tokens', 0)} "
+            f"cache_creation_input_tokens={total.get('cache_creation_input_tokens', 0)}"
+        )
+        by_model = usage.get('by_model', {}) or {}
+        # Keep per-model logs concise; only print when there are multiple models.
+        if len(by_model) > 1:
+            for model, m in sorted(by_model.items(), key=lambda kv: kv[0]):
+                logger.info(
+                    '[web_search_summarization_usage_process_total_by_model] '
+                    f'model={model} '
+                    f"pages={m.get('pages', 0)} "
+                    f"api_calls={m.get('api_calls', 0)} "
+                    f"prompt_tokens={m.get('prompt_tokens', 0)} "
+                    f"completion_tokens={m.get('completion_tokens', 0)} "
+                    f"total_tokens={m.get('prompt_tokens', 0) + m.get('completion_tokens', 0)} "
+                    f"cached_tokens={m.get('cached_tokens', 0)} "
+                    f"cache_creation_input_tokens={m.get('cache_creation_input_tokens', 0)}"
+                )
+
     def __init__(self, config, **kwargs):
         super().__init__(config)
         tool_cfg = getattr(getattr(config, 'tools'), 'web_search')
@@ -369,6 +437,42 @@ class WebSearchTool(ToolBase):
         self._max_concurrent_fetch = int(
             getattr(tool_cfg, 'max_concurrent_fetch', 3)
             or 3) if tool_cfg else 3
+        self._max_concurrent_summarization = int(
+            getattr(tool_cfg, 'max_concurrent_summarization', 5)
+            or 5) if tool_cfg else 5
+
+        # Content optimization config (summarization & reranking)
+        self._enable_summarization = bool(
+            getattr(tool_cfg, 'enable_summarization',
+                    False)) if tool_cfg else False
+        self._summarizer_model = getattr(
+            tool_cfg, 'summarizer_model',
+            'qwen-flash') if tool_cfg else 'qwen-flash'
+        self._summarizer_base_url = getattr(
+            tool_cfg, 'summarizer_base_url',
+            'https://dashscope.aliyuncs.com/compatible-mode/v1'
+        ) if tool_cfg else 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+        self._summarizer_api_key = getattr(tool_cfg, 'summarizer_api_key',
+                                           None) if tool_cfg else None
+        self._max_content_chars = int(
+            getattr(tool_cfg, 'max_content_chars', 500000)
+            or 500000) if tool_cfg else 500000
+        self._summarizer_max_workers = int(
+            getattr(tool_cfg, 'summarizer_max_workers', 5)
+            or 5) if tool_cfg else 5
+        self._summarization_timeout = float(
+            getattr(tool_cfg, 'summarization_timeout', 90.0)
+            or 90.0) if tool_cfg else 90.0
+
+        # Reranking config
+        self._enable_rerank = bool(getattr(tool_cfg, 'enable_rerank',
+                                           False)) if tool_cfg else False
+        self._rerank_top_k = int(getattr(tool_cfg, 'rerank_top_k', 3)
+                                 or 3) if tool_cfg else 3
+
+        # Task context for summarization (can be set dynamically)
+        self._task_context = getattr(tool_cfg, 'task_context',
+                                     '') if tool_cfg else ''
 
         # Runtime instances (lazy init)
         self._engines: Dict[str, SearchEngine] = {
@@ -376,7 +480,17 @@ class WebSearchTool(ToolBase):
         self._engine_classes: Dict[str, Type[SearchEngine]] = {
         }  # engine_type -> engine class
         self._content_fetcher: Optional[ContentFetcher] = None
+        self._content_optimizer: Optional[ContentOptimizer] = None
         self._executor: Optional[ThreadPoolExecutor] = None
+        # Summarization token usage tracking (separate from LLMAgent usage)
+        self._summary_usage_total: Dict[str, int] = {
+            'api_calls': 0,
+            'prompt_tokens': 0,
+            'completion_tokens': 0,
+            'cached_tokens': 0,
+            'cache_creation_input_tokens': 0,
+        }
+        self._summary_usage_model: str = ''
 
     async def connect(self) -> None:
         """Initialize search engines and content fetcher."""
@@ -410,16 +524,69 @@ class WebSearchTool(ToolBase):
             timeout=self._fetch_timeout,
             retries=self._fetch_retries,
         )
-        self._executor = ThreadPoolExecutor(
-            max_workers=self._max_concurrent_fetch)
+        # Use daemon threads: tool-call timeouts can cancel the awaiting coroutine,
+        # but not the underlying sync network calls running in executor threads.
+        self._executor = DaemonThreadPoolExecutor(
+            max_workers=self._max_concurrent_fetch,
+            thread_name_prefix='web_search_',
+        )
+
+        # Initialize content optimizer if summarization or reranking is enabled
+        if self._enable_summarization or self._enable_rerank:
+            optimizer_config = ContentOptimizerConfig(
+                summarizer_model=self._summarizer_model,
+                summarizer_base_url=self._summarizer_base_url,
+                summarizer_api_key=(self._summarizer_api_key
+                                    or os.getenv('DASHSCOPE_API_KEY')
+                                    or os.getenv('OPENAI_API_KEY')),
+                max_content_chars=self._max_content_chars,
+                summarizer_max_workers=self._summarizer_max_workers,
+                summarization_timeout=self._summarization_timeout,
+                enable_rerank=self._enable_rerank,
+                rerank_top_k=self._rerank_top_k,
+            )
+            self._content_optimizer = ContentOptimizer(optimizer_config)
+            if self._enable_summarization:
+                await self._content_optimizer.initialize()
+                logger.info(
+                    f'Content optimizer initialized with model: {self._summarizer_model}'
+                )
+            else:
+                logger.info(
+                    'Content reranking enabled (summarization disabled)')
 
     async def cleanup(self) -> None:
         """Cleanup resources."""
         if self._executor:
-            self._executor.shutdown(wait=False)
+            try:
+                self._executor.shutdown(wait=False, cancel_futures=True)
+            except TypeError:
+                # Python<3.9 compatibility (cancel_futures not supported)
+                self._executor.shutdown(wait=False)
             self._executor = None
+        if self._content_optimizer:
+            await self._content_optimizer.cleanup()
+            self._content_optimizer = None
         self._engines.clear()
         self._engine_classes.clear()
+        # Optional: instance-level totals can be noisy when multiple sub-agents
+        # create their own WebSearchTool instances. Default off; use env var to enable.
+        if os.getenv('MS_AGENT_WEB_SEARCH_LOG_INSTANCE_SUMMARY_USAGE',
+                     '').lower() in ('1', 'true', 'yes'):
+            if (self._summary_usage_total.get('prompt_tokens', 0)
+                    or self._summary_usage_total.get('completion_tokens', 0)
+                    or self._summary_usage_total.get('api_calls', 0)):
+                model = self._summary_usage_model or self._summarizer_model
+                logger.info(
+                    '[web_search_summarization_usage_total] '
+                    f'model={model} '
+                    f"api_calls={self._summary_usage_total.get('api_calls', 0)} "
+                    f"prompt_tokens={self._summary_usage_total.get('prompt_tokens', 0)} "
+                    f"completion_tokens={self._summary_usage_total.get('completion_tokens', 0)} "
+                    f"total_tokens={self._summary_usage_total.get('prompt_tokens', 0) + self._summary_usage_total.get('completion_tokens', 0)} "  # noqa: E501
+                    f"cached_tokens={self._summary_usage_total.get('cached_tokens', 0)} "
+                    f"cache_creation_input_tokens={self._summary_usage_total.get('cache_creation_input_tokens', 0)}"  # noqa: E501
+                )
 
     def _get_tool_name_to_engine_map(self) -> Dict[str, str]:
         """Build mapping from tool_name to engine_type."""
@@ -578,6 +745,12 @@ class WebSearchTool(ToolBase):
                               tool_args: Dict[str, Any]) -> str:
         """
         Execute search using the specified engine.
+        The search pipeline with optimization:
+        1. Execute search query
+        2. (Optional) Rerank results by relevance before fetching
+        3. Fetch page content for top results
+        4. (Optional) Summarize content using fast LLM
+        5. Format and return results
 
         Args:
             engine_type: The engine type to use
@@ -593,6 +766,9 @@ class WebSearchTool(ToolBase):
         # Get fetch_content preference, default to configured value
         fetch_content = tool_args.pop('fetch_content',
                                       self._fetch_content_default)
+
+        # Get task context for summarization (can be passed in tool_args)
+        task_context = tool_args.pop('task_context', self._task_context)
 
         if 'num_results' not in tool_args or tool_args['num_results'] is None:
             tool_args[
@@ -626,8 +802,24 @@ class WebSearchTool(ToolBase):
                 'message': 'No search results found.',
             })
 
-        # Optionally fetch content
+        original_count = len(search_results)
+
+        # Step 2: Rerank results before fetching content (if enabled)
+        # This reduces the number of pages to fetch and summarize
+        if self._enable_rerank and self._content_optimizer:
+            search_results = self._content_optimizer.rerank_results(
+                search_results,
+                query,
+                top_k=self._rerank_top_k,
+            )
+            logger.info(
+                f'Reranked {original_count} results to top {len(search_results)} '
+                f'for query: {query[:50]}...')
+
+        # Step 3: Fetch content for (filtered) results
         if fetch_content and self._content_fetcher:
+            search_results = SearchResultReranker.deduplicate_by_url(
+                search_results)
             urls = [r.get('url') for r in search_results if r.get('url')]
             if urls:
                 fetch_results = await self._fetch_multiple_async(urls)
@@ -646,6 +838,127 @@ class WebSearchTool(ToolBase):
                             sr['published_at'] = fetched['published_at']
                         if self._enable_chunking and fetched.get('chunks'):
                             sr['chunks'] = fetched['chunks']
+
+        # Step 4: Summarize content (if enabled)
+        summarization_usage: Optional[Dict[str, Any]] = None
+        if self._enable_summarization and self._content_optimizer and fetch_content:
+            # Collect contents that need summarization
+            contents_to_summarize = [
+                (sr.get('url', ''), sr.get('content', ''))
+                for sr in search_results
+                if sr.get('content') and sr.get('fetch_success', False)
+            ]
+
+            if contents_to_summarize:
+                logger.info(
+                    f'Summarizing {len(contents_to_summarize)} pages...')
+
+                # Summarize all contents in parallel + collect usage
+                summaries, summarization_usage = await self._content_optimizer.summarize_contents_with_usage(
+                    contents_to_summarize,
+                    task_context=task_context,
+                    max_concurrent=min(self._max_concurrent_summarization,
+                                       len(contents_to_summarize)),
+                )
+
+                # Update global usage totals for this tool instance (independent from LLMAgent)
+                try:
+                    if summarization_usage:
+                        self._summary_usage_model = str(
+                            summarization_usage.get('model')
+                            or self._summary_usage_model or '')
+                        self._summary_usage_total['api_calls'] += int(
+                            summarization_usage.get('api_calls', 0) or 0)
+                        self._summary_usage_total['prompt_tokens'] += int(
+                            summarization_usage.get('prompt_tokens', 0) or 0)
+                        self._summary_usage_total['completion_tokens'] += int(
+                            summarization_usage.get('completion_tokens', 0)
+                            or 0)
+                        self._summary_usage_total['cached_tokens'] += int(
+                            summarization_usage.get('cached_tokens', 0) or 0)
+                        self._summary_usage_total[
+                            'cache_creation_input_tokens'] += int(
+                                summarization_usage.get(
+                                    'cache_creation_input_tokens', 0) or 0)
+                        # Process-wide totals (thread-safe; sub-agents may run in background threads)
+                        model = str(
+                            summarization_usage.get('model')
+                            or self._summarizer_model)
+                        with WebSearchTool._GLOBAL_SUMMARY_USAGE_LOCK:
+                            WebSearchTool._GLOBAL_SUMMARY_USAGE_TOTAL[
+                                'pages'] += int(
+                                    summarization_usage.get('pages', 0) or 0)
+                            WebSearchTool._GLOBAL_SUMMARY_USAGE_TOTAL[
+                                'api_calls'] += int(
+                                    summarization_usage.get('api_calls', 0)
+                                    or 0)
+                            WebSearchTool._GLOBAL_SUMMARY_USAGE_TOTAL[
+                                'prompt_tokens'] += int(
+                                    summarization_usage.get(
+                                        'prompt_tokens', 0) or 0)
+                            WebSearchTool._GLOBAL_SUMMARY_USAGE_TOTAL[
+                                'completion_tokens'] += int(
+                                    summarization_usage.get(
+                                        'completion_tokens', 0) or 0)
+                            WebSearchTool._GLOBAL_SUMMARY_USAGE_TOTAL[
+                                'cached_tokens'] += int(
+                                    summarization_usage.get(
+                                        'cached_tokens', 0) or 0)
+                            WebSearchTool._GLOBAL_SUMMARY_USAGE_TOTAL[
+                                'cache_creation_input_tokens'] += int(
+                                    summarization_usage.get(
+                                        'cache_creation_input_tokens', 0) or 0)
+                            m = WebSearchTool._GLOBAL_SUMMARY_USAGE_BY_MODEL.setdefault(
+                                model, {
+                                    'pages': 0,
+                                    'api_calls': 0,
+                                    'prompt_tokens': 0,
+                                    'completion_tokens': 0,
+                                    'cached_tokens': 0,
+                                    'cache_creation_input_tokens': 0,
+                                })
+                            m['pages'] += int(
+                                summarization_usage.get('pages', 0) or 0)
+                            m['api_calls'] += int(
+                                summarization_usage.get('api_calls', 0) or 0)
+                            m['prompt_tokens'] += int(
+                                summarization_usage.get('prompt_tokens', 0)
+                                or 0)
+                            m['completion_tokens'] += int(
+                                summarization_usage.get(
+                                    'completion_tokens', 0) or 0)
+                            m['cached_tokens'] += int(
+                                summarization_usage.get('cached_tokens', 0)
+                                or 0)
+                            m['cache_creation_input_tokens'] += int(
+                                summarization_usage.get(
+                                    'cache_creation_input_tokens', 0) or 0)
+                        logger.info(
+                            '[web_search_summarization_usage] '
+                            f"model={summarization_usage.get('model', self._summarizer_model)} "
+                            f"pages={summarization_usage.get('pages', 0)} "
+                            f"api_calls={summarization_usage.get('api_calls', 0)} "
+                            f"prompt_tokens={summarization_usage.get('prompt_tokens', 0)} "
+                            f"completion_tokens={summarization_usage.get('completion_tokens', 0)} "
+                            f"total_tokens={summarization_usage.get('total_tokens', 0)} "
+                            f"cached_tokens={summarization_usage.get('cached_tokens', 0)} "
+                            f"cache_creation_input_tokens={summarization_usage.get('cache_creation_input_tokens', 0)}"
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f'Failed to record summarization usage: {e}')
+
+                # Replace original content with summaries
+                for sr in search_results:
+                    url = sr.get('url', '')
+                    if url in summaries:
+                        original_len = len(sr.get('content', ''))
+                        sr['content'] = summaries[url]
+                        sr['content_summarized'] = True
+                        sr['original_content_length'] = original_len
+                        logger.debug(
+                            f'Summarized content for {url[:50]}: '
+                            f"{original_len} -> {len(sr['content'])} chars")
 
         # Format output
         output_results = []
@@ -681,21 +994,72 @@ class WebSearchTool(ToolBase):
             if fetch_content:
                 item['content'] = sr.get('content', '')
                 item['fetch_success'] = sr.get('fetch_success', False)
+                # Add summarization metadata if applicable
+                if sr.get('content_summarized'):
+                    item['content_summarized'] = True
+                    item['original_content_length'] = sr.get(
+                        'original_content_length', 0)
                 if self._enable_chunking and sr.get('chunks'):
                     item['chunks'] = sr['chunks']
 
-            if not engine_type == 'arxiv':
-                # Include snippet if available
+            if engine_type != 'arxiv':
+                # Include snippet if available for non-arxiv engines
                 item['summary'] = sr.get('summary', '')
-                output_results.append(item)
 
-        return _json_dumps({
+            # Add item to results for all engines
+            output_results.append(item)
+
+        # Build response with optimization metadata
+        response = {
             'status': 'ok',
             'query': query,
             'engine': engine_type,
             'count': len(output_results),
             'results': output_results,
-        })
+        }
+
+        # Add optimization info
+        if self._enable_rerank or self._enable_summarization:
+            response['optimization'] = {
+                'rerank_enabled': self._enable_rerank,
+                'summarization_enabled': self._enable_summarization,
+            }
+            if self._enable_rerank:
+                response['optimization'][
+                    'original_result_count'] = original_count
+                response['optimization']['filtered_to'] = len(output_results)
+            if self._enable_summarization:
+                summarized_count = sum(1 for r in output_results
+                                       if r.get('content_summarized'))
+                response['optimization']['pages_summarized'] = summarized_count
+                # Include per-call usage + cumulative totals (separate from LLMAgent usage)
+                if summarization_usage:
+                    response['optimization'][
+                        'summarization_usage'] = summarization_usage
+                response['optimization']['summarization_usage_total'] = {
+                    'model':
+                    self._summary_usage_model or self._summarizer_model,
+                    'api_calls':
+                    self._summary_usage_total.get('api_calls', 0),
+                    'prompt_tokens':
+                    self._summary_usage_total.get('prompt_tokens', 0),
+                    'completion_tokens':
+                    self._summary_usage_total.get('completion_tokens', 0),
+                    'total_tokens':
+                    (self._summary_usage_total.get('prompt_tokens', 0)
+                     + self._summary_usage_total.get('completion_tokens', 0)),
+                    'cached_tokens':
+                    self._summary_usage_total.get('cached_tokens', 0),
+                    'cache_creation_input_tokens':
+                    self._summary_usage_total.get(
+                        'cache_creation_input_tokens', 0),
+                }
+                # Process-wide totals so far (across all WebSearchTool instances)
+                response['optimization'][
+                    'summarization_usage_process_total'
+                ] = WebSearchTool.get_global_summarization_usage()  # yapf: disable
+
+        return _json_dumps(response)
 
     async def fetch_page(self, url: str) -> str:
         """Fetch and parse a single web page."""

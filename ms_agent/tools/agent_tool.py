@@ -1,7 +1,9 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import asyncio
 import os
 import uuid
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
 
@@ -13,6 +15,7 @@ from ms_agent.utils import get_logger
 from ms_agent.utils.stats import (append_stats, build_timing_record,
                                   get_stats_path, monotonic, now_iso,
                                   summarize_usage)
+from ms_agent.utils.thread_util import DaemonThreadPoolExecutor
 from omegaconf import DictConfig, ListConfig, OmegaConf
 
 logger = get_logger()
@@ -42,6 +45,7 @@ class _AgentToolSpec:
     max_output_chars: int
     trust_remote_code: Optional[bool]
     env: Optional[Dict[str, str]]
+    run_in_thread: bool
 
 
 class AgentTool(ToolBase):
@@ -55,7 +59,21 @@ class AgentTool(ToolBase):
         self._enable_stats = False
         self._specs: Dict[str, _AgentToolSpec] = {}
         self._server_tools: Dict[str, List[Tool]] = {}
+        self._thread_executor: Optional[ThreadPoolExecutor] = None
+        self._thread_max_workers: int = 0
         self._load_specs()
+        self._init_thread_pool_config()
+
+    def _init_thread_pool_config(self):
+        tools_cfg = getattr(self.config, 'tools', DictConfig({}))
+        agent_tools_cfg = getattr(tools_cfg, 'agent_tools', DictConfig({}))
+        max_workers = getattr(agent_tools_cfg, 'max_workers', None)
+        if max_workers is None:
+            max_workers = os.getenv('AGENT_TOOL_MAX_WORKERS', None)
+        try:
+            self._thread_max_workers = int(max_workers) if max_workers else 3
+        except Exception:
+            self._thread_max_workers = 3
 
     @property
     def enabled(self) -> bool:
@@ -158,6 +176,9 @@ class AgentTool(ToolBase):
         max_chars = int(getattr(cfg, 'max_output_chars', 100000))
         server_name = getattr(cfg, 'server_name', default_server)
         trust_remote_code = getattr(cfg, 'trust_remote_code', None)
+        # Run sub-agent in a background thread to avoid blocking the main event loop
+        # when underlying LLM SDKs are synchronous.
+        run_in_thread = bool(getattr(cfg, 'run_in_thread', True))
 
         env_cfg = getattr(cfg, 'env', None)
         env_cfg = _to_container(env_cfg) if env_cfg is not None else None
@@ -183,6 +204,7 @@ class AgentTool(ToolBase):
             max_output_chars=max_chars,
             trust_remote_code=trust_remote_code,
             env=env_cfg,
+            run_in_thread=run_in_thread,
         )
 
     def _build_server_index(self):
@@ -198,9 +220,28 @@ class AgentTool(ToolBase):
         self._server_tools = server_map
 
     async def connect(self):
+        # Lazily initialize a dedicated pool for agent tools that opt into
+        # `run_in_thread`, so we don't consume threads when the tool is unused.
+        if self._thread_executor is None:
+            # Use daemon threads to avoid blocking process exit when sub-agent
+            # calls are cancelled by tool-call timeouts.
+            self._thread_executor = DaemonThreadPoolExecutor(
+                max_workers=self._thread_max_workers,
+                thread_name_prefix='agent_tool_',
+            )
         return None
 
     async def cleanup(self):
+        if self._thread_executor is not None:
+            try:
+                try:
+                    self._thread_executor.shutdown(
+                        wait=False, cancel_futures=True)
+                except TypeError:
+                    self._thread_executor.shutdown(wait=False)
+            except Exception:
+                pass
+            self._thread_executor = None
         return None
 
     async def get_tools(self) -> Dict[str, Any]:
@@ -252,7 +293,8 @@ class AgentTool(ToolBase):
         return agent
 
     async def _run_agent(self, agent, payload, spec: _AgentToolSpec):
-        if not self._enable_stats:
+
+        async def _run_and_collect():
             result = await agent.run(payload)
             if hasattr(result, '__aiter__'):
                 history = None
@@ -261,17 +303,28 @@ class AgentTool(ToolBase):
                 result = history
             return result
 
+        async def _run_in_background():
+            # Run sub-agent in a dedicated event loop in a background thread.
+            def _sync_runner():
+                return asyncio.run(_run_and_collect())
+
+            loop = asyncio.get_running_loop()
+            if self._thread_executor is not None:
+                return await loop.run_in_executor(self._thread_executor,
+                                                  _sync_runner)
+            return await asyncio.to_thread(_sync_runner)
+
+        runner = _run_in_background if spec.run_in_thread else _run_and_collect
+
+        if not self._enable_stats:
+            return await runner()
+
         start_ts = now_iso()
         start_time = monotonic()
         status = 'completed'
         result = None
         try:
-            result = await agent.run(payload)
-            if hasattr(result, '__aiter__'):
-                history = None
-                async for chunk in result:
-                    history = chunk
-                result = history
+            result = await runner()
             return result
         except Exception:
             status = 'error'

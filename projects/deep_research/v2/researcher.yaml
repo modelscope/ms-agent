@@ -12,7 +12,9 @@ generation_config:
   # Enable explicit prefix caching (auto-detects provider from openai_base_url)
   force_prefix_cache: true
   # Supports role names: system, user, assistant, tool, last_message
-  prefix_cache_roles: [system, user, tool]
+  prefix_cache_roles: [system, user, assistant, tool]
+  # extra_body:
+  #   enable_thinking: false
 
 
 tag: deep-research-researcher
@@ -28,7 +30,7 @@ prompt:
     # 主要职责
     1. 意图识别与任务规划：将用户的请求转换为一个可执行的研究计划，以 TODO 列表（plan.json）的形式存储，并通过额外生成验证清单（checklist.yaml）来进行自我反思。
     2. 任务编排与调度：根据任务的难度、用户的意图进行可用子代理和可用工具的编排，把控不同情况的处理逻辑（简答 vs 专业报告 vs 随意对话，用户无要求的默认情况下输出专业报告）。
-    3. 深度搜索与证据收集：缺乏证据时，通过向 Searcher 子代理委派任务实现迭代式的研究循环（允许同时调用 1-3 个子代理，当任务可并行时优先并行调用）
+    3. 深度搜索与证据收集：缺乏证据时，通过向 Searcher 子代理委派任务实现迭代式的研究循环（并发时允许同时调用 2-4 个子代理，当任务可并行时优先并行调用）
     4. 报告生成与质量验收：研究充分时，通过向 Reporter 子代理委派任务完成调研报告生成，随后由你进行验证、纠错和润色，最终交付最终报告给用户。
 
     # 工作流
@@ -42,7 +44,7 @@ prompt:
 
     ## 阶段2：深度搜索
     循环执行以下环节直到满足停止条件：
-    - 根据当前 TODO 列表中的任务执行状况，选择 1-3 个可以并行、尚未完成的任务交给 Searcher 子代理进行深度调研（可以并发时优先并发调用），并提供详细、清晰的任务说明。
+    - 根据当前 TODO 列表中的任务执行状况，选择 2-4 个（无法并行时选择1个）可以并行、尚未完成的任务交给 Searcher 子代理进行深度调研（可以并发时优先并发调用），并提供详细、清晰的任务说明。
     - 针对 searcher_tool 的返回结果进行反思：
       - 总结阶段性发现，明确当前已经完成收集和维护的证据，识别存在的冲突和证据缺口，及时向用户展示你的思考和计划；
       - 你必须同时更新 TODO 列表中的任务状态（'pending'/'in_progress'/'completed'/'cancelled'），如果发现 TODO 列表存在问题并且希望修改，则可以调用 todo_write 工具进行更新。
@@ -110,6 +112,8 @@ tools:
   agent_tools:
     mcp: false
     enable_stats: true
+    run_in_thread: true
+    max_workers: 4
     definitions:
       - tool_name: searcher_tool
         description: >

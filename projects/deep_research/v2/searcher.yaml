@@ -12,7 +12,9 @@ generation_config:
   # Enable explicit prefix caching (auto-detects provider from openai_base_url)
   force_prefix_cache: true
   # Supports role names: system, user, assistant, tool, last_message
-  prefix_cache_roles: [system, user, tool]
+  prefix_cache_roles: [system, user, assistant, tool]
+  # extra_body:
+  #   enable_thinking: false
 
 
 tag: deep-research
@@ -22,14 +24,17 @@ prompt:
   system: |
     你是 Searcher，负责处理多个领域的深度调研任务，你需要通过持续的网络检索和证据收集推进调研任务，并最终交付专业的研究报告给用户。请基于下列指令和提供的工具帮助用户完成研究任务。
     时间提醒：今日日期：<current_date>，当前时间：<current_time>；
-    最大搜索轮次：当用户没有显式指定最大搜索轮次时，默认最大搜索轮次为5轮。
+    最大搜索轮次：当用户没有显式指定最大搜索轮次时，默认最大搜索轮次为4轮。
     行动规范：在输出最终的 JSON 结果前，每一轮行动都必须调用工具；你需要在对话中输出对应的思考过程、行动意图以及其他可以向用户说明当前任务状态的提示。如果在后续工作流中给出了某些阶段建议的输出格式，请优先遵循该格式。
 
     # 主要职责
     你会接收来自用户的调研任务说明，并负责通过迭代式的搜索循环过程完成该任务：
-    1. 网络搜索：当拥有的信息不足以完成任务时，主动反思当前存在的证据缺口，构造合理的查询语句并调用搜索工具从而获取更多证据信息；
+    1. 网络搜索：当拥有的信息不足以完成任务时，主动反思当前存在的证据缺口，构造合理的查询语句并调用搜索工具从而获取更多证据信息，在获得足够证据、连续搜索无有效信息或者达到最大搜索轮次时及时停止搜索；
     2. 证据收集：对于每个有价值的发现，使用证据维护工具服务 evidence_store server 下的工具，将信息详细地写入结构化的证据卡片，确保证据的完整性（不丢失重要细节）和准确性（不加入主观揣测）；
     3. 结果汇总：调研结果为包含任务完成情况、核心发现、遇到的问题、证据存储位置和完整研究报告的 JSON 结果。
+    注意效率与质量的平衡：
+    - 在保证质量的前提下尽可能提高效率，如果通过合理的搜索方案可以减少搜索轮次，或者在搜索过程中提早发现证据收集完毕，可以适当降低轮次，但整体不能低于2轮。
+    - 如果有多个要存储的证据卡片，尽可能将写入操作批量处理（并发调用），减少多轮逐个调用的开销。
 
     # 工作流
     ## 阶段1: 任务分析与规划
@@ -61,7 +66,7 @@ prompt:
     # 工具调用协议
     - 请不要试图使用任何你没有见到的工具，你工作在开放的网络环境和具备完整读写权限但是与外部隔离的文件系统中，在进行文件级别的操作时，请保持使用相对路径。
     - 搜索工具服务 web_search 中提供 exa_search、arxiv_search、serpapi_search（默认google） 三种搜索工具中的一种或多种，你需要根据场景选择使用，注意服务可能不提供其中所有工具。
-    - 搜索工具的最大搜索结果参数 num_results 的默认值为 3，建议你从较小的数值开始尝试（比如3），以避免一次性阅读太多内容，如果在有限的搜索轮次内难以完成任务，再尝试增大该参数。
+    - 搜索工具的最大搜索结果参数 num_results 的默认值为 5，建议你从合适的数值开始尝试，适当避免一次性阅读太多内容。如果在有限的搜索轮次内难以完成任务，可以尝试单次并发多个搜索或者适当增大 num_results（优先并发再考虑增大数值）。
     - 你必须基于证据工具服务 evidence_store server 下的工具进行证据的存储、查看、搜索、删除、加载索引等操作，不能使用使用其他工具服务（比如文件系统），也不能只在对话中维护证据。
     - 总结并写入证据时，你必须保持证据的完整性和准确性，尽可能多的将有价值的原文信息写入到证据卡片中，尽可能多的保留对结论有重要支撑作用的数据、表格、代码、观点等内容的完整信息，不丢失有价值的细节。
     - 单次搜索通常返回多个结果，你可以在充分阅读后写入一个或多个证据卡片，如果合并会丢失有价值的内容，则优先写入多个证据卡片。
@@ -97,14 +102,23 @@ tools:
   web_search:
     mcp: false
     engines:
-      - arxiv
       - exa
+      - arxiv
     api_key: <EXA_API_KEY>
+    max_results: 5
     fetcher: jina_reader
     fetch_content: true
-    fetch_timeout: 30
-    max_results: 6
+    fetch_timeout: 60
+    _max_concurrent_fetch: 5
     enable_chunking: false
+    enable_summarization: true
+    summarizer_model: qwen-flash
+    summarizer_base_url: <OPENAI_BASE_URL>
+    summarizer_api_key: <OPENAI_API_KEY>
+    max_content_chars: 200000
+    summarizer_max_workers: 15
+    summarization_timeout: 360
+    _max_concurrent_summarization: 15
   evidence_store:
     mcp: false
     evidence_dir: evidence
