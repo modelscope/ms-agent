@@ -11,6 +11,9 @@ from typing import Any, Dict, List, Optional
 class ProjectDiscovery:
     """Discovers and manages projects from the ms-agent projects directory"""
 
+    # Whitelist of projects to show in the UI
+    VISIBLE_PROJECTS = {'code_genesis', 'singularity_cinema'}
+
     def __init__(self, projects_dir: str):
         self.projects_dir = projects_dir
         self._projects_cache: Optional[List[Dict[str, Any]]] = None
@@ -28,7 +31,9 @@ class ProjectDiscovery:
 
         for item in os.listdir(self.projects_dir):
             item_path = os.path.join(self.projects_dir, item)
-            if os.path.isdir(item_path) and not item.startswith('.'):
+            # Only show projects in the whitelist
+            if os.path.isdir(item_path) and not item.startswith(
+                    '.') and item in self.VISIBLE_PROJECTS:
                 project_info = self._analyze_project(item, item_path)
                 if project_info:
                     projects.append(project_info)

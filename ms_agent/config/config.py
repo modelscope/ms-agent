@@ -216,7 +216,21 @@ class Config:
                 if not hasattr(current, final_key) or getattr(
                         current, final_key) is None:
                     logger.info(f'Adding new config key: {key}')
-                    setattr(current, final_key, value)
+                    # Convert temperature to float and max_tokens to int if they're numeric strings
+                    value_to_set = value
+                    if final_key == 'temperature' and isinstance(
+                            value_to_set, str):
+                        try:
+                            value_to_set = float(value_to_set)
+                        except (ValueError, TypeError):
+                            pass
+                    elif final_key == 'max_tokens' and isinstance(
+                            value_to_set, str):
+                        try:
+                            value_to_set = int(value_to_set)
+                        except (ValueError, TypeError):
+                            pass
+                    setattr(current, final_key, value_to_set)
 
         return None
 
