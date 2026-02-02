@@ -6,7 +6,7 @@ llm:
 
 mllm:
   mllm_service: openai
-  mllm_model: claude-sonnet-4-5-20250929
+  mllm_model: gemini-3-pro-preview
   mllm_openai_api_key:
   mllm_openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 
@@ -16,7 +16,7 @@ generation_config:
   max_tokens: 64000
   extra_body:
     dashscope_extend_params:
-      provider: b
+      provider: d
 
 prompt:
   system: |
@@ -68,7 +68,7 @@ prompt:
 
     Now begin:
 
-t2i_num_parallel: 1
+t2i_num_parallel: 5
 t2v_num_parallel: 1
 llm_num_parallel: 10
 
@@ -83,7 +83,7 @@ video:
   preset: ultrafast
   fps: 24
 
-use_doc_image: false
+use_doc_image: true
 
 use_subtitle: false
 
@@ -93,18 +93,9 @@ use_video_soundtrack: false
 
 subtitle_translate:
 
-bg_audio_path: bg_audio.mp3
+bg_audio_path:
 
 bg_audio_volume: 0.3
-
-extra_requirement: |
-  布局要求:
-  1. 文字动画布局工整,采用左右式或者田字格式，多利用横向空间，在屏幕上对称分布，每个分镜有一个title
-  2. 不要有截断和动画重叠
-  3. 文字颜色和背景有高对比度
-  4. 不要用代码绘制人物或物体，也不要用代码绘制复杂图像，多利用前景图片
-  5. 所有分镜背景和前景均使用一种主要配色
-  6. 生成的背景图片中间留空方便展示动画，防止前景混乱
 
 # image/'#fcfbf9'/BLACK/WHITE
 background: image
@@ -120,10 +111,10 @@ video_generator:
   seconds: [4, 8, 12]
 
 image_generator:
-  type: modelscope
-  model: Qwen/Qwen-Image-2512
+  type: dashscope
+  model: gemini-3-pro-image-preview
   api_key:
-  size: '1280x720'
+  ratio: '16:9'
 
 audio_generator:
   type: edge_tts
@@ -271,7 +262,7 @@ animation_render_timeout: 120
 
 output_dir: output_video
 
-slogan: ['知识元气弹', '梯度爆炸']
+slogan: ['']
 
 slogan_subtitle_color: '#000000'
 
@@ -295,5 +286,7 @@ tools:
 
 memory:
   diversity:
+
+save_history: false
 
 help: |

@@ -2,109 +2,88 @@ generate_script:
   agent_config: "agent.yaml"
   agent:
     kwargs:
-      code_file: step1_generate_script/agent.py
+      code_file: generate_script/agent.py
   next:
     - parse_images
 
 parse_images:
   agent:
     kwargs:
-      code_file: step2_parse_images/agent.py
+      code_file: parse_images/agent.py
   next:
     - segment
 
 segment:
   agent:
     kwargs:
-      code_file: step3_segment/agent.py
+      code_file: segment/agent.py
   next:
     - generate_audio
 
 generate_audio:
   agent:
     kwargs:
-      code_file: step4_generate_audio/agent.py
-  next:
-    - visual_director
-
-visual_director:
-  agent:
-    kwargs:
-      code_file: step5_visual_director/agent.py
+      code_file: generate_audio/agent.py
   next:
     - generate_illustration_prompts
 
 generate_illustration_prompts:
   agent:
     kwargs:
-      code_file: step6_generate_illustration_prompts/agent.py
+      code_file: generate_illustration_prompts/agent.py
   next:
     - generate_images
 
 generate_images:
   agent:
     kwargs:
-      code_file: step7_generate_images/agent.py
+      code_file: generate_images/agent.py
   next:
     - generate_animation
 
 generate_animation:
   agent:
     kwargs:
-      code_file: step8_generate_animation/agent.py
-  next:
-    - fix_animation
-
-fix_animation:
-  agent:
-    kwargs:
-      code_file: step9_fix_animation/agent.py
+      code_file: generate_animation/agent.py
   next:
     - render_animation
 
 render_animation:
   agent:
     kwargs:
-      code_file: step10_render_animation/agent.py
+      code_file: render_animation/agent.py
   next:
     - generate_video_prompts
 
 generate_video_prompts:
   agent:
     kwargs:
-      code_file: step11_generate_video_prompts/agent.py
+      code_file: generate_video_prompts/agent.py
   next:
     - generate_video
 
 generate_video:
   agent:
     kwargs:
-      code_file: step12_generate_video/agent.py
+      code_file: generate_video/agent.py
   next:
     - generate_subtitle
 
 generate_subtitle:
   agent:
     kwargs:
-      code_file: step13_generate_subtitle/agent.py
+      code_file: generate_subtitle/agent.py
   next:
     - create_background
 
 create_background:
   agent:
     kwargs:
-      code_file: step14_create_background/agent.py
+      code_file: create_background/agent.py
   next:
     - compose_video
 
 compose_video:
   agent:
     kwargs:
-      code_file: step15_compose_video/agent.py
-  next:
-    - human_feedback
-
-human_feedback:
-  agent:
-    kwargs:
-      code_file: step16_human_feedback/agent.py
+      code_file: compose_video/agent.py

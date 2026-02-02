@@ -1,4 +1,5 @@
 dotenv
+faiss-cpu
 json5
 markdown
 mcp
@@ -7,3 +8,4 @@ numpy
 omegaconf
 openai
 pillow
+sentence-transformers

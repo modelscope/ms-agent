@@ -262,56 +262,6 @@ asyncio.run(main())
 </details>
 
 
-### Agent Skills
-
-**MS-Agent Skills** 模块是对 [**Anthropic-Agent-Skills**](https://docs.claude.com/en/docs/agents-and-tools/agent-skills) 协议的实现，允许开发者轻松创建、管理和使用智能体技能，提升智能体在复杂任务上的表现。
-
-
-#### 1) 核心特性
-
-- 📜 **标准技能协议**：完全兼容 [Anthropic Skills](https://github.com/anthropics/skills) 协议
-- 🧠 **启发式上下文加载**：仅在需要时加载必要的上下文，如`References`、`Resources`和`Scripts`等
-- 🤖 **自主执行**：智能体根据技能定义，自主分析、规划和决策执行哪些脚本和资源
-- 🔍 **技能管理**：支持技能批量加载，可根据用户输入自动检索和发现相关技能
-- 🛡️ **代码执行环境**：可选代码本地直接执行，或使用沙箱环境（[**ms-enclave**](https://github.com/modelscope/ms-enclave)），自动处理依赖项安装和环境隔离
-- 📁 **多文件类型支持**：支持文档、脚本和资源文件
-- 🧩 **可扩展设计**：对「技能」的数据结构进行了模块化设计，提供 `SkillSchema`、`SkillContext`等实现，便于扩展和定制
-
-#### 2) 快速开始
-
-> 💡 提示：
-> 1. 在运行以下示例之前，请确保设置了 `OPENAI_API_KEY` 和 `OPENAI_BASE_URL` 环境变量，以便访问所需的模型 API
-> 2. Agent Skills 要求 ms-agent 版本 >= 1.4.0
-
-
-**安装依赖**：
-
-```shell
-pip install ms-agent
-```
-
-**使用示例**：
-> 该示例展示了如何配置和运行一个Agent Skill，基于p5.js的流场生成艺术代码。
-
-
-参考代码： [Run Skills](projects/agent_skills/run.py)
-
-
-**运行结果**：
-
-<div align="center">
-  <img src="https://github.com/user-attachments/assets/9d5d78bf-c2db-4280-b780-324eab74a41e" alt="FlowFieldParticles" width="750">
-  <p><em>Agent-Skills: Flow Field Particles</em></p>
-</div>
-
-
-
-#### 3) 参考文档
-- **README**：请参考 [MS-Agent Skills](projects/agent_skills/README.md)
-- **Anthropic Agent Skills官方文档**：请参考 [Anthropic-Agent-Skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills)
-- **Anthropic预定义Skills GitHub仓库**：请参考 [Skills](https://github.com/anthropics/skills)
-
-
 ### Agentic Insight
 
 #### - 轻量级、高效且可扩展的多模态深度研究框架

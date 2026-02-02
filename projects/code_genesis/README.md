@@ -1,15 +1,12 @@
-# Do a Website!
+# Code Genesis
 
-This is a development version of code generation. We hope you can play happily with this code. It can do:
+An open-source multi-agent framework that generates production-ready software projects from natural language requirements. It can do:
 
-* Complex code generation work, especially React frontend and Node.js backend tasks
-* A high success rate of generation
-* Free development of your own code generation workflows, fitting your scenario
-
-The codebase contains three YAML configuration files:
-
-- **workflow.yaml** - The entry configuration file for code generation; the command line automatically detects this file's existence
-- **agent.yaml** - Configuration file used for generating code projects, referenced by workflow.yaml
+* End-to-end project generation with frontend, backend, and database integration
+* High-quality code with LSP validation and dependency resolution
+* Topology-aware code generation that eliminates reference errors
+* Automated deployment to EdgeOne Pages
+* Flexible workflows: standard (7-stage) or simple (4-stage) pipelines
 
 This project needs to be used together with ms-agent.
 
@@ -48,45 +45,58 @@ PYTHONPATH=. openai_api_key=your-api-key openai_base_url=your-api-url python ms_
 
 The code will be output to the `output` folder in the current directory by default.
 
+## Configuration for Advanced Features
+
+To enable diff-based editing and automated deployment, configure the following in your YAML files:
+
+### 1. Enable Diff-Based File Editing
+
+Add `edit_file_config` to both [coding.yaml](coding.yaml) and [refine.yaml](refine.yaml):
+
+```yaml
+edit_file_config:
+  model: morph-v3-fast  # or other compatible models
+  api_key: your-api-key
+  base_url: https://api.morphllm.com/v1
+```
+
+Get your model and API key from https://www.morphllm.com
+
+### 2. Enable Automated Deployment
+
+Add `edgeone-pages-mcp` configuration to [refine.yaml](refine.yaml):
+
+```yaml
+mcp_servers:
+  edgeone-pages:
+    env:
+      EDGEONE_PAGES_API_TOKEN: your-edgeone-token
+```
+
+Get your `EDGEONE_PAGES_API_TOKEN` from https://pages.edgeone.ai/zh/document/pages-mcp
+
 ## Architecture Principles
 
-The workflow is defined in workflow.yaml and follows a two-phase approach:
+The workflow is defined in [workflow.yaml](workflow.yaml) and follows a 7-stage pipeline:
 
-**Design & Coding Phase:**
-1. A user query is given to the architecture
-2. The architecture produces a PRD (Product Requirements Document) & module design
-3. The architecture starts several tasks to finish the coding jobs
-4. The Design & Coding phase completes when all coding jobs are done
+**Standard Workflow:**
+1. **User Story Agent** - Parses user requirements into structured user stories
+2. **Architect Agent** - Selects technology stack and defines system architecture
+3. **File Design Agent** - Generates physical file structure from architectural blueprint
+4. **File Order Agent** - Constructs dependency DAG and topological sort for parallel code generation
+5. **Install Agent** - Bootstraps environment and resolves dependencies
+6. **Coding Agent** - Synthesizes code with LSP validation, following dependency order
+7. **Refine Agent** - Performs runtime validation, bug fixing, and automated deployment
 
-**Refine Phase:**
-1. The first three messages are carried to the refine phase (system, query, and architecture design)
-2. Building begins (in this case, npm install & npm run dev/build); error messages are incorporated into the process
-3. The refiner distributes tasks to programmers to read files and collect information (these tasks do no coding)
-4. The refiner creates a fix plan with the information collected from the tasks
-5. The refiner distributes tasks to fix the problems
-6. After all problems are resolved, users can input additional requirements, and the refiner will analyze and update the code accordingly
+Each agent produces structured intermediate outputs, ensuring engineering rigor throughout the pipeline.
 
 ## Developer Guide
 
 Function of each module:
 
-- **workflow.yaml** - Entry configuration file used to describe the entire workflow's running process. You can add other processes
-- **agent.yaml** - Configuration file for each Agent in the workflow. This file is loaded in the first Agent and passed to subsequent processes
-- **config_handler.py** - Controls config modifications for each Agent in the workflow, for example, dynamically modifying callbacks and tools that need to be loaded for different scenarios like Architecture, Refiner, Worker, etc.
-- **callbacks/artifact_callback.py** - Code storage callback. All code in this project uses the following format:
-
-    ```js:js/index.js
-    ... code ...
-    ```
-  js/index.js is used for file storage. This callback parses all code blocks matching this format in a task and stores them as files.
-  In this project, a worker can write multiple files because code writing is divided into different clusters, allowing more closely related modules to be written together, resulting in fewer bugs.
-- **callbacks/coding_callback.py** - This callback adds several necessary fields to each task's system before the `split_to_sub_task` tool is called:
-    * Complete project design
-    * Code standards (currently fixed to insert frontend standards)
-    * Code generation format
-- **callbacks/eval_callback** - Automatically compiles npm (developers using other languages can also modify this to other compilation methods) and hands it to the Refiner for checking and fixing:
-    * The Refiner first analyzes files that might be affected based on errors and uses `split_to_sub_task` to assign tasks for information collection
-    * The Refiner redistributes fix tasks based on collected information, using `split_to_sub_task` for repairs
+- **workflow.yaml** - Entry configuration file defining the 7-stage pipeline. You can customize the workflow sequence here
+- **user_story.yaml / architect.yaml / file_design.yaml / file_order.yaml / install.yaml / coding.yaml / refine.yaml** - Configuration files for each agent in the workflow
+- **workflow/*.py** - Python implementation for each agent's logic
 
 ## Human Evaluation
 
@@ -98,13 +108,5 @@ After all writing and compiling is finished, an input will be shown to enable hu
    * The browser console
    * Page errors
 3. After the website runs normally, you can adjust the website, add new features, or refactor something
-4. If you find the token cost is huge or there's an infinite loop, stop it at any time. The project serves as a cache in ~/.cache/modelscope/hub/workflow_cache
+4. If you find the token cost is huge or there's an infinite loop, stop it at any time.
 5. Feel free to optimize the code and bring new ideas
-
-## TODOs
-
-1. Generation is unstable
-2. Bug fixing cost long
-3. A recall tool to help locate related files and errors, preload some file content can help reduce errors
-   * example: Error reported in scss file, but the error actually in vite.config.js
-4. Too much thinking

@@ -1,4 +1,4 @@
-# Copyright (c) Alibaba, Inc. and its affiliates.
+# Copyright (c) ModelScope Contributors. All rights reserved.
 import os.path
 from copy import copy
 from typing import Dict

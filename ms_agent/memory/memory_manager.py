@@ -1,4 +1,4 @@
-# Copyright (c) Alibaba, Inc. and its affiliates.
+# Copyright (c) ModelScope Contributors. All rights reserved.
 from typing import Dict
 
 from ms_agent.memory import Memory, memory_mapping

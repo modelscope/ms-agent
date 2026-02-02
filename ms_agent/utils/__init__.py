@@ -1,4 +1,4 @@
-# Copyright (c) Alibaba, Inc. and its affiliates.
+# Copyright (c) ModelScope Contributors. All rights reserved.
 from .llm_utils import async_retry, retry
 from .logger import get_logger
 from .prompt import get_fact_retrieval_prompt

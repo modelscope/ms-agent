@@ -1,4 +1,4 @@
-# Copyright (c) Alibaba, Inc. and its affiliates.
+# Copyright (c) ModelScope Contributors. All rights reserved.
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime

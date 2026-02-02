@@ -95,7 +95,7 @@ Here are the original query and the keywords:
 
         arguments = {
             'tasks': arguments,
-            'execution_mode': 'parallel',
+            'execution_mode': 'sequential',
         }
 
         results = await self.split_task.call_tool(
@@ -120,7 +120,7 @@ Here are the original query and the keywords:
 
         arguments = {
             'tasks': arguments,
-            'execution_mode': 'parallel',
+            'execution_mode': 'sequential',
         }
 
         results = await self.split_task.call_tool(

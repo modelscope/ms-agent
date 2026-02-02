@@ -1,4 +1,4 @@
-# Copyright (c) Alibaba, Inc. and its affiliates.
+# Copyright (c) ModelScope Contributors. All rights reserved.
 from .llama_index_rag import LlamaIndexRAG
 
 rag_mapping = {

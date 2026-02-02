@@ -1,57 +1,40 @@
 
 
+
 repos:
   - repo: https://github.com/pycqa/flake8.git
     rev: 4.0.0
     hooks:
       - id: flake8
-        exclude: |
-            (?x)^(
-                thirdparty/|
-                examples/|
-                tests/run.py|
-                projects/fin_research/examples/|
-                ms_agent/utils/prompts.py
-            )$
+        exclude: ^(thirdparty/|examples/|tests/|projects/agent_skills/|projects/fin_research/examples/|ms_agent/utils/prompts\.py)
   - repo: https://github.com/PyCQA/isort.git
     rev: 4.3.21
     hooks:
       - id: isort
-        exclude: |
-            (?x)^(
-                examples/|
-                projects/fin_research/examples/|
-                tests/run.py|
-            )$
+        exclude: ^(examples/|projects/fin_research/examples/|projects/agent_skills/|tests/)
   - repo: https://github.com/pre-commit/mirrors-yapf.git
     rev: v0.30.0
     hooks:
       - id: yapf
-        exclude: |
-            (?x)^(
-                thirdparty/|
-                examples/|
-                projects/fin_research/examples/|
-                tests/run.py
-            )$
+        exclude: ^(thirdparty/|examples/|projects/fin_research/examples/|projects/agent_skills/|tests/)
   - repo: https://github.com/pre-commit/pre-commit-hooks.git
     rev: v3.1.0
     hooks:
       - id: trailing-whitespace
-        exclude: thirdparty/|tests/run.py|projects/fin_research/examples/
+        exclude: ^(thirdparty/|tests/|projects/fin_research/examples/|projects/agent_skills/)
       - id: check-yaml
-        exclude: thirdparty/|tests/run.py|projects/fin_research/examples/
+        exclude: ^(thirdparty/|tests/|projects/fin_research/examples/|projects/agent_skills/)
       - id: end-of-file-fixer
-        exclude: thirdparty/|tests/run.py|projects/fin_research/examples/
+        exclude: ^(thirdparty/|tests/|projects/fin_research/examples/|projects/agent_skills/)
       - id: requirements-txt-fixer
-        exclude: thirdparty/|tests/run.py|projects/fin_research/examples/
+        exclude: ^(thirdparty/|tests/|projects/fin_research/examples/|projects/agent_skills/)
       - id: double-quote-string-fixer
-        exclude: thirdparty/|tests/run.py|projects/fin_research/examples/
+        exclude: ^(thirdparty/|tests/|projects/fin_research/examples/|projects/agent_skills/)
       - id: check-merge-conflict
-        exclude: thirdparty/|tests/run.py
+        exclude: ^(thirdparty/|tests/|projects/agent_skills/)
       - id: fix-encoding-pragma
-        exclude: thirdparty/|tests/run.py|projects/fin_research/examples/
+        exclude: ^(thirdparty/|tests/|projects/fin_research/examples/|projects/agent_skills/)
         args: ["--remove"]
       - id: mixed-line-ending
-        exclude: thirdparty/|tests/run.py|projects/fin_research/examples/
+        exclude: ^(thirdparty/|tests/|projects/fin_research/examples/|projects/agent_skills/)
         args: ["--fix=lf"]

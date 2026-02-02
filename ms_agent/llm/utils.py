@@ -1,4 +1,4 @@
-# Copyright (c) Alibaba, Inc. and its affiliates.
+# Copyright (c) ModelScope Contributors. All rights reserved.
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Union
 

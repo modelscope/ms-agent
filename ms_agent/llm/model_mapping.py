@@ -1,4 +1,4 @@
-# Copyright (c) Alibaba, Inc. and its affiliates.
+# Copyright (c) ModelScope Contributors. All rights reserved.
 from ms_agent.llm.anthropic_llm import Anthropic
 from ms_agent.llm.dashscope_llm import DashScope
 from ms_agent.llm.modelscope_llm import ModelScope
