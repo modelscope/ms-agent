@@ -237,7 +237,30 @@ class AgentRunner:
             if llm_config.get('api_key'):
                 provider = llm_config.get('provider', 'modelscope')
                 if provider == 'modelscope':
-                    cmd.extend(['--modelscope_api_key', llm_config['api_key']])
+                    cmd.extend(
+                        ['--llm.modelscope_api_key', llm_config['api_key']])
+                    # Set llm.service to modelscope to ensure the correct service is used
+                    cmd.extend(['--llm.service', 'modelscope'])
+                    # Pass base_url if set by user
+                    if llm_config.get('base_url'):
+                        cmd.extend([
+                            '--llm.modelscope_base_url', llm_config['base_url']
+                        ])
+                    # Pass model if set by user
+                    if llm_config.get('model'):
+                        cmd.extend(['--llm.model', llm_config['model']])
+                    # Pass temperature if set by user (in generation_config)
+                    if llm_config.get('temperature') is not None:
+                        cmd.extend([
+                            '--generation_config.temperature',
+                            str(llm_config['temperature'])
+                        ])
+                    # Pass max_tokens if set by user (in generation_config)
+                    if llm_config.get('max_tokens'):
+                        cmd.extend([
+                            '--generation_config.max_tokens',
+                            str(llm_config['max_tokens'])
+                        ])
                 elif provider == 'openai':
                     cmd.extend(['--llm.openai_api_key', llm_config['api_key']])
                     # Set llm.service to openai to ensure the correct service is used

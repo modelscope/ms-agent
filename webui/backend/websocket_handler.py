@@ -144,11 +144,11 @@ async def start_agent(session_id: str, data: Dict[str, Any],
     # For chat mode, use default chat agent config
     if session_type == 'chat':
         # Create a virtual project for chat mode using the default agent.yaml
+        import ms_agent
         from pathlib import Path
-        # Find ms_agent path relative to this file (webui/backend -> ms_agent)
-        backend_dir = Path(__file__).parent
-        ms_agent_path = backend_dir.parent.parent / 'ms_agent'
-        chat_config_path = ms_agent_path / 'agent' / 'agent.yaml'
+        # Get ms_agent package installation path
+        ms_agent_package_path = Path(ms_agent.__file__).parent
+        chat_config_path = ms_agent_package_path / 'agent' / 'agent.yaml'
 
         project = {
             'id': '__chat__',
@@ -156,7 +156,7 @@ async def start_agent(session_id: str, data: Dict[str, Any],
             'display_name': 'Chat Assistant',
             'description': 'Default chat mode',
             'type': 'agent',
-            'path': str(ms_agent_path / 'agent'),
+            'path': str(ms_agent_package_path / 'agent'),
             'config_file': str(chat_config_path),
             'has_readme': False,
             'supports_workflow_switch': False
