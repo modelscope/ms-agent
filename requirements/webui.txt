@@ -2,3 +2,4 @@ aiohttp
 fastapi
 pandas
 uvicorn
+uvicorn[standard]

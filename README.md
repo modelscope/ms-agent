@@ -395,6 +395,8 @@ For more details, refer to [Doc Research](projects/doc_research/README.md)
 
 ### Code Genesis
 
+<img alt="Workflow Diagram" src="projects/code_genesis/asset/workflow.jpg" />
+
 **Code Genesis** is a production-ready multi-agent framework that orchestrates specialized AI agents to autonomously generate complete software projects from natural language requirements.
 
 #### Features

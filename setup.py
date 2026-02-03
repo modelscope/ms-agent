@@ -237,9 +237,11 @@ if __name__ == '__main__':
     extra_requires['research'], _ = parse_requirements(
         'requirements/research.txt')
     extra_requires['code'], _ = parse_requirements('requirements/code.txt')
+    extra_requires['webui'], _ = parse_requirements('requirements/webui.txt')
     all_requires.extend(install_requires)
     all_requires.extend(extra_requires['research'])
     all_requires.extend(extra_requires['code'])
+    all_requires.extend(extra_requires['webui'])
     extra_requires['all'] = all_requires
 
     setup(

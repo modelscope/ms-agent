@@ -29,7 +29,7 @@ Code Genesis is built on three foundational pillars:
 Code Genesis provides **two configurable workflow modes** to balance between generation quality and execution speed, enabling users to select the optimal strategy based on project complexity:
 
 #### Standard Workflow (Production-Grade)
-<img alt="Simple Workflow Diagram" src="asset/workflow_code_genesis.png" />
+<img alt="Workflow Diagram" src="asset/workflow.jpg" />
 
 The standard pipeline implements a rigorous 7-stage process optimized for complex, production-ready projects:
 
@@ -49,7 +49,7 @@ User Story → Architect → File Design → File Order → Install → Coding �
 This workflow guarantees architectural coherence, eliminates reference errors through explicit dependency modeling, and produces enterprise-grade codebases with comprehensive documentation.
 
 #### Simple Workflow (Rapid Prototyping)
-<img alt="Simple Workflow Diagram" src="asset/simple_workflow_code_genesis.png" />
+<img alt="Simple Workflow Diagram" src="asset/simple_workflow.jpg" />
 
 For lightweight projects or quick iterations, the simple workflow condenses the pipeline into 4 core stages:
 
