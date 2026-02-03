@@ -216,8 +216,8 @@ We curated a benchmark of **30 real-world project specifications** spanning prod
 - **OpenCode** (open-source)
 
 **Foundation Models**:
-- **Qwen2.5-Coder-Plus** for simple projects
-- **Qwen2.5-Max** for medium projects
+- **Qwen3-Coder-Plus** for simple projects
+- **Qwen3-Max** for medium projects
 
 ### 3.3 Evaluation Metrics
 

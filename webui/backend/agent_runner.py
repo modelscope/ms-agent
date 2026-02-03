@@ -408,6 +408,20 @@ class AgentRunner:
                     if self._waiting_for_input:
                         # Check if process is still alive
                         if self.process.returncode is None:
+                            # Flush any pending chat response before waiting
+                            if self._is_chat_mode:
+                                self._flush_chat_response()
+                                # Send waiting_input message to enable frontend input
+                                if self.on_output and not self._waiting_input_sent:
+                                    self.on_output({
+                                        'type': 'waiting_input',
+                                        'content': '',
+                                        'role': 'system',
+                                        'metadata': {
+                                            'waiting': True
+                                        }
+                                    })
+                                    self._waiting_input_sent = True
                             # Process is still alive, continue waiting
                             continue
                         else:
@@ -440,6 +454,20 @@ class AgentRunner:
                     if self._waiting_for_input:
                         # Check if process is still alive
                         if self.process.returncode is None:
+                            # Flush any pending chat response before waiting
+                            if self._is_chat_mode:
+                                self._flush_chat_response()
+                                # Send waiting_input message to enable frontend input
+                                if self.on_output and not self._waiting_input_sent:
+                                    self.on_output({
+                                        'type': 'waiting_input',
+                                        'content': '',
+                                        'role': 'system',
+                                        'metadata': {
+                                            'waiting': True
+                                        }
+                                    })
+                                    self._waiting_input_sent = True
                             print(
                                 '[Runner] Agent is waiting for user input, keeping process alive...'
                             )
@@ -609,34 +637,90 @@ class AgentRunner:
         return text.strip()
 
     async def _process_chat_line(self, line: str):
-        """Simple chat mode - send response and wait for next input"""
-        # Detect [assistant]: marker - next lines will be the response
+        """Simple chat mode - handle assistant output, tool calls, and tool results"""
+        cleaned = self._clean_log_prefix(line)
+
+        # Detect [tool_calling]: marker - flush assistant output and start collecting tool call
+        if '[tool_calling]:' in line:
+            self._flush_chat_response()
+            self._collecting_tool_call = True
+            self._tool_call_json_buffer = ''
+            return
+
+        # Collect tool call JSON
+        if self._collecting_tool_call:
+            if cleaned:
+                if self._tool_call_json_buffer:
+                    self._tool_call_json_buffer += '\n' + cleaned
+                else:
+                    self._tool_call_json_buffer = cleaned
+                # Check if we have a complete JSON object
+                if cleaned == '}' and self._tool_call_json_buffer.strip(
+                ).startswith('{'):
+                    self._flush_tool_call()
+            return
+
+        # Detect tool execution result (success or error)
+        if 'execute tool call' in line:
+            if self.on_output:
+                is_error = 'error' in line.lower()
+                self.on_output({
+                    'type': 'tool_result',
+                    'content': cleaned,
+                    'role': 'assistant',
+                    'metadata': {
+                        'is_error': is_error
+                    }
+                })
+            return
+
+        # Detect [assistant]: marker - start collecting
         if '[assistant]:' in line:
+            self._flush_chat_response()
             self._collecting_assistant_output = True
             self._chat_response_buffer = ''
             return
 
-        # If collecting, send content immediately as complete
+        # Detect end markers - flush assistant output
+        end_markers = ['[user]:']
+        for marker in end_markers:
+            if marker in line:
+                self._flush_chat_response()
+                return
+
+        # If collecting assistant output, accumulate the content
         if self._collecting_assistant_output:
-            cleaned = self._clean_log_prefix(line)
             if cleaned:
                 if self._chat_response_buffer:
                     self._chat_response_buffer += '\n' + cleaned
                 else:
                     self._chat_response_buffer = cleaned
-                # Send immediately with done=true (non-streaming mode)
-                print(
-                    f'[Runner] Chat response: {len(self._chat_response_buffer)} chars'
-                )
-                if self.on_output:
-                    self.on_output({
-                        'type': 'stream',
-                        'content': self._chat_response_buffer,
-                        'role': 'assistant',
-                        'done': True
-                    })
                 # Mark as waiting for input - process is still running
                 self._waiting_for_input = True
+
+    def _flush_tool_call(self):
+        """Send tool call information to frontend"""
+        if self._is_chat_mode and self._tool_call_json_buffer.strip(
+        ) and self.on_output:
+            try:
+                import json
+                tool_data = json.loads(self._tool_call_json_buffer)
+                tool_name = tool_data.get('tool_name', 'unknown')
+                print(f'[Runner] Tool call: {tool_name}')
+                self.on_output({
+                    'type': 'tool_call',
+                    'content': '',
+                    'role': 'assistant',
+                    'metadata': {
+                        'tool_name': tool_name,
+                        'arguments': tool_data.get('arguments', {}),
+                        'id': tool_data.get('id', '')
+                    }
+                })
+            except json.JSONDecodeError:
+                print('[Runner] Failed to parse tool call JSON')
+        self._tool_call_json_buffer = ''
+        self._collecting_tool_call = False
 
     def _flush_chat_response(self):
         """Send final chat response with done=True"""
@@ -652,7 +736,8 @@ class AgentRunner:
                 'done': True
             })
             self._chat_response_buffer = ''
-            self._collecting_assistant_output = False
+            # Don't reset _collecting_assistant_output here - more content may come
+            # It will be reset when we see [tool_calling]: or [user]: or process exits
 
     async def _process_line(self, line: str):
         """Process a line of output"""

@@ -60,12 +60,6 @@ fi
 echo -e "${YELLOW}Installing Python dependencies...${NC}"
 pip install -q -r "$SCRIPT_DIR/requirements.txt"
 
-# Install ms-agent in development mode if not installed
-# Always reinstall to ensure entry point is correct
-echo -e "${YELLOW}Installing/Updating ms-agent...${NC}"
-pip install -q -e "$SCRIPT_DIR/.."
-
-
 # Install frontend dependencies if needed
 if [ ! -d "$SCRIPT_DIR/frontend/node_modules" ]; then
     echo -e "${YELLOW}Installing frontend dependencies...${NC}"
