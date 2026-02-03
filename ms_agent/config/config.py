@@ -111,6 +111,38 @@ class Config:
         return config.name in ['workflow.yaml', 'workflow.yml']
 
     @staticmethod
+    def _coerce_value(raw: Any, target: Any):
+        if raw is None:
+            return None
+
+        if isinstance(target, bool):
+            if isinstance(raw, bool):
+                return raw
+            if isinstance(raw, str):
+                s = raw.strip().lower()
+                if s in ("true", "1", "yes", "y", "on"):
+                    return True
+                if s in ("false", "0", "no", "n", "off"):
+                    return False
+            return raw
+
+        # int/float
+        if isinstance(target, int) and not isinstance(target, bool):
+            if isinstance(raw, str):
+                try:
+                    return int(raw)
+                except ValueError:
+                    return raw
+        if isinstance(target, float):
+            if isinstance(raw, str):
+                try:
+                    return float(raw)
+                except ValueError:
+                    return raw
+
+        return raw
+
+    @staticmethod
     def parse_args() -> Dict[str, Any]:
         arg_parser = argparse.ArgumentParser()
         args, unknown = arg_parser.parse_known_args()
@@ -119,8 +151,7 @@ class Config:
             for idx in range(1, len(unknown) - 1, 2):
                 key = unknown[idx]
                 value = unknown[idx + 1]
-                assert key.startswith(
-                    '--'), f'Parameter not correct: {unknown}'
+                assert key.startswith('--'), f'Parameter not correct: {unknown}'
                 _dict_config[key[2:]] = value
         return _dict_config
 
@@ -134,8 +165,8 @@ class Config:
         return node
 
     @staticmethod
-    def _update_config(config: Union[DictConfig, ListConfig],
-                       extra: Dict[str, str] = None):
+    def _update_config(cls, config: Union[DictConfig, ListConfig],
+                       extra: Dict[str, Any] = None):
         if not extra:
             return config
 
@@ -149,22 +180,23 @@ class Config:
                         traverse_config(value, current_path)
                     else:
                         if current_path in extra:
-                            logger.info(
-                                f'Replacing {current_path} with extra value.')
-                            setattr(_config, name, extra[current_path])
-                        # Find the key in extra that matches name (case-insensitive)
+                            logger.info(f'Replacing {current_path} with extra value.')
+                            coerced = cls._coerce_value(extra[current_path], value)
+                            setattr(_config, name, coerced)
+
                         elif (key_match := next(
-                            (key
-                             for key in extra if key.lower() == name.lower()),
-                                None)) is not None:
+                            (key for key in extra if key.lower() == name.lower()),
+                            None)) is not None:
                             logger.info(f'Replacing {name} with extra value.')
-                            setattr(_config, name, extra[key_match])
-                        # Handle placeholder replacement like <api_key>
+                            coerced = cls._coerce_value(extra[key_match], value)
+                            setattr(_config, name, coerced)
+
                         elif (isinstance(value, str) and value.startswith('<')
                               and value.endswith('>')
                               and value[1:-1] in extra):
                             logger.info(f'Replacing {value} with extra value.')
-                            setattr(_config, name, extra[value[1:-1]])
+                            coerced = cls._coerce_value(extra[value[1:-1]], value)
+                            setattr(_config, name, coerced)
 
             elif isinstance(_config, ListConfig):
                 for idx in range(len(_config)):
@@ -179,6 +211,25 @@ class Config:
                             _config[idx] = extra[value[1:-1]]
 
         traverse_config(config)
+
+        for key, value in extra.items():
+            if '.' in key and not key.startswith('tools.'):
+                parts = key.split('.')
+                current = config
+                for part in parts[:-1]:
+                    if not hasattr(current, part) or getattr(current, part) is None:
+                        setattr(current, part, DictConfig({}))
+                    current = getattr(current, part)
+
+                final_key = parts[-1]
+
+                if not hasattr(current, final_key) or getattr(current, final_key) is None:
+                    logger.info(f'Adding new config key: {key}')
+                    setattr(current, final_key, value)
+                else:
+                    old = getattr(current, final_key)
+                    coerced = cls._coerce_value(value, old)
+                    setattr(current, final_key, coerced)
         return None
 
     @staticmethod
