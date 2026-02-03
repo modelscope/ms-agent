@@ -263,58 +263,6 @@ asyncio.run(main())
 </details>
 
 
-### Agent Skills
-
-**MS-Agent Skills** is an **Implementation** of the [**Anthropic-Agent-Skills**](https://docs.claude.com/en/docs/agents-and-tools/agent-skills) protocol, enabling agents to autonomously explore and execute complex tasks by leveraging predefined or custom "skills".
-
-
-#### Key Features
-
-- 📜 **Standard Skill Protocol**: Fully compatible with the [Anthropic Skills](https://github.com/anthropics/skills) protocol
-- 🧠 **Heuristic Context Loading**: Loads only necessary context—such as `References`, `Resources`, and `Scripts` on demand
-- 🤖 **Autonomous Execution**: Agents autonomously analyze, plan, and decide which scripts and resources to execute based on skill definitions
-- 🔍 **Skill Management**: Supports batch loading of skills and can automatically retrieve and discover relevant skills based on user input
-- 🛡️ **Code Execution Environment**: Optional local direct code execution or secure sandboxed execution via [**ms-enclave**](https://github.com/modelscope/ms-enclave), with automatic dependency installation and environment isolation
-- 📁 **Multi-file Type Support**: Supports documentation, scripts, and resource files
-- 🧩 **Extensible Design**: The skill data structure is modularized, with implementations such as `SkillSchema` and `SkillContext` provided for easy extension and customization
-
-
-#### Quick Start
-
-> 💡 Note:
-> 1. Before running the following examples, ensure that you have set the `OPENAI_API_KEY` and `OPENAI_BASE_URL` environment variables to access the required model APIs.
-> 2. Agent Skills requires ms-agent >= 1.4.0
-
-
-**Installation**:
-
-```shell
-pip install ms-agent
-```
-
-**Usage**:
-
-> This example demonstrates how to configure and run an Agent Skill that generates generative art code based on p5.js flow fields.
-
-
-Refer to: [Run Skills](projects/agent_skills/run.py)
-
-
-**Result**:
-
-<div align="center">
-  <img src="https://github.com/user-attachments/assets/9d5d78bf-c2db-4280-b780-324eab74a41e" alt="FlowFieldParticles" width="750">
-  <p><em>Agent-Skills: Flow Field Particles</em></p>
-</div>
-
-
-#### References
-- **README**: [MS-Agent Skills](projects/agent_skills/README.md)
-- **Anthropic Agent Skills Official Docs**: [Anthropic-Agent-Skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills)
-- **Anthropic Skills GitHub Repo**: [Skills](https://github.com/anthropics/skills)
-
-
-
 ### Agentic Insight
 
 #### - Lightweight, Efficient, and Extensible Multi-modal Deep Research Framework
@@ -394,8 +342,6 @@ For more details, refer to [Doc Research](projects/doc_research/README.md)
 <br>
 
 ### Code Genesis
-
-<img alt="Workflow Diagram" src="projects/code_genesis/asset/workflow.jpg" />
 
 **Code Genesis** is a production-ready multi-agent framework that orchestrates specialized AI agents to autonomously generate complete software projects from natural language requirements.
 
