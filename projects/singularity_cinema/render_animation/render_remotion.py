@@ -442,13 +442,13 @@ class RenderRemotion(CodeAgent):
         import sys
 
         platform_str = 'win64' if os.name == 'nt' else 'linux64'
-        if sys.platform == "darwin":
+        if sys.platform == 'darwin':
             import platform
             m = platform.machine().lower()
-            if m in ("arm64", "aarch64"):
-                platform_str = "mac-arm64"
-            if m in ("x86_64", "amd64"):
-                platform_str = "mac-x64"
+            if m in ('arm64', 'aarch64'):
+                platform_str = 'mac-arm64'
+            if m in ('x86_64', 'amd64'):
+                platform_str = 'mac-x64'
 
         filename = f'chrome-headless-shell-{platform_str}.zip'
         mirror_url = f'http://modelscope.oss-cn-beijing.aliyuncs.com/ms-agent/software/chrome-for-testing/{version}/{platform_str}/{filename}'

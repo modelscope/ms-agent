@@ -71,7 +71,9 @@ class ComposeVideo(CodeAgent):
             else:
                 actual_duration = None
                 if not use_video_soundtrack:
-                    raise ValueError(f"File {audio_path} does not exist, run again to generate it.")
+                    raise ValueError(
+                        f'File {audio_path} does not exist, run again to generate it.'
+                    )
 
             if i < len(foreground_paths
                        ) and foreground_paths[i] and os.path.exists(
