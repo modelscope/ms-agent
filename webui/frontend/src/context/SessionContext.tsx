@@ -4,13 +4,9 @@ export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
-  type: 'text' | 'tool_call' | 'tool_result' | 'error' | 'log' | 'file_output' | 'step_start' | 'step_complete';
+  type: 'text' | 'tool_call' | 'tool_result' | 'error' | 'log' | 'file_output' | 'step_start' | 'step_complete' | 'deployment_url' | 'waiting_input' | 'agent_output';
   timestamp: string;
   metadata?: Record<string, unknown>;
-
-  client_request_id?: string;
-  retry_of?: string;
-  status?: 'sent' | 'running' | 'error' | 'completed'; // 给 UI 用
 }
 
 export interface Project {
@@ -21,6 +17,7 @@ export interface Project {
   type: 'workflow' | 'agent' | 'script';
   path: string;
   has_readme: boolean;
+  supports_workflow_switch?: boolean;
 }
 
 export interface WorkflowProgress {
@@ -43,6 +40,8 @@ export interface Session {
   workflow_progress?: WorkflowProgress;
   file_progress?: FileProgress;
   current_step?: string;
+  workflow_type?: 'standard' | 'simple';
+  session_type?: 'project' | 'chat';
 }
 
 export interface LogEntry {
@@ -61,12 +60,15 @@ interface SessionContextType {
   streamingContent: string;
   isStreaming: boolean;
   isLoading: boolean;
+  ws: WebSocket | null;
   loadProjects: () => Promise<void>;
-  createSession: (projectId: string) => Promise<Session | null>;
+  createSession: (projectId: string, workflowType?: string) => Promise<Session | null>;
+  createChatSession: (initialQuery: string) => Promise<void>;
   selectSession: (sessionId: string, initialQuery?: string, sessionObj?: Session) => void;
-  sendMessage: (content: string, opts?: { reuseMessageId?: string }) => void;
+  sendMessage: (content: string) => void;
   stopAgent: () => void;
   clearLogs: () => void;
+  clearSession: () => void;
 }
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
@@ -122,12 +124,16 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
   }, []);
 
   // Create session
-  const createSession = useCallback(async (projectId: string): Promise<Session | null> => {
+  const createSession = useCallback(async (projectId: string, workflowType: string = 'standard'): Promise<Session | null> => {
     try {
       const response = await fetch(`${API_BASE}/sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project_id: projectId }),
+        body: JSON.stringify({
+          project_id: projectId,
+          workflow_type: workflowType,
+          session_type: 'project'
+        }),
       });
 
       if (response.ok) {
@@ -140,35 +146,6 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
     return null;
   }, []);
-
-  const endRunningState = useCallback((nextStatus: Session['status'], errMsg?: string) => {
-    setIsLoading(false);
-    setIsStreaming(false);
-    setStreamingContent('');
-
-    setCurrentSession(prev => {
-      if (!prev) return prev;
-      return { ...prev, status: nextStatus, workflow_progress: undefined, file_progress: undefined, current_step: undefined };
-    });
-
-    setSessions(prev =>
-      prev.map(s => (s.id === currentSession?.id ? { ...s, status: nextStatus } : s))
-    );
-
-    if (errMsg) {
-      setMessages(prev => {
-        const last = prev[prev.length - 1];
-        if (last && last.type === 'error' && last.content === errMsg) return prev;
-        return [...prev, {
-          id: Date.now().toString(),
-          role: 'system',
-          content: errMsg,
-          type: 'error',
-          timestamp: new Date().toISOString(),
-        }];
-      });
-    }
-  }, [currentSession?.id]);
 
   // Connect WebSocket for session
   const connectWebSocket = useCallback((sessionId: string, initialQuery?: string) => {
@@ -209,39 +186,20 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
     };
 
     socket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        handleWebSocketMessage(data);
-      } catch (e) {
-        console.error('[WS] Non-JSON message:', event.data, e);
-
-        // Fallback: stop the loading state to avoid being stuck in "Processing".
-        endRunningState('error', typeof event.data === 'string'
-          ? event.data
-          : 'Agent failed with non-JSON output');
-
-        // Don't throw again to avoid a blank screen.
-      }
+      const data = JSON.parse(event.data);
+      handleWebSocketMessage(data);
     };
 
     socket.onclose = () => {
       console.log('WebSocket disconnected');
-
-      // If it's still running and the connection drops: end with an error
-      // to avoid the frontend being stuck in "Processing...".
-      setWs(null);
-      endRunningState('error', 'Connection closed unexpectedly. Please retry.');
     };
 
     socket.onerror = (error) => {
       console.error('WebSocket error:', error);
-
-      // onerror may sometimes be followed by onclose, but adding a fallback here doesn't hurt.
-      endRunningState('error', 'WebSocket error occurred. Please retry.');
     };
 
     setWs(socket);
-  }, [ws, endRunningState]);
+  }, [ws]);
 
   // Handle WebSocket messages
   const handleWebSocketMessage = useCallback((data: Record<string, unknown>) => {
@@ -249,14 +207,23 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
 
     switch (type) {
       case 'message':
-        setMessages(prev => [...prev, {
-          id: Date.now().toString(),
-          role: data.role as Message['role'],
-          content: data.content as string,
-          type: (data.message_type as Message['type']) || 'text',
-          timestamp: new Date().toISOString(),
-          metadata: data.metadata as Record<string, unknown>,
-        }]);
+        {
+          const messageType = (data.message_type as Message['type']) || 'text';
+          const metadata = data.metadata as Record<string, unknown> | undefined;
+          console.log('[SessionContext] Received message:', { type: messageType, content: data.content, metadata });
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: data.role as Message['role'],
+            content: data.content as string,
+            type: messageType,
+            timestamp: new Date().toISOString(),
+            metadata,
+          }]);
+          // Enable input after chat response completes or when waiting for input
+          if (messageType === 'waiting_input' || metadata?.chat_complete) {
+            setIsLoading(false);
+          }
+        }
         break;
 
       case 'stream':
@@ -271,6 +238,8 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
             timestamp: new Date().toISOString(),
           }]);
           setStreamingContent('');
+          // Enable input after stream completes
+          setIsLoading(false);
         }
         break;
 
@@ -287,10 +256,7 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
         setCurrentSession(prev => {
           if (!prev) return prev;
 
-          const progressType =
-            (data.progress_type as string | undefined) ??
-            (data.progressType as string | undefined) ??
-            (data.kind as string | undefined);
+          const progressType = data.type as string;
           if (progressType === 'workflow') {
             return {
               ...prev,
@@ -314,22 +280,26 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
         });
         break;
 
-      case 'status': {
-        const nextStatus =
-          (data.status as Session['status'] | undefined) ??
-          ((data as any)?.session?.status as Session['status'] | undefined);
-
-        if (!nextStatus) break;
-
-        if (nextStatus === 'running') {
-          setCurrentSession(prev => (prev ? { ...prev, status: 'running' } : prev));
-          setSessions(prev => prev.map(s => (s.id === currentSession?.id ? { ...s, status: 'running' } : s)));
-          setIsLoading(true);
-        } else {
-          endRunningState(nextStatus);
+      case 'status':
+        {
+          const nextStatus = (data.status as Session['status'] | undefined) ?? ((data as any)?.session?.status as Session['status'] | undefined);
+          if (nextStatus) {
+            setCurrentSession(prev => {
+              if (!prev) return prev;
+              if (nextStatus !== 'running') {
+                return { ...prev, status: nextStatus, workflow_progress: undefined, file_progress: undefined, current_step: undefined };
+              }
+              return { ...prev, status: nextStatus };
+            });
+            setSessions(prev => prev.map(s => (s.id === currentSession?.id ? { ...s, status: nextStatus } : s)));
+            setIsLoading(nextStatus === 'running');
+            if (nextStatus !== 'running') {
+              setIsStreaming(false);
+              setStreamingContent('');
+            }
+          }
         }
         break;
-      }
 
       case 'complete':
         setCurrentSession(prev => {
@@ -337,26 +307,35 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
           return { ...prev, status: 'completed' };
         });
         setSessions(prev => prev.map(s => (s.id === currentSession?.id ? { ...s, status: 'completed' } : s)));
-        endRunningState('completed');
+        setIsLoading(false);
         break;
 
       case 'error':
-        setCurrentSession(prev => {
-          if (!prev) return prev;
-          return { ...prev, status: 'error' };
-        });
-        setSessions(prev => prev.map(s => (s.id === currentSession?.id ? { ...s, status: 'error' } : s)));
-        setMessages(prev => [...prev, {
-          id: Date.now().toString(),
-          role: 'system',
-          content: data.message as string,
-          type: 'error',
-          timestamp: new Date().toISOString(),
-        }]);
-        endRunningState('error', (data.message as string) || 'Unknown error');
+        {
+          const errorMessage = data.message as string;
+          // Check if error indicates process termination/completion
+          const isProcessTerminated = errorMessage.includes('process has terminated') ||
+                                       errorMessage.includes('workflow completed') ||
+                                       errorMessage.includes('not running');
+
+          setCurrentSession(prev => {
+            if (!prev) return prev;
+            // If process terminated, mark as completed instead of error
+            return { ...prev, status: isProcessTerminated ? 'completed' : 'error' };
+          });
+          setSessions(prev => prev.map(s => (s.id === currentSession?.id ? { ...s, status: isProcessTerminated ? 'completed' : 'error' } : s)));
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'system',
+            content: errorMessage,
+            type: 'error',
+            timestamp: new Date().toISOString(),
+          }]);
+          setIsLoading(false);
+        }
         break;
     }
-  }, [currentSession?.id, endRunningState]);
+  }, [currentSession?.id]);
 
   // Select session (can pass session object directly for newly created sessions)
   const selectSession = useCallback((sessionId: string, initialQuery?: string, sessionObj?: Session) => {
@@ -374,46 +353,60 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   }, [sessions, connectWebSocket]);
 
+  // Create chat session
+  const createChatSession = useCallback(async (initialQuery: string): Promise<void> => {
+    try {
+      const response = await fetch(`${API_BASE}/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_type: 'chat'
+        }),
+      });
+
+      if (response.ok) {
+        const session: Session = await response.json();
+        session.session_type = 'chat';  // Ensure session_type is set
+        setSessions(prev => [...prev, session]);
+        // Select session and send initial query
+        selectSession(session.id, initialQuery, session);
+      } else {
+        console.error('Failed to create chat session:', await response.text());
+      }
+    } catch (error) {
+      console.error('Failed to create chat session:', error);
+    }
+  }, [selectSession]);
+
   // Send message
-const sendMessage = useCallback((content: string, opts?: { reuseMessageId?: string }) => {
-  if (!currentSession || !ws || ws.readyState !== WebSocket.OPEN) return;
+  const sendMessage = useCallback((content: string) => {
+    if (!currentSession || !ws || ws.readyState !== WebSocket.OPEN) return;
 
-  const clientRequestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-  // Reuse mode: update the existing message instead of adding a new one.
-  if (opts?.reuseMessageId) {
-    setMessages(prev => prev.map(m => {
-      if (m.id !== opts.reuseMessageId) return m;
-      return {
-        ...m,
-        content,
-        status: 'running',
-        client_request_id: clientRequestId,
-      };
-    }));
-  } else {
-    // Default: add a new user message.
+    // Add user message locally
     setMessages(prev => [...prev, {
       id: Date.now().toString(),
       role: 'user',
       content,
       type: 'text',
       timestamp: new Date().toISOString(),
-      status: 'running',
-      client_request_id: clientRequestId,
     }]);
-  }
 
-  ws.send(JSON.stringify({
-    action: 'start',
-    query: content,
-    client_request_id: clientRequestId, // If the backend can pass it back unchanged, that would be better.
-  }));
+    // For chat mode, send as input to existing process
+    // For project mode, start a new agent
+    if (currentSession.session_type === 'chat') {
+      ws.send(JSON.stringify({
+        action: 'send_input',
+        input: content,
+      }));
+    } else {
+      ws.send(JSON.stringify({
+        action: 'start',
+        query: content,
+      }));
+    }
 
-  setIsStreaming(false);
-  setStreamingContent('');
-  setIsLoading(true);
-}, [currentSession, ws]);
+    setIsLoading(true);
+  }, [currentSession, ws]);
 
   // Stop agent
   const stopAgent = useCallback(() => {
@@ -436,6 +429,19 @@ const sendMessage = useCallback((content: string, opts?: { reuseMessageId?: stri
   const clearLogs = useCallback(() => {
     setLogs([]);
   }, []);
+
+  // Clear session (return to home)
+  const clearSession = useCallback(() => {
+    if (ws) {
+      ws.close();
+    }
+    setCurrentSession(null);
+    setMessages([]);
+    setLogs([]);
+    setStreamingContent('');
+    setIsLoading(false);
+    setIsStreaming(false);
+  }, [ws]);
 
   // Initial load
   useEffect(() => {
@@ -462,12 +468,15 @@ const sendMessage = useCallback((content: string, opts?: { reuseMessageId?: stri
         streamingContent,
         isStreaming,
         isLoading,
+        ws,
         loadProjects,
         createSession,
+        createChatSession,
         selectSession,
         sendMessage,
         stopAgent,
         clearLogs,
+        clearSession,
       }}
     >
       {children}

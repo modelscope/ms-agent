@@ -1,4 +1,4 @@
-# Copyright (c) ModelScope Contributors. All rights reserved.
+# Copyright (c) Alibaba, Inc. and its affiliates.
 import fnmatch
 import os
 import re
@@ -8,12 +8,12 @@ from pathlib import Path
 from typing import Optional
 
 import json
-from ms_agent.config import Config
 from ms_agent.llm import LLM
 from ms_agent.llm.utils import Message, Tool
 from ms_agent.tools.base import ToolBase
-from ms_agent.utils import get_logger
+from ms_agent.utils import MAX_CONTINUE_RUNS, get_logger, retry
 from ms_agent.utils.constants import DEFAULT_INDEX_DIR, DEFAULT_OUTPUT_DIR
+from openai import OpenAI
 
 logger = get_logger()
 
@@ -46,6 +46,13 @@ class FileSystemTool(ToolBase):
         super().__init__(config)
         self.exclude_func(getattr(config.tools, 'file_system', None))
         self.output_dir = getattr(config, 'output_dir', DEFAULT_OUTPUT_DIR)
+        if self.exclude_functions and 'edit_file' not in self.exclude_functions \
+                or self.include_functions and 'edit_file' in self.include_functions:
+            self.edit_file_config = getattr(config.tools.file_system,
+                                            'edit_file_config', None)
+            self.edit_client = OpenAI(
+                api_key=self.edit_file_config.api_key,
+                base_url=self.edit_file_config.base_url)
         self.trust_remote_code = kwargs.get('trust_remote_code', False)
         self.allow_read_all_files = getattr(
             getattr(config.tools, 'file_system', {}), 'allow_read_all_files',
@@ -57,10 +64,8 @@ class FileSystemTool(ToolBase):
         index_dir = getattr(config, 'index_cache_dir', DEFAULT_INDEX_DIR)
         self.index_dir = os.path.join(self.output_dir, index_dir)
         self.system = self.SYSTEM_FOR_ABBREVIATIONS
-        system = Config.safe_get_config(
-            self.config, 'tools.file_system.system_for_abbreviations')
-        if system:
-            self.system = system
+        if hasattr(self.config.tools.file_system, 'system_for_abbreviations'):
+            self.system = self.config.tools.file_system.system_for_abbreviations
 
     async def connect(self):
         logger.warning_once(
@@ -195,6 +200,65 @@ class FileSystemTool(ToolBase):
                         },
                         'required': ['path'],
                         'additionalProperties': False
+                    }),
+                Tool(
+                    tool_name='edit_file',
+                    server_name='file_system',
+                    description=
+                    ('Use this tool to make an edit to an existing file.\n\n'
+                     'This will be read by a less intelligent model, which will quickly apply the edit. '
+                     'You should make it clear what the edit is, while also minimizing the unchanged code you write.\n'
+                     'When writing the edit, you should specify each edit in sequence, with the special comment '
+                     '// ... existing code ... to represent unchanged code in between edited lines.\n\n'
+                     'For example:\n\n// ... existing code ...\nFIRST_EDIT\n// ... existing code ...\n'
+                     'SECOND_EDIT\n// ... existing code ...\nTHIRD_EDIT\n// ... existing code ...\n\n'
+                     'You should still bias towards repeating as few lines of the original file '
+                     'as possible to convey the change.\n'
+                     'But, each edit should contain minimally sufficient context of unchanged lines '
+                     "around the code you're editing to resolve ambiguity.\n"
+                     'DO NOT omit spans of pre-existing code (or comments) without using the '
+                     '// ... existing code ... comment to indicate its absence. '
+                     'If you omit the existing code comment, the model may inadvertently delete these lines.\n'
+                     'If you plan on deleting a section, you must provide context before and after to delete it. '
+                     'If the initial code is ```code \\n Block 1 \\n Block 2 \\n Block 3 \\n code```, '
+                     'and you want to remove Block 2, you would output '
+                     '```// ... existing code ... \\n Block 1 \\n  Block 3 \\n // ... existing code ...```.\n'
+                     'Make sure it is clear what the edit should be, and where it should be applied.\n'
+                     'Make edits to a file in a single edit_file call '
+                     'instead of multiple edit_file calls to the same file. '
+                     'The apply model can handle many distinct edits at once.'
+                     ),
+                    parameters={
+                        'type': 'object',
+                        'properties': {
+                            'path': {
+                                'type': 'string',
+                                'description':
+                                'Path of the target file to modify.'
+                            },
+                            'instructions': {
+                                'type':
+                                'string',
+                                'description':
+                                ('A single sentence instruction describing '
+                                 'what you are going to do for the sketched edit. '
+                                 'This is used to assist the less intelligent model in applying the edit. '
+                                 'Use the first person to describe what you are going to do. '
+                                 'Use it to disambiguate uncertainty in the edit.'
+                                 )
+                            },
+                            'code_edit': {
+                                'type':
+                                'string',
+                                'description':
+                                ('Specify ONLY the precise lines of code that you wish to edit. '
+                                 'NEVER specify or write out unchanged code. '
+                                 'Instead, represent all unchanged code using the comment of the language '
+                                 "you're editing in - example: // ... existing code ..."
+                                 )
+                            }
+                        },
+                        'required': ['path', 'instructions', 'code_edit']
                     }),
                 Tool(
                     tool_name='search_file_content',
@@ -936,3 +1000,29 @@ class FileSystemTool(ToolBase):
         except Exception as e:
             return f'List files of <{path or "root path"}> failed, error: ' + str(
                 e)
+
+    @retry(max_attempts=MAX_CONTINUE_RUNS, delay=1.0)
+    async def edit_file(self,
+                        path: str = None,
+                        instructions: str = None,
+                        code_edit: str = None):
+        try:
+            with open(os.path.join(self.output_dir, path), 'r') as f:
+                initial_code = f.read()
+                response = self.edit_client.chat.completions.create(
+                    model=self.edit_file_config.diff_model,
+                    messages=[{
+                        'role':
+                        'user',
+                        'content':
+                        (f'<instruction>{instructions}</instruction>\n'
+                         f'<code>{initial_code}</code>\n'
+                         f'<update>{code_edit}</update>')
+                    }])
+                merged_code = response.choices[0].message.content
+
+            with open(os.path.join(self.output_dir, path), 'w') as f:
+                f.write(merged_code)
+            return f'Edit file <{path}> successfully.'
+        except Exception as e:
+            return f'Edit file <{path}> failed, error: ' + str(e)

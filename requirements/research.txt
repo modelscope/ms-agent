@@ -9,6 +9,7 @@ markdown
 mcp
 modelscope
 openai
+pandas
 Pillow
 python-dotenv
 requests

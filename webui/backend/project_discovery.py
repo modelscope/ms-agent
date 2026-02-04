@@ -11,6 +11,9 @@ from typing import Any, Dict, List, Optional
 class ProjectDiscovery:
     """Discovers and manages projects from the ms-agent projects directory"""
 
+    # Whitelist of projects to show in the UI
+    VISIBLE_PROJECTS = {'code_genesis', 'singularity_cinema'}
+
     def __init__(self, projects_dir: str):
         self.projects_dir = projects_dir
         self._projects_cache: Optional[List[Dict[str, Any]]] = None
@@ -28,7 +31,9 @@ class ProjectDiscovery:
 
         for item in os.listdir(self.projects_dir):
             item_path = os.path.join(self.projects_dir, item)
-            if os.path.isdir(item_path) and not item.startswith('.'):
+            # Only show projects in the whitelist
+            if os.path.isdir(item_path) and not item.startswith(
+                    '.') and item in self.VISIBLE_PROJECTS:
                 project_info = self._analyze_project(item, item_path)
                 if project_info:
                     projects.append(project_info)
@@ -43,6 +48,7 @@ class ProjectDiscovery:
         """Analyze a project directory and extract its information"""
         # Check for workflow.yaml or agent.yaml
         workflow_file = os.path.join(path, 'workflow.yaml')
+        simple_workflow_file = os.path.join(path, 'simple_workflow.yaml')
         agent_file = os.path.join(path, 'agent.yaml')
         run_file = os.path.join(path, 'run.py')
         readme_file = os.path.join(path, 'README.md')
@@ -61,6 +67,12 @@ class ProjectDiscovery:
             # Skip directories without valid config
             return None
 
+        # Check if project supports workflow switching (e.g., code_genesis)
+        supports_workflow_switch = False
+        if project_type == 'workflow' and name == 'code_genesis' and os.path.exists(
+                simple_workflow_file):
+            supports_workflow_switch = True
+
         # Generate display name from directory name
         display_name = self._format_display_name(name)
 
@@ -76,7 +88,8 @@ class ProjectDiscovery:
             'type': project_type,
             'path': path,
             'has_readme': os.path.exists(readme_file),
-            'config_file': config_file
+            'config_file': config_file,
+            'supports_workflow_switch': supports_workflow_switch
         }
 
     def _format_display_name(self, name: str) -> str:

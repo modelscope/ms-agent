@@ -57,10 +57,9 @@ class SkillLoader:
         for skill in skill_list:
 
             if is_skill_id(skill):
-                # Treat as skill ID on ModelScope hub  # TODO: to be implemented
-                raise NotImplementedError(
-                    'Loading skills from ModelScope hub is not implemented yet.'
-                )
+                from modelscope import snapshot_download
+                skill_path: str = snapshot_download(repo_id=skill)
+                skill = skill_path
 
             if isinstance(skill, SkillSchema):
                 skill_key = self._get_skill_key(skill=skill)
@@ -80,7 +79,7 @@ class SkillLoader:
                 if skill_schema:
                     skill_key = f'{skill_schema.skill_id}@{skill_schema.version}'
                     all_skills[skill_key] = skill_schema
-                    logger.info(f'Successfully loaded skill: {skill_key}')
+                    # logger.info(f'Successfully loaded skill: {skill_key}')
             else:
                 skill_schema_dict: Dict[
                     str, SkillSchema] = self._scan_and_load_skills(skill_dir)
@@ -154,9 +153,9 @@ class SkillLoader:
                 if skill:
                     skill_key = self._get_skill_key(skill=skill)
                     skills[skill_key] = skill
-                    logger.info(
-                        f'Successfully loaded skill: {skill_key} (from {item})'
-                    )
+                    # logger.info(
+                    #     f'Successfully loaded skill: {skill_key} (from {item})'
+                    # )
 
         return skills
 

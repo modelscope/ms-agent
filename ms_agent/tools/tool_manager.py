@@ -14,7 +14,6 @@ from ms_agent.tools.agent_tool import AgentTool
 from ms_agent.tools.base import ToolBase
 from ms_agent.tools.code import CodeExecutionTool, LocalCodeExecutionTool
 from ms_agent.tools.filesystem_tool import FileSystemTool
-from ms_agent.tools.findata.findata_fetcher import FinancialDataFetcher
 from ms_agent.tools.image_generator import ImageGenerator
 from ms_agent.tools.mcp_client import MCPClient
 from ms_agent.tools.shell.shell import Shell
@@ -77,6 +76,7 @@ class ToolManager:
                 self.extra_tools.append(CodeExecutionTool(config))
         if hasattr(config, 'tools') and hasattr(config.tools,
                                                 'financial_data_fetcher'):
+            from ms_agent.tools.findata.findata_fetcher import FinancialDataFetcher
             self.extra_tools.append(FinancialDataFetcher(config))
         if hasattr(config, 'tools') and getattr(config.tools, 'agent_tools',
                                                 None):

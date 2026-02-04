@@ -17,8 +17,11 @@ class SessionManager:
         self._messages: Dict[str, List[Dict[str, Any]]] = {}
         self._lock = Lock()
 
-    def create_session(self, project_id: str,
-                       project_name: str) -> Dict[str, Any]:
+    def create_session(self,
+                       project_id: str,
+                       project_name: str,
+                       workflow_type: str = 'standard',
+                       session_type: str = 'project') -> Dict[str, Any]:
         """Create a new session"""
         session_id = str(uuid.uuid4())
         session = {
@@ -29,7 +32,9 @@ class SessionManager:
             'created_at': datetime.now().isoformat(),
             'workflow_progress': None,
             'file_progress': None,
-            'current_step': None
+            'current_step': None,
+            'workflow_type': workflow_type,  # 'standard' or 'simple'
+            'session_type': session_type  # 'project' or 'chat'
         }
 
         with self._lock:

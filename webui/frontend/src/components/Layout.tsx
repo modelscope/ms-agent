@@ -18,6 +18,7 @@ import {
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import { useThemeContext } from '../context/ThemeContext';
+import { useSession } from '../context/SessionContext';
 
 interface LayoutProps {
   children: ReactNode;
@@ -29,6 +30,7 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ children, onOpenSettings, onToggleLogs, showLogs }) => {
   const theme = useTheme();
   const { mode, toggleTheme } = useThemeContext();
+  const { clearSession, currentSession } = useSession();
 
   return (
     <Box
@@ -60,6 +62,7 @@ const Layout: React.FC<LayoutProps> = ({ children, onOpenSettings, onToggleLogs,
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
               <Box
+                onClick={currentSession ? clearSession : undefined}
                 sx={{
                   width: 36,
                   height: 36,
@@ -69,6 +72,12 @@ const Layout: React.FC<LayoutProps> = ({ children, onOpenSettings, onToggleLogs,
                   alignItems: 'center',
                   justifyContent: 'center',
                   boxShadow: `0 4px 12px ${alpha(theme.palette.primary.main, 0.3)}`,
+                  cursor: currentSession ? 'pointer' : 'default',
+                  transition: 'transform 0.2s, box-shadow 0.2s',
+                  '&:hover': currentSession ? {
+                    transform: 'scale(1.05)',
+                    boxShadow: `0 6px 16px ${alpha(theme.palette.primary.main, 0.4)}`,
+                  } : {},
                 }}
               >
                 <Typography
@@ -227,7 +236,7 @@ const Layout: React.FC<LayoutProps> = ({ children, onOpenSettings, onToggleLogs,
             color: theme.palette.text.secondary,
           }}
         >
-          © 2024 Alibaba Inc.
+          © 2026 Alibaba Inc.
         </Typography>
       </Box>
     </Box>

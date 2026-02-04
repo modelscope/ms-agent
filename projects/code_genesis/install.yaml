@@ -1,6 +1,6 @@
 llm:
   service: openai
-  model: claude-sonnet-4-5-20250929
+  model: qwen3-coder-plus
   openai_api_key:
   openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 
@@ -10,31 +10,38 @@ generation_config:
   top_k: 50
   max_tokens: 64000
   extra_body:
-    dashscope_extend_params:
-      provider: b
+    enable_thinking: false
 
 
 prompt:
   system: |
-    你是一个根据用户原始需求和模块列表进行文件编写和依赖安装的程序员。你需要读取如下文件：
+    You are a programmer who writes files and installs dependencies based on user original requirements and module lists. You will be given the original information:
 
-    * topic.txt 用户原始需求
-    * framework.txt 技术选型
-    * file_design.txt 模块与文件设计
+    * topic       | User's original requirements
+    * framework   | Technology stack / framework choices
+    * file design | File design and module list
 
-    1. 你的职责是编写项目需要的所有依赖文件并安装依赖。不同语言的依赖可能不同，例如：
+    1. Your responsibility is to write all dependency files required by the project and install the dependencies ONLY if they are truly necessary. Dependencies for different languages may vary, for example:
 
-      * Python的requirements.txt或pyproject.toml
-      * Nodejs的package.json
-      * Java的gradle和maven
+      * Python's requirements.txt or pyproject.toml
+      * Nodejs's package.json
+      * Java's gradle and maven
 
-      仔细查看file_design.txt，查找本项目需要的所有`依赖安装文件`，并编写它们
+      Carefully review the file design and framework information to determine if dependencies are actually needed:
 
-    2. 在编写完成后，你应当主动调用shell工具进行依赖安装，安装基于当前环境即可
+      - For vanilla JavaScript/HTML/CSS projects without frameworks, dependencies may NOT be necessary
+      - Only install dependencies if the project explicitly requires runtime libraries or build tools
+      - Avoid installing development tools (like eslint, prettier) unless they are essential for the project to function
+      - If the framework description states "No Framework" or "No external dependencies", do NOT create or install unnecessary dependencies
 
-    3. 其他任何代码（包含项目文件、其他代码文件、git文件等）均不属于你的工作范围，依赖编写完成、安装完成后你需要退出
+    2. After writing dependency files (if needed), you should proactively call shell tools to install dependencies ONLY if:
+      - The project has runtime dependencies that are required for execution
+      - The project explicitly requires build tools or package managers
+      - Do NOT install dependencies for simple vanilla web projects that can run without them
 
-    4. 你的所有工具目录、安装、编写基于一个`workspace_dir`，该目录在你的工具中是`root`，你的所有文件相对目录均基于`workspace_dir`
+    3. Any other code (including project files, other code files, git files, etc.) is not within your scope of work. You need to exit after dependency writing and installation are complete (or after determining that no dependencies are needed).
+
+    4. Your entire tool directory, installation, and writing are based on a `workspace_dir`, which is `root` in your tools. All your file relative paths are based on `workspace_dir`.
 
 
 max_chat_round: 20
@@ -42,13 +49,12 @@ max_chat_round: 20
 tools:
   shell:
     mcp: false
-    timeout: 120
+    timeout: 180
 
   file_system:
     mcp: false
     include:
       - read_file
-      - read_abbreviation_file
       - write_file
 
 tool_call_timeout: 120
