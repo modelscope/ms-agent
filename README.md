@@ -453,7 +453,7 @@ The generated code will be output to the `output` folder in the current director
 - **Standard Pipeline** (7 agents): User Story → Architect → File Design → File Order → Install → Coding → Refine
 - **Simple Pipeline** (4 agents): Orchestrator → Install → Coding → Refine
 
-For more details, refer to [Code Genesis](projects/code_genesis/pr_article.md).
+For more details, refer to [Code Genesis](projects/code_genesis/TECH_REPORT.md).
 
 <br>
 
