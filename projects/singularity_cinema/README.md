@@ -7,6 +7,8 @@
 
 [![Video Preview](./show_case/deploy_llm.png)](http://modelscope.oss-cn-beijing.aliyuncs.com/ms-agent/show_case/video/deploy_llm_claude_sonnet_4_5_mllm_gemini_3_pro_image_gen_gemini_3_pro_image.mp4)
 
+[![Video Preview](./show_case/silu.png)](http://modelscope.oss-cn-beijing.aliyuncs.com/ms-agent/show_case/video/silu_claude_sonnet_4_5_mllm_gemini_3_pro_image_gen_gemini_3_pro_image.mp4)
+
 ## 安装
 
 项目需要 Python 和 Node.js 环境。
@@ -133,13 +135,30 @@ video_generator:
 
 ### 3）运行命令示例
 
-下面示例展示了：在使用默认 YAML 的基础上，通过命令行覆盖 LLM / MLLM / 文生图 / 文生视频等关键配置。
+在使用默认 YAML 的基础上，通过命令行覆盖 LLM / MLLM / 文生图 / 文生视频等关键配置。
+
+以下为生成本页视频预览使用的两个示例
 - 运行前请把query中的{path_to_ms-agent}替换成本地参考文件路径
 - 将下述api_key替换成真实api-key
 
 ```bash
 ms-agent run --project singularity_cinema \
   --query "把/{path_to_ms-agent}/projects/singularity_cinema/test_files/J.部署.md转为短视频，蓝色风格，注意使用其中重要的图片" \
+  --trust_remote_code true \
+  --openai_base_url https://api.anthropic.com/v1/ \
+  --llm.model claude-sonnet-4-5 \
+  --openai_api_key {your_api_key_of_anthropic} \
+  --mllm_openai_base_url https://generativelanguage.googleapis.com/v1beta/openai/ \
+  --mllm_openai_api_key {your_api_key_of_gemini} \
+  --mllm_model gemini-3-pro-preview \
+  --image_generator.api_key {your_api_key_of_gemini} \
+  --image_generator.type google \
+  --image_generator.model gemini-3-pro-image-preview \
+```
+
+```bash
+ms-agent run --project singularity_cinema \
+  --query "请以介绍丝绸之路为主题创作短视频，视频风格统一" \
   --trust_remote_code true \
   --openai_base_url https://api.anthropic.com/v1/ \
   --llm.model claude-sonnet-4-5 \
