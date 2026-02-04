@@ -132,7 +132,7 @@ video_generator:
 
 ---
 
-### 3）运行命令示例
+### 4）运行命令示例
 
 在使用默认 YAML 的基础上，通过命令行覆盖 LLM / MLLM / 文生图 / 文生视频等关键配置。
 
@@ -175,7 +175,7 @@ ms-agent run --project singularity_cinema \
 
 ---
 
-### 4）输出与失败重试
+### 5）输出与失败重试
 
 - 运行持续约20min左右。
 - 生成视频输出在 命令执行目录/`output_video/`（由配置项 `--output_dir` 控制）final_video.mp4
@@ -202,17 +202,17 @@ ms-agent run --project singularity_cinema \
    - 输出：更新的remotion_code/segment_N.py文件
 6. 渲染remotion代码
    - 输入：remotion_code/segment_N.py
-   - 输出：remotion_render/scene_N文件夹列表，如果segments.txt中对某个步骤包含了manim要求，则对应文件夹中会有remotion.mov文件
+   - 输出：remotion_render/scene_N文件夹列表，如果segments.txt中对某个步骤包含了remotion要求，则对应文件夹中会有remotion.mov文件
 7. 生成文生图提示词
    - 输入：segments.txt
    - 输出：illustration_prompts/segment_N.txt，N为segment序号从1开始
 8. 文生图
    - 输入：illustration_prompts/segment_N.txt列表
    - 输出：images/illustration_N.png列表，N为segment序号从1开始
-10. 生成背景，为纯色带有短视频title和slogans的图片
+9. 生成背景，为纯色带有短视频title和slogans的图片
     - 输入：title.txt
     - 输出：background.jpg
-11. 拼合整体视频
+0拼合整体视频
     - 输入：前序所有的文件信息。这一步会有较长无日志耗时，这一阶段不消耗token。
     - 输出：final_video.mp4
 ---

@@ -179,7 +179,7 @@ ms-agent run --project singularity_cinema \
 
 ---
 
-### 4) Output and Failure Retry
+### 5) Output and Failure Retry
 
 - The run typically takes about 20 minutes.
 - The generated video is output to `output_video/` under your command execution directory (controlled by `--output_dir`) as `final_video.mp4`.
@@ -208,17 +208,17 @@ ms-agent run --project singularity_cinema \
    - Output: updated `remotion_code/segment_N.py`
 6. Render Remotion code
    - Input: `remotion_code/segment_N.py`
-   - Output: `remotion_render/scene_N` folder list; if a segment includes Manim requirements in `segments.txt`, the corresponding folder will contain `remotion.mov`
+   - Output: `remotion_render/scene_N` folder list; if a segment includes Remotion requirements in `segments.txt`, the corresponding folder will contain `remotion.mov`
 7. Generate text-to-image prompts
    - Input: `segments.txt`
    - Output: `illustration_prompts/segment_N.txt` (N starts from 1)
 8. Text-to-image generation
    - Input: list of `illustration_prompts/segment_N.txt`
    - Output: list of `images/illustration_N.png` (N starts from 1)
-10. Generate a background image (solid color) with the short-video title and slogans
+9. Generate a background image (solid color) with the short-video title and slogans
     - Input: `title.txt`
     - Output: `background.jpg`
-11. Compose the final video
+10. Compose the final video
     - Input: all files from previous steps. This step may take a long time with no logs and does not consume tokens.
     - Output: `final_video.mp4`
 
