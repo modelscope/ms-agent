@@ -135,7 +135,7 @@ video_generator:
 
 ---
 
-### 3) Example Commands
+### 4) Example Commands
 
 Based on the default YAML, override key configurations for LLM / MLLM / text-to-image / text-to-video via the command line.
 
