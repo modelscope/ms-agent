@@ -155,7 +155,7 @@ ms-agent run --project singularity_cinema \
   --mllm_model gemini-3-pro-preview \
   --image_generator.api_key {your_api_key_of_gemini} \
   --image_generator.type google \
-  --image_generator.model gemini-3-pro-image-preview \
+  --image_generator.model gemini-3-pro-image-preview
 ```
 
 ```bash
@@ -170,7 +170,7 @@ ms-agent run --project singularity_cinema \
   --mllm_model gemini-3-pro-preview \
   --image_generator.api_key {your_api_key_of_gemini} \
   --image_generator.type google \
-  --image_generator.model gemini-3-pro-image-preview \
+  --image_generator.model gemini-3-pro-image-preview
 ```
 
 ---
