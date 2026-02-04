@@ -230,4 +230,4 @@ ms-agent run --project singularity_cinema \
 - 视频参数：`--video.fps`、`--video.bitrate` 等
 - 开关项：`--use_subtitle`、`--use_text2video`、`--use_doc_image` 等
 
----**
+---
