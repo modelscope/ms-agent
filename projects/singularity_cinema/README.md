@@ -1,4 +1,4 @@
-# SingularityCinema
+**# SingularityCinema
 
 一个轻量的短视频生成器：基于大语言模型生成**台本与分镜**，并自动生成**配音 /（可选）字幕 / 图片 /（可选）文生视频**，最终合成短视频。
 
@@ -230,4 +230,4 @@ ms-agent run --project singularity_cinema \
 - 视频参数：`--video.fps`、`--video.bitrate` 等
 - 开关项：`--use_subtitle`、`--use_text2video`、`--use_doc_image` 等
 
----
+---**
