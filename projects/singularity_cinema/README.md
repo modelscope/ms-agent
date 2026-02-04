@@ -6,9 +6,8 @@
 ## 效果展示
 
 [![Video Preview](./show_case/deploy_llm.png)](http://modelscope.oss-cn-beijing.aliyuncs.com/ms-agent/show_case/video/deploy_llm_claude_sonnet_4_5_mllm_gemini_3_pro_image_gen_gemini_3_pro_image.mp4)
-
 [![Video Preview](./show_case/silu.png)](http://modelscope.oss-cn-beijing.aliyuncs.com/ms-agent/show_case/video/silu_claude_sonnet_4_5_mllm_gemini_3_pro_image_gen_gemini_3_pro_image.mp4)
-
+[![Video Preview](./show_case/deploy_llm_en.png)](http://modelscope.oss-cn-beijing.aliyuncs.com/ms-agent/show_case/video/en_deploy_llm_claude_sonnet_4_5_mllm_gemini_3_pro_image_gen_gemini_3_pro_image.mp4)
 ## 安装
 
 项目需要 Python 和 Node.js 环境。
@@ -142,6 +141,9 @@ video_generator:
 - 将下述api_key替换成真实api-key
 
 ```bash
+# 英文版即把query内容替换成"Convert /home/user/workspace/ms-agent/projects/singularity_cinema/test_files/J.部署.md
+# into a short video in a blue-themed style, making sure to use the important images from the document.
+# The short video must be in English."
 ms-agent run --project singularity_cinema \
   --query "把/{path_to_ms-agent}/projects/singularity_cinema/test_files/J.部署.md转为短视频，蓝色风格，注意使用其中重要的图片" \
   --trust_remote_code true \
