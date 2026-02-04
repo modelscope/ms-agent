@@ -5,13 +5,7 @@
 ---
 ## 效果展示
 
-<video src="http://modelscope.oss-cn-beijing.aliyuncs.com/ms-agent/show_case/video/deploy_llm_claude_sonnet_4_5_mllm_gemini_3_pro_image_gen_gemini_3_pro_image.mp4"
-       controls
-       preload="metadata"
-       style="max-width: 100%; height: auto;">
-  您的浏览器不支持 video 标签。可以直接打开：
-  http://modelscope.oss-cn-beijing.aliyuncs.com/ms-agent/show_case/video/deploy_llm_claude_sonnet_4_5_mllm_gemini_3_pro_image_gen_gemini_3_pro_image.mp4
-</video>
+http://modelscope.oss-cn-beijing.aliyuncs.com/ms-agent/show_case/video/deploy_llm_claude_sonnet_4_5_mllm_gemini_3_pro_image_gen_gemini_3_pro_image.mp4
 
 ## 安装
 
