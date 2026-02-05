@@ -118,9 +118,12 @@ class SkillAnalyzer:
         """Generate LLM response from prompt."""
         from ms_agent.llm.utils import Message
         messages = [Message(role='user', content=prompt)]
+        logger.debug(f'Input msg to LLM in SkillAnalyzer: {messages}')
         response = self.llm.generate(messages=messages)
-        return response.content if hasattr(response,
+        res = response.content if hasattr(response,
                                            'content') else str(response)
+        logger.debug(f'LLM response in SkillAnalyzer: {res}')
+        return res
 
     def _parse_json_response(self, response: str) -> Dict[str, Any]:
         """Parse JSON from LLM response with robust extraction."""
@@ -1257,9 +1260,12 @@ class AutoSkills:
     def _llm_generate(self, prompt: str) -> str:
         """Generate LLM response from prompt."""
         messages = [Message(role='user', content=prompt)]
+        logger.debug(f'Input msg to LLM: {messages}')       # set env `LOG_LEVEL=DEBUG`
         response = self.llm.generate(messages=messages)
-        return response.content if hasattr(response,
+        res = response.content if hasattr(response,
                                            'content') else str(response)
+        logger.debug('LLM response: {}'.format(res))
+        return res
 
     async def _async_llm_generate(self, prompt: str) -> str:
         """Async wrapper for LLM generation."""

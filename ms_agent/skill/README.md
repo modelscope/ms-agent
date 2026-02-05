@@ -110,7 +110,7 @@ config = DictConfig({
         'path': '/path/to/skills',
         'auto_execute': True,
         'work_dir': '/path/to/workspace',
-        'use_sandbox': True,
+        'use_sandbox': False,
     }
 })
 
@@ -157,7 +157,7 @@ auto_skills = AutoSkills(
     skills='/path/to/skills',
     llm=llm,
     work_dir='/path/to/workspace',
-    use_sandbox=True
+    use_sandbox=False,
 )
 
 async def main():
@@ -451,7 +451,7 @@ config = DictConfig({
         'work_dir': '/path/to/workspace',
 
         # Optional: Use Docker sandbox (default: True)
-        'use_sandbox': True,
+        'use_sandbox': False,
 
         # Optional: Auto-execute skills (default: True)
         'auto_execute': True,
