@@ -225,6 +225,86 @@ class ReporterCallback(Callback):
                     f'Injected researcher trajectory ({len(trajectory_text)} chars) '
                     f'into reporter messages at position {insert_pos}')
 
+    async def on_generate_response(self, runtime: Runtime,
+                                   messages: List[Message]):
+        """
+        Inject a round-aware reminder into the system prompt near max rounds.
+
+        Motivation:
+        - The model does not inherently know `runtime.round` unless we tell it in the prompt.
+        - When approaching `max_chat_round`, remind it to converge: summarize and prepare final JSON.
+
+        Config (optional, in agent yaml):
+          round_reminder:
+            enabled: true
+            remind_before_max_round: 2        # default
+            remind_at_round: 28               # overrides computed threshold if set
+            message: |                        # optional custom reminder text
+              ...
+        """
+        max_chat_round = getattr(self.config, 'max_chat_round', None)
+        if not isinstance(max_chat_round, int):
+            try:
+                max_chat_round = int(max_chat_round)
+            except Exception:
+                return
+
+        round_reminder_cfg = getattr(self.config, 'round_reminder', None)
+        enabled = False
+        remind_before = 2
+        remind_at_round = None
+        custom_message = None
+        if round_reminder_cfg is not None:
+            enabled = bool(getattr(round_reminder_cfg, 'enabled', False))
+            remind_before = getattr(round_reminder_cfg,
+                                    'remind_before_max_round', remind_before)
+            remind_at_round = getattr(round_reminder_cfg, 'remind_at_round',
+                                      None)
+            custom_message = getattr(round_reminder_cfg, 'message', None)
+
+        if not enabled:
+            return
+
+        if remind_at_round is None:
+            try:
+                remind_before_int = int(remind_before)
+            except Exception:
+                remind_before_int = 2
+            remind_at_round = max_chat_round - remind_before_int
+        else:
+            try:
+                remind_at_round = int(remind_at_round)
+            except Exception:
+                return
+
+        # `runtime.round` counts completed steps; at the beginning of a step it's the current step index.
+        if runtime.round != remind_at_round:
+            return
+
+        # Append reminder message to the end of the messages.
+        reminder_mark = '\n[ROUND_REMINDER]\n'
+        # Avoid injecting duplicates (e.g. if resumed from history at the same round).
+        for m in reversed(messages[-10:]):
+            if m.role == 'user' and isinstance(
+                    m.content, str) and '[ROUND_REMINDER]' in m.content:
+                return
+
+        remaining = max_chat_round - runtime.round
+        if not custom_message or not isinstance(custom_message, str):
+            custom_message = (
+                '你已接近最大允许的对话轮数上限，请立刻开始收敛准备最终交付。\n'
+                '- 从现在开始：优先基于已完成撰写的章节、整合的草稿、记录的冲突列表和最新的大纲进行收敛，补齐关键缺口、减少发散探索。\n'
+                '- 在接下来的极少数轮次内，必须立刻准备并输出最终的 JSON 回复。\n'
+                '- 当前轮次信息：round=<round>，max_chat_round=<max_chat_round>，剩余≈<remaining_rounds> 轮。'
+            )
+
+        injected = custom_message
+        injected = injected.replace('<round>', str(runtime.round))
+        injected = injected.replace('<max_chat_round>', str(max_chat_round))
+        injected = injected.replace('<remaining_rounds>', str(remaining))
+        messages.append(
+            Message(role='user', content=reminder_mark + injected + '\n'))
+
     def _extract_json_from_content(self,
                                    content: str) -> Optional[Dict[str, Any]]:
         """

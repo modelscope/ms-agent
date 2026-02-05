@@ -8,6 +8,7 @@ import {
   Tooltip,
   useTheme,
   alpha,
+  GlobalStyles,
 } from '@mui/material';
 import {
   Settings as SettingsIcon,
@@ -33,16 +34,26 @@ const Layout: React.FC<LayoutProps> = ({ children, onOpenSettings, onToggleLogs,
   const { clearSession, currentSession } = useSession();
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        background: theme.palette.mode === 'dark'
-          ? `linear-gradient(180deg, ${alpha(theme.palette.primary.main, 0.03)} 0%, transparent 100%)`
-          : theme.palette.background.default,
-      }}
-    >
+    <>
+      <GlobalStyles
+        styles={{
+          'html, body, #root': {
+            height: '100%',
+            overflow: 'hidden',
+          },
+        }}
+      />
+      <Box
+        sx={{
+          height: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          background: theme.palette.mode === 'dark'
+            ? `linear-gradient(180deg, ${alpha(theme.palette.primary.main, 0.03)} 0%, transparent 100%)`
+            : theme.palette.background.default,
+        }}
+      >
       {/* Header */}
       <AppBar
         position="sticky"
@@ -194,6 +205,7 @@ const Layout: React.FC<LayoutProps> = ({ children, onOpenSettings, onToggleLogs,
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
+          minHeight: 0,
         }}
       >
         {children}
@@ -239,7 +251,8 @@ const Layout: React.FC<LayoutProps> = ({ children, onOpenSettings, onToggleLogs,
           © 2026 Alibaba Inc.
         </Typography>
       </Box>
-    </Box>
+      </Box>
+    </>
   );
 };
 

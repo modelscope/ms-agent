@@ -7,18 +7,23 @@ from omegaconf import DictConfig
 
 
 class TimeHandler(ConfigLifecycleHandler):
-    """Config handler that injects current date/time into prompts"""
+    """Config handler that injects current date/time and other config values into prompts"""
 
     def task_begin(self, config: DictConfig, tag: str) -> DictConfig:
-        """Inject current date and time before task begins"""
         now = datetime.now()
 
-        # Prepare time variables
+        # Prepare variables (time + selected config values)
         time_vars = {
             'current_date': now.strftime('%Y-%m-%d'),
             'current_time': now.strftime('%H:%M:%S'),
             'current_datetime': now.isoformat(),
         }
+
+        # Also expose config-driven limits for prompt placeholders.
+        # This enables writing prompts like: "max_chat_round=<max_chat_round>".
+        max_chat_round = getattr(config, 'max_chat_round', None)
+        if max_chat_round is not None:
+            time_vars['max_chat_round'] = str(max_chat_round)
 
         # Inject into config using recursive traversal
         def traverse_and_replace(_config: Any):

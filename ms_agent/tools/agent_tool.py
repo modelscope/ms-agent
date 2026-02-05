@@ -5,7 +5,7 @@ import uuid
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import json
 from ms_agent.agent.loader import AgentLoader
@@ -61,6 +61,7 @@ class AgentTool(ToolBase):
         self._server_tools: Dict[str, List[Tool]] = {}
         self._thread_executor: Optional[ThreadPoolExecutor] = None
         self._thread_max_workers: int = 0
+        self._chunk_cb: Optional[Callable[..., Any]] = None
         self._load_specs()
         self._init_thread_pool_config()
 
@@ -247,6 +248,22 @@ class AgentTool(ToolBase):
     async def get_tools(self) -> Dict[str, Any]:
         return self._server_tools
 
+    def set_chunk_callback(self, cb: Optional[Callable[..., Any]]) -> None:
+        self._chunk_cb = cb
+
+    def _emit_chunk_event(self, event_type: str, data: Dict[str, Any]) -> None:
+        if not self._chunk_cb:
+            return
+        try:
+            self._chunk_cb(event_type=event_type, data=data)
+        except TypeError:
+            try:
+                self._chunk_cb(event_type, data)
+            except Exception as exc:  # noqa
+                logger.warning(f'AgentTool chunk callback failed: {exc}')
+        except Exception as exc:  # noqa
+            logger.warning(f'AgentTool chunk callback failed: {exc}')
+
     async def call_tool(self, server_name: str, *, tool_name: str,
                         tool_args: dict) -> str:
         if tool_name not in self._specs:
@@ -257,9 +274,12 @@ class AgentTool(ToolBase):
                 f'Agent tool "{tool_name}" is not part of server "{server_name}".'
             )
 
+        call_id = None
+        if isinstance(tool_args, dict) and '__call_id' in tool_args:
+            call_id = tool_args.pop('__call_id', None)
         payload = self._build_payload(tool_args, spec)
         agent = self._build_agent(spec)
-        messages = await self._run_agent(agent, payload, spec)
+        messages = await self._run_agent(agent, payload, spec, call_id=call_id)
         return self._format_output(messages, spec)
 
     def _build_agent(self, spec: _AgentToolSpec):
@@ -292,15 +312,56 @@ class AgentTool(ToolBase):
         agent.config.generation_config = generation_cfg
         return agent
 
-    async def _run_agent(self, agent, payload, spec: _AgentToolSpec):
+    async def _run_agent(self,
+                         agent,
+                         payload,
+                         spec: _AgentToolSpec,
+                         call_id: Optional[str] = None):
 
         async def _run_and_collect():
-            result = await agent.run(payload)
+            if self._chunk_cb:
+                result = await agent.run(payload, stream=True)
+            else:
+                result = await agent.run(payload)
             if hasattr(result, '__aiter__'):
                 history = None
+                self._emit_chunk_event('start', {
+                    'call_id': call_id,
+                    'tool_name': spec.tool_name,
+                })
                 async for chunk in result:
                     history = chunk
+                    self._emit_chunk_event(
+                        'chunk', {
+                            'call_id': call_id,
+                            'tool_name': spec.tool_name,
+                            'history': chunk,
+                        })
+                if history is not None:
+                    self._emit_chunk_event(
+                        'end', {
+                            'call_id': call_id,
+                            'tool_name': spec.tool_name,
+                            'history': history,
+                        })
                 result = history
+            else:
+                self._emit_chunk_event('start', {
+                    'call_id': call_id,
+                    'tool_name': spec.tool_name,
+                })
+                self._emit_chunk_event(
+                    'chunk', {
+                        'call_id': call_id,
+                        'tool_name': spec.tool_name,
+                        'history': result,
+                    })
+                self._emit_chunk_event(
+                    'end', {
+                        'call_id': call_id,
+                        'tool_name': spec.tool_name,
+                        'history': result,
+                    })
             return result
 
         async def _run_in_background():

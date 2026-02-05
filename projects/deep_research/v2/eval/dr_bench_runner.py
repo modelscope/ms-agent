@@ -1,5 +1,5 @@
 """
-DeepResearch Bench (dr_bench) batch runner for ms-agent v2.
+DeepResearch Bench (dr_bench) batch runner for ms-agent deep research v2.
 
 Goal:
 - Read DeepResearch Bench queries from a JSONL file.
@@ -29,6 +29,14 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple
 
 import json
+
+try:
+    # Auto-load environment variables from a nearby `.env` (if present).
+    from dotenv import find_dotenv, load_dotenv
+
+    load_dotenv(find_dotenv(), override=False)
+except Exception:  # pragma: no cover
+    pass
 
 try:
     import select  # Unix-only; dr_bench_runner is used on mac/linux

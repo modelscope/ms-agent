@@ -234,6 +234,8 @@ class AgentRunner:
 
             # Add LLM config from user settings
             llm_config = self.config_manager.get_llm_config()
+            temperature_enabled = bool(
+                llm_config.get('temperature_enabled', False))
             if llm_config.get('api_key'):
                 provider = llm_config.get('provider', 'modelscope')
                 if provider == 'modelscope':
@@ -250,7 +252,8 @@ class AgentRunner:
                     if llm_config.get('model'):
                         cmd.extend(['--llm.model', llm_config['model']])
                     # Pass temperature if set by user (in generation_config)
-                    if llm_config.get('temperature') is not None:
+                    if temperature_enabled and llm_config.get(
+                            'temperature') is not None:
                         cmd.extend([
                             '--generation_config.temperature',
                             str(llm_config['temperature'])
@@ -273,7 +276,8 @@ class AgentRunner:
                     if llm_config.get('model'):
                         cmd.extend(['--llm.model', llm_config['model']])
                     # Pass temperature if set by user (in generation_config)
-                    if llm_config.get('temperature') is not None:
+                    if temperature_enabled and llm_config.get(
+                            'temperature') is not None:
                         cmd.extend([
                             '--generation_config.temperature',
                             str(llm_config['temperature'])

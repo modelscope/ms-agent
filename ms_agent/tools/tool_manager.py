@@ -4,6 +4,7 @@ import importlib
 import inspect
 import os
 import sys
+import uuid
 from copy import copy
 from types import TracebackType
 from typing import Any, Dict, List, Optional
@@ -223,11 +224,16 @@ class ToolManager:
                         return f'The input {tool_args} is not a valid JSON, fix your arguments and try again'
                 assert tool_name in self._tool_index, f'Tool name {tool_name} not found'
                 tool_ins, server_name, _ = self._tool_index[tool_name]
+                call_args = tool_args
+                if isinstance(tool_ins, AgentTool):
+                    call_args = dict(tool_args or {})
+                    call_id = tool_info.get('id') or str(uuid.uuid4())
+                    call_args['__call_id'] = call_id
                 response = await asyncio.wait_for(
                     tool_ins.call_tool(
                         server_name,
                         tool_name=tool_name.split(self.TOOL_SPLITER)[1],
-                        tool_args=tool_args),
+                        tool_args=call_args),
                     timeout=self.tool_call_timeout)
                 return response
             except asyncio.TimeoutError:

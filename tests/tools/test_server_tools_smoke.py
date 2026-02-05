@@ -302,7 +302,7 @@ class TestWebSearchToolServerNetwork(unittest.TestCase):
                     self.assertIn('title', data['results'][0])
                     self.assertIn('url', data['results'][0])
                     # fetch_content=False -> summary path
-                    self.assertIn('summary', data['results'][0])
+                    self.assertIn('abstract', data['results'][0])
 
                 await tool.cleanup()
 
