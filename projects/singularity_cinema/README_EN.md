@@ -181,46 +181,92 @@ ms-agent run --project singularity_cinema \
 
 ### 5) Output and Failure Retry
 
-- The run typically takes about 20 minutes.
-- The generated video is output to `output_video/` under your command execution directory (controlled by `--output_dir`) as `final_video.mp4`.
-- If the run fails (timeout/interruption/missing files), you can rerun the command directly: the system will read execution info in `output_video` and resume from the breakpoint.
-  - To regenerate from scratch: rename/delete the `output_video` directory.
-  - To rerun only part of a storyboard: delete only the corresponding files for that segment; rerunning will execute only those segments.
+- **Estimated time**: The full pipeline takes about **20 minutes** (depends on machine performance and model/API speed).
+- **Output location**: By default, the video and all intermediate artifacts are generated in `output_video/` under the **directory where you run the command** (can be changed via `--output_dir`).
+  - Final video file: `output_video/final_video.mp4`
+- **Failure retry / resume from checkpoint**: If the run fails (e.g., timeout, interruption, missing files), you can **rerun the exact same command**. The system will read existing intermediate results in `output_video/` and continue from where it stopped.
+  - **Regenerate everything**: Delete or rename the `output_video/` directory, then run again.
+  - **Redo only a specific scene/step**: Delete the files you want to regenerate, **and any downstream files that depend on them** (for example, if you delete a scene’s render output, rerunning will only re-render that scene).
+    - Common practice: delete the target scene’s related files + the final `final_video.mp4` to trigger regeneration of only the necessary parts.
 
 ---
 
-## Technical Workflow
+## Execution Pipeline and Effect Tuning
 
-1. Generate a base script from user requirements
-   - Input: user requirements; may read a user-specified file
-   - Output: script file `script.txt`, original request file `topic.txt`, short-video title file `title.txt`
-2. Split the script into storyboard segments
+If you are not satisfied with the result of a certain step, you can trigger regeneration by **deleting the output files of that step** (and all subsequent files that depend on them).
+The complete workflow and code entry points are defined in: `projects/singularity_cinema/workflow.yaml`. Below is each step in order, including inputs, outputs, and scope (all under `output_video/` by default).
+
+1. **Generate the base script**
+   - Input: user requirements (may include user-provided files)
+   - Output:
+     - `script.txt`: main script content
+     - `topic.txt`: original request/topic
+     - `title.txt`: short-video title
+   - Code: `generate_script/agent.py`
+
+2. **Split the script and design storyboards**
    - Input: `topic.txt`, `script.txt`
-   - Output: `segments.txt`, a list of segments describing narration, background image generation requirements, and foreground Manim animation requirements
-3. Generate audio narration for each segment
+   - Output: `segments.txt` (shot list: each shot includes narration, background image requirements, foreground animation requirements, etc.)
+   - Code: `segment/agent.py`
+
+3. **Generate voice-over audio for each segment**
    - Input: `segments.txt`
-   - Output: `audio/audio_N.mp3` list (N starts from 1), plus `audio_info.txt` in the root directory containing audio durations
-4. Generate Remotion animation code based on audio duration
+   - Output:
+     - `audio/segment_N.mp3`: voice-over for segment N (N starts from 1)
+     - `audio_info.txt`: audio duration and other info (used later for animation alignment)
+   - Code: `generate_audio/agent.py`
+   - Scope: by default, every segment has voice-over
+     - Exception: when `use_text2video=true` and `use_video_soundtrack=true`, and the segment is marked as **text-to-video** in the storyboard design, the system will use the video’s original soundtrack instead of generating separate voice-over.
+
+4. **Generate prompts for text-to-image**
+   - Input: `segments.txt`
+   - Output:
+     - `illustration_prompts/segment_N.txt`: background image prompt for segment N
+     - If foreground images are needed: `illustration_prompts/segment_N_foreground_K.txt` (prompt for the K-th foreground image of segment N)
+   - Code: `generate_illustration_prompts/agent.py`
+   - Scope: describes the image content required for each segment
+
+5. **Generate images from prompts (text-to-image)**
+   - Input: prompt files such as `illustration_prompts/segment_N.txt`
+   - Output: `images/illustration_N.png` (and possibly foreground images)
+   - Code: `generate_images/agent.py`
+   - Scope: background/foreground visual assets for each segment
+
+6. **Generate Remotion animation code based on voice-over duration**
    - Input: `segments.txt`, `audio_info.txt`
-   - Output: Manim code files `remotion_code/segment_N.py` (N starts from 1)
-5. Fix Remotion code
-   - Input: `remotion_code/segment_N.py` (N starts from 1), pre-error file `code_fix/code_fix_N.txt`
-   - Output: updated `remotion_code/segment_N.py`
-6. Render Remotion code
-   - Input: `remotion_code/segment_N.py`
-   - Output: `remotion_render/scene_N` folder list; if a segment includes Remotion requirements in `segments.txt`, the corresponding folder will contain `remotion.mov`
-7. Generate text-to-image prompts
-   - Input: `segments.txt`
-   - Output: `illustration_prompts/segment_N.txt` (N starts from 1)
-8. Text-to-image generation
-   - Input: list of `illustration_prompts/segment_N.txt`
-   - Output: list of `images/illustration_N.png` (N starts from 1)
-9. Generate a background image (solid color) with the short-video title and slogans
-    - Input: `title.txt`
-    - Output: `background.jpg`
-10. Compose the final video
-    - Input: all files from previous steps. This step may take a long time with no logs and does not consume tokens.
-    - Output: `final_video.mp4`
+   - Output: `remotion_code/SegmentN.tsx` (one per segment)
+   - Code: `generate_animation/agent.py`
+   - Scope: animation implementation code for each segment (duration aligned to audio)
+
+7. **Render Remotion and auto-fix code (if needed)**
+   - Input: `remotion_code/SegmentN.tsx`
+   - Output:
+     - Updated `remotion_code/SegmentN.tsx`
+     - Render result: `remotion_render/scene_N/SceneN.mov`
+   - Code: `render_animation/agent.py`
+
+8. **Generate a unified background image (title and slogan)**
+   - Input: `title.txt`
+   - Output: `background.jpg`
+   - Code: `create_background/agent.py`
+   - Scope: top-left title/background element shared by all segments
+
+9. **Compose the final video**
+   - Input: all artifacts above (audio, rendered videos, background image, etc.)
+   - Output: `final_video.mp4`
+   - Note: this stage may have a **long period with no logs**, which is normal; it typically does not consume tokens.
+
+---
+
+### Example: Redo only the animation of Segment 1
+
+If you’re not satisfied with the animation of segment 1, delete the following files under `output_video/` and rerun the command:
+
+- `remotion_code/Segment1.tsx` (segment 1 animation code)
+- `remotion_render/scene_1/Scene1.mov` (rendered output from that code)
+- `final_video.mp4` (final composition depends on the render result, so it must be recomposed)
+
+After rerunning, the system will only redo the steps related to these files and reuse the other intermediate artifacts that were not deleted.
 
 ---
 

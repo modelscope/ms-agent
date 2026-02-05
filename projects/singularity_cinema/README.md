@@ -177,44 +177,92 @@ ms-agent run --project singularity_cinema \
 
 ### 5）输出与失败重试
 
-- 运行持续约20min左右。
-- 生成视频输出在 命令执行目录/`output_video/`（由配置项 `--output_dir` 控制）final_video.mp4
-- 如果运行失败（超时/中断/文件缺失），可直接重新运行命令：系统会读取 `output_video` 中的执行信息从断点继续
-  - 若希望完全重新生成：重命名/删除 output_video 目录
-  - 删除输入文件可以仅删除某个分镜的部分，这样重新执行也仅执行对应分镜的。
+- **预计耗时**：全流程运行约 **20 分钟**（与机器性能、模型调用速度有关）。
+- **输出位置**：视频与中间产物默认生成在**命令执行目录**下的 `output_video/`（可通过参数 `--output_dir` 修改）。
+  - 最终视频文件：`output_video/final_video.mp4`
+- **失败重试 / 断点续跑**：若运行失败（如超时、中断、文件缺失等），可直接**重新执行同一命令**。系统会读取 `output_video/` 中已生成的中间结果，并从断点继续。
+  - **完全重新生成**：删除或重命名 `output_video/` 目录后再运行。
+  - **只重做某个分镜/某一步**：删除你希望重生成的对应文件，以及其后续依赖生成的文件（例如删除某个分镜的渲染结果后，再运行会只重跑该分镜渲染效果）。
+    - 常见做法：删除目标分镜相关文件 + 最后的 `final_video.mp4`，即可触发仅重生成必要部分。
 
 ---
-## 技术原理流程
-1. 根据用户需求生成基本台本
-   - 输入：用户需求，可能读取用户指定的文件
-   - 输出：台本文件script.txt，原始需求文件topic.txt，短视频名称文件title.txt
-2. 根据台本切分分镜设计
-   - 输入：topic.txt, script.txt
-   - 输出：segments.txt，描述旁白、背景图片生成要求、前景manim动画要求的分镜列表
-3. 生成分镜的音频讲解
-   - 输入：segments.txt
-   - 输出：audio/audio_N.mp3列表，N为segment序号从1开始，以及根目录audio_info.txt，包含audio时长
-4. 根据语音时长生成remotion动画代码
-   - 输入：segments.txt，audio_info.txt
-   - 输出：manim代码文件列表 remotion_code/segment_N.py，N为segment序号从1开始
-5. 修复remotion代码
-   - 输入：remotion_code/segment_N.py N为segment序号从1开始，code_fix/code_fix_N.txt 预错误文件
-   - 输出：更新的remotion_code/segment_N.py文件
-6. 渲染remotion代码
-   - 输入：remotion_code/segment_N.py
-   - 输出：remotion_render/scene_N文件夹列表，如果segments.txt中对某个步骤包含了remotion要求，则对应文件夹中会有remotion.mov文件
-7. 生成文生图提示词
-   - 输入：segments.txt
-   - 输出：illustration_prompts/segment_N.txt，N为segment序号从1开始
-8. 文生图
-   - 输入：illustration_prompts/segment_N.txt列表
-   - 输出：images/illustration_N.png列表，N为segment序号从1开始
-9. 生成背景，为纯色带有短视频title和slogans的图片
-    - 输入：title.txt
-    - 输出：background.jpg
-0拼合整体视频
-    - 输入：前序所有的文件信息。这一步会有较长无日志耗时，这一阶段不消耗token。
-    - 输出：final_video.mp4
+
+## 运行流程与效果调试
+
+当某一步效果不满意时，你可以通过**删除该步骤的输出文件**（以及所有依赖它的后续文件）来触发重新生成。
+完整流程与对应代码入口见：`projects/singularity_cinema/workflow.yaml`。下面按顺序说明各步骤的输入、输出与作用范围（均默认在 `output_video/` 下）。
+
+1. **生成基础台本**
+   - 输入：用户需求（可能包含用户指定的文件）
+   - 输出：
+     - `script.txt`：台本正文
+     - `topic.txt`：原始需求/主题
+     - `title.txt`：短视频标题
+   - 代码：`generate_script/agent.py`
+
+2. **台本切分与分镜设计**
+   - 输入：`topic.txt`、`script.txt`
+   - 输出：`segments.txt`（分镜列表：每个分镜包含旁白、背景图需求、前景动画需求等）
+   - 代码：`segment/agent.py`
+
+3. **生成分镜配音（音频）**
+   - 输入：`segments.txt`
+   - 输出：
+     - `audio/segment_N.mp3`：第 N 个分镜的配音（N 从 1 开始）
+     - `audio_info.txt`：音频时长等信息（用于后续对齐动画）
+   - 代码：`generate_audio/agent.py`
+   - 作用范围：默认每个分镜都有配音
+     - 例外：当 `use_text2video=true` 且 `use_video_soundtrack=true`，且该分镜在台本设计中为**文生视频**时，将使用视频原声，不再额外使用配音。
+
+4. **生成文生图提示词（Prompt）**
+   - 输入：`segments.txt`
+   - 输出：
+     - `illustration_prompts/segment_N.txt`：第 N 个分镜的背景图提示词
+     - 若该分镜需要前景图：`illustration_prompts/segment_N_foreground_K.txt`（第 N 个分镜的第 K 张前景图提示词）
+   - 代码：`generate_illustration_prompts/agent.py`
+   - 作用范围：描述每个分镜所需图像内容
+
+5. **文生图生成图片**
+   - 输入：`illustration_prompts/segment_N.txt` 等提示词文件
+   - 输出：`images/illustration_N.png`（以及可能的前景图）
+   - 代码：`generate_images/agent.py`
+   - 作用范围：各分镜背景图/前景图素材
+
+6. **根据配音时长生成 Remotion 动画代码**
+   - 输入：`segments.txt`、`audio_info.txt`
+   - 输出：`remotion_code/SegmentN.tsx`（每个分镜一份）
+   - 代码：`generate_animation/agent.py`
+   - 作用范围：每个分镜的动画实现代码（时长与音频对齐）
+
+7. **渲染 Remotion 并自动修复代码（如有）**
+   - 输入：`remotion_code/SegmentN.tsx`
+   - 输出：
+     - 更新后的 `remotion_code/SegmentN.tsx`
+     - 渲染结果：`remotion_render/scene_N/SceneN.mov`
+   - 代码：`render_animation/agent.py`
+
+8. **生成统一背景图（标题与口号）**
+   - 输入：`title.txt`
+   - 输出：`background.jpg`
+   - 代码：`create_background/agent.py`
+   - 作用范围：视频左上角标题/背景元素（所有分镜共用）
+
+9. **合成最终视频**
+   - 输入：上述所有产物（音频、渲染视频、背景图等）
+   - 输出：`final_video.mp4`
+   - 说明：该阶段可能出现**较长时间无日志**，属于正常现象；通常不消耗 token。
+
+
+### 示例：只重做第 1 个分镜的动画效果
+
+如果你对第 1 个分镜动画不满意，可在 `output_video/` 中删除以下文件后重新运行命令：
+
+- `remotion_code/Segment1.tsx`（第 1 镜动画代码）
+- `remotion_render/scene_1/Scene1.mov`（由该代码渲染出的结果）
+- `final_video.mp4`（最终合成依赖渲染结果，需要重新合成）
+
+重新执行后，系统会仅重跑与这些文件相关的步骤，并复用其它未删除的中间产物。
+
 ---
 
 ## 可调参数（概览）
