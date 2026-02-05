@@ -54,6 +54,13 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 
 ## 🎉 News
 
+* 🚀 Feb 04, 2026: Release MS-Agent v1.6.0rc0, which includes the following updates:
+  - **Code Genesis** for complex code generation tasks, refer to [Code Genesis](https://github.com/modelscope/ms-agent/tree/main/projects/code_genesis)
+  - **Singularity Cinema** for animated video generation workflow, refactored version, refer to [Singularity Cinema](https://github.com/modelscope/ms-agent/tree/main/projects/singularity_cinema)
+  - **New framework of Skills**: New design of the skills system to enhance robustness and extensibility. Refer to [MS-Agent Skills](https://github.com/modelscope/ms-agent/tree/main/ms_agent/skill).
+  - **WebUI**: A new WebUI has been added, featuring agentic chatting capabilities, complex code generation and video generation workflow.
+
+
 * 🎬 Nov 13, 2025: Release Singularity Cinema, to support short video generation for complex scenarios, check [here](projects/singularity_cinema/README_EN.md)
 
 * 🚀 Nov 12, 2025: Release MS-Agent v1.5.0, which includes the following updates:
@@ -82,6 +89,8 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
   - DocResearch now supports exporting the Markdown report to `HTML`、`PDF`、`PPTX` and `DOCX` formats, refer to [Doc Research](projects/doc_research/README.md) for more details.
   - DocResearch now supports `TXT` file processing and file preprocessing, refer to [Doc Research](projects/doc_research/README.md) for more details.
 
+
+<details><summary>Archive</summary>
 * 🚀 July 31, 2025: Release MS-Agent v1.1.0, which includes the following updates:
   - 🔥 Support [Doc Research](projects/doc_research/README.md), demo: [DocResearchStudio](https://modelscope.cn/studios/ms-agent/DocResearch)
   - Add `General Web Search Engine` for Agentic Insight (DeepResearch)
@@ -94,10 +103,6 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
   - Support for Deep Research (Agentic Insight), refer to: [Report_Demo](projects/deep_research/examples/task_20250617a/report.md), [Script_Demo](projects/deep_research/run.py)
   - Support for [MCP-Playground](https://modelscope.cn/mcp/playground)
   - Add callback mechanism for Agent chat
-
-
-<details><summary>Archive</summary>
-
 * 🔥🔥🔥Aug 8, 2024: A new graph based code generation tool [CodexGraph](https://arxiv.org/abs/2408.03910) is released by Modelscope-Agent, it has been proved effective and versatile on various code related tasks, please check [example](https://github.com/modelscope/modelscope-agent/tree/master/apps/codexgraph_agent).
 * 🔥🔥Aug 1, 2024: A high efficient and reliable Data Science Assistant is running on Modelscope-Agent, please find detail in [example](https://github.com/modelscope/modelscope-agent/tree/master/apps/datascience_assistant).
 * 🔥July 17, 2024: Parallel tool calling on Modelscope-Agent-Server, please find detail in [doc](https://github.com/modelscope/modelscope-agent/blob/master/modelscope_agent_servers/README.md).
@@ -262,57 +267,75 @@ asyncio.run(main())
 
 </details>
 
+---
 
 ### Agent Skills
 
-**MS-Agent Skills** is an **Implementation** of the [**Anthropic-Agent-Skills**](https://docs.claude.com/en/docs/agents-and-tools/agent-skills) protocol, enabling agents to autonomously explore and execute complex tasks by leveraging predefined or custom "skills".
+The **MS-Agent Skill Module** is **Implementation** of [Anthropic-Agent-Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills) Protocol.
+
+#### 🔍 Intelligent Skill Retrieval
+- **Hybrid Search**: Combines FAISS dense retrieval with BM25 sparse retrieval
+- **LLM-based Filtering**: Uses LLM to filter and validate skill relevance
+- **Query Analysis**: Automatically determines if skills are needed for a query
+
+#### 📊 DAG-based Execution
+- **Dependency Management**: Builds execution DAG based on skill dependencies
+- **Parallel Execution**: Runs independent skills concurrently
+- **Input/Output Linking**: Automatically passes outputs between dependent skills
+
+#### 🧠 Progressive Skill Analysis
+- **Two-phase Analysis**: Plan first, then load resources
+- **Incremental Loading**: Only loads required scripts/references/resources
+- **Context Optimization**: Minimizes token usage while maximizing understanding
+- **Auto Bug Fixing**: Analyzes errors and attempts automatic fixes
+
+#### 🔒 Secure Execution Environment
+- **Docker Sandbox**: Isolated execution using [ms-enclave](https://github.com/modelscope/ms-enclave) containers
+- **Local Execution**: Controlled local execution with RCE prevention
+- **Security Checks**: Pattern-based detection of dangerous code
+
+#### 🔄 Self-Reflection & Retry
+- **Error Analysis**: LLM-based analysis of execution failures
+- **Auto-Fix**: Attempts to fix code based on error messages
+- **Configurable Retries**: Up to N retry attempts with fixes
 
 
-#### Key Features
+For more details, please refer to [**MS-Agent Skills**](ms_agent/skill/README.md).
 
-- 📜 **Standard Skill Protocol**: Fully compatible with the [Anthropic Skills](https://github.com/anthropics/skills) protocol
-- 🧠 **Heuristic Context Loading**: Loads only necessary context—such as `References`, `Resources`, and `Scripts` on demand
-- 🤖 **Autonomous Execution**: Agents autonomously analyze, plan, and decide which scripts and resources to execute based on skill definitions
-- 🔍 **Skill Management**: Supports batch loading of skills and can automatically retrieve and discover relevant skills based on user input
-- 🛡️ **Code Execution Environment**: Optional local direct code execution or secure sandboxed execution via [**ms-enclave**](https://github.com/modelscope/ms-enclave), with automatic dependency installation and environment isolation
-- 📁 **Multi-file Type Support**: Supports documentation, scripts, and resource files
-- 🧩 **Extensible Design**: The skill data structure is modularized, with implementations such as `SkillSchema` and `SkillContext` provided for easy extension and customization
+---
 
+### Agent Skills
 
-#### Quick Start
+The **MS-Agent Skill Module** is **Implementation** of [Anthropic-Agent-Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills) Protocol.
 
-> 💡 Note:
-> 1. Before running the following examples, ensure that you have set the `OPENAI_API_KEY` and `OPENAI_BASE_URL` environment variables to access the required model APIs.
-> 2. Agent Skills requires ms-agent >= 1.4.0
+#### 🔍 Intelligent Skill Retrieval
+- **Hybrid Search**: Combines FAISS dense retrieval with BM25 sparse retrieval
+- **LLM-based Filtering**: Uses LLM to filter and validate skill relevance
+- **Query Analysis**: Automatically determines if skills are needed for a query
 
+#### 📊 DAG-based Execution
+- **Dependency Management**: Builds execution DAG based on skill dependencies
+- **Parallel Execution**: Runs independent skills concurrently
+- **Input/Output Linking**: Automatically passes outputs between dependent skills
 
-**Installation**:
+#### 🧠 Progressive Skill Analysis
+- **Two-phase Analysis**: Plan first, then load resources
+- **Incremental Loading**: Only loads required scripts/references/resources
+- **Context Optimization**: Minimizes token usage while maximizing understanding
+- **Auto Bug Fixing**: Analyzes errors and attempts automatic fixes
 
-```shell
-pip install ms-agent
-```
+#### 🔒 Secure Execution Environment
+- **Docker Sandbox**: Isolated execution using [ms-enclave](https://github.com/modelscope/ms-enclave) containers
+- **Local Execution**: Controlled local execution with RCE prevention
+- **Security Checks**: Pattern-based detection of dangerous code
 
-**Usage**:
-
-> This example demonstrates how to configure and run an Agent Skill that generates generative art code based on p5.js flow fields.
-
-
-Refer to: [Run Skills](projects/agent_skills/run.py)
-
-
-**Result**:
-
-<div align="center">
-  <img src="https://github.com/user-attachments/assets/9d5d78bf-c2db-4280-b780-324eab74a41e" alt="FlowFieldParticles" width="750">
-  <p><em>Agent-Skills: Flow Field Particles</em></p>
-</div>
+#### 🔄 Self-Reflection & Retry
+- **Error Analysis**: LLM-based analysis of execution failures
+- **Auto-Fix**: Attempts to fix code based on error messages
+- **Configurable Retries**: Up to N retry attempts with fixes
 
 
-#### References
-- **README**: [MS-Agent Skills](projects/agent_skills/README.md)
-- **Anthropic Agent Skills Official Docs**: [Anthropic-Agent-Skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills)
-- **Anthropic Skills GitHub Repo**: [Skills](https://github.com/anthropics/skills)
-
+For more details, please refer to [**MS-Agent Skills**](ms_agent/skill/README.md).
 
 
 ### Agentic Insight
@@ -361,6 +384,8 @@ For more details, please refer to [Deep Research](projects/deep_research/README.
 
 <br>
 
+---
+
 ### Doc Research
 
 This project provides a framework for **Doc Research**, enabling agents to autonomously explore and execute complex tasks related to document analysis and research.
@@ -392,6 +417,8 @@ This project provides a framework for **Doc Research**, enabling agents to auton
 For more details, refer to [Doc Research](projects/doc_research/README.md)
 
 <br>
+
+---
 
 ### Code Genesis
 
@@ -426,9 +453,11 @@ The generated code will be output to the `output` folder in the current director
 - **Standard Pipeline** (7 agents): User Story → Architect → File Design → File Order → Install → Coding → Refine
 - **Simple Pipeline** (4 agents): Orchestrator → Install → Coding → Refine
 
-For more details, refer to [Code Genesis](projects/code_genesis/pr_article.md).
+For more details, refer to [Code Genesis](projects/code_genesis/TECH_REPORT.md).
 
 <br>
+
+---
 
 ### FinResearch
 
@@ -495,6 +524,8 @@ aggregator:
 - README: [FinResearch](projects/fin_research/README.md)
 - Documentation: [MS-Agent Documentation](https://ms-agent-en.readthedocs.io/en/latest/Projects/FinResearch.html)
 
+---
+
 ### WebUI
 
 MS-Agent provides a modern web interface for interacting with agents. Built with React frontend and FastAPI backend, featuring real-time WebSocket communication.
@@ -539,6 +570,8 @@ ms-agent ui --production --no-browser
 
 <br>
 
+---
+
 ### Singularity Cinema
 
 Singularity Cinema is an Agent-powered workflow for generating short videos, capable of producing high-quality complex short videos using either a single-sentence prompt or knowledge-based documents.
@@ -579,6 +612,8 @@ OPENAI_API_KEY=xxx-xxx T2I_API_KEY=ms-xxx-xxx MANIM_TEST_API_KEY=xxx-xxx ms-agen
 
 
 <br>
+
+---
 
 ### Interesting works
 

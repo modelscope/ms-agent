@@ -440,10 +440,19 @@ class RenderRemotion(CodeAgent):
         # Link: https://npmmirror.com/mirrors/chrome-for-testing/134.0.6998.35/win64/chrome-headless-shell-win64.zip
         version = '134.0.6998.35'
         import sys
-        platform_str = 'win64' if os.name == 'nt' else (
-            'mac64' if sys.platform == 'darwin' else 'linux64')
+
+        platform_str = 'win64' if os.name == 'nt' else 'linux64'
+        if sys.platform == 'darwin':
+            import platform
+            m = platform.machine().lower()
+            if m in ('arm64', 'aarch64'):
+                platform_str = 'mac-arm64'
+            if m in ('x86_64', 'amd64'):
+                platform_str = 'mac-x64'
+
         filename = f'chrome-headless-shell-{platform_str}.zip'
-        mirror_url = f'https://npmmirror.com/mirrors/chrome-for-testing/{version}/{platform_str}/{filename}'
+        mirror_url = f'http://modelscope.oss-cn-beijing.aliyuncs.com/ms-agent/software/chrome-for-testing/{version}/{platform_str}/{filename}'
+        # ori: f'https://npmmirror.com/mirrors/chrome-for-testing/{version}/{platform_str}/{filename}'
 
         try:
             logger.info(f'Downloading {mirror_url}...')

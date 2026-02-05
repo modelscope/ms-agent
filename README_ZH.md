@@ -51,6 +51,12 @@ MS-Agent是一个轻量级框架，旨在为智能体提供自主探索能力。
 
 ## 🎉 新闻
 
+* 🚀 **2026年2月4日：发布 MS-Agent v1.6.0rc0，主要更新内容如下：**
+  - **Code Genesis**：针对复杂代码生成任务的专项功能，详情请参考 [Code Genesis](https://github.com/modelscope/ms-agent/tree/main/projects/code_genesis)
+  - **Singularity Cinema**：动画视频生成工作流的重构版本，详情请参考 [Singularity Cinema](https://github.com/modelscope/ms-agent/tree/main/projects/singularity_cinema)
+  - **全新技能框架 (Skills Framework)**：全新设计的技能系统，显著增强了系统的健壮性与可扩展性。详情请参考 [MS-Agent Skills](https://github.com/modelscope/ms-agent/tree/main/ms_agent/skill)
+  - **WebUI**：新增 Web 交互界面，支持智能体对话、复杂代码生成以及视频生成工作流。
+
 * 🎬 2025.11.13: 发布了“奇点放映室”，用于进行知识类文档的复杂场景短视频制作，具体查看[这里](projects/singularity_cinema/README.md)
 
 * 🚀 2025.11.12：发布MS-Agent v1.5.0，包含以下更新：
@@ -79,6 +85,9 @@ MS-Agent是一个轻量级框架，旨在为智能体提供自主探索能力。
   - DocResearch现在支持将Markdown报告导出为`HTML`、`PDF`、`PPTX`和`DOCX`格式，详情请参考[Doc Research](projects/doc_research/README.md)。
   - DocResearch现在支持`TXT`文件处理和文件预处理，详情请参考[Doc Research](projects/doc_research/README.md)。
 
+
+<details><summary>归档</summary>
+
 * 🚀 2025.7.31：发布MS-Agent v1.1.0，包含以下更新：
 - 🔥 支持[文档研究](projects/doc_research/README.md)，演示：[DocResearchStudio](https://modelscope.cn/studios/ms-agent/DocResearch) - 为智能洞察（DeepResearch）添加`通用网络搜索引擎`
   - 为Agent与MCP聊天添加`最大连续运行次数`。
@@ -90,9 +99,6 @@ MS-Agent是一个轻量级框架，旨在为智能体提供自主探索能力。
   - 支持深度研究（智能洞察），参考：[报告演示](projects/deep_research/examples/task_20250617a/report.md)，[脚本演示](projects/deep_research/run.py)
   - 支持[MCP-Playground](https://modelscope.cn/mcp/playground)
   - 为Agent聊天添加回调机制
-
-
-<details><summary>归档</summary>
 
 * 🔥🔥🔥2024年8月8日：Modelscope-Agent发布了一个新的基于图的代码生成工具[CodexGraph](https://arxiv.org/abs/2408.03910)，它已被证明在各种代码相关任务上有效且通用，请查看[示例](https://github.com/modelscope/modelscope-agent/tree/master/apps/codexgraph_agent)。
 * 🔥🔥2024年8月1日：一个高效可靠的数据科学助手正在Modelscope-Agent上运行，请在[示例](https://github.com/modelscope/modelscope-agent/tree/master/apps/datascience_assistant)中查看详情。
@@ -261,6 +267,47 @@ asyncio.run(main())
 
 </details>
 
+---
+
+### Agent Skills (智能体技能)
+
+**MS-Agent 技能模块** 是对 [Anthropic-Agent-Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills) 协议的**具体实现**。
+
+#### 🔍 智能技能检索
+
+* **混合检索**：结合 FAISS 稠密检索与 BM25 稀疏检索。
+* **基于 LLM 的过滤**：利用大模型对技能相关性进行二次筛选与验证。
+* **查询分析**：自动判断当前查询是否需要调用相关技能。
+
+#### 📊 基于 DAG 的执行机制
+
+* **依赖管理**：根据技能间的依赖关系构建执行有向无环图 (DAG)。
+* **并行执行**：支持无相互依赖的技能并发运行。
+* **输入/输出级联**：自动在具有依赖关系的技能间传递输出数据。
+
+#### 🧠 渐进式技能分析
+
+* **两阶段分析**：先规划路径，后加载具体资源。
+* **增量加载**：仅加载必要的脚本、参考资料和资源。
+* **上下文优化**：在最大化理解深度的同时，最小化 Token 消耗。
+* **自动修复**：分析执行错误并尝试自动修正。
+
+#### 🔒 安全执行环境
+
+* **Docker 沙箱**：使用 [ms-enclave](https://github.com/modelscope/ms-enclave) 容器进行隔离执行。
+* **本地执行**：具备 RCE（远程代码执行）防护的受控本地执行环境。
+* **安全检查**：基于模式匹配的危险代码检测。
+
+#### 🔄 自我反思与重试
+
+* **错误分析**：基于 LLM 对执行失败原因进行深度分析。
+* **自动修复**：根据错误信息尝试修正代码逻辑。
+* **可配置重试**：支持带修复逻辑的 N 次重试机制。
+
+欲了解更多详情，请参阅 **[MS-Agent Skills 文档](ms_agent/skill/README.md)**。
+
+---
+
 
 ### Agentic Insight
 
@@ -307,7 +354,9 @@ asyncio.run(main())
 
 <br>
 
-### 文档研究
+---
+
+### 文档深度研究
 
 该项目提供了**文档研究**框架，使智能体能够自主探索和执行与文档分析和研究相关的复杂任务。
 
@@ -337,6 +386,8 @@ asyncio.run(main())
 更多详情，请参考 [文档研究](projects/doc_research/README.md)
 
 <br>
+
+---
 
 ### Code Scratch
 
@@ -370,6 +421,8 @@ PYTHONPATH=. openai_api_key=your-api-key openai_base_url=your-api-url python ms_
 更多详情，请参考 [Code Scratch](projects/code_genesis/README.md)。
 
 <br>
+
+---
 
 ### 金融深度研究
 
@@ -437,6 +490,9 @@ aggregator:
 - README：请参考[FinResearch](projects/fin_research/README_zh.md)
 - 说明文档: 请参考[MS-Agent文档](https://ms-agent.readthedocs.io/zh-cn/latest/Projects/%E9%87%91%E8%9E%8D%E6%B7%B1%E5%BA%A6%E7%A0%94%E7%A9%B6.html)
 
+
+---
+
 ### 奇点放映室
 
 奇点放映室是一个Agent生成短视频的工作流，可以在使用一句话prompt或者知识类DOC的情况下支持高质量复杂短视频生成。
@@ -478,10 +534,56 @@ OPENAI_API_KEY=xxx-xxx T2I_API_KEY=ms-xxx-xxx MANIM_TEST_API_KEY=xxx-xxx ms-agen
 
 <br>
 
+---
+
+### WebUI
+
+MS-Agent提供了一个简洁轻量的Web界面，用于与智能体进行交互。该界面由React前端和FastAPI后端构建，支持实时的WebSocket通信。
+
+#### Demo
+
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/62026584-6c96-4a84-a849-05ae49906f48" alt="LocalGradioApplication" width="750">
+  <p><em>Demo: WebUI</em></p>
+</div>
+
+#### 快速开始
+
+**启动WebUI:**
+
+```bash
+ms-agent ui
+```
+
+浏览器打开： http://localhost:7860
+
+**命令参数**
+
+| 选项             | 描述                       | 默认值     |
+|----------------|--------------------------|---------|
+| `--host`       | Server host              | 0.0.0.0 |
+| `--port`       | Server port              | 7860    |
+| `--production` | Production mode          | False   |
+| `--no-browser` | Don't auto-open browser  | False   |
+| `--reload`     | Enable auto-reload (dev) | False   |
+
+**示例**
+
+```bash
+# Custom port
+ms-agent ui --port 8080
+
+# Production mode without auto browser
+ms-agent ui --production --no-browser
+```
+
+---
+
 ### 有趣的工作
 
 1. 新闻收集智能体 [ms-agent/newspaper](https://www.modelscope.cn/models/ms-agent/newspaper/summary)
 
+---
 
 ## 未来计划
 

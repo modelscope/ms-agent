@@ -49,6 +49,7 @@ The **MS-Agent Skill Module** is **Implementation** of [Anthropic-Agent-Skills](
 - **Two-phase Analysis**: Plan first, then load resources
 - **Incremental Loading**: Only loads required scripts/references/resources
 - **Context Optimization**: Minimizes token usage while maximizing understanding
+- **Auto Bug Fixing**: Analyzes errors and attempts automatic fixes
 
 ### 🔒 Secure Execution Environment
 - **Docker Sandbox**: Isolated execution using [ms-enclave](https://github.com/modelscope/ms-enclave) containers
