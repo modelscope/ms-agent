@@ -6,6 +6,7 @@ import SearchView from './components/SearchView';
 import ConversationView from './components/ConversationView';
 import { ChatView } from './components/ChatView';
 import Layout from './components/Layout';
+import DeepResearchView from './components/deep_research/DeepResearchView';
 
 const App: React.FC = () => {
   const { currentSession } = useSession();
@@ -30,6 +31,8 @@ const App: React.FC = () => {
           {currentSession ? (
             currentSession.session_type === 'chat' ? (
               <ChatView key="chat" />
+            ) : currentSession.project_id === 'deep_research_v2' ? (
+              <DeepResearchView key="deep-research" />
             ) : (
               <ConversationView
                 key="conversation"
