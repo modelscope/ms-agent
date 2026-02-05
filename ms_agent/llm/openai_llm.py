@@ -567,9 +567,7 @@ class OpenAI(LLM):
                     'role', '')
                 if msg_role in role_cache:
                     cache_indices.add(idx)
-            cache_indice = max(max(cache_indices),
-                               len(messages)
-                               - 1) if cache_indices else cache_indice
+            cache_indice = max(cache_indices) if cache_indices else None
 
         openai_messages = []
         for idx, message in enumerate(messages):
