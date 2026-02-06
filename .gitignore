@@ -160,3 +160,6 @@ neo4j.lock
 
 **/temp_workspace/
 ms_agent/app/temp_workspace/
+
+# webui
+webui/work_dir/

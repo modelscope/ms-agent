@@ -49,6 +49,7 @@ The **MS-Agent Skill Module** is **Implementation** of [Anthropic-Agent-Skills](
 - **Two-phase Analysis**: Plan first, then load resources
 - **Incremental Loading**: Only loads required scripts/references/resources
 - **Context Optimization**: Minimizes token usage while maximizing understanding
+- **Auto Bug Fixing**: Analyzes errors and attempts automatic fixes
 
 ### 🔒 Secure Execution Environment
 - **Docker Sandbox**: Isolated execution using [ms-enclave](https://github.com/modelscope/ms-enclave) containers
@@ -109,7 +110,7 @@ config = DictConfig({
         'path': '/path/to/skills',
         'auto_execute': True,
         'work_dir': '/path/to/workspace',
-        'use_sandbox': True,
+        'use_sandbox': False,
     }
 })
 
@@ -156,7 +157,7 @@ auto_skills = AutoSkills(
     skills='/path/to/skills',
     llm=llm,
     work_dir='/path/to/workspace',
-    use_sandbox=True
+    use_sandbox=False,
 )
 
 async def main():
@@ -450,7 +451,7 @@ config = DictConfig({
         'work_dir': '/path/to/workspace',
 
         # Optional: Use Docker sandbox (default: True)
-        'use_sandbox': True,
+        'use_sandbox': False,
 
         # Optional: Auto-execute skills (default: True)
         'auto_execute': True,

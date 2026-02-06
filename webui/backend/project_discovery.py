@@ -38,9 +38,35 @@ class ProjectDiscovery:
                 if project_info:
                     projects.append(project_info)
 
+        # Add virtual projects (non-top-level entries)
+        projects.extend(self._build_virtual_projects())
+
         # Sort by display name
         projects.sort(key=lambda x: x['display_name'])
         self._projects_cache = projects
+        return projects
+
+    def _build_virtual_projects(self) -> List[Dict[str, Any]]:
+        projects: List[Dict[str, Any]] = []
+
+        v2_root = os.path.join(self.projects_dir, 'deep_research', 'v2')
+        researcher_yaml = os.path.join(v2_root, 'researcher.yaml')
+        if os.path.exists(researcher_yaml):
+            readme_path = os.path.join(v2_root, 'README.md')
+            description = self._extract_description(
+                readme_path) if os.path.exists(readme_path) else ''
+            projects.append({
+                'id': 'deep_research_v2',
+                'name': 'deep_research_v2',
+                'display_name': 'Deep Research',
+                'description': description,
+                'type': 'agent',
+                'path': v2_root,
+                'has_readme': os.path.exists(readme_path),
+                'config_file': researcher_yaml,
+                'supports_workflow_switch': False
+            })
+
         return projects
 
     def _analyze_project(self, name: str,

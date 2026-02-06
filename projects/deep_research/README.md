@@ -1,4 +1,3 @@
-
 # Agentic Insight
 
 ### Lightweight, Efficient, and Extensible Multi-modal Deep Research Framework
@@ -18,6 +17,22 @@ This project provides a framework for deep research, enabling agents to autonomo
 
 - **Expandable Deep Search Architecture** — Scales from lightweight search to recursive deep search with auto-generated follow-up questions; configurable breadth/depth; clean context handoff via dense *learnings*; multimodal report assembly (via docling) that preserves figure/table captions and ordering.
 
+### 🆕 Agentic Insight v2 (Recommended)
+
+This directory contains both the **legacy** implementation (Python API examples below) and the newer **Agentic Insight v2**. v2 emphasizes:
+
+- **Extensible main-agent + sub-agent architecture**: a Researcher orchestrates Searcher/Reporter and can be extended with new sub agents and tools.
+
+- **File-system based context management**: flexible, debuggable, and resume-friendly context via structured artifacts on disk.
+
+- **Deep-research optimized toolchain**: dedicated todo, evidence, search, and report tools tuned for iterative research loops.
+
+- **Evidence-bound report generation**: reports are generated from raw evidence with explicit bindings for higher trustworthiness.
+
+For v2 usage and detailed instructions, see:
+
+- English: [Agentic Insight v2 Guide](v2/README.md)
+- Chinese: [Agentic Insight v2 使用说明](v2/README_zh.md)
 
 ### 📺 Demonstration
 
@@ -67,6 +82,7 @@ By default, the system uses free **arXiv search** (no API key required).  Option
 
 1. Copy and edit your `.env` file:
 ```bash
+# From projects/deep_research/
 cp .env.example .env
 
 # Then, edit `.env` to include the API key for the search engine you choose:

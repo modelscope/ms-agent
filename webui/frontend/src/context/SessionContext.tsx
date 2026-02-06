@@ -69,15 +69,19 @@ interface SessionContextType {
   stopAgent: () => void;
   clearLogs: () => void;
   clearSession: () => void;
+  registerEventHandler: (prefix: string, handler: (data: Record<string, unknown>) => void) => () => void;
 }
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
 
 const API_BASE = '/api';
 const WS_BASE = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
+const LAST_SESSION_KEY = 'ms_agent_last_session_id';
 
 const PROJECT_DESCRIPTION_OVERRIDES: Record<string, string> = {
   deep_research:
+    'This project provides a framework for deep research, enabling agents to autonomously explore and execute complex tasks.',
+  deep_research_v2:
     'This project provides a framework for deep research, enabling agents to autonomously explore and execute complex tasks.',
   code_genesis:
     'This project provides a code generation workflow that helps agents plan, scaffold, and refine software projects end-to-end.',
@@ -102,6 +106,8 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
   const [isLoading, setIsLoading] = useState(false);
   const [ws, setWs] = useState<WebSocket | null>(null);
   const pendingQueryRef = useRef<string | null>(null);
+  const prefixHandlersRef = useRef<Map<string, Set<(data: Record<string, unknown>) => void>>>(new Map());
+  const restoreAttemptedRef = useRef(false);
 
   // Load projects
   const loadProjects = useCallback(async () => {
@@ -120,6 +126,18 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
       }
     } catch (error) {
       console.error('Failed to load projects:', error);
+    }
+  }, []);
+
+  const loadSessions = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/sessions`);
+      if (response.ok) {
+        const data = await response.json();
+        setSessions(Array.isArray(data) ? data : []);
+      }
+    } catch (error) {
+      console.error('Failed to load sessions:', error);
     }
   }, []);
 
@@ -182,6 +200,9 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
         }));
 
         setIsLoading(true);
+      } else if (socket.readyState === WebSocket.OPEN) {
+        // Sync status for reconnects without new query
+        socket.send(JSON.stringify({ action: 'get_status' }));
       }
     };
 
@@ -201,9 +222,37 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
     setWs(socket);
   }, [ws]);
 
+  const registerEventHandler = useCallback((prefix: string, handler: (data: Record<string, unknown>) => void) => {
+    const handlers = prefixHandlersRef.current;
+    if (!handlers.has(prefix)) {
+      handlers.set(prefix, new Set());
+    }
+    handlers.get(prefix)!.add(handler);
+    return () => {
+      const set = handlers.get(prefix);
+      if (!set) return;
+      set.delete(handler);
+      if (set.size === 0) {
+        handlers.delete(prefix);
+      }
+    };
+  }, []);
+
   // Handle WebSocket messages
   const handleWebSocketMessage = useCallback((data: Record<string, unknown>) => {
     const type = data.type as string;
+    if (type) {
+      let handledByPrefix = false;
+      prefixHandlersRef.current.forEach((handlers, prefix) => {
+        if (type.startsWith(prefix)) {
+          handledByPrefix = true;
+          handlers.forEach((handler) => handler(data));
+        }
+      });
+      if (handledByPrefix) {
+        return;
+      }
+    }
 
     switch (type) {
       case 'message':
@@ -343,6 +392,9 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
     const session = sessionObj || sessions.find(s => s.id === sessionId);
     if (session) {
       console.log('[Session] Selecting session:', session.id);
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(LAST_SESSION_KEY, session.id);
+      }
       setCurrentSession(session);
       setMessages([]);
       setLogs([]);
@@ -441,12 +493,42 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
     setStreamingContent('');
     setIsLoading(false);
     setIsStreaming(false);
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(LAST_SESSION_KEY);
+    }
   }, [ws]);
 
   // Initial load
   useEffect(() => {
     loadProjects();
-  }, [loadProjects]);
+    loadSessions();
+  }, [loadProjects, loadSessions]);
+
+  useEffect(() => {
+    if (restoreAttemptedRef.current || currentSession) return;
+    if (typeof window === 'undefined') return;
+    const lastSessionId = window.localStorage.getItem(LAST_SESSION_KEY);
+    if (!lastSessionId) {
+      restoreAttemptedRef.current = true;
+      return;
+    }
+    restoreAttemptedRef.current = true;
+    const restore = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/sessions/${lastSessionId}`);
+        if (!response.ok) {
+          window.localStorage.removeItem(LAST_SESSION_KEY);
+          return;
+        }
+        const session: Session = await response.json();
+        setSessions(prev => (prev.find(s => s.id === session.id) ? prev : [...prev, session]));
+        selectSession(session.id, undefined, session);
+      } catch (error) {
+        console.error('Failed to restore session:', error);
+      }
+    };
+    restore();
+  }, [currentSession, selectSession]);
 
   // Cleanup WebSocket on unmount
   useEffect(() => {
@@ -477,6 +559,7 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
         stopAgent,
         clearLogs,
         clearSession,
+      registerEventHandler,
       }}
     >
       {children}

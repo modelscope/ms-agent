@@ -279,6 +279,7 @@ tools:
     mcp: false
     allow_read_all_files: true
     exclude:
+      - edit_file
       - list_files
       - search_file_content
       - search_file_name

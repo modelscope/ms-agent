@@ -6,10 +6,12 @@ Handles agent execution, log streaming, and progress updates.
 import asyncio
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, Set
 
 import json
 from agent_runner import AgentRunner
+from deep_research_worker_manager import DeepResearchWorkerManager
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 # Import shared instances
 from shared import config_manager, project_discovery, session_manager
@@ -73,6 +75,42 @@ agent_runners: Dict[str, AgentRunner] = {}
 agent_tasks: Dict[str, asyncio.Task] = {}
 
 
+async def _update_deep_research_status(session_id: str,
+                                       event: Dict[str, Any]) -> None:
+    event_type = event.get('type')
+    if event_type == 'status':
+        status = event.get('status')
+        if status:
+            session_manager.update_session(session_id, {'status': status})
+        return
+    if event_type == 'complete':
+        session_manager.update_session(session_id, {'status': 'completed'})
+        return
+    if event_type == 'error':
+        session_manager.update_session(session_id, {'status': 'error'})
+        return
+    if event_type == 'dr.worker.exited':
+        payload = event.get('payload') or {}
+        status = payload.get('status') or 'completed'
+        session_manager.update_session(session_id, {'status': status})
+        return
+    if event_type == 'dr.worker.error':
+        session_manager.update_session(session_id, {'status': 'error'})
+
+
+async def _send_deep_research_event(session_id: str, event: Dict[str,
+                                                                 Any]) -> None:
+    event_type = str(event.get('type') or '')
+    stored_event = event
+    if event_type.startswith('dr.'):
+        stored_event = session_manager.add_dr_event(session_id, event) or event
+    await connection_manager.send_to_session(session_id, stored_event)
+    await _update_deep_research_status(session_id, event)
+
+
+deep_research_manager = DeepResearchWorkerManager(_send_deep_research_event)
+
+
 @router.websocket('/session/{session_id}')
 async def websocket_session(websocket: WebSocket, session_id: str):
     """WebSocket endpoint for session communication"""
@@ -88,6 +126,9 @@ async def websocket_session(websocket: WebSocket, session_id: str):
     except WebSocketDisconnect:
         print(f'[WS] Client disconnected from session: {session_id}')
         connection_manager.disconnect(websocket, session_id)
+        session = session_manager.get_session(session_id)
+        is_deep_research = bool(
+            session and session.get('project_id') == 'deep_research_v2')
         # Stop agent if running
         if session_id in agent_runners:
             await agent_runners[session_id].stop()
@@ -95,6 +136,8 @@ async def websocket_session(websocket: WebSocket, session_id: str):
         if session_id in agent_tasks:
             agent_tasks[session_id].cancel()
             del agent_tasks[session_id]
+        if not is_deep_research:
+            await deep_research_manager.stop(session_id)
 
 
 @router.websocket('/logs')
@@ -145,7 +188,6 @@ async def start_agent(session_id: str, data: Dict[str, Any],
     if session_type == 'chat':
         # Create a virtual project for chat mode using the default agent.yaml
         import ms_agent
-        from pathlib import Path
         # Get ms_agent package installation path
         # Use __path__ which is always available for packages and gives real filesystem paths
         if hasattr(ms_agent, '__path__') and ms_agent.__path__:
@@ -213,6 +255,32 @@ async def start_agent(session_id: str, data: Dict[str, Any],
     # Add user message to session (but don't broadcast - frontend already has it)
     session_manager.add_message(session_id, 'user', query, 'text')
 
+    if project['id'] == 'deep_research_v2':
+        try:
+            backend_root = Path(__file__).resolve().parents[1]
+            output_dir = backend_root / 'work_dir' / session_id
+            await deep_research_manager.start(
+                session_id,
+                query=query,
+                config_path=project['config_file'],
+                output_dir=str(output_dir),
+                env_vars=config_manager.get_env_vars(),
+                llm_config=config_manager.get_llm_config(),
+            )
+            session_manager.update_session(session_id, {'status': 'running'})
+            await connection_manager.send_to_session(session_id, {
+                'type': 'status',
+                'status': 'running'
+            })
+        except Exception as e:
+            await connection_manager.send_to_session(
+                session_id, {
+                    'type': 'error',
+                    'message': f'Worker 启动失败: {str(e)}'
+                })
+            session_manager.update_session(session_id, {'status': 'error'})
+        return
+
     # Create agent runner with workflow_type
     runner = AgentRunner(
         session_id=session_id,
@@ -250,6 +318,7 @@ async def start_agent(session_id: str, data: Dict[str, Any],
 
 async def stop_agent(session_id: str):
     """Stop a running agent"""
+    await deep_research_manager.stop(session_id)
     if session_id in agent_runners:
         await agent_runners[session_id].stop()
         del agent_runners[session_id]
