@@ -25,9 +25,10 @@ class DeepResearchWorkerManager:
     def _get_worker_path(self) -> Path:
         return Path(__file__).resolve().parent / 'deep_research_worker.py'
 
-    def _build_env(self, env_vars: Optional[Dict[str, str]],
-                   llm_config: Optional[Dict[str, Any]],
-                   deep_research_config: Optional[Dict[str, Any]]) -> Dict[str, str]:
+    def _build_env(
+            self, env_vars: Optional[Dict[str, str]],
+            llm_config: Optional[Dict[str, Any]],
+            deep_research_config: Optional[Dict[str, Any]]) -> Dict[str, str]:
         env = os.environ.copy()
         if env_vars:
             env.update({k: v for k, v in env_vars.items() if v})
@@ -52,15 +53,16 @@ class DeepResearchWorkerManager:
                 os.pathsep + existing_path if existing_path else '')
         return env
 
-    async def start(self,
-                    session_id: str,
-                    *,
-                    query: str,
-                    config_path: str,
-                    output_dir: str,
-                    env_vars: Optional[Dict[str, str]] = None,
-                    llm_config: Optional[Dict[str, Any]] = None,
-                    deep_research_config: Optional[Dict[str, Any]] = None) -> None:
+    async def start(
+            self,
+            session_id: str,
+            *,
+            query: str,
+            config_path: str,
+            output_dir: str,
+            env_vars: Optional[Dict[str, str]] = None,
+            llm_config: Optional[Dict[str, Any]] = None,
+            deep_research_config: Optional[Dict[str, Any]] = None) -> None:
         if session_id in self._processes:
             await self.stop(session_id)
 

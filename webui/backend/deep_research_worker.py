@@ -75,15 +75,17 @@ def _resolve_agent_llm_config(role: str, llm_config: Dict[str, Any],
                               dr_config: Dict[str, Any]) -> Dict[str, str]:
     overrides = _normalize_agent_override((dr_config or {}).get(role))
     return {
-        'model': overrides.get('model') or str(llm_config.get('model') or ''),
-        'api_key': overrides.get('api_key') or str(llm_config.get('api_key')
-                                                   or ''),
-        'base_url': overrides.get('base_url') or str(
-            llm_config.get('base_url') or ''),
+        'model':
+        overrides.get('model') or str(llm_config.get('model') or ''),
+        'api_key':
+        overrides.get('api_key') or str(llm_config.get('api_key') or ''),
+        'base_url':
+        overrides.get('base_url') or str(llm_config.get('base_url') or ''),
     }
 
 
-def _normalize_search_override(raw: Optional[Dict[str, Any]]) -> Dict[str, str]:
+def _normalize_search_override(
+        raw: Optional[Dict[str, Any]]) -> Dict[str, str]:
     raw = raw or {}
     return {
         'summarizer_model': str(raw.get('summarizer_model') or ''),
@@ -92,10 +94,9 @@ def _normalize_search_override(raw: Optional[Dict[str, Any]]) -> Dict[str, str]:
     }
 
 
-def _build_config_override(llm_config: Dict[str, Any],
-                           output_dir: str,
-                           dr_config: Dict[str, Any]) -> Optional[Dict[str,
-                                                                       Any]]:
+def _build_config_override(
+        llm_config: Dict[str, Any], output_dir: str,
+        dr_config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     override: Dict[str, Any] = {}
     if output_dir:
         override['output_dir'] = output_dir
@@ -275,11 +276,13 @@ async def run_worker(args: argparse.Namespace) -> None:
                                 web_cfg['summarizer_model'] = search_override[
                                     'summarizer_model']
                             if search_override.get('summarizer_api_key'):
-                                web_cfg['summarizer_api_key'] = search_override[
-                                    'summarizer_api_key']
+                                web_cfg[
+                                    'summarizer_api_key'] = search_override[
+                                        'summarizer_api_key']
                             if search_override.get('summarizer_base_url'):
-                                web_cfg['summarizer_base_url'] = search_override[
-                                    'summarizer_base_url']
+                                web_cfg[
+                                    'summarizer_base_url'] = search_override[
+                                        'summarizer_base_url']
                             if web_cfg:
                                 tools_cfg['web_search'] = web_cfg
                                 updated['tools'] = tools_cfg

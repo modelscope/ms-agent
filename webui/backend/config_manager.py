@@ -198,7 +198,7 @@ class ConfigManager:
                           self.DEFAULT_CONFIG['deep_research'])
 
     def update_deep_research_config(self, deep_research_config: Dict[str,
-                                                                         Any]):
+                                                                     Any]):
         """Update deep research configuration"""
         self._load_config()
         self._config['deep_research'] = deep_research_config
