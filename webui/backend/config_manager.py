@@ -23,6 +23,28 @@ class ConfigManager:
             'temperature_enabled': False,
             'max_tokens': None
         },
+        'deep_research': {
+            'researcher': {
+                'model': '',
+                'api_key': '',
+                'base_url': ''
+            },
+            'searcher': {
+                'model': '',
+                'api_key': '',
+                'base_url': ''
+            },
+            'reporter': {
+                'model': '',
+                'api_key': '',
+                'base_url': ''
+            },
+            'search': {
+                'summarizer_model': '',
+                'summarizer_api_key': '',
+                'summarizer_base_url': ''
+            }
+        },
         'edit_file_config': {
             'api_key': '',
             'base_url': 'https://api.morphllm.com/v1',
@@ -167,6 +189,19 @@ class ConfigManager:
         """Update search API keys configuration"""
         self._load_config()
         self._config['search_keys'] = search_keys
+        self._save_config()
+
+    def get_deep_research_config(self) -> Dict[str, Any]:
+        """Get deep research configuration"""
+        config = self._load_config()
+        return config.get('deep_research',
+                          self.DEFAULT_CONFIG['deep_research'])
+
+    def update_deep_research_config(self, deep_research_config: Dict[str,
+                                                                         Any]):
+        """Update deep research configuration"""
+        self._load_config()
+        self._config['deep_research'] = deep_research_config
         self._save_config()
 
     def add_mcp_server(self, name: str, server_config: Dict[str, Any]):

@@ -26,13 +26,24 @@ class DeepResearchWorkerManager:
         return Path(__file__).resolve().parent / 'deep_research_worker.py'
 
     def _build_env(self, env_vars: Optional[Dict[str, str]],
-                   llm_config: Optional[Dict[str, Any]]) -> Dict[str, str]:
+                   llm_config: Optional[Dict[str, Any]],
+                   deep_research_config: Optional[Dict[str, Any]]) -> Dict[str, str]:
         env = os.environ.copy()
         if env_vars:
             env.update({k: v for k, v in env_vars.items() if v})
         if llm_config:
             env['MS_AGENT_LLM_CONFIG'] = json.dumps(
                 llm_config, ensure_ascii=False)
+        if deep_research_config:
+            env['MS_AGENT_DEEP_RESEARCH_CONFIG'] = json.dumps(
+                deep_research_config, ensure_ascii=False)
+
+        api_key = (llm_config or {}).get('api_key')
+        base_url = (llm_config or {}).get('base_url')
+        if api_key and not env.get('OPENAI_API_KEY'):
+            env['OPENAI_API_KEY'] = api_key
+        if base_url and not env.get('OPENAI_BASE_URL'):
+            env['OPENAI_BASE_URL'] = base_url
         env['PYTHONUNBUFFERED'] = '1'
         repo_root = str(self._get_repo_root())
         existing_path = env.get('PYTHONPATH', '')
@@ -48,7 +59,8 @@ class DeepResearchWorkerManager:
                     config_path: str,
                     output_dir: str,
                     env_vars: Optional[Dict[str, str]] = None,
-                    llm_config: Optional[Dict[str, Any]] = None) -> None:
+                    llm_config: Optional[Dict[str, Any]] = None,
+                    deep_research_config: Optional[Dict[str, Any]] = None) -> None:
         if session_id in self._processes:
             await self.stop(session_id)
 
@@ -69,7 +81,7 @@ class DeepResearchWorkerManager:
             str(output_dir_path),
         ]
 
-        env = self._build_env(env_vars, llm_config)
+        env = self._build_env(env_vars, llm_config, deep_research_config)
 
         process = await asyncio.create_subprocess_exec(
             *cmd,
