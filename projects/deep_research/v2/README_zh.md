@@ -59,6 +59,21 @@ PYTHONPATH=. python ms_agent/cli/cli.py run \
   --output_dir "output/deep_research/runs"
 ```
 
+#### 在 WebUI 中使用
+
+你也可以在内置 WebUI 中使用 Agentic Insight v2：
+
+```bash
+ms-agent ui
+```
+
+然后打开 `http://localhost:7860`，选择 **Deep Research**，并确保已配置：
+
+- `OPENAI_API_KEY` / `OPENAI_BASE_URL`（LLM 配置）
+- 二选一：`EXA_API_KEY` 或 `SERPAPI_API_KEY`（搜索工具）
+
+你可以通过 `.env` 或 WebUI 的 **Settings** 进行配置。WebUI 的运行产物会保存在 `webui/work_dir/<session_id>/` 下。
+
 ### 关键配置（常改位置）
 
 - `projects/deep_research/v2/researcher.yaml`

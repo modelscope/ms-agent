@@ -54,6 +54,9 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 
 ## 🎉 News
 
+* 🚀 Feb 06, 2026: Release MS-Agent v1.6.0rc1, which includes the following updates:
+  - **Agentic Insight v2**: A fully refactored deep-research system with better performance, scalability, and trustworthiness, now available in WebUI. See [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2).
+
 * 🚀 Feb 04, 2026: Release MS-Agent v1.6.0rc0, which includes the following updates:
   - **Code Genesis** for complex code generation tasks, refer to [Code Genesis](https://github.com/modelscope/ms-agent/tree/main/projects/code_genesis)
   - **Singularity Cinema** for animated video generation workflow, refactored version, refer to [Singularity Cinema](https://github.com/modelscope/ms-agent/tree/main/projects/singularity_cinema)
@@ -351,6 +354,16 @@ This project provides a framework for **Deep Research**, enabling agents to auto
 - **Multimodal** - Capable of processing diverse data modalities and generating research reports rich in both text and images.
 
 - **Lightweight & Efficient** - Support "search-then-execute" mode, completing complex research tasks within few minutes, significantly reducing token consumption.
+
+#### 🚀 Agentic Insight v2 (Recommended)
+
+- **Performance**: Multi-model orchestration (a low-cost combo across qwen3-max/plus/flash) achieves **49.94** on DeepResearch Bench.
+- **Deep Agents architecture**: "Researcher + tool-augmented sub-agents (Searcher/Reporter)" for flexible task allocation and efficient concurrency.
+- **File system as context**: Structured artifacts persisted to disk for low-loss context handoff and stable long-horizon runs (resume-friendly).
+- **Evidence-driven writing**: Reports are grounded in an indexed evidence base, improving trustworthiness and traceability.
+- **Deep-research toolchain**: Decoupled modules like todo list / evidence store / report generator for reuse and extensibility.
+
+See [Agentic Insight v2](projects/deep_research/v2/README.md).
 
 
 #### 📺 Demonstration

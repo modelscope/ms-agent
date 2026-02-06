@@ -51,6 +51,9 @@ MS-Agent是一个轻量级框架，旨在为智能体提供自主探索能力。
 
 ## 🎉 新闻
 
+* 🚀 **2026年2月6日：发布 MS-Agent v1.6.0rc1，主要更新内容如下：**
+  - **Agentic Insight v2**：完整重构的深度研究系统，性能更优、可扩展性更强、可信度更高，支持在webui中使用，详情请参考 [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2)
+
 * 🚀 **2026年2月4日：发布 MS-Agent v1.6.0rc0，主要更新内容如下：**
   - **Code Genesis**：针对复杂代码生成任务的专项功能，详情请参考 [Code Genesis](https://github.com/modelscope/ms-agent/tree/main/projects/code_genesis)
   - **Singularity Cinema**：动画视频生成工作流的重构版本，详情请参考 [Singularity Cinema](https://github.com/modelscope/ms-agent/tree/main/projects/singularity_cinema)
@@ -322,6 +325,16 @@ asyncio.run(main())
 - **多模态** - 能够处理多样化的数据模态，生成包含丰富文本和图像的研究报告。
 
 - **轻量级与高效** - 支持"搜索后执行"模式，在几分钟内完成复杂的研究任务，显著减少token消耗。
+
+#### 🚀 Agentic Insight v2（推荐）
+
+- **性能表现** - 基于 qwen3-max/plus/flash 多模型协同（低成本组合），在 DeepResearch Bench 上取得 **49.94** 分，性能位于同类框架一线水平
+- **Deep Agents 架构** - "Researcher + 工具化子 Agent（Searcher/Reporter）"模式，支持任务灵活分配与高效并发
+- **文件系统即上下文** - 中间产物结构化存储到文件系统，实现低损耗上下文传递和长链路任务稳定运行
+- **证据驱动写作** - 自主建立带索引的证据库，报告以证据为唯一事实基础，实现报告高可信度与来源可追溯
+- **深度研究专用工具链** - 提供 todo_list / evidence_store / report_generator 等专用模块，实现核心能力的解耦与高度复用
+
+使用方式请参考 [Agentic Insight v2](projects/deep_research/v2/README.md)。
 
 #### 📺 演示
 
