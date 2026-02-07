@@ -32,6 +32,7 @@ const projectIcons: Record<string, React.ReactElement> = {
   code_genesis: <CodeIcon />,
   agent_skills: <PsychologyIcon />,
   deep_research: <ScienceIcon />,
+  deep_research_v2: <ScienceIcon />,
   doc_research: <DescriptionIcon />,
   fin_research: <ScienceIcon />,
   singularity_cinema: <MovieIcon />,

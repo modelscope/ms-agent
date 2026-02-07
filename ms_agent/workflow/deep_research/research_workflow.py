@@ -221,7 +221,7 @@ class ResearchWorkflow:
         self._dump_todo_file()
 
     def search(self, search_request: 'SearchRequest') -> str:
-        from ms_agent.tools.exa.schema import dump_batch_search_results
+        from ms_agent.tools.search.exa.schema import dump_batch_search_results
         from ms_agent.tools.search.search_base import SearchRequest, SearchResult
         if self._reuse:
             # Load existing search results if they exist

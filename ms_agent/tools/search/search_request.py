@@ -3,8 +3,8 @@
 from datetime import datetime
 from typing import Any, Dict
 
-from ms_agent.tools.exa import ExaSearchRequest
 from ms_agent.tools.search.arxiv.schema import ArxivSearchRequest
+from ms_agent.tools.search.exa import ExaSearchRequest
 from ms_agent.tools.search.search_base import SearchEngineType, SearchRequest
 from ms_agent.tools.search.serpapi.schema import SerpApiSearchRequest
 
