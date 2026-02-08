@@ -568,6 +568,12 @@ MS-Agent提供了一个简洁轻量的Web界面，用于与智能体进行交互
 ms-agent ui
 ```
 
+**Windows 提示：** 若控制台出现乱码，建议使用 PowerShell 启动脚本：
+
+```powershell
+webui/scripts/start-webui.ps1
+```
+
 浏览器打开： http://localhost:7860
 
 **命令参数**

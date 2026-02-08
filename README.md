@@ -558,6 +558,12 @@ MS-Agent provides a modern web interface for interacting with agents. Built with
 ms-agent ui
 ```
 
+**Windows tip:** If the console shows garbled text, use the PowerShell helper:
+
+```powershell
+webui/scripts/start-webui.ps1
+```
+
 The browser will automatically open at http://localhost:7860
 
 **Command Options:**

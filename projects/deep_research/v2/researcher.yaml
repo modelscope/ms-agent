@@ -2,7 +2,7 @@ llm:
   service: openai
   model: qwen3-max
   openai_api_key: <OPENAI_API_KEY>
-  openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  openai_base_url: <OPENAI_BASE_URL>
 
 
 generation_config:
