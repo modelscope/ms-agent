@@ -496,7 +496,7 @@ class DAGExecutor:
             env_vars['UPSTREAM_OUTPUTS'] = json.dumps(upstream_data)
             # Also provide individual upstream references
             for dep_id, data in upstream_data.items():
-                safe_key = dep_id.replace('-', '_').replace('.', '_').upper()
+                safe_key = dep_id.replace('-', '_').replace('.', '_').replace('@', '_').replace('/', '_').upper()
                 if data.get('stdout'):
                     env_vars[f'UPSTREAM_{safe_key}_STDOUT'] = data[
                         'stdout'][:4096]
