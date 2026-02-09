@@ -1,15 +1,21 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import asyncio
 import os
 import uuid
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import json
 from ms_agent.agent.loader import AgentLoader
 from ms_agent.llm.utils import Message, Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils import get_logger
+from ms_agent.utils.stats import (append_stats, build_timing_record,
+                                  get_stats_path, monotonic, now_iso,
+                                  summarize_usage)
+from ms_agent.utils.thread_util import DaemonThreadPoolExecutor
 from omegaconf import DictConfig, ListConfig, OmegaConf
 
 logger = get_logger()
@@ -39,6 +45,7 @@ class _AgentToolSpec:
     max_output_chars: int
     trust_remote_code: Optional[bool]
     env: Optional[Dict[str, str]]
+    run_in_thread: bool
 
 
 class AgentTool(ToolBase):
@@ -49,9 +56,25 @@ class AgentTool(ToolBase):
     def __init__(self, config: DictConfig, **kwargs):
         super().__init__(config)
         self._trust_remote_code = kwargs.get('trust_remote_code', True)
+        self._enable_stats = False
         self._specs: Dict[str, _AgentToolSpec] = {}
         self._server_tools: Dict[str, List[Tool]] = {}
+        self._thread_executor: Optional[ThreadPoolExecutor] = None
+        self._thread_max_workers: int = 0
+        self._chunk_cb: Optional[Callable[..., Any]] = None
         self._load_specs()
+        self._init_thread_pool_config()
+
+    def _init_thread_pool_config(self):
+        tools_cfg = getattr(self.config, 'tools', DictConfig({}))
+        agent_tools_cfg = getattr(tools_cfg, 'agent_tools', DictConfig({}))
+        max_workers = getattr(agent_tools_cfg, 'max_workers', None)
+        if max_workers is None:
+            max_workers = os.getenv('AGENT_TOOL_MAX_WORKERS', None)
+        try:
+            self._thread_max_workers = int(max_workers) if max_workers else 3
+        except Exception:
+            self._thread_max_workers = 3
 
     @property
     def enabled(self) -> bool:
@@ -68,6 +91,8 @@ class AgentTool(ToolBase):
             definitions = agent_tools_cfg.definitions
             server_name = getattr(agent_tools_cfg, 'server_name',
                                   self.DEFAULT_SERVER)
+            self._enable_stats = bool(
+                getattr(agent_tools_cfg, 'enable_stats', False))
         else:
             definitions = agent_tools_cfg
             server_name = self.DEFAULT_SERVER
@@ -149,9 +174,12 @@ class AgentTool(ToolBase):
         input_template = getattr(cfg, 'input_template', None)
         input_mode = getattr(cfg, 'input_mode', 'text')
         output_mode = getattr(cfg, 'output_mode', 'final_message')
-        max_chars = int(getattr(cfg, 'max_output_chars', 5000))
+        max_chars = int(getattr(cfg, 'max_output_chars', 100000))
         server_name = getattr(cfg, 'server_name', default_server)
         trust_remote_code = getattr(cfg, 'trust_remote_code', None)
+        # Run sub-agent in a background thread to avoid blocking the main event loop
+        # when underlying LLM SDKs are synchronous.
+        run_in_thread = bool(getattr(cfg, 'run_in_thread', True))
 
         env_cfg = getattr(cfg, 'env', None)
         env_cfg = _to_container(env_cfg) if env_cfg is not None else None
@@ -177,6 +205,7 @@ class AgentTool(ToolBase):
             max_output_chars=max_chars,
             trust_remote_code=trust_remote_code,
             env=env_cfg,
+            run_in_thread=run_in_thread,
         )
 
     def _build_server_index(self):
@@ -192,13 +221,48 @@ class AgentTool(ToolBase):
         self._server_tools = server_map
 
     async def connect(self):
+        # Lazily initialize a dedicated pool for agent tools that opt into
+        # `run_in_thread`, so we don't consume threads when the tool is unused.
+        if self._thread_executor is None:
+            # Use daemon threads to avoid blocking process exit when sub-agent
+            # calls are cancelled by tool-call timeouts.
+            self._thread_executor = DaemonThreadPoolExecutor(
+                max_workers=self._thread_max_workers,
+                thread_name_prefix='agent_tool_',
+            )
         return None
 
     async def cleanup(self):
+        if self._thread_executor is not None:
+            try:
+                try:
+                    self._thread_executor.shutdown(
+                        wait=False, cancel_futures=True)
+                except TypeError:
+                    self._thread_executor.shutdown(wait=False)
+            except Exception:
+                pass
+            self._thread_executor = None
         return None
 
     async def get_tools(self) -> Dict[str, Any]:
         return self._server_tools
+
+    def set_chunk_callback(self, cb: Optional[Callable[..., Any]]) -> None:
+        self._chunk_cb = cb
+
+    def _emit_chunk_event(self, event_type: str, data: Dict[str, Any]) -> None:
+        if not self._chunk_cb:
+            return
+        try:
+            self._chunk_cb(event_type=event_type, data=data)
+        except TypeError:
+            try:
+                self._chunk_cb(event_type, data)
+            except Exception as exc:  # noqa
+                logger.warning(f'AgentTool chunk callback failed: {exc}')
+        except Exception as exc:  # noqa
+            logger.warning(f'AgentTool chunk callback failed: {exc}')
 
     async def call_tool(self, server_name: str, *, tool_name: str,
                         tool_args: dict) -> str:
@@ -210,9 +274,12 @@ class AgentTool(ToolBase):
                 f'Agent tool "{tool_name}" is not part of server "{server_name}".'
             )
 
+        call_id = None
+        if isinstance(tool_args, dict) and '__call_id' in tool_args:
+            call_id = tool_args.pop('__call_id', None)
         payload = self._build_payload(tool_args, spec)
         agent = self._build_agent(spec)
-        messages = await self._run_agent(agent, payload)
+        messages = await self._run_agent(agent, payload, spec, call_id=call_id)
         return self._format_output(messages, spec)
 
     def _build_agent(self, spec: _AgentToolSpec):
@@ -245,14 +312,109 @@ class AgentTool(ToolBase):
         agent.config.generation_config = generation_cfg
         return agent
 
-    async def _run_agent(self, agent, payload):
-        result = await agent.run(payload)
-        if hasattr(result, '__aiter__'):
-            history = None
-            async for chunk in result:
-                history = chunk
-            result = history
-        return result
+    async def _run_agent(self,
+                         agent,
+                         payload,
+                         spec: _AgentToolSpec,
+                         call_id: Optional[str] = None):
+
+        async def _run_and_collect():
+            if self._chunk_cb:
+                result = await agent.run(payload, stream=True)
+            else:
+                result = await agent.run(payload)
+            if hasattr(result, '__aiter__'):
+                history = None
+                self._emit_chunk_event('start', {
+                    'call_id': call_id,
+                    'tool_name': spec.tool_name,
+                })
+                async for chunk in result:
+                    history = chunk
+                    self._emit_chunk_event(
+                        'chunk', {
+                            'call_id': call_id,
+                            'tool_name': spec.tool_name,
+                            'history': chunk,
+                        })
+                if history is not None:
+                    self._emit_chunk_event(
+                        'end', {
+                            'call_id': call_id,
+                            'tool_name': spec.tool_name,
+                            'history': history,
+                        })
+                result = history
+            else:
+                self._emit_chunk_event('start', {
+                    'call_id': call_id,
+                    'tool_name': spec.tool_name,
+                })
+                self._emit_chunk_event(
+                    'chunk', {
+                        'call_id': call_id,
+                        'tool_name': spec.tool_name,
+                        'history': result,
+                    })
+                self._emit_chunk_event(
+                    'end', {
+                        'call_id': call_id,
+                        'tool_name': spec.tool_name,
+                        'history': result,
+                    })
+            return result
+
+        async def _run_in_background():
+            # Run sub-agent in a dedicated event loop in a background thread.
+            def _sync_runner():
+                return asyncio.run(_run_and_collect())
+
+            loop = asyncio.get_running_loop()
+            if self._thread_executor is not None:
+                return await loop.run_in_executor(self._thread_executor,
+                                                  _sync_runner)
+            return await asyncio.to_thread(_sync_runner)
+
+        runner = _run_in_background if spec.run_in_thread else _run_and_collect
+
+        if not self._enable_stats:
+            return await runner()
+
+        start_ts = now_iso()
+        start_time = monotonic()
+        status = 'completed'
+        result = None
+        try:
+            result = await runner()
+            return result
+        except Exception:
+            status = 'error'
+            raise
+        finally:
+            end_ts = now_iso()
+            duration_s = monotonic() - start_time
+            usage = summarize_usage(result if isinstance(result, list) else [])
+            record = build_timing_record(
+                event='agent_tool',
+                agent_tag=getattr(agent, 'tag', None),
+                agent_type=getattr(agent, 'AGENT_NAME', None),
+                started_at=start_ts,
+                ended_at=end_ts,
+                duration_s=duration_s,
+                status=status,
+                usage=usage,
+                extra={
+                    'tool_name': spec.tool_name,
+                    'server_name': spec.server_name,
+                    'caller_tag': getattr(self.config, 'tag', None),
+                },
+            )
+            try:
+                await append_stats(get_stats_path(self.config), record)
+            except Exception as exc:
+                logger.warning(
+                    f'Failed to write agent tool stats for {spec.tool_name}: {exc}'
+                )
 
     def _build_payload(self, tool_args: dict, spec: _AgentToolSpec):
         if spec.input_mode == 'messages':

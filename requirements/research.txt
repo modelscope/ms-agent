@@ -13,3 +13,4 @@ pandas
 Pillow
 python-dotenv
 requests
+rich

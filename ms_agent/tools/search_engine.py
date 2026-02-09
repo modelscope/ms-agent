@@ -4,8 +4,8 @@ from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
 from ms_agent.config.env import Env
-from ms_agent.tools.exa import ExaSearch
 from ms_agent.tools.search.arxiv import ArxivSearch
+from ms_agent.tools.search.exa import ExaSearch
 from ms_agent.tools.search.search_base import SearchEngineType
 from ms_agent.tools.search.serpapi import SerpApiSearch
 from ms_agent.utils.logger import get_logger

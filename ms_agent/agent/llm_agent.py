@@ -4,6 +4,7 @@ import importlib
 import inspect
 import os.path
 import sys
+import threading
 import uuid
 from contextlib import contextmanager
 from copy import deepcopy
@@ -84,6 +85,8 @@ class LLMAgent(Agent):
 
     TOTAL_PROMPT_TOKENS = 0
     TOTAL_COMPLETION_TOKENS = 0
+    TOTAL_CACHED_TOKENS = 0
+    TOTAL_CACHE_CREATION_INPUT_TOKENS = 0
     TOKEN_LOCK = asyncio.Lock()
 
     def __init__(self,
@@ -539,6 +542,41 @@ class LLMAgent(Agent):
         return getattr(generation_config, 'stream', False)
 
     @property
+    def show_reasoning(self) -> bool:
+        """Whether to print model reasoning/thinking content in stream mode.
+
+        Notes:
+            - This only affects local console output.
+            - Reasoning is carried by `Message.reasoning_content` (if the backend provides it).
+        """
+        generation_config = getattr(self.config, 'generation_config',
+                                    DictConfig({}))
+        return bool(getattr(generation_config, 'show_reasoning', False))
+
+    @property
+    def reasoning_output(self) -> str:
+        """Where to print reasoning content when `show_reasoning=True`.
+
+        Supported values:
+            - "stderr" (default): keep stdout clean for assistant final text
+            - "stdout": interleave reasoning with assistant output on stdout
+        """
+        generation_config = getattr(self.config, 'generation_config',
+                                    DictConfig({}))
+        return str(getattr(generation_config, 'reasoning_output', 'stdout'))
+
+    def _write_reasoning(self, text: str):
+        if not text:
+            return
+        if self.reasoning_output.lower() == 'stdout':
+            sys.stdout.write(text)
+            sys.stdout.flush()
+        else:
+            # default: stderr
+            sys.stderr.write(text)
+            sys.stderr.flush()
+
+    @property
     def system(self):
         return getattr(
             getattr(self.config, 'prompt', DictConfig({})), 'system', None)
@@ -753,22 +791,49 @@ class LLMAgent(Agent):
             if self.stream:
                 self.log_output('[assistant]:')
                 _content = ''
+                _reasoning = ''
                 is_first = True
                 _response_message = None
+                _printed_reasoning_header = False
                 for _response_message in self.llm.generate(
                         messages, tools=tools):
                     if is_first:
                         messages.append(_response_message)
                         is_first = False
+
+                    # Optional: stream model "thinking/reasoning" if available.
+                    if self.show_reasoning:
+                        reasoning_text = getattr(_response_message,
+                                                 'reasoning_content', '') or ''
+                        # Some providers may reset / shorten content across chunks.
+                        if len(reasoning_text) < len(_reasoning):
+                            _reasoning = ''
+                        new_reasoning = reasoning_text[len(_reasoning):]
+                        if new_reasoning:
+                            if not _printed_reasoning_header:
+                                self._write_reasoning('[thinking]:\n')
+                                _printed_reasoning_header = True
+                            self._write_reasoning(new_reasoning)
+                            _reasoning = reasoning_text
+
                     new_content = _response_message.content[len(_content):]
                     sys.stdout.write(new_content)
                     sys.stdout.flush()
                     _content = _response_message.content
                     messages[-1] = _response_message
                     yield messages
+                if self.show_reasoning and _printed_reasoning_header:
+                    self._write_reasoning('\n')
                 sys.stdout.write('\n')
             else:
                 _response_message = self.llm.generate(messages, tools=tools)
+                if self.show_reasoning:
+                    reasoning_text = getattr(_response_message,
+                                             'reasoning_content', '') or ''
+                    if reasoning_text:
+                        self._write_reasoning('[thinking]:\n')
+                        self._write_reasoning(reasoning_text)
+                        self._write_reasoning('\n')
                 if _response_message.content:
                     self.log_output('[assistant]:')
                     self.log_output(_response_message.content)
@@ -791,19 +856,33 @@ class LLMAgent(Agent):
         # usage
         prompt_tokens = _response_message.prompt_tokens
         completion_tokens = _response_message.completion_tokens
+        cached_tokens = getattr(_response_message, 'cached_tokens', 0) or 0
+        cache_creation_input_tokens = getattr(
+            _response_message, 'cache_creation_input_tokens', 0) or 0
 
         async with LLMAgent.TOKEN_LOCK:
             LLMAgent.TOTAL_PROMPT_TOKENS += prompt_tokens
             LLMAgent.TOTAL_COMPLETION_TOKENS += completion_tokens
+            LLMAgent.TOTAL_CACHED_TOKENS += cached_tokens
+            LLMAgent.TOTAL_CACHE_CREATION_INPUT_TOKENS += cache_creation_input_tokens
 
         # tokens in the current step
         self.log_output(
             f'[usage] prompt_tokens: {prompt_tokens}, completion_tokens: {completion_tokens}'
         )
+        if cached_tokens or cache_creation_input_tokens:
+            self.log_output(
+                f'[usage_cache] cache_hit: {cached_tokens}, cache_created: {cache_creation_input_tokens}'
+            )
         # total tokens for the process so far
         self.log_output(
             f'[usage_total] total_prompt_tokens: {LLMAgent.TOTAL_PROMPT_TOKENS}, '
             f'total_completion_tokens: {LLMAgent.TOTAL_COMPLETION_TOKENS}')
+        if LLMAgent.TOTAL_CACHED_TOKENS or LLMAgent.TOTAL_CACHE_CREATION_INPUT_TOKENS:
+            self.log_output(
+                f'[usage_cache_total] total_cache_hit: {LLMAgent.TOTAL_CACHED_TOKENS}, '
+                f'total_cache_created: {LLMAgent.TOTAL_CACHE_CREATION_INPUT_TOKENS}'
+            )
 
         yield messages
 
