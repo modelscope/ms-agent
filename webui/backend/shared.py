@@ -13,7 +13,8 @@ from session_manager import SessionManager
 BASE_DIR = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PROJECTS_DIR = os.path.join(BASE_DIR, 'projects')
-CONFIG_DIR = os.path.join(BASE_DIR, 'webui', 'config')
+# Use ~/.ms_agent/ for configuration storage (privacy-sensitive data)
+CONFIG_DIR = os.path.expanduser('~/.ms_agent')
 
 # Shared instances
 project_discovery = ProjectDiscovery(PROJECTS_DIR)

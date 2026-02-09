@@ -59,7 +59,6 @@ class ComposeVideo(CodeAgent):
             segment = segments[i]
             is_video_frame = 'video' in segment
             use_video_soundtrack = self.config.use_video_soundtrack and is_video_frame
-
             if audio_path and os.path.exists(
                     audio_path) and not use_video_soundtrack:
                 try:
@@ -71,6 +70,10 @@ class ComposeVideo(CodeAgent):
                     actual_duration = 2.0
             else:
                 actual_duration = None
+                if not use_video_soundtrack:
+                    raise ValueError(
+                        f'File {audio_path} does not exist, run again to generate it.'
+                    )
 
             if i < len(foreground_paths
                        ) and foreground_paths[i] and os.path.exists(
@@ -479,6 +482,8 @@ class ComposeVideo(CodeAgent):
             preset=self.preset,
             write_logfile=False)
 
+        logger.info(f'file saved: {output_path}')
+
         if os.path.exists(output_path) and os.path.getsize(output_path) > 1024:
             test_clip = mp.VideoFileClip(output_path)
             actual_duration = test_clip.duration
@@ -490,6 +495,7 @@ class ComposeVideo(CodeAgent):
         final_name = 'final_video.mp4'
         final_video_path = os.path.join(self.work_dir, final_name)
         if os.path.exists(final_video_path):
+            logger.info(f'output: {final_video_path}')
             return messages
         with open(os.path.join(self.work_dir, 'segments.txt'), 'r') as f:
             segments = json.load(f)

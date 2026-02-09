@@ -28,12 +28,23 @@ class CreateBackground(CodeAgent):
         self.slogan = getattr(self.config, 'slogan', [])
 
     def get_font(self, size):
-        for font_name in self.fonts:
+        candidates = list(self.fonts)
+        import subprocess
+        for name in candidates:
             try:
-                font_path = fm.findfont(fm.FontProperties(family=font_name))
-                return ImageFont.truetype(font_path, size)
-            except OSError or ValueError:
+                font_path = subprocess.check_output(
+                    ['fc-match', '-f', '%{file}\n', name], text=True).strip()
+
+                font = ImageFont.truetype(font_path, size)
+                font.getmask('中')
+
+                logger.info(f"Using font '{name}' -> {font_path}")
+                return font
+            except Exception as e:
+                logger.warning(f"Font '{name}' not usable: {e}")
                 continue
+
+        logger.error('No Chinese font found, falling back to default.')
         return ImageFont.load_default()
 
     async def execute_code(self, messages, **kwargs):

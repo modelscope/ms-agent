@@ -32,7 +32,7 @@ prompt:
 
     7. Respond in the same language the user uses. If the user switches, switch accordingly.
 
-    For requests that require performing a specific task or retrieving information, using the following format **in user language**:
+    For requests that require performing a specific task or retrieving information, using the following format:
     ```
     The user needs to ...
     I have analyzed this request in detail and broken it down into the following steps:
@@ -47,6 +47,8 @@ prompt:
     ...
     I have carefully reviewed the tool's output. The result does/does not fully meet my expectations. Next, I need to ...
     ```
+
+    **Important: Always respond in the same language the user is using.**
 
 max_chat_round: 9999
 

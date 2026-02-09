@@ -10,7 +10,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import click
 from ms_agent.llm.openai import OpenAIChat
 from ms_agent.rag.extraction_manager import extract_key_information
-from ms_agent.tools.exa.schema import dump_batch_search_results
+from ms_agent.tools.search.exa.schema import dump_batch_search_results
 from ms_agent.tools.search.search_base import SearchRequest, SearchResult
 from ms_agent.tools.search.search_request import get_search_request_generator
 from ms_agent.utils.logger import get_logger

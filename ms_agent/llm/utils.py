@@ -53,6 +53,12 @@ class Message:
     # usage
     completion_tokens: int = 0
     prompt_tokens: int = 0
+
+    # tokens that hit existing cache (billed at reduced rate like 0.1x)
+    cached_tokens: int = 0
+    # tokens used to create new cache (explicit cache only, billed at higher rate like 1.25x)
+    cache_creation_input_tokens: int = 0
+
     api_calls: int = 1
 
     def to_dict(self):
