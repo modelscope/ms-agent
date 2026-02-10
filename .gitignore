@@ -56,6 +56,7 @@ htmlcov/
 nosetests.xml
 coverage.xml
 *.cover
+*node_modules*
 .hypothesis/
 .pytest_cache/
 
@@ -159,3 +160,6 @@ neo4j.lock
 
 **/temp_workspace/
 ms_agent/app/temp_workspace/
+
+# webui
+webui/work_dir/

@@ -23,6 +23,7 @@ class EdgeTTSGenerator:
         import edge_tts
         output_dir = os.path.dirname(output_file) or '.'
         os.makedirs(output_dir, exist_ok=True)
+        text = text.replace('[', '').replace(']', '')
         communicate = edge_tts.Communicate(
             text=text, voice=speaker, rate=rate, pitch=pitch)
 

@@ -1,4 +1,4 @@
-# Copyright (c) Alibaba, Inc. and its affiliates.
+# Copyright (c) ModelScope Contributors. All rights reserved.
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Union
 
@@ -47,12 +47,18 @@ class Message:
     partial: bool = False
     prefix: bool = False
 
-    # code block
-    resources: List[str] = field(default_factory=list)
+    # UI resources from mcp result
+    resources: List[Dict[str, str]] = field(default_factory=list)
 
     # usage
     completion_tokens: int = 0
     prompt_tokens: int = 0
+
+    # tokens that hit existing cache (billed at reduced rate like 0.1x)
+    cached_tokens: int = 0
+    # tokens used to create new cache (explicit cache only, billed at higher rate like 1.25x)
+    cache_creation_input_tokens: int = 0
+
     api_calls: int = 1
 
     def to_dict(self):

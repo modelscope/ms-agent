@@ -1,4 +1,4 @@
-# Copyright (c) Alibaba, Inc. and its affiliates.
+# Copyright (c) ModelScope Contributors. All rights reserved.
 # flake8: noqa
 import os
 from typing import Any, Dict, List, Optional, Tuple

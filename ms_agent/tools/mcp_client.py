@@ -1,4 +1,4 @@
-# Copyright (c) Alibaba, Inc. and its affiliates.
+# Copyright (c) ModelScope Contributors. All rights reserved.
 import os
 from contextlib import AsyncExitStack
 from datetime import timedelta
@@ -79,8 +79,10 @@ class MCPClient(ToolBase):
             if content.type == 'text':
                 texts.append(content.text)
             elif content.type == 'resource':
-                texts.append(str(content.resource))
-                resources.append(str(content.resource))
+                import json5
+                json_str = content.resource.model_dump_json(by_alias=True)
+                texts.append(json_str)
+                resources.append(json5.loads(json_str))
 
         if resources:
             return {'text': '\n\n'.join(texts), 'resources': resources}

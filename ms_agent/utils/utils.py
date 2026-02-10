@@ -1,4 +1,4 @@
-# Copyright (c) Alibaba, Inc. and its affiliates.
+# Copyright (c) ModelScope Contributors. All rights reserved.
 import base64
 import glob
 import hashlib
@@ -378,7 +378,7 @@ def load_image_from_url_to_pil(url: str) -> 'Image.Image':
     """
     from PIL import Image
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=(10, 25))
         # Raise an HTTPError for bad responses (4xx or 5xx)
         response.raise_for_status()
         image_bytes = BytesIO(response.content)
@@ -774,3 +774,61 @@ def file_lock(lock_dir: str, filename: str, timeout: float = 120.0):
             os.remove(lock_file_path)
         except OSError:
             pass
+
+
+def render_markdown_todo(md_path: str,
+                         *,
+                         title: str = ' CURRENT PLAN',
+                         use_pager: bool = False) -> None:
+    """
+    Render a Markdown todo list nicely in terminal using Rich.
+    - Cross-platform (Windows/Linux/macOS)
+    - Good-looking: theme + panel + soft wrapping
+    """
+    from rich.console import Console
+    from rich.markdown import Markdown
+    from rich.panel import Panel
+    from rich.theme import Theme
+
+    theme = Theme({
+        'markdown.code': 'bold',
+        'markdown.code_block': 'dim',
+        'markdown.h1': 'bold',
+        'markdown.h2': 'bold',
+        'markdown.h3': 'bold',
+        'markdown.link': 'underline',
+        'markdown.list': '',
+    })
+    console = Console(theme=theme, soft_wrap=True, highlight=False)
+
+    try:
+        md_text = Path(md_path).read_text(encoding='utf-8')
+    except FileNotFoundError:
+        logger.error(f'Markdown file not found: {md_path}')
+        return
+    except Exception as e:
+        logger.error(f'Error reading markdown file: {e}')
+        return
+
+    if not md_text:
+        return
+
+    md = Markdown(
+        md_text,
+        code_theme='monokai',
+        hyperlinks=True,
+        inline_code_lexer='text',
+    )
+
+    content = Panel.fit(
+        md,
+        title=title,
+        border_style='dim',
+        padding=(1, 2),
+    )
+
+    if use_pager:
+        with console.pager():
+            console.print(content)
+    else:
+        console.print(content)
