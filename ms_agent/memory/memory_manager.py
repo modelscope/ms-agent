@@ -17,10 +17,15 @@ class SharedMemoryManager:
     async def get_shared_memory(cls, config: DictConfig,
                                 mem_instance_type: str) -> Memory:
         """Get or create a shared memory instance based on configuration."""
-        user_id: str = getattr(getattr(config.memory, mem_instance_type, OmegaConf.create({})), 'user_id', DEFAULT_USER)
-        path: str = getattr(getattr(config.memory, mem_instance_type, OmegaConf.create({})), 'path', DEFAULT_OUTPUT_DIR)
+        user_id: str = getattr(
+            getattr(config.memory, mem_instance_type, OmegaConf.create({})),
+            'user_id', DEFAULT_USER)
+        path: str = getattr(
+            getattr(config.memory, mem_instance_type, OmegaConf.create({})),
+            'path', DEFAULT_OUTPUT_DIR)
+        llm_str: str = getattr(config.llm, 'model', 'default_model')
 
-        key = f'{mem_instance_type}_{user_id}_{path}'
+        key = f'{mem_instance_type}_{user_id}_{llm_str}_{path}'
 
         if key not in cls._instances:
             logger.info(f'Creating new shared memory instance for key: {key}')
