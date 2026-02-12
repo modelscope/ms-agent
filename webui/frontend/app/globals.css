@@ -1,0 +1,142 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100;
+  }
+}
+
+/* Markdown Styles */
+.prose pre {
+  @apply bg-slate-950 text-slate-50 rounded-lg p-4 overflow-x-auto my-4;
+}
+
+.prose code {
+  @apply bg-slate-100 text-slate-900 px-1.5 py-0.5 rounded text-sm font-mono;
+}
+
+.dark .prose code {
+  @apply bg-slate-700 text-slate-200;
+}
+
+.prose pre code {
+  @apply bg-transparent text-inherit p-0;
+}
+
+.prose h1,
+.prose h2,
+.prose h3 {
+  @apply font-semibold tracking-tight text-slate-900 mt-8 mb-4;
+}
+
+.dark .prose h1,
+.dark .prose h2,
+.dark .prose h3 {
+  @apply text-slate-100;
+}
+
+.prose p {
+  @apply leading-7 mb-4 text-slate-700;
+}
+
+.dark .prose p {
+  @apply text-slate-300;
+}
+
+.prose ul {
+  @apply list-disc list-outside ml-6 mb-4 text-slate-700;
+}
+
+.dark .prose ul {
+  @apply text-slate-300;
+}
+
+.prose ol {
+  @apply list-decimal list-outside ml-6 mb-4 text-slate-700;
+}
+
+.dark .prose ol {
+  @apply text-slate-300;
+}
+
+.prose blockquote {
+  @apply border-l-4 border-blue-500 pl-4 italic my-4 text-slate-600;
+}
+
+.dark .prose blockquote {
+  @apply text-slate-400 border-blue-400;
+}
+
+.prose a {
+  @apply text-blue-600 hover:text-blue-700 underline;
+}
+
+.dark .prose a {
+  @apply text-blue-400 hover:text-blue-300;
+}
+
+.prose strong {
+  @apply text-slate-900 font-semibold;
+}
+
+.dark .prose strong {
+  @apply text-slate-100;
+}
+
+/* KaTeX Styles for Dark Mode */
+.dark .katex {
+  color: #e2e8f0;
+}
+
+.dark .katex .mord,
+.dark .katex .mbin,
+.dark .katex .mrel,
+.dark .katex .mopen,
+.dark .katex .mclose,
+.dark .katex .mpunct,
+.dark .katex .minner,
+.dark .katex .mop {
+  color: #e2e8f0;
+}
+
+/* Tables */
+.prose table {
+  @apply border-collapse;
+}
+
+.prose th {
+  @apply bg-slate-100 text-slate-900 font-semibold px-4 py-2 border border-slate-200;
+}
+
+.dark .prose th {
+  @apply bg-slate-700 text-slate-100 border-slate-600;
+}
+
+.prose td {
+  @apply px-4 py-2 border border-slate-200 text-slate-700;
+}
+
+.dark .prose td {
+  @apply border-slate-600 text-slate-300;
+}
+
+/* Custom Animations */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out forwards;
+}
