@@ -1,4 +1,4 @@
-<h1> MS-Agent: Lightweight Framework for Empowering Agents with Autonomous Exploration</h1>
+<h1> MS-Agent: a lightweight framework to empower agentic execution of complex tasks</h1>
 
 <p align="center">
     <br>
