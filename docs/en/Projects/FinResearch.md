@@ -1,3 +1,9 @@
+---
+slug: FinResearch
+title: Finance Research Workflow
+description: Ms-Agent FinResearch is a multi-agent workflow designed for financial market research, combining quantitative data analysis and in-depth sentiment research to generate professional reports.
+---
+
 # FinResearch
 
 Ms-Agent’s FinResearch project is a multi-agent workflow tailored for financial market research. It combines quantitative market/data analysis with in-depth online information research to automatically produce a structured, professional research report.
@@ -73,10 +79,41 @@ pip install akshare baostock
 
 ### Sandbox Environment
 
+By default, the Collector and Analyst agents use a Docker-based sandbox to safely execute code:
+
 ```bash
 pip install ms-enclave docker websocket-client  # https://github.com/modelscope/ms-enclave
 bash projects/fin_research/tools/build_jupyter_image.sh
 ```
+
+If you prefer not to install Docker and related dependencies, you can configure a local code execution tool instead. In both `analyst.yaml` and `collector.yaml`, change the default `tools` configuration to:
+
+```yaml
+tools:
+  code_executor:
+    mcp: false
+    implementation: python_env
+    exclude:
+      - python_executor
+      - shell_executor
+      - file_operation
+```
+
+With this configuration, code is executed via a Jupyter kernel–based notebook executor that isolates environment variables and supports shell command execution; the necessary dependencies (for data analysis and code execution) will be installed automatically on the first run.
+
+If you only need a lighter-weight Python execution environment and do not want to introduce notebook-related dependencies, you can instead use:
+
+```yaml
+tools:
+  code_executor:
+    mcp: false
+    implementation: python_env
+    exclude:
+      - notebook_executor
+      - file_operation
+```
+
+This configuration uses an independent Python executor together with a shell command executor and is suitable for lightweight code execution scenarios.
 
 ### Environment Variables
 

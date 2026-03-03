@@ -1,2 +1,2 @@
-# Copyright (c) Alibaba, Inc. and its affiliates.
+# Copyright (c) ModelScope Contributors. All rights reserved.
 from .agent.llm_agent import LLMAgent

@@ -1,7 +1,8 @@
-# Copyright (c) Alibaba, Inc. and its affiliates.
+# Copyright (c) ModelScope Contributors. All rights reserved.
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
+import json
 from typing_extensions import Literal, Required, TypedDict
 
 
@@ -9,8 +10,8 @@ class ToolCall(TypedDict, total=False):
     id: str = 'default_id'
     index: int = 0
     type: str = 'function'
-    tool_name: Required[str]
-    arguments: str = ''
+    tool_name: str = ''
+    arguments: str = '{}'
 
 
 class Tool(TypedDict, total=False):
@@ -27,12 +28,13 @@ class Tool(TypedDict, total=False):
 class Message:
     role: Literal['system', 'user', 'assistant', 'tool']
 
-    content: str = ''
+    content: Union[str, List[Dict[str, str]]] = ''
 
     tool_calls: List[ToolCall] = field(default_factory=list)
 
     tool_call_id: Optional[str] = None
 
+    # Also defined in OpenAI message
     name: Optional[str] = None
 
     # needed for output
@@ -45,10 +47,65 @@ class Message:
     partial: bool = False
     prefix: bool = False
 
+    # UI resources from mcp result
+    resources: List[Dict[str, str]] = field(default_factory=list)
+
     # usage
     completion_tokens: int = 0
     prompt_tokens: int = 0
+
+    # tokens that hit existing cache (billed at reduced rate like 0.1x)
+    cached_tokens: int = 0
+    # tokens used to create new cache (explicit cache only, billed at higher rate like 1.25x)
+    cache_creation_input_tokens: int = 0
+
     api_calls: int = 1
 
     def to_dict(self):
         return asdict(self)
+
+    def to_dict_clean(self):
+        raw_dict = asdict(self)
+        if raw_dict.get('tool_calls'):
+            for idx, tool_call in enumerate(raw_dict['tool_calls']):
+                try:
+                    if tool_call['arguments']:
+                        json.loads(tool_call['arguments'])
+                except Exception:
+                    tool_call['arguments'] = '{}'
+                raw_dict['tool_calls'][idx] = {
+                    'id': tool_call['id'],
+                    'type': tool_call['type'],
+                    'function': {
+                        'name': tool_call['tool_name'],
+                        'arguments': tool_call['arguments'],
+                    }
+                }
+        required = ['content', 'role']
+        rm = ['completion_tokens', 'prompt_tokens', 'api_calls']
+        return {
+            key: value
+            for key, value in raw_dict.items()
+            if (value or key in required) and key not in rm
+        }
+
+
+@dataclass
+class ToolResult:
+    text: str
+    resources: List[str] = field(default_factory=list)
+    extra: dict = field(default_factory=dict)
+
+    @staticmethod
+    def from_raw(raw):
+        if isinstance(raw, str):
+            return ToolResult(text=raw)
+        if isinstance(raw, dict):
+            return ToolResult(
+                text=str(raw.get('text', '')),
+                resources=raw.get('resources', []),
+                extra={
+                    k: v
+                    for k, v in raw.items() if k not in ['text', 'resources']
+                })
+        raise TypeError('tool_call_result must be str or dict')

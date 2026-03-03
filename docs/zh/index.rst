@@ -2,33 +2,32 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-MS-Agent DOCUMENTATION
+MS-Agent 官方文档
 ========================
 
 .. toctree::
    :maxdepth: 2
    :caption: 🚀 快速开始
 
-   GetStarted/安装.md
-   GetStarted/快速上手.md
+   GetStarted/installation
+   GetStarted/quick-start
 
 .. toctree::
    :maxdepth: 2
    :caption: ⚙️ 组件
 
-   Components/配置与参数.md
-   Components/基础智能体.md
-   Components/工作流.md
-   Components/支持的模型.md
-   Components/工具.md
-   Components/贡献者指南.md
+   Components/config
+   Components/llm-agent
+   Components/workflow
+   Components/supported-models
+   Components/tools
+   Components/contributor-guide
 
 .. toctree::
    :maxdepth: 2
    :caption: 📁 项目
 
-   Projects/智能体技能.md
-   Projects/深度研究.md
-   Projects/代码生成.md
-   Projects/金融深度研究.md
-   Projects/短视频生成.md
+   Projects/agent-skills
+   Projects/deep-research
+   Projects/fin-research
+   Projects/video-generation

@@ -84,15 +84,42 @@ pip install akshare baostock
 
 ### 沙箱环境
 
-Collector 与 Analyst 需要 Docker 沙箱以安全执行代码：
+Collector 与 Analyst 默认使用 Docker 沙箱以安全执行代码（可选）：
 
 ```bash
 # 安装 ms-enclave（https://github.com/modelscope/ms-enclave）
 pip install ms-enclave docker websocket-client
 
-# 构建所需 Docker 镜像（确保设备已安装并运行 Docker）
+# 构建所需 Docker 镜像（确保系统已安装并运行 Docker）
 bash projects/fin_research/tools/build_jupyter_image.sh
 ```
+
+如果不希望安装Docker等依赖，也可以选择配置本地代码执行工具，推荐将`analyst.yaml`和`collector.yaml`中默认的`tools`配置修改为：
+
+```yaml
+tools:
+  code_executor:
+    mcp: false
+    implementation: python_env
+    exclude:
+      - python_executor
+      - shell_executor
+      - file_operation
+```
+
+该配置下默认依赖Jupyter Kernel执行代码，提供对环境变量的隔离，并支持shell命令执行，相应的依赖将在第一次运行代码时自动安装（包括数据分析和代码执行需要的依赖）。如果希望只使用更轻量的Python执行环境而不引入其他依赖，可以修改为：
+
+```yaml
+tools:
+  code_executor:
+    mcp: false
+    implementation: python_env
+    exclude:
+      - notebook_executor
+      - file_operation
+```
+
+该配置使用独立的Python执行器和Shell命令执行器，适合轻量级代码执行场景。
 
 ## 🚀 快速开始
 
@@ -157,6 +184,17 @@ aggregator:
 ```
 
 随后在命令行中按之前相同的方式启动即可。需要注意的是，由于信息维度不全面，FinResearch可能无法对复杂问题给出篇幅较长、内容丰富的分析报告，建议仅用于测试。
+
+运行FinResearch应用：
+
+```bash
+# 使用命令行的方式启动Gradio服务（可以不带参数启动，只使用--app_type fin_research）
+ms-agent app --app_type fin_research --server_name 0.0.0.0 --server_port 7860 --share
+
+# 使用Python脚本的方式启动Gradio服务
+cd ms-agent/app
+python fin_research.py
+```
 
 ### 样例
 

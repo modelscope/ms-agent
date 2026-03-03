@@ -1,4 +1,4 @@
-# Copyright (c) Alibaba, Inc. and its affiliates.
+# Copyright (c) ModelScope Contributors. All rights reserved.
 import asyncio
 import socket
 from pathlib import Path
@@ -331,7 +331,7 @@ class CodeExecutionTool(ToolBase):
         except Exception as e:
             logger.error(f'Error during sandbox cleanup: {e}', exc_info=True)
 
-    async def get_tools(self) -> Dict[str, Any]:
+    async def _get_tools_inner(self) -> Dict[str, Any]:
         """Return tool definitions for LLM"""
         tools = {
             'code_executor': [
@@ -465,7 +465,7 @@ class CodeExecutionTool(ToolBase):
                         'additionalProperties': False
                     }),
                 Tool(
-                    tool_name='reset_sandbox',
+                    tool_name='reset_executor',
                     server_name='code_executor',
                     description=
                     ('Reset the sandbox state by restarting the kernel. '
@@ -479,7 +479,7 @@ class CodeExecutionTool(ToolBase):
                     },
                 ),
                 Tool(
-                    tool_name='get_sandbox_info',
+                    tool_name='get_executor_info',
                     server_name='code_executor',
                     description='Get current sandbox status and information',
                     parameters={
@@ -492,12 +492,7 @@ class CodeExecutionTool(ToolBase):
             ]
         }
 
-        return {
-            'code_executor': [
-                t for t in tools['code_executor']
-                if t['tool_name'] not in self.exclude_functions
-            ]
-        }
+        return tools
 
     async def call_tool(self, server_name: str, *, tool_name: str,
                         tool_args: dict) -> str:
@@ -739,7 +734,7 @@ class CodeExecutionTool(ToolBase):
                 },
                 indent=2)
 
-    async def reset_sandbox(self) -> str:
+    async def reset_executor(self) -> str:
         """
         Reset the sandbox by recreating it.
         This clears all variables and session state.
@@ -778,7 +773,7 @@ class CodeExecutionTool(ToolBase):
             logger.error(f'Reset sandbox failed: {e}', exc_info=True)
             return json.dumps({'success': False, 'error': str(e)}, indent=2)
 
-    async def get_sandbox_info(self) -> str:
+    async def get_executor_info(self) -> str:
         """
         Get current sandbox information.
 

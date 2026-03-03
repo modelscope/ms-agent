@@ -1,3 +1,9 @@
+---
+slug: Installation
+title: Installation
+description: Ms-Agent Installation Guide
+---
+
 # Installation
 
 ## Wheel Package Installation
@@ -18,7 +24,7 @@ cd ms-agent
 pip install -e .
 ```
 
-If using DeepResearch or CodeScratch, there may be additional dependencies. Please install according to the corresponding README documentation.
+If using DeepResearch or CodeGenesis, there may be additional dependencies. Please install according to the corresponding README documentation.
 
 ## Images
 

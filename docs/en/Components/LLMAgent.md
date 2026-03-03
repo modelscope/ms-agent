@@ -1,3 +1,9 @@
+---
+slug: LLMAgent
+title: LLMAgent for basic usage
+description: Ms-Agent LLMAgent for basic usage
+---
+
 # LLM Agent
 
 The basic agent class in MS-Agent is [LLMAgent](https://github.com/modelscope/ms-agent/blob/main/ms_agent/agent/llm_agent.py). MS-Agent's conversational capabilities and tool invocation are all handled through this class. The diagram is as follows:
@@ -81,4 +87,4 @@ In this case, agent.yaml will use your custom agent class instead of loading the
 
 1. A basic agent.yaml: https://www.modelscope.cn/models/ms-agent/simple_agent
 2. Agent with external code: https://www.modelscope.cn/models/ms-agent/simple_agent_code
-3. Using callbacks to complete complex workflows: https://github.com/modelscope/ms-agent/tree/main/projects/code_scratch
+3. Using callbacks to complete complex workflows: https://github.com/modelscope/ms-agent/tree/main/projects/code_genesis

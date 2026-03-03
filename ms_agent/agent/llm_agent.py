@@ -1,8 +1,10 @@
-# Copyright (c) Alibaba, Inc. and its affiliates.
+# Copyright (c) ModelScope Contributors. All rights reserved.
+import asyncio
 import importlib
 import inspect
 import os.path
 import sys
+import threading
 import uuid
 from contextlib import contextmanager
 from copy import deepcopy
@@ -12,25 +14,27 @@ import json
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback, callbacks_mapping
 from ms_agent.llm.llm import LLM
-from ms_agent.llm.utils import Message
-from ms_agent.memory import Memory, memory_mapping
-from ms_agent.memory.mem0ai import Mem0Memory, SharedMemoryManager
+from ms_agent.llm.utils import Message, ToolResult
+from ms_agent.memory import Memory, get_memory_meta_safe, memory_mapping
+from ms_agent.memory.memory_manager import SharedMemoryManager
 from ms_agent.rag.base import RAG
 from ms_agent.rag.utils import rag_mapping
 from ms_agent.tools import ToolManager
 from ms_agent.utils import async_retry, read_history, save_history
-from ms_agent.utils.constants import (DEFAULT_OUTPUT_DIR, DEFAULT_TAG,
-                                      DEFAULT_USER)
-from ms_agent.utils.logger import logger
+from ms_agent.utils.constants import DEFAULT_TAG, DEFAULT_USER
+from ms_agent.utils.logger import get_logger
 from omegaconf import DictConfig, OmegaConf
 
 from ..config.config import Config, ConfigLifecycleHandler
 from .base import Agent
 
+logger = get_logger()
+
 
 class LLMAgent(Agent):
     """
-    An agent designed to run LLM-based tasks with support for tools, memory, planning, and callbacks.
+    An agent designed to run LLM-based tasks with support for tools, memory,
+    planning, callbacks, and automatic skill execution.
 
     This class provides a full lifecycle for running an LLM agent, including:
     - Prompt preparation
@@ -40,12 +44,37 @@ class LLMAgent(Agent):
     - Planning logic
     - Stream or non-stream response generation
     - Callback hooks at various stages of execution
+    - Automatic skill detection and execution (AutoSkills integration)
 
     Args:
         config (DictConfig): Pre-loaded configuration object.
         tag (str): The name of this class defined by the user.
         trust_remote_code (bool): Whether to trust remote code if any.
         **kwargs: Additional keyword arguments passed to the parent Agent constructor.
+
+    Skills Configuration (in config.skills):
+        path: Path(s) to skill directories.
+        enable_retrieve: Whether to use retriever (None=auto based on skill count).
+        retrieve_args: Arguments for HybridRetriever (top_k, min_score).
+        max_candidate_skills: Maximum candidate skills to consider.
+        max_retries: Maximum retry attempts for skill execution.
+        work_dir: Working directory for skill execution.
+        use_sandbox: Whether to use Docker sandbox.
+        auto_execute: Whether to auto-execute skills after retrieval.
+
+    Example:
+        ```python
+        config = DictConfig({
+            'llm': {...},
+            'skills': {
+                'path': '/path/to/skills',
+                'auto_execute': True,
+                'work_dir': '/path/to/workspace'
+            }
+        })
+        agent = LLMAgent(config, tag='my-agent')
+        result = await agent.run('Generate a PDF report for Q4 sales of Apple')
+        ```
     """
 
     AGENT_NAME = 'LLMAgent'
@@ -53,6 +82,12 @@ class LLMAgent(Agent):
     DEFAULT_SYSTEM = 'You are a helpful assistant.'
 
     DEFAULT_MAX_CHAT_ROUND = 20
+
+    TOTAL_PROMPT_TOKENS = 0
+    TOTAL_COMPLETION_TOKENS = 0
+    TOTAL_CACHED_TOKENS = 0
+    TOTAL_CACHE_CREATION_INPUT_TOKENS = 0
+    TOKEN_LOCK = asyncio.Lock()
 
     def __init__(self,
                  config: DictConfig = DictConfig({}),
@@ -79,6 +114,233 @@ class LLMAgent(Agent):
             kwargs.get('mcp_config', {}))
         self.mcp_client = kwargs.get('mcp_client', None)
         self.config_handler = self.register_config_handler()
+
+        # AutoSkills integration (lazy initialization)
+        self._auto_skills = None
+        self._auto_skills_initialized = False
+        self._last_skill_result = None
+        self._skill_mode_active = False
+
+    def _get_skills_config(self) -> Optional[DictConfig]:
+        """Get skills configuration from agent config."""
+        if hasattr(self.config, 'skills') and self.config.skills:
+            return self.config.skills
+        return None
+
+    def _ensure_auto_skills(self) -> bool:
+        """
+        Ensure AutoSkills is initialized (lazy initialization).
+
+        Returns:
+            True if AutoSkills is available and initialized.
+        """
+        if self._auto_skills_initialized:
+            return self._auto_skills is not None
+
+        skills_config = self._get_skills_config()
+        if not skills_config:
+            self._auto_skills_initialized = True
+            return False
+
+        skills_path = getattr(skills_config, 'path', None)
+        if not skills_path:
+            logger.debug('No skills path configured')
+            self._auto_skills_initialized = True
+            return False
+
+        # Ensure LLM is initialized
+        if self.llm is None:
+            self.prepare_llm()
+
+        try:
+            from ms_agent.skill.auto_skills import AutoSkills
+
+            # Check sandbox requirements
+            use_sandbox = getattr(skills_config, 'use_sandbox', True)
+            if use_sandbox:
+                from ms_agent.utils.docker_utils import is_docker_daemon_running
+                if not is_docker_daemon_running():
+                    logger.warning(
+                        'Docker not running, disabling sandbox for skills')
+                    use_sandbox = False
+
+            # Build retrieve args
+            retrieve_args = {}
+            if hasattr(skills_config, 'retrieve_args'):
+                retrieve_args = OmegaConf.to_container(
+                    skills_config.retrieve_args)
+
+            self._auto_skills = AutoSkills(
+                skills=skills_path,
+                llm=self.llm,
+                enable_retrieve=getattr(skills_config, 'enable_retrieve',
+                                        None),
+                retrieve_args=retrieve_args,
+                max_candidate_skills=getattr(skills_config,
+                                             'max_candidate_skills', 10),
+                max_retries=getattr(skills_config, 'max_retries', 3),
+                work_dir=getattr(skills_config, 'work_dir', None),
+                use_sandbox=use_sandbox,
+            )
+            logger.info(
+                f'AutoSkills initialized with {len(self._auto_skills.all_skills)} skills'
+            )
+            self._auto_skills_initialized = True
+            return True
+
+        except Exception as e:
+            logger.warning(f'Failed to initialize AutoSkills: {e}')
+            self._auto_skills_initialized = True
+            return False
+
+    @property
+    def skills_available(self) -> bool:
+        """Check if AutoSkills is available."""
+        return self._ensure_auto_skills()
+
+    @property
+    def auto_skills(self):
+        """Get AutoSkills instance (maybe None if not configured)."""
+        self._ensure_auto_skills()
+        return self._auto_skills
+
+    async def should_use_skills(self, query: str) -> bool:
+        """
+        Determine if the query should use skills.
+
+        Combines keyword detection with LLM-based analysis.
+
+        Args:
+            query: User's query string.
+
+        Returns:
+            True if skills should be used for this query.
+        """
+        if not self._ensure_auto_skills():
+            return False
+
+        skills_config = self._get_skills_config()
+        if not skills_config:
+            return False
+        skills_path = getattr(skills_config, 'path', None)
+        if not skills_path:
+            return False
+
+        # Use LLM analysis for ambiguous queries
+        try:
+            needs_skills, _, _, _ = self._auto_skills._analyze_query(query)
+            return needs_skills
+        except Exception as e:
+            logger.error(f'Skill analysis error: {e}')
+            return False
+
+    async def get_skill_dag(self, query: str):
+        """
+        Get skill DAG for a query without executing.
+
+        Args:
+            query: User's query string.
+
+        Returns:
+            SkillDAGResult containing the execution plan, or None if unavailable.
+        """
+        if not self._ensure_auto_skills():
+            return None
+        return await self._auto_skills.get_skill_dag(query)
+
+    async def execute_skills(self, query: str, execution_input=None):
+        """
+        Execute skills for a query.
+
+        Args:
+            query: User's query string.
+            execution_input: Optional initial input for skills.
+
+        Returns:
+            SkillDAGResult with execution results, or None if unavailable.
+        """
+        if not self._ensure_auto_skills():
+            return None
+
+        skills_config = self._get_skills_config()
+        stop_on_failure = getattr(skills_config, 'stop_on_failure',
+                                  True) if skills_config else True
+
+        result = await self._auto_skills.run(
+            query=query,
+            execution_input=execution_input,
+            stop_on_failure=stop_on_failure)
+        self._last_skill_result = result
+        return result
+
+    def _format_skill_result_as_messages(self, dag_result) -> List[Message]:
+        """
+        Format skill execution result as messages for agent history.
+
+        Args:
+            dag_result: SkillDAGResult from skill execution.
+
+        Returns:
+            List of Message objects describing the result.
+        """
+        messages = []
+
+        # Handle chat-only response
+        if dag_result.chat_response:
+            messages.append(
+                Message(role='assistant', content=dag_result.chat_response))
+            return messages
+
+        # Handle incomplete skills
+        if not dag_result.is_complete:
+            content = "I couldn't find suitable skills for this task."
+            if dag_result.clarification:
+                content += f'\n\n{dag_result.clarification}'
+            messages.append(Message(role='assistant', content=content))
+            return messages
+
+        # Format execution result
+        if dag_result.execution_result:
+            exec_result = dag_result.execution_result
+            skill_names = list(dag_result.selected_skills.keys())
+
+            if exec_result.success:
+                content = f"Successfully executed {len(skill_names)} skill(s): {', '.join(skill_names)}\n\n"
+
+                # Add output summaries
+                for skill_id, result in exec_result.results.items():
+                    if result.success and result.output:
+                        output = result.output
+                        if output.stdout:
+                            stdout_preview = output.stdout[:1000]
+                            if len(output.stdout) > 1000:
+                                stdout_preview += '...'
+                            content += f'**{skill_id} output:**\n{stdout_preview}\n\n'
+                        if output.output_files:
+                            content += f'**Generated files:** {list(output.output_files.values())}\n\n'
+
+                content += f'Total execution time: {exec_result.total_duration_ms:.2f}ms'
+            else:
+                content = 'Skill execution completed with errors.\n\n'
+                for skill_id, result in exec_result.results.items():
+                    if not result.success:
+                        content += f'**{skill_id} failed:** {result.error}\n'
+
+            messages.append(Message(role='assistant', content=content))
+        else:
+            # DAG only, no execution
+            skill_names = list(dag_result.selected_skills.keys())
+            content = f'Found {len(skill_names)} relevant skill(s) for your task:\n'
+            for skill_id, skill in dag_result.selected_skills.items():
+                desc_preview = skill.description[:100]
+                if len(skill.description) > 100:
+                    desc_preview += '...'
+                content += f'- **{skill.name}** ({skill_id}): {desc_preview}\n'
+            content += f'\nExecution order: {dag_result.execution_order}'
+
+            messages.append(Message(role='assistant', content=content))
+
+        return messages
 
     def register_callback(self, callback: Callback):
         """
@@ -213,6 +475,8 @@ class LLMAgent(Agent):
         await self.loop_callback('on_tool_call', messages)
 
     async def after_tool_call(self, messages: List[Message]):
+        if messages[-1].role == 'assistant' and not messages[-1].tool_calls:
+            self.runtime.should_stop = True
         await self.loop_callback('after_tool_call', messages)
 
     async def loop_callback(self, point, messages: List[Message]):
@@ -242,11 +506,14 @@ class LLMAgent(Agent):
         assert len(tool_call_result) == len(messages[-1].tool_calls)
         for tool_call_result, tool_call_query in zip(tool_call_result,
                                                      messages[-1].tool_calls):
+            tool_call_result_format = ToolResult.from_raw(tool_call_result)
             _new_message = Message(
                 role='tool',
-                content=tool_call_result,
+                content=tool_call_result_format.text,
                 tool_call_id=tool_call_query['id'],
-                name=tool_call_query['tool_name'])
+                name=tool_call_query['tool_name'],
+                resources=tool_call_result_format.resources)
+
             if _new_message.tool_call_id is None:
                 # If tool call id is None, add a random one
                 _new_message.tool_call_id = str(uuid.uuid4())[:8]
@@ -273,6 +540,41 @@ class LLMAgent(Agent):
         generation_config = getattr(self.config, 'generation_config',
                                     DictConfig({}))
         return getattr(generation_config, 'stream', False)
+
+    @property
+    def show_reasoning(self) -> bool:
+        """Whether to print model reasoning/thinking content in stream mode.
+
+        Notes:
+            - This only affects local console output.
+            - Reasoning is carried by `Message.reasoning_content` (if the backend provides it).
+        """
+        generation_config = getattr(self.config, 'generation_config',
+                                    DictConfig({}))
+        return bool(getattr(generation_config, 'show_reasoning', False))
+
+    @property
+    def reasoning_output(self) -> str:
+        """Where to print reasoning content when `show_reasoning=True`.
+
+        Supported values:
+            - "stderr" (default): keep stdout clean for assistant final text
+            - "stdout": interleave reasoning with assistant output on stdout
+        """
+        generation_config = getattr(self.config, 'generation_config',
+                                    DictConfig({}))
+        return str(getattr(generation_config, 'reasoning_output', 'stdout'))
+
+    def _write_reasoning(self, text: str):
+        if not text:
+            return
+        if self.reasoning_output.lower() == 'stdout':
+            sys.stdout.write(text)
+            sys.stdout.flush()
+        else:
+            # default: stderr
+            sys.stderr.write(text)
+            sys.stderr.flush()
 
     @property
     def system(self):
@@ -320,6 +622,63 @@ class LLMAgent(Agent):
         if self.rag is not None:
             messages[1].content = await self.rag.query(messages[1].content)
 
+    async def do_skill(self,
+                       messages: List[Message]) -> Optional[List[Message]]:
+        """
+        Process skill-related query if applicable.
+
+        Analyzes the user query, determines if skills should be used,
+        and executes the skill pipeline if appropriate.
+
+        Args:
+            messages: Normalized message list with system and user messages
+
+        Returns:
+            Updated messages with skill results if successful and should return,
+            None if no skill processing or fallback to standard agent
+        """
+        # Extract user query from normalized messages
+        query = (
+            messages[1].content
+            if len(messages) > 1 and messages[1].role == 'user' else None)
+
+        if not query:
+            return None
+
+        # Check if skills should be used for this query
+        if not await self.should_use_skills(query):
+            return None
+
+        logger.info('Query detected as skill-related, using skill processing.')
+        self._skill_mode_active = True
+
+        try:
+            skills_config = self._get_skills_config()
+            auto_execute = getattr(skills_config, 'auto_execute',
+                                   True) if skills_config else True
+
+            if auto_execute:
+                dag_result = await self.execute_skills(query)
+            else:
+                dag_result = await self.get_skill_dag(query)
+
+            if dag_result:
+                skill_messages = self._format_skill_result_as_messages(
+                    dag_result)
+                for msg in skill_messages:
+                    messages.append(msg)
+                return messages
+
+            # dag_result is None/empty, fallback to standard agent
+            self._skill_mode_active = False
+            return None
+
+        except Exception as e:
+            logger.warning(
+                f'Skill execution failed: {e}, falling back to standard agent')
+            self._skill_mode_active = False
+            return None
+
     async def load_memory(self):
         """Initialize and append memory tool instances based on the configuration provided in the global config.
 
@@ -328,43 +687,14 @@ class LLMAgent(Agent):
         """
         self.config: DictConfig
         if hasattr(self.config, 'memory'):
-            for _memory in (self.config.memory or []):
-                memory_type = getattr(_memory, 'name', 'default_memory')
-                assert memory_type in memory_mapping, (
-                    f'{memory_type} not in memory_mapping, '
+            for mem_instance_type, _memory in self.config.memory.items():
+                assert mem_instance_type in memory_mapping, (
+                    f'{mem_instance_type} not in memory_mapping, '
                     f'which supports: {list(memory_mapping.keys())}')
 
-                # Use LLM config if no special configuration is specified
-                llm_config = getattr(_memory, 'llm', None)
-                if llm_config is None:
-                    service = self.config.llm.service
-                    config_dict = {
-                        'model':
-                        _memory.summary_model if hasattr(
-                            _memory, 'summary_model') else getattr(
-                                self.config.llm, 'model', None),
-                        'provider':
-                        'openai',
-                        'openai_base_url':
-                        getattr(self.config.llm, f'{service}_base_url', None),
-                        'openai_api_key':
-                        getattr(self.config.llm, f'{service}_api_key', None),
-                        'max_tokens':
-                        getattr(_memory, 'max_tokens', 4096),
-                    }
-                    llm_config_obj = OmegaConf.create(config_dict)
-                    setattr(_memory, 'llm', llm_config_obj)
-                if memory_type == 'mem0':
-                    shared_memory = SharedMemoryManager.get_shared_memory(
-                        _memory)
-                    self.memory_tools.append(shared_memory)
-                else:
-                    self.memory_tools.append(
-                        memory_mapping[memory_type](_memory))
-
-                for memory in self.memory_tools:
-                    # In case any memory tool need other information
-                    memory.set_base_config(self.config)
+                shared_memory = await SharedMemoryManager.get_shared_memory(
+                    self.config, mem_instance_type)
+                self.memory_tools.append(shared_memory)
 
     async def prepare_rag(self):
         """Load and initialize the RAG component from the config."""
@@ -397,6 +727,8 @@ class LLMAgent(Agent):
         Args:
             content (str): Content to log.
         """
+        if len(content) > 1024:
+            content = content[:512] + '\n...\n' + content[-512:]
         for line in content.split('\n'):
             for _line in line.split('\\n'):
                 logger.info(f'[{self.tag}] {_line}')
@@ -459,22 +791,49 @@ class LLMAgent(Agent):
             if self.stream:
                 self.log_output('[assistant]:')
                 _content = ''
+                _reasoning = ''
                 is_first = True
                 _response_message = None
+                _printed_reasoning_header = False
                 for _response_message in self.llm.generate(
                         messages, tools=tools):
                     if is_first:
                         messages.append(_response_message)
                         is_first = False
+
+                    # Optional: stream model "thinking/reasoning" if available.
+                    if self.show_reasoning:
+                        reasoning_text = getattr(_response_message,
+                                                 'reasoning_content', '') or ''
+                        # Some providers may reset / shorten content across chunks.
+                        if len(reasoning_text) < len(_reasoning):
+                            _reasoning = ''
+                        new_reasoning = reasoning_text[len(_reasoning):]
+                        if new_reasoning:
+                            if not _printed_reasoning_header:
+                                self._write_reasoning('[thinking]:\n')
+                                _printed_reasoning_header = True
+                            self._write_reasoning(new_reasoning)
+                            _reasoning = reasoning_text
+
                     new_content = _response_message.content[len(_content):]
                     sys.stdout.write(new_content)
                     sys.stdout.flush()
                     _content = _response_message.content
                     messages[-1] = _response_message
                     yield messages
+                if self.show_reasoning and _printed_reasoning_header:
+                    self._write_reasoning('\n')
                 sys.stdout.write('\n')
             else:
                 _response_message = self.llm.generate(messages, tools=tools)
+                if self.show_reasoning:
+                    reasoning_text = getattr(_response_message,
+                                             'reasoning_content', '') or ''
+                    if reasoning_text:
+                        self._write_reasoning('[thinking]:\n')
+                        self._write_reasoning(reasoning_text)
+                        self._write_reasoning('\n')
                 if _response_message.content:
                     self.log_output('[assistant]:')
                     self.log_output(_response_message.content)
@@ -491,13 +850,40 @@ class LLMAgent(Agent):
 
         if _response_message.tool_calls:
             messages = await self.parallel_tool_call(messages)
-        else:
-            self.runtime.should_stop = True
 
         await self.after_tool_call(messages)
+
+        # usage
+        prompt_tokens = _response_message.prompt_tokens
+        completion_tokens = _response_message.completion_tokens
+        cached_tokens = getattr(_response_message, 'cached_tokens', 0) or 0
+        cache_creation_input_tokens = getattr(
+            _response_message, 'cache_creation_input_tokens', 0) or 0
+
+        async with LLMAgent.TOKEN_LOCK:
+            LLMAgent.TOTAL_PROMPT_TOKENS += prompt_tokens
+            LLMAgent.TOTAL_COMPLETION_TOKENS += completion_tokens
+            LLMAgent.TOTAL_CACHED_TOKENS += cached_tokens
+            LLMAgent.TOTAL_CACHE_CREATION_INPUT_TOKENS += cache_creation_input_tokens
+
+        # tokens in the current step
         self.log_output(
-            f'[usage] prompt_tokens: {_response_message.prompt_tokens}, '
-            f'completion_tokens: {_response_message.completion_tokens}')
+            f'[usage] prompt_tokens: {prompt_tokens}, completion_tokens: {completion_tokens}'
+        )
+        if cached_tokens or cache_creation_input_tokens:
+            self.log_output(
+                f'[usage_cache] cache_hit: {cached_tokens}, cache_created: {cache_creation_input_tokens}'
+            )
+        # total tokens for the process so far
+        self.log_output(
+            f'[usage_total] total_prompt_tokens: {LLMAgent.TOTAL_PROMPT_TOKENS}, '
+            f'total_completion_tokens: {LLMAgent.TOTAL_COMPLETION_TOKENS}')
+        if LLMAgent.TOTAL_CACHED_TOKENS or LLMAgent.TOTAL_CACHE_CREATION_INPUT_TOKENS:
+            self.log_output(
+                f'[usage_cache_total] total_cache_hit: {LLMAgent.TOTAL_CACHED_TOKENS}, '
+                f'total_cache_created: {LLMAgent.TOTAL_CACHE_CREATION_INPUT_TOKENS}'
+            )
+
         yield messages
 
     def prepare_llm(self):
@@ -551,6 +937,51 @@ class LLMAgent(Agent):
                     break
         return user_id
 
+    def _get_step_memory_info(self, memory_config: DictConfig):
+        user_id, agent_id, run_id, memory_type = get_memory_meta_safe(
+            memory_config, 'add_after_step')
+        if all(value is None
+               for value in [user_id, agent_id, run_id, memory_type]):
+            return None, None, None, None
+        user_id = user_id or getattr(memory_config, 'user_id', None)
+        return user_id, agent_id, run_id, memory_type
+
+    def _get_run_memory_info(self, memory_config: DictConfig):
+        user_id, agent_id, run_id, memory_type = get_memory_meta_safe(
+            memory_config,
+            'add_after_task',
+            default_user_id=getattr(memory_config, 'user_id', None))
+        if all(value is None
+               for value in [user_id, agent_id, run_id, memory_type]):
+            return None, None, None, None
+        user_id = user_id or getattr(memory_config, 'user_id', None)
+        agent_id = agent_id or self.tag
+        memory_type = memory_type or None
+        return user_id, agent_id, run_id, memory_type
+
+    async def add_memory(self, messages: List[Message], add_type, **kwargs):
+        if hasattr(self.config, 'memory') and self.config.memory:
+            tools_num = len(self.memory_tools) if self.memory_tools else 0
+
+            for idx, (mem_instance_type,
+                      memory_config) in enumerate(self.config.memory.items()):
+                if add_type == 'add_after_task':
+                    user_id, agent_id, run_id, memory_type = self._get_run_memory_info(
+                        memory_config)
+                else:
+                    user_id, agent_id, run_id, memory_type = self._get_step_memory_info(
+                        memory_config)
+
+                if idx < tools_num:
+                    if any(v is not None
+                           for v in [user_id, agent_id, run_id, memory_type]):
+                        await self.memory_tools[idx].add(
+                            messages,
+                            user_id=user_id,
+                            agent_id=agent_id,
+                            run_id=run_id,
+                            memory_type=memory_type)
+
     def save_history(self, messages: List[Message], **kwargs):
         """
         Save current chat history to disk for future resuming.
@@ -574,40 +1005,12 @@ class LLMAgent(Agent):
         save_history(
             self.output_dir, task=self.tag, config=config, messages=messages)
 
-    def save_memory(self, messages: List[Message]):
-        """
-        Save memories to disk for future resuming.
-
-        Args:
-            messages (List[Message]): Current message history to save.
-        """
-        messages = deepcopy(messages)
-        for message in messages:
-            # Prevent the arguments are not json
-            if message.tool_calls:
-                for tool_call in message.tool_calls:
-                    try:
-                        if tool_call['arguments']:
-                            json.loads(tool_call['arguments'])
-                    except Exception:
-                        tool_call['arguments'] = '{}'
-
-        if self.memory_tools:
-            if self.runtime.should_stop:
-                for memory_tool in self.memory_tools:
-                    if isinstance(memory_tool, Mem0Memory):
-                        memory_tool.add_memories_from_procedural(
-                            messages, self.get_user_id(), self.tag,
-                            'procedural_memory')
-            else:
-                for memory_tool in self.memory_tools:
-                    if isinstance(memory_tool, Mem0Memory):
-                        memory_tool.add_memories_from_conversation(
-                            messages, self.get_user_id())
-
     async def run_loop(self, messages: Union[List[Message], str],
                        **kwargs) -> AsyncGenerator[Any, Any]:
-        """Run the agent, mainly contains a llm calling and tool calling loop.
+        """
+        Run the agent, mainly contains a llm calling and tool calling loop.
+
+        If skills are configured, skill-related queries will be automatically routed to skill execution.
 
         Args:
             messages (Union[List[Message], str]): Input data for the agent. Can be a raw string prompt,
@@ -629,11 +1032,23 @@ class LLMAgent(Agent):
             if messages is None:
                 messages = self.query
 
+            # Load history and restore state
             self.config, self.runtime, messages = self.read_history(messages)
 
             if self.runtime.round == 0:
-                # 0 means no history
+                # New task: create standardized messages first
                 messages = await self.create_messages(messages)
+
+                # Try skill processing first
+                skill_result = await self.do_skill(messages)
+                if skill_result is not None:
+                    await self.on_task_begin(skill_result)
+                    yield skill_result
+                    await self.on_task_end(skill_result)
+                    await self.cleanup_tools()
+                    return
+
+                # Standard processing continues
                 await self.do_rag(messages)
                 await self.on_task_begin(messages)
 
@@ -646,7 +1061,8 @@ class LLMAgent(Agent):
                     yield messages
                 self.runtime.round += 1
                 # save memory and history
-                self.save_memory(messages)
+                await self.add_memory(
+                    messages, add_type='add_after_step', **kwargs)
                 self.save_history(messages)
 
                 # +1 means the next round the assistant may give a conclusion
@@ -662,11 +1078,17 @@ class LLMAgent(Agent):
                     yield messages
 
             # save memory
-            self.save_memory(messages)
-
             await self.on_task_end(messages)
             await self.cleanup_tools()
             yield messages
+
+            def _add_memory():
+                asyncio.run(
+                    self.add_memory(
+                        messages, add_type='add_after_task', **kwargs))
+
+            loop = asyncio.get_running_loop()
+            loop.run_in_executor(None, _add_memory)
         except Exception as e:
             import traceback
             logger.warning(traceback.format_exc())

@@ -3,52 +3,35 @@ repos:
     rev: 4.0.0
     hooks:
       - id: flake8
-        exclude: |
-            (?x)^(
-                thirdparty/|
-                examples/|
-                projects/fin_research/examples/|
-                tests/run.py
-            )$
+        exclude: ^(thirdparty/|examples/|projects/fin_research/examples/|projects/agent_skills/|tests/)
   - repo: /home/admin/pre-commit/isort
     rev: 4.3.21
     hooks:
       - id: isort
-        exclude: |
-            (?x)^(
-                examples/|
-                projects/fin_research/examples/|
-                tests/run.py|
-            )$
+        exclude: ^(examples/|projects/fin_research/examples/|projects/agent_skills/|tests/)
   - repo: /home/admin/pre-commit/mirrors-yapf
     rev: v0.30.0
     hooks:
       - id: yapf
-        exclude: |
-            (?x)^(
-                thirdparty/|
-                examples/|
-                projects/fin_research/examples/|
-                tests/run.py
-            )$
+        exclude: ^(thirdparty/|examples/|projects/fin_research/examples/|projects/agent_skills/|tests/)
   - repo: /home/admin/pre-commit/pre-commit-hooks
     rev: v3.1.0
     hooks:
       - id: trailing-whitespace
-        exclude: thirdparty/|tests/run.py|projects/fin_research/examples/
+        exclude: ^(thirdparty/|tests/|projects/fin_research/examples/|projects/agent_skills/)
       - id: check-yaml
-        exclude: thirdparty/|tests/run.py|projects/fin_research/examples/
+        exclude: ^(thirdparty/|tests/|projects/fin_research/examples/|projects/agent_skills/)
       - id: end-of-file-fixer
-        exclude: thirdparty/|projects/fin_research/examples/
+        exclude: ^(thirdparty/|tests/|projects/fin_research/examples/|projects/agent_skills/)
       - id: requirements-txt-fixer
-        exclude: thirdparty/|tests/run.py|projects/fin_research/examples/
+        exclude: ^(thirdparty/|tests/|projects/fin_research/examples/|projects/agent_skills/)
       - id: double-quote-string-fixer
-        exclude: thirdparty/|tests/run.py|projects/fin_research/examples/
+        exclude: ^(thirdparty/|tests/|projects/fin_research/examples/|projects/agent_skills/)
       - id: check-merge-conflict
-        exclude: thirdparty/|tests/run.py
+        exclude: ^(thirdparty/|tests/|projects/agent_skills/)
       - id: fix-encoding-pragma
-        exclude: thirdparty/|tests/run.py|projects/fin_research/examples/
+        exclude: ^(thirdparty/|tests/|projects/fin_research/examples/|projects/agent_skills/)
         args: ["--remove"]
       - id: mixed-line-ending
-        exclude: thirdparty/|tests/run.py|projects/fin_research/examples/
+        exclude: ^(thirdparty/|tests/|projects/fin_research/examples/|projects/agent_skills/)
         args: ["--fix=lf"]

@@ -14,7 +14,7 @@ from omegaconf import DictConfig
 
 logger = get_logger()
 
-os.environ['PAGE_RANGE'] = '(1, 50)'
+os.environ['PAGE_RANGE'] = '(1, 20)'
 
 
 class SearchAgent(CodeAgent):
@@ -103,6 +103,7 @@ class SearchAgent(CodeAgent):
             breadth=getattr(self.config, 'breadth', 4),
             depth=getattr(self.config, 'depth', 2),
             is_report=getattr(self.config, 'is_report', True),
+            use_feedback=getattr(self.config, 'use_feedback', False),
         )
 
         result_content = report_path if report_path else 'No report generated.'

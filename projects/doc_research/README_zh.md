@@ -83,7 +83,7 @@ export OPENAI_MODEL_ID=Qwen/Qwen3-235B-A22B-Instruct-2507
 **快速启动：**
 ```bash
 # 使用命令行的方式启动Gradio服务
-ms-agent app --doc_research
+ms-agent app --app_type doc_research
 
 # 使用Python脚本启动Gradio服务
 cd ms-agent/app
@@ -93,7 +93,7 @@ python doc_research.py
 **带参数启动：**
 ```bash
 
-ms-agent app --doc_research \
+ms-agent app --app_type doc_research \
     --server_name 0.0.0.0 \
     --server_port 7860 \
     --share

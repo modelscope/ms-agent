@@ -7,6 +7,8 @@ llm:
 
 generation_config:
   stream: true
+  stream_options:
+    include_usage: true
 
 
 prompt:
@@ -93,7 +95,7 @@ prompt:
     </Tool_Calling_Protocol>
 
     <Safety_Constraints>
-    - When using the code_executor server, you can only access directories mounted inside the sandbox (i.e., /data/...).
+    - When using the code_executor server, you can only access directories under <DATA_ROOT>/.
     - When using the file_system server, you can only access contents within the tool's default working directory.
     - Due to API limitations, data retrieval often fails — never generate data on your own when it cannot be obtained.
     - Never attempt to call a tool with unsupported arguments.
@@ -145,10 +147,9 @@ tools:
       max_concurrent: 1  # Maximum concurrent requests (reduced to work with thread semaphore)
   file_system:
     mcp: false
-    exclude:
-      - create_directory
-      - read_file
-      - list_files
+    include:
+      - write_file
+      - delete_file_or_dir
 
 
 handler: time_handler

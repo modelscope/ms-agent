@@ -1,4 +1,4 @@
-# Copyright (c) Alibaba, Inc. and its affiliates.
+# Copyright (c) ModelScope Contributors. All rights reserved.
 import base64
 import glob
 import hashlib
@@ -9,15 +9,18 @@ import os.path
 import re
 import subprocess
 import sys
+import time
+from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional, Tuple, Union
 
 import json
 import requests
 import yaml
 from omegaconf import DictConfig, OmegaConf
 
+from .constants import DEFAULT_MEMORY_DIR
 from .logger import get_logger
 
 logger = get_logger()
@@ -195,7 +198,7 @@ def save_history(output_dir: str, task: str, config: DictConfig,
         TypeError / ValueError: If the config or messages cannot be serialized properly.
         AttributeError: If any message in the list does not implement the `to_dict()` method.
     """
-    cache_dir = os.path.join(output_dir, 'memory')
+    cache_dir = os.path.join(output_dir, DEFAULT_MEMORY_DIR)
     os.makedirs(cache_dir, exist_ok=True)
     config_file = os.path.join(cache_dir, f'{task}.yaml')
     message_file = os.path.join(cache_dir, f'{task}.json')
@@ -239,7 +242,7 @@ def read_history(output_dir: str, task: str):
     """
     from ms_agent.llm import Message
     from ms_agent.config import Config
-    cache_dir = os.path.join(output_dir, 'memory')
+    cache_dir = os.path.join(output_dir, DEFAULT_MEMORY_DIR)
     os.makedirs(cache_dir, exist_ok=True)
     config_file = os.path.join(cache_dir, f'{task}.yaml')
     message_file = os.path.join(cache_dir, f'{task}.json')
@@ -375,7 +378,7 @@ def load_image_from_url_to_pil(url: str) -> 'Image.Image':
     """
     from PIL import Image
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=(10, 25))
         # Raise an HTTPError for bad responses (4xx or 5xx)
         response.raise_for_status()
         image_bytes = BytesIO(response.content)
@@ -673,3 +676,159 @@ def extract_by_tag(text: str, tag: str) -> str:
         return match.group(1).strip()
     else:
         return ''
+
+
+def valid_repo_id(repo_id: str) -> bool:
+    """
+    Validate the format of a ModelScope repository ID.
+
+    Args:
+        repo_id (str): The repository ID to validate. e.g. owner/model_name, owner/model_name/subfolder
+
+    Returns:
+        bool: True if the repo_id is valid, False otherwise.
+    """
+    if not repo_id:
+        return False
+
+    repo_id_parts: List[str] = repo_id.split('/')
+    if len(repo_id_parts) in (2, 3) and all(repo_id_parts):
+        return True
+
+    return False
+
+
+def extract_code_blocks(
+    text: str,
+    target_filename: Optional[str] = None,
+    file_wrapper: Optional[List[str]] = None,
+) -> Tuple[List, str]:
+    """Extract code blocks from the given text.
+
+    <result>py:a.py
+    </result>
+
+    Args:
+        text: The text to extract code blocks from.
+        target_filename: The filename target to extract.
+        file_wrapper: The file wrapper
+
+    Returns:
+        Tuple:
+            0: The extracted code blocks.
+            1: The left content of the input text.
+    """
+    if not file_wrapper:
+        file_wrapper = ['<result>', '</result>']
+    assert len(file_wrapper) == 2
+    pattern = rf'{file_wrapper[0]}[a-zA-Z]*:([^\n\r`]+)\n(.*?){file_wrapper[1]}'
+    matches = re.findall(pattern, text, re.DOTALL)
+    result = []
+
+    for filename, code in matches:
+        filename = filename.strip()
+        if target_filename is None or filename == target_filename:
+            result.append({'filename': filename, 'code': code.strip()})
+
+    if target_filename is not None:
+        remove_pattern = rf'{file_wrapper[0]}[a-zA-Z]*:{re.escape(target_filename)}\n.*?{file_wrapper[1]}'
+    else:
+        remove_pattern = pattern
+
+    remaining_text = re.sub(remove_pattern, '', text, flags=re.DOTALL)
+    remaining_text = re.sub(r'\n\s*\n\s*\n', '\n\n', remaining_text)
+    remaining_text = remaining_text.strip()
+
+    return result, remaining_text
+
+
+@contextmanager
+def file_lock(lock_dir: str, filename: str, timeout: float = 120.0):
+    os.makedirs(lock_dir, exist_ok=True)
+    lock_file_name = filename.replace(os.sep, '_') + '.lock'
+    lock_file_path = os.path.join(lock_dir, lock_file_name)
+
+    # Acquire lock with timeout
+    start_time = time.time()
+
+    while True:
+        try:
+            lock_fd = os.open(lock_file_path,
+                              os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(lock_fd, f'{os.getpid()}'.encode())
+            break
+        except FileExistsError:
+            if time.time() - start_time >= timeout:
+                raise TimeoutError(
+                    f'Failed to acquire lock for {filename} after {timeout} seconds'
+                )
+            time.sleep(0.1)  # Wait 100ms before retry
+
+    try:
+        yield
+    finally:
+        # Release lock
+        if lock_fd is not None:
+            os.close(lock_fd)
+        try:
+            os.remove(lock_file_path)
+        except OSError:
+            pass
+
+
+def render_markdown_todo(md_path: str,
+                         *,
+                         title: str = ' CURRENT PLAN',
+                         use_pager: bool = False) -> None:
+    """
+    Render a Markdown todo list nicely in terminal using Rich.
+    - Cross-platform (Windows/Linux/macOS)
+    - Good-looking: theme + panel + soft wrapping
+    """
+    from rich.console import Console
+    from rich.markdown import Markdown
+    from rich.panel import Panel
+    from rich.theme import Theme
+
+    theme = Theme({
+        'markdown.code': 'bold',
+        'markdown.code_block': 'dim',
+        'markdown.h1': 'bold',
+        'markdown.h2': 'bold',
+        'markdown.h3': 'bold',
+        'markdown.link': 'underline',
+        'markdown.list': '',
+    })
+    console = Console(theme=theme, soft_wrap=True, highlight=False)
+
+    try:
+        md_text = Path(md_path).read_text(encoding='utf-8')
+    except FileNotFoundError:
+        logger.error(f'Markdown file not found: {md_path}')
+        return
+    except Exception as e:
+        logger.error(f'Error reading markdown file: {e}')
+        return
+
+    if not md_text:
+        return
+
+    md = Markdown(
+        md_text,
+        code_theme='monokai',
+        hyperlinks=True,
+        inline_code_lexer='text',
+    )
+
+    content = Panel.fit(
+        md,
+        title=title,
+        border_style='dim',
+        padding=(1, 2),
+    )
+
+    if use_pager:
+        with console.pager():
+            console.print(content)
+    else:
+        console.print(content)

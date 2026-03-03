@@ -1,21 +1,27 @@
-# Copyright (c) Alibaba, Inc. and its affiliates.
+# Copyright (c) ModelScope Contributors. All rights reserved.
 import asyncio
 import importlib
 import inspect
 import os
 import sys
+import uuid
 from copy import copy
 from types import TracebackType
 from typing import Any, Dict, List, Optional
 
 import json
 from ms_agent.llm.utils import Tool, ToolCall
+from ms_agent.tools.agent_tool import AgentTool
 from ms_agent.tools.base import ToolBase
-from ms_agent.tools.code.code_executor import CodeExecutionTool
+from ms_agent.tools.code import CodeExecutionTool, LocalCodeExecutionTool
 from ms_agent.tools.filesystem_tool import FileSystemTool
-from ms_agent.tools.findata.findata_fetcher import FinancialDataFetcher
+from ms_agent.tools.image_generator import ImageGenerator
 from ms_agent.tools.mcp_client import MCPClient
+from ms_agent.tools.search.websearch_tool import WebSearchTool
+from ms_agent.tools.shell.shell import Shell
 from ms_agent.tools.split_task import SplitTask
+from ms_agent.tools.todolist_tool import TodoListTool
+from ms_agent.tools.video_generator import VideoGenerator
 from ms_agent.utils import get_logger
 from ms_agent.utils.constants import TOOL_PLUGIN_NAME
 
@@ -44,15 +50,47 @@ class ToolManager:
         self.has_split_task_tool = False
         if hasattr(config, 'tools') and hasattr(config.tools, 'split_task'):
             self.extra_tools.append(SplitTask(config))
+        if hasattr(config, 'tools') and hasattr(config.tools,
+                                                'image_generator'):
+            self.extra_tools.append(ImageGenerator(config))
+        if hasattr(config, 'tools') and hasattr(config.tools,
+                                                'video_generator'):
+            self.extra_tools.append(VideoGenerator(config))
+        if hasattr(config, 'tools') and hasattr(config.tools, 'shell'):
+            self.extra_tools.append(Shell(config))
         if hasattr(config, 'tools') and hasattr(config.tools, 'file_system'):
             self.extra_tools.append(
                 FileSystemTool(
                     config, trust_remote_code=self.trust_remote_code))
         if hasattr(config, 'tools') and hasattr(config.tools, 'code_executor'):
-            self.extra_tools.append(CodeExecutionTool(config))
+            code_exec_cfg = getattr(config.tools, 'code_executor')
+            implementation = getattr(code_exec_cfg, 'implementation',
+                                     'sandbox')
+            if isinstance(implementation,
+                          str) and implementation.lower() == 'python_env':
+                self.extra_tools.append(LocalCodeExecutionTool(config))
+            elif isinstance(implementation,
+                            str) and implementation.lower() == 'sandbox':
+                self.extra_tools.append(CodeExecutionTool(config))
+            else:
+                logger.warning(
+                    f'Unknown code execution implementation: {implementation},'
+                    f'using sandbox instead.')
+                self.extra_tools.append(CodeExecutionTool(config))
         if hasattr(config, 'tools') and hasattr(config.tools,
                                                 'financial_data_fetcher'):
+            from ms_agent.tools.findata.findata_fetcher import FinancialDataFetcher
             self.extra_tools.append(FinancialDataFetcher(config))
+        if hasattr(config, 'tools') and getattr(config.tools, 'agent_tools',
+                                                None):
+            agent_tool = AgentTool(
+                config, trust_remote_code=self.trust_remote_code)
+            if agent_tool.enabled:
+                self.extra_tools.append(agent_tool)
+        if hasattr(config, 'tools') and hasattr(config.tools, 'todo_list'):
+            self.extra_tools.append(TodoListTool(config))
+        if hasattr(config, 'tools') and hasattr(config.tools, 'web_search'):
+            self.extra_tools.append(WebSearchTool(config))
         self.tool_call_timeout = getattr(config, 'tool_call_timeout',
                                          TOOL_CALL_TIMEOUT)
         local_dir = self.config.local_dir if hasattr(self.config,
@@ -158,7 +196,10 @@ class ToolManager:
                 extend_tool(extra_tool, server_name, tool_list)
 
     async def get_tools(self):
-        return [value[2] for value in self._tool_index.values()]
+        # Return tools in deterministic order to improve prompt/prefix cache hit rate
+        # across process restarts and across different MCP tool listing orders.
+        tools = [value[2] for value in self._tool_index.values()]
+        return sorted(tools, key=lambda t: (t.get('tool_name', ''), ))
 
     async def single_call_tool(self, tool_info: ToolCall):
         if self._concurrent_limiter is None:
@@ -183,11 +224,16 @@ class ToolManager:
                         return f'The input {tool_args} is not a valid JSON, fix your arguments and try again'
                 assert tool_name in self._tool_index, f'Tool name {tool_name} not found'
                 tool_ins, server_name, _ = self._tool_index[tool_name]
+                call_args = tool_args
+                if isinstance(tool_ins, AgentTool):
+                    call_args = dict(tool_args or {})
+                    call_id = tool_info.get('id') or str(uuid.uuid4())
+                    call_args['__call_id'] = call_id
                 response = await asyncio.wait_for(
                     tool_ins.call_tool(
                         server_name,
                         tool_name=tool_name.split(self.TOOL_SPLITER)[1],
-                        tool_args=tool_args),
+                        tool_args=call_args),
                     timeout=self.tool_call_timeout)
                 return response
             except asyncio.TimeoutError:

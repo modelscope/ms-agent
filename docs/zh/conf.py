@@ -121,7 +121,7 @@ theme_options = ThemeOptions(
     extra_header_link_icons={
         'language': {
             'link':
-            'https://ms-agent.readthedocs.io/en/latest/index.html',
+            'https://ms-agent-en.readthedocs.io/en/latest/index.html',
             'icon':
             """
             <svg height="25px" style="margin-top:-2px;display:inline" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
