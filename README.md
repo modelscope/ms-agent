@@ -307,39 +307,6 @@ For more details, please refer to [**MS-Agent Skills**](ms_agent/skill/README.md
 
 ---
 
-### Agent Skills
-
-The **MS-Agent Skill Module** is **Implementation** of [Anthropic-Agent-Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills) Protocol.
-
-#### 🔍 Intelligent Skill Retrieval
-- **Hybrid Search**: Combines FAISS dense retrieval with BM25 sparse retrieval
-- **LLM-based Filtering**: Uses LLM to filter and validate skill relevance
-- **Query Analysis**: Automatically determines if skills are needed for a query
-
-#### 📊 DAG-based Execution
-- **Dependency Management**: Builds execution DAG based on skill dependencies
-- **Parallel Execution**: Runs independent skills concurrently
-- **Input/Output Linking**: Automatically passes outputs between dependent skills
-
-#### 🧠 Progressive Skill Analysis
-- **Two-phase Analysis**: Plan first, then load resources
-- **Incremental Loading**: Only loads required scripts/references/resources
-- **Context Optimization**: Minimizes token usage while maximizing understanding
-- **Auto Bug Fixing**: Analyzes errors and attempts automatic fixes
-
-#### 🔒 Secure Execution Environment
-- **Docker Sandbox**: Isolated execution using [ms-enclave](https://github.com/modelscope/ms-enclave) containers
-- **Local Execution**: Controlled local execution with RCE prevention
-- **Security Checks**: Pattern-based detection of dangerous code
-
-#### 🔄 Self-Reflection & Retry
-- **Error Analysis**: LLM-based analysis of execution failures
-- **Auto-Fix**: Attempts to fix code based on error messages
-- **Configurable Retries**: Up to N retry attempts with fixes
-
-
-For more details, please refer to [**MS-Agent Skills**](ms_agent/skill/README.md).
-
 
 ### Agentic Insight
 
