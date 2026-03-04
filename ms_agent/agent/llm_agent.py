@@ -3,8 +3,8 @@ import asyncio
 import importlib
 import inspect
 import os.path
+import re
 import sys
-import threading
 import uuid
 from contextlib import contextmanager
 from copy import deepcopy
@@ -400,6 +400,12 @@ class LLMAgent(Agent):
             if local_dir not in sys.path:
                 sys.path.insert(0, local_dir)
 
+            handler_file = os.path.basename(handler_file)
+            if handler_file.endswith(".py"):
+                handler_file = handler_file[:-3]
+            if not re.match(r"^[a-zA-Z0-9_-]+$", handler_file):
+                raise ValueError(f"Invalid handler module name: {handler_file}")
+
             handler_module = importlib.import_module(handler_file)
             module_classes = {
                 name: cls
@@ -443,8 +449,10 @@ class LLMAgent(Agent):
                         sys.path.insert(0, local_dir)
                     if subdir and subdir not in sys.path:
                         sys.path.insert(0, subdir)
-                    if _callback.endswith('.py'):
+                    if _callback.endswith(".py"):
                         _callback = _callback[:-3]
+                    if not re.match(r"^[a-zA-Z0-9_-]+$", _callback):
+                        raise ValueError(f"Invalid callback module name: {_callback}")
                     callback_file = importlib.import_module(_callback)
                     module_classes = {
                         name: cls

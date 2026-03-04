@@ -2,6 +2,7 @@
 import importlib
 import inspect
 import os
+import re
 import sys
 from typing import Dict, Optional
 
@@ -92,8 +93,10 @@ class AgentLoader:
         if subdir and subdir not in sys.path:
             sys.path.insert(0, subdir)
             subdir_inserted = True
-        if code_file.endswith('.py'):
+        if code_file.endswith(".py"):
             code_file = code_file[:-3]
+        if not re.match(r"^[a-zA-Z0-9_-]+$", code_file):
+            raise ValueError(f"Invalid code module name: {code_file}")
         if code_file in sys.modules:
             del sys.modules[code_file]
         code_module = importlib.import_module(code_file)
