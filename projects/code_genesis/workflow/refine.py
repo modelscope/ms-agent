@@ -107,10 +107,10 @@ class RefineAgent(LLMAgent):
                 f'Tech stack (framework.txt): {framework}\n'
                 f'Communication protocol (protocol.txt): {protocol}\n'
                 f'File list:\n{file_info}\n'
-                # f'Your shell tool workspace_dir is {self.output_dir}; '
-                f'all tools should use this directory as the current working directory.\n'
+                f'The shell_executor runs inside a Docker sandbox. '
+                f'Project files are at the current working directory (/data). '
+                f'All relative paths work directly.\n'
                 f'When creating the deployment zip file, name it workspace.zip.\n'
-                f'Python executable: {sys.executable}\n'
                 f'Please refine the project and deploy it to EdgeOne Pages:'),
         ]
         return await super().run(messages, **kwargs)

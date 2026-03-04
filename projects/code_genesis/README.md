@@ -19,25 +19,15 @@ This project needs to be used together with ms-agent.
   cd ms-agent
   ```
 
-2. Prepare python environment (python>=3.10) with conda:
+2. Build the Docker sandbox image (requires Docker):
 
   ```shell
-  conda create -n code_genesis python==3.11
-  conda activate code_genesis
-  pip install -r ./requirements.txt
+  bash projects/code_genesis/tools/build_sandbox_image.sh
   ```
 
-3. Prepare npm environment, following https://nodejs.org/en/download. If you are using Mac, using Homebrew is recommended: https://formulae.brew.sh/formula/node
+  This builds a `code-genesis-sandbox:version1` image containing Python 3.12, Node.js 20, npm, git and curl. All shell commands from the agents run inside this container for security isolation.
 
-Make sure your installation is successful:
-
-```shell
-npm --version
-```
-
-Make sure the npm installation is successful, or the npm install/build/dev will fail and cause an infinite loop.
-
-4. Run:
+3. Run:
 
 ```shell
 PYTHONPATH=. openai_api_key=your-api-key openai_base_url=your-api-url python ms_agent/cli/cli.py run --config projects/code_genesis --query 'make a demo website' --trust_remote_code true
