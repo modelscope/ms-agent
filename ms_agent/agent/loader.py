@@ -95,7 +95,7 @@ class AgentLoader:
             subdir_inserted = True
         if code_file.endswith(".py"):
             code_file = code_file[:-3]
-        if not re.match(r"^[a-zA-Z0-9_-]+$", code_file):
+        if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", code_file):
             raise ValueError(f"Invalid code module name: {code_file}")
         if code_file in sys.modules:
             del sys.modules[code_file]
