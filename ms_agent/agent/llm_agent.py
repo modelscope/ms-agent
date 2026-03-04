@@ -451,7 +451,7 @@ class LLMAgent(Agent):
                         sys.path.insert(0, subdir)
                     if _callback.endswith(".py"):
                         _callback = _callback[:-3]
-                    if not re.match(r"^[a-zA-Z0-9_-]+$", _callback):
+                    if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", _callback):
                         raise ValueError(f"Invalid callback module name: {_callback}")
                     callback_file = importlib.import_module(_callback)
                     module_classes = {
