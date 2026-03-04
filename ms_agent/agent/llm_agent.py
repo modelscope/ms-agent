@@ -403,7 +403,7 @@ class LLMAgent(Agent):
             handler_file = os.path.basename(handler_file)
             if handler_file.endswith(".py"):
                 handler_file = handler_file[:-3]
-            if not re.match(r"^[a-zA-Z0-9_-]+$", handler_file):
+            if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", handler_file):
                 raise ValueError(f"Invalid handler module name: {handler_file}")
 
             handler_module = importlib.import_module(handler_file)
