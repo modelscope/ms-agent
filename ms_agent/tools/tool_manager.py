@@ -18,7 +18,6 @@ from ms_agent.tools.filesystem_tool import FileSystemTool
 from ms_agent.tools.image_generator import ImageGenerator
 from ms_agent.tools.mcp_client import MCPClient
 from ms_agent.tools.search.websearch_tool import WebSearchTool
-from ms_agent.tools.shell.shell import Shell
 from ms_agent.tools.split_task import SplitTask
 from ms_agent.tools.todolist_tool import TodoListTool
 from ms_agent.tools.video_generator import VideoGenerator
@@ -56,8 +55,6 @@ class ToolManager:
         if hasattr(config, 'tools') and hasattr(config.tools,
                                                 'video_generator'):
             self.extra_tools.append(VideoGenerator(config))
-        if hasattr(config, 'tools') and hasattr(config.tools, 'shell'):
-            self.extra_tools.append(Shell(config))
         if hasattr(config, 'tools') and hasattr(config.tools, 'file_system'):
             self.extra_tools.append(
                 FileSystemTool(
