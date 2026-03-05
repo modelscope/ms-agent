@@ -119,7 +119,6 @@ class RefineAgent(LLMAgent):
         await super().after_tool_call(messages)
 
         if self.runtime.should_stop:
-            import sys
             if not sys.stdin.isatty():
                 # Running in WebUI - notify user that agent is waiting for input
                 logger.info(
