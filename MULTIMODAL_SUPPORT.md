@@ -222,7 +222,7 @@ messages = [Message(role="user", content=multimodal_content)]
 response = llm.generate(messages=messages)
 ```
 
-### 3. 本地文件路径
+### 3. 使用本地文件（Base64 编码）
 
 ```python
 import base64

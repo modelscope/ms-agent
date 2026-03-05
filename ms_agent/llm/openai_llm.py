@@ -602,11 +602,9 @@ class OpenAI(LLM):
                     else:
                         formatted_message[key] = value
 
-            # Ensure content field is set correctly
-            if 'content' not in formatted_message:
-                formatted_message['content'] = ''
-            elif not formatted_message['content']:
-                formatted_message['content'] = content
+            # Always use the transformed content to support features like prefix caching
+            # The content variable has been processed by _to_structured_content() if needed
+            formatted_message['content'] = content
 
             openai_messages.append(formatted_message)
 

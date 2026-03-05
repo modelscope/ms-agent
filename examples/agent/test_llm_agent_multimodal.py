@@ -16,6 +16,40 @@ from ms_agent.llm.utils import Message
 path = os.path.dirname(os.path.abspath(__file__))
 agent_config = os.path.join(path, '..', '..', 'ms_agent', 'agent', 'agent.yaml')
 
+# 测试图片 URL
+TEST_IMAGE_URL = "https://dashscope.oss-cn-beijing.aliyuncs.com/images/dog_and_girl.jpeg"
+
+
+def _create_multimodal_config(stream: bool = False):
+    """
+    创建多模态配置
+
+    Args:
+        stream: 是否启用流式输出
+
+    Returns:
+        Config: 配置好的 Config 对象，如果 API Key 未设置则返回 None
+    """
+    config = Config.from_task(agent_config)
+
+    # 配置多模态模型
+    config.llm.model = 'qwen3.5-plus'
+    config.llm.service = 'dashscope'
+    config.llm.dashscope_api_key = os.environ.get('DASHSCOPE_API_KEY', '')
+    config.llm.modelscope_base_url = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+
+    # 禁用 load_cache 和 callbacks（避免交互式输入问题）
+    config.generation_config.stream = stream
+    config.load_cache = False
+    config.callbacks = []
+
+    if not config.llm.dashscope_api_key:
+        print("[错误] 未设置 DASHSCOPE_API_KEY 环境变量")
+        print("请先设置: export DASHSCOPE_API_KEY='your-api-key'")
+        return None
+
+    return config
+
 
 async def test_llm_agent_multimodal_non_stream():
     """
@@ -25,40 +59,22 @@ async def test_llm_agent_multimodal_non_stream():
     print("测试 1: LLMAgent 非 stream 模式 - 多模态对话 (URL 图片)")
     print("=" * 70)
 
-    # 创建配置
-    config = Config.from_task(agent_config)
-
-    # 配置多模态模型
-    config.llm.model = 'qwen3.5-plus'
-    config.llm.service = 'dashscope'
-    config.llm.dashscope_api_key = os.environ.get('DASHSCOPE_API_KEY', '')
-    config.llm.modelscope_base_url = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
-
-    # 禁用 stream、load_cache 和 callbacks（避免交互式输入问题）
-    config.generation_config.stream = False
-    config.load_cache = False
-    config.callbacks = []
-
-    if not config.llm.dashscope_api_key:
-        print("[错误] 未设置 DASHSCOPE_API_KEY 环境变量")
-        print("请先设置: export DASHSCOPE_API_KEY='your-api-key'")
+    config = _create_multimodal_config(stream=False)
+    if not config:
         return False
 
     # 创建 LLMAgent，使用唯一 tag 避免历史记录的干扰
     tag = f"multimodal_test_{uuid.uuid4().hex[:8]}"
     agent = LLMAgent(config=config, tag=tag)
 
-    # 测试图片 URL
-    test_image_url = "https://dashscope.oss-cn-beijing.aliyuncs.com/images/dog_and_girl.jpeg"
-
     # 构建多模态内容
     multimodal_content = [
         {"type": "text", "text": "请详细描述这张图片中的内容。"},
-        {"type": "image_url", "image_url": {"url": test_image_url}}
+        {"type": "image_url", "image_url": {"url": TEST_IMAGE_URL}}
     ]
 
     try:
-        print(f"\n[发送] 请描述这张图片: {test_image_url}")
+        print(f"\n[发送] 请描述这张图片: {TEST_IMAGE_URL}")
         print("-" * 70)
 
         messages = [
@@ -88,39 +104,22 @@ async def test_llm_agent_multimodal_stream():
     print("测试 2: LLMAgent stream 模式 - 多模态对话 (URL 图片)")
     print("=" * 70)
 
-    # 创建配置
-    config = Config.from_task(agent_config)
-
-    # 配置多模态模型
-    config.llm.model = 'qwen3.5-plus'
-    config.llm.service = 'dashscope'
-    config.llm.dashscope_api_key = os.environ.get('DASHSCOPE_API_KEY', '')
-    config.llm.modelscope_base_url = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
-
-    # 启用 stream，禁用 load_cache 和 callbacks
-    config.generation_config.stream = True
-    config.load_cache = False
-    config.callbacks = []
-
-    if not config.llm.dashscope_api_key:
-        print("[错误] 未设置 DASHSCOPE_API_KEY 环境变量")
+    config = _create_multimodal_config(stream=True)
+    if not config:
         return False
 
     # 创建 LLMAgent，使用唯一 tag
     tag = f"multimodal_stream_{uuid.uuid4().hex[:8]}"
     agent = LLMAgent(config=config, tag=tag)
 
-    # 测试图片 URL
-    test_image_url = "https://dashscope.oss-cn-beijing.aliyuncs.com/images/dog_and_girl.jpeg"
-
     # 构建多模态内容
     multimodal_content = [
         {"type": "text", "text": "请用中文描述这张图片中的内容。"},
-        {"type": "image_url", "image_url": {"url": test_image_url}}
+        {"type": "image_url", "image_url": {"url": TEST_IMAGE_URL}}
     ]
 
     try:
-        print(f"\n[发送] 请描述这张图片: {test_image_url}")
+        print(f"\n[发送] 请描述这张图片: {TEST_IMAGE_URL}")
         print("-" * 70)
         print("[回复开始]")
 
@@ -162,18 +161,8 @@ async def test_llm_agent_multimodal_base64_non_stream():
 
     import base64
 
-    # 创建配置
-    config = Config.from_task(agent_config)
-    config.llm.model = 'qwen3.5-plus'
-    config.llm.service = 'dashscope'
-    config.llm.dashscope_api_key = os.environ.get('DASHSCOPE_API_KEY', '')
-    config.llm.modelscope_base_url = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
-    config.generation_config.stream = False
-    config.load_cache = False
-    config.callbacks = []
-
-    if not config.llm.dashscope_api_key:
-        print("[错误] 未设置 DASHSCOPE_API_KEY 环境变量")
+    config = _create_multimodal_config(stream=False)
+    if not config:
         return False
 
     # 创建 LLMAgent，使用唯一 tag
@@ -222,26 +211,13 @@ async def test_llm_agent_multimodal_conversation():
     print("测试 4: LLMAgent 多轮对话 - 多模态 + 文本混合")
     print("=" * 70)
 
-    # 创建配置
-    config = Config.from_task(agent_config)
-    config.llm.model = 'qwen3.5-plus'
-    config.llm.service = 'dashscope'
-    config.llm.dashscope_api_key = os.environ.get('DASHSCOPE_API_KEY', '')
-    config.llm.modelscope_base_url = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
-    config.generation_config.stream = False
-    config.load_cache = False
-    config.callbacks = []
-
-    if not config.llm.dashscope_api_key:
-        print("[错误] 未设置 DASHSCOPE_API_KEY 环境变量")
+    config = _create_multimodal_config(stream=False)
+    if not config:
         return False
 
     # 创建 LLMAgent，使用唯一 tag
     tag = f"multimodal_conv_{uuid.uuid4().hex[:8]}"
     agent = LLMAgent(config=config, tag=tag)
-
-    # 测试图片 URL
-    test_image_url = "https://dashscope.oss-cn-beijing.aliyuncs.com/images/dog_and_girl.jpeg"
 
     try:
         # 第一轮：发送图片
@@ -250,7 +226,7 @@ async def test_llm_agent_multimodal_conversation():
 
         multimodal_content = [
             {"type": "text", "text": "这张图片里有几个人？"},
-            {"type": "image_url", "image_url": {"url": test_image_url}}
+            {"type": "image_url", "image_url": {"url": TEST_IMAGE_URL}}
         ]
 
         messages = [

@@ -720,12 +720,12 @@ class LLMAgent(Agent):
             messages = await memory_tool.run(messages)
         return messages
 
-    def log_output(self, content: str):
+    def log_output(self, content: Union[str, list]):
         """
         Log formatted output with a tag prefix.
 
         Args:
-            content (str): Content to log. Can be a string or a list (for multimodal content).
+            content (Union[str, list]): Content to log. Can be a string or a list (for multimodal content).
         """
         # Handle multimodal content (list type)
         if isinstance(content, list):
