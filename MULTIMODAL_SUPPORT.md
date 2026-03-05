@@ -303,4 +303,3 @@ A: 是的，多模态对话支持流式输出。设置 `stream: true` 即可：
 config.generation_config.stream = True
 response = llm.generate(messages=messages, stream=True)
 ```
-
