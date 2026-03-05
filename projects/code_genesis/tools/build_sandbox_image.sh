@@ -16,7 +16,9 @@ cat > Dockerfile.sandbox << 'EOF'
 FROM python:3.12-slim
 
 # Install system dependencies and Node.js
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update -o Acquire::Retries=5 \
+    && apt-get install -y --no-install-recommends \
     curl \
     git \
     build-essential \
@@ -24,8 +26,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get install -y --no-install-recommends nodejs \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Configure npm to use a Chinese mirror. Comment out this line if not needed.
+RUN npm config set registry https://registry.npmmirror.com/
+
 # Install Jupyter kernel gateway (required by sandbox)
-RUN pip install --no-cache-dir \
+RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple --trusted-host mirrors.aliyun.com \
     jupyter_kernel_gateway \
     jupyter_client \
     ipykernel

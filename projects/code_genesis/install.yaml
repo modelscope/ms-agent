@@ -46,6 +46,8 @@ prompt:
 
 max_chat_round: 20
 
+tool_call_timeout: 30000
+
 tools:
   code_executor:
     mcp: false

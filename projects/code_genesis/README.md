@@ -26,6 +26,7 @@ This project needs to be used together with ms-agent.
   ```
 
   This builds a `code-genesis-sandbox:version1` image containing Python 3.12, Node.js 20, npm, git and curl. All shell commands from the agents run inside this container for security isolation.
+  Note: To speed up dependency downloads during image builds and at container runtime, we use some mirror registries instead of the official sources by default. If your network environment does not require mirrors, you can comment out the relevant lines.
 
 3. Run:
 
