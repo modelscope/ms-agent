@@ -1,4 +1,10 @@
-# ms-agent 多模态支持指南
+---
+slug: multimodal-support
+title: 多模态支持
+description: Ms-Agent 多模态对话使用指南：图片理解、分析功能配置与使用方法。
+---
+
+# 多模态支持
 
 本文档介绍如何使用 ms-agent 进行多模态对话，包括图片理解和分析功能。
 
@@ -21,7 +27,7 @@ pip install openai
 
 ### 2. 配置 API Key
 
-（以qwen3.5-plus为例）获取 DashScope API Key 并设置环境变量：
+（以 qwen3.5-plus 为例）获取 DashScope API Key 并设置环境变量：
 
 ```bash
 export DASHSCOPE_API_KEY='your-dashscope-api-key'
@@ -31,40 +37,28 @@ export DASHSCOPE_API_KEY='your-dashscope-api-key'
 
 ## 配置多模态模型
 
-### 使用配置文件
+多模态功能主要取决于两点：
+1. **选择支持多模态的模型**（如 `qwen3.5-plus`）
+2. **使用正确的消息格式**（包含 `image_url` 块）
 
-可以使用预定义的多模态配置文件 `config/cfg_model_multimodal.yaml`：
-
-```yaml
-llm:
-  service: dashscope
-  model: qwen3.5-plus
-  dashscope_api_key: your-api-key  # 或使用环境变量
-  modelscope_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
-
-generation_config:
-  temperature: 0.7
-  top_k: 50
-  top_p: 0.8
-  max_tokens: 2048
-  stream: true
-  extra_body:
-    enable_thinking: false
-```
-
-### 在代码中配置
+你可以在现有配置基础上，通过代码动态修改模型配置：
 
 ```python
 from ms_agent.config import Config
-from ms_agent.llm import LLM
+from ms_agent import LLMAgent
+import os
 
-config = Config.from_task('path/to/config')
+# 使用现有配置文件（如 ms_agent/agent/agent.yaml）
+config = Config.from_task('ms_agent/agent/agent.yaml')
+
+# 覆盖配置为多模态模型
 config.llm.model = 'qwen3.5-plus'
 config.llm.service = 'dashscope'
-config.llm.dashscope_api_key = 'your-api-key'
+config.llm.dashscope_api_key = os.environ.get('DASHSCOPE_API_KEY', '')
 config.llm.modelscope_base_url = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
 
-llm = LLM.from_config(config)
+# 创建 LLMAgent
+agent = LLMAgent(config=config)
 ```
 
 ## 使用 LLMAgent 进行多模态对话
@@ -222,7 +216,7 @@ messages = [Message(role="user", content=multimodal_content)]
 response = llm.generate(messages=messages)
 ```
 
-### 3. 使用本地文件（Base64 编码）
+### 3. 本地文件路径
 
 ```python
 import base64
