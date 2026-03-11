@@ -78,6 +78,37 @@ def _render_outline_md(outline: Dict[str, Any]) -> str:
     return '\n'.join(lines)
 
 
+def _render_outline_progress_md(outline: Dict[str, Any]) -> str:
+    """Render a concise outline progress view for terminal logs."""
+    chapters = outline.get('chapters', [])
+    total = len(chapters)
+    completed = sum(1 for ch in chapters if ch.get('status') == 'completed')
+    in_progress = sum(1 for ch in chapters
+                      if ch.get('status') == 'in_progress')
+    pending = total - completed - in_progress
+
+    lines = [f"# {outline.get('title', 'Report Outline')}", '']
+    lines.append(
+        f'Progress: {completed}/{total} completed | {in_progress} in progress | {pending} pending'
+    )
+    lines.append('')
+    lines.append('## Chapters')
+    lines.append('')
+
+    for ch in chapters:
+        status = ch.get('status', 'pending')
+        status_icon = {
+            'pending': '⏳',
+            'in_progress': '🔄',
+            'completed': '✅'
+        }.get(status, '⏳')
+        lines.append(
+            f"- {status_icon} Chapter {ch['chapter_id']}: {ch['title']}")
+
+    lines.append('')
+    return '\n'.join(lines)
+
+
 class ReportTool(ToolBase):
     """
     Report generation tool for DeepResearch Reporter agent.
@@ -128,6 +159,9 @@ class ReportTool(ToolBase):
             os.path.join(self.output_dir, self._reports_dir, 'outline.json'),
             'outline_md':
             os.path.join(self.output_dir, self._reports_dir, 'outline.md'),
+            'outline_progress_md':
+            os.path.join(self.output_dir, self._reports_dir,
+                         'outline_progress.md'),
             'chapters_dir':
             os.path.join(self.output_dir, self._reports_dir, 'chapters'),
             'conflict_json':
@@ -486,10 +520,12 @@ class ReportTool(ToolBase):
         outline['updated_at'] = _now_iso()
         _write_text(paths['outline_json'], _json_dumps(outline))
         _write_text(paths['outline_md'], _render_outline_md(outline))
+        _write_text(paths['outline_progress_md'],
+                    _render_outline_progress_md(outline))
 
         if render:
             render_markdown_todo(
-                paths['outline_md'],
+                paths['outline_progress_md'],
                 title='CURRENT REPORT OUTLINE',
                 use_pager=False)
 
@@ -647,10 +683,8 @@ class ReportTool(ToolBase):
                     note_id,
                     'title':
                     meta.get('title', note_data.get('title', '')),
-                    'claim':
-                    note_data.get('claim', ''),
-                    'supports':
-                    note_data.get('supports', ''),
+                    'content':
+                    note_data.get('content', ''),
                     'contradicts':
                     note_data.get('contradicts', ''),
                     'summary':
@@ -684,10 +718,8 @@ class ReportTool(ToolBase):
                         note_id,
                         'title':
                         meta.get('title', note_data.get('title', '')),
-                        'claim':
-                        note_data.get('claim', ''),
-                        'supports':
-                        note_data.get('supports', ''),
+                        'content':
+                        note_data.get('content', ''),
                         'contradicts':
                         note_data.get('contradicts', ''),
                         'summary':
@@ -1048,7 +1080,10 @@ class ReportTool(ToolBase):
             'conflicts_summary':
             conflicts_summary,
             'next_step_reminder':
-            ('Review the draft and conflicts, then you can try to generate the final report. '
+            ('Review the draft and conflicts, then generate the final report. '
+             'Note: the draft cannot be used as the final report; '
+             'do not replace report content with references or pointers to other content or files '
+             '(e.g., "details are in chapter_2.md", "see draft.md for more details").'
              ),
         })
 

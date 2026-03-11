@@ -29,6 +29,60 @@ class ReporterCallback(Callback):
     # Tool names to exclude from trajectory (reporter_tool calls and their responses)
     EXCLUDED_TOOL_PATTERNS = ['reporter_tool']
 
+    # Bilingual round-reminder templates keyed by language code.
+    _ROUND_REMINDER_TEMPLATES = {
+        'zh':
+        ('你已接近最大允许的对话轮数上限，请立刻开始收敛准备最终交付。\n'
+         '- 从现在开始：优先基于已完成撰写的章节、整合的草稿、记录的冲突列表和最新的大纲进行收敛，补齐关键缺口、减少发散探索。\n'
+         '- 在接下来的极少数轮次内，必须立刻准备并输出最终的 JSON 回复。\n'
+         '- 当前轮次信息：round=<round>，max_chat_round=<max_chat_round>，剩余≈<remaining_rounds> 轮。'
+         ),
+        'en':
+        ('You are approaching the maximum allowed conversation round limit. Begin converging immediately and prepare the final delivery.\n'
+         '- From now on: Prioritize converging based on the already completed chapters, assembled drafts, recorded conflict list, and the latest outline. Fill critical gaps and reduce exploratory divergence.\n'
+         '- Within the very few remaining rounds, you must immediately prepare and output the final JSON response.\n'
+         '- Current round info: round=<round>, max_chat_round=<max_chat_round>, remaining ≈ <remaining_rounds> rounds.'
+         ),
+    }
+
+    # Bilingual trajectory labels keyed by language code.
+    _TRAJECTORY_LABELS = {
+        'zh': {
+            'title':
+            '# 主代理（Researcher）调研轨迹',
+            'user_request':
+            '## 用户请求',
+            'assistant_thinking':
+            '### 助理思考/回复',
+            'tool_calls':
+            '### 工具调用',
+            'tool_result':
+            '### 工具结果',
+            'trajectory_intro':
+            ('以下是主代理（Researcher）的调研轨迹，包含了研究过程中的关键决策、'
+             '工具调用和中间结论。请参考这些信息来理解研究背景和约束，'
+             '但报告写作仍需以 evidence_store 中的证据为准，并且注意该轨迹可能存在内容过长导致的截断。'),
+        },
+        'en': {
+            'title':
+            '# Main Agent (Researcher) Research Trajectory',
+            'user_request':
+            '## User Request',
+            'assistant_thinking':
+            '### Assistant Thinking/Response',
+            'tool_calls':
+            '### Tool Calls',
+            'tool_result':
+            '### Tool Result',
+            'trajectory_intro':
+            ('Below is the research trajectory of the main agent (Researcher), containing key decisions, '
+             'tool calls, and intermediate conclusions during the research process. Please refer to this '
+             'information to understand the research background and constraints, but report writing must '
+             'still be based on the evidence in evidence_store. Note that this trajectory may be truncated '
+             'due to excessive length.'),
+        },
+    }
+
     def __init__(self, config: DictConfig):
         super().__init__(config)
         self.output_dir = getattr(config, 'output_dir', './output')
@@ -42,6 +96,22 @@ class ReporterCallback(Callback):
 
         self.report_path = os.path.join(self.output_dir, self.reports_dir,
                                         'report.md')
+        # Resolve language from config for bilingual prompt selection.
+        self.lang = self._resolve_lang(config)
+
+    @staticmethod
+    def _resolve_lang(config: DictConfig) -> str:
+        """Resolve language code from config.prompt.lang, defaulting to 'en'."""
+        prompt_cfg = getattr(config, 'prompt', None)
+        if prompt_cfg is not None:
+            lang = getattr(prompt_cfg, 'lang', None)
+            if isinstance(lang, str) and lang.strip():
+                normed = lang.strip().lower()
+                if normed in {'en', 'en-us', 'en_us', 'us'}:
+                    return 'en'
+                elif normed in {'zh', 'zh-cn', 'zh_cn', 'cn'}:
+                    return 'zh'
+        return 'en'
 
     def _load_researcher_history(self) -> Optional[List[Dict[str, Any]]]:
         """
@@ -137,7 +207,9 @@ class ReporterCallback(Callback):
         """
         Format the filtered messages into a readable research trajectory summary.
         """
-        lines = ['# 主代理（Researcher）调研轨迹', '']
+        labels = self._TRAJECTORY_LABELS.get(self.lang,
+                                             self._TRAJECTORY_LABELS['en'])
+        lines = [labels['title'], '']
 
         for i, msg in enumerate(messages):
             role = msg.get('role', 'unknown')
@@ -146,19 +218,19 @@ class ReporterCallback(Callback):
             tool_name = msg.get('name', '')
 
             if role == 'user':
-                lines.append('## 用户请求')
+                lines.append(labels['user_request'])
                 lines.append(content[:2000] if content else '(empty)')
                 lines.append('')
 
             elif role == 'assistant':
                 if content:
-                    lines.append('### 助理思考/回复')
+                    lines.append(labels['assistant_thinking'])
                     lines.append(
                         content[:20000] if len(content) > 20000 else content)
                     lines.append('')
 
                 if tool_calls:
-                    lines.append('### 工具调用')
+                    lines.append(labels['tool_calls'])
                     for tc in tool_calls:
                         tc_name = tc.get('tool_name', '') or tc.get(
                             'function', {}).get('name', '')
@@ -170,7 +242,7 @@ class ReporterCallback(Callback):
                     lines.append('')
 
             elif role == 'tool':
-                lines.append(f'### 工具结果 ({tool_name})')
+                lines.append(f'{labels["tool_result"]} ({tool_name})')
                 # Truncate very long tool results
                 if content and len(content) > 20000:
                     content = content[:20000] + '\n...(truncated)'
@@ -207,16 +279,15 @@ class ReporterCallback(Callback):
                         insert_pos = i + 1
                         break
 
-                trajectory_str = (
-                    '以下是主代理（Researcher）的调研轨迹，包含了研究过程中的关键决策、'
-                    '工具调用和中间结论。请参考这些信息来理解研究背景和约束，'
-                    '但报告写作仍需以 evidence_store 中的证据为准，并且注意该轨迹可能存在内容过长导致的截断。\n\n'
-                    f'{trajectory_text}')
+                labels = self._TRAJECTORY_LABELS.get(
+                    self.lang, self._TRAJECTORY_LABELS['en'])
+                trajectory_str = (f'{labels["trajectory_intro"]}\n\n'
+                                  f'{trajectory_text}')
 
                 if messages[insert_pos].role == 'user':
                     messages[insert_pos].content += f'\n\n{trajectory_str}'
                 else:
-                    # fallback: 插入独立消息
+                    # fallback: insert as a standalone message
                     messages.insert(
                         insert_pos,
                         Message(role='user', content=trajectory_str))
@@ -291,12 +362,8 @@ class ReporterCallback(Callback):
 
         remaining = max_chat_round - runtime.round
         if not custom_message or not isinstance(custom_message, str):
-            custom_message = (
-                '你已接近最大允许的对话轮数上限，请立刻开始收敛准备最终交付。\n'
-                '- 从现在开始：优先基于已完成撰写的章节、整合的草稿、记录的冲突列表和最新的大纲进行收敛，补齐关键缺口、减少发散探索。\n'
-                '- 在接下来的极少数轮次内，必须立刻准备并输出最终的 JSON 回复。\n'
-                '- 当前轮次信息：round=<round>，max_chat_round=<max_chat_round>，剩余≈<remaining_rounds> 轮。'
-            )
+            custom_message = self._ROUND_REMINDER_TEMPLATES.get(
+                self.lang, self._ROUND_REMINDER_TEMPLATES['en'])
 
         injected = custom_message
         injected = injected.replace('<round>', str(runtime.round))

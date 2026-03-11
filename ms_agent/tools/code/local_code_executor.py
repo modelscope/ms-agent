@@ -345,7 +345,7 @@ class LocalCodeExecutionTool(ToolBase):
         await self.kernel_session.stop()
         self._initialized = False
 
-    async def get_tools(self) -> Dict[str, Any]:
+    async def _get_tools_inner(self) -> Dict[str, Any]:
         tools = {
             'code_executor': [
                 Tool(
@@ -502,12 +502,8 @@ class LocalCodeExecutionTool(ToolBase):
                     }),
             ]
         }
-        return {
-            'code_executor': [
-                t for t in tools['code_executor']
-                if t['tool_name'] not in self.exclude_functions
-            ]
-        }
+
+        return tools
 
     async def call_tool(self, server_name: str, *, tool_name: str,
                         tool_args: dict) -> str:

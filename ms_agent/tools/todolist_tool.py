@@ -111,8 +111,8 @@ class TodoListTool(ToolBase):
                     server_name=self.SERVER_NAME,
                     description=
                     ('Create or update the structured todo list (plan.json) for this session/workdir. '
-                     'Use merge=true to merge by id; merge=false replaces the list.'
-                     ),
+                     'Use merge=true to merge by id (partial updates allowed for existing ids); '
+                     'merge=false replaces the list (full items required).'),
                     parameters={
                         'type': 'object',
                         'properties': {
@@ -136,7 +136,8 @@ class TodoListTool(ToolBase):
                                             'type':
                                             'string',
                                             'description':
-                                            'Unique identifier for the todo item',
+                                            ('Unique identifier for the todo item. '
+                                             'e.g. "T_1", "T_2", ...'),
                                         },
                                         'content': {
                                             'type':
@@ -162,7 +163,7 @@ class TodoListTool(ToolBase):
                                             'default': 'medium',
                                         },
                                     },
-                                    'required': ['id', 'content', 'status'],
+                                    'required': ['id'],
                                     # Allow DeepResearch to attach extra structured fields:
                                     # e.g. evidence_ids, depends_on, acceptance, agent, etc.
                                     'additionalProperties': True,
@@ -277,6 +278,68 @@ class TodoListTool(ToolBase):
             normalized.append(merged)
         return normalized
 
+    def _normalize_todo_updates(
+        self,
+        todos: List[Dict[str, Any]],
+        *,
+        existing_ids: set[str],
+    ) -> List[Dict[str, Any]]:
+        """
+        Normalize partial updates for merge=true.
+
+        Rules:
+        - id is always required.
+        - For existing ids, you may provide any subset of fields (e.g. status only).
+        - For new ids, you must provide content and status (so the merged plan is valid).
+        - If a field is provided, it is validated; missing fields are not touched.
+        """
+        normalized: List[Dict[str, Any]] = []
+        for idx, item in enumerate(todos or []):
+            if not isinstance(item, dict):
+                raise ValueError(f'todos[{idx}] must be an object.')
+
+            todo_id = str(item.get('id', '')).strip()
+            if not todo_id:
+                raise ValueError(
+                    f'todos[{idx}].id is required and must be non-empty.')
+
+            is_new = todo_id not in existing_ids
+
+            # Start from original item to keep extra fields (e.g. depends_on).
+            upd = dict(item)
+            upd['id'] = todo_id
+
+            if 'content' in item:
+                content = str(item.get('content', '')).strip()
+                if not content:
+                    raise ValueError(
+                        f'todos[{idx}].content is required and must be non-empty.'
+                    )
+                upd['content'] = content
+            elif is_new:
+                raise ValueError(
+                    f'todos[{idx}] is a new id "{todo_id}" so content is required.'
+                )
+
+            if 'status' in item:
+                status = str(item.get('status', '')).strip()
+                _validate_status(status)
+                upd['status'] = status
+            elif is_new:
+                raise ValueError(
+                    f'todos[{idx}] is a new id "{todo_id}" so status is required.'
+                )
+
+            if 'priority' in item:
+                priority = str(item.get('priority', 'medium')
+                               or 'medium').strip()
+                _validate_priority(priority)
+                upd['priority'] = priority
+
+            normalized.append(upd)
+
+        return normalized
+
     def _merge_todos(self, base: List[Dict[str, Any]],
                      updates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         base_by_id: Dict[str, Dict[str, Any]] = {
@@ -329,16 +392,21 @@ class TodoListTool(ToolBase):
         paths = self._paths()
         _ensure_dir(self.output_dir)
         _ensure_dir(paths.lock_dir)
-        normalized = self._normalize_todos(todos)
 
         with file_lock(paths.lock_dir, self._plan_filename):
             plan = self._load_plan_locked(paths)
             existing = plan.get('todos', [])
             if merge:
-                merged = self._merge_todos(existing, normalized)
+                # For merge=true, allow partial updates for existing ids.
+                existing_full = self._normalize_todos(existing)
+                existing_ids = {str(t.get('id')) for t in existing_full}
+                updates = self._normalize_todo_updates(
+                    todos, existing_ids=existing_ids)
+                merged = self._merge_todos(existing_full, updates)
+                plan['todos'] = self._normalize_todos(merged)
             else:
-                merged = normalized
-            plan['todos'] = merged
+                # For merge=false (replace), require full items.
+                plan['todos'] = self._normalize_todos(todos)
             self._save_plan_locked(paths, plan)
 
             if self._auto_render_md:

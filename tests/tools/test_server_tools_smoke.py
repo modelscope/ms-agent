@@ -496,8 +496,7 @@ class TestEvidenceToolServer(unittest.TestCase):
 
                 res = await tool.write_note(
                     title='Finding A',
-                    claim='Claim A',
-                    supports='Support A',
+                    content='Claim A. Support A',
                     sources=[{
                         'url': 'https://example.com/src',
                         'published_at': '2026-01-01',
@@ -520,7 +519,7 @@ class TestEvidenceToolServer(unittest.TestCase):
                     note_id=note_id, parse_note=True))
                 self.assertEqual(got['status'], 'ok')
                 self.assertEqual(got['note']['note_id'], note_id)
-                self.assertEqual(got['note']['claim'], 'Claim A')
+                self.assertEqual(got['note']['content'], 'Claim A. Support A')
 
                 listed = json.loads(await tool.list_notes(
                     task_id='task_1', tags=['tag1']))
@@ -543,6 +542,76 @@ class TestEvidenceToolServer(unittest.TestCase):
 
         asyncio.run(main())
 
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_evidence_tool_write_get_list_search_delete_analysis(self):
+
+        async def main():
+            with tempfile.TemporaryDirectory() as td:
+                cfg = _make_config(td, tools={'evidence_store': SimpleNamespace()})
+                tool = EvidenceTool(cfg)
+                await tool.connect()
+
+                # Write a note first; conclusion can reference it.
+                note_res = json.loads(await tool.write_note(
+                    title='Finding A',
+                    content='Claim A. Support A',
+                    sources=[{
+                        'url': 'https://example.com/src',
+                        'published_at': '2026-01-01',
+                        'source_tier': 'primary',
+                    }],
+                    summary='summary A',
+                    task_id='task_1',
+                    tags=['tag1', 'tag2'],
+                    quality_score=80,
+                ))
+                note_id = note_res['note_id']
+
+                res = await tool.write_analysis(
+                    title='Interim synthesis',
+                    content='Some **markdown** synthesis.',
+                    summary='one-liner',
+                    task_id='task_1',
+                    based_on_note_ids=[note_id],
+                    tags=['synthesis', 'tag1'],
+                    quality_score=90,
+                )
+                data = json.loads(res)
+                self.assertEqual(data['status'], 'ok')
+                analysis_id = data['analysis_id']
+
+                idx = json.loads(await tool.load_index())
+                self.assertEqual(idx['status'], 'ok')
+                self.assertEqual(idx['total_notes'], 1)
+                self.assertEqual(idx['total_analyses'], 1)
+                self.assertIn(analysis_id, idx.get('analyses', {}))
+
+                got = json.loads(await tool.get_analysis(
+                    analysis_id=analysis_id, parse_analysis=True))
+                self.assertEqual(got['status'], 'ok')
+                self.assertEqual(got['analysis']['analysis_id'], analysis_id)
+                self.assertIn('markdown', got['analysis'].get('content', ''))
+
+                listed = json.loads(await tool.list_analyses(
+                    task_id='task_1', tags=['tag1']))
+                self.assertEqual(listed['status'], 'ok')
+                self.assertEqual(listed['count'], 1)
+
+                searched = json.loads(
+                    await tool.search_analyses(keyword='synthesis'))
+                self.assertEqual(searched['status'], 'ok')
+                self.assertEqual(searched['count'], 1)
+
+                deleted = json.loads(
+                    await tool.delete_analysis(analysis_id=analysis_id))
+                self.assertEqual(deleted['status'], 'ok')
+
+                missing = json.loads(
+                    await tool.get_analysis(analysis_id=analysis_id))
+                self.assertEqual(missing['status'], 'error')
+
+        asyncio.run(main())
+
 
 class TestReportToolServer(unittest.TestCase):
 
@@ -558,8 +627,7 @@ class TestReportToolServer(unittest.TestCase):
                 await ev.connect()
                 n1 = json.loads(await ev.write_note(
                     title='N1',
-                    claim='C1',
-                    supports='S1',
+                    content='C1. S1',
                     sources=[{
                         'url': 'https://example.com/1'
                     }],
@@ -569,8 +637,7 @@ class TestReportToolServer(unittest.TestCase):
                 ))
                 n2 = json.loads(await ev.write_note(
                     title='N2',
-                    claim='C2',
-                    supports='S2',
+                    content='C2. S2',
                     sources=[{
                         'url': 'https://example.com/2'
                     }],
