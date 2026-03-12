@@ -720,13 +720,30 @@ class LLMAgent(Agent):
             messages = await memory_tool.run(messages)
         return messages
 
-    def log_output(self, content: str):
+    def log_output(self, content: Union[str, list]):
         """
         Log formatted output with a tag prefix.
 
         Args:
-            content (str): Content to log.
+            content (Union[str, list]): Content to log. Can be a string or a list (for multimodal content).
         """
+        # Handle multimodal content (list type)
+        if isinstance(content, list):
+            # Extract text from multimodal content
+            text_parts = []
+            for item in content:
+                if isinstance(item, dict):
+                    if item.get('type') == 'text':
+                        text_parts.append(item.get('text', ''))
+                    elif item.get('type') == 'image_url':
+                        img_url = item.get('image_url', {}).get('url', '')
+                        text_parts.append(f'[Image: {img_url[:50]}...]')
+            content = ' '.join(text_parts)
+
+        # Ensure content is a string
+        if not isinstance(content, str):
+            content = str(content)
+
         if len(content) > 1024:
             content = content[:512] + '\n...\n' + content[-512:]
         for line in content.split('\n'):
