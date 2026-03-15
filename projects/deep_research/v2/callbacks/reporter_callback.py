@@ -1,9 +1,13 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+# yapf: disable
 import os
 import re
+import shutil
 from typing import Any, Dict, List, Optional, Set
 
 import json
+from callbacks.quality_checker import (ReportQualityChecker,
+                                       build_quality_checkers)
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback
 from ms_agent.llm.utils import Message
@@ -20,16 +24,20 @@ class ReporterCallback(Callback):
 
     Responsibilities:
     - on_task_begin: Clean up system prompt formatting and load researcher trajectory
-    - on_task_end: Save the final report to file
+    - on_generate_response: Inject round-aware reminder near max rounds
+    - after_tool_call: Pre-completion quality checks (report existence,
+      length retention vs draft, model-based content audit)
+    - on_task_end: Promote the best report to final_report.md and save JSON summary
     """
 
-    # The tag of the main researcher agent whose history we want to load
     RESEARCHER_TAG = 'deep-research-researcher'
-
-    # Tool names to exclude from trajectory (reporter_tool calls and their responses)
     EXCLUDED_TOOL_PATTERNS = ['reporter_tool']
 
-    # Bilingual round-reminder templates keyed by language code.
+    DRAFT_FILENAME = 'draft.md'
+    REPORT_FILENAME = 'report.md'
+    FINAL_REPORT_FILENAME = 'final_report.md'
+    DEFAULT_MIN_RETENTION_RATIO = 0.3
+
     _ROUND_REMINDER_TEMPLATES = {
         'zh':
         ('你已接近最大允许的对话轮数上限，请立刻开始收敛准备最终交付。\n'
@@ -83,6 +91,75 @@ class ReporterCallback(Callback):
         },
     }
 
+    _REFLECTION_TEMPLATES = {
+        'zh': {
+            'no_report':
+            ('外部检查发现：输出目录中尚未检测到已完成的报告文件 reports/report.md。\n'
+             '请确认报告写作流程是否已完成。你应当至少完成以下步骤：\n'
+             '1. 完成所有章节的撰写\n'
+             '2. 调用 report_generator---assemble_draft 生成报告草稿\n'
+             '3. 审阅草稿并交付最终版本\n'
+             '请立即采取行动完成报告交付。'),
+            'over_compressed':
+            ('外部检查发现：reports/{report_name} 的内容量（{report_chars} 字符）'
+             '仅为 reports/draft.md（{draft_chars} 字符）的 {ratio:.0%}，有可能存在内容丢失风险，请对报告内容进行检查并采取合理的行动。\n'
+             '**重要提醒**：draft.md 是由工具逐章组装的完整版本，理论上保留了最大的证据保真度。\n'
+             '- 如果你确认你对 draft.md 进行的修改是合理的，可以直接说明压缩内容的理由，无需再次修改或者重写。\n'
+             '- 如果你发现 reports/{report_name} 相比 draft.md 确实存在不合理的压缩，请重写并修复这些问题。\n'
+             '请立即采取行动完成报告交付。'),
+            'low_quality':
+            ('外部检查发现：报告内容存在质量问题——{reason}。\n'
+             '请仔细确认上述质量问题是否属实、是否还有更多问题，并立即采取行动修复。\n'
+             '**重要提醒**：如果质量问题属实，你必须完整重写整份报告。'
+             'write_file 会完全覆盖文件，你写入的内容就是最终文件的全部内容——'
+             '以下写法都会原样出现在文件中并导致报告内容被永久丢失：\n'
+             '- 用省略号或缩略标记替代正文，如"（同之前，略）"、"此处省略"、"篇幅所限不再展开"、'
+             '"……以下类似"、"内容已截断"、"Content truncated for brevity"等；\n'
+             '- 引导读者查看外部文件而非包含实际内容，如"该部分内容保存在xxx文件中"等；\n'
+             '- 引导读者查看引用来源而没有撰写实质性内容，如"详见[1]"等。\n'
+             '不得遗漏或省略任何章节，无需担心与先前输出的内容或写入过的文件重复。'),
+        },
+        'en': {
+            'no_report':
+            ('External inspection found that the completed report file reports/report.md '
+             'has not been detected in the output directory.\n'
+             'Please confirm whether the report writing workflow has been completed. '
+             'You should have completed at least the following steps:\n'
+             '1. Finished writing all chapters\n'
+             '2. Called report_generator---assemble_draft to generate the report draft\n'
+             '3. Reviewed the draft and delivered the final version\n'
+             'Please take immediate action to complete report delivery.'),
+            'over_compressed':
+            ('External inspection found that reports/{report_name} ({report_chars} chars) '
+             'is only {ratio:.0%} of reports/draft.md ({draft_chars} chars), '
+             'indicating a risk of content loss. Please review the report content and take appropriate action.\n'
+             '**IMPORTANT**: draft.md is the tool-assembled complete version that theoretically '
+             'preserves maximum evidence fidelity.\n'
+             '- If you confirm that your modifications to draft.md are reasonable, you may simply '
+             'explain the rationale for the compression without further modifications or rewrites.\n'
+             '- If you find that reports/{report_name} has indeed been unreasonably compressed '
+             'compared to draft.md, please rewrite and fix these issues.\n'
+             'Please take immediate action to complete report delivery.'),
+            'low_quality':
+            ('External inspection found quality issues in the report — {reason}.\n'
+             'Please carefully verify whether these issues are valid and whether additional '
+             'problems exist, then immediately take action to fix them.\n'
+             '**IMPORTANT**: If the quality issues are confirmed, you must completely rewrite '
+             'the entire report. write_file will fully overwrite the file — what you write is '
+             'the entire final content of the file. The following patterns will appear verbatim '
+             'in the file and cause permanent loss of report content:\n'
+             '- Replacing body text with ellipsis or brevity markers, e.g., "(same as before, omitted)", '
+             '"omitted here", "not elaborated due to space constraints", '
+             '"...similar below", "content truncated", "Content truncated for brevity", etc.;\n'
+             '- Directing readers to view external files instead of including actual content, '
+             'e.g., "this section is stored in xxx file", etc.;\n'
+             '- Directing readers to view reference sources without writing substantive content, '
+             'e.g., "see [1]", etc.\n'
+             'Do not omit or skip any sections. Do not worry about duplicating content '
+             'from previous outputs or previously written files.'),
+        },
+    }
+
     def __init__(self, config: DictConfig):
         super().__init__(config)
         self.output_dir = getattr(config, 'output_dir', './output')
@@ -95,9 +172,31 @@ class ReporterCallback(Callback):
             self.reports_dir = getattr(report_cfg, 'reports_dir', 'reports')
 
         self.report_path = os.path.join(self.output_dir, self.reports_dir,
-                                        'report.md')
-        # Resolve language from config for bilingual prompt selection.
+                                        self.REPORT_FILENAME)
+        self.draft_path = os.path.join(self.output_dir, self.reports_dir,
+                                       self.DRAFT_FILENAME)
+        self.final_report_path = os.path.join(self.output_dir,
+                                              self.FINAL_REPORT_FILENAME)
+
         self.lang = self._resolve_lang(config)
+
+        # Self-reflection config
+        refl_cfg = getattr(config, 'self_reflection', None)
+        self.reflection_enabled: bool = False
+        self.reflection_max_retries: int = 2
+        self.min_retention_ratio: float = self.DEFAULT_MIN_RETENTION_RATIO
+
+        if refl_cfg is not None:
+            self.reflection_enabled = bool(getattr(refl_cfg, 'enabled', False))
+            self.reflection_max_retries = int(
+                getattr(refl_cfg, 'max_retries', 2))
+            self.min_retention_ratio = float(
+                getattr(refl_cfg, 'min_retention_ratio',
+                        self.DEFAULT_MIN_RETENTION_RATIO))
+
+        self._reflection_retries_used: int = 0
+        self._quality_checkers: List[ReportQualityChecker] = (
+            build_quality_checkers(config))
 
     @staticmethod
     def _resolve_lang(config: DictConfig) -> str:
@@ -112,6 +211,11 @@ class ReporterCallback(Callback):
                 elif normed in {'zh', 'zh-cn', 'zh_cn', 'cn'}:
                     return 'zh'
         return 'en'
+
+    def _get_reflection(self, key: str, **kwargs) -> str:
+        templates = self._REFLECTION_TEMPLATES.get(
+            self.lang, self._REFLECTION_TEMPLATES['en'])
+        return templates[key].format(**kwargs)
 
     def _load_researcher_history(self) -> Optional[List[Dict[str, Any]]]:
         """
@@ -372,6 +476,89 @@ class ReporterCallback(Callback):
         messages.append(
             Message(role='user', content=reminder_mark + injected + '\n'))
 
+    async def after_tool_call(self, runtime: Runtime, messages: List[Message]):
+        """Pre-completion quality checks before allowing the reporter to stop.
+
+        Checks performed (in order, first failure wins):
+        1. Report file existence — report.md must exist.
+        2. Length retention — if report.md exists alongside draft.md, its
+           size must be >= ``min_retention_ratio`` of draft.md.
+        3. Model quality audit — detects placeholder / abbreviated content.
+        """
+        if not self.reflection_enabled:
+            return
+        if not runtime.should_stop:
+            return
+        if self._reflection_retries_used >= self.reflection_max_retries:
+            logger.info('ReporterCallback: reflection retry cap reached '
+                        f'({self.reflection_max_retries}), allowing stop.')
+            return
+
+        has_report = os.path.isfile(self.report_path)
+        has_draft = os.path.isfile(self.draft_path)
+
+        # --- Check 1: report file existence ---
+        if not has_report:
+            logger.warning('ReporterCallback: no report found, '
+                           'injecting reflection prompt.')
+            prompt = self._get_reflection('no_report')
+            messages.append(Message(role='user', content=prompt))
+            runtime.should_stop = False
+            self._reflection_retries_used += 1
+            return
+
+        # --- Check 2: length retention ---
+        if has_report and has_draft:
+            try:
+                report_chars = os.path.getsize(self.report_path)
+                draft_chars = os.path.getsize(self.draft_path)
+                if draft_chars > 0:
+                    ratio = report_chars / draft_chars
+                    if ratio < self.min_retention_ratio:
+                        logger.warning(f'ReporterCallback: report.md is only '
+                                       f'{ratio:.0%} of draft.md, '
+                                       'injecting over-compression prompt.')
+                        prompt = self._get_reflection(
+                            'over_compressed',
+                            report_name=self.REPORT_FILENAME,
+                            report_chars=report_chars,
+                            draft_chars=draft_chars,
+                            ratio=ratio)
+                        messages.append(Message(role='user', content=prompt))
+                        runtime.should_stop = False
+                        self._reflection_retries_used += 1
+                        return
+            except OSError as exc:
+                logger.warning(
+                    f'ReporterCallback: failed to stat report files: {exc}')
+
+        # --- Check 3: quality checker chain ---
+        if not self._quality_checkers:
+            logger.info('ReporterCallback: no quality checkers configured, '
+                        'skipping quality gate.')
+            return
+
+        try:
+            with open(self.report_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except Exception as exc:
+            logger.warning(f'ReporterCallback: failed to read report: {exc}')
+            return
+
+        for checker in self._quality_checkers:
+            failure = await checker.check(content, self.lang)
+            if failure is not None:
+                logger.warning(f'ReporterCallback: quality check failed '
+                               f'({type(checker).__name__}: {failure}), '
+                               'injecting reflection prompt.')
+                prompt = self._get_reflection('low_quality', reason=failure)
+                messages.append(Message(role='user', content=prompt))
+                runtime.should_stop = False
+                self._reflection_retries_used += 1
+                return
+
+        logger.info('ReporterCallback: all pre-completion checks passed.')
+
     def _extract_json_from_content(self,
                                    content: str) -> Optional[Dict[str, Any]]:
         """
@@ -407,51 +594,78 @@ class ReporterCallback(Callback):
 
         return None
 
-    async def on_task_end(self, runtime: Runtime, messages: List[Message]):
-        """
-        Save the final report to file.
-        Supports both JSON and markdown output formats.
-        """
-        if os.path.exists(self.report_path):
-            logger.info(f'Report already exists at {self.report_path}')
-            return
+    def _select_best_report(self) -> Optional[str]:
+        """Return the path to the best available report file.
 
-        # Find the last assistant message without tool calls
+        Prefers ``report.md`` when it exists and passes the length
+        retention check against ``draft.md``.  Falls back to
+        ``draft.md`` otherwise.
+        """
+        has_report = os.path.isfile(self.report_path)
+        has_draft = os.path.isfile(self.draft_path)
+
+        if has_report and has_draft:
+            try:
+                report_chars = os.path.getsize(self.report_path)
+                draft_chars = os.path.getsize(self.draft_path)
+                if draft_chars > 0:
+                    ratio = report_chars / draft_chars
+                    if ratio < self.min_retention_ratio:
+                        logger.warning(
+                            f'ReporterCallback: report.md ({report_chars} '
+                            f'chars) is only {ratio:.0%} of draft.md '
+                            f'({draft_chars} chars). '
+                            f'Using draft.md as final report source.')
+                        return self.draft_path
+            except OSError:
+                pass
+            return self.report_path
+        elif has_report:
+            return self.report_path
+        elif has_draft:
+            return self.draft_path
+        return None
+
+    async def on_task_end(self, runtime: Runtime, messages: List[Message]):
+        """Promote the best report to final_report.md and save JSON summary."""
+
+        # --- Step 1: Extract and save JSON summary from last message ---
         for message in reversed(messages):
             if message.role == 'assistant' and not message.tool_calls:
                 content = message.content
                 if not content:
                     continue
 
-                # Ensure directory exists
-                os.makedirs(os.path.dirname(self.report_path), exist_ok=True)
-
-                # Try to extract and save JSON result
                 json_result = self._extract_json_from_content(content)
                 if json_result:
-                    # Save the full JSON result
+                    os.makedirs(
+                        os.path.dirname(self.report_path), exist_ok=True)
                     json_path = self.report_path.replace('.md', '.json')
-                    with open(json_path, 'w', encoding='utf-8') as f:
-                        json.dump(json_result, f, ensure_ascii=False, indent=2)
-                    logger.info(f'Reporter: JSON result saved to {json_path}')
-
-                    # Also extract and save the Report field as markdown if present
-                    report_content = json_result.get(
-                        'Report') or json_result.get('report')
-                    if report_content:
-                        with open(
-                                self.report_path, 'w', encoding='utf-8') as f:
-                            f.write(report_content)
+                    try:
+                        with open(json_path, 'w', encoding='utf-8') as f:
+                            json.dump(
+                                json_result, f, ensure_ascii=False, indent=2)
                         logger.info(
-                            f'Reporter: Report content saved to {self.report_path}'
-                        )
-                    return
+                            f'Reporter: JSON result saved to {json_path}')
+                    except Exception as exc:
+                        logger.warning(f'Reporter: failed to save JSON: {exc}')
+                break
 
-                # Fallback: save as markdown if not valid JSON
-                with open(self.report_path, 'w', encoding='utf-8') as f:
-                    f.write(content)
+        # --- Step 2: Promote best report to final_report.md ---
+        best_source = self._select_best_report()
+        if best_source:
+            try:
+                os.makedirs(
+                    os.path.dirname(self.final_report_path), exist_ok=True)
+                shutil.copy2(best_source, self.final_report_path)
+                source_name = os.path.basename(best_source)
                 logger.info(
-                    f'Reporter: Final report saved to {self.report_path}')
-                return
-
-        logger.warning('Reporter: No final report content found in messages')
+                    f'Reporter: promoted {source_name} -> '
+                    f'{self.FINAL_REPORT_FILENAME} '
+                    f'({os.path.getsize(self.final_report_path)} bytes)')
+            except Exception as exc:
+                logger.warning(f'Reporter: failed to copy report to '
+                               f'{self.final_report_path}: {exc}')
+        else:
+            logger.warning('Reporter: no report file found to promote to '
+                           f'{self.FINAL_REPORT_FILENAME}')

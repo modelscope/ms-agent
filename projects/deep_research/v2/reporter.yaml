@@ -35,6 +35,7 @@ tools:
       - write_file
       - read_file
       - list_files
+      - replace_file_lines
   evidence_store:
     mcp: false
     evidence_dir: evidence
@@ -65,6 +66,14 @@ max_chat_round: 36
 round_reminder:
   enabled: true
   remind_at_round: 34
+
+self_reflection:
+  enabled: true
+  max_retries: 2
+  min_retention_ratio: 0.3
+  quality_check:
+    enabled: true
+    model: qwen3.5-flash
 
 tool_call_timeout: 300
 
