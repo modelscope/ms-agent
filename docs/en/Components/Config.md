@@ -166,3 +166,20 @@ In addition to yaml configuration, MS-Agent also supports several additional com
     ```
 
 > Any configuration in agent.yaml can be passed in with new values via command line, and also supports reading from environment variables with the same name (case insensitive), for example `--llm.modelscope_api_key xxx-xxx`.
+
+- knowledge_search_paths: Knowledge search paths, comma-separated multiple paths. When provided, automatically enables SirchmunkSearch for knowledge retrieval, with LLM configuration automatically inherited from the `llm` module.
+
+### Quick Start for Knowledge Search
+
+Use the `--knowledge_search_paths` parameter to quickly enable knowledge search based on local documents:
+
+```bash
+# Using default agent.yaml configuration, automatically reuses LLM settings
+ms-agent run --query "How to implement user authentication?" --knowledge_search_paths "./src,./docs"
+
+# Specify configuration file
+ms-agent run --config /path/to/agent.yaml --query "your question" --knowledge_search_paths "/path/to/docs"
+```
+
+LLM-related parameters (api_key, base_url, model) are automatically inherited from the `llm` module in the configuration file, no need to configure them repeatedly.
+If you need to use independent LLM configuration in the `knowledge_search` module, you can explicitly configure `knowledge_search.llm_api_key` and other parameters in the yaml.
