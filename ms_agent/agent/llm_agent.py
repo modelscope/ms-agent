@@ -757,20 +757,6 @@ class LLMAgent(Agent):
         if hasattr(self.config, 'knowledge_search'):
             ks_config = self.config.knowledge_search
             if ks_config is not None:
-                # Extract LLM config for sirchmunk
-                if hasattr(self.config, 'llm'):
-                    llm_config = self.config.llm
-                    # Update knowledge_search config with LLM settings if not specified
-                    if not hasattr(ks_config, 'llm_api_key') and hasattr(llm_config, 'modelscope_api_key'):
-                        OmegaConf.update(self.config, 'knowledge_search.llm_api_key',
-                                        getattr(llm_config, 'modelscope_api_key', None), merge=True)
-                    if not hasattr(ks_config, 'llm_base_url') and hasattr(llm_config, 'modelscope_base_url'):
-                        OmegaConf.update(self.config, 'knowledge_search.llm_base_url',
-                                        getattr(llm_config, 'modelscope_base_url', None), merge=True)
-                    if not hasattr(ks_config, 'llm_model_name') and hasattr(llm_config, 'model'):
-                        OmegaConf.update(self.config, 'knowledge_search.llm_model_name',
-                                        getattr(llm_config, 'model', None), merge=True)
-
                 self.knowledge_search: SirchmunkSearch = SirchmunkSearch(self.config)
 
     async def condense_memory(self, messages: List[Message]) -> List[Message]:
