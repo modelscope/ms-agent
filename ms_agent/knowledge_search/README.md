@@ -108,7 +108,7 @@ for msg in result:
         print(f"Search results: {msg.search_result}")
 ```
 
-### 2. 单独使用 SirchmunkSearch
+### 3. 单独使用 SirchmunkSearch
 
 ```python
 from ms_agent.knowledge_search import SirchmunkSearch
