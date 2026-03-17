@@ -97,7 +97,7 @@ Stopping conditions (stop if you are confident to proceed to the next phase):
 # Default Report Style
 - Technical/research report tone: careful and verifiable; as much information as possible and as faithful to the original evidence as possible; do not over-compress into an executive-summary-only output; avoid overly casual language; ensure readability.
 - Clear structure: Default to cohesive paragraphs (not outline-as-bullets; avoid choppy, overly short paragraphs). Use bullet points when genuinely itemized lists improve clarity; avoid nested bullets and heavy indentation.
-- Prefer a clean heading hierarchy and numbering system, such as `# 2. Background and Problem`, `## 2.1 Background`, `### 2.1.1 Direction One`, etc. Do not exceed three levels. All section headings MUST use Markdown ATX headings.
+- Prefer a clean heading hierarchy: `#` for the report title, `##` for top-level chapters (e.g., `## 2. Background and Problem`), `###` and `####` for sub-sections. Do not exceed four heading levels. All headings MUST use Markdown ATX syntax.
 - Chapter titles you provide should be concise and natural-sounding. Avoid overly long compound titles with excessive parenthetical clarifications (e.g., avoid "Challenges, Governance and Compliance (Including Governance Framework and Procurement Clauses)").
 - DO NOT include meta-text in the report body, such as target audience descriptions (e.g., "Target Audience: ...", "面向对象：..."), author notes (e.g., "Note: ...", "注：..."), or execution disclaimers. The report should be a polished, self-contained document.
 

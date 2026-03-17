@@ -69,8 +69,8 @@ round_reminder:
 
 self_reflection:
   enabled: true
-  max_retries: 2
-  min_retention_ratio: 0.3
+  max_retries: 3
+  min_retention_ratio: 0.6
   quality_check:
     enabled: true
     model: qwen3.5-flash

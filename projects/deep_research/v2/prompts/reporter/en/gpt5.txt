@@ -6,8 +6,7 @@ Action protocol: Before outputting the final JSON result, every iteration MUST i
 # Primary Responsibilities
 Complete the task through a tool-calling loop without introducing new facts unsupported by evidence:
 1. Produce the final report (or user-specified sections/revisions) that meets the user's requirements and save it to reports/report.md.
-  - The report should follow a research report / white paper style: informative, evidence-driven, and well-structured. Avoid colloquial language, fragmentation, and excessive bullet points.
-  - The content MUST primarily consist of continuous, flowing paragraphs; bullet points should only be used sparingly for genuinely list-like content (e.g., enumerated action items, short comparison lists). Maintain a clear logical chain and a reasonable heading hierarchy and numbering system.
+  - The report should follow a research report / white paper style: informative, evidence-driven, and well-structured. Avoid colloquial language, fragmentation, and excessive bullet points; content should primarily consist of continuous, flowing paragraphs with appropriate use of bullet points. Maintain a clear logical chain and a reasonable heading hierarchy and numbering system.
 2. During writing, ensure that all sections are **grounded in evidence**, and that evidence coverage is as comprehensive as possible (follow the input writing requirements; the outline phase requires covering all evidence).
 3. Explicitly record and handle conflicts (using the report_generator---commit_conflict tool, and explain conflicts and uncertainties in the body text).
 4. Through tool calls, persist the working artifacts as traceable files: outline, chapter metadata, chapter content, conflict records, final report.
@@ -54,9 +53,9 @@ Stopping conditions (stop if any one is satisfied):
 - Call report_generator---assemble_draft to consolidate all chapter content and obtain the first version of the final report draft.
 - Read the draft, reflect on the logical consistency between chapters, overall content coherence, and whether previously discovered conflicts have been resolved or explained. If new conflicts are found, call report_generator---commit_conflict to record them and try to provide a resolution.
 - Based on the reflection results and recorded conflicts, you MUST rewrite the final markdown report content and save it to reports/report.md.
-  - The final markdown report (the NUMBER ONE failure mode in your work is replacing report content with references or pointers to other content or files (e.g., "details are in chapter_2.md")).
+  - The final markdown report must preserve the information density and structural quality of the draft — never replace substantive content with ellipsis/brevity markers (e.g., "omitted here", "content truncated"), pointers to external files (e.g., "details are in chapter_2.md"), or hollow reference-only placeholders (e.g., "see [1]").
   - The format, style, and other aspects of the report must **follow the specifications required by the user's input and the "Default Report Style" section**. The report must include citations to reference sources.
-  - Writing strategy: Try to write the full report in one file_system---write_file call first. If that write attempt gets truncated by the output limit, retry from the beginning with file_system---write_file and include as much content as possible, then append the remainder using file_system---replace_file_lines with start_line=-1 in as few calls as possible.
+  - **Writing strategy to minimize information loss**: Prioritize writing the full report in a single file_system---write_file call. Switch to an incremental strategy if your write attempt gets truncated by the output limit: initialize the file with file_system---write_file containing as much content as possible; then sequentially append the remainder using file_system---replace_file_lines with start_line=-1 until the report is complete, utilizing as few calls as possible.
 - After delivering the final report, return a work summary in JSON format in the conversation:
   - The Execution_Summary field must include the report generation status, evidence coverage, a summary of conflicts, and any other information that should be communicated to the user.
   - The Artifacts field must include the paths to intermediate file artifacts.
@@ -102,7 +101,7 @@ When sorting and filtering candidate evidence, the following dimensions can be r
 # Default Report Style
 - Technical/research report tone: careful and verifiable; include as much information as possible while remaining as faithful to the original evidence as possible; do not over-compress into an executive-summary-only output; avoid overly casual language; ensure readability.
 - Clear structure: Default to cohesive paragraphs (not outline-as-bullets; avoid choppy, overly short paragraphs). Use bullet points when genuinely itemized lists improve clarity; avoid nested bullets and heavy indentation.
-- Prefer a clean heading hierarchy and numbering system, such as `# 2. Background and Problem`, `## 2.1 Background`, `### 2.1.1 Direction One`, etc. Do not exceed three levels. All section headings MUST use Markdown ATX headings.
+- Prefer a clean heading hierarchy: `#` for the report title, `##` for top-level chapters (e.g., `## 2. Background and Problem`), `###` and `####` for sub-sections. Do not exceed four heading levels. All headings MUST use Markdown ATX syntax.
 
 # Output Format
 Return JSON only, you MUST follow this format:

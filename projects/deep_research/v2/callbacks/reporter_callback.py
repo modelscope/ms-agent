@@ -105,7 +105,7 @@ class ReporterCallback(Callback):
              '仅为 reports/draft.md（{draft_chars} 字符）的 {ratio:.0%}，有可能存在内容丢失风险，请对报告内容进行检查并采取合理的行动。\n'
              '**重要提醒**：draft.md 是由工具逐章组装的完整版本，理论上保留了最大的证据保真度。\n'
              '- 如果你确认你对 draft.md 进行的修改是合理的，可以直接说明压缩内容的理由，无需再次修改或者重写。\n'
-             '- 如果你发现 reports/{report_name} 相比 draft.md 确实存在不合理的压缩，请重写并修复这些问题。\n'
+             '- 如果你发现 reports/{report_name} 相比 draft.md 确实存在不合理的压缩，请通过重写/追加/续写等方式来修复这些问题。\n'
              '请立即采取行动完成报告交付。'),
             'low_quality':
             ('外部检查发现：报告内容存在质量问题——{reason}。\n'
@@ -138,7 +138,7 @@ class ReporterCallback(Callback):
              '- If you confirm that your modifications to draft.md are reasonable, you may simply '
              'explain the rationale for the compression without further modifications or rewrites.\n'
              '- If you find that reports/{report_name} has indeed been unreasonably compressed '
-             'compared to draft.md, please rewrite and fix these issues.\n'
+             'compared to draft.md, please rewrite/append/continue writing to repair these issues.\n'
              'Please take immediate action to complete report delivery.'),
             'low_quality':
             ('External inspection found quality issues in the report — {reason}.\n'

@@ -68,5 +68,5 @@ Return JSON only, you MUST follow this format:
     "findings": ["Core finding 1 from this research", "Core finding 2 from this research"],
     "issues": ["Issues or limitations encountered during this research"],
     "note_ids": ["note_id_1", "note_id_2", ...(all stored evidence card IDs)],
-    "report": "The research report body for this investigation, required to be detailed, accurate, and rigorous in organizing research results, with no subjective speculation, following standard academic writing style"
+    "report": "The research report body for this investigation, required to be detailed, accurate, and rigorous in organizing research results, with no subjective speculation, well-organized and evidence-based"
 }

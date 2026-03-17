@@ -66,11 +66,12 @@ class LocalKernelSession:
         self._km = AsyncKernelManager(
             kernel_name=self.kernel_name,
             env=self.env,
-            cwd=str(self.working_dir))
+            cwd=str(self.working_dir))  # cwd may be ignored here
 
         start_kernel_result = self._km.start_kernel(
             extra_arguments=self.extra_arguments,
             env=self.env,
+            cwd=str(self.working_dir),
         )
         if inspect.isawaitable(start_kernel_result):
             await start_kernel_result
