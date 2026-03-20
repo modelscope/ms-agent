@@ -53,6 +53,10 @@ def get_logger(log_file: Optional[str] = None,
     logger = logging.getLogger(logger_name)
     logger.propagate = False
     if logger_name in init_loggers:
+        # Update log level dynamically to respect current LOG_LEVEL env var
+        logger.setLevel(log_level)
+        for handler in logger.handlers:
+            handler.setLevel(log_level)
         add_file_handler_if_needed(logger, log_file, file_mode, log_level)
         return logger
 
@@ -124,3 +128,28 @@ def add_file_handler_if_needed(logger, log_file, file_mode, log_level):
         file_handler.setFormatter(logger_format)
         file_handler.setLevel(log_level)
         logger.addHandler(file_handler)
+
+
+def refresh_log_level(target_logger=None):
+    """
+    Refresh logger level from LOG_LEVEL environment variable.
+
+    This is useful when LOG_LEVEL is changed after the logger was initialized.
+
+    Args:
+        target_logger: Logger to refresh. If None, uses the default logger.
+
+    Returns:
+        The new log level (as int).
+    """
+    if target_logger is None:
+        target_logger = logger
+
+    log_level_str = os.getenv('LOG_LEVEL', 'INFO').upper()
+    log_level_int = getattr(logging, log_level_str, logging.INFO)
+
+    target_logger.setLevel(log_level_int)
+    for handler in target_logger.handlers:
+        handler.setLevel(log_level_int)
+
+    return log_level_int

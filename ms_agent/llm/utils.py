@@ -47,8 +47,8 @@ class Message:
     partial: bool = False
     prefix: bool = False
 
-    # code block
-    resources: List[str] = field(default_factory=list)
+    # UI resources from mcp result
+    resources: List[Dict[str, str]] = field(default_factory=list)
 
     # usage
     completion_tokens: int = 0

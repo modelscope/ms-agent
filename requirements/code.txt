@@ -1,3 +1,5 @@
+docker
 llama-index-core
 llama-index-embeddings-huggingface
 mem0ai
+websocket-client

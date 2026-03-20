@@ -34,7 +34,7 @@ prompt:
       - Avoid installing development tools (like eslint, prettier) unless they are essential for the project to function
       - If the framework description states "No Framework" or "No external dependencies", do NOT create or install unnecessary dependencies
 
-    2. After writing dependency files (if needed), you should proactively call shell tools to install dependencies ONLY if:
+    2. After writing dependency files (if needed), you should proactively call the shell_executor tool to install dependencies ONLY if:
       - The project has runtime dependencies that are required for execution
       - The project explicitly requires build tools or package managers
       - Do NOT install dependencies for simple vanilla web projects that can run without them
@@ -46,17 +46,33 @@ prompt:
 
 max_chat_round: 20
 
+tool_call_timeout: 30000
+
 tools:
-  shell:
+  code_executor:
     mcp: false
-    timeout: 180
+    sandbox:
+      mode: local
+      type: docker_notebook
+      image: code-genesis-sandbox:version1
+      working_dir: /data
+      timeout: 180
+      memory_limit: "2g"
+      cpu_limit: 2.0
+      network_enabled: true
+      tools_config:
+        shell_executor: {}
+    exclude:
+      - notebook_executor
+      - python_executor
+      - file_operation
+      - reset_executor
+      - get_executor_info
 
   file_system:
     mcp: false
     include:
       - read_file
       - write_file
-
-tool_call_timeout: 120
 
 help: |
