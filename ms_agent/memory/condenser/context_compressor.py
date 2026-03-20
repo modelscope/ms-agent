@@ -17,7 +17,6 @@ from ms_agent.llm import LLM, Message
 from ms_agent.memory import Memory
 from ms_agent.utils.logger import logger
 
-
 # Default summary prompt template (from opencode)
 SUMMARY_PROMPT = """Summarize this conversation to help continue the work.
 
@@ -76,10 +75,9 @@ class ContextCompressor(Memory):
         """Estimate tokens for a single message."""
         total = 0
         if msg.content:
-            content = msg.content if isinstance(msg.content,
-                                                str) else json.dumps(
-                                                    msg.content,
-                                                    ensure_ascii=False)
+            content = msg.content if isinstance(
+                msg.content, str) else json.dumps(
+                    msg.content, ensure_ascii=False)
             total += self.estimate_tokens(content)
         if msg.tool_calls:
             total += self.estimate_tokens(json.dumps(msg.tool_calls))
@@ -113,8 +111,8 @@ class ContextCompressor(Memory):
         for msg in reversed(messages):
             if msg.role == 'tool' and msg.content:
                 content_str = msg.content if isinstance(
-                    msg.content, str) else json.dumps(msg.content,
-                                                      ensure_ascii=False)
+                    msg.content, str) else json.dumps(
+                        msg.content, ensure_ascii=False)
                 tokens = self.estimate_tokens(content_str)
                 total_tool_tokens += tokens
 
@@ -152,8 +150,8 @@ class ContextCompressor(Memory):
         query = f'{self.summary_prompt}\n\n---\n{conversation}'
 
         try:
-            response = self.llm.generate(
-                [Message(role='user', content=query)], stream=False)
+            response = self.llm.generate([Message(role='user', content=query)],
+                                         stream=False)
             return response.content
         except Exception as e:
             logger.error(f'Summary generation failed: {e}')
