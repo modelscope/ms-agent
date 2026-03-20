@@ -7,12 +7,12 @@ codebase and documentation search.
 """
 
 import asyncio
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
 from loguru import logger
+from omegaconf import DictConfig
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union, Callable
 
 from ms_agent.rag.base import RAG
-from omegaconf import DictConfig
 
 
 class SirchmunkSearch(RAG):
@@ -49,7 +49,9 @@ class SirchmunkSearch(RAG):
         paths = rag_config.get('paths', [])
         if isinstance(paths, str):
             paths = [paths]
-        self.search_paths: List[str] = [str(Path(p).expanduser().resolve()) for p in paths]
+        self.search_paths: List[str] = [
+            str(Path(p).expanduser().resolve()) for p in paths
+        ]
 
         # Work path for sirchmunk cache
         _work_path = rag_config.get('work_path', './.sirchmunk')
@@ -70,28 +72,40 @@ class SirchmunkSearch(RAG):
         self.llm_model_name = rag_config.get('llm_model_name', None)
 
         # Fall back to main llm config if not specified in knowledge_search
-        if self.llm_api_key is None or self.llm_base_url is None or self.llm_model_name is None:
+        if (
+            self.llm_api_key is None
+            or self.llm_base_url is None
+            or self.llm_model_name is None
+        ):
             llm_config = config.get('llm', {})
             if llm_config:
                 service = getattr(llm_config, 'service', 'dashscope')
                 if self.llm_api_key is None:
-                    self.llm_api_key = getattr(llm_config, f'{service}_api_key', None)
+                    self.llm_api_key = getattr(llm_config, f"{service}_api_key", None)
                 if self.llm_base_url is None:
-                    self.llm_base_url = getattr(llm_config, f'{service}_base_url', None)
+                    self.llm_base_url = getattr(llm_config, f"{service}_base_url", None)
                 if self.llm_model_name is None:
                     self.llm_model_name = getattr(llm_config, 'model', None)
 
         # Embedding model configuration
         self.embedding_model_id = rag_config.get('embedding_model', None)
-        self.embedding_model_cache_dir = rag_config.get('embedding_model_cache_dir', None)
+        self.embedding_model_cache_dir = rag_config.get(
+            'embedding_model_cache_dir', None
+        )
 
         # Runtime state
         self._searcher = None
         self._initialized = False
+        self._cluster_cache_hit = False
+        self._cluster_cache_hit_time: str | None = None
+        self._last_search_result: List[Dict[str, Any]] | None = None
 
         # Callback for capturing logs
         self._log_callback = None
         self._search_logs: List[str] = []
+        # Async queue for streaming logs in real-time
+        self._log_queue: asyncio.Queue | None = None
+        self._streaming_callback: Callable | None = None
 
     def _validate_config(self, config: DictConfig):
         """Validate configuration parameters."""
@@ -112,8 +126,8 @@ class SirchmunkSearch(RAG):
             return
 
         try:
-            from sirchmunk.search import AgenticSearch
             from sirchmunk.llm.openai_chat import OpenAIChat
+            from sirchmunk.search import AgenticSearch
             from sirchmunk.utils.embedding_util import EmbeddingUtil
 
             # Create LLM client
@@ -127,9 +141,17 @@ class SirchmunkSearch(RAG):
 
             # Create embedding util
             # Handle empty strings by using None (which triggers DEFAULT_MODEL_ID)
-            embedding_model_id = self.embedding_model_id if self.embedding_model_id else None
-            embedding_cache_dir = self.embedding_model_cache_dir if self.embedding_model_cache_dir else None
-            embedding = EmbeddingUtil(model_id=embedding_model_id, cache_dir=embedding_cache_dir)
+            embedding_model_id = (
+                self.embedding_model_id if self.embedding_model_id else None
+            )
+            embedding_cache_dir = (
+                self.embedding_model_cache_dir
+                if self.embedding_model_cache_dir
+                else None
+            )
+            embedding = EmbeddingUtil(
+                model_id=embedding_model_id, cache_dir=embedding_cache_dir
+            )
 
             # Create AgenticSearch instance
             self._searcher = AgenticSearch(
@@ -145,20 +167,35 @@ class SirchmunkSearch(RAG):
             )
 
             self._initialized = True
-            logger.info(f'SirschmunkSearch initialized with paths: {self.search_paths}')
+            logger.info(f"SirschmunkSearch initialized with paths: {self.search_paths}")
 
         except ImportError as e:
             raise ImportError(
-                f'Failed to import sirchmunk: {e}. '
+                f"Failed to import sirchmunk: {e}. "
                 'Please install sirchmunk: pip install sirchmunk'
             )
         except Exception as e:
-            raise RuntimeError(f'Failed to initialize SirchmunkSearch: {e}')
+            raise RuntimeError(f"Failed to initialize SirchmunkSearch: {e}")
 
     def _log_callback_wrapper(self):
-        """Create a callback wrapper to capture search logs."""
-        def log_callback(message: str, level: str = 'INFO', logger_name: str = '', is_async: bool = False):
-            self._search_logs.append(f'[{level}] {message}')
+        """Create a callback wrapper to capture search logs.
+
+        The sirchmunk LogCallback signature is:
+            (level: str, message: str, end: str, flush: bool) -> None
+        See sirchmunk/utils/log_utils.py for reference.
+        """
+
+        def log_callback(
+            level: str,
+            message: str,
+            end: str = '\n',
+            flush: bool = False,
+        ):
+            log_entry = f"[{level.upper()}] {message}"
+            self._search_logs.append(log_entry)
+            # Stream log in real-time if streaming callback is set
+            if self._streaming_callback:
+                asyncio.create_task(self._streaming_callback(log_entry))
 
         return log_callback
 
@@ -186,7 +223,7 @@ class SirchmunkSearch(RAG):
                 await self._searcher.knowledge_base.refresh()
                 return True
             except Exception as e:
-                logger.error(f'Failed to refresh knowledge base: {e}')
+                logger.error(f"Failed to refresh knowledge base: {e}")
                 return False
         return True
 
@@ -208,15 +245,13 @@ class SirchmunkSearch(RAG):
                         await self._searcher.scan_directory(str(Path(file_path).parent))
                 return True
             except Exception as e:
-                logger.error(f'Failed to scan files: {e}')
+                logger.error(f"Failed to scan files: {e}")
                 return False
         return True
 
-    async def retrieve(self,
-                       query: str,
-                       limit: int = 5,
-                       score_threshold: float = 0.7,
-                       **filters) -> List[Dict[str, Any]]:
+    async def retrieve(
+        self, query: str, limit: int = 5, score_threshold: float = 0.7, **filters
+    ) -> List[Dict[str, Any]]:
         """Retrieve relevant documents using sirchmunk.
 
         Args:
@@ -246,11 +281,21 @@ class SirchmunkSearch(RAG):
                 return_context=True,
             )
 
+            # Check if cluster cache was hit
+            self._cluster_cache_hit = False
+            self._cluster_cache_hit_time = None
+            if hasattr(result, 'cluster') and result.cluster is not None:
+                # If a similar cluster was found and reused, it's a cache hit
+                self._cluster_cache_hit = getattr(result.cluster, '_reused_from_cache', False)
+                # Get the cluster cache hit time if available
+                if hasattr(result.cluster, 'updated_at'):
+                    self._cluster_cache_hit_time = getattr(result.cluster, 'updated_at', None)
+
             # Parse results into standard format
             return self._parse_search_result(result, score_threshold, limit)
 
         except Exception as e:
-            logger.error(f'SirschmunkSearch retrieve failed: {e}')
+            logger.error(f"SirschmunkSearch retrieve failed: {e}")
             return []
 
     async def query(self, query: str) -> str:
@@ -273,34 +318,45 @@ class SirchmunkSearch(RAG):
             max_loops = self.max_loops
             max_token_budget = self.max_token_budget
 
-            # Perform search and get answer
+            # Single search with context so we get both the synthesized answer and
+            # source units in one call, avoiding a redundant second search.
             result = await self._searcher.search(
                 query=query,
                 mode=mode,
                 max_loops=max_loops,
                 max_token_budget=max_token_budget,
-                return_context=False,
+                return_context=True,
             )
 
-            # Result is already a synthesized answer string
-            if isinstance(result, str):
-                return result
+            # Check if cluster cache was hit
+            self._cluster_cache_hit = False
+            self._cluster_cache_hit_time = None
+            if hasattr(result, 'cluster') and result.cluster is not None:
+                self._cluster_cache_hit = getattr(result.cluster, '_reused_from_cache', False)
+                if hasattr(result.cluster, 'updated_at'):
+                    self._cluster_cache_hit_time = getattr(result.cluster, 'updated_at', None)
 
-            # If we got SearchContext or other format, extract the answer
+            # Store parsed context for frontend display
+            self._last_search_result = self._parse_search_result(result, score_threshold=0.7, limit=5)
+
+            # Extract the synthesized answer from the context result
             if hasattr(result, 'answer'):
                 return result.answer
+
+            # If result is already a plain string (some modes return str directly)
+            if isinstance(result, str):
+                return result
 
             # Fallback: convert to string
             return str(result)
 
         except Exception as e:
-            logger.error(f'SirschmunkSearch query failed: {e}')
-            return f'Query failed: {e}'
+            logger.error(f"SirschmunkSearch query failed: {e}")
+            return f"Query failed: {e}"
 
-    def _parse_search_result(self,
-                             result: Any,
-                             score_threshold: float,
-                             limit: int) -> List[Dict[str, Any]]:
+    def _parse_search_result(
+        self, result: Any, score_threshold: float, limit: int
+    ) -> List[Dict[str, Any]]:
         """Parse sirchmunk search result into standard format.
 
         Args:
@@ -329,28 +385,38 @@ class SirchmunkSearch(RAG):
                         else:
                             text_parts.append(str(snippet))
 
-                    results.append({
-                        'text': '\n'.join(text_parts) if text_parts else getattr(unit, 'summary', ''),
-                        'score': score,
-                        'metadata': {
-                            'source': source,
-                            'type': getattr(unit, 'abstraction_level', 'text') if hasattr(unit, 'abstraction_level') else 'text',
+                    results.append(
+                        {
+                            'text': '\n'.join(text_parts)
+                            if text_parts
+                            else getattr(unit, 'summary', ''),
+                            'score': score,
+                            'metadata': {
+                                'source': source,
+                                'type': getattr(unit, 'abstraction_level', 'text')
+                                if hasattr(unit, 'abstraction_level')
+                                else 'text',
+                            },
                         }
-                    })
+                    )
 
         # Handle format with evidence_units attribute directly
         elif hasattr(result, 'evidence_units'):
             for unit in result.evidence_units:
                 score = getattr(unit, 'confidence', 1.0)
                 if score >= score_threshold:
-                    results.append({
-                        'text': str(unit.content) if hasattr(unit, 'content') else str(unit),
-                        'score': score,
-                        'metadata': {
-                            'source': getattr(unit, 'source_file', 'unknown'),
-                            'type': getattr(unit, 'abstraction_level', 'text'),
+                    results.append(
+                        {
+                            'text': str(unit.content)
+                            if hasattr(unit, 'content')
+                            else str(unit),
+                            'score': score,
+                            'metadata': {
+                                'source': getattr(unit, 'source_file', 'unknown'),
+                                'type': getattr(unit, 'abstraction_level', 'text'),
+                            },
                         }
-                    })
+                    )
 
         # Handle list format
         elif isinstance(result, list):
@@ -358,21 +424,27 @@ class SirchmunkSearch(RAG):
                 if isinstance(item, dict):
                     score = item.get('score', item.get('confidence', 1.0))
                     if score >= score_threshold:
-                        results.append({
-                            'text': item.get('content', item.get('text', str(item))),
-                            'score': score,
-                            'metadata': item.get('metadata', {}),
-                        })
+                        results.append(
+                            {
+                                'text': item.get(
+                                    'content', item.get('text', str(item))
+                                ),
+                                'score': score,
+                                'metadata': item.get('metadata', {}),
+                            }
+                        )
 
         # Handle dict format
         elif isinstance(result, dict):
             score = result.get('score', result.get('confidence', 1.0))
             if score >= score_threshold:
-                results.append({
-                    'text': result.get('content', result.get('text', str(result))),
-                    'score': score,
-                    'metadata': result.get('metadata', {}),
-                })
+                results.append(
+                    {
+                        'text': result.get('content', result.get('text', str(result))),
+                        'score': score,
+                        'metadata': result.get('metadata', {}),
+                    }
+                )
 
         # Sort by score and limit results
         results.sort(key=lambda x: x.get('score', 0), reverse=True)
@@ -398,4 +470,16 @@ class SirchmunkSearch(RAG):
             'paths': self.search_paths,
             'work_path': str(self.work_path),
             'reuse_knowledge': self.reuse_knowledge,
+            'cluster_cache_hit': self._cluster_cache_hit,
+            'cluster_cache_hit_time': self._cluster_cache_hit_time,
         }
+
+    def enable_streaming_logs(self, callback: Callable):
+        """Enable streaming mode for search logs.
+
+        Args:
+            callback: Async callback function to receive log entries in real-time.
+                      Signature: async def callback(log_entry: str) -> None
+        """
+        self._streaming_callback = callback
+        self._search_logs.clear()

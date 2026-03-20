@@ -2,30 +2,29 @@
 import asyncio
 import importlib
 import inspect
+import json
 import os.path
 import sys
 import threading
 import uuid
 from contextlib import contextmanager
 from copy import deepcopy
+from omegaconf import DictConfig, OmegaConf
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
 
-import json
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback, callbacks_mapping
+from ms_agent.knowledge_search import SirchmunkSearch
 from ms_agent.llm.llm import LLM
 from ms_agent.llm.utils import Message, ToolResult
 from ms_agent.memory import Memory, get_memory_meta_safe, memory_mapping
 from ms_agent.memory.memory_manager import SharedMemoryManager
 from ms_agent.rag.base import RAG
 from ms_agent.rag.utils import rag_mapping
-from ms_agent.knowledge_search import SirchmunkSearch
 from ms_agent.tools import ToolManager
 from ms_agent.utils import async_retry, read_history, save_history
 from ms_agent.utils.constants import DEFAULT_TAG, DEFAULT_USER
 from ms_agent.utils.logger import get_logger
-from omegaconf import DictConfig, OmegaConf
-
 from ..config.config import Config, ConfigLifecycleHandler
 from .base import Agent
 
@@ -90,14 +89,17 @@ class LLMAgent(Agent):
     TOTAL_CACHE_CREATION_INPUT_TOKENS = 0
     TOKEN_LOCK = asyncio.Lock()
 
-    def __init__(self,
-                 config: DictConfig = DictConfig({}),
-                 tag: str = DEFAULT_TAG,
-                 trust_remote_code: bool = False,
-                 **kwargs):
+    def __init__(
+        self,
+        config: DictConfig = DictConfig({}),
+        tag: str = DEFAULT_TAG,
+        trust_remote_code: bool = False,
+        **kwargs,
+    ):
         if not hasattr(config, 'llm'):
             default_yaml = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), 'agent.yaml')
+                os.path.dirname(os.path.abspath(__file__)), 'agent.yaml'
+            )
             llm_config = Config.from_task(default_yaml)
             config = OmegaConf.merge(llm_config, config)
         super().__init__(config, tag, trust_remote_code)
@@ -113,7 +115,8 @@ class LLMAgent(Agent):
         self.config.load_cache = self.load_cache
         self.mcp_server_file = kwargs.get('mcp_server_file', None)
         self.mcp_config: Dict[str, Any] = self.parse_mcp_servers(
-            kwargs.get('mcp_config', {}))
+            kwargs.get('mcp_config', {})
+        )
         self.mcp_client = kwargs.get('mcp_client', None)
         self.config_handler = self.register_config_handler()
 
@@ -161,37 +164,34 @@ class LLMAgent(Agent):
             use_sandbox = getattr(skills_config, 'use_sandbox', True)
             if use_sandbox:
                 from ms_agent.utils.docker_utils import is_docker_daemon_running
+
                 if not is_docker_daemon_running():
-                    logger.warning(
-                        'Docker not running, disabling sandbox for skills')
+                    logger.warning('Docker not running, disabling sandbox for skills')
                     use_sandbox = False
 
             # Build retrieve args
             retrieve_args = {}
             if hasattr(skills_config, 'retrieve_args'):
-                retrieve_args = OmegaConf.to_container(
-                    skills_config.retrieve_args)
+                retrieve_args = OmegaConf.to_container(skills_config.retrieve_args)
 
             self._auto_skills = AutoSkills(
                 skills=skills_path,
                 llm=self.llm,
-                enable_retrieve=getattr(skills_config, 'enable_retrieve',
-                                        None),
+                enable_retrieve=getattr(skills_config, 'enable_retrieve', None),
                 retrieve_args=retrieve_args,
-                max_candidate_skills=getattr(skills_config,
-                                             'max_candidate_skills', 10),
+                max_candidate_skills=getattr(skills_config, 'max_candidate_skills', 10),
                 max_retries=getattr(skills_config, 'max_retries', 3),
                 work_dir=getattr(skills_config, 'work_dir', None),
                 use_sandbox=use_sandbox,
             )
             logger.info(
-                f'AutoSkills initialized with {len(self._auto_skills.all_skills)} skills'
+                f"AutoSkills initialized with {len(self._auto_skills.all_skills)} skills"
             )
             self._auto_skills_initialized = True
             return True
 
         except Exception as e:
-            logger.warning(f'Failed to initialize AutoSkills: {e}')
+            logger.warning(f"Failed to initialize AutoSkills: {e}")
             self._auto_skills_initialized = True
             return False
 
@@ -233,7 +233,7 @@ class LLMAgent(Agent):
             needs_skills, _, _, _ = self._auto_skills._analyze_query(query)
             return needs_skills
         except Exception as e:
-            logger.error(f'Skill analysis error: {e}')
+            logger.error(f"Skill analysis error: {e}")
             return False
 
     async def get_skill_dag(self, query: str):
@@ -265,13 +265,15 @@ class LLMAgent(Agent):
             return None
 
         skills_config = self._get_skills_config()
-        stop_on_failure = getattr(skills_config, 'stop_on_failure',
-                                  True) if skills_config else True
+        stop_on_failure = (
+            getattr(skills_config, 'stop_on_failure', True) if skills_config else True
+        )
 
         result = await self._auto_skills.run(
             query=query,
             execution_input=execution_input,
-            stop_on_failure=stop_on_failure)
+            stop_on_failure=stop_on_failure,
+        )
         self._last_skill_result = result
         return result
 
@@ -289,15 +291,14 @@ class LLMAgent(Agent):
 
         # Handle chat-only response
         if dag_result.chat_response:
-            messages.append(
-                Message(role='assistant', content=dag_result.chat_response))
+            messages.append(Message(role='assistant', content=dag_result.chat_response))
             return messages
 
         # Handle incomplete skills
         if not dag_result.is_complete:
             content = "I couldn't find suitable skills for this task."
             if dag_result.clarification:
-                content += f'\n\n{dag_result.clarification}'
+                content += f"\n\n{dag_result.clarification}"
             messages.append(Message(role='assistant', content=content))
             return messages
 
@@ -317,28 +318,30 @@ class LLMAgent(Agent):
                             stdout_preview = output.stdout[:1000]
                             if len(output.stdout) > 1000:
                                 stdout_preview += '...'
-                            content += f'**{skill_id} output:**\n{stdout_preview}\n\n'
+                            content += f"**{skill_id} output:**\n{stdout_preview}\n\n"
                         if output.output_files:
-                            content += f'**Generated files:** {list(output.output_files.values())}\n\n'
+                            content += f"**Generated files:** {list(output.output_files.values())}\n\n"
 
-                content += f'Total execution time: {exec_result.total_duration_ms:.2f}ms'
+                content += (
+                    f"Total execution time: {exec_result.total_duration_ms:.2f}ms"
+                )
             else:
                 content = 'Skill execution completed with errors.\n\n'
                 for skill_id, result in exec_result.results.items():
                     if not result.success:
-                        content += f'**{skill_id} failed:** {result.error}\n'
+                        content += f"**{skill_id} failed:** {result.error}\n"
 
             messages.append(Message(role='assistant', content=content))
         else:
             # DAG only, no execution
             skill_names = list(dag_result.selected_skills.keys())
-            content = f'Found {len(skill_names)} relevant skill(s) for your task:\n'
+            content = f"Found {len(skill_names)} relevant skill(s) for your task:\n"
             for skill_id, skill in dag_result.selected_skills.items():
                 desc_preview = skill.description[:100]
                 if len(skill.description) > 100:
                     desc_preview += '...'
-                content += f'- **{skill.name}** ({skill_id}): {desc_preview}\n'
-            content += f'\nExecution order: {dag_result.execution_order}'
+                content += f"- **{skill.name}** ({skill_id}): {desc_preview}\n"
+            content += f"\nExecution order: {dag_result.execution_order}"
 
             messages.append(Message(role='assistant', content=content))
 
@@ -364,8 +367,7 @@ class LLMAgent(Agent):
             Dict[str, Any]: Merged configuration including file-based overrides.
         """
         mcp_config = mcp_config or {}
-        if self.mcp_server_file is not None and os.path.isfile(
-                self.mcp_server_file):
+        if self.mcp_server_file is not None and os.path.isfile(self.mcp_server_file):
             with open(self.mcp_server_file, 'r') as f:
                 config = json.load(f)
                 config.update(mcp_config)
@@ -394,26 +396,32 @@ class LLMAgent(Agent):
         if handler_file is not None:
             local_dir = self.config.local_dir
             assert self.config.trust_remote_code, (
-                f'[External Code]A Config Lifecycle handler '
-                f'registered in the config: {handler_file}. '
-                f'\nThis is external code, if you trust this workflow, '
-                f'please specify `--trust_remote_code true`')
-            assert local_dir is not None, 'Using external py files, but local_dir cannot be found.'
+                f"[External Code]A Config Lifecycle handler "
+                f"registered in the config: {handler_file}. "
+                f"\nThis is external code, if you trust this workflow, "
+                f"please specify `--trust_remote_code true`"
+            )
+            assert (
+                local_dir is not None
+            ), 'Using external py files, but local_dir cannot be found.'
             if local_dir not in sys.path:
                 sys.path.insert(0, local_dir)
 
             handler_module = importlib.import_module(handler_file)
             module_classes = {
                 name: cls
-                for name, cls in inspect.getmembers(handler_module,
-                                                    inspect.isclass)
+                for name, cls in inspect.getmembers(handler_module, inspect.isclass)
             }
             handler = None
             for name, handler_cls in module_classes.items():
-                if handler_cls.__bases__[
-                        0] is ConfigLifecycleHandler and handler_cls.__module__ == handler_file:
+                if (
+                    handler_cls.__bases__[0] is ConfigLifecycleHandler
+                    and handler_cls.__module__ == handler_file
+                ):
                     handler = handler_cls()
-            assert handler is not None, f'Config Lifecycle handler class cannot be found in {handler_file}'
+            assert (
+                handler is not None
+            ), f"Config Lifecycle handler class cannot be found in {handler_file}"
             return handler
         return None
 
@@ -424,13 +432,14 @@ class LLMAgent(Agent):
         Raises:
             AssertionError: If untrusted external code is referenced without permission.
         """
-        local_dir = self.config.local_dir if hasattr(self.config,
-                                                     'local_dir') else None
+        local_dir = self.config.local_dir if hasattr(self.config, 'local_dir') else None
         if hasattr(self.config, 'callbacks'):
             callbacks = self.config.callbacks or []
             for _callback in callbacks:
                 subdir = os.path.dirname(_callback)
-                assert local_dir is not None, 'Using external py files, but local_dir cannot be found.'
+                assert (
+                    local_dir is not None
+                ), 'Using external py files, but local_dir cannot be found.'
                 if subdir:
                     subdir = os.path.join(local_dir, str(subdir))
                 _callback = os.path.basename(_callback)
@@ -451,23 +460,22 @@ class LLMAgent(Agent):
                     module_classes = {
                         name: cls
                         for name, cls in inspect.getmembers(
-                            callback_file, inspect.isclass)
+                            callback_file, inspect.isclass
+                        )
                     }
                     for name, cls in module_classes.items():
                         # Find cls which base class is `Callback`
-                        if issubclass(
-                                cls, Callback) and cls.__module__ == _callback:
+                        if issubclass(cls, Callback) and cls.__module__ == _callback:
                             self.callbacks.append(cls(self.config))  # noqa
                 else:
-                    self.callbacks.append(callbacks_mapping[_callback](
-                        self.config))
+                    self.callbacks.append(callbacks_mapping[_callback](self.config))
 
     async def on_task_begin(self, messages: List[Message]):
-        self.log_output(f'Agent {self.tag} task beginning.')
+        self.log_output(f"Agent {self.tag} task beginning.")
         await self.loop_callback('on_task_begin', messages)
 
     async def on_task_end(self, messages: List[Message]):
-        self.log_output(f'Agent {self.tag} task finished.')
+        self.log_output(f"Agent {self.tag} task finished.")
         await self.loop_callback('on_task_end', messages)
 
     async def on_generate_response(self, messages: List[Message]):
@@ -492,8 +500,7 @@ class LLMAgent(Agent):
         for callback in self.callbacks:
             await getattr(callback, point)(self.runtime, messages)
 
-    async def parallel_tool_call(self,
-                                 messages: List[Message]) -> List[Message]:
+    async def parallel_tool_call(self, messages: List[Message]) -> List[Message]:
         """
         Execute multiple tool calls in parallel and append results to the message list.
 
@@ -504,17 +511,20 @@ class LLMAgent(Agent):
             List[Message]: Updated message list including tool responses.
         """
         tool_call_result = await self.tool_manager.parallel_call_tool(
-            messages[-1].tool_calls)
+            messages[-1].tool_calls
+        )
         assert len(tool_call_result) == len(messages[-1].tool_calls)
-        for tool_call_result, tool_call_query in zip(tool_call_result,
-                                                     messages[-1].tool_calls):
+        for tool_call_result, tool_call_query in zip(
+            tool_call_result, messages[-1].tool_calls
+        ):
             tool_call_result_format = ToolResult.from_raw(tool_call_result)
             _new_message = Message(
                 role='tool',
                 content=tool_call_result_format.text,
                 tool_call_id=tool_call_query['id'],
                 name=tool_call_query['tool_name'],
-                resources=tool_call_result_format.resources)
+                resources=tool_call_result_format.resources,
+            )
 
             if _new_message.tool_call_id is None:
                 # If tool call id is None, add a random one
@@ -530,7 +540,8 @@ class LLMAgent(Agent):
             self.config,
             self.mcp_config,
             self.mcp_client,
-            trust_remote_code=self.trust_remote_code)
+            trust_remote_code=self.trust_remote_code,
+        )
         await self.tool_manager.connect()
 
     async def cleanup_tools(self):
@@ -539,8 +550,7 @@ class LLMAgent(Agent):
 
     @property
     def stream(self):
-        generation_config = getattr(self.config, 'generation_config',
-                                    DictConfig({}))
+        generation_config = getattr(self.config, 'generation_config', DictConfig({}))
         return getattr(generation_config, 'stream', False)
 
     @property
@@ -551,8 +561,7 @@ class LLMAgent(Agent):
             - This only affects local console output.
             - Reasoning is carried by `Message.reasoning_content` (if the backend provides it).
         """
-        generation_config = getattr(self.config, 'generation_config',
-                                    DictConfig({}))
+        generation_config = getattr(self.config, 'generation_config', DictConfig({}))
         return bool(getattr(generation_config, 'show_reasoning', False))
 
     @property
@@ -563,8 +572,7 @@ class LLMAgent(Agent):
             - "stderr" (default): keep stdout clean for assistant final text
             - "stdout": interleave reasoning with assistant output on stdout
         """
-        generation_config = getattr(self.config, 'generation_config',
-                                    DictConfig({}))
+        generation_config = getattr(self.config, 'generation_config', DictConfig({}))
         return str(getattr(generation_config, 'reasoning_output', 'stdout'))
 
     def _write_reasoning(self, text: str):
@@ -580,19 +588,18 @@ class LLMAgent(Agent):
 
     @property
     def system(self):
-        return getattr(
-            getattr(self.config, 'prompt', DictConfig({})), 'system', None)
+        return getattr(getattr(self.config, 'prompt', DictConfig({})), 'system', None)
 
     @property
     def query(self):
-        query = getattr(
-            getattr(self.config, 'prompt', DictConfig({})), 'query', None)
+        query = getattr(getattr(self.config, 'prompt', DictConfig({})), 'query', None)
         if not query:
             query = input('>>>')
         return query
 
     async def create_messages(
-            self, messages: Union[List[Message], str]) -> List[Message]:
+        self, messages: Union[List[Message], str]
+    ) -> List[Message]:
         """
         Convert input into a standardized list of messages.
 
@@ -604,18 +611,19 @@ class LLMAgent(Agent):
         """
         if isinstance(messages, list):
             system = self.system
-            if system is not None and messages[
-                    0].role == 'system' and system != messages[0].content:
+            if (
+                system is not None
+                and messages[0].role == 'system'
+                and system != messages[0].content
+            ):
                 # Replace the existing system
                 messages[0].content = system
         else:
             assert isinstance(
                 messages, str
-            ), f'inputs can be either a list or a string, but current is {type(messages)}'
+            ), f"inputs can be either a list or a string, but current is {type(messages)}"
             messages = [
-                Message(
-                    role='system',
-                    content=self.system or LLMAgent.DEFAULT_SYSTEM),
+                Message(role='system', content=self.system or LLMAgent.DEFAULT_SYSTEM),
                 Message(role='user', content=messages or self.query),
             ]
         return messages
@@ -639,11 +647,10 @@ class LLMAgent(Agent):
         # Handle traditional RAG
         if self.rag is not None:
             user_message.content = await self.rag.query(query)
-
         # Handle sirchmunk knowledge search
         if self.knowledge_search is not None:
             # Perform search and get results
-            search_result = await self.knowledge_search.retrieve(query)
+            search_result = await self.knowledge_search.query(query)
             search_details = self.knowledge_search.get_search_details()
 
             # Store search details in the message for frontend display
@@ -652,24 +659,14 @@ class LLMAgent(Agent):
 
             # Build enriched context from search results
             if search_result:
-                context_parts = []
-                for i, result in enumerate(search_result, 1):
-                    text = result.get('text', '')
-                    source = result.get('metadata', {}).get('source', 'unknown')
-                    score = result.get('score', 0)
-                    context_parts.append(
-                        f"[Source {i}] {source} (relevance: {score:.2f})\n{text}\n"
-                    )
-
                 # Append search context to user query
-                context = '\n'.join(context_parts)
+                context = search_result
                 user_message.content = (
                     f"Relevant context retrieved from codebase search:\n\n{context}\n\n"
                     f"User question: {query}"
                 )
 
-    async def do_skill(self,
-                       messages: List[Message]) -> Optional[List[Message]]:
+    async def do_skill(self, messages: List[Message]) -> Optional[List[Message]]:
         """
         Process skill-related query if applicable.
 
@@ -686,7 +683,9 @@ class LLMAgent(Agent):
         # Extract user query from normalized messages
         query = (
             messages[1].content
-            if len(messages) > 1 and messages[1].role == 'user' else None)
+            if len(messages) > 1 and messages[1].role == 'user'
+            else None
+        )
 
         if not query:
             return None
@@ -700,8 +699,9 @@ class LLMAgent(Agent):
 
         try:
             skills_config = self._get_skills_config()
-            auto_execute = getattr(skills_config, 'auto_execute',
-                                   True) if skills_config else True
+            auto_execute = (
+                getattr(skills_config, 'auto_execute', True) if skills_config else True
+            )
 
             if auto_execute:
                 dag_result = await self.execute_skills(query)
@@ -709,8 +709,7 @@ class LLMAgent(Agent):
                 dag_result = await self.get_skill_dag(query)
 
             if dag_result:
-                skill_messages = self._format_skill_result_as_messages(
-                    dag_result)
+                skill_messages = self._format_skill_result_as_messages(dag_result)
                 for msg in skill_messages:
                     messages.append(msg)
                 return messages
@@ -721,7 +720,8 @@ class LLMAgent(Agent):
 
         except Exception as e:
             logger.warning(
-                f'Skill execution failed: {e}, falling back to standard agent')
+                f"Skill execution failed: {e}, falling back to standard agent"
+            )
             self._skill_mode_active = False
             return None
 
@@ -735,11 +735,13 @@ class LLMAgent(Agent):
         if hasattr(self.config, 'memory'):
             for mem_instance_type, _memory in self.config.memory.items():
                 assert mem_instance_type in memory_mapping, (
-                    f'{mem_instance_type} not in memory_mapping, '
-                    f'which supports: {list(memory_mapping.keys())}')
+                    f"{mem_instance_type} not in memory_mapping, "
+                    f"which supports: {list(memory_mapping.keys())}"
+                )
 
                 shared_memory = await SharedMemoryManager.get_shared_memory(
-                    self.config, mem_instance_type)
+                    self.config, mem_instance_type
+                )
                 self.memory_tools.append(shared_memory)
 
     async def prepare_rag(self):
@@ -748,12 +750,17 @@ class LLMAgent(Agent):
             rag = self.config.rag
             if rag is not None:
                 assert rag.name in rag_mapping, (
-                    f'{rag.name} not in rag_mapping, '
-                    f'which supports: {list(rag_mapping.keys())}')
+                    f"{rag.name} not in rag_mapping, "
+                    f"which supports: {list(rag_mapping.keys())}"
+                )
                 self.rag: RAG = rag_mapping(rag.name)(self.config)
 
     async def prepare_knowledge_search(self):
         """Load and initialize the knowledge search component from the config."""
+        if self.knowledge_search is not None:
+            # Already initialized (e.g. by caller before run_loop), skip to avoid
+            # overwriting a configured instance (e.g. one with streaming callbacks set).
+            return
         if hasattr(self.config, 'knowledge_search'):
             ks_config = self.config.knowledge_search
             if ks_config is not None:
@@ -790,7 +797,7 @@ class LLMAgent(Agent):
                         text_parts.append(item.get('text', ''))
                     elif item.get('type') == 'image_url':
                         img_url = item.get('image_url', {}).get('url', '')
-                        text_parts.append(f'[Image: {img_url[:50]}...]')
+                        text_parts.append(f"[Image: {img_url[:50]}...]")
             content = ' '.join(text_parts)
 
         # Ensure content is a string
@@ -801,10 +808,9 @@ class LLMAgent(Agent):
             content = content[:512] + '\n...\n' + content[-512:]
         for line in content.split('\n'):
             for _line in line.split('\\n'):
-                logger.info(f'[{self.tag}] {_line}')
+                logger.info(f"[{self.tag}] {_line}")
 
-    def handle_new_response(self, messages: List[Message],
-                            response_message: Message):
+    def handle_new_response(self, messages: List[Message], response_message: Message):
         assert response_message is not None, 'No response message generated from LLM.'
         if response_message.tool_calls:
             self.log_output('[tool_calling]:')
@@ -812,24 +818,23 @@ class LLMAgent(Agent):
                 tool_call = deepcopy(tool_call)
                 if isinstance(tool_call['arguments'], str):
                     try:
-                        tool_call['arguments'] = json.loads(
-                            tool_call['arguments'])
+                        tool_call['arguments'] = json.loads(tool_call['arguments'])
                     except json.decoder.JSONDecodeError:
                         pass
-                self.log_output(
-                    json.dumps(tool_call, ensure_ascii=False, indent=4))
+                self.log_output(json.dumps(tool_call, ensure_ascii=False, indent=4))
 
         if messages[-1] is not response_message:
             messages.append(response_message)
 
-        if messages[-1].role == 'assistant' and not messages[
-                -1].content and response_message.tool_calls:
+        if (
+            messages[-1].role == 'assistant'
+            and not messages[-1].content
+            and response_message.tool_calls
+        ):
             messages[-1].content = 'Let me do a tool calling.'
 
     @async_retry(max_attempts=Agent.retry_count, delay=1.0)
-    async def step(
-        self, messages: List[Message]
-    ) -> AsyncGenerator[List[Message], Any]:  # type: ignore
+    async def step(self, messages: List[Message]) -> AsyncGenerator[List[Message], Any]:  # type: ignore
         """
         Execute a single step in the agent's interaction loop.
 
@@ -865,20 +870,20 @@ class LLMAgent(Agent):
                 is_first = True
                 _response_message = None
                 _printed_reasoning_header = False
-                for _response_message in self.llm.generate(
-                        messages, tools=tools):
+                for _response_message in self.llm.generate(messages, tools=tools):
                     if is_first:
                         messages.append(_response_message)
                         is_first = False
 
                     # Optional: stream model "thinking/reasoning" if available.
                     if self.show_reasoning:
-                        reasoning_text = getattr(_response_message,
-                                                 'reasoning_content', '') or ''
+                        reasoning_text = (
+                            getattr(_response_message, 'reasoning_content', '') or ''
+                        )
                         # Some providers may reset / shorten content across chunks.
                         if len(reasoning_text) < len(_reasoning):
                             _reasoning = ''
-                        new_reasoning = reasoning_text[len(_reasoning):]
+                        new_reasoning = reasoning_text[len(_reasoning) :]
                         if new_reasoning:
                             if not _printed_reasoning_header:
                                 self._write_reasoning('[thinking]:\n')
@@ -886,7 +891,7 @@ class LLMAgent(Agent):
                             self._write_reasoning(new_reasoning)
                             _reasoning = reasoning_text
 
-                    new_content = _response_message.content[len(_content):]
+                    new_content = _response_message.content[len(_content) :]
                     sys.stdout.write(new_content)
                     sys.stdout.flush()
                     _content = _response_message.content
@@ -898,8 +903,9 @@ class LLMAgent(Agent):
             else:
                 _response_message = self.llm.generate(messages, tools=tools)
                 if self.show_reasoning:
-                    reasoning_text = getattr(_response_message,
-                                             'reasoning_content', '') or ''
+                    reasoning_text = (
+                        getattr(_response_message, 'reasoning_content', '') or ''
+                    )
                     if reasoning_text:
                         self._write_reasoning('[thinking]:\n')
                         self._write_reasoning(reasoning_text)
@@ -927,8 +933,9 @@ class LLMAgent(Agent):
         prompt_tokens = _response_message.prompt_tokens
         completion_tokens = _response_message.completion_tokens
         cached_tokens = getattr(_response_message, 'cached_tokens', 0) or 0
-        cache_creation_input_tokens = getattr(
-            _response_message, 'cache_creation_input_tokens', 0) or 0
+        cache_creation_input_tokens = (
+            getattr(_response_message, 'cache_creation_input_tokens', 0) or 0
+        )
 
         async with LLMAgent.TOKEN_LOCK:
             LLMAgent.TOTAL_PROMPT_TOKENS += prompt_tokens
@@ -938,20 +945,21 @@ class LLMAgent(Agent):
 
         # tokens in the current step
         self.log_output(
-            f'[usage] prompt_tokens: {prompt_tokens}, completion_tokens: {completion_tokens}'
+            f"[usage] prompt_tokens: {prompt_tokens}, completion_tokens: {completion_tokens}"
         )
         if cached_tokens or cache_creation_input_tokens:
             self.log_output(
-                f'[usage_cache] cache_hit: {cached_tokens}, cache_created: {cache_creation_input_tokens}'
+                f"[usage_cache] cache_hit: {cached_tokens}, cache_created: {cache_creation_input_tokens}"
             )
         # total tokens for the process so far
         self.log_output(
-            f'[usage_total] total_prompt_tokens: {LLMAgent.TOTAL_PROMPT_TOKENS}, '
-            f'total_completion_tokens: {LLMAgent.TOTAL_COMPLETION_TOKENS}')
+            f"[usage_total] total_prompt_tokens: {LLMAgent.TOTAL_PROMPT_TOKENS}, "
+            f"total_completion_tokens: {LLMAgent.TOTAL_COMPLETION_TOKENS}"
+        )
         if LLMAgent.TOTAL_CACHED_TOKENS or LLMAgent.TOTAL_CACHE_CREATION_INPUT_TOKENS:
             self.log_output(
-                f'[usage_cache_total] total_cache_hit: {LLMAgent.TOTAL_CACHED_TOKENS}, '
-                f'total_cache_created: {LLMAgent.TOTAL_CACHE_CREATION_INPUT_TOKENS}'
+                f"[usage_cache_total] total_cache_hit: {LLMAgent.TOTAL_CACHED_TOKENS}, "
+                f"total_cache_created: {LLMAgent.TOTAL_CACHE_CREATION_INPUT_TOKENS}"
             )
 
         yield messages
@@ -964,8 +972,9 @@ class LLMAgent(Agent):
         """Initialize the runtime context."""
         self.runtime: Runtime = Runtime(llm=self.llm)
 
-    def read_history(self, messages: List[Message],
-                     **kwargs) -> Tuple[DictConfig, Runtime, List[Message]]:
+    def read_history(
+        self, messages: List[Message], **kwargs
+    ) -> Tuple[DictConfig, Runtime, List[Message]]:
         """
         Load previous chat history from disk if available.
 
@@ -1009,9 +1018,9 @@ class LLMAgent(Agent):
 
     def _get_step_memory_info(self, memory_config: DictConfig):
         user_id, agent_id, run_id, memory_type = get_memory_meta_safe(
-            memory_config, 'add_after_step')
-        if all(value is None
-               for value in [user_id, agent_id, run_id, memory_type]):
+            memory_config, 'add_after_step'
+        )
+        if all(value is None for value in [user_id, agent_id, run_id, memory_type]):
             return None, None, None, None
         user_id = user_id or getattr(memory_config, 'user_id', None)
         return user_id, agent_id, run_id, memory_type
@@ -1020,9 +1029,9 @@ class LLMAgent(Agent):
         user_id, agent_id, run_id, memory_type = get_memory_meta_safe(
             memory_config,
             'add_after_task',
-            default_user_id=getattr(memory_config, 'user_id', None))
-        if all(value is None
-               for value in [user_id, agent_id, run_id, memory_type]):
+            default_user_id=getattr(memory_config, 'user_id', None),
+        )
+        if all(value is None for value in [user_id, agent_id, run_id, memory_type]):
             return None, None, None, None
         user_id = user_id or getattr(memory_config, 'user_id', None)
         agent_id = agent_id or self.tag
@@ -1033,24 +1042,29 @@ class LLMAgent(Agent):
         if hasattr(self.config, 'memory') and self.config.memory:
             tools_num = len(self.memory_tools) if self.memory_tools else 0
 
-            for idx, (mem_instance_type,
-                      memory_config) in enumerate(self.config.memory.items()):
+            for idx, (mem_instance_type, memory_config) in enumerate(
+                self.config.memory.items()
+            ):
                 if add_type == 'add_after_task':
                     user_id, agent_id, run_id, memory_type = self._get_run_memory_info(
-                        memory_config)
+                        memory_config
+                    )
                 else:
                     user_id, agent_id, run_id, memory_type = self._get_step_memory_info(
-                        memory_config)
+                        memory_config
+                    )
 
                 if idx < tools_num:
-                    if any(v is not None
-                           for v in [user_id, agent_id, run_id, memory_type]):
+                    if any(
+                        v is not None for v in [user_id, agent_id, run_id, memory_type]
+                    ):
                         await self.memory_tools[idx].add(
                             messages,
                             user_id=user_id,
                             agent_id=agent_id,
                             run_id=run_id,
-                            memory_type=memory_type)
+                            memory_type=memory_type,
+                        )
 
     def save_history(self, messages: List[Message], **kwargs):
         """
@@ -1072,11 +1086,11 @@ class LLMAgent(Agent):
 
         config: DictConfig = deepcopy(self.config)
         config.runtime = self.runtime.to_dict()
-        save_history(
-            self.output_dir, task=self.tag, config=config, messages=messages)
+        save_history(self.output_dir, task=self.tag, config=config, messages=messages)
 
-    async def run_loop(self, messages: Union[List[Message], str],
-                       **kwargs) -> AsyncGenerator[Any, Any]:
+    async def run_loop(
+        self, messages: Union[List[Message], str], **kwargs
+    ) -> AsyncGenerator[Any, Any]:
         """
         Run the agent, mainly contains a llm calling and tool calling loop.
 
@@ -1089,8 +1103,9 @@ class LLMAgent(Agent):
             List[Message]: A list of message objects representing the agent's response or interaction history.
         """
         try:
-            self.max_chat_round = getattr(self.config, 'max_chat_round',
-                                          LLMAgent.DEFAULT_MAX_CHAT_ROUND)
+            self.max_chat_round = getattr(
+                self.config, 'max_chat_round', LLMAgent.DEFAULT_MAX_CHAT_ROUND
+            )
             self.register_callback_from_config()
             self.prepare_llm()
             self.prepare_runtime()
@@ -1132,8 +1147,7 @@ class LLMAgent(Agent):
                     yield messages
                 self.runtime.round += 1
                 # save memory and history
-                await self.add_memory(
-                    messages, add_type='add_after_step', **kwargs)
+                await self.add_memory(messages, add_type='add_after_step', **kwargs)
                 self.save_history(messages)
 
                 # +1 means the next round the assistant may give a conclusion
@@ -1142,9 +1156,10 @@ class LLMAgent(Agent):
                         messages.append(
                             Message(
                                 role='assistant',
-                                content=
-                                f'Task {messages[1].content} was cutted off, because '
-                                f'max round({self.max_chat_round}) exceeded.'))
+                                content=f"Task {messages[1].content} was cutted off, because "
+                                f"max round({self.max_chat_round}) exceeded.",
+                            )
+                        )
                     self.runtime.should_stop = True
                     yield messages
 
@@ -1155,32 +1170,33 @@ class LLMAgent(Agent):
 
             def _add_memory():
                 asyncio.run(
-                    self.add_memory(
-                        messages, add_type='add_after_task', **kwargs))
+                    self.add_memory(messages, add_type='add_after_task', **kwargs)
+                )
 
             loop = asyncio.get_running_loop()
             loop.run_in_executor(None, _add_memory)
         except Exception as e:
             import traceback
+
             logger.warning(traceback.format_exc())
             if hasattr(self.config, 'help'):
                 logger.error(
-                    f'[{self.tag}] Runtime error, please follow the instructions:\n\n {self.config.help}'
+                    f"[{self.tag}] Runtime error, please follow the instructions:\n\n {self.config.help}"
                 )
             raise e
 
     async def run(
-            self, messages: Union[List[Message], str], **kwargs
+        self, messages: Union[List[Message], str], **kwargs
     ) -> Union[List[Message], AsyncGenerator[List[Message], Any]]:
         stream = kwargs.get('stream', False)
         with self.config_context():
             if stream:
                 OmegaConf.update(
-                    self.config, 'generation_config.stream', True, merge=True)
+                    self.config, 'generation_config.stream', True, merge=True
+                )
 
                 async def stream_generator():
-                    async for _chunk in self.run_loop(
-                            messages=messages, **kwargs):
+                    async for _chunk in self.run_loop(messages=messages, **kwargs):
                         yield _chunk
 
                 return stream_generator()
