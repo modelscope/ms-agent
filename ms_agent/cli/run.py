@@ -4,11 +4,10 @@ import asyncio
 import os
 from importlib import resources as importlib_resources
 
-from omegaconf import OmegaConf
-
 from ms_agent.config import Config
 from ms_agent.utils import get_logger, strtobool
 from ms_agent.utils.constants import AGENT_CONFIG_FILE, MS_AGENT_ASCII
+from omegaconf import OmegaConf
 
 from .base import CLICommand
 
@@ -185,8 +184,10 @@ class RunCMD(CLICommand):
                 self.args.config = os.path.join(current_dir, AGENT_CONFIG_FILE)
             else:
                 # Use built-in default agent.yaml from package
-                default_config_path = importlib_resources.files('ms_agent').joinpath('agent', AGENT_CONFIG_FILE)
-                with importlib_resources.as_file(default_config_path) as config_file:
+                default_config_path = importlib_resources.files(
+                    'ms_agent').joinpath('agent', AGENT_CONFIG_FILE)
+                with importlib_resources.as_file(
+                        default_config_path) as config_file:
                     self.args.config = str(config_file)
         elif not os.path.exists(self.args.config):
             from modelscope import snapshot_download
@@ -226,7 +227,10 @@ class RunCMD(CLICommand):
 
         # If knowledge_search_paths is provided, configure SirchmunkSearch
         if getattr(self.args, 'knowledge_search_paths', None):
-            paths = [p.strip() for p in self.args.knowledge_search_paths.split(',') if p.strip()]
+            paths = [
+                p.strip() for p in self.args.knowledge_search_paths.split(',')
+                if p.strip()
+            ]
             if paths:
                 if 'knowledge_search' not in config or not config.knowledge_search:
                     # No existing knowledge_search config, create minimal config
@@ -237,11 +241,13 @@ class RunCMD(CLICommand):
                         'work_path': './.sirchmunk',
                         'mode': 'FAST',
                     }
-                    config['knowledge_search'] = OmegaConf.create(knowledge_search_config)
+                    config['knowledge_search'] = OmegaConf.create(
+                        knowledge_search_config)
                 else:
                     # Existing knowledge_search config found, only update paths
                     # LLM settings are already handled by SirchmunkSearch internally
-                    existing = OmegaConf.to_container(config.knowledge_search, resolve=True)
+                    existing = OmegaConf.to_container(
+                        config.knowledge_search, resolve=True)
                     existing['paths'] = paths
                     config['knowledge_search'] = OmegaConf.create(existing)
 
