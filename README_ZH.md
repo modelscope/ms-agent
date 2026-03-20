@@ -311,8 +311,7 @@ asyncio.run(main())
 
 ---
 
-
-### Agentic Insight
+### Agentic Insight (Deep Research)
 
 #### - 轻量级、高效且可扩展的多模态深度研究框架
 

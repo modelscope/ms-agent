@@ -610,8 +610,10 @@ class ReporterCallback(Callback):
         # --- Check 2: length retention ---
         if has_report and has_draft:
             try:
-                report_chars = os.path.getsize(self.report_path)
-                draft_chars = os.path.getsize(self.draft_path)
+                with open(self.report_path, 'r', encoding='utf-8') as f:
+                    report_chars = len(f.read())
+                with open(self.draft_path, 'r', encoding='utf-8') as f:
+                    draft_chars = len(f.read())
                 if draft_chars > 0:
                     ratio = report_chars / draft_chars
                     if ratio < self.min_retention_ratio:
@@ -630,7 +632,7 @@ class ReporterCallback(Callback):
                         return
             except OSError as exc:
                 logger.warning(
-                    f'ReporterCallback: failed to stat report files: {exc}')
+                    f'ReporterCallback: failed to read report files: {exc}')
 
         # --- Check 3: quality checker chain ---
         if not self._quality_checkers:
@@ -706,8 +708,10 @@ class ReporterCallback(Callback):
 
         if has_report and has_draft:
             try:
-                report_chars = os.path.getsize(self.report_path)
-                draft_chars = os.path.getsize(self.draft_path)
+                with open(self.report_path, 'r', encoding='utf-8') as f:
+                    report_chars = len(f.read())
+                with open(self.draft_path, 'r', encoding='utf-8') as f:
+                    draft_chars = len(f.read())
                 if draft_chars > 0:
                     ratio = report_chars / draft_chars
                     if ratio < self.min_retention_ratio:
