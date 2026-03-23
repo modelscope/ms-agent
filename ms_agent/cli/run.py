@@ -5,6 +5,7 @@ import os
 from importlib import resources as importlib_resources
 
 from ms_agent.config import Config
+from ms_agent.config.env import Env
 from ms_agent.utils import get_logger, strtobool
 from ms_agent.utils.constants import AGENT_CONFIG_FILE, MS_AGENT_ASCII
 from omegaconf import OmegaConf
@@ -47,28 +48,21 @@ class RunCMD(CLICommand):
     def __init__(self, args):
         self.args = args
 
-    def load_env_file(self):
-        """Load environment variables from .env file in current directory."""
-        env_file = os.path.join(os.getcwd(), '.env')
-        if os.path.exists(env_file):
-            with open(env_file, 'r') as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith('#') and '=' in line:
-                        key, value = line.split('=', 1)
-                        key = key.strip()
-                        value = value.strip()
-                        # Only set if not already set in environment
-                        if key not in os.environ:
-                            os.environ[key] = value
-                            logger.debug(f'Loaded {key} from .env file')
-
     @staticmethod
     def define_args(parsers: argparse.ArgumentParser):
         """Define args for run command."""
         projects = list_builtin_projects()
 
         parser: argparse.ArgumentParser = parsers.add_parser(RunCMD.name)
+        parser.add_argument(
+            '--env',
+            required=False,
+            type=str,
+            default=None,
+            metavar='PATH',
+            help=
+            'Path to a .env file. If omitted, loads ./.env from the current '
+            'working directory when present; missing file is ignored.')
         parser.add_argument(
             '--query',
             required=False,
@@ -175,8 +169,7 @@ class RunCMD(CLICommand):
         return self._execute_with_config()
 
     def _execute_with_config(self):
-        # Load environment variables from .env file if exists
-        self.load_env_file()
+        Env.load_dotenv_into_environ(getattr(self.args, 'env', None))
 
         if not self.args.config:
             current_dir = os.getcwd()
