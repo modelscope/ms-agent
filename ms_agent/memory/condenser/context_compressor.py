@@ -63,8 +63,8 @@ class ContextCompressor(Memory):
             return 0
         return len(text) // 4
 
-    def estimate_message_tokens(self, msg: Message) -> int:
-        """Estimate tokens for a single message."""
+    def _estimate_message_tokens_from_content(self, msg: Message) -> int:
+        """Heuristic token count from message body (no API usage fields)."""
         total = 0
         if msg.content:
             content = msg.content if isinstance(
@@ -77,8 +77,34 @@ class ContextCompressor(Memory):
             total += self.estimate_tokens(msg.reasoning_content)
         return total
 
+    def estimate_message_tokens(self, msg: Message) -> int:
+        """Tokens for one message: prefer ``Message`` usage, else content heuristic."""
+        pt = int(getattr(msg, 'prompt_tokens', 0) or 0)
+        ct = int(getattr(msg, 'completion_tokens', 0) or 0)
+        if pt or ct:
+            return pt + ct
+        return self._estimate_message_tokens_from_content(msg)
+
     def estimate_total_tokens(self, messages: List[Message]) -> int:
-        """Estimate total tokens for all messages."""
+        """Total tokens for the conversation."""
+        last_usage_idx = -1
+        for i in range(len(messages) - 1, -1, -1):
+            m = messages[i]
+            if m.role != 'assistant':
+                continue
+            pt = int(getattr(m, 'prompt_tokens', 0) or 0)
+            ct = int(getattr(m, 'completion_tokens', 0) or 0)
+            if pt or ct:
+                last_usage_idx = i
+                break
+        if last_usage_idx >= 0:
+            m = messages[last_usage_idx]
+            base = int(getattr(m, 'prompt_tokens', 0) or 0) + int(
+                getattr(m, 'completion_tokens', 0) or 0)
+            tail = sum(
+                self._estimate_message_tokens_from_content(x)
+                for x in messages[last_usage_idx + 1:])
+            return base + tail
         return sum(self.estimate_message_tokens(m) for m in messages)
 
     def is_overflow(self, messages: List[Message]) -> bool:
@@ -95,34 +121,27 @@ class ContextCompressor(Memory):
         - Protect the most recent tool outputs (prune_protect tokens)
         - Truncate older tool outputs
         """
-        result = []
         total_tool_tokens = 0
         pruned_count = 0
 
-        # Process in reverse to protect recent outputs
-        for msg in reversed(messages):
-            if msg.role == 'tool' and msg.content:
-                content_str = msg.content if isinstance(
-                    msg.content, str) else json.dumps(
-                        msg.content, ensure_ascii=False)
-                tokens = self.estimate_tokens(content_str)
-                total_tool_tokens += tokens
+        for idx in range(len(messages) - 1, -1, -1):
+            msg = messages[idx]
+            if msg.role != 'tool' or not msg.content:
+                continue
+            content_str = msg.content if isinstance(
+                msg.content, str) else json.dumps(
+                    msg.content, ensure_ascii=False)
+            tokens = self.estimate_tokens(content_str)
+            total_tool_tokens += tokens
 
-                # Prune if beyond protection threshold
-                if total_tool_tokens > self.prune_protect:
-                    msg = Message(
-                        role=msg.role,
-                        content='[Output truncated to save context]',
-                        tool_call_id=msg.tool_call_id,
-                        name=msg.name,
-                    )
-                    pruned_count += 1
-            result.append(msg)
+            if total_tool_tokens > self.prune_protect:
+                msg.content = '[Output truncated to save context]'
+                pruned_count += 1
 
         if pruned_count > 0:
             logger.info(f'Pruned {pruned_count} tool outputs')
 
-        return list(reversed(result))
+        return messages
 
     def summarize(self, messages: List[Message]) -> Optional[str]:
         """Generate conversation summary using LLM."""
