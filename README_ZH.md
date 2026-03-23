@@ -51,6 +51,12 @@ MS-Agent是一个轻量级框架，旨在为智能体提供自主探索能力。
 
 ## 🎉 新闻
 
+- 🚀 **2026年3月23日：发布 MS-Agent v1.6.0，主要更新内容如下：**
+  - **上下文压缩**：新增上下文压缩机制，支持 Token 用量监控与溢出检测，通过裁剪历史工具输出和 LLM 摘要自动压缩对话上下文。
+  - **Agentic Insight v2 增强**：深度研究系统架构与性能大幅优化，基于 GPT5、Qwen3.5-plus/flash 模型组合在 DeepResearch Bench 上的评分达到 **55.43** 分。详情请参考 [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2)。
+  - **知识库搜索**：集成 Sirchmunk 智能检索，支持在 Agent 对话中自动检索本地代码库与文档，详情请参考[配置文档](docs/zh/Components/config.md)。
+  - **多模态模型输入**：支持图片、视频等多模态输入，详情请参考[多模态文档](docs/zh/Components/multimodal-support.md)。
+
 * 🚀 **2026年2月6日：发布 MS-Agent v1.6.0rc1，主要更新内容如下：**
   - **Agentic Insight v2**：完整重构的深度研究系统，性能更优、可扩展性更强、可信度更高，支持在webui中使用，详情请参考 [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2)
 
