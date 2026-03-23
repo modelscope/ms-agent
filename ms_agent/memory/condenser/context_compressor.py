@@ -1,14 +1,4 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
-"""
-Context Compressor - Inspired by opencode's context compaction mechanism.
-
-Core concepts:
-1. Token overflow detection - Monitor token usage against context limits
-2. Tool output pruning - Compress old tool call outputs to save context
-3. Summary compaction - Use LLM to generate conversation summary
-
-Reference: desktop/opencode/packages/opencode/src/session/compaction.ts
-"""
 
 from typing import List, Optional
 
@@ -31,12 +21,14 @@ Keep it concise but comprehensive enough for another agent to continue."""
 
 
 class ContextCompressor(Memory):
-    """Context compression tool inspired by opencode's compaction mechanism.
+    """Context Compressor - Inspired by opencode's context compaction mechanism.
 
-    Features:
-    1. Token-based overflow detection
-    2. Tool output pruning for old tool calls
-    3. LLM-based conversation summarization
+    Core concepts:
+    1. Token overflow detection - Monitor token usage against context limits
+    2. Tool output pruning - Compress old tool call outputs to save context
+    3. Summary compaction - Use LLM to generate conversation summary
+
+    Reference: opencode/packages/opencode/src/session/compaction.ts
     """
 
     def __init__(self, config):
