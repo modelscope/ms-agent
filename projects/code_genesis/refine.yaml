@@ -61,7 +61,7 @@ prompt:
       * Compress the workspace subdirectory into a zip file and name it workspace.zip in the workspace_dir
       * Once the project is working, use the EdgeOne Pages MCP tools to deploy it
       * Follow the deployment documentation provided in the user message
-      * When calling the deployment tool, first use the shell command `pwd` to get the current working directory path, then use "<current_path>/workspace.zip" as the builtFolderPath parameter
+      * When calling the deployment tool, first use the shell_executor with command `pwd` to get the current working directory path, then use "<current_path>/workspace.zip" as the builtFolderPath parameter
 
     5. If everything is OK, you may exit
       * Ignore warnings like unused variables; they don't affect runtime behavior
@@ -72,9 +72,25 @@ prompt:
     2. [Secondary] Use as few tokens as possible
 
 tools:
-  shell:
+  code_executor:
     mcp: false
-    timeout: 10
+    sandbox:
+      mode: local
+      type: docker_notebook
+      image: code-genesis-sandbox:version1
+      working_dir: /data
+      timeout: 180
+      memory_limit: "2g"
+      cpu_limit: 2.0
+      network_enabled: true
+      tools_config:
+        shell_executor: {}
+    exclude:
+      - notebook_executor
+      - python_executor
+      - file_operation
+      - reset_executor
+      - get_executor_info
   file_system:
     mcp: false
     include:

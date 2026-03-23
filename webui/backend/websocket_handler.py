@@ -266,6 +266,7 @@ async def start_agent(session_id: str, data: Dict[str, Any],
                 output_dir=str(output_dir),
                 env_vars=config_manager.get_env_vars(),
                 llm_config=config_manager.get_llm_config(),
+                deep_research_config=config_manager.get_deep_research_config(),
             )
             session_manager.update_session(session_id, {'status': 'running'})
             await connection_manager.send_to_session(session_id, {

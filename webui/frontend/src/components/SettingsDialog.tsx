@@ -64,6 +64,25 @@ interface SearchKeysConfig {
   serpapi_api_key: string;
 }
 
+interface DeepResearchAgentConfig {
+  model: string;
+  api_key: string;
+  base_url: string;
+}
+
+interface DeepResearchSearchConfig {
+  summarizer_model: string;
+  summarizer_api_key: string;
+  summarizer_base_url: string;
+}
+
+interface DeepResearchConfig {
+  researcher: DeepResearchAgentConfig;
+  searcher: DeepResearchAgentConfig;
+  reporter: DeepResearchAgentConfig;
+  search: DeepResearchSearchConfig;
+}
+
 interface MCPServer {
   type: 'stdio' | 'sse';
   command?: string;
@@ -110,9 +129,31 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
     exa_api_key: '',
     serpapi_api_key: '',
   });
+  const [deepResearchConfig, setDeepResearchConfig] = useState<DeepResearchConfig>({
+    researcher: { model: '', api_key: '', base_url: '' },
+    searcher: { model: '', api_key: '', base_url: '' },
+    reporter: { model: '', api_key: '', base_url: '' },
+    search: { summarizer_model: '', summarizer_api_key: '', summarizer_base_url: '' },
+  });
   const [mcpServers, setMcpServers] = useState<Record<string, MCPServer>>({});
   const [newServerName, setNewServerName] = useState('');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  const normalizeDeepResearchConfig = (data: Partial<DeepResearchConfig> | null | undefined): DeepResearchConfig => {
+    const base: DeepResearchConfig = {
+      researcher: { model: '', api_key: '', base_url: '' },
+      searcher: { model: '', api_key: '', base_url: '' },
+      reporter: { model: '', api_key: '', base_url: '' },
+      search: { summarizer_model: '', summarizer_api_key: '', summarizer_base_url: '' },
+    };
+    if (!data) return base;
+    return {
+      researcher: { ...base.researcher, ...(data.researcher || {}) },
+      searcher: { ...base.searcher, ...(data.searcher || {}) },
+      reporter: { ...base.reporter, ...(data.reporter || {}) },
+      search: { ...base.search, ...(data.search || {}) },
+    };
+  };
 
   // Load config on mount
   useEffect(() => {
@@ -123,12 +164,13 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
 
   const loadConfig = async () => {
     try {
-      const [llmRes, mcpRes, editFileRes, edgeOnePagesRes, searchKeysRes] = await Promise.all([
+      const [llmRes, mcpRes, editFileRes, edgeOnePagesRes, searchKeysRes, deepResearchRes] = await Promise.all([
         fetch('/api/config/llm'),
         fetch('/api/config/mcp'),
         fetch('/api/config/edit_file'),
         fetch('/api/config/edgeone_pages'),
         fetch('/api/config/search_keys'),
+        fetch('/api/config/deep_research'),
       ]);
 
       if (llmRes.ok) {
@@ -160,6 +202,11 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
       if (searchKeysRes.ok) {
         const data = await searchKeysRes.json();
         setSearchKeysConfig(data);
+      }
+
+      if (deepResearchRes.ok) {
+        const data = await deepResearchRes.json();
+        setDeepResearchConfig(normalizeDeepResearchConfig(data));
       }
     } catch (error) {
       console.error('Failed to load config:', error);
@@ -206,7 +253,13 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
         body: JSON.stringify(searchKeysConfig),
       });
 
-      if (llmRes.ok && mcpRes.ok && editFileRes.ok && edgeOnePagesRes.ok && searchKeysRes.ok) {
+      const deepResearchRes = await fetch('/api/config/deep_research', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(deepResearchConfig),
+      });
+
+      if (llmRes.ok && mcpRes.ok && editFileRes.ok && edgeOnePagesRes.ok && searchKeysRes.ok && deepResearchRes.ok) {
         setSaveStatus('saved');
         setTimeout(() => setSaveStatus('idle'), 2000);
       } else {
@@ -289,6 +342,7 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
           <Tab label="LLM Configuration" />
           <Tab label="Search Keys" />
           <Tab label="MCP Servers" />
+          <Tab label="Deep Research" />
         </Tabs>
 
         {/* LLM Configuration Tab */}
@@ -625,6 +679,151 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
                 </Typography>
               </Box>
             )}
+          </Box>
+        </TabPanel>
+
+        {/* Deep Research Tab */}
+        <TabPanel value={tabValue} index={3}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <Alert severity="info">
+              Configure per-agent overrides for Deep Research. Leave fields blank to fall back to the global LLM settings.
+            </Alert>
+
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Typography variant="h6" sx={{ fontWeight: 600 }}>Researcher Agent</Typography>
+              <TextField
+                fullWidth
+                label="Model"
+                value={deepResearchConfig.researcher.model}
+                onChange={(e) => setDeepResearchConfig((prev) => ({
+                  ...prev,
+                  researcher: { ...prev.researcher, model: e.target.value },
+                }))}
+              />
+              <TextField
+                fullWidth
+                label="API Key"
+                type="password"
+                value={deepResearchConfig.researcher.api_key}
+                onChange={(e) => setDeepResearchConfig((prev) => ({
+                  ...prev,
+                  researcher: { ...prev.researcher, api_key: e.target.value },
+                }))}
+              />
+              <TextField
+                fullWidth
+                label="Base URL"
+                value={deepResearchConfig.researcher.base_url}
+                onChange={(e) => setDeepResearchConfig((prev) => ({
+                  ...prev,
+                  researcher: { ...prev.researcher, base_url: e.target.value },
+                }))}
+              />
+            </Box>
+
+            <Divider />
+
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Typography variant="h6" sx={{ fontWeight: 600 }}>Searcher Agent</Typography>
+              <TextField
+                fullWidth
+                label="Model"
+                value={deepResearchConfig.searcher.model}
+                onChange={(e) => setDeepResearchConfig((prev) => ({
+                  ...prev,
+                  searcher: { ...prev.searcher, model: e.target.value },
+                }))}
+              />
+              <TextField
+                fullWidth
+                label="API Key"
+                type="password"
+                value={deepResearchConfig.searcher.api_key}
+                onChange={(e) => setDeepResearchConfig((prev) => ({
+                  ...prev,
+                  searcher: { ...prev.searcher, api_key: e.target.value },
+                }))}
+              />
+              <TextField
+                fullWidth
+                label="Base URL"
+                value={deepResearchConfig.searcher.base_url}
+                onChange={(e) => setDeepResearchConfig((prev) => ({
+                  ...prev,
+                  searcher: { ...prev.searcher, base_url: e.target.value },
+                }))}
+              />
+            </Box>
+
+            <Divider />
+
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Typography variant="h6" sx={{ fontWeight: 600 }}>Reporter Agent</Typography>
+              <TextField
+                fullWidth
+                label="Model"
+                value={deepResearchConfig.reporter.model}
+                onChange={(e) => setDeepResearchConfig((prev) => ({
+                  ...prev,
+                  reporter: { ...prev.reporter, model: e.target.value },
+                }))}
+              />
+              <TextField
+                fullWidth
+                label="API Key"
+                type="password"
+                value={deepResearchConfig.reporter.api_key}
+                onChange={(e) => setDeepResearchConfig((prev) => ({
+                  ...prev,
+                  reporter: { ...prev.reporter, api_key: e.target.value },
+                }))}
+              />
+              <TextField
+                fullWidth
+                label="Base URL"
+                value={deepResearchConfig.reporter.base_url}
+                onChange={(e) => setDeepResearchConfig((prev) => ({
+                  ...prev,
+                  reporter: { ...prev.reporter, base_url: e.target.value },
+                }))}
+              />
+            </Box>
+
+            <Divider />
+
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Typography variant="h6" sx={{ fontWeight: 600 }}>Search Summarizer</Typography>
+              <TextField
+                fullWidth
+                label="Summarizer Model"
+                value={deepResearchConfig.search.summarizer_model}
+                onChange={(e) => setDeepResearchConfig((prev) => ({
+                  ...prev,
+                  search: { ...prev.search, summarizer_model: e.target.value },
+                }))}
+                placeholder="qwen-flash"
+                helperText="Recommended: low-cost model (default qwen-flash) to reduce token usage."
+              />
+              <TextField
+                fullWidth
+                label="Summarizer API Key"
+                type="password"
+                value={deepResearchConfig.search.summarizer_api_key}
+                onChange={(e) => setDeepResearchConfig((prev) => ({
+                  ...prev,
+                  search: { ...prev.search, summarizer_api_key: e.target.value },
+                }))}
+              />
+              <TextField
+                fullWidth
+                label="Summarizer Base URL"
+                value={deepResearchConfig.search.summarizer_base_url}
+                onChange={(e) => setDeepResearchConfig((prev) => ({
+                  ...prev,
+                  search: { ...prev.search, summarizer_base_url: e.target.value },
+                }))}
+              />
+            </Box>
           </Box>
         </TabPanel>
       </DialogContent>

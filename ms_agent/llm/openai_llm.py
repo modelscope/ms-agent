@@ -572,6 +572,7 @@ class OpenAI(LLM):
         openai_messages = []
         for idx, message in enumerate(messages):
             if isinstance(message, Message):
+                # Only strip string content, keep list content as-is for multimodal
                 if isinstance(message.content, str):
                     message.content = message.content.strip()
                 message = message.to_dict_clean()
@@ -579,25 +580,32 @@ class OpenAI(LLM):
                 message = dict(message)
 
             content = message.get('content', '')
+            # Only strip string content, multimodal content (list) should be kept as-is
             if isinstance(content, str):
                 content = content.strip()
 
             # Apply prefix cache structured content transformation
+            # Only for string content, multimodal content is already structured
             if cache_indice is not None and idx == cache_indice:
                 content = self._to_structured_content(
                     content,
                     add_cache_control=True,
                     provider=self._prefix_cache_provider)
 
-            message = {
-                key: value.strip() if isinstance(value, str) else value
-                for key, value in message.items()
-                if key in self.input_msg and value
-            }
-            if 'content' not in message:
-                message['content'] = ''
-            message['content'] = content if content else ''
+            # Build the message dict, handling both string and multimodal content
+            formatted_message = {}
+            for key, value in message.items():
+                if key in self.input_msg:
+                    # Only strip string values, keep other types as-is
+                    if isinstance(value, str):
+                        formatted_message[key] = value.strip() if value else ''
+                    else:
+                        formatted_message[key] = value
 
-            openai_messages.append(message)
+            # Always use the transformed content to support features like prefix caching
+            # The content variable has been processed by _to_structured_content() if needed
+            formatted_message['content'] = content
+
+            openai_messages.append(formatted_message)
 
         return openai_messages

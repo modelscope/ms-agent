@@ -12,7 +12,7 @@ class DashScope(OpenAI):
     def __init__(self, config: DictConfig):
         super().__init__(
             config,
-            base_url=config.llm.modelscope_base_url
+            base_url=config.llm.dashscope_base_url
             or get_service_config('dashscope').base_url,
             api_key=config.llm.dashscope_api_key)
 

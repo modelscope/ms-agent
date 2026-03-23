@@ -3,6 +3,7 @@
 # yapf: disable
 import asyncio
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -39,6 +40,15 @@ def _configure_logger_to_dir(log_dir: Path) -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / 'ms_agent.log'
 
+    # Get current log level from environment
+    log_level_str = os.getenv('LOG_LEVEL', 'INFO').upper()
+    log_level = getattr(logging, log_level_str, logging.INFO)
+
+    # Update logger level to respect current LOG_LEVEL env var
+    logger.setLevel(log_level)
+    for handler in logger.handlers:
+        handler.setLevel(log_level)
+
     # Check if file handler for this path already exists
     for handler in logger.handlers:
         if isinstance(handler, logging.FileHandler):
@@ -52,7 +62,7 @@ def _configure_logger_to_dir(log_dir: Path) -> None:
 
     file_handler = logging.FileHandler(str(log_file), mode='a')
     file_handler.setFormatter(logging.Formatter('[%(levelname)s:%(name)s] %(message)s'))
-    file_handler.setLevel(logger.level)
+    file_handler.setLevel(log_level)
     logger.addHandler(file_handler)
     logger.info(f'Logger configured to output to: {log_file}')
 
@@ -496,7 +506,7 @@ class DAGExecutor:
             env_vars['UPSTREAM_OUTPUTS'] = json.dumps(upstream_data)
             # Also provide individual upstream references
             for dep_id, data in upstream_data.items():
-                safe_key = dep_id.replace('-', '_').replace('.', '_').upper()
+                safe_key = dep_id.replace('-', '_').replace('.', '_').replace('@', '_').replace('/', '_').upper()
                 if data.get('stdout'):
                     env_vars[f'UPSTREAM_{safe_key}_STDOUT'] = data[
                         'stdout'][:4096]

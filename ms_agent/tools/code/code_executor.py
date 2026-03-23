@@ -407,8 +407,10 @@ class CodeExecutionTool(ToolBase):
                     tool_name='shell_executor',
                     server_name='code_executor',
                     description=
-                    ('Execute shell commands in an isolated environment using bash. '
-                     'Supports basic shell operations like ls, cd, mkdir, rm, etc. '
+                    ('Execute one shell command in an isolated environment. '
+                     'Commands will be executed directly without shell parsing. '
+                     'For shell syntax (cd, &&, ||, pipes, redirection), use explicit wrapper like sh -lc "...". '
+                     'Supports basic operations like ls, mkdir, rm, mv, npm, pip, etc. '
                      'Data files in the output directory are accessible at /data/ path. '
                      ),
                     parameters={
@@ -421,7 +423,7 @@ class CodeExecutionTool(ToolBase):
                             'timeout': {
                                 'type': 'integer',
                                 'description': 'Execution timeout in seconds',
-                                'default': 30
+                                'default': 900
                             }
                         },
                         'required': ['command'],
@@ -648,13 +650,22 @@ class CodeExecutionTool(ToolBase):
         try:
             logger.info(f'Executing command: {command[:50]}...')
 
+            shell_meta = ('&&', '||', '|', ';', '>', '<', '`', '$(', 'cd ',
+                          'export ')
+            already_wrapped = command.lstrip().startswith(
+                ('sh ', 'bash ', '/bin/sh ', '/bin/bash '))
+            if not already_wrapped and any(meta in command
+                                           for meta in shell_meta):
+                import shlex
+                command = f'sh -lc {shlex.quote(command)}'
+
             # Execute via shell_executor
             result = await self.manager.execute_tool(
                 sandbox_id=self.sandbox_id,
                 tool_name='shell_executor',
                 parameters={
                     'command': command,
-                    'timeout': timeout or 60
+                    'timeout': timeout or 900
                 })
             success = result.status == ExecutionStatus.SUCCESS
 

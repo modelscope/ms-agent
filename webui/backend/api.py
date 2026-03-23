@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 # Import shared instances
 from shared import config_manager, project_discovery, session_manager
 
@@ -84,6 +84,29 @@ class EdgeOnePagesConfig(BaseModel):
 class SearchKeysConfig(BaseModel):
     exa_api_key: Optional[str] = None
     serpapi_api_key: Optional[str] = None
+
+
+class DeepResearchAgentConfig(BaseModel):
+    model: Optional[str] = ''
+    api_key: Optional[str] = ''
+    base_url: Optional[str] = ''
+
+
+class DeepResearchSearchConfig(BaseModel):
+    summarizer_model: Optional[str] = ''
+    summarizer_api_key: Optional[str] = ''
+    summarizer_base_url: Optional[str] = ''
+
+
+class DeepResearchConfig(BaseModel):
+    researcher: DeepResearchAgentConfig = Field(
+        default_factory=DeepResearchAgentConfig)
+    searcher: DeepResearchAgentConfig = Field(
+        default_factory=DeepResearchAgentConfig)
+    reporter: DeepResearchAgentConfig = Field(
+        default_factory=DeepResearchAgentConfig)
+    search: DeepResearchSearchConfig = Field(
+        default_factory=DeepResearchSearchConfig)
 
 
 class MCPServer(BaseModel):
@@ -327,6 +350,19 @@ async def get_search_keys_config():
 async def update_search_keys_config(config: SearchKeysConfig):
     """Update search API keys configuration"""
     config_manager.update_search_keys(config.model_dump())
+    return {'status': 'updated'}
+
+
+@router.get('/config/deep_research')
+async def get_deep_research_config():
+    """Get deep research configuration"""
+    return config_manager.get_deep_research_config()
+
+
+@router.put('/config/deep_research')
+async def update_deep_research_config(config: DeepResearchConfig):
+    """Update deep research configuration"""
+    config_manager.update_deep_research_config(config.model_dump())
     return {'status': 'updated'}
 
 
