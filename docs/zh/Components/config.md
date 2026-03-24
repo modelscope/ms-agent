@@ -106,7 +106,6 @@ tools:
 
 支持的完整工具列表，以及自定义工具请参考 [这里](./tools)
 
-<<<<<<< HEAD
 ## 技能配置
 
 > 可选，启用 Agent Skills 时使用
@@ -124,7 +123,7 @@ skills:
 ```
 
 完整的技能模块说明（包括架构、目录结构、API 参考和安全机制等），请参考 [智能体技能](./agent-skills)。
-=======
+
 ## 内存压缩配置
 
 > 可选，用于长对话场景的上下文管理
@@ -159,7 +158,6 @@ memory:
 | `context_compressor` | 通用长对话 | Token检测 + 工具裁剪 + LLM摘要 |
 | `refine_condenser` | 需保留执行轨迹 | 结构化消息压缩（1:6压缩比） |
 | `code_condenser` | 代码生成任务 | 生成代码索引JSON |
->>>>>>> 30d4fc1fbcc786416b07df8e3940cbf46ac59dc2
 
 ## 其他
 

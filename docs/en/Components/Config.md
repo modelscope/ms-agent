@@ -106,7 +106,6 @@ tools:
 
 For the complete list of supported tools and custom tools, please refer to [here](./Tools.md)
 
-<<<<<<< HEAD
 ## Skills Configuration
 
 > Optional, used when enabling Agent Skills
@@ -124,7 +123,7 @@ skills:
 ```
 
 For the complete skill module documentation (including architecture, directory structure, API reference, and security mechanisms), see [Agent Skills](./AgentSkills).
-=======
+
 ## Memory Compression Configuration
 
 > Optional, for context management in long conversations
@@ -159,7 +158,6 @@ Supported compressor types:
 | `context_compressor` | General long conversations | Token detection + Tool pruning + LLM summary |
 | `refine_condenser` | Preserve execution trace | Structured message compression (1:6 ratio) |
 | `code_condenser` | Code generation tasks | Generate code index JSON |
->>>>>>> 30d4fc1fbcc786416b07df8e3940cbf46ac59dc2
 
 ## Others
 
