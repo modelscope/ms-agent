@@ -106,6 +106,41 @@ tools:
 
 For the complete list of supported tools and custom tools, please refer to [here](./Tools.md)
 
+## Memory Compression Configuration
+
+> Optional, for context management in long conversations
+
+```yaml
+memory:
+  # Context Compressor: token detection + tool output pruning + LLM summary
+  context_compressor:
+    context_limit: 128000      # Model context window size
+    prune_protect: 40000       # Token threshold to protect recent tool outputs
+    prune_minimum: 20000       # Minimum pruning amount
+    reserved_buffer: 20000     # Reserved buffer
+    enable_summary: true       # Enable LLM summary
+    summary_prompt: |          # Custom summary prompt (optional)
+      Summarize this conversation...
+
+  # Refine Condenser: structured compression preserving execution trace
+  refine_condenser:
+    threshold: 60000           # Character threshold to trigger compression
+    system: ...                # Custom compression prompt (optional)
+
+  # Code Condenser: generate code index files
+  code_condenser:
+    system: ...                # Custom index generation prompt (optional)
+    code_wrapper: ['```', '```']  # Code block markers
+```
+
+Supported compressor types:
+
+| Type | Use Case | Compression Method |
+|------|----------|-------------------|
+| `context_compressor` | General long conversations | Token detection + Tool pruning + LLM summary |
+| `refine_condenser` | Preserve execution trace | Structured message compression (1:6 ratio) |
+| `code_condenser` | Code generation tasks | Generate code index JSON |
+
 ## Others
 
 > Optional, configure as needed
