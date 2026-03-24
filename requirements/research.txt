@@ -3,6 +3,7 @@ docling<=2.38.1
 docling-core<=2.38.2
 exa-py
 google-search-results
+tavily-python
 gradio>=5.0.0
 json5
 markdown
