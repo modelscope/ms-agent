@@ -17,6 +17,8 @@ from ms_agent.tools.code import CodeExecutionTool, LocalCodeExecutionTool
 from ms_agent.tools.filesystem_tool import FileSystemTool
 from ms_agent.tools.image_generator import ImageGenerator
 from ms_agent.tools.mcp_client import MCPClient
+from ms_agent.tools.search.localsearch_tool import LocalSearchTool
+from ms_agent.tools.search.sirchmunk_search import effective_localsearch_settings
 from ms_agent.tools.search.websearch_tool import WebSearchTool
 from ms_agent.tools.split_task import SplitTask
 from ms_agent.tools.todolist_tool import TodoListTool
@@ -88,6 +90,8 @@ class ToolManager:
             self.extra_tools.append(TodoListTool(config))
         if hasattr(config, 'tools') and hasattr(config.tools, 'web_search'):
             self.extra_tools.append(WebSearchTool(config))
+        if effective_localsearch_settings(config) is not None:
+            self.extra_tools.append(LocalSearchTool(config))
         self.tool_call_timeout = getattr(config, 'tool_call_timeout',
                                          TOOL_CALL_TIMEOUT)
         local_dir = self.config.local_dir if hasattr(self.config,

@@ -5,5 +5,5 @@ rag_mapping = {
     'LlamaIndexRAG': LlamaIndexRAG,
 }
 
-# Note: SirchmunkSearch is registered in knowledge_search module
-# and integrated directly in LLMAgent, not through rag_mapping
+# Note: Sirchmunk local search is the ``localsearch`` tool
+# (ms_agent.tools.search); it is not wired through rag_mapping.

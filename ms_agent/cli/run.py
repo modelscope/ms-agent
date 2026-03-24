@@ -153,7 +153,7 @@ class RunCMD(CLICommand):
             type=str,
             default=None,
             help=
-            'Comma-separated list of paths for knowledge search. When provided, enables SirchmunkSearch using LLM config from llm module.'
+            'Comma-separated list of paths for knowledge search.'
         )
         parser.set_defaults(func=subparser_func)
 
@@ -233,31 +233,28 @@ class RunCMD(CLICommand):
 
         config = Config.from_task(self.args.config)
 
-        # If knowledge_search_paths is provided, configure SirchmunkSearch
+        # If knowledge_search_paths is provided, configure tools.localsearch
         if getattr(self.args, 'knowledge_search_paths', None):
             paths = [
                 p.strip() for p in self.args.knowledge_search_paths.split(',')
                 if p.strip()
             ]
             if paths:
-                if 'knowledge_search' not in config or not config.knowledge_search:
-                    # No existing knowledge_search config, create minimal config
-                    # LLM settings will be auto-reused from llm module by SirchmunkSearch
-                    knowledge_search_config = {
-                        'name': 'SirchmunkSearch',
+                if not hasattr(config, 'tools') or config.tools is None:
+                    config['tools'] = OmegaConf.create({})
+                tl = getattr(config.tools, 'localsearch', None)
+                if tl is None or not OmegaConf.is_config(tl):
+                    localsearch_config = {
                         'paths': paths,
                         'work_path': './.sirchmunk',
                         'mode': 'FAST',
                     }
-                    config['knowledge_search'] = OmegaConf.create(
-                        knowledge_search_config)
+                    config.tools['localsearch'] = OmegaConf.create(
+                        localsearch_config)
                 else:
-                    # Existing knowledge_search config found, only update paths
-                    # LLM settings are already handled by SirchmunkSearch internally
-                    existing = OmegaConf.to_container(
-                        config.knowledge_search, resolve=True)
+                    existing = OmegaConf.to_container(tl, resolve=True)
                     existing['paths'] = paths
-                    config['knowledge_search'] = OmegaConf.create(existing)
+                    config.tools['localsearch'] = OmegaConf.create(existing)
 
         if Config.is_workflow(config):
             from ms_agent.workflow.loader import WorkflowLoader

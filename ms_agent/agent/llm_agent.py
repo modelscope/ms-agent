@@ -13,7 +13,6 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
 import json
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback, callbacks_mapping
-from ms_agent.knowledge_search import SirchmunkSearch
 from ms_agent.llm.llm import LLM
 from ms_agent.llm.utils import Message, ToolResult
 from ms_agent.memory import Memory, get_memory_meta_safe, memory_mapping
@@ -107,7 +106,6 @@ class LLMAgent(Agent):
         self.tool_manager: Optional[ToolManager] = None
         self.memory_tools: List[Memory] = []
         self.rag: Optional[RAG] = None
-        self.knowledge_search: Optional[SirschmunkSearch] = None
         self.llm: Optional[LLM] = None
         self.runtime: Optional[Runtime] = None
         self.max_chat_round: int = 0
@@ -528,6 +526,7 @@ class LLMAgent(Agent):
                 tool_call_id=tool_call_query['id'],
                 name=tool_call_query['tool_name'],
                 resources=tool_call_result_format.resources,
+                tool_detail=tool_call_result_format.tool_detail,
             )
 
             if _new_message.tool_call_id is None:
@@ -636,11 +635,7 @@ class LLMAgent(Agent):
         return messages
 
     async def do_rag(self, messages: List[Message]):
-        """Process RAG or knowledge search to enrich the user query with context.
-
-        This method handles both traditional RAG and sirchmunk-based knowledge search.
-        For knowledge search, it also populates searching_detail and search_result
-        fields in the message for frontend display and next-turn LLM context.
+        """Process RAG to enrich the user query with context.
 
         Args:
             messages (List[Message]): The message list to process.
@@ -654,23 +649,6 @@ class LLMAgent(Agent):
         # Handle traditional RAG
         if self.rag is not None:
             user_message.content = await self.rag.query(query)
-        # Handle sirchmunk knowledge search
-        if self.knowledge_search is not None:
-            # Perform search and get results
-            search_result = await self.knowledge_search.query(query)
-            search_details = self.knowledge_search.get_search_details()
-
-            # Store search details in the message for frontend display
-            user_message.searching_detail = search_details
-            user_message.search_result = search_result
-
-            # Build enriched context from search results
-            if search_result:
-                # Append search context to user query
-                context = search_result
-                user_message.content = (
-                    f'Relevant context retrieved from codebase search:\n\n{context}\n\n'
-                    f'User question: {query}')
 
     async def do_skill(self,
                        messages: List[Message]) -> Optional[List[Message]]:
@@ -756,18 +734,6 @@ class LLMAgent(Agent):
                     f'{rag.name} not in rag_mapping, '
                     f'which supports: {list(rag_mapping.keys())}')
                 self.rag: RAG = rag_mapping(rag.name)(self.config)
-
-    async def prepare_knowledge_search(self):
-        """Load and initialize the knowledge search component from the config."""
-        if self.knowledge_search is not None:
-            # Already initialized (e.g. by caller before run_loop), skip to avoid
-            # overwriting a configured instance (e.g. one with streaming callbacks set).
-            return
-        if hasattr(self.config, 'knowledge_search'):
-            ks_config = self.config.knowledge_search
-            if ks_config is not None:
-                self.knowledge_search: SirchmunkSearch = SirchmunkSearch(
-                    self.config)
 
     async def condense_memory(self, messages: List[Message]) -> List[Message]:
         """
@@ -1111,7 +1077,6 @@ class LLMAgent(Agent):
             await self.prepare_tools()
             await self.load_memory()
             await self.prepare_rag()
-            await self.prepare_knowledge_search()
             self.runtime.tag = self.tag
 
             if messages is None:
