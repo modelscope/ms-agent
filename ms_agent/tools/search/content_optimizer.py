@@ -375,7 +375,11 @@ class ContentSummarizer:
                 'openai_base_url': self.config.summarizer_base_url,
                 'openai_api_key': self.config.summarizer_api_key,
             },
-            'generation_config': {},
+            'generation_config': {
+                'extra_body': {
+                    'enable_thinking': False
+                }
+            },
         }
         return OmegaConf.create(config_dict)
 
