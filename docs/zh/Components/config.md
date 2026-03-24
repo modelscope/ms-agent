@@ -106,6 +106,7 @@ tools:
 
 支持的完整工具列表，以及自定义工具请参考 [这里](./tools)
 
+<<<<<<< HEAD
 ## 技能配置
 
 > 可选，启用 Agent Skills 时使用
@@ -123,6 +124,42 @@ skills:
 ```
 
 完整的技能模块说明（包括架构、目录结构、API 参考和安全机制等），请参考 [智能体技能](./agent-skills)。
+=======
+## 内存压缩配置
+
+> 可选，用于长对话场景的上下文管理
+
+```yaml
+memory:
+  # 上下文压缩器：基于token检测 + 工具输出裁剪 + LLM摘要
+  context_compressor:
+    context_limit: 128000      # 模型上下文窗口大小
+    prune_protect: 40000       # 保护最近工具输出的token阈值
+    prune_minimum: 20000       # 最小裁剪数量
+    reserved_buffer: 20000     # 预留缓冲区
+    enable_summary: true       # 是否启用LLM摘要
+    summary_prompt: |          # 自定义摘要提示词（可选）
+      Summarize this conversation...
+
+  # 精炼压缩器：保留执行轨迹的结构化压缩
+  refine_condenser:
+    threshold: 60000           # 触发压缩的字符阈值
+    system: ...                # 自定义压缩提示词（可选）
+
+  # 代码压缩器：生成代码索引文件
+  code_condenser:
+    system: ...                # 自定义索引生成提示词（可选）
+    code_wrapper: ['```', '```']  # 代码块标记
+```
+
+支持的压缩器类型：
+
+| 类型 | 适用场景 | 压缩方式 |
+|------|---------|---------|
+| `context_compressor` | 通用长对话 | Token检测 + 工具裁剪 + LLM摘要 |
+| `refine_condenser` | 需保留执行轨迹 | 结构化消息压缩（1:6压缩比） |
+| `code_condenser` | 代码生成任务 | 生成代码索引JSON |
+>>>>>>> 30d4fc1fbcc786416b07df8e3940cbf46ac59dc2
 
 ## 其他
 
