@@ -66,11 +66,12 @@ class LocalKernelSession:
         self._km = AsyncKernelManager(
             kernel_name=self.kernel_name,
             env=self.env,
-            cwd=str(self.working_dir))
+            cwd=str(self.working_dir))  # cwd may be ignored here
 
         start_kernel_result = self._km.start_kernel(
             extra_arguments=self.extra_arguments,
             env=self.env,
+            cwd=str(self.working_dir),
         )
         if inspect.isawaitable(start_kernel_result):
             await start_kernel_result
@@ -345,7 +346,7 @@ class LocalCodeExecutionTool(ToolBase):
         await self.kernel_session.stop()
         self._initialized = False
 
-    async def get_tools(self) -> Dict[str, Any]:
+    async def _get_tools_inner(self) -> Dict[str, Any]:
         tools = {
             'code_executor': [
                 Tool(
@@ -502,12 +503,8 @@ class LocalCodeExecutionTool(ToolBase):
                     }),
             ]
         }
-        return {
-            'code_executor': [
-                t for t in tools['code_executor']
-                if t['tool_name'] not in self.exclude_functions
-            ]
-        }
+
+        return tools
 
     async def call_tool(self, server_name: str, *, tool_name: str,
                         tool_args: dict) -> str:

@@ -54,6 +54,12 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 
 ## 🎉 News
 
+* 🚀 Mar 23, 2026: Release MS-Agent v1.6.0, which includes the following updates:
+  - **Context Compression**: Added context compression mechanism with token usage monitoring, overflow detection, and automatic context compaction via pruning historical tool outputs and LLM-based summarization.
+  - **Agentic Insight v2 Enhancements**: Major architecture and performance improvements to the deep research system; achieves **55.43** on DeepResearch Bench with GPT5 and Qwen3.5-plus/flash. See [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2).
+  - **Knowledge Search**: Integrated Sirchmunk for intelligent retrieval over local codebases and documentation during agent conversations. See [Config Docs](docs/en/Components/Config.md).
+  - **Multimodal Model Input**: Support image, video, and other multimodal inputs. See [Multimodal Docs](docs/zh/Components/multimodal-support.md).
+
 * 🚀 Feb 06, 2026: Release MS-Agent v1.6.0rc1, which includes the following updates:
   - **Agentic Insight v2**: A fully refactored deep-research system with better performance, scalability, and trustworthiness, now available in WebUI. See [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2).
 
@@ -308,7 +314,7 @@ For more details, please refer to [**MS-Agent Skills**](ms_agent/skill/README.md
 ---
 
 
-### Agentic Insight
+### Agentic Insight (Deep Research)
 
 #### - Lightweight, Efficient, and Extensible Multi-modal Deep Research Framework
 

@@ -23,13 +23,45 @@ class SearcherCallback(Callback):
     - on_task_end: Save the final search result to file
     """
 
+    # Bilingual round-reminder templates keyed by language code.
+    _ROUND_REMINDER_TEMPLATES = {
+        'zh':
+        ('你已接近最大允许的对话轮数上限，请立刻开始收敛准备最终交付。\n'
+         '- 从现在开始：优先总结已有证据与进度、补齐关键缺口、减少发散探索。\n'
+         '- 在接下来的极少数轮次内，立刻准备并输出最终的 JSON 回复。\n'
+         '- 当前轮次信息：round=<round>，max_chat_round=<max_chat_round>，剩余≈<remaining_rounds> 轮。'
+         ),
+        'en':
+        ('You are approaching the maximum allowed conversation round limit. Begin converging immediately and prepare the final delivery.\n'
+         '- From now on: Prioritize summarizing existing evidence and progress, fill critical gaps, and reduce exploratory divergence.\n'
+         '- Within the very few remaining rounds, immediately prepare and output the final JSON response.\n'
+         '- Current round info: round=<round>, max_chat_round=<max_chat_round>, remaining ≈ <remaining_rounds> rounds.'
+         ),
+    }
+
     def __init__(self, config: DictConfig):
         super().__init__(config)
         self.output_dir = getattr(config, 'output_dir', './output')
         self.search_task_id: Optional[str] = None
         self.search_result_path = os.path.join(
             self.output_dir, f'search_result_{uuid.uuid4().hex[:4]}.json')
+        # Resolve language from config for bilingual prompt selection.
+        self.lang = self._resolve_lang(config)
         self._ensure_output_dir()
+
+    @staticmethod
+    def _resolve_lang(config: DictConfig) -> str:
+        """Resolve language code from config.prompt.lang, defaulting to 'en'."""
+        prompt_cfg = getattr(config, 'prompt', None)
+        if prompt_cfg is not None:
+            lang = getattr(prompt_cfg, 'lang', None)
+            if isinstance(lang, str) and lang.strip():
+                normed = lang.strip().lower()
+                if normed in {'en', 'en-us', 'en_us', 'us'}:
+                    return 'en'
+                elif normed in {'zh', 'zh-cn', 'zh_cn', 'cn'}:
+                    return 'zh'
+        return 'en'
 
     def _ensure_output_dir(self) -> None:
         try:
@@ -155,12 +187,8 @@ class SearcherCallback(Callback):
 
         remaining = max_chat_round - runtime.round
         if not custom_message or not isinstance(custom_message, str):
-            custom_message = (
-                '你已接近最大允许的对话轮数上限，请立刻开始收敛准备最终交付。\n'
-                '- 从现在开始：优先总结已有证据与进度、补齐关键缺口、减少发散探索。\n'
-                '- 在接下来的极少数轮次内，立刻准备并输出最终的 JSON 回复。\n'
-                '- 当前轮次信息：round=<round>，max_chat_round=<max_chat_round>，剩余≈<remaining_rounds> 轮。'
-            )
+            custom_message = self._ROUND_REMINDER_TEMPLATES.get(
+                self.lang, self._ROUND_REMINDER_TEMPLATES['en'])
 
         injected = custom_message
         injected = injected.replace('<round>', str(runtime.round))

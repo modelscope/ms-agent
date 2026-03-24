@@ -5,6 +5,7 @@ import os
 from importlib import resources as importlib_resources
 
 from ms_agent.config import Config
+from ms_agent.config.env import Env
 from ms_agent.utils import get_logger, strtobool
 from ms_agent.utils.constants import AGENT_CONFIG_FILE, MS_AGENT_ASCII
 from omegaconf import OmegaConf
@@ -69,6 +70,15 @@ class RunCMD(CLICommand):
         projects = list_builtin_projects()
 
         parser: argparse.ArgumentParser = parsers.add_parser(RunCMD.name)
+        parser.add_argument(
+            '--env',
+            required=False,
+            type=str,
+            default=None,
+            metavar='PATH',
+            help=
+            'Path to a .env file. If omitted, loads ./.env from the current '
+            'working directory when present; missing file is ignored.')
         parser.add_argument(
             '--query',
             required=False,
@@ -175,9 +185,7 @@ class RunCMD(CLICommand):
         return self._execute_with_config()
 
     def _execute_with_config(self):
-        # Load environment variables from .env file if exists
-        self.load_env_file()
-
+        Env.load_dotenv_into_environ(getattr(self.args, 'env', None))
         if not self.args.config:
             current_dir = os.getcwd()
             if os.path.exists(os.path.join(current_dir, AGENT_CONFIG_FILE)):
