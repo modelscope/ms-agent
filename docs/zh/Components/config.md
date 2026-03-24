@@ -106,6 +106,24 @@ tools:
 
 支持的完整工具列表，以及自定义工具请参考 [这里](./tools)
 
+## 技能配置
+
+> 可选，启用 Agent Skills 时使用
+
+```yaml
+skills:
+  # 技能目录路径或 ModelScope 仓库 ID
+  path: /path/to/skills
+  # 是否自动执行技能（默认 True）
+  auto_execute: true
+  # 工作目录
+  work_dir: /path/to/workspace
+  # 是否使用 Docker 沙箱执行（默认 True）
+  use_sandbox: false
+```
+
+完整的技能模块说明（包括架构、目录结构、API 参考和安全机制等），请参考 [智能体技能](./agent-skills)。
+
 ## 其他
 
 > 可选，按需配置

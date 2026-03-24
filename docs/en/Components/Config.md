@@ -106,6 +106,24 @@ tools:
 
 For the complete list of supported tools and custom tools, please refer to [here](./Tools.md)
 
+## Skills Configuration
+
+> Optional, used when enabling Agent Skills
+
+```yaml
+skills:
+  # Path to skills directory or ModelScope repo ID
+  path: /path/to/skills
+  # Whether to auto-execute skills (default: True)
+  auto_execute: true
+  # Working directory for outputs
+  work_dir: /path/to/workspace
+  # Whether to use Docker sandbox for execution (default: True)
+  use_sandbox: false
+```
+
+For the complete skill module documentation (including architecture, directory structure, API reference, and security mechanisms), see [Agent Skills](./AgentSkills).
+
 ## Others
 
 > Optional, configure as needed
