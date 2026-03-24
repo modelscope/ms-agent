@@ -74,6 +74,7 @@ class TavilySearchResult:
                 'id': res.get('url', ''),
                 'title': res.get('title', ''),
                 'summary': res.get('content', ''),
+                'published_date': res.get('published_date', ''),
             })
 
         return res_list
