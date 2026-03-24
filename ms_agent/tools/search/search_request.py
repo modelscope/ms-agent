@@ -7,6 +7,7 @@ from ms_agent.tools.search.arxiv.schema import ArxivSearchRequest
 from ms_agent.tools.search.exa import ExaSearchRequest
 from ms_agent.tools.search.search_base import SearchEngineType, SearchRequest
 from ms_agent.tools.search.serpapi.schema import SerpApiSearchRequest
+from ms_agent.tools.search.tavily.schema import TavilySearchRequest
 
 
 class SearchRequestGenerator:
@@ -256,6 +257,82 @@ class ArxivSearchRequestGenerator(SearchRequestGenerator):
         return ArxivSearchRequest(**search_request_d)
 
 
+class TavilySearchRequestGenerator(SearchRequestGenerator):
+
+    def get_args_template(self) -> str:
+        return '{"query": "xxx", "num_results": 5, "search_depth": "advanced", "topic": "general"}'
+
+    def get_json_schema(self,
+                        num_queries: int,
+                        is_strict: bool = True) -> Dict[str, Any]:
+        return {
+            'name': 'search_requests',
+            'strict': is_strict,
+            'schema': {
+                'type': 'array',
+                'items': {
+                    'type': 'object',
+                    'properties': {
+                        'query': {
+                            'type': 'string',
+                            'description': (
+                                'Write a concise, keyword-rich search query optimized for web search. '
+                                'Keep under 400 characters for best results. Follow these rules:\n'
+                                '1) Use exact-match quotes for key phrases (e.g., "contrastive learning").\n'
+                                '2) Combine terms naturally; avoid overly complex Boolean syntax.\n'
+                                '3) Keep it concise and focused on the core research intent.\n'
+                                '4) Chinese queries are supported directly.\n\n'
+                                'Examples:\n'
+                                '- "retrieval augmented generation" evaluation benchmarks\n'
+                                '- large language model medical applications 2024\n'
+                                '- 大模型 函数调用 工具调用\n')
+                        },
+                        'num_results': {
+                            'type': 'integer',
+                            'description': 'The number of results to return (1-10). '
+                                           'Choose a value appropriate to the query complexity (e.g., 5)',
+                        },
+                        'search_depth': {
+                            'type': 'string',
+                            'enum': ['basic', 'advanced'],
+                            'description': 'Search depth. "basic" for quick results, '
+                                           '"advanced" for higher relevance. Default is "advanced".',
+                        },
+                        'topic': {
+                            'type': 'string',
+                            'enum': ['general', 'news', 'finance'],
+                            'description': 'Topic category for the search. Default is "general".',
+                        },
+                        'research_goal': {
+                            'type': 'string',
+                            'description': 'The goal of the research and additional research directions'
+                        }
+                    },
+                    'required': ['query', 'num_results', 'research_goal']
+                },
+                'description': f'List of Tavily search queries, max of {num_queries}'
+            }
+        }
+
+    def get_rewrite_prompt(self) -> str:
+        return (
+            f'生成search request，具体要求为： '
+            f'\n1. 必须符合以下arguments格式：{self.get_args_template()}'
+            f'\n2. 其中，query参数的值通过分析用户原始输入中的有效问题部分生成，即{self.user_prompt}，要求为精简的关键词查询，'
+            f'例如，用户输入"请帮我查找2023年发表的关于大语言模型在医疗领域应用的最新研究"，则query参数的值应为"large language model medical applications 2023"；'
+            f'\n3. 参数需要符合搜索引擎的要求，num_results需要根据实际问题的复杂程度来估算，最大10，最小1；'
+            f'\n4. search_depth参数默认为"advanced"，如需快速结果可设为"basic"；'
+            f'\n5. topic参数默认为"general"，如搜索新闻可设为"news"，搜索金融相关可设为"finance"')
+
+    def create_request(self,
+                       search_request_d: Dict[str, Any]) -> TavilySearchRequest:
+        # Filter out keys not in TavilySearchRequest fields
+        valid_keys = {'query', 'num_results', 'search_depth', 'topic',
+                      'include_domains', 'exclude_domains'}
+        filtered = {k: v for k, v in search_request_d.items() if k in valid_keys}
+        return TavilySearchRequest(**filtered)
+
+
 def get_search_request_generator(engine_type: SearchEngineType,
                                  user_prompt: str) -> SearchRequestGenerator:
     """
@@ -277,5 +354,7 @@ def get_search_request_generator(engine_type: SearchEngineType,
         return SerpApiSearchRequestGenerator(user_prompt)
     elif engine_type == SearchEngineType.ARXIV:
         return ArxivSearchRequestGenerator(user_prompt)
+    elif engine_type == SearchEngineType.TAVILY:
+        return TavilySearchRequestGenerator(user_prompt)
     else:
         raise ValueError(f'Unsupported search engine type: {engine_type}')
