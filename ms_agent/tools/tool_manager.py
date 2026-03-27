@@ -251,14 +251,13 @@ class ToolManager:
             self, tool_info: ToolCall) -> AsyncGenerator:
         """Streaming variant of single_call_tool.
 
-        Yields (tool_call_id, item) pairs where item is either:
-        - a str: intermediate log line
-        - a str/dict (final): the tool result (same as single_call_tool return value)
+        Yields (tool_call_id, item, is_final) triples:
+        - is_final False: intermediate log line (str).
+        - is_final True: final tool result (same shape as single_call_tool),
+          including error/timeout strings.
 
-        The final item is always the last yield; it is distinguished from log
-        lines by being a dict, or by being the item after which the generator
-        stops.  Callers can rely on the generator exhausting after the final
-        result.
+        Callers must use is_final to tell logs from short string results (e.g.
+        \"OK\"); content-based heuristics are unreliable.
 
         Timeout: if no yield arrives within self.tool_call_timeout seconds the
         tool is considered hung and a timeout error string is yielded as the
@@ -285,7 +284,9 @@ class ToolManager:
                     try:
                         tool_args = json.loads(tool_args)
                     except Exception:  # noqa
-                        yield call_id, f'The input {tool_args} is not a valid JSON, fix your arguments and try again'
+                        yield (call_id,
+                               f'The input {tool_args} is not a valid JSON, fix your arguments and try again',
+                               True)
                         return
                 assert tool_name in self._tool_index, \
                     f'Tool name {tool_name} not found'
@@ -312,22 +313,22 @@ class ToolManager:
                     except StopAsyncIteration:
                         # Generator exhausted normally; last_item is the result.
                         if last_item is not None:
-                            yield call_id, last_item
+                            yield call_id, last_item, True
                         return
                     except asyncio.TimeoutError:
                         import traceback
                         logger.warning(traceback.format_exc())
-                        yield call_id, f'Execute tool call timeout: {brief_info}'
+                        yield call_id, f'Execute tool call timeout: {brief_info}', True
                         return
                     except Exception as e:
                         import traceback
                         logger.warning(traceback.format_exc())
-                        yield call_id, f'Tool calling failed: {brief_info}, details: {str(e)}'
+                        yield call_id, f'Tool calling failed: {brief_info}, details: {str(e)}', True
                         return
 
                     if last_item is not None:
                         # Emit previous item as an intermediate log.
-                        yield call_id, last_item
+                        yield call_id, last_item, False
                     last_item = item
 
                     # Once we have the first yield (any kind), relax the
@@ -338,7 +339,7 @@ class ToolManager:
             except Exception as e:
                 import traceback
                 logger.warning(traceback.format_exc())
-                yield call_id, f'Tool calling failed: {brief_info}, details: {str(e)}'
+                yield call_id, f'Tool calling failed: {brief_info}, details: {str(e)}', True
 
     async def parallel_call_tool(self, tool_list: List[ToolCall]):
         tasks = [self.single_call_tool(tool) for tool in tool_list]
@@ -347,21 +348,20 @@ class ToolManager:
 
     async def parallel_call_tool_streaming(
             self, tool_list: List[ToolCall]) -> AsyncGenerator:
-        """Run all tools concurrently; yield (call_id, item) as they arrive.
+        """Run all tools concurrently; yield (call_id, item, is_final) as they arrive.
 
         Items are interleaved in arrival order.  The caller must track call_id
-        to associate intermediate logs with their tool.  Each tool's final
-        result is a dict or non-log string; intermediate logs are plain strings
-        emitted before the final result.
+        to associate intermediate logs with their tool.  is_final distinguishes
+        the last result for that tool from streaming log lines.
         """
-        # Shared queue: producers push (call_id, item); sentinel signals done.
+        # Shared queue: producers push (call_id, item, is_final); sentinel signals done.
         queue: asyncio.Queue = asyncio.Queue()
         _DONE = object()
 
         async def _producer(tool_info: ToolCall):
-            async for call_id, item in self.single_call_tool_streaming(
+            async for call_id, item, is_final in self.single_call_tool_streaming(
                     tool_info):
-                await queue.put((call_id, item))
+                await queue.put((call_id, item, is_final))
             await queue.put(_DONE)
 
         tasks = [asyncio.create_task(_producer(t)) for t in tool_list]

@@ -556,11 +556,10 @@ class LLMAgent(Agent):
         # Accumulate final results keyed by call_id.
         final_results: dict = {}
 
-        async for call_id, item in self.tool_manager.parallel_call_tool_streaming(
+        async for call_id, item, is_final in self.tool_manager.parallel_call_tool_streaming(
                 tool_calls):
-            if isinstance(item, dict) or not isinstance(item, str) or \
-                    not self._is_log_line(item):
-                # Final result for this call_id.
+            if is_final:
+                # Final result for this call_id (any type; not inferred from content).
                 final_results[call_id] = item
             else:
                 # Intermediate log line: emit a snapshot with searching_detail_delta.
@@ -595,17 +594,6 @@ class LLMAgent(Agent):
             self.log_output(_new_message.content)
 
         yield messages
-
-    @staticmethod
-    def _is_log_line(item: str) -> bool:
-        """Heuristic: a plain log string from sirchmunk is not a timeout/error result."""
-        if item.startswith('Execute tool call timeout:'):
-            return False
-        if item.startswith('Tool calling failed:'):
-            return False
-        if item.startswith('The input ') and 'is not a valid JSON' in item:
-            return False
-        return True
 
     async def prepare_tools(self):
         """Initialize and connect the tool manager."""

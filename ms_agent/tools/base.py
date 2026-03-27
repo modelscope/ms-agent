@@ -94,11 +94,20 @@ class ToolBase:
                                   tool_args: dict):
         """Streaming variant of call_tool.
 
-        Yields incremental log strings (str) during execution, then yields the
-        final result (str or dict) as the last item.
+        Contract for overrides:
+        - Emit zero or more intermediate updates as strings (UI / log lines).
+        - The **last** value yielded before the async generator finishes must
+          be the same shape as ``call_tool`` would return: a ``str`` or a
+          ``dict`` understood by ``ToolResult.from_raw`` (e.g. with a
+          ``result`` / ``text`` field).
 
-        Default implementation simply delegates to call_tool (no streaming).
-        Override in subclasses that support real-time log emission.
+        Callers inside this package (``ToolManager.single_call_tool_streaming``)
+        do **not** infer \"final vs log\" from types: they mark the terminal
+        emission explicitly. Short string finals (e.g. ``\"OK\"``) are therefore
+        valid and unambiguous.
+
+        Default implementation: no intermediate yields; a single final yield
+        from ``call_tool``.
         """
         result = await self.call_tool(
             server_name, tool_name=tool_name, tool_args=tool_args)
