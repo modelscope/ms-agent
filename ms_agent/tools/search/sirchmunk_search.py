@@ -324,11 +324,14 @@ class SirchmunkSearch:
             self._cluster_cache_hit = False
             self._cluster_cache_hit_time = None
             if hasattr(result, 'cluster') and result.cluster is not None:
-                self._cluster_cache_hit = getattr(result.cluster,
-                                                  '_reused_from_cache', False)
-                if hasattr(result.cluster, 'updated_at'):
+                self._cluster_cache_hit = any(
+                    'Found similar cluster' in entry
+                    or 'Reused existing knowledge cluster' in entry
+                    for entry in self._search_logs
+                )
+                if hasattr(result.cluster, 'last_modified'):
                     self._cluster_cache_hit_time = getattr(
-                        result.cluster, 'updated_at', None)
+                        result.cluster, 'last_modified', None)
 
             return self._parse_search_result(result, score_threshold, limit)
 
@@ -419,11 +422,19 @@ class SirchmunkSearch:
             self._cluster_cache_hit = False
             self._cluster_cache_hit_time = None
             if hasattr(result, 'cluster') and result.cluster is not None:
-                self._cluster_cache_hit = getattr(result.cluster,
-                                                  '_reused_from_cache', False)
-                if hasattr(result.cluster, 'updated_at'):
+                # Detect cluster reuse from search logs: sirchmunk emits
+                # "[SUCCESS] Found similar cluster: ..." or
+                # "[SUCCESS] Reused existing knowledge cluster" when a cached
+                # cluster is reused.  KnowledgeCluster has no _reused_from_cache
+                # attribute, so log-based detection is the correct approach.
+                self._cluster_cache_hit = any(
+                    'Found similar cluster' in entry
+                    or 'Reused existing knowledge cluster' in entry
+                    for entry in self._search_logs
+                )
+                if hasattr(result.cluster, 'last_modified'):
                     self._cluster_cache_hit_time = getattr(
-                        result.cluster, 'updated_at', None)
+                        result.cluster, 'last_modified', None)
 
             self._last_search_result = self._parse_search_result(
                 result, score_threshold=0.7, limit=5)

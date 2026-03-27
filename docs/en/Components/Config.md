@@ -104,12 +104,22 @@ tools:
       - map_geo
   # Local codebase / document search (sirchmunk), exposed as the `localsearch` tool
   localsearch:
+    mcp: false
     paths:
       - ./src
       - ./docs
     work_path: ./.sirchmunk
     mode: FAST
     # Optional: llm_api_key, llm_base_url, llm_model_name (else inherited from `llm`)
+    # When true, a shallow sirchmunk DirectoryScanner run at tool connect injects file titles/previews
+    # into the `localsearch` tool description (default: false)
+    # description_catalog: false
+    # description_catalog_max_files: 120
+    # description_catalog_max_depth: 5
+    # description_catalog_max_chars: 10000
+    # description_catalog_max_preview_chars: 400
+    # description_catalog_cache_ttl_seconds: 300
+    # description_catalog_exclude: []  # extra globs / dir names merged with sirchmunk defaults
 ```
 
 For the complete list of supported tools and custom tools, please refer to [here](./Tools.md)

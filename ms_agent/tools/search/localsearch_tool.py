@@ -1,10 +1,20 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 """On-demand local codebase search via sirchmunk (replaces pre-turn RAG injection)."""
 
+import asyncio
 import json
+import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
+from ms_agent.tools.search.localsearch_catalog import (
+    build_file_catalog_text,
+    catalog_cache_path,
+    catalog_fingerprint,
+    description_catalog_settings,
+    load_cached_catalog,
+    save_cached_catalog,
+)
 from ms_agent.tools.search.sirchmunk_search import (
     SirchmunkSearch,
     effective_localsearch_settings,
@@ -26,6 +36,8 @@ USE THIS TOOL WHEN:
 - You need to find information in source code, config files, or documents
 - The query references a local path, project structure, or codebase
 - You need to search PDF, DOCX, XLSX, PPTX, CSV, JSON, YAML, Markdown, etc.
+- Large files or directories should be searched by this tool.
+
 
 DO NOT USE THIS TOOL WHEN:
 - The user is asking a general knowledge question
@@ -39,6 +51,8 @@ available. Retrieved excerpts and meta are included in the tool output.
 
 Configured search roots for this agent (absolute paths; default search scope when `paths` is omitted):
 {configured_roots}
+
+{file_catalog_section}
 """
 
 
@@ -56,6 +70,64 @@ def _resolved_localsearch_paths_from_config(config) -> List[str]:
             continue
         out.append(str(Path(str(p).strip()).expanduser().resolve()))
     return out
+
+
+def _work_path_from_config(config) -> Path:
+    block = effective_localsearch_settings(config)
+    if not block:
+        return Path('.sirchmunk').expanduser().resolve()
+    wp = block.get('work_path', './.sirchmunk') if hasattr(
+        block, 'get') else getattr(block, 'work_path', './.sirchmunk')
+    return Path(str(wp)).expanduser().resolve()
+
+
+def _truncate_catalog_text(text: str, max_chars: int) -> str:
+    """Truncate catalog text to ``max_chars``, preserving the directory tree section
+    and truncating the file-summary section on entry boundaries.
+
+    The catalog has two sections:
+      1. Directory structure (``#### Directory structure of ...``)
+      2. File summaries (``#### File summaries ...``) — entries start with ``- ``
+
+    Strategy: always keep the full directory tree (it fits in a few hundred chars
+    per root); truncate only the file-summary entries within the remaining budget.
+    """
+    if max_chars <= 0 or len(text) <= max_chars:
+        return text
+
+    import re
+
+    # Locate the first file-summary section header.
+    summary_header_m = re.search(r'^#### File summaries', text, re.MULTILINE)
+    if summary_header_m is None:
+        # No file summaries — just hard-truncate.
+        return text[: max_chars - 24].rstrip() + '\n\n… (truncated)'
+
+    # Everything up to and including the file-summary header line is the
+    # "prefix" we always keep.
+    header_section_end = text.find('\n', summary_header_m.end())
+    if header_section_end == -1:
+        return text[: max_chars - 24].rstrip() + '\n\n… (truncated)'
+
+    prefix = text[: header_section_end + 1]
+    body = text[header_section_end + 1:]
+
+    # Split body into individual entry lines (each starts with "- ").
+    parts = re.split(r'(?=^- )', body, flags=re.MULTILINE)
+    parts = [p for p in parts if p.strip()]
+
+    budget = max_chars - len(prefix) - 50  # reserve space for trailing note
+    kept: list[str] = []
+    used = 0
+    for part in parts:
+        if used + len(part) > budget:
+            break
+        kept.append(part)
+        used += len(part)
+
+    omitted = len(parts) - len(kept)
+    suffix = f'\n… ({omitted} more files not shown)' if omitted > 0 else ''
+    return prefix + ''.join(kept).rstrip() + suffix
 
 
 def _format_configured_roots(paths: List[str]) -> str:
@@ -93,10 +165,36 @@ class LocalSearchTool(ToolBase):
         self._searcher: Optional[SirchmunkSearch] = None
         self._configured_roots: List[str] = (
             _resolved_localsearch_paths_from_config(config))
+        block = effective_localsearch_settings(config)
+        self._catalog_enabled, self._catalog_opts = description_catalog_settings(
+            block)
+        self._work_path = _work_path_from_config(config)
+        self._catalog_text: str = ''
+        self._catalog_build_error: Optional[str] = None
+
+    def _file_catalog_section(self) -> str:
+        if not self._catalog_enabled:
+            return ''
+        err = self._catalog_build_error
+        if err:
+            return (
+                '\n\n## Local knowledge catalog\n'
+                f'_(Catalog build failed: {err})_\n')
+        body = (self._catalog_text or '').strip()
+        if not body:
+            return (
+                '\n\n## Local knowledge catalog\n'
+                '_(No scannable files or catalog empty.)_\n')
+        shown = _truncate_catalog_text(body, self._catalog_opts['max_chars'])
+        return (
+            '\n\n## Local knowledge catalog (shallow scan)\n'
+            'Brief previews of files under the configured roots; call this tool '
+            'with a `query` for full search.\n\n' + shown + '\n')
 
     def _tool_description(self) -> str:
         return _LOCALSEARCH_DESCRIPTION.format(
-            configured_roots=_format_configured_roots(self._configured_roots))
+            configured_roots=_format_configured_roots(self._configured_roots),
+            file_catalog_section=self._file_catalog_section())
 
     def _paths_param_description(self) -> str:
         roots = _format_configured_roots(self._configured_roots)
@@ -112,7 +210,63 @@ class LocalSearchTool(ToolBase):
         return self._searcher
 
     async def connect(self) -> None:
-        return None
+        self._catalog_build_error = None
+        self._catalog_text = ''
+        if not self._catalog_enabled:
+            return
+        roots = [r for r in self._configured_roots if r]
+        if not roots:
+            self._catalog_build_error = 'no configured roots'
+            return
+        o = self._catalog_opts
+        fp = catalog_fingerprint(
+            roots,
+            o['max_files'],
+            o['max_depth'],
+            o['max_preview_chars'],
+            o['max_chars'],
+            o['exclude_extra'],
+        )
+        cache_path = catalog_cache_path(self._work_path, fp)
+        ttl = float(o['cache_ttl_seconds'])
+        t0 = time.monotonic()
+        cached = load_cached_catalog(cache_path, ttl)
+        if cached is not None:
+            elapsed = time.monotonic() - t0
+            self._catalog_text = cached
+            logger.info(
+                f'localsearch catalog: loaded from cache in {elapsed:.3f}s '
+                f'({len(cached)} chars) roots={roots}')
+            return
+        try:
+            built = await build_file_catalog_text(
+                roots,
+                max_files=o['max_files'],
+                max_depth=o['max_depth'],
+                max_preview_chars=o['max_preview_chars'],
+                exclude_extra=o['exclude_extra'],
+                max_file_size_mb=o['max_file_size_mb'],
+                oversized_pdf_timeout_s=o['oversized_pdf_timeout_s'],
+                max_chars=o['max_chars'],
+            )
+            elapsed = time.monotonic() - t0
+            self._catalog_text = built
+            logger.info(
+                f'localsearch catalog: scanned in {elapsed:.3f}s '
+                f'({len(built)} chars) roots={roots}')
+            if ttl > 0 and built.strip():
+                try:
+                    save_cached_catalog(cache_path, built)
+                except OSError as exc:
+                    logger.debug(f'localsearch catalog cache write failed: {exc}')
+        except ImportError as exc:
+            elapsed = time.monotonic() - t0
+            self._catalog_build_error = str(exc)
+            logger.warning(f'localsearch description_catalog ({elapsed:.3f}s): {exc}')
+        except Exception as exc:
+            elapsed = time.monotonic() - t0
+            self._catalog_build_error = str(exc)
+            logger.warning(f'localsearch description_catalog scan failed ({elapsed:.3f}s): {exc}')
 
     async def _get_tools_inner(self) -> Dict[str, List[Tool]]:
         return {
@@ -279,4 +433,61 @@ class LocalSearchTool(ToolBase):
         except Exception as exc:
             logger.warning(f'localsearch failed: {exc}')
             return f'Local search failed: {exc}'
+
+    async def call_tool_streaming(self, server_name: str, *, tool_name: str,
+                                  tool_args: dict):
+        """Streaming variant: yield log lines while searching, then yield final result.
+
+        Intermediate yields are plain strings (log lines).
+        The final yield is the result dict (or error string) from call_tool.
+
+        Timeout semantics: the caller should treat the absence of any yield
+        within 30 s as a hang and cancel the task.
+        """
+        log_queue: asyncio.Queue = asyncio.Queue()
+
+        # Register the streaming callback on the searcher so sirchmunk pushes
+        # log lines into our queue as they are emitted.
+        async def _on_log(entry: str):
+            await log_queue.put(entry)
+
+        # We need the searcher to exist before we can register the callback.
+        # _ensure_searcher() is synchronous and cheap if already initialized.
+        try:
+            searcher = self._ensure_searcher()
+            searcher.enable_streaming_logs(_on_log)
+        except Exception as exc:
+            yield f'Local search failed: {exc}'
+            return
+
+        # Sentinel placed in the queue by the search coroutine when done.
+        _DONE = object()
+
+        async def _run_search():
+            try:
+                result = await self.call_tool(
+                    server_name, tool_name=tool_name, tool_args=tool_args)
+            except Exception as exc:
+                result = f'Local search failed: {exc}'
+            await log_queue.put(_DONE)
+            await log_queue.put(result)
+
+        search_task = asyncio.create_task(_run_search())
+
+        try:
+            while True:
+                item = await log_queue.get()
+                if item is _DONE:
+                    # Next item is the final result.
+                    final = await log_queue.get()
+                    yield final
+                    break
+                # Intermediate log line.
+                yield item
+        finally:
+            search_task.cancel()
+            try:
+                await search_task
+            except asyncio.CancelledError:
+                pass
 

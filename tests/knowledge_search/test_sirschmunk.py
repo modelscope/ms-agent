@@ -11,6 +11,14 @@ import shutil
 import unittest
 from pathlib import Path
 
+
+def _sirchmunk_dir_scanner_available() -> bool:
+    try:
+        import sirchmunk.scan.dir_scanner  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
 from ms_agent.agent import LLMAgent
 from ms_agent.tools.search.sirchmunk_search import SirchmunkSearch
 from ms_agent.llm.utils import Message
@@ -81,7 +89,7 @@ class SirchmunkKnowledgeSearchTest(unittest.TestCase):
                 Message(role='system', content='You are a helper.'),
                 Message(role='user', content=original),
             ]
-            await agent.run(messages)
+            messages = await agent.run(messages)
             return messages
 
         messages = asyncio.run(run())
@@ -104,6 +112,29 @@ class SirchmunkKnowledgeSearchTest(unittest.TestCase):
             any(n.endswith('localsearch') for n in names),
             f'Expected localsearch in tools, got: {names}',
         )
+
+    @unittest.skipUnless(
+        _sirchmunk_dir_scanner_available(),
+        'sirchmunk scan not installed',
+    )
+    def test_localsearch_description_catalog_injects_file_preview(self):
+        """Optional: shallow DirectoryScanner summaries appear in tool description."""
+
+        async def run():
+            config = self._base_config()
+            config.tools.localsearch['description_catalog'] = True
+            config.tools.localsearch['description_catalog_cache_ttl_seconds'] = 0
+            tm = ToolManager(config, trust_remote_code=False)
+            await tm.connect()
+            tools = await tm.get_tools()
+            await tm.cleanup()
+            return tools
+
+        tools = asyncio.run(run())
+        loc = next(t for t in tools if t['tool_name'].endswith('localsearch'))
+        desc = loc.get('description') or ''
+        self.assertIn('Local knowledge catalog', desc)
+        self.assertIn('UserManager', desc)
 
     @unittest.skipUnless(
         os.getenv('TEST_SIRCHMUNK_SMOKE', ''),

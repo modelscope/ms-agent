@@ -537,6 +537,76 @@ class LLMAgent(Agent):
             self.log_output(_new_message.content)
         return messages
 
+    async def parallel_tool_call_streaming(
+            self, messages: List[Message]) -> AsyncGenerator:
+        """Streaming variant of parallel_tool_call.
+
+        Yields messages list snapshots during tool execution:
+        - While tools are running: yields messages with the latest
+          searching_detail_delta set on a temporary placeholder Message so the
+          caller can stream intermediate logs to the frontend.
+        - After all tools finish: yields the final messages list (with proper
+          tool result Messages appended), same as parallel_tool_call.
+        """
+        tool_calls = messages[-1].tool_calls
+
+        # Map call_id -> tool_call_query for final message construction.
+        call_id_to_query = {tc['id']: tc for tc in tool_calls}
+
+        # Accumulate final results keyed by call_id.
+        final_results: dict = {}
+
+        async for call_id, item in self.tool_manager.parallel_call_tool_streaming(
+                tool_calls):
+            if isinstance(item, dict) or not isinstance(item, str) or \
+                    not self._is_log_line(item):
+                # Final result for this call_id.
+                final_results[call_id] = item
+            else:
+                # Intermediate log line: emit a snapshot with searching_detail_delta.
+                log_message = Message(
+                    role='tool',
+                    content='',
+                    tool_call_id=call_id,
+                    name=call_id_to_query.get(call_id, {}).get(
+                        'tool_name', ''),
+                    searching_detail_delta=item,
+                )
+                yield messages + [log_message]
+
+        # All tools done — build final tool messages and yield.
+        for tool_call_query in tool_calls:
+            cid = tool_call_query['id']
+            raw_result = final_results.get(
+                cid, f'Tool call missing result for id {cid}')
+            tool_call_result_format = ToolResult.from_raw(raw_result)
+            _new_message = Message(
+                role='tool',
+                content=tool_call_result_format.text,
+                tool_call_id=cid,
+                name=tool_call_query['tool_name'],
+                resources=tool_call_result_format.resources,
+                tool_detail=tool_call_result_format.tool_detail,
+            )
+            if _new_message.tool_call_id is None:
+                _new_message.tool_call_id = str(uuid.uuid4())[:8]
+                tool_call_query['id'] = _new_message.tool_call_id
+            messages.append(_new_message)
+            self.log_output(_new_message.content)
+
+        yield messages
+
+    @staticmethod
+    def _is_log_line(item: str) -> bool:
+        """Heuristic: a plain log string from sirchmunk is not a timeout/error result."""
+        if item.startswith('Execute tool call timeout:'):
+            return False
+        if item.startswith('Tool calling failed:'):
+            return False
+        if item.startswith('The input ') and 'is not a valid JSON' in item:
+            return False
+        return True
+
     async def prepare_tools(self):
         """Initialize and connect the tool manager."""
         self.tool_manager = ToolManager(
@@ -897,7 +967,14 @@ class LLMAgent(Agent):
         self.save_history(messages)
 
         if _response_message.tool_calls:
-            messages = await self.parallel_tool_call(messages)
+            # Use the streaming variant so intermediate tool logs are yielded
+            # back to the caller while the tools are still running.
+            async for messages in self.parallel_tool_call_streaming(messages):
+                is_final = (
+                    not messages[-1].searching_detail_delta
+                    if hasattr(messages[-1], 'searching_detail_delta') else True)
+                if not is_final:
+                    yield messages
 
         await self.after_tool_call(messages)
 

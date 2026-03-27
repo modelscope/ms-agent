@@ -7,7 +7,7 @@ import sys
 import uuid
 from copy import copy
 from types import TracebackType
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import json
 from ms_agent.llm.utils import Tool, ToolCall
@@ -247,10 +247,137 @@ class ToolManager:
                 logger.warning(traceback.format_exc())
                 return f'Tool calling failed: {brief_info}, details: {str(e)}'
 
+    async def single_call_tool_streaming(
+            self, tool_info: ToolCall) -> AsyncGenerator:
+        """Streaming variant of single_call_tool.
+
+        Yields (tool_call_id, item) pairs where item is either:
+        - a str: intermediate log line
+        - a str/dict (final): the tool result (same as single_call_tool return value)
+
+        The final item is always the last yield; it is distinguished from log
+        lines by being a dict, or by being the item after which the generator
+        stops.  Callers can rely on the generator exhausting after the final
+        result.
+
+        Timeout: if no yield arrives within self.tool_call_timeout seconds the
+        tool is considered hung and a timeout error string is yielded as the
+        final result.
+        """
+        if self._concurrent_limiter is None:
+            if self._init_lock is None:
+                self._init_lock = asyncio.Lock()
+            async with self._init_lock:
+                if self._concurrent_limiter is None:
+                    self._concurrent_limiter = asyncio.Semaphore(
+                        MAX_CONCURRENT_TOOLS)
+
+        call_id = tool_info.get('id', '')
+        brief_info = json.dumps(tool_info, ensure_ascii=False)
+        if len(brief_info) > 1024:
+            brief_info = brief_info[:1024] + '...'
+
+        async with self._concurrent_limiter:
+            try:
+                tool_name = tool_info['tool_name']
+                tool_args = tool_info['arguments']
+                while isinstance(tool_args, str):
+                    try:
+                        tool_args = json.loads(tool_args)
+                    except Exception:  # noqa
+                        yield call_id, f'The input {tool_args} is not a valid JSON, fix your arguments and try again'
+                        return
+                assert tool_name in self._tool_index, \
+                    f'Tool name {tool_name} not found'
+                tool_ins, server_name, _ = self._tool_index[tool_name]
+                call_args = tool_args
+                if isinstance(tool_ins, AgentTool):
+                    call_args = dict(tool_args or {})
+                    call_args['__call_id'] = call_id or str(uuid.uuid4())
+
+                # Use the streaming variant; default impl wraps call_tool.
+                gen = tool_ins.call_tool_streaming(
+                    server_name,
+                    tool_name=tool_name.split(self.TOOL_SPLITER)[1],
+                    tool_args=call_args)
+
+                # Enforce per-item timeout: if no item arrives within
+                # tool_call_timeout seconds the tool is considered hung.
+                timeout = self.tool_call_timeout
+                last_item = None
+                while True:
+                    try:
+                        item = await asyncio.wait_for(
+                            gen.__anext__(), timeout=timeout)
+                    except StopAsyncIteration:
+                        # Generator exhausted normally; last_item is the result.
+                        if last_item is not None:
+                            yield call_id, last_item
+                        return
+                    except asyncio.TimeoutError:
+                        import traceback
+                        logger.warning(traceback.format_exc())
+                        yield call_id, f'Execute tool call timeout: {brief_info}'
+                        return
+                    except Exception as e:
+                        import traceback
+                        logger.warning(traceback.format_exc())
+                        yield call_id, f'Tool calling failed: {brief_info}, details: {str(e)}'
+                        return
+
+                    if last_item is not None:
+                        # Emit previous item as an intermediate log.
+                        yield call_id, last_item
+                    last_item = item
+
+                    # Once we have the first yield (any kind), relax the
+                    # per-item timeout to avoid cutting off long-running but
+                    # active searches.
+                    timeout = max(timeout, 120)
+
+            except Exception as e:
+                import traceback
+                logger.warning(traceback.format_exc())
+                yield call_id, f'Tool calling failed: {brief_info}, details: {str(e)}'
+
     async def parallel_call_tool(self, tool_list: List[ToolCall]):
         tasks = [self.single_call_tool(tool) for tool in tool_list]
         result = await asyncio.gather(*tasks)
         return result
+
+    async def parallel_call_tool_streaming(
+            self, tool_list: List[ToolCall]) -> AsyncGenerator:
+        """Run all tools concurrently; yield (call_id, item) as they arrive.
+
+        Items are interleaved in arrival order.  The caller must track call_id
+        to associate intermediate logs with their tool.  Each tool's final
+        result is a dict or non-log string; intermediate logs are plain strings
+        emitted before the final result.
+        """
+        # Shared queue: producers push (call_id, item); sentinel signals done.
+        queue: asyncio.Queue = asyncio.Queue()
+        _DONE = object()
+
+        async def _producer(tool_info: ToolCall):
+            async for call_id, item in self.single_call_tool_streaming(
+                    tool_info):
+                await queue.put((call_id, item))
+            await queue.put(_DONE)
+
+        tasks = [asyncio.create_task(_producer(t)) for t in tool_list]
+        remaining = len(tasks)
+
+        try:
+            while remaining > 0:
+                item = await queue.get()
+                if item is _DONE:
+                    remaining -= 1
+                else:
+                    yield item
+        finally:
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def __aenter__(self) -> 'ToolManager':
 

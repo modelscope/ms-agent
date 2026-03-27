@@ -64,6 +64,10 @@ class Message:
     # role=tool: extra payload for UIs / SSE only; omitted from LLM API via to_dict_clean().
     tool_detail: Optional[str] = None
 
+    # role=tool (streaming): incremental log line emitted while the tool is still running.
+    # Non-empty only on intermediate yields; final yield has tool_detail set instead.
+    searching_detail_delta: Optional[str] = None
+
     def to_dict(self):
         return asdict(self)
 

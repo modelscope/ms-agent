@@ -1,8 +1,9 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 """Backward-compatible re-exports for sirchmunk local search.
 
-Implementation lives in :mod:`ms_agent.tools.search.sirchmunk_search`; prefer
-importing ``SirchmunkSearch`` from there in new code.
+This module provides integration between sirchmunk's AgenticSearch
+and the ms_agent framework, enabling intelligent local path search
+capabilities.
 """
 
 from ms_agent.tools.search.sirchmunk_search import SirchmunkSearch

@@ -89,3 +89,17 @@ class ToolBase:
             Calling result in string format.
         """
         pass
+
+    async def call_tool_streaming(self, server_name: str, *, tool_name: str,
+                                  tool_args: dict):
+        """Streaming variant of call_tool.
+
+        Yields incremental log strings (str) during execution, then yields the
+        final result (str or dict) as the last item.
+
+        Default implementation simply delegates to call_tool (no streaming).
+        Override in subclasses that support real-time log emission.
+        """
+        result = await self.call_tool(
+            server_name, tool_name=tool_name, tool_args=tool_args)
+        yield result

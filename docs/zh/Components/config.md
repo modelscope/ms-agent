@@ -104,12 +104,22 @@ tools:
       - map_geo
   # 本地代码库/文档搜索（sirchmunk），对应模型可调用的 `localsearch` 工具
   localsearch:
+    mcp: false
     paths:
       - ./src
       - ./docs
     work_path: ./.sirchmunk
     mode: FAST
     # 可选：llm_api_key、llm_base_url、llm_model_name（不填则从 `llm` 继承）
+    # 为 true 时，在工具连接阶段用 sirchmunk DirectoryScanner 做浅层扫描，把文件标题/预览写入
+    # `localsearch` 工具 description，便于模型知道本地知识库里大致有哪些内容（默认 false）
+    # description_catalog: false
+    # description_catalog_max_files: 120
+    # description_catalog_max_depth: 5
+    # description_catalog_max_chars: 10000
+    # description_catalog_max_preview_chars: 400
+    # description_catalog_cache_ttl_seconds: 300
+    # description_catalog_exclude: []  # 额外 glob / 目录名，与 sirchmunk 默认排除合并
 ```
 
 支持的完整工具列表，以及自定义工具请参考 [这里](./tools)
@@ -190,4 +200,4 @@ ms-agent run --config /path/to/agent.yaml --query "你的问题" --knowledge_sea
 ```
 
 LLM 相关参数（api_key, base_url, model）会自动从配置文件的 `llm` 模块继承，无需重复配置。
-若 sirchmunk 需独立 LLM，可在 yaml 的 `tools.localsearch` 下设置 `llm_api_key`、`llm_base_url`、`llm_model_name`。仍支持旧版顶层 `knowledge_search` 相同字段，以便迁移。
+若 sirchmunk 需独立 LLM，可在 yaml 的 `tools.localsearch` 下设置 `llm_api_key`、`llm_base_url`、`llm_model_name`。
