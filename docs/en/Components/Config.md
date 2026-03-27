@@ -102,6 +102,24 @@ tools:
     url: https://mcp.api-inference.modelscope.net/xxx/sse
     exclude:
       - map_geo
+  # Local codebase / document search (sirchmunk), exposed as the `localsearch` tool
+  localsearch:
+    mcp: false
+    paths:
+      - ./src
+      - ./docs
+    work_path: ./.sirchmunk
+    mode: FAST
+    # Optional: llm_api_key, llm_base_url, llm_model_name (else inherited from `llm`)
+    # When true, a shallow sirchmunk DirectoryScanner run at tool connect injects file titles/previews
+    # into the `localsearch` tool description (default: false)
+    # description_catalog: false
+    # description_catalog_max_files: 120
+    # description_catalog_max_depth: 5
+    # description_catalog_max_chars: 10000
+    # description_catalog_max_preview_chars: 400
+    # description_catalog_cache_ttl_seconds: 300
+    # description_catalog_exclude: []  # extra globs / dir names merged with sirchmunk defaults
 ```
 
 For the complete list of supported tools and custom tools, please refer to [here](./Tools.md)
@@ -220,19 +238,19 @@ In addition to yaml configuration, MS-Agent also supports several additional com
 
 > Any configuration in agent.yaml can be passed in with new values via command line, and also supports reading from environment variables with the same name (case insensitive), for example `--llm.modelscope_api_key xxx-xxx`.
 
-- knowledge_search_paths: Knowledge search paths, comma-separated multiple paths. When provided, automatically enables SirchmunkSearch for knowledge retrieval, with LLM configuration automatically inherited from the `llm` module.
+- knowledge_search_paths: Comma-separated local search paths. Merges into `tools.localsearch.paths` and registers the **`localsearch`** tool (sirchmunk) for on-demand use by the model—not automatic per-turn injection. LLM settings are inherited from the `llm` module unless you set `tools.localsearch.llm_*` fields.
 
 ### Quick Start for Knowledge Search
 
-Use the `--knowledge_search_paths` parameter to quickly enable knowledge search based on local documents:
+Use `--knowledge_search_paths` or define `tools.localsearch` in yaml so the model can call `localsearch` when needed:
 
 ```bash
 # Using default agent.yaml configuration, automatically reuses LLM settings
-ms-agent run --query "How to implement user authentication?" --knowledge_search_paths "./src,./docs"
+ms-agent run --query "How to implement user authentication?" --knowledge_search_paths "/path/to/docs"
 
 # Specify configuration file
 ms-agent run --config /path/to/agent.yaml --query "your question" --knowledge_search_paths "/path/to/docs"
 ```
 
 LLM-related parameters (api_key, base_url, model) are automatically inherited from the `llm` module in the configuration file, no need to configure them repeatedly.
-If you need to use independent LLM configuration in the `knowledge_search` module, you can explicitly configure `knowledge_search.llm_api_key` and other parameters in the yaml.
+For a dedicated sirchmunk LLM, set `tools.localsearch.llm_api_key`, `llm_base_url`, and `llm_model_name` in yaml. Legacy top-level `knowledge_search` with the same keys is still read for backward compatibility.

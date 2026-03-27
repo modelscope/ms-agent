@@ -89,3 +89,26 @@ class ToolBase:
             Calling result in string format.
         """
         pass
+
+    async def call_tool_streaming(self, server_name: str, *, tool_name: str,
+                                  tool_args: dict):
+        """Streaming variant of call_tool.
+
+        Contract for overrides:
+        - Emit zero or more intermediate updates as strings (UI / log lines).
+        - The **last** value yielded before the async generator finishes must
+          be the same shape as ``call_tool`` would return: a ``str`` or a
+          ``dict`` understood by ``ToolResult.from_raw`` (e.g. with a
+          ``result`` / ``text`` field).
+
+        Callers inside this package (``ToolManager.single_call_tool_streaming``)
+        do **not** infer \"final vs log\" from types: they mark the terminal
+        emission explicitly. Short string finals (e.g. ``\"OK\"``) are therefore
+        valid and unambiguous.
+
+        Default implementation: no intermediate yields; a single final yield
+        from ``call_tool``.
+        """
+        result = await self.call_tool(
+            server_name, tool_name=tool_name, tool_args=tool_args)
+        yield result
