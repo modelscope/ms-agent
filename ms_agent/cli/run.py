@@ -152,9 +152,7 @@ class RunCMD(CLICommand):
             required=False,
             type=str,
             default=None,
-            help=
-            'Comma-separated list of paths for knowledge search.'
-        )
+            help='Comma-separated list of paths for knowledge search.')
         parser.set_defaults(func=subparser_func)
 
     def execute(self):

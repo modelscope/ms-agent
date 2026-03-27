@@ -567,8 +567,8 @@ class LLMAgent(Agent):
                     role='tool',
                     content='',
                     tool_call_id=call_id,
-                    name=call_id_to_query.get(call_id, {}).get(
-                        'tool_name', ''),
+                    name=call_id_to_query.get(call_id,
+                                              {}).get('tool_name', ''),
                     searching_detail_delta=item,
                 )
                 yield messages + [log_message]
@@ -958,9 +958,8 @@ class LLMAgent(Agent):
             # Use the streaming variant so intermediate tool logs are yielded
             # back to the caller while the tools are still running.
             async for messages in self.parallel_tool_call_streaming(messages):
-                is_final = (
-                    not messages[-1].searching_detail_delta
-                    if hasattr(messages[-1], 'searching_detail_delta') else True)
+                is_final = (not messages[-1].searching_detail_delta if hasattr(
+                    messages[-1], 'searching_detail_delta') else True)
                 if not is_final:
                     yield messages
 

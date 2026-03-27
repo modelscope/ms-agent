@@ -18,7 +18,8 @@ from ms_agent.tools.filesystem_tool import FileSystemTool
 from ms_agent.tools.image_generator import ImageGenerator
 from ms_agent.tools.mcp_client import MCPClient
 from ms_agent.tools.search.localsearch_tool import LocalSearchTool
-from ms_agent.tools.search.sirchmunk_search import effective_localsearch_settings
+from ms_agent.tools.search.sirchmunk_search import \
+    effective_localsearch_settings
 from ms_agent.tools.search.websearch_tool import WebSearchTool
 from ms_agent.tools.split_task import SplitTask
 from ms_agent.tools.todolist_tool import TodoListTool
@@ -284,9 +285,10 @@ class ToolManager:
                     try:
                         tool_args = json.loads(tool_args)
                     except Exception:  # noqa
-                        yield (call_id,
-                               f'The input {tool_args} is not a valid JSON, fix your arguments and try again',
-                               True)
+                        yield (
+                            call_id,
+                            f'The input {tool_args} is not a valid JSON, fix your arguments and try again',
+                            True)
                         return
                 assert tool_name in self._tool_index, \
                     f'Tool name {tool_name} not found'

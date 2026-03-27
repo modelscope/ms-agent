@@ -6,10 +6,10 @@ Legacy top-level ``knowledge_search`` is still accepted for backward compatibili
 """
 
 import asyncio
-import json
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+import json
 from loguru import logger
 from omegaconf import DictConfig
 
@@ -142,8 +142,8 @@ class SirchmunkSearch:
                 'tools.localsearch.paths (or legacy knowledge_search.paths) '
                 'must be specified and non-empty')
 
-    def resolve_tool_paths(
-            self, paths: Optional[List[str]]) -> Optional[List[str]]:
+    def resolve_tool_paths(self,
+                           paths: Optional[List[str]]) -> Optional[List[str]]:
         """Restrict per-call paths to configured search roots."""
         if not paths:
             return None
@@ -154,10 +154,10 @@ class SirchmunkSearch:
                 continue
             p = Path(str(raw).strip()).expanduser().resolve()
             if not p.exists():
-                logger.warning(f'localsearch: path does not exist, skipped: {p}')
+                logger.warning(
+                    f'localsearch: path does not exist, skipped: {p}')
                 continue
-            allowed = any(
-                p == r or p.is_relative_to(r) for r in roots)
+            allowed = any(p == r or p.is_relative_to(r) for r in roots)
             if not allowed:
                 logger.warning(
                     f'localsearch: path outside configured search roots, '
@@ -327,8 +327,7 @@ class SirchmunkSearch:
                 self._cluster_cache_hit = any(
                     'Found similar cluster' in entry
                     or 'Reused existing knowledge cluster' in entry
-                    for entry in self._search_logs
-                )
+                    for entry in self._search_logs)
                 if hasattr(result.cluster, 'last_modified'):
                     self._cluster_cache_hit_time = getattr(
                         result.cluster, 'last_modified', None)
@@ -405,8 +404,9 @@ class SirchmunkSearch:
                 self._last_search_result = []
                 for item in result[:20]:
                     if isinstance(item, dict):
-                        src = (item.get('path') or item.get('file_path')
-                               or item.get('file') or '')
+                        src = (
+                            item.get('path') or item.get('file_path')
+                            or item.get('file') or '')
                         self._last_search_result.append({
                             'text':
                             json.dumps(item, ensure_ascii=False),
@@ -430,8 +430,7 @@ class SirchmunkSearch:
                 self._cluster_cache_hit = any(
                     'Found similar cluster' in entry
                     or 'Reused existing knowledge cluster' in entry
-                    for entry in self._search_logs
-                )
+                    for entry in self._search_logs)
                 if hasattr(result.cluster, 'last_modified'):
                     self._cluster_cache_hit_time = getattr(
                         result.cluster, 'last_modified', None)
@@ -440,7 +439,7 @@ class SirchmunkSearch:
                 result, score_threshold=0.7, limit=5)
 
             if hasattr(result, 'answer') and getattr(result, 'answer',
-                                                       None) is not None:
+                                                     None) is not None:
                 return result.answer
 
             if isinstance(result, str):

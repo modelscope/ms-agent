@@ -2,12 +2,12 @@
 """Build a compact file catalog for localsearch tool descriptions using sirchmunk's DirectoryScanner."""
 
 from __future__ import annotations
-
 import hashlib
-import json
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
+
+import json
 
 
 def catalog_cache_path(work_path: Path, fingerprint: str) -> Path:
@@ -31,7 +31,8 @@ def catalog_fingerprint(
         'max_chars': max_chars,
         'exclude': sorted(exclude or []),
     }
-    raw = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode('utf-8')
+    raw = json.dumps(
+        payload, sort_keys=True, ensure_ascii=False).encode('utf-8')
     return hashlib.sha256(raw).hexdigest()[:24]
 
 
@@ -102,41 +103,84 @@ def description_catalog_settings(block: Any) -> Tuple[bool, Dict[str, Any]]:
     """Parse ``tools.localsearch`` (or legacy ``knowledge_search``) catalog options."""
     enabled = _bool_from_block(block, 'description_catalog', True)
     opts = {
-        'max_files': max(1, min(2000, _int_from_block(
-            block, 'description_catalog_max_files', 120))),
-        'max_depth': max(1, min(20, _int_from_block(
-            block, 'description_catalog_max_depth', 5))),
-        'max_chars': max(500, min(100_000, _int_from_block(
-            block, 'description_catalog_max_chars', 3_000))),
-        'max_preview_chars': max(80, min(4000, _int_from_block(
-            block, 'description_catalog_max_preview_chars', 400))),
-        'cache_ttl_seconds': max(0, _int_from_block(
-            block, 'description_catalog_cache_ttl_seconds', 300)),
-        'exclude_extra': _exclude_from_block(block),
+        'max_files':
+        max(
+            1,
+            min(2000,
+                _int_from_block(block, 'description_catalog_max_files', 120))),
+        'max_depth':
+        max(
+            1,
+            min(20, _int_from_block(block, 'description_catalog_max_depth',
+                                    5))),
+        'max_chars':
+        max(
+            500,
+            min(100_000,
+                _int_from_block(block, 'description_catalog_max_chars',
+                                3_000))),
+        'max_preview_chars':
+        max(
+            80,
+            min(
+                4000,
+                _int_from_block(block, 'description_catalog_max_preview_chars',
+                                400))),
+        'cache_ttl_seconds':
+        max(
+            0,
+            _int_from_block(block, 'description_catalog_cache_ttl_seconds',
+                            300)),
+        'exclude_extra':
+        _exclude_from_block(block),
         # Files larger than this are skipped during catalog scan (default 50 MB).
         # Set to 0 to disable the cap.
-        'max_file_size_mb': max(0, _int_from_block(
-            block, 'description_catalog_max_file_size_mb', 50)),
+        'max_file_size_mb':
+        max(0,
+            _int_from_block(block, 'description_catalog_max_file_size_mb',
+                            50)),
         # Wall-clock timeout (seconds) for extracting the first page of an
         # oversized PDF.  Corrupt or pathological PDFs are abandoned after this
         # and only their filename + size appear in the catalog.
-        'oversized_pdf_timeout_s': max(0.1, _int_from_block(
-            block, 'description_catalog_oversized_pdf_timeout_s', 1)),
+        'oversized_pdf_timeout_s':
+        max(
+            0.1,
+            _int_from_block(block,
+                            'description_catalog_oversized_pdf_timeout_s', 1)),
     }
     return enabled, opts
 
 
 _DIR_SKIP: Set[str] = {
-    '.git', '.svn', 'node_modules', '__pycache__', '.idea', '.vscode',
-    '.cache', '.tox', '.eggs', 'dist', 'build', '.DS_Store',
+    '.git',
+    '.svn',
+    'node_modules',
+    '__pycache__',
+    '.idea',
+    '.vscode',
+    '.cache',
+    '.tox',
+    '.eggs',
+    'dist',
+    'build',
+    '.DS_Store',
 }
 
 # Directories that typically contain generated/compiled artifacts, not source.
 # These are skipped by default to keep the tree focused on meaningful content.
 _DIR_SKIP_GENERATED: Set[str] = {
-    '_build', '_static', '_templates', '_sphinx_design_static',
-    '__pycache__', '.mypy_cache', '.pytest_cache', '.ruff_cache',
-    'htmlcov', 'site-packages', 'egg-info', '.egg-info',
+    '_build',
+    '_static',
+    '_templates',
+    '_sphinx_design_static',
+    '__pycache__',
+    '.mypy_cache',
+    '.pytest_cache',
+    '.ruff_cache',
+    'htmlcov',
+    'site-packages',
+    'egg-info',
+    '.egg-info',
 }
 
 
@@ -170,33 +214,38 @@ def _build_dir_tree(
         skip.update(exclude)
 
     # --- Pass 1: DFS, collect (depth, seq, line_text) ---
-    collected: List[tuple] = []   # (depth, seq, line_text)
+    collected: List[tuple] = []  # (depth, seq, line_text)
     seq = [0]
 
     def _dfs(p: Path, depth: int, indent: str) -> None:
         if depth > max_depth:
             return
         try:
-            entries = sorted(p.iterdir(), key=lambda e: (e.is_file(), e.name.lower()))
+            entries = sorted(
+                p.iterdir(), key=lambda e: (e.is_file(), e.name.lower()))
         except PermissionError:
             return
 
-        dirs = [e for e in entries if e.is_dir()
-                and not e.name.startswith('.') and e.name not in skip]
-        files = [e for e in entries if e.is_file()
-                 and not e.name.startswith('.') and e.name not in skip]
+        dirs = [
+            e for e in entries
+            if e.is_dir() and not e.name.startswith('.') and e.name not in skip
+        ]
+        files = [
+            e for e in entries if e.is_file() and not e.name.startswith('.')
+            and e.name not in skip
+        ]
 
         child_indent = indent + '  '
 
         for d in dirs:
             try:
-                file_count = sum(
-                    1 for _ in d.iterdir()
-                    if _.is_file() and not _.name.startswith('.'))
+                file_count = sum(1 for _ in d.iterdir()
+                                 if _.is_file() and not _.name.startswith('.'))
             except PermissionError:
                 file_count = 0
             count_hint = f'  ({file_count} files)' if file_count else ''
-            collected.append((depth, seq[0], f'{indent}📁 {d.name}/{count_hint}'))
+            collected.append(
+                (depth, seq[0], f'{indent}📁 {d.name}/{count_hint}'))
             seq[0] += 1
             _dfs(d, depth + 1, child_indent)
 
@@ -238,7 +287,8 @@ def _build_dir_tree(
     return result
 
 
-def _compact_file_summary(candidate: Any, root_dir: str, max_preview: int) -> str:
+def _compact_file_summary(candidate: Any, root_dir: str,
+                          max_preview: int) -> str:
     """Single-line or two-line compact summary for a FileCandidate.
 
     Format:
@@ -296,9 +346,8 @@ async def build_file_catalog_text(
     try:
         from sirchmunk.scan.dir_scanner import DirectoryScanner
     except ImportError as e:
-        raise ImportError(
-            'sirchmunk is required for description_catalog. '
-            f'Import failed: {e}') from e
+        raise ImportError('sirchmunk is required for description_catalog. '
+                          f'Import failed: {e}') from e
 
     # Tree gets 60% of the budget; file summaries get the remaining 40%.
     # Each root shares the budget equally.
@@ -306,7 +355,8 @@ async def build_file_catalog_text(
     per_root_budget = max(500, max_chars // num_roots)
     tree_budget = max(300, int(per_root_budget * 0.60))
 
-    max_file_size_bytes = (max_file_size_mb * 1024 * 1024) if max_file_size_mb > 0 else None
+    max_file_size_bytes = (max_file_size_mb * 1024
+                           * 1024) if max_file_size_mb > 0 else None
     # Merge the built-in skip sets with any user-provided excludes so the
     # scanner also skips generated/artifact directories.
     scanner_exclude: List[str] = sorted(_DIR_SKIP | _DIR_SKIP_GENERATED)
@@ -331,7 +381,10 @@ async def build_file_catalog_text(
 
         # --- Section 1: directory tree (fast, no content reads) ---
         tree = _build_dir_tree(
-            p, max_depth=max_depth, exclude=exclude_extra, max_chars=tree_budget)
+            p,
+            max_depth=max_depth,
+            exclude=exclude_extra,
+            max_chars=tree_budget)
         tree_block = f'#### Directory structure of `{p}`\n{tree}' if tree else ''
 
         # --- Section 2: per-file compact summaries ---
@@ -364,7 +417,8 @@ async def build_file_catalog_text(
         total_scanned = len(all_candidates)
         header = f'#### File summaries ({len(file_lines)} of {total_scanned} sampled)'
         if omitted:
-            file_block = header + '\n' + '\n'.join(file_lines) + f'\n… ({omitted} more files not shown)'
+            file_block = header + '\n' + '\n'.join(
+                file_lines) + f'\n… ({omitted} more files not shown)'
         else:
             file_block = header + '\n' + '\n'.join(file_lines)
 
@@ -374,7 +428,8 @@ async def build_file_catalog_text(
     return '\n\n---\n\n'.join(sections).strip()
 
 
-def _stratified_sample(candidates: List[Any], root: Path, max_entries: int) -> List[Any]:
+def _stratified_sample(candidates: List[Any], root: Path,
+                       max_entries: int) -> List[Any]:
     """Return a stratified sample of candidates so every subdirectory gets
     representation, rather than simply taking the first N by path.
 

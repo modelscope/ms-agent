@@ -2,25 +2,18 @@
 """On-demand local codebase search via sirchmunk (replaces pre-turn RAG injection)."""
 
 import asyncio
-import json
 import time
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
-from ms_agent.tools.search.localsearch_catalog import (
-    build_file_catalog_text,
-    catalog_cache_path,
-    catalog_fingerprint,
-    description_catalog_settings,
-    load_cached_catalog,
-    save_cached_catalog,
-)
-from ms_agent.tools.search.sirchmunk_search import (
-    SirchmunkSearch,
-    effective_localsearch_settings,
-)
+import json
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
+from ms_agent.tools.search.localsearch_catalog import (
+    build_file_catalog_text, catalog_cache_path, catalog_fingerprint,
+    description_catalog_settings, load_cached_catalog, save_cached_catalog)
+from ms_agent.tools.search.sirchmunk_search import (
+    SirchmunkSearch, effective_localsearch_settings)
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
@@ -101,15 +94,15 @@ def _truncate_catalog_text(text: str, max_chars: int) -> str:
     summary_header_m = re.search(r'^#### File summaries', text, re.MULTILINE)
     if summary_header_m is None:
         # No file summaries — just hard-truncate.
-        return text[: max_chars - 24].rstrip() + '\n\n… (truncated)'
+        return text[:max_chars - 24].rstrip() + '\n\n… (truncated)'
 
     # Everything up to and including the file-summary header line is the
     # "prefix" we always keep.
     header_section_end = text.find('\n', summary_header_m.end())
     if header_section_end == -1:
-        return text[: max_chars - 24].rstrip() + '\n\n… (truncated)'
+        return text[:max_chars - 24].rstrip() + '\n\n… (truncated)'
 
-    prefix = text[: header_section_end + 1]
+    prefix = text[:header_section_end + 1]
     body = text[header_section_end + 1:]
 
     # Split body into individual entry lines (each starts with "- ").
@@ -132,9 +125,8 @@ def _truncate_catalog_text(text: str, max_chars: int) -> str:
 
 def _format_configured_roots(paths: List[str]) -> str:
     if not paths:
-        return (
-            '(none — set tools.localsearch.paths in agent config, '
-            'or legacy knowledge_search.paths)')
+        return ('(none — set tools.localsearch.paths in agent config, '
+                'or legacy knowledge_search.paths)')
     return '\n'.join(f'- {p}' for p in paths)
 
 
@@ -159,7 +151,8 @@ class LocalSearchTool(ToolBase):
     def __init__(self, config, **kwargs):
         super().__init__(config)
         tools_root = getattr(config, 'tools', None)
-        tool_cfg = getattr(tools_root, 'localsearch', None) if tools_root else None
+        tool_cfg = getattr(tools_root, 'localsearch',
+                           None) if tools_root else None
         if tool_cfg is not None:
             self.exclude_func(tool_cfg)
         self._searcher: Optional[SirchmunkSearch] = None
@@ -177,14 +170,12 @@ class LocalSearchTool(ToolBase):
             return ''
         err = self._catalog_build_error
         if err:
-            return (
-                '\n\n## Local knowledge catalog\n'
-                f'_(Catalog build failed: {err})_\n')
+            return ('\n\n## Local knowledge catalog\n'
+                    f'_(Catalog build failed: {err})_\n')
         body = (self._catalog_text or '').strip()
         if not body:
-            return (
-                '\n\n## Local knowledge catalog\n'
-                '_(No scannable files or catalog empty.)_\n')
+            return ('\n\n## Local knowledge catalog\n'
+                    '_(No scannable files or catalog empty.)_\n')
         shown = _truncate_catalog_text(body, self._catalog_opts['max_chars'])
         return (
             '\n\n## Local knowledge catalog (shallow scan)\n'
@@ -251,22 +242,25 @@ class LocalSearchTool(ToolBase):
             )
             elapsed = time.monotonic() - t0
             self._catalog_text = built
-            logger.info(
-                f'localsearch catalog: scanned in {elapsed:.3f}s '
-                f'({len(built)} chars) roots={roots}')
+            logger.info(f'localsearch catalog: scanned in {elapsed:.3f}s '
+                        f'({len(built)} chars) roots={roots}')
             if ttl > 0 and built.strip():
                 try:
                     save_cached_catalog(cache_path, built)
                 except OSError as exc:
-                    logger.debug(f'localsearch catalog cache write failed: {exc}')
+                    logger.debug(
+                        f'localsearch catalog cache write failed: {exc}')
         except ImportError as exc:
             elapsed = time.monotonic() - t0
             self._catalog_build_error = str(exc)
-            logger.warning(f'localsearch description_catalog ({elapsed:.3f}s): {exc}')
+            logger.warning(
+                f'localsearch description_catalog ({elapsed:.3f}s): {exc}')
         except Exception as exc:
             elapsed = time.monotonic() - t0
             self._catalog_build_error = str(exc)
-            logger.warning(f'localsearch description_catalog scan failed ({elapsed:.3f}s): {exc}')
+            logger.warning(
+                f'localsearch description_catalog scan failed ({elapsed:.3f}s): {exc}'
+            )
 
     async def _get_tools_inner(self) -> Dict[str, List[Tool]]:
         return {
@@ -276,8 +270,7 @@ class LocalSearchTool(ToolBase):
                     server_name=_SERVER,
                     description=self._tool_description(),
                     parameters={
-                        'type':
-                        'object',
+                        'type': 'object',
                         'properties': {
                             'query': {
                                 'type':
@@ -286,13 +279,11 @@ class LocalSearchTool(ToolBase):
                                 'Search keywords or natural-language question about local content.',
                             },
                             'paths': {
-                                'type':
-                                'array',
+                                'type': 'array',
                                 'items': {
                                     'type': 'string'
                                 },
-                                'description':
-                                self._paths_param_description(),
+                                'description': self._paths_param_description(),
                             },
                             'mode': {
                                 'type':
@@ -302,21 +293,28 @@ class LocalSearchTool(ToolBase):
                                 'Search mode; omit to use agent default (usually FAST).',
                             },
                             'max_depth': {
-                                'type': 'integer',
-                                'minimum': 1,
-                                'maximum': 20,
+                                'type':
+                                'integer',
+                                'minimum':
+                                1,
+                                'maximum':
+                                20,
                                 'description':
                                 'Max directory depth for filesystem search.',
                             },
                             'top_k_files': {
-                                'type': 'integer',
-                                'minimum': 1,
-                                'maximum': 20,
+                                'type':
+                                'integer',
+                                'minimum':
+                                1,
+                                'maximum':
+                                20,
                                 'description':
                                 'Max files for evidence / filename hits.',
                             },
                             'include': {
-                                'type': 'array',
+                                'type':
+                                'array',
                                 'items': {
                                     'type': 'string'
                                 },
@@ -324,7 +322,8 @@ class LocalSearchTool(ToolBase):
                                 'Glob patterns to include (e.g. *.py, *.md).',
                             },
                             'exclude': {
-                                'type': 'array',
+                                'type':
+                                'array',
                                 'items': {
                                     'type': 'string'
                                 },
@@ -373,8 +372,7 @@ class LocalSearchTool(ToolBase):
             if paths_arg:
                 resolved_paths = searcher.resolve_tool_paths(paths_arg)
                 if not resolved_paths:
-                    roots = _format_configured_roots(
-                        self._configured_roots)
+                    roots = _format_configured_roots(self._configured_roots)
                     return (
                         'Error: `paths` are invalid. Each path must exist on disk and lie '
                         'under one of these configured roots:\n' + roots)
@@ -420,8 +418,7 @@ class LocalSearchTool(ToolBase):
                 result_parts.append('\nSource paths:')
                 for item in excerpts[:12]:
                     meta = item.get('metadata') or {}
-                    result_parts.append(
-                        f'- {meta.get("source", "?")}')
+                    result_parts.append(f'- {meta.get("source", "?")}')
             result_text = '\n'.join(result_parts)
 
             return {
@@ -490,4 +487,3 @@ class LocalSearchTool(ToolBase):
                 await search_task
             except asyncio.CancelledError:
                 pass
-
