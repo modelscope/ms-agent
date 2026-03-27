@@ -60,13 +60,11 @@ class ExaSearch(SearchEngine):
 
         if len(all_keys) > 1:
             with ExaSearch._global_lock:
-                n_exhausted = sum(
-                    1 for k in all_keys
-                    if k in ExaSearch._global_exhausted_keys)
-            logger.info(
-                f'Exa key pool: {len(all_keys)} keys, '
-                f'{n_exhausted} previously exhausted, '
-                f'starting at key {start_idx + 1}/{len(all_keys)}')
+                n_exhausted = sum(1 for k in all_keys
+                                  if k in ExaSearch._global_exhausted_keys)
+            logger.info(f'Exa key pool: {len(all_keys)} keys, '
+                        f'{n_exhausted} previously exhausted, '
+                        f'starting at key {start_idx + 1}/{len(all_keys)}')
 
     @staticmethod
     def _collect_keys(
@@ -122,8 +120,7 @@ class ExaSearch(SearchEngine):
         """Detect Exa 402 / NO_MORE_CREDITS errors."""
         msg = str(error)
         return ('402' in msg
-                and ('credits' in msg.lower()
-                     or 'NO_MORE_CREDITS' in msg))
+                and ('credits' in msg.lower() or 'NO_MORE_CREDITS' in msg))
 
     @staticmethod
     def _mask_key(key: str) -> str:
@@ -170,8 +167,7 @@ class ExaSearch(SearchEngine):
                 return search_result
             except Exception as e:
                 if not self._is_credits_exhausted(e):
-                    raise RuntimeError(
-                        f'Failed to perform search: {e}') from e
+                    raise RuntimeError(f'Failed to perform search: {e}') from e
 
                 last_error = e
                 instance_exhausted.add(key_idx)
@@ -185,14 +181,13 @@ class ExaSearch(SearchEngine):
                     )
                     rotated = False
                     for i in range(len(self._api_keys)):
-                        if i not in instance_exhausted and not self._is_key_exhausted(i):
+                        if i not in instance_exhausted and not self._is_key_exhausted(
+                                i):
                             self._current_key_idx = i
-                            self.client = Exa(
-                                api_key=self._api_keys[i])
-                            logger.info(
-                                f'Rotated to Exa API key '
-                                f'{self._mask_key(self._api_keys[i])} '
-                                f'({i + 1}/{len(self._api_keys)})')
+                            self.client = Exa(api_key=self._api_keys[i])
+                            logger.info(f'Rotated to Exa API key '
+                                        f'{self._mask_key(self._api_keys[i])} '
+                                        f'({i + 1}/{len(self._api_keys)})')
                             rotated = True
                             break
                     if not rotated:

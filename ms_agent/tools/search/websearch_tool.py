@@ -409,11 +409,9 @@ class WebSearchTool(ToolBase):
                 getattr(tool_cfg, 'exa_api_keys', None)
                 or getattr(tool_cfg, 'exa_api_key', None)
                 or getattr(tool_cfg, 'api_key', None)  # backward compat
-                or os.getenv('EXA_API_KEYS')
-                or os.getenv('EXA_API_KEY'))
-            if tool_cfg else (
-                os.getenv('EXA_API_KEYS')
-                or os.getenv('EXA_API_KEY')),
+                or os.getenv('EXA_API_KEYS') or os.getenv('EXA_API_KEY'))
+            if tool_cfg else
+            (os.getenv('EXA_API_KEYS') or os.getenv('EXA_API_KEY')),
             'serpapi': (getattr(tool_cfg, 'serpapi_api_key', None)
                         or os.getenv('SERPAPI_API_KEY'))
             if tool_cfg else os.getenv('SERPAPI_API_KEY'),
