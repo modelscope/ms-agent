@@ -71,7 +71,7 @@ self_reflection:
   enabled: true
   max_retries: 3
   min_retention_ratio: 0.6
-  post_report_guidance_enabled: false
+  post_report_guidance_enabled: true
   quality_check:
     enabled: true
     model: qwen3.5-flash

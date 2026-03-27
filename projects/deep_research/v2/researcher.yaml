@@ -1,6 +1,6 @@
 llm:
   service: openai
-  model: gpt-5-2025-08-07
+  model: gpt-5.2-2025-12-11
   openai_api_key: <OPENAI_API_KEY>
   openai_base_url: <OPENAI_BASE_URL>
 
@@ -17,7 +17,7 @@ generation_config:
   #   enable_thinking: true
   #   show_reasoning: true
   #   reasoning_output: stdout
-  # reasoning_effort: medium
+  reasoning_effort: medium
 
 
 tag: deep-research-researcher
@@ -27,7 +27,7 @@ prompt:
   root: prompts/
   agent: researcher
   lang: en
-  family: gpt5
+  family: thinking
 
 
 tools:
