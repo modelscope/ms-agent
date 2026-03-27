@@ -183,7 +183,7 @@ handler: custom_handler
       }
     }
     ```
-- knowledge_search_paths: 知识搜索路径，逗号分隔。会合并到 `tools.localsearch.paths` 并注册 **`localsearch`** 工具（sirchmunk），由模型按需调用，不再在每轮自动注入上下文；除非配置 `tools.localsearch.llm_*`，否则 LLM 从 `llm` 模块复用
+- knowledge_search_paths: 知识搜索路径，逗号分隔。会合并到 `tools.localsearch.paths` 并注册 **`localsearch`** 工具（sirchmunk），由模型按需调用；如未配置 `tools.localsearch.llm_*`， LLM 从 `llm` 模块复用
 
 > agent.yaml 中的任意一个配置，都可以使用命令行传入新的值，也支持从同名（大小写不敏感）环境变量中读取，例如 `--llm.modelscope_api_key xxx-xxx`。
 

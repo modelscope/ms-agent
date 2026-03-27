@@ -542,9 +542,9 @@ class LLMAgent(Agent):
         """Streaming variant of parallel_tool_call.
 
         Yields messages list snapshots during tool execution:
-        - While tools are running: yields messages with the latest
-          searching_detail_delta set on a temporary placeholder Message so the
-          caller can stream intermediate logs to the frontend.
+        - While tools are running: yields messages with the latest incremental
+          ``tool_detail`` on a temporary placeholder Message (content='') so the
+          caller can stream logs to the frontend.
         - After all tools finish: yields the final messages list (with proper
           tool result Messages appended), same as parallel_tool_call.
         """
@@ -562,14 +562,14 @@ class LLMAgent(Agent):
                 # Final result for this call_id (any type; not inferred from content).
                 final_results[call_id] = item
             else:
-                # Intermediate log line: emit a snapshot with searching_detail_delta.
+                # Intermediate log line: one incremental chunk in tool_detail.
                 log_message = Message(
                     role='tool',
                     content='',
                     tool_call_id=call_id,
                     name=call_id_to_query.get(call_id,
                                               {}).get('tool_name', ''),
-                    searching_detail_delta=item,
+                    tool_detail=item,
                 )
                 yield messages + [log_message]
 
@@ -585,7 +585,6 @@ class LLMAgent(Agent):
                 tool_call_id=cid,
                 name=tool_call_query['tool_name'],
                 resources=tool_call_result_format.resources,
-                tool_detail=tool_call_result_format.tool_detail,
             )
             if _new_message.tool_call_id is None:
                 _new_message.tool_call_id = str(uuid.uuid4())[:8]
@@ -958,9 +957,11 @@ class LLMAgent(Agent):
             # Use the streaming variant so intermediate tool logs are yielded
             # back to the caller while the tools are still running.
             async for messages in self.parallel_tool_call_streaming(messages):
-                is_final = (not messages[-1].searching_detail_delta if hasattr(
-                    messages[-1], 'searching_detail_delta') else True)
-                if not is_final:
+                _lm = messages[-1]
+                _progress = (
+                    _lm.role == 'tool' and _lm.content == ''
+                    and _lm.tool_detail is not None)
+                if _progress:
                     yield messages
 
         await self.after_tool_call(messages)
