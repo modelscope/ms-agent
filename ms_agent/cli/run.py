@@ -48,22 +48,6 @@ class RunCMD(CLICommand):
     def __init__(self, args):
         self.args = args
 
-    def load_env_file(self):
-        """Load environment variables from .env file in current directory."""
-        env_file = os.path.join(os.getcwd(), '.env')
-        if os.path.exists(env_file):
-            with open(env_file, 'r') as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith('#') and '=' in line:
-                        key, value = line.split('=', 1)
-                        key = key.strip()
-                        value = value.strip()
-                        # Only set if not already set in environment
-                        if key not in os.environ:
-                            os.environ[key] = value
-                            logger.debug(f'Loaded {key} from .env file')
-
     @staticmethod
     def define_args(parsers: argparse.ArgumentParser):
         """Define args for run command."""
