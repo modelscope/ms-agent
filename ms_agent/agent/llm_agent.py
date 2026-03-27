@@ -565,16 +565,41 @@ class LLMAgent(Agent):
                                     DictConfig({}))
         return str(getattr(generation_config, 'reasoning_output', 'stdout'))
 
-    def _write_reasoning(self, text: str):
+    _THINKING_SEP = '─' * 40
+
+    def _reasoning_stream(self):
+        if self.reasoning_output.lower() == 'stdout':
+            return sys.stdout
+        return sys.stderr
+
+    def _write_reasoning(self, text: str, dim: bool = False):
         if not text:
             return
-        if self.reasoning_output.lower() == 'stdout':
-            sys.stdout.write(text)
-            sys.stdout.flush()
+        stream = self._reasoning_stream()
+        use_ansi = hasattr(stream, 'isatty') and stream.isatty()
+        if dim and use_ansi:
+            text = f'\033[2m{text}\033[0m'
+        stream.write(text)
+        stream.flush()
+
+    def _write_thinking_header(self):
+        stream = self._reasoning_stream()
+        use_ansi = hasattr(stream, 'isatty') and stream.isatty()
+        line = f'{self._THINKING_SEP[:15]} thinking {self._THINKING_SEP[25:]}'
+        if use_ansi:
+            stream.write(f'\033[2m{line}\033[0m\n')
         else:
-            # default: stderr
-            sys.stderr.write(text)
-            sys.stderr.flush()
+            stream.write(line + '\n')
+        stream.flush()
+
+    def _write_thinking_footer(self):
+        stream = self._reasoning_stream()
+        use_ansi = hasattr(stream, 'isatty') and stream.isatty()
+        if use_ansi:
+            stream.write(f'\n\033[2m{self._THINKING_SEP}\033[0m\n')
+        else:
+            stream.write(f'\n{self._THINKING_SEP}\n')
+        stream.flush()
 
     @property
     def system(self):
@@ -812,35 +837,38 @@ class LLMAgent(Agent):
                 is_first = True
                 _response_message = None
                 _printed_reasoning_header = False
+                _printed_reasoning_footer = False
                 for _response_message in self.llm.generate(
                         messages, tools=tools):
                     if is_first:
                         messages.append(_response_message)
                         is_first = False
 
-                    # Optional: stream model "thinking/reasoning" if available.
                     if self.show_reasoning:
                         reasoning_text = getattr(_response_message,
                                                  'reasoning_content', '') or ''
-                        # Some providers may reset / shorten content across chunks.
                         if len(reasoning_text) < len(_reasoning):
                             _reasoning = ''
                         new_reasoning = reasoning_text[len(_reasoning):]
                         if new_reasoning:
                             if not _printed_reasoning_header:
-                                self._write_reasoning('[thinking]:\n')
+                                self._write_thinking_header()
                                 _printed_reasoning_header = True
-                            self._write_reasoning(new_reasoning)
+                            self._write_reasoning(new_reasoning, dim=True)
                             _reasoning = reasoning_text
 
                     new_content = _response_message.content[len(_content):]
-                    sys.stdout.write(new_content)
-                    sys.stdout.flush()
+                    if new_content:
+                        if _printed_reasoning_header and not _printed_reasoning_footer:
+                            self._write_thinking_footer()
+                            _printed_reasoning_footer = True
+                        sys.stdout.write(new_content)
+                        sys.stdout.flush()
                     _content = _response_message.content
                     messages[-1] = _response_message
                     yield messages
-                if self.show_reasoning and _printed_reasoning_header:
-                    self._write_reasoning('\n')
+                if _printed_reasoning_header and not _printed_reasoning_footer:
+                    self._write_thinking_footer()
                 sys.stdout.write('\n')
             else:
                 _response_message = self.llm.generate(messages, tools=tools)
@@ -848,9 +876,9 @@ class LLMAgent(Agent):
                     reasoning_text = getattr(_response_message,
                                              'reasoning_content', '') or ''
                     if reasoning_text:
-                        self._write_reasoning('[thinking]:\n')
-                        self._write_reasoning(reasoning_text)
-                        self._write_reasoning('\n')
+                        self._write_thinking_header()
+                        self._write_reasoning(reasoning_text, dim=True)
+                        self._write_thinking_footer()
                 if _response_message.content:
                     self.log_output('[assistant]:')
                     self.log_output(_response_message.content)
