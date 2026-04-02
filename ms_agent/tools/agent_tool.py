@@ -55,6 +55,7 @@ class _AgentToolSpec:
     dynamic: bool = False
     disallowed_tools: Optional[List[str]] = None
     max_subtask_output_chars: int = 8192
+    run_in_background: bool = False
 
 
 _MESSAGE_FIELDS = set(Message.__dataclass_fields__.keys())
@@ -423,6 +424,7 @@ class AgentTool(ToolBase):
             dynamic=is_dynamic,
             disallowed_tools=disallowed_tools,
             max_subtask_output_chars=max_subtask_chars,
+            run_in_background=bool(getattr(cfg, 'run_in_background', False)),
         )
 
     def _build_server_index(self):
@@ -503,6 +505,10 @@ class AgentTool(ToolBase):
             return await self._call_dynamic(tool_args, spec)
 
         payload = self._build_payload(tool_args, spec)
+
+        if spec.run_in_background:
+            return await self._launch_background(payload, spec, call_id)
+
         use_subprocess = spec.run_in_thread and spec.run_in_process
         agent = None if use_subprocess else self._build_agent(spec)
         messages = await self._run_agent(agent, payload, spec, call_id=call_id)
@@ -511,7 +517,65 @@ class AgentTool(ToolBase):
     def _build_agent(self, spec: _AgentToolSpec):
         return _build_sub_agent(spec, self._trust_remote_code)
 
-    async def _call_dynamic(self, tool_args: dict, spec: _AgentToolSpec) -> str:
+    async def _launch_background(self, payload: Any, spec: _AgentToolSpec,
+                                  call_id: Optional[str]) -> str:
+        """Fire-and-forget: start subprocess, register with TaskManager, return immediately."""
+        if self._task_manager is None:
+            raise RuntimeError(
+                f'AgentTool "{spec.tool_name}" has run_in_background=true but '
+                'no TaskManager is attached. Ensure LLMAgent wires task_manager '
+                'into AgentTool via set_task_manager().')
+
+        ctx = mp.get_context('spawn')
+        result_queue = ctx.Queue(maxsize=1)
+        process_payload = self._serialize_payload_for_process(payload)
+        proc = ctx.Process(
+            target=_run_agent_in_subprocess,
+            args=(spec, self._trust_remote_code, process_payload, False, None,
+                  result_queue),
+            name=f'agent_tool_bg_{spec.tool_name}',
+        )
+        proc.start()
+
+        task_id = self._task_manager.register(
+            task_type='agent',
+            tool_name=spec.tool_name,
+            description=f'{spec.tool_name} (call_id={call_id})',
+            proc=proc,
+        )
+        self._register_process(task_id, proc)
+
+        async def _watcher():
+            try:
+                result = await self._wait_process_result(proc, result_queue)
+                if result is None or not result.get('ok'):
+                    err = (result or {}).get('error', 'subprocess exited without result')
+                    tb = (result or {}).get('traceback', '')
+                    if tb:
+                        logger.warning(tb)
+                    await self._task_manager.fail(task_id, err)
+                else:
+                    result_payload = result.get('result', {}) or {}
+                    restored = self._restore_process_result(result_payload)
+                    output = self._format_output(restored, spec)
+                    await self._task_manager.complete(task_id, output)
+            except Exception as exc:
+                await self._task_manager.fail(task_id, str(exc))
+            finally:
+                self._unregister_process(task_id)
+                try:
+                    result_queue.close()
+                    result_queue.join_thread()
+                except Exception:
+                    pass
+
+        asyncio.create_task(_watcher())
+
+        return json.dumps({
+            'status': 'async_launched',
+            'task_id': task_id,
+            'tool_name': spec.tool_name,
+        }, ensure_ascii=False)
         tasks = tool_args.get('tasks', [])
         execution_mode = tool_args.get('execution_mode', 'sequential')
 
