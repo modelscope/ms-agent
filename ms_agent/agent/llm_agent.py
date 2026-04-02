@@ -869,6 +869,16 @@ class LLMAgent(Agent):
                     yield messages
                 if _printed_reasoning_header and not _printed_reasoning_footer:
                     self._write_thinking_footer()
+
+                # Handle reasoning summaries that arrive after content
+                if self.show_reasoning and _response_message is not None:
+                    final_reasoning = getattr(
+                        _response_message, 'reasoning_content', '') or ''
+                    if final_reasoning and not _printed_reasoning_header:
+                        self._write_thinking_header()
+                        self._write_reasoning(final_reasoning, dim=True)
+                        self._write_thinking_footer()
+
                 sys.stdout.write('\n')
             else:
                 _response_message = self.llm.generate(messages, tools=tools)

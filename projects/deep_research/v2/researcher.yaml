@@ -158,6 +158,8 @@ self_reflection:
   quality_check:
     enabled: true
     model: qwen3.5-flash
+    openai_base_url: <OPENAI_BASE_URL>
+    openai_api_key: <OPENAI_API_KEY>
 
 handler: time_handler
 
