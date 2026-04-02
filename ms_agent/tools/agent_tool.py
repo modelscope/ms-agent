@@ -52,6 +52,9 @@ class _AgentToolSpec:
     env: Optional[Dict[str, str]]
     run_in_thread: bool
     run_in_process: bool
+    dynamic: bool = False
+    disallowed_tools: Optional[List[str]] = None
+    max_subtask_output_chars: int = 8192
 
 
 _MESSAGE_FIELDS = set(Message.__dataclass_fields__.keys())
@@ -90,6 +93,16 @@ def _build_sub_agent(spec: _AgentToolSpec, default_trust_remote_code: bool):
 
     generation_cfg = getattr(agent.config, 'generation_config', DictConfig({}))
     agent.config.generation_config = generation_cfg
+
+    if spec.disallowed_tools:
+        tools_cfg = getattr(agent.config, 'tools', None)
+        if tools_cfg is not None:
+            tools_dict = OmegaConf.to_container(tools_cfg, resolve=True)
+            if isinstance(tools_dict, dict):
+                for key in spec.disallowed_tools:
+                    tools_dict.pop(key, None)
+                agent.config.tools = OmegaConf.create(tools_dict)
+
     return agent
 
 
@@ -189,6 +202,7 @@ class AgentTool(ToolBase):
         self._chunk_cb: Optional[Callable[..., Any]] = None
         self._active_processes: Dict[str, mp.Process] = {}
         self._active_processes_lock = threading.Lock()
+        self._task_manager = None
         self._load_specs()
         self._init_thread_pool_config()
 
@@ -207,10 +221,67 @@ class AgentTool(ToolBase):
     def enabled(self) -> bool:
         return bool(self._specs)
 
+    _SPLIT_TASK_DESCRIPTION = (
+        'Split complex task into sub tasks and start them, for example, '
+        'split a website generation task into sub tasks, '
+        'you plan the framework, include code files and classes and functions, and give the detail '
+        'information to the system and query field of the subtask, then '
+        'let each subtask to write a single file')
+
+    _SPLIT_TASK_PARAMETERS = {
+        'type': 'object',
+        'properties': {
+            'tasks': {
+                'type': 'array',
+                'description': (
+                    'MANDATORY: Each element is a dict, which must contains two fields: '
+                    '`system`(str) and `query`(str) to start one sub task.'),
+            },
+            'execution_mode': {
+                'type': 'string',
+                'enum': ['sequential', 'parallel'],
+                'description': 'Whether to run sub-tasks sequentially or in parallel.',
+            },
+        },
+        'required': ['tasks'],
+        'additionalProperties': False,
+    }
+
     def _load_specs(self):
         tools_cfg = getattr(self.config, 'tools', DictConfig({}))
+
+        # Backward compat: if config.tools.split_task exists, register a built-in dynamic spec
+        if hasattr(tools_cfg, 'split_task'):
+            split_cfg = tools_cfg.split_task
+            tag_prefix = getattr(split_cfg, 'tag_prefix', 'worker-')
+            run_in_thread = bool(getattr(split_cfg, 'run_in_thread', True))
+            run_in_process = bool(getattr(split_cfg, 'run_in_process', run_in_thread))
+            builtin_spec = _AgentToolSpec(
+                tool_name='split_to_sub_task',
+                description=self._SPLIT_TASK_DESCRIPTION,
+                parameters=self._SPLIT_TASK_PARAMETERS,
+                config_path=None,
+                inline_config=None,
+                server_name='split_task',
+                tag_prefix=tag_prefix,
+                input_mode='text',
+                request_field='request',
+                input_template=None,
+                output_mode='final_message',
+                max_output_chars=100000,
+                trust_remote_code=None,
+                env=None,
+                run_in_thread=run_in_thread,
+                run_in_process=run_in_process,
+                dynamic=True,
+                max_subtask_output_chars=8192,
+            )
+            self._specs['split_to_sub_task'] = builtin_spec
+
         agent_tools_cfg = getattr(tools_cfg, 'agent_tools', None)
         if agent_tools_cfg is None:
+            if self._specs:
+                self._build_server_index()
             return
 
         if isinstance(agent_tools_cfg, DictConfig) and hasattr(
@@ -233,6 +304,8 @@ class AgentTool(ToolBase):
             definitions_list = definitions
         else:
             logger.warning('agent_tools configuration is not iterable; skip.')
+            if self._specs:
+                self._build_server_index()
             return
 
         for idx, spec_cfg in enumerate(definitions_list):
@@ -258,6 +331,9 @@ class AgentTool(ToolBase):
                 'agent_tools[%s] missing tool_name/name field, skip.', idx)
             return None
 
+        mode = getattr(cfg, 'mode', None)
+        is_dynamic = (mode == 'dynamic')
+
         agent_cfg = getattr(cfg, 'agent', None)
         config_path = getattr(cfg, 'config_path', None)
         inline_cfg = getattr(cfg, 'config', None)
@@ -267,7 +343,7 @@ class AgentTool(ToolBase):
         inline_cfg = _to_container(
             inline_cfg) if inline_cfg is not None else None
 
-        if not config_path and inline_cfg is None:
+        if not is_dynamic and not config_path and inline_cfg is None:
             logger.warning(
                 'agent_tools[%s] (%s) missing config_path/config definition.',
                 idx, tool_name)
@@ -277,19 +353,22 @@ class AgentTool(ToolBase):
                               f'Invoke agent "{tool_name}" as a tool.')
         parameters = getattr(cfg, 'parameters', None)
         if parameters is None:
-            parameters = {
-                'type': 'object',
-                'properties': {
-                    'request': {
-                        'type':
-                        'string',
-                        'description':
-                        f'Task description forwarded to the sub-agent {tool_name}.'
+            if is_dynamic:
+                parameters = self._SPLIT_TASK_PARAMETERS
+            else:
+                parameters = {
+                    'type': 'object',
+                    'properties': {
+                        'request': {
+                            'type':
+                            'string',
+                            'description':
+                            f'Task description forwarded to the sub-agent {tool_name}.'
+                        },
                     },
-                },
-                'required': ['request'],
-                'additionalProperties': True,
-            }
+                    'required': ['request'],
+                    'additionalProperties': True,
+                }
         else:
             parameters = _to_container(parameters)
 
@@ -302,16 +381,21 @@ class AgentTool(ToolBase):
         input_mode = getattr(cfg, 'input_mode', 'text')
         output_mode = getattr(cfg, 'output_mode', 'final_message')
         max_chars = int(getattr(cfg, 'max_output_chars', 100000))
+        max_subtask_chars = int(getattr(cfg, 'max_subtask_output_chars', 8192))
         server_name = getattr(cfg, 'server_name', default_server)
         trust_remote_code = getattr(cfg, 'trust_remote_code', None)
-        # Run sub-agent in a background thread to avoid blocking the main event loop
-        # when underlying LLM SDKs are synchronous.
         run_in_thread = bool(getattr(cfg, 'run_in_thread', True))
-        # Run sub-agent in an isolated process so timed-out calls can be killed.
         run_in_process = bool(getattr(cfg, 'run_in_process', run_in_thread))
 
         env_cfg = getattr(cfg, 'env', None)
         env_cfg = _to_container(env_cfg) if env_cfg is not None else None
+
+        disallowed_raw = getattr(cfg, 'disallowed_tools', None)
+        disallowed_tools = _to_container(disallowed_raw) if disallowed_raw is not None else None
+        if isinstance(disallowed_tools, list):
+            disallowed_tools = [str(t) for t in disallowed_tools]
+        elif disallowed_tools is not None:
+            disallowed_tools = None
 
         if config_path and not os.path.isabs(config_path):
             base_dir = getattr(self.config, 'local_dir', None)
@@ -336,6 +420,9 @@ class AgentTool(ToolBase):
             env=env_cfg,
             run_in_thread=run_in_thread,
             run_in_process=run_in_process,
+            dynamic=is_dynamic,
+            disallowed_tools=disallowed_tools,
+            max_subtask_output_chars=max_subtask_chars,
         )
 
     def _build_server_index(self):
@@ -395,6 +482,9 @@ class AgentTool(ToolBase):
         except Exception as exc:  # noqa
             logger.warning(f'AgentTool chunk callback failed: {exc}')
 
+    def set_task_manager(self, task_manager) -> None:
+        self._task_manager = task_manager
+
     async def call_tool(self, server_name: str, *, tool_name: str,
                         tool_args: dict) -> str:
         if tool_name not in self._specs:
@@ -408,6 +498,10 @@ class AgentTool(ToolBase):
         call_id = None
         if isinstance(tool_args, dict) and '__call_id' in tool_args:
             call_id = tool_args.pop('__call_id', None)
+
+        if spec.dynamic:
+            return await self._call_dynamic(tool_args, spec)
+
         payload = self._build_payload(tool_args, spec)
         use_subprocess = spec.run_in_thread and spec.run_in_process
         agent = None if use_subprocess else self._build_agent(spec)
@@ -416,6 +510,72 @@ class AgentTool(ToolBase):
 
     def _build_agent(self, spec: _AgentToolSpec):
         return _build_sub_agent(spec, self._trust_remote_code)
+
+    async def _call_dynamic(self, tool_args: dict, spec: _AgentToolSpec) -> str:
+        tasks = tool_args.get('tasks', [])
+        execution_mode = tool_args.get('execution_mode', 'sequential')
+
+        base_config = OmegaConf.to_container(self.config, resolve=True)
+
+        async def _run_one(i: int, task: dict) -> str:
+            system = task.get('system', '')
+            query = task.get('query', '')
+            task_config = dict(base_config) if isinstance(base_config, dict) else {}
+            if 'prompt' not in task_config or not isinstance(task_config.get('prompt'), dict):
+                task_config['prompt'] = {}
+            task_config['prompt']['system'] = system
+            sub_spec = _AgentToolSpec(
+                tool_name=f'{spec.tool_name}_sub{i}',
+                description='',
+                parameters={},
+                config_path=None,
+                inline_config=task_config,
+                server_name=spec.server_name,
+                tag_prefix=spec.tag_prefix,
+                input_mode='text',
+                request_field='request',
+                input_template=None,
+                output_mode='final_message',
+                max_output_chars=spec.max_subtask_output_chars,
+                trust_remote_code=spec.trust_remote_code,
+                env=spec.env,
+                run_in_thread=spec.run_in_thread,
+                run_in_process=spec.run_in_process,
+                dynamic=False,
+                disallowed_tools=spec.disallowed_tools,
+                max_subtask_output_chars=spec.max_subtask_output_chars,
+            )
+            use_subprocess = sub_spec.run_in_thread and sub_spec.run_in_process
+            agent = None if use_subprocess else self._build_agent(sub_spec)
+            messages = await self._run_agent(agent, query, sub_spec)
+            return self._format_output(messages, sub_spec)
+
+        if execution_mode == 'parallel':
+            results = await asyncio.gather(
+                *[_run_one(i, task) for i, task in enumerate(tasks)],
+                return_exceptions=True,
+            )
+            res_list = []
+            for i, r in enumerate(results):
+                if isinstance(r, Exception):
+                    res_list.append(f'SubTask{i} failed with error: {r}')
+                else:
+                    res_list.append(str(r))
+        else:
+            res_list = []
+            for i, task in enumerate(tasks):
+                try:
+                    r = await _run_one(i, task)
+                    res_list.append(r)
+                except Exception as e:
+                    res_list.append(f'SubTask{i} failed with error: {e}')
+
+        formatted = ''
+        for i, content in enumerate(res_list):
+            if len(content) > spec.max_subtask_output_chars:
+                content = content[:spec.max_subtask_output_chars]
+            formatted += f'SubTask{i}:{content}\n'
+        return formatted
 
     @staticmethod
     def _terminate_process(proc: Optional[mp.Process], *, reason: str) -> None:
@@ -710,7 +870,10 @@ class AgentTool(ToolBase):
             runner = _run_and_collect
 
         if not self._enable_stats:
-            return await runner()
+            result = await runner()
+            if not spec.run_in_process:
+                self._save_transcript(result, runtime_agent_tag)
+            return result
 
         start_ts = now_iso()
         start_time = monotonic()
@@ -718,6 +881,8 @@ class AgentTool(ToolBase):
         result = None
         try:
             result = await runner()
+            if not spec.run_in_process:
+                self._save_transcript(result, runtime_agent_tag)
             return result
         except BaseException as exc:
             status = 'cancelled' if isinstance(
@@ -748,6 +913,21 @@ class AgentTool(ToolBase):
                 logger.warning(
                     f'Failed to write agent tool stats for {spec.tool_name}: {exc}'
                 )
+
+    def _save_transcript(self, messages: Any, agent_tag: Optional[str]) -> None:
+        if not isinstance(messages, list) or not agent_tag:
+            return
+        try:
+            output_dir = getattr(self.config, 'output_dir', './output')
+            subagents_dir = os.path.join(output_dir, 'subagents')
+            os.makedirs(subagents_dir, exist_ok=True)
+            path = os.path.join(subagents_dir, f'{agent_tag}.jsonl')
+            with open(path, 'w', encoding='utf-8') as f:
+                for msg in messages:
+                    if hasattr(msg, 'to_dict'):
+                        f.write(json.dumps(msg.to_dict(), ensure_ascii=False) + '\n')
+        except Exception as exc:
+            logger.warning(f'Failed to save sub-agent transcript for {agent_tag}: {exc}')
 
     def _build_payload(self, tool_args: dict, spec: _AgentToolSpec):
         if spec.input_mode == 'messages':

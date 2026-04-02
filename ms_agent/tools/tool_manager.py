@@ -18,7 +18,6 @@ from ms_agent.tools.filesystem_tool import FileSystemTool
 from ms_agent.tools.image_generator import ImageGenerator
 from ms_agent.tools.mcp_client import MCPClient
 from ms_agent.tools.search.websearch_tool import WebSearchTool
-from ms_agent.tools.split_task import SplitTask
 from ms_agent.tools.todolist_tool import TodoListTool
 from ms_agent.tools.video_generator import VideoGenerator
 from ms_agent.utils import get_logger
@@ -47,8 +46,6 @@ class ToolManager:
 
         self.extra_tools: List[ToolBase] = []
         self.has_split_task_tool = False
-        if hasattr(config, 'tools') and hasattr(config.tools, 'split_task'):
-            self.extra_tools.append(SplitTask(config))
         if hasattr(config, 'tools') and hasattr(config.tools,
                                                 'image_generator'):
             self.extra_tools.append(ImageGenerator(config))
@@ -78,8 +75,9 @@ class ToolManager:
                                                 'financial_data_fetcher'):
             from ms_agent.tools.findata.findata_fetcher import FinancialDataFetcher
             self.extra_tools.append(FinancialDataFetcher(config))
-        if hasattr(config, 'tools') and getattr(config.tools, 'agent_tools',
-                                                None):
+        if hasattr(config, 'tools') and (
+                getattr(config.tools, 'agent_tools', None)
+                or hasattr(config.tools, 'split_task')):
             agent_tool = AgentTool(
                 config, trust_remote_code=self.trust_remote_code)
             if agent_tool.enabled:
