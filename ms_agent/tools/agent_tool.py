@@ -454,6 +454,9 @@ class AgentTool(ToolBase):
 
     async def cleanup(self):
         self._terminate_all_active_processes(reason='during AgentTool cleanup')
+        for t in list(self._watcher_tasks):
+            t.cancel()
+        self._watcher_tasks.clear()
         if self._thread_executor is not None:
             try:
                 try:
