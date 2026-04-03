@@ -86,6 +86,9 @@ class ToolManager:
             self.extra_tools.append(TodoListTool(config))
         if hasattr(config, 'tools') and hasattr(config.tools, 'web_search'):
             self.extra_tools.append(WebSearchTool(config))
+        if hasattr(config, 'tools') and hasattr(config.tools, 'task_control'):
+            from ms_agent.tools.task_control_tool import TaskControlTool
+            self.extra_tools.append(TaskControlTool(config))
         self.tool_call_timeout = getattr(config, 'tool_call_timeout',
                                          TOOL_CALL_TIMEOUT)
         local_dir = self.config.local_dir if hasattr(self.config,
