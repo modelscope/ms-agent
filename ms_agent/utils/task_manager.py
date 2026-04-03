@@ -115,18 +115,18 @@ class TaskManager:
 
     @staticmethod
     def _format_notification(task: BackgroundTask) -> str:
-        status_line = f'status: {task.status}'
-        result_line = f'\nresult: {task.result}' if task.result else ''
-        error_line = f'\nerror: {task.error}' if task.error else ''
+        result_line = f'\n<result>{task.result}</result>' if task.result else ''
+        error_line = f'\n<error>{task.error}</error>' if task.error else ''
         duration = ''
         if task.ended_at:
-            duration = f'\nduration_s: {task.ended_at - task.started_at:.1f}'
+            duration = f'\n<duration_s>{task.ended_at - task.started_at:.1f}</duration_s>'
         return (
             f'<task-notification>\n'
             f'<task-id>{task.task_id}</task-id>\n'
             f'<task-type>{task.task_type}</task-type>\n'
             f'<tool-name>{task.tool_name}</tool-name>\n'
             f'<description>{task.description}</description>\n'
-            f'<{status_line}/>{result_line}{error_line}{duration}\n'
+            f'<status>{task.status}</status>'
+            f'{result_line}{error_line}{duration}\n'
             f'</task-notification>'
         )
