@@ -204,6 +204,7 @@ class AgentTool(ToolBase):
         self._active_processes: Dict[str, mp.Process] = {}
         self._active_processes_lock = threading.Lock()
         self._task_manager = None
+        self._watcher_tasks: set = set()
         self._load_specs()
         self._init_thread_pool_config()
 
@@ -569,7 +570,9 @@ class AgentTool(ToolBase):
                 except Exception:
                     pass
 
-        asyncio.create_task(_watcher())
+        t = asyncio.create_task(_watcher())
+        self._watcher_tasks.add(t)
+        t.add_done_callback(self._watcher_tasks.discard)
 
         return json.dumps({
             'status': 'async_launched',
