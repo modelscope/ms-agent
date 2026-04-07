@@ -191,6 +191,9 @@ def _tail_text_from_file(path: str, *, max_chars: int = 20000) -> str:
         return ''
 
 
+TASK_FINISHED_MARKER = '.researcher_task_finished'
+
+
 @dataclass(frozen=True)
 class Task:
     task_id: str
@@ -288,6 +291,7 @@ def _run_one_task(
     os.makedirs(workdir, exist_ok=True)
 
     log_path = os.path.join(workdir, 'ms_agent.log')
+    marker_path = os.path.join(workdir, TASK_FINISHED_MARKER)
 
     cmd = [
         python_executable,
@@ -309,12 +313,21 @@ def _run_one_task(
         env = dict(os.environ)
         env.setdefault('PYTHONUNBUFFERED', '1')
 
-        # Safety net for rare "subprocess produced final_report.md but never exits".
-        # This happens when the child Python process is stuck at shutdown (e.g. a
-        # non-daemon thread blocked in I/O). If the final report is already stable
-        # on disk, force-reap the child so the batch runner can continue.
+        # Exit strategy (two independent conditions, first one wins):
+        #
+        # 1. PRIMARY — .researcher_task_finished marker file appears in workdir
+        #    (written by ResearcherCallback.on_task_end).
+        #    Wait `post_finish_grace_s` then force-reap.
+        #
+        # 2. FALLBACK — final_report.md exists and has been stable for
+        #    `post_report_exit_grace_s` but the marker never appeared
+        #    (e.g. process hung at shutdown).  Force-reap to unblock
+        #    the batch runner.
+        #
+        post_finish_grace_s = float(
+            os.getenv('DR_BENCH_POST_FINISH_GRACE_S', '180') or 180.0)
         post_report_exit_grace_s = float(
-            os.getenv('DR_BENCH_POST_REPORT_EXIT_GRACE_S', '15') or 15.0)
+            os.getenv('DR_BENCH_POST_REPORT_EXIT_GRACE_S', '3600') or 3600.0)
         report_stable_window_s = float(
             os.getenv('DR_BENCH_REPORT_STABLE_WINDOW_S', '2') or 2.0)
         poll_interval_s = float(
@@ -324,11 +337,10 @@ def _run_one_task(
         kill_timeout_s = float(
             os.getenv('DR_BENCH_SUBPROCESS_KILL_TIMEOUT_S', '2') or 2.0)
 
-        # We consider a task "already done" if it produced a top-level
-        # final report file (final_report.md or report.md) with non-empty content.
         report_seen_stable_at: Optional[float] = None
         report_last_sig: Optional[Tuple[float, int]] = None
         report_stable_since: Optional[float] = None
+        marker_seen_at: Optional[float] = None
         force_reaped = False
 
         if stream_subprocess_output:
@@ -349,7 +361,21 @@ def _run_one_task(
                 while True:
                     now_s = time.time()
 
-                    # If final report exists and is stable, start a grace timer.
+                    # --- Condition 1: .researcher_task_finished marker ---
+                    if marker_seen_at is None and os.path.exists(marker_path):
+                        marker_seen_at = now_s
+                    if (marker_seen_at is not None and proc.poll() is None
+                            and (now_s - marker_seen_at) >= max(
+                                0.0, post_finish_grace_s)):
+                        _terminate_process(
+                            proc,
+                            terminate_timeout_s=terminate_timeout_s,
+                            kill_timeout_s=kill_timeout_s,
+                        )
+                        force_reaped = True
+                        break
+
+                    # --- Condition 2: report stable for a long time (fallback) ---
                     report_path_hint = _find_report_md(workdir)
                     if report_path_hint and _is_direct_final_report_path(
                             workdir, report_path_hint):
@@ -360,8 +386,11 @@ def _run_one_task(
                             stable_since=report_stable_since,
                             now_s=now_s,
                         )
-                        if stable and report_seen_stable_at is None:
-                            report_seen_stable_at = now_s
+                        if stable:
+                            if report_seen_stable_at is None:
+                                report_seen_stable_at = now_s
+                        else:
+                            report_seen_stable_at = None
                         if (report_seen_stable_at is not None
                                 and proc.poll() is None
                                 and (now_s - report_seen_stable_at) >= max(
@@ -438,6 +467,21 @@ def _run_one_task(
                 while True:
                     now_s = time.time()
 
+                    # --- Condition 1: .researcher_task_finished marker ---
+                    if marker_seen_at is None and os.path.exists(marker_path):
+                        marker_seen_at = now_s
+                    if (marker_seen_at is not None and proc2.poll() is None
+                            and (now_s - marker_seen_at) >= max(
+                                0.0, post_finish_grace_s)):
+                        _terminate_process(
+                            proc2,
+                            terminate_timeout_s=terminate_timeout_s,
+                            kill_timeout_s=kill_timeout_s,
+                        )
+                        force_reaped = True
+                        break
+
+                    # --- Condition 2: report stable for a long time (fallback) ---
                     report_path_hint = _find_report_md(workdir)
                     if report_path_hint and _is_direct_final_report_path(
                             workdir, report_path_hint):
@@ -448,8 +492,11 @@ def _run_one_task(
                             stable_since=report_stable_since,
                             now_s=now_s,
                         )
-                        if stable and report_seen_stable_at is None:
-                            report_seen_stable_at = now_s
+                        if stable:
+                            if report_seen_stable_at is None:
+                                report_seen_stable_at = now_s
+                        else:
+                            report_seen_stable_at = None
                         if (report_seen_stable_at is not None
                                 and proc2.poll() is None
                                 and (now_s - report_seen_stable_at) >= max(
