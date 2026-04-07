@@ -1,4 +1,4 @@
-# Copyright (c) Alibaba, Inc. and its affiliates.
+# Copyright (c) ModelScope Contributors. All rights reserved.
 """ms-agent Capability Gateway.
 
 Provides a unified abstraction layer that packages ms-agent's internal
