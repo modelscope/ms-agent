@@ -47,13 +47,25 @@ class Message:
     partial: bool = False
     prefix: bool = False
 
-    # code block
-    resources: List[str] = field(default_factory=list)
+    # UI resources from mcp result
+    resources: List[Dict[str, str]] = field(default_factory=list)
 
     # usage
     completion_tokens: int = 0
     prompt_tokens: int = 0
+
+    # tokens that hit existing cache (billed at reduced rate like 0.1x)
+    cached_tokens: int = 0
+    # tokens used to create new cache (explicit cache only, billed at higher rate like 1.25x)
+    cache_creation_input_tokens: int = 0
+
     api_calls: int = 1
+
+    # Knowledge search (sirchmunk) related fields
+    # searching_detail: Search process logs and metadata for frontend display
+    searching_detail: Dict[str, Any] = field(default_factory=dict)
+    # search_result: Raw search results to be used as context for next LLM turn
+    search_result: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self):
         return asdict(self)

@@ -1,0 +1,159 @@
+llm:
+  service: openai
+  model: gpt-5-2025-08-07
+  openai_api_key: <OPENAI_API_KEY>
+  openai_base_url: <OPENAI_BASE_URL>
+
+
+generation_config:
+  stream: true
+  stream_options:
+    include_usage: true
+  # Enable explicit prefix caching (auto-detects provider from openai_base_url)
+  force_prefix_cache: false
+  # Supports role names: system, user, assistant, tool, last_message
+  prefix_cache_roles: [system, user, assistant, tool]
+  # extra_body:
+    # enable_thinking: false
+
+
+tag: deep-research-researcher
+
+
+prompt:
+  root: prompts/
+  agent: researcher
+  lang: en
+  family: gpt5
+
+
+tools:
+  file_system:
+    mcp: false
+    include:
+      - write_file
+      - read_file
+      - list_files
+      - search_file_content
+      - replace_file_contents
+      - replace_file_lines
+  code_executor:
+    mcp: false
+    implementation: python_env
+    notebook_timeout: 120
+    include:
+      - notebook_executor
+  todo_list:
+    mcp: false
+    auto_render_md: true
+    include:
+      - todo_write
+      - todo_read
+  evidence_store:
+    mcp: false
+    evidence_dir: evidence
+    include:
+      - load_index
+      - get_note
+      - list_notes
+      - write_analysis
+      - get_analysis
+      - list_analyses
+  agent_tools:
+    mcp: false
+    enable_stats: true
+    run_in_thread: true
+    max_workers: 4
+    definitions:
+      - tool_name: searcher_tool
+        description: >
+          Invoke the Searcher sub-agent to perform an in-depth research task on a specific topic.
+          Searcher is capable of autonomously executing a research loop until sufficient evidence is collected and a research report is produced (search -> parse -> evidence discovery & storage -> progressive search -> ...).
+          Returns a JSON result containing: task completion status, core findings, issues or limitations encountered, research report body, and evidence storage locations.
+        config_path: searcher.yaml
+        parameters:
+          type: object
+          properties:
+            request:
+              type: string
+              description: >
+                A JSON-formatted research task description that should include:
+                - The corresponding task ID from the TODO list (required)
+                - Specific research objectives
+                - Questions to be answered
+                - Constraints (time range, source preferences, etc., optional)
+                - Stopping conditions (optional)
+                - Other requirements (optional)
+                Recommended format:
+                {
+                  "task_id": "...",
+                  "research_objectives": "...",
+                  "questions_to_answer": "...",
+                  "constraints": "...",
+                  "stopping_conditions": "...",
+                  "other_requirements": "...",
+                }
+          required: [request]
+          additionalProperties: false
+        trust_remote_code: true
+        output_mode: final_message
+        max_output_chars: 200000
+      - tool_name: reporter_tool
+        description: >
+          Invoke the Reporter sub-agent to generate a research report based on collected evidence.
+          Reporter reads the stored evidence cards and executes a complex workflow for research report writing.
+          The completed report is automatically saved to `final_report.md` in the output directory.
+          Returns a JSON result containing: execution summary and
+          intermediate artifact file paths (the full report body is NOT included in the return value —
+          read `final_report.md` directly to access the report content).
+        config_path: reporter.yaml
+        parameters:
+          type: object
+          properties:
+            request:
+              type: string
+              description: >
+                A JSON-formatted report generation instruction that should include:
+                - Report topic and target audience
+                - Complete background description and task description
+                - Core questions to be covered
+                - Writing requirements (style, structure, length, language, etc.)
+                - Any other requirements
+                Recommended format:
+                {
+                  "report_topic_and_audience": "...",
+                  "background": "...",
+                  "task_description": "...",
+                  "writing_requirements": "...",
+                  "other_requirements": "...",
+                }
+          required: [request]
+          additionalProperties: false
+        trust_remote_code: true
+        output_mode: final_message
+        max_output_chars: 200000
+  plugins:
+    - tools/evidence_tool.py
+
+
+callbacks:
+  - callbacks/researcher_callback
+
+# Self-reflection checks before allowing the researcher to stop.
+# Runs inside ResearcherCallback.after_tool_call.
+self_reflection:
+  enabled: true
+  max_retries: 2
+  quality_check:
+    enabled: true
+    model: qwen3.5-flash
+
+handler: time_handler
+
+code_file: researcher
+
+max_chat_round: 42
+
+tool_call_timeout: 2400
+
+output_dir: ./output

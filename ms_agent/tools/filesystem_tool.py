@@ -336,8 +336,14 @@ class FileSystemTool(ToolBase):
                     server_name='file_system',
                     description=
                     'Replace specific line ranges in a file. Supports inserting at beginning '
-                    '(start_line=0) or end (start_line=-1). '
-                    'Line numbers are 1-based and inclusive on both ends.',
+                    '(start_line=0) or end (start_line=-1). Line numbers are 1-based and inclusive on both ends.\n\n'
+                    'IMPORTANT — Line-number shift after each call. Every replacement changes the total line count, '
+                    'which invalidates ALL line numbers after the replaced range. If you need to make multiple replacements in the same file:\n'
+                    '- Option A (recommended): Work from BOTTOM to TOP — edit the largest line numbers first so earlier line numbers remain valid.\n'
+                    '- Option B: Re-search after each replacement to get updated line numbers before the next replacement.\n'
+                    '- Option C: Pre-calculate the cumulative offset — each replacement shifts subsequent lines by (new_content_lines - replaced_lines).\n'
+                    'NEVER call this tool multiple times in parallel on the same file — the concurrent line-number '
+                    'shifts will corrupt the file. Always call sequentially.\n',
                     parameters={
                         'type': 'object',
                         'properties': {
@@ -374,11 +380,15 @@ class FileSystemTool(ToolBase):
                     server_name='file_system',
                     description=
                     'Replace exact content in a file without using line numbers. '
-                    'You must provide:'
+                    'You must provide:\n'
                     '[Required]path: The relative path of modified file.\n'
-                    '[Required]source: The old content to be replaced\n'
-                    '[Required]target: The new content to replace the `source`\n'
-                    'Do not miss any of these arguments!',
+                    '[Required]source: The old content to be replaced.\n'
+                    '[Required]target: The new content to replace the `source`.\n'
+                    '[Required]occurrence: Which occurrence to replace (1-based).\n'
+                    'Do not miss any of these arguments!\n\n'
+                    'IMPORTANT:\n'
+                    '- `source` must match the file content EXACTLY — including punctuation style '
+                    '(e.g., Chinese "、" vs English ","), whitespace, line breaks, and Unicode characters.',
                     parameters={
                         'type': 'object',
                         'properties': {
@@ -392,7 +402,8 @@ class FileSystemTool(ToolBase):
                                 'type':
                                 'string',
                                 'description':
-                                'The exact content to find and replace (must match exactly including whitespace)',
+                                'The exact content to find and replace. Must match the file content '
+                                'EXACTLY including all whitespace, punctuation, and line breaks. ',
                             },
                             'target': {
                                 'type': 'string',
@@ -403,11 +414,11 @@ class FileSystemTool(ToolBase):
                                 'type':
                                 'integer',
                                 'description':
-                                'Which occurrence to replace (1-based). Use -1 to replace all occurrences. '
-                                'Default is -1 (all occurrences).',
+                                'Which occurrence to replace (1-based). Default is 1 (first occurrence). '
+                                'Use -1 to replace all occurrences.',
                             },
                         },
-                        'required': ['path', 'source', 'target'],
+                        'required': ['path', 'source', 'target', 'occurrence'],
                         'additionalProperties': False
                     }),
             ]
@@ -451,9 +462,10 @@ class FileSystemTool(ToolBase):
         try:
             if not os.path.exists(self.output_dir):
                 os.makedirs(self.output_dir, exist_ok=True)
+            original_path = path  # Preserve original path for error messages
             path = self.get_real_path(path)
             if path is None:
-                return f'<{path}> is out of the valid project path: {self.output_dir}'
+                return f'<{original_path}> is out of the valid project path: {self.output_dir}'
             dirname = os.path.dirname(path)
             if dirname:
                 os.makedirs(
@@ -468,7 +480,7 @@ class FileSystemTool(ToolBase):
                                     path: str,
                                     source: str = None,
                                     target: str = None,
-                                    occurrence: int = -1):
+                                    occurrence: int = 1):
         """Replace exact content in a file without using line numbers.
 
         This method is safer for parallel operations as it doesn't rely on line numbers
@@ -479,16 +491,16 @@ class FileSystemTool(ToolBase):
             source(str): The exact content to find and replace (must match exactly including whitespace)
             target(str): The new content to replace with
             occurrence(int): Which occurrence to replace (1-based). Use -1 to replace all occurrences.
-                           Default is -1 (all occurrences).
+                           Default is 1 (first occurrence).
 
         Returns:
             Success or error message.
         """
         try:
             if not source:
-                return 'Error: You MUST provide the `source` parameter to be replaced with the `target`.'
-            if not target:
-                return 'Error: You MUST provide the `target` parameter to replace the `source`'
+                return f'Error: You MUST provide the `source` parameter to be replaced with the `target`, but got {source}.'
+            if target is None:
+                return f'Error: You MUST provide the `target` parameter to replace the `source`, but got {target}.'
             target_path_real = self.get_real_path(path)
             if target_path_real is None:
                 return f'<{path}> is out of the valid project path: {self.output_dir}'
@@ -611,13 +623,22 @@ class FileSystemTool(ToolBase):
                 f.writelines(new_lines)
 
             target = '\n'.join(new_lines).split('\n')
-            return f'{operation} in file <{path}> successfully. New file has {len(target)} lines.'
+            return (
+                f'{operation} in file <{path}> completed successfully. The updated file now has {len(target)} lines. '
+                'WARNING: All line numbers after the replaced range may have shifted. '
+                'If you need to make another line-based replacement in this file, keep this in mind.'
+            )
 
         except Exception as e:
             return f'Replace lines in file <{path}> failed, error: ' + str(e)
 
     def get_real_path(self, path):
-        if os.path.isabs(path) or os.path.basename(self.output_dir) in path:
+        # Check if path is absolute or already starts with output_dir
+        if os.path.isabs(path):
+            target_path = path
+        elif path.startswith(self.output_dir + os.sep) or path.startswith(
+                self.output_dir):
+            # Path already includes output_dir as prefix
             target_path = path
         else:
             target_path = os.path.join(self.output_dir, path)
@@ -836,7 +857,7 @@ class FileSystemTool(ToolBase):
 
     async def search_file_content(self,
                                   content: str = None,
-                                  parent_path: str = None,
+                                  parent_path: str = '.',
                                   file_pattern: str = '*',
                                   context_lines: int = 2):
         """Search for content in files using thread pool.

@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 # Import shared instances
 from shared import config_manager, project_discovery, session_manager
 
@@ -65,8 +65,9 @@ class LLMConfig(BaseModel):
     model: str = 'qwen3-coder-plus'
     api_key: Optional[str] = None
     base_url: Optional[str] = None
-    temperature: float = 0.7
-    max_tokens: int = 4096
+    temperature: Optional[float] = None
+    temperature_enabled: Optional[bool] = False
+    max_tokens: Optional[int] = None
 
 
 class EditFileConfig(BaseModel):
@@ -78,6 +79,34 @@ class EditFileConfig(BaseModel):
 class EdgeOnePagesConfig(BaseModel):
     api_token: Optional[str] = None
     project_name: Optional[str] = None
+
+
+class SearchKeysConfig(BaseModel):
+    exa_api_key: Optional[str] = None
+    serpapi_api_key: Optional[str] = None
+
+
+class DeepResearchAgentConfig(BaseModel):
+    model: Optional[str] = ''
+    api_key: Optional[str] = ''
+    base_url: Optional[str] = ''
+
+
+class DeepResearchSearchConfig(BaseModel):
+    summarizer_model: Optional[str] = ''
+    summarizer_api_key: Optional[str] = ''
+    summarizer_base_url: Optional[str] = ''
+
+
+class DeepResearchConfig(BaseModel):
+    researcher: DeepResearchAgentConfig = Field(
+        default_factory=DeepResearchAgentConfig)
+    searcher: DeepResearchAgentConfig = Field(
+        default_factory=DeepResearchAgentConfig)
+    reporter: DeepResearchAgentConfig = Field(
+        default_factory=DeepResearchAgentConfig)
+    search: DeepResearchSearchConfig = Field(
+        default_factory=DeepResearchSearchConfig)
 
 
 class MCPServer(BaseModel):
@@ -235,6 +264,16 @@ async def get_session_messages(session_id: str):
     return {'messages': messages}
 
 
+@router.get('/sessions/{session_id}/dr_events')
+async def get_session_dr_events(session_id: str,
+                                after_id: Optional[int] = Query(None, ge=0)):
+    """Get deep research event history for a session."""
+    events = session_manager.list_dr_events(session_id, after_id)
+    if events is None:
+        raise HTTPException(status_code=404, detail='Session not found')
+    return {'events': events}
+
+
 # Configuration Endpoints
 @router.get('/config')
 async def get_config():
@@ -298,6 +337,32 @@ async def get_edgeone_pages_config():
 async def update_edgeone_pages_config(config: EdgeOnePagesConfig):
     """Update EdgeOne Pages configuration"""
     config_manager.update_edgeone_pages_config(config.model_dump())
+    return {'status': 'updated'}
+
+
+@router.get('/config/search_keys')
+async def get_search_keys_config():
+    """Get search API keys configuration"""
+    return config_manager.get_search_keys()
+
+
+@router.put('/config/search_keys')
+async def update_search_keys_config(config: SearchKeysConfig):
+    """Update search API keys configuration"""
+    config_manager.update_search_keys(config.model_dump())
+    return {'status': 'updated'}
+
+
+@router.get('/config/deep_research')
+async def get_deep_research_config():
+    """Get deep research configuration"""
+    return config_manager.get_deep_research_config()
+
+
+@router.put('/config/deep_research')
+async def update_deep_research_config(config: DeepResearchConfig):
+    """Update deep research configuration"""
+    config_manager.update_deep_research_config(config.model_dump())
     return {'status': 'updated'}
 
 

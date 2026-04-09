@@ -1,0 +1,86 @@
+# Sirchmunk Knowledge Search 配置示例
+# Sirchmunk Knowledge Search Configuration Example
+
+# 在您的 agent.yaml 或 workflow.yaml 中添加以下配置：
+
+llm:
+  service: modelscope
+  model: Qwen/Qwen3-235B-A22B-Instruct-2507
+  modelscope_api_key: <your-api-key>
+  modelscope_base_url: https://api-inference.modelscope.cn/v1
+
+generation_config:
+  temperature: 0.3
+  top_k: 20
+  stream: true
+
+# Knowledge Search 配置（可选）
+# 用于在本地代码库中搜索相关信息
+knowledge_search:
+  # 必选：要搜索的路径列表
+  paths:
+    - ./src
+    - ./docs
+
+  # 可选：sirchmunk 工作目录，用于缓存
+  work_path: ./.sirchmunk
+
+  # 可选：LLM 配置（如不配置则使用上面 llm 的配置）
+  llm_api_key: <your-api-key>
+  llm_base_url: https://api.openai.com/v1
+  llm_model_name: gpt-4o-mini
+
+  # 可选：Embedding 模型
+  embedding_model: text-embedding-3-small
+
+  # 可选：聚类相似度阈值
+  cluster_sim_threshold: 0.85
+
+  # 可选：聚类 TopK
+  cluster_sim_top_k: 3
+
+  # 可选：是否重用之前的知识
+  reuse_knowledge: true
+
+  # 可选：搜索模式 (DEEP, FAST, FILENAME_ONLY)
+  mode: FAST
+
+  # 可选：最大循环次数
+  max_loops: 10
+
+  # 可选：最大 token 预算
+  max_token_budget: 128000
+
+prompt:
+  system: |
+    You are an assistant that helps me complete tasks.
+
+max_chat_round: 9999
+
+# 使用说明：
+# 1. 配置 knowledge_search 后，LLMAgent 会在处理用户请求时自动搜索本地代码库
+# 2. 搜索结果会自动添加到 user message 的 search_result 和 searching_detail 字段
+# 3. search_result 包含搜索到的相关文档，会作为上下文提供给 LLM
+# 4. searching_detail 包含搜索日志和元数据，可用于前端展示
+#
+# Python 使用示例：
+# ```python
+# from ms_agent import LLMAgent
+# from ms_agent.config import Config
+#
+# config = Config.from_task('path/to/agent.yaml')
+# agent = LLMAgent(config=config)
+# result = await agent.run('如何实现用户认证功能？')
+#
+# # 获取搜索详情（用于前端展示）
+# for msg in result:
+#     if msg.role == 'user':
+#         print(f"Search logs: {msg.searching_detail}")
+#         print(f"Search results: {msg.search_result}")
+# ```
+#
+# CLI 测试命令：
+# export LLM_API_KEY="your-api-key"
+# export LLM_BASE_URL="https://api.openai.com/v1"
+# export LLM_MODEL_NAME="gpt-4o-mini"
+# python tests/knowledge_search/test_cli.py --query "你的问题"

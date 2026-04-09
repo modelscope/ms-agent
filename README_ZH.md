@@ -51,6 +51,17 @@ MS-Agent是一个轻量级框架，旨在为智能体提供自主探索能力。
 
 ## 🎉 新闻
 
+- 🏆 **2026年4月9日**：Agentic Insight v2 在 [DeepResearch Bench](https://github.com/Ayanami0730/deep_research_bench) 上位列**开源方案 #2**（总榜 #5）——提交版本得分 **55.31**（Qwen3.5-Plus + GPT 5.2）。[排行榜](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard) | [Agentic Insight v2](projects/deep_research/v2/README.md)。
+
+- 🚀 **2026年3月23日：发布 MS-Agent v1.6.0，主要更新内容如下：**
+  - **上下文压缩**：新增上下文压缩机制，支持 Token 用量监控与溢出检测，通过裁剪历史工具输出和 LLM 摘要自动压缩对话上下文。
+  - **Agentic Insight v2 增强**：深度研究系统架构与性能大幅优化，基于 GPT5、Qwen3.5-plus/flash 模型组合在 DeepResearch Bench 上的评分达到 **55.43** 分。详情请参考 [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2)。
+  - **知识库搜索**：集成 Sirchmunk 智能检索，支持在 Agent 对话中自动检索本地代码库与文档，详情请参考[配置文档](docs/zh/Components/config.md)。
+  - **多模态模型输入**：支持图片、视频等多模态输入，详情请参考[多模态文档](docs/zh/Components/multimodal-support.md)。
+
+* 🚀 **2026年2月6日：发布 MS-Agent v1.6.0rc1，主要更新内容如下：**
+  - **Agentic Insight v2**：完整重构的深度研究系统，性能更优、可扩展性更强、可信度更高，支持在webui中使用，详情请参考 [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2)
+
 * 🚀 **2026年2月4日：发布 MS-Agent v1.6.0rc0，主要更新内容如下：**
   - **Code Genesis**：针对复杂代码生成任务的专项功能，详情请参考 [Code Genesis](https://github.com/modelscope/ms-agent/tree/main/projects/code_genesis)
   - **Singularity Cinema**：动画视频生成工作流的重构版本，详情请参考 [Singularity Cinema](https://github.com/modelscope/ms-agent/tree/main/projects/singularity_cinema)
@@ -308,8 +319,7 @@ asyncio.run(main())
 
 ---
 
-
-### Agentic Insight
+### Agentic Insight (Deep Research)
 
 #### - 轻量级、高效且可扩展的多模态深度研究框架
 
@@ -322,6 +332,16 @@ asyncio.run(main())
 - **多模态** - 能够处理多样化的数据模态，生成包含丰富文本和图像的研究报告。
 
 - **轻量级与高效** - 支持"搜索后执行"模式，在几分钟内完成复杂的研究任务，显著减少token消耗。
+
+#### 🚀 Agentic Insight v2（推荐）
+
+- **性能表现** - [DeepResearch Bench](https://github.com/Ayanami0730/deep_research_bench) **开源 #2**（总榜 #5），提交版本得分 **55.31**（Qwen3.5-Plus + GPT 5.2）
+- **Deep Agents 架构** - "Researcher + 工具化子 Agent（Searcher/Reporter）"模式，支持任务灵活分配与高效并发
+- **文件系统即上下文** - 中间产物结构化存储到文件系统，实现低损耗上下文传递和长链路任务稳定运行
+- **证据驱动写作** - 自主建立带索引的证据库，报告以证据为唯一事实基础，实现报告高可信度与来源可追溯
+- **深度研究专用工具链** - 提供 todo_list / evidence_store / report_generator 等专用模块，实现核心能力的解耦与高度复用
+
+使用方式请参考 [Agentic Insight v2](projects/deep_research/v2/README.md)。
 
 #### 📺 演示
 
@@ -553,6 +573,12 @@ MS-Agent提供了一个简洁轻量的Web界面，用于与智能体进行交互
 
 ```bash
 ms-agent ui
+```
+
+**Windows 提示：** 若控制台出现乱码，建议使用 PowerShell 启动脚本：
+
+```powershell
+webui/scripts/start-webui.ps1
 ```
 
 浏览器打开： http://localhost:7860

@@ -15,6 +15,8 @@ class SessionManager:
     def __init__(self):
         self._sessions: Dict[str, Dict[str, Any]] = {}
         self._messages: Dict[str, List[Dict[str, Any]]] = {}
+        self._dr_events: Dict[str, List[Dict[str, Any]]] = {}
+        self._dr_event_counters: Dict[str, int] = {}
         self._lock = Lock()
 
     def create_session(self,
@@ -40,6 +42,8 @@ class SessionManager:
         with self._lock:
             self._sessions[session_id] = session
             self._messages[session_id] = []
+            self._dr_events[session_id] = []
+            self._dr_event_counters[session_id] = 0
 
         return session
 
@@ -63,6 +67,10 @@ class SessionManager:
                 del self._sessions[session_id]
                 if session_id in self._messages:
                     del self._messages[session_id]
+                if session_id in self._dr_events:
+                    del self._dr_events[session_id]
+                if session_id in self._dr_event_counters:
+                    del self._dr_event_counters[session_id]
                 return True
         return False
 
@@ -101,6 +109,33 @@ class SessionManager:
         if session_id not in self._sessions:
             return None
         return self._messages.get(session_id, [])
+
+    def add_dr_event(self, session_id: str,
+                     event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Add a deep research event for replay."""
+        if session_id not in self._sessions:
+            return None
+        with self._lock:
+            next_id = self._dr_event_counters.get(session_id, 0) + 1
+            self._dr_event_counters[session_id] = next_id
+            stored = dict(event)
+            stored['event_id'] = next_id
+            self._dr_events.setdefault(session_id, []).append(stored)
+        return stored
+
+    def list_dr_events(
+            self,
+            session_id: str,
+            after_id: Optional[int] = None) -> Optional[List[Dict[str, Any]]]:
+        """List deep research events for a session."""
+        if session_id not in self._sessions:
+            return None
+        events = self._dr_events.get(session_id, [])
+        if after_id is None:
+            return list(events)
+        return [
+            event for event in events if event.get('event_id', 0) > after_id
+        ]
 
     def update_last_message(self, session_id: str, content: str) -> bool:
         """Update the content of the last message (for streaming)"""

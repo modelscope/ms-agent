@@ -19,8 +19,31 @@ class ConfigManager:
             'model': 'Qwen/Qwen3-235B-A22B-Instruct-2507',
             'api_key': '',
             'base_url': 'https://api-inference.modelscope.cn/v1/',
-            'temperature': 0.7,
-            'max_tokens': 4096
+            'temperature': None,
+            'temperature_enabled': False,
+            'max_tokens': None
+        },
+        'deep_research': {
+            'researcher': {
+                'model': '',
+                'api_key': '',
+                'base_url': ''
+            },
+            'searcher': {
+                'model': '',
+                'api_key': '',
+                'base_url': ''
+            },
+            'reporter': {
+                'model': '',
+                'api_key': '',
+                'base_url': ''
+            },
+            'search': {
+                'summarizer_model': '',
+                'summarizer_api_key': '',
+                'summarizer_base_url': ''
+            }
         },
         'edit_file_config': {
             'api_key': '',
@@ -30,6 +53,10 @@ class ConfigManager:
         'edgeone_pages': {
             'api_token': '',
             'project_name': ''
+        },
+        'search_keys': {
+            'exa_api_key': '',
+            'serpapi_api_key': '',
         },
         'mcp_servers': {},
         'theme': 'dark',
@@ -153,6 +180,30 @@ class ConfigManager:
         self._config['edgeone_pages'] = edgeone_pages_config
         self._save_config()
 
+    def get_search_keys(self) -> Dict[str, Any]:
+        """Get search API keys configuration"""
+        config = self._load_config()
+        return config.get('search_keys', self.DEFAULT_CONFIG['search_keys'])
+
+    def update_search_keys(self, search_keys: Dict[str, Any]):
+        """Update search API keys configuration"""
+        self._load_config()
+        self._config['search_keys'] = search_keys
+        self._save_config()
+
+    def get_deep_research_config(self) -> Dict[str, Any]:
+        """Get deep research configuration"""
+        config = self._load_config()
+        return config.get('deep_research',
+                          self.DEFAULT_CONFIG['deep_research'])
+
+    def update_deep_research_config(self, deep_research_config: Dict[str,
+                                                                     Any]):
+        """Update deep research configuration"""
+        self._load_config()
+        self._config['deep_research'] = deep_research_config
+        self._save_config()
+
     def add_mcp_server(self, name: str, server_config: Dict[str, Any]):
         """Add a new MCP server"""
         self._load_config()
@@ -178,6 +229,7 @@ class ConfigManager:
         """Get environment variables for running agents"""
         config = self._load_config()
         llm = config.get('llm', {})
+        search_keys = config.get('search_keys', {})
 
         env_vars = {}
 
@@ -192,5 +244,12 @@ class ConfigManager:
 
         if llm.get('base_url'):
             env_vars['OPENAI_BASE_URL'] = llm['base_url']
+
+        exa_key = search_keys.get('exa_api_key')
+        if exa_key:
+            env_vars['EXA_API_KEY'] = exa_key
+        serp_key = search_keys.get('serpapi_api_key')
+        if serp_key:
+            env_vars['SERPAPI_API_KEY'] = serp_key
 
         return env_vars

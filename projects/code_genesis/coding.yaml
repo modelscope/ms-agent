@@ -103,11 +103,10 @@ prompt:
     8. When fixing issues and updating files:
     Call the `edit_file` tool or `write_file` tool, after fixing issues there's no need to check by yourself, the lsp tool will check and report issues.
 
-    9. You can use the shell to debug problems:
+    9. You can use the shell_executor to debug problems:
 
     Example:
-    # Find all fields of a class
-    execute_single(command='python -c "from module import MyClass; print(vars(MyClass))"')
+    shell_executor(command='python -c "from module import MyClass; print(vars(MyClass))"')
 
     Your optimization goals:
     1. [Priority] Output the most accurate code implementation at once, without hallucinations or incorrect references.
@@ -128,8 +127,25 @@ tools:
       base_url: https://api.morphllm.com/v1
   plugins:
     - workflow/api_search
-  shell:
+  code_executor:
     mcp: false
+    sandbox:
+      mode: local
+      type: docker_notebook
+      image: code-genesis-sandbox:version1
+      working_dir: /data
+      timeout: 180
+      memory_limit: "2g"
+      cpu_limit: 2.0
+      network_enabled: true
+      tools_config:
+        shell_executor: {}
+    exclude:
+      - notebook_executor
+      - python_executor
+      - file_operation
+      - reset_executor
+      - get_executor_info
 
 pre_import_check: true
 post_import_check: true

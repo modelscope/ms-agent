@@ -54,6 +54,17 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 
 ## 🎉 News
 
+* 🏆 Apr 09, 2026: Agentic Insight v2 is now **#2 Open-Source** (#5 Overall) on [DeepResearch Bench](https://github.com/Ayanami0730/deep_research_bench) — scoring **55.31** with the submitted version (Qwen3.5-Plus + GPT 5.2). [Leaderboard](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard) | [Agentic Insight v2](projects/deep_research/v2/README.md).
+
+* 🚀 Mar 23, 2026: Release MS-Agent v1.6.0, which includes the following updates:
+  - **Context Compression**: Added context compression mechanism with token usage monitoring, overflow detection, and automatic context compaction via pruning historical tool outputs and LLM-based summarization.
+  - **Agentic Insight v2 Enhancements**: Major architecture and performance improvements to the deep research system; achieves **55.43** on DeepResearch Bench with GPT5 and Qwen3.5-plus/flash. See [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2).
+  - **Knowledge Search**: Integrated Sirchmunk for intelligent retrieval over local codebases and documentation during agent conversations. See [Config Docs](docs/en/Components/Config.md).
+  - **Multimodal Model Input**: Support image, video, and other multimodal inputs. See [Multimodal Docs](docs/zh/Components/multimodal-support.md).
+
+* 🚀 Feb 06, 2026: Release MS-Agent v1.6.0rc1, which includes the following updates:
+  - **Agentic Insight v2**: A fully refactored deep-research system with better performance, scalability, and trustworthiness, now available in WebUI. See [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2).
+
 * 🚀 Feb 04, 2026: Release MS-Agent v1.6.0rc0, which includes the following updates:
   - **Code Genesis** for complex code generation tasks, refer to [Code Genesis](https://github.com/modelscope/ms-agent/tree/main/projects/code_genesis)
   - **Singularity Cinema** for animated video generation workflow, refactored version, refer to [Singularity Cinema](https://github.com/modelscope/ms-agent/tree/main/projects/singularity_cinema)
@@ -304,41 +315,8 @@ For more details, please refer to [**MS-Agent Skills**](ms_agent/skill/README.md
 
 ---
 
-### Agent Skills
 
-The **MS-Agent Skill Module** is **Implementation** of [Anthropic-Agent-Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills) Protocol.
-
-#### 🔍 Intelligent Skill Retrieval
-- **Hybrid Search**: Combines FAISS dense retrieval with BM25 sparse retrieval
-- **LLM-based Filtering**: Uses LLM to filter and validate skill relevance
-- **Query Analysis**: Automatically determines if skills are needed for a query
-
-#### 📊 DAG-based Execution
-- **Dependency Management**: Builds execution DAG based on skill dependencies
-- **Parallel Execution**: Runs independent skills concurrently
-- **Input/Output Linking**: Automatically passes outputs between dependent skills
-
-#### 🧠 Progressive Skill Analysis
-- **Two-phase Analysis**: Plan first, then load resources
-- **Incremental Loading**: Only loads required scripts/references/resources
-- **Context Optimization**: Minimizes token usage while maximizing understanding
-- **Auto Bug Fixing**: Analyzes errors and attempts automatic fixes
-
-#### 🔒 Secure Execution Environment
-- **Docker Sandbox**: Isolated execution using [ms-enclave](https://github.com/modelscope/ms-enclave) containers
-- **Local Execution**: Controlled local execution with RCE prevention
-- **Security Checks**: Pattern-based detection of dangerous code
-
-#### 🔄 Self-Reflection & Retry
-- **Error Analysis**: LLM-based analysis of execution failures
-- **Auto-Fix**: Attempts to fix code based on error messages
-- **Configurable Retries**: Up to N retry attempts with fixes
-
-
-For more details, please refer to [**MS-Agent Skills**](ms_agent/skill/README.md).
-
-
-### Agentic Insight
+### Agentic Insight (Deep Research)
 
 #### - Lightweight, Efficient, and Extensible Multi-modal Deep Research Framework
 
@@ -351,6 +329,16 @@ This project provides a framework for **Deep Research**, enabling agents to auto
 - **Multimodal** - Capable of processing diverse data modalities and generating research reports rich in both text and images.
 
 - **Lightweight & Efficient** - Support "search-then-execute" mode, completing complex research tasks within few minutes, significantly reducing token consumption.
+
+#### 🚀 Agentic Insight v2 (Recommended)
+
+- **Performance**: **#2 Open-Source** (#5 Overall) on [DeepResearch Bench](https://github.com/Ayanami0730/deep_research_bench) — **55.31** with the submitted version (Qwen3.5-Plus + GPT 5.2).
+- **Deep Agents architecture**: "Researcher + tool-augmented sub-agents (Searcher/Reporter)" for flexible task allocation and efficient concurrency.
+- **File system as context**: Structured artifacts persisted to disk for low-loss context handoff and stable long-horizon runs (resume-friendly).
+- **Evidence-driven writing**: Reports are grounded in an indexed evidence base, improving trustworthiness and traceability.
+- **Deep-research toolchain**: Decoupled modules like todo list / evidence store / report generator for reuse and extensibility.
+
+See [Agentic Insight v2](projects/deep_research/v2/README.md).
 
 
 #### 📺 Demonstration
@@ -543,6 +531,12 @@ MS-Agent provides a modern web interface for interacting with agents. Built with
 
 ```bash
 ms-agent ui
+```
+
+**Windows tip:** If the console shows garbled text, use the PowerShell helper:
+
+```powershell
+webui/scripts/start-webui.ps1
 ```
 
 The browser will automatically open at http://localhost:7860

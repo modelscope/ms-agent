@@ -106,6 +106,59 @@ tools:
 
 For the complete list of supported tools and custom tools, please refer to [here](./Tools.md)
 
+## Skills Configuration
+
+> Optional, used when enabling Agent Skills
+
+```yaml
+skills:
+  # Path to skills directory or ModelScope repo ID
+  path: /path/to/skills
+  # Whether to auto-execute skills (default: True)
+  auto_execute: true
+  # Working directory for outputs
+  work_dir: /path/to/workspace
+  # Whether to use Docker sandbox for execution (default: True)
+  use_sandbox: false
+```
+
+For the complete skill module documentation (including architecture, directory structure, API reference, and security mechanisms), see [Agent Skills](./AgentSkills).
+
+## Memory Compression Configuration
+
+> Optional, for context management in long conversations
+
+```yaml
+memory:
+  # Context Compressor: token detection + tool output pruning + LLM summary
+  context_compressor:
+    context_limit: 128000      # Model context window size
+    prune_protect: 40000       # Token threshold to protect recent tool outputs
+    prune_minimum: 20000       # Minimum pruning amount
+    reserved_buffer: 20000     # Reserved buffer
+    enable_summary: true       # Enable LLM summary
+    summary_prompt: |          # Custom summary prompt (optional)
+      Summarize this conversation...
+
+  # Refine Condenser: structured compression preserving execution trace
+  refine_condenser:
+    threshold: 60000           # Character threshold to trigger compression
+    system: ...                # Custom compression prompt (optional)
+
+  # Code Condenser: generate code index files
+  code_condenser:
+    system: ...                # Custom index generation prompt (optional)
+    code_wrapper: ['```', '```']  # Code block markers
+```
+
+Supported compressor types:
+
+| Type | Use Case | Compression Method |
+|------|----------|-------------------|
+| `context_compressor` | General long conversations | Token detection + Tool pruning + LLM summary |
+| `refine_condenser` | Preserve execution trace | Structured message compression (1:6 ratio) |
+| `code_condenser` | Code generation tasks | Generate code index JSON |
+
 ## Others
 
 > Optional, configure as needed
@@ -166,3 +219,20 @@ In addition to yaml configuration, MS-Agent also supports several additional com
     ```
 
 > Any configuration in agent.yaml can be passed in with new values via command line, and also supports reading from environment variables with the same name (case insensitive), for example `--llm.modelscope_api_key xxx-xxx`.
+
+- knowledge_search_paths: Knowledge search paths, comma-separated multiple paths. When provided, automatically enables SirchmunkSearch for knowledge retrieval, with LLM configuration automatically inherited from the `llm` module.
+
+### Quick Start for Knowledge Search
+
+Use the `--knowledge_search_paths` parameter to quickly enable knowledge search based on local documents:
+
+```bash
+# Using default agent.yaml configuration, automatically reuses LLM settings
+ms-agent run --query "How to implement user authentication?" --knowledge_search_paths "./src,./docs"
+
+# Specify configuration file
+ms-agent run --config /path/to/agent.yaml --query "your question" --knowledge_search_paths "/path/to/docs"
+```
+
+LLM-related parameters (api_key, base_url, model) are automatically inherited from the `llm` module in the configuration file, no need to configure them repeatedly.
+If you need to use independent LLM configuration in the `knowledge_search` module, you can explicitly configure `knowledge_search.llm_api_key` and other parameters in the yaml.

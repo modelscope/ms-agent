@@ -153,10 +153,13 @@ apps/agentfabric/config/local_user/*
 ast_index_file.py
 
 
-#neo4j
+# neo4j
 .neo4j.lock
 neo4j.lock
 /temp/
 
 **/temp_workspace/
 ms_agent/app/temp_workspace/
+
+# webui
+webui/work_dir/

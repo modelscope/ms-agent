@@ -5,6 +5,7 @@ from abc import abstractmethod
 from copy import deepcopy
 from typing import Any, Dict, Union
 
+from ms_agent.prompting import apply_prompt_files
 from ms_agent.utils import get_logger
 from omegaconf import DictConfig, ListConfig, OmegaConf
 from omegaconf.basecontainer import BaseContainer
@@ -95,6 +96,14 @@ class Config:
         config.local_dir = config_dir_or_id
         config.name = name
         config = cls.fill_missing_fields(config)
+        # Prompt files: resolve config.prompt.system from prompts/ directory
+        # if user didn't specify inline prompt.system.
+        try:
+            if isinstance(config, DictConfig):
+                config = apply_prompt_files(config)
+        except Exception:
+            # Never block config loading due to prompt resolving.
+            pass
         return config
 
     @staticmethod
