@@ -3,9 +3,8 @@ import inspect
 from copy import deepcopy
 from typing import Any, Dict, Generator, Iterable, List, Optional
 
-import json
-
 import httpx
+import json
 from ms_agent.llm import LLM
 from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.utils import (MAX_CONTINUE_RUNS, assert_package_exist,
@@ -29,8 +28,8 @@ class _DashScopeResponsesTransport(httpx.HTTPTransport):
 
     def handle_request(self, request):
         if b'/v1/responses' in request.url.raw_path:
-            new_path = request.url.raw_path.replace(
-                b'/v1/responses', b'/v1/chat/completions')
+            new_path = request.url.raw_path.replace(b'/v1/responses',
+                                                    b'/v1/chat/completions')
             request.url = request.url.copy_with(raw_path=new_path)
         return super().handle_request(request)
 
@@ -85,7 +84,8 @@ class OpenAI(LLM):
             getattr(config, 'generation_config', DictConfig({})))
 
         # Responses API support
-        self._use_responses_api = bool(self.args.get('use_responses_api', False))
+        self._use_responses_api = bool(
+            self.args.get('use_responses_api', False))
         self._responses_client = None
         self._responses_state_mode = str(
             self.args.get('responses_state_mode', 'stateless')).lower()
@@ -93,8 +93,8 @@ class OpenAI(LLM):
             self._responses_state_mode = 'previous_response_id'
 
         if self._use_responses_api:
-            self._is_dashscope = bool(
-                base_url and 'dashscope' in base_url.lower())
+            self._is_dashscope = bool(base_url
+                                      and 'dashscope' in base_url.lower())
             if self._is_dashscope:
                 http_client = httpx.Client(
                     transport=_DashScopeResponsesTransport(),
@@ -618,10 +618,11 @@ class OpenAI(LLM):
                 if self._responses_state_mode != 'previous_response_id':
                     # Stateless mode needs explicit passback of opaque reasoning
                     # items returned by the previous response.
-                    for raw_item in getattr(
-                            msg, '_responses_output_items', []):
+                    for raw_item in getattr(msg, '_responses_output_items',
+                                            []):
                         items.append(raw_item)
-                if msg.content and not self._is_responses_tool_placeholder(msg):
+                if msg.content and not self._is_responses_tool_placeholder(
+                        msg):
                     items.append({
                         'role': 'assistant',
                         'content': msg.content,
@@ -657,11 +658,11 @@ class OpenAI(LLM):
     @staticmethod
     def _is_responses_tool_placeholder(message: Message) -> bool:
         """Return True for framework-generated assistant placeholder text."""
-        return bool(message.tool_calls) and message.content == 'Let me do a tool calling.'
+        return bool(message.tool_calls
+                    ) and message.content == 'Let me do a tool calling.'
 
     def _prepare_responses_request(
-            self,
-            messages: List[Message],
+            self, messages: List[Message],
             args: Dict[str, Any]) -> tuple[List[Message], Dict[str, Any]]:
         """Prepare message slice and request args for Responses API calls."""
         request_args = dict(args)
@@ -741,7 +742,8 @@ class OpenAI(LLM):
         return '\n'.join(parts)
 
     @staticmethod
-    def _extract_tool_calls_from_response(response) -> Optional[List[ToolCall]]:
+    def _extract_tool_calls_from_response(
+            response) -> Optional[List[ToolCall]]:
         """Extract tool calls from a completed Responses API object."""
         tool_calls: List[ToolCall] = []
         for item in getattr(response, 'output', []) or []:
@@ -751,7 +753,8 @@ class OpenAI(LLM):
                     arguments = json.dumps(arguments, ensure_ascii=False)
                 tool_calls.append(
                     ToolCall(
-                        id=getattr(item, 'call_id', '') or getattr(item, 'id', ''),
+                        id=getattr(item, 'call_id', '')
+                        or getattr(item, 'id', ''),
                         index=len(tool_calls),
                         type='function',
                         tool_name=getattr(item, 'name', ''),
@@ -779,7 +782,8 @@ class OpenAI(LLM):
             return [OpenAI._to_jsonable(item) for item in value]
         if isinstance(value, dict):
             return {
-                key: OpenAI._to_jsonable(item) for key, item in value.items()
+                key: OpenAI._to_jsonable(item)
+                for key, item in value.items()
             }
         if hasattr(value, 'model_dump'):
             return OpenAI._to_jsonable(value.model_dump())
@@ -798,9 +802,10 @@ class OpenAI(LLM):
             item_type = getattr(item, 'type', None)
             if item_type == 'reasoning':
                 passback_item: Dict[str, Any] = {
-                    'type': 'reasoning',
-                    'summary': self._to_jsonable(
-                        getattr(item, 'summary', []) or []),
+                    'type':
+                    'reasoning',
+                    'summary':
+                    self._to_jsonable(getattr(item, 'summary', []) or []),
                 }
                 encrypted_content = getattr(item, 'encrypted_content', None)
                 if encrypted_content:
@@ -812,11 +817,10 @@ class OpenAI(LLM):
                 items.append(passback_item)
         return items
 
-    def _responses_generate(
-            self,
-            messages: List[Message],
-            tools: Optional[List[Tool]] = None,
-            **args) -> Message:
+    def _responses_generate(self,
+                            messages: List[Message],
+                            tools: Optional[List[Tool]] = None,
+                            **args) -> Message:
         """Non-streaming Responses API call."""
         request_messages, request_args = self._prepare_responses_request(
             messages, args)
@@ -859,11 +863,10 @@ class OpenAI(LLM):
                 parts.append(text)
         return '\n'.join(parts)
 
-    def _responses_stream_generate(
-            self,
-            messages: List[Message],
-            tools: Optional[List[Tool]] = None,
-            **args) -> Generator[Message, None, None]:
+    def _responses_stream_generate(self,
+                                   messages: List[Message],
+                                   tools: Optional[List[Tool]] = None,
+                                   **args) -> Generator[Message, None, None]:
         """Streaming Responses API call.
 
         Yields incremental ``Message`` objects.  Reasoning summaries are
@@ -929,8 +932,8 @@ class OpenAI(LLM):
             elif event_type == 'response.failed':
                 failed_response = getattr(event, 'response', None)
                 failed_error = getattr(failed_response, 'error', None)
-                response_error_msg = getattr(
-                    failed_error, 'message', '') or str(failed_error)
+                response_error_msg = getattr(failed_error, 'message',
+                                             '') or str(failed_error)
 
         if final_response:
             if not reasoning_parts:
@@ -952,8 +955,7 @@ class OpenAI(LLM):
             current_message.id = getattr(final_response, 'id', '')
             yield current_message
         elif response_error_msg:
-            logger.error(
-                f'Responses API failed: {response_error_msg}')
+            logger.error(f'Responses API failed: {response_error_msg}')
             raise RuntimeError(
                 f'Responses API call failed: {response_error_msg}')
 

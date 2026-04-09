@@ -937,8 +937,8 @@ class LLMAgent(Agent):
 
                 # Handle reasoning summaries that arrive after content
                 if self.show_reasoning and _response_message is not None:
-                    final_reasoning = getattr(
-                        _response_message, 'reasoning_content', '') or ''
+                    final_reasoning = getattr(_response_message,
+                                              'reasoning_content', '') or ''
                     if final_reasoning and not _printed_reasoning_header:
                         self._write_thinking_header()
                         self._write_reasoning(final_reasoning, dim=True)

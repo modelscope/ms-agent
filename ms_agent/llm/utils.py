@@ -42,8 +42,7 @@ class Message:
 
     # Opaque output items from the Responses API that must be passed back
     # in multi-turn tool-calling conversations (e.g. reasoning items).
-    _responses_output_items: List[Dict[str, Any]] = field(
-        default_factory=list)
+    _responses_output_items: List[Dict[str, Any]] = field(default_factory=list)
 
     # request id
     id: str = ''
@@ -93,8 +92,10 @@ class Message:
                     }
                 }
         required = ['content', 'role']
-        rm = ['completion_tokens', 'prompt_tokens', 'api_calls',
-              '_responses_output_items']
+        rm = [
+            'completion_tokens', 'prompt_tokens', 'api_calls',
+            '_responses_output_items'
+        ]
         return {
             key: value
             for key, value in raw_dict.items()
