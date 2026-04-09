@@ -2,6 +2,8 @@
 
 Agentic Insight v2提供了一个更具可扩展性的深度研究框架，使智能体能够自主探索并执行复杂任务。
 
+> 🏆 **Benchmark**：[DeepResearch Bench](https://github.com/Ayanami0730/deep_research_bench) **开源 #2**（总榜 #5）——提交版本得分 **55.31**（Qwen3.5-Plus + GPT 5.2）。查看[排行榜](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard)。
+
 ### 🌟 功能特性
 
 Agentic Insight v2 的设计理念围绕以下要点：
