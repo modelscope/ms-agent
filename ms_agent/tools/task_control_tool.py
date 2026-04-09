@@ -15,17 +15,23 @@ _SERVER = 'task_control'
 class TaskControlTool(ToolBase):
     """Exposes background task management to the LLM.
 
-    Provides two tools:
+    Provides three tools:
     - list_tasks: show all background tasks and their status
     - cancel_task: kill a running background task by task_id
+    - push_to_background: escape a currently-blocking sync agent call to background
     """
 
     def __init__(self, config: DictConfig, **kwargs):
         super().__init__(config)
         self._task_manager = None
+        self._agent_tool = None
 
     def set_task_manager(self, task_manager) -> None:
         self._task_manager = task_manager
+
+    def set_agent_tool(self, agent_tool) -> None:
+        """Wire up the AgentTool so push_to_background can call escape_to_background."""
+        self._agent_tool = agent_tool
 
     async def connect(self) -> None:
         pass

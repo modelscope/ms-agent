@@ -234,5 +234,130 @@ class TestTaskControlTool(unittest.IsolatedAsyncioTestCase):
         self.assertIn('already', result)
 
 
+# ---------------------------------------------------------------------------
+# AgentTool escape-to-background (sync_timeout_s + escape_to_background API)
+# ---------------------------------------------------------------------------
+
+class TestAgentToolEscape(unittest.IsolatedAsyncioTestCase):
+    """Tests for _run_sync_escapable and escape_to_background.
+
+    We mock _run_agent and _launch_background so no real sub-agent is needed.
+    """
+
+    def _make_agent_tool(self):
+        from ms_agent.tools.agent_tool import AgentTool, _AgentToolSpec
+        from ms_agent.utils.task_manager import TaskManager
+        from omegaconf import OmegaConf
+        config = OmegaConf.create({
+            'tag': 'test',
+            'output_dir': '/tmp',
+            'tools': {},
+        })
+        tool = AgentTool(config)
+        tm = TaskManager()
+        tool.set_task_manager(tm)
+        return tool, tm
+
+    def _make_spec(self, sync_timeout_s=None):
+        from ms_agent.tools.agent_tool import _AgentToolSpec
+        return _AgentToolSpec(
+            tool_name='test_tool',
+            description='test',
+            parameters={},
+            config_path=None,
+            inline_config=None,
+            server_name='test_server',
+            tag_prefix='t-',
+            input_mode='text',
+            request_field='request',
+            input_template=None,
+            output_mode='final_message',
+            max_output_chars=1000,
+            trust_remote_code=None,
+            env=None,
+            run_in_thread=False,
+            run_in_process=False,
+            dynamic=False,
+            sync_timeout_s=sync_timeout_s,
+        )
+
+    async def test_normal_completion(self):
+        """Without timeout, task completes normally."""
+        tool, _ = self._make_agent_tool()
+        spec = self._make_spec()
+
+        async def fake_run_agent(agent, payload, spec, call_id=None):
+            return ['result']
+
+        tool._run_agent = fake_run_agent
+        result = await tool._run_sync_escapable('payload', spec, 'cid1')
+        self.assertEqual(result, ['result'])
+
+    async def test_escape_to_background_via_api(self):
+        """escape_to_background() triggers escape before task completes."""
+        tool, tm = self._make_agent_tool()
+        spec = self._make_spec()
+
+        started = asyncio.Event()
+
+        async def slow_run_agent(agent, payload, spec, call_id=None):
+            started.set()
+            await asyncio.sleep(10)  # will be cancelled
+            return ['should not reach']
+
+        launched = {}
+
+        async def fake_launch_background(payload, spec, call_id):
+            import json
+            launched['called'] = True
+            task_id = tm.register('agent', spec.tool_name, 'escaped')
+            return json.dumps({'status': 'async_launched', 'task_id': task_id})
+
+        tool._run_agent = slow_run_agent
+        tool._launch_background = fake_launch_background
+
+        async def _trigger_escape():
+            await started.wait()
+            tool.escape_to_background('cid2')
+
+        result_task = asyncio.create_task(
+            tool._run_sync_escapable('payload', spec, 'cid2'))
+        await asyncio.gather(_trigger_escape(), return_exceptions=True)
+        result = await result_task
+
+        self.assertIsInstance(result, str)
+        import json
+        data = json.loads(result)
+        self.assertEqual(data['status'], 'async_launched')
+        self.assertTrue(launched.get('called'))
+
+    async def test_escape_to_background_unknown_call_id(self):
+        """escape_to_background returns False for unknown call_id."""
+        tool, _ = self._make_agent_tool()
+        self.assertFalse(tool.escape_to_background('nonexistent'))
+
+    async def test_sync_timeout_triggers_escape(self):
+        """sync_timeout_s causes auto-escape when task takes too long."""
+        tool, tm = self._make_agent_tool()
+        spec = self._make_spec(sync_timeout_s=0.05)
+
+        async def slow_run_agent(agent, payload, spec, call_id=None):
+            await asyncio.sleep(10)
+            return ['should not reach']
+
+        async def fake_launch_background(payload, spec, call_id):
+            import json
+            task_id = tm.register('agent', spec.tool_name, 'timed out')
+            return json.dumps({'status': 'async_launched', 'task_id': task_id})
+
+        tool._run_agent = slow_run_agent
+        tool._launch_background = fake_launch_background
+
+        result = await tool._run_sync_escapable('payload', spec, 'cid3')
+        import json
+        data = json.loads(result)
+        self.assertEqual(data['status'], 'async_launched')
+
+
 if __name__ == '__main__':
     unittest.main()
