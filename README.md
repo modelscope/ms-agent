@@ -54,6 +54,8 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 
 ## 🎉 News
 
+* 🏆 Apr 09, 2026: Agentic Insight v2 is now **#2 Open-Source** (#5 Overall) on [DeepResearch Bench](https://github.com/Ayanami0730/deep_research_bench) — scoring **55.31** with the submitted version (Qwen3.5-Plus + GPT 5.2). [Leaderboard](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard) | [Agentic Insight v2](projects/deep_research/v2/README.md).
+
 * 🚀 Mar 23, 2026: Release MS-Agent v1.6.0, which includes the following updates:
   - **Context Compression**: Added context compression mechanism with token usage monitoring, overflow detection, and automatic context compaction via pruning historical tool outputs and LLM-based summarization.
   - **Agentic Insight v2 Enhancements**: Major architecture and performance improvements to the deep research system; achieves **55.43** on DeepResearch Bench with GPT5 and Qwen3.5-plus/flash. See [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2).
@@ -330,7 +332,7 @@ This project provides a framework for **Deep Research**, enabling agents to auto
 
 #### 🚀 Agentic Insight v2 (Recommended)
 
-- **Performance**: Multi-model orchestration (a low-cost combo across qwen3-max/plus/flash) achieves **49.94** on DeepResearch Bench.
+- **Performance**: **#2 Open-Source** (#5 Overall) on [DeepResearch Bench](https://github.com/Ayanami0730/deep_research_bench) — **55.31** with the submitted version (Qwen3.5-Plus + GPT 5.2).
 - **Deep Agents architecture**: "Researcher + tool-augmented sub-agents (Searcher/Reporter)" for flexible task allocation and efficient concurrency.
 - **File system as context**: Structured artifacts persisted to disk for low-loss context handoff and stable long-horizon runs (resume-friendly).
 - **Evidence-driven writing**: Reports are grounded in an indexed evidence base, improving trustworthiness and traceability.
