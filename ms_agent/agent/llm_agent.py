@@ -22,6 +22,7 @@ from ms_agent.rag.base import RAG
 from ms_agent.rag.utils import rag_mapping
 from ms_agent.tools import ToolManager
 from ms_agent.utils import async_retry, read_history, save_history
+from ms_agent.utils.task_manager import TaskManager
 from ms_agent.utils.constants import DEFAULT_TAG, DEFAULT_USER
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.snapshot import take_snapshot
@@ -106,6 +107,7 @@ class LLMAgent(Agent):
         super().__init__(config, tag, trust_remote_code)
         self.callbacks: List[Callback] = []
         self.tool_manager: Optional[ToolManager] = None
+        self.task_manager: Optional[TaskManager] = None
         self.memory_tools: List[Memory] = []
         self.rag: Optional[RAG] = None
         self.knowledge_search: Optional[SirschmunkSearch] = None
@@ -365,7 +367,7 @@ class LLMAgent(Agent):
                          saved_messages[:message_count])
         # Clear read cache on FileSystemTool so stale entries don't block edits
         if self.tool_manager is not None:
-            for tool in self.tool_manager.tools.values():
+            for tool in self.tool_manager.extra_tools:
                 if hasattr(tool, '_read_cache'):
                     tool._read_cache.clear()
         return True
@@ -570,6 +572,7 @@ class LLMAgent(Agent):
 
     async def prepare_tools(self):
         """Initialize and connect the tool manager."""
+        self.task_manager = TaskManager()
         self.tool_manager = ToolManager(
             self.config,
             self.mcp_config,
@@ -577,10 +580,16 @@ class LLMAgent(Agent):
             trust_remote_code=self.trust_remote_code,
         )
         await self.tool_manager.connect()
+        for tool in self.tool_manager.extra_tools:
+            if hasattr(tool, 'set_task_manager'):
+                tool.set_task_manager(self.task_manager)
 
     async def cleanup_tools(self):
         """Cleanup resources used by the tool manager."""
-        await self.tool_manager.cleanup()
+        if self.task_manager is not None:
+            self.task_manager.kill_all()
+        if self.tool_manager is not None:
+            await self.tool_manager.cleanup()
 
     @property
     def stream(self):
@@ -866,6 +875,17 @@ class LLMAgent(Agent):
                 and response_message.tool_calls):
             messages[-1].content = 'Let me do a tool calling.'
 
+    def _append_task_notifications(self, messages: List[Message]) -> List[Message]:
+        """Inject drained TaskManager completion notices as a user message."""
+        if self.task_manager is None:
+            return messages
+        notes = self.task_manager.drain_notifications()
+        if not notes:
+            return messages
+        body = '[Background task updates]\n' + '\n'.join(notes)
+        messages.append(Message(role='user', content=body))
+        return messages
+
     @async_retry(max_attempts=Agent.retry_count, delay=1.0)
     async def step(
         self, messages: List[Message]
@@ -893,6 +913,7 @@ class LLMAgent(Agent):
             List[Message]: Updated message history after this step.
         """
         messages = deepcopy(messages)
+        messages = self._append_task_notifications(messages)
         if (not self.load_cache) or messages[-1].role != 'assistant':
             messages = await self.condense_memory(messages)
             await self.on_generate_response(messages)

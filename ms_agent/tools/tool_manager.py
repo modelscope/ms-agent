@@ -88,6 +88,12 @@ class ToolManager:
             self.extra_tools.append(TodoListTool(config))
         if hasattr(config, 'tools') and hasattr(config.tools, 'web_search'):
             self.extra_tools.append(WebSearchTool(config))
+        ws = getattr(getattr(config, 'tools', None), 'workspace_search', None)
+        _ws_enabled = True if ws is None else bool(getattr(ws, 'enabled', True))
+        if _ws_enabled:
+            from ms_agent.tools.workspace_search_tool import WorkspaceSearchTool
+
+            self.extra_tools.append(WorkspaceSearchTool(config))
         self.tool_call_timeout = getattr(config, 'tool_call_timeout',
                                          TOOL_CALL_TIMEOUT)
         local_dir = self.config.local_dir if hasattr(self.config,
@@ -226,6 +232,13 @@ class ToolManager:
                     call_args = dict(tool_args or {})
                     call_id = tool_info.get('id') or str(uuid.uuid4())
                     call_args['__call_id'] = call_id
+                elif isinstance(
+                        tool_ins,
+                        LocalCodeExecutionTool) and tool_name.endswith(
+                            f'{self.TOOL_SPLITER}shell_executor'):
+                    call_args = dict(tool_args or {})
+                    call_args['__call_id'] = tool_info.get('id') or str(
+                        uuid.uuid4())
                 response = await asyncio.wait_for(
                     tool_ins.call_tool(
                         server_name,
