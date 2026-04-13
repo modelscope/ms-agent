@@ -371,9 +371,38 @@ class TypeScriptLSPServer(LSPServer):
 class PythonLSPServer(LSPServer):
     """Python LSP server (pyright)"""
 
+    @staticmethod
+    def _clean_env_for_node() -> dict[str, str]:
+        """Build a sanitized environment for the pyright Node.js process.
+
+        Pyright's langserver internally calls ``process.chdir()`` to its own
+        dist directory (``site-packages/pyright/dist/dist``), then spawns
+        Python subprocesses via ``execFileSync`` *without* an explicit
+        ``cwd``, so those subprocesses inherit the chdir'd directory.
+
+        If ``PYTHONPATH`` contains a relative component like ``../../``, it
+        gets resolved against pyright's dist directory at Python startup,
+        *before* any user code runs.  From ``pyright/dist/dist``, ``../../``
+        resolves to ``site-packages/pyright/``, which contains a
+        ``types.py`` that shadows the stdlib ``types`` module.  This causes
+        a fatal circular-import crash during site initialisation.
+
+        The fix: remove ``PYTHONPATH`` from the node subprocess environment.
+        Pyright doesn't need it — it discovers Python's search paths by
+        running ``python -c "..."`` and inspecting ``sys.path`` directly.
+        """
+        env = dict(os.environ)
+        removed = env.pop('PYTHONPATH', None)
+        if removed:
+            logger.debug('Removed PYTHONPATH=%r from pyright subprocess env',
+                         removed)
+        return env
+
     async def start(self) -> bool:
         """Start pyright"""
         try:
+            clean_env = self._clean_env_for_node()
+
             # Check if pyright is installed
             check_process = await asyncio.create_subprocess_exec(
                 'pyright',
@@ -394,7 +423,8 @@ class PythonLSPServer(LSPServer):
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                cwd=str(self.workspace_dir))
+                cwd=str(self.workspace_dir),
+                env=clean_env)
 
             self.stdin = self.process.stdin
             self.stdout = self.process.stdout
