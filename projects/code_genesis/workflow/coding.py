@@ -163,9 +163,7 @@ class Programmer(LLMAgent):
             for message in messages:
                 if message.tool_calls:
                     for tool_call in message.tool_calls:
-                        if 'read_file' in tool_call[
-                                'tool_name'] or 'read_abbreviation_file' in tool_call[
-                                    'tool_name']:
+                        if 'read_file' in tool_call['tool_name']:
                             arguments = tool_call['arguments']
                             if isinstance(arguments, str):
                                 try:

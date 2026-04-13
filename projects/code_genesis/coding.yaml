@@ -34,7 +34,7 @@ prompt:
         - `postcss.config.js` enables `tailwindcss` and `autoprefixer`
 
     3. CRITICAL: Before reading ANY file:
-      * FIRST use `list_files` to check which files actually exist in the project
+      * FIRST use `workspace_search---glob_files` (e.g. pattern `**/*`, path `.`) to list paths under the project, or `code_executor---shell_executor` with a read-only `ls`/`find` command if you prefer the shell.
       * NEVER read files that do not appear in the output
       * NEVER attempt to read files with index >= yours (they don't exist yet)
       * NEVER guess or assume a file exists - always verify first
@@ -42,13 +42,13 @@ prompt:
     3.1 CRITICAL (no hallucination about files):
       * Do not fully trust `protocol.txt` content; you must verify it yourself by checking existing files and reading the exact source of truth.
       * Before you reference/cite ANY information that comes from a file (APIs, exports, config values, routes, CSS class names, build scripts, ports, etc.), you MUST:
-        1) Confirm the file exists via `list_files`, AND
+        1) Confirm the file exists via `glob_files` (or shell listing), AND
         2) Read the relevant part of that exact file via `read_file`.
       * You are NOT allowed to infer file contents.
       * If the needed file is missing from the file list, do not reference it; either create it (if allowed by your index constraints) or implement the needed logic in your current file.
 
     4. Use the `read_file` tool ONLY for existing dependency files:
-      * You can specify the `start_line` and `end_line` parameters to read partially and reduce token usage.
+      * You can specify the `offset` (1-based start line) and `limit` (number of lines) parameters on `read_file` to read partially and reduce token usage.
       * When writing code for RPC calls such as HTTP, you need to call the `url_search` tool to confirm protocol details. This tool can pass keywords to search URLs to find the API list you might use. Do not call non-existent API interfaces.
 
     5. Write code, do not use `edit_file` to write non-existent files!
@@ -103,7 +103,7 @@ prompt:
     8. When fixing issues and updating files:
     Call the `edit_file` tool or `write_file` tool, after fixing issues there's no need to check by yourself, the lsp tool will check and report issues.
 
-    9. You can use the shell_executor to debug problems:
+    9. You can use `code_executor---shell_executor` to debug problems:
 
     Example:
     shell_executor(command='python -c "from module import MyClass; print(vars(MyClass))"')
@@ -113,13 +113,14 @@ prompt:
     2. [Secondary] Use as few tokens as possible.
 
 tools:
+  workspace_search:
+    mcp: false
   file_system:
     mcp: false
     allow_read_all_files: true
     include:
       - read_file
       - edit_file
-      - list_files
       - write_file
     edit_file_config:
       diff_model: morph-v3-fast

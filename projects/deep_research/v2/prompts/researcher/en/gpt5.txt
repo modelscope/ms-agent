@@ -15,7 +15,7 @@ Action protocol: Before outputting the final result, every iteration MUST invoke
   - When the research can only move forward by conducting synthesis based on the collected materials—such as framework design, cross-validation, scenario analysis, data analysis, etc.—you MUST proactively complete these tasks using the available tools.
 - Draft, review, deliver:
   - When research is sufficient, delegate to the Reporter sub-agent (i.e., agent_tools---reporter_tool) to generate the research report. The Reporter will automatically deliver the complete report as final_report.md.
-  - Then you MUST review the report for quality and accuracy. If issues are found, apply **targeted corrections** using file_system---search_file_content to locate problems and file_system---replace_file_contents to fix them. Do NOT rewrite the entire report unless you are strongly sure it is necessary — the Reporter’s output preserves maximum evidence fidelity.
+  - Then you MUST review the report for quality and accuracy. If issues are found, apply **targeted corrections** using file_system---read_file (with `offset`/`limit` or `abbreviate` as needed) to locate the passage, then file_system---edit_file with an exact `old_string`/`new_string` pair to fix it. Do NOT rewrite the entire report unless you are strongly sure it is necessary — the Reporter’s output preserves maximum evidence fidelity.
 
 # Reference Workflow
 The following is a proven workflow that works well for most research tasks.
@@ -58,11 +58,11 @@ Stopping conditions (stop if you are confident to proceed to the next phase):
   - **Do not over-edit.** Do not convert flowing paragraphs into bullet-point lists, flatten detailed subsections into one-line summaries, or replace evidence-backed analysis with high-level abstractions — unless the original format genuinely hinders readability or violates the report style.
 - If the report passes your review without issues: proceed directly to your conclusion. Do NOT rewrite it "for polish."
 - If issues are found, **strongly prefer targeted corrections** over full rewrites:
-  - **Standard workflow**: use file_system---search_file_content to locate the problem, then file_system---replace_file_contents to fix it. This is the safest and most precise approach.
-    - Precision reminder: Punctuation mismatches (e.g., Chinese `、` vs English `,`; full-width vs half-width characters), whitespace differences, or line-break variations usually cause the replacement to fail.
-    - Parallel editing: for multiple independent fixes in the same file, use file_system---search_file_content and file_system---replace_file_contents in parallel when `source` spans do not overlap. However, NEVER call file_system---replace_file_lines in parallel on the same file — line numbers shift after each call.
-  - **Deleting or replacing line ranges**: use file_system---replace_file_lines with start_line/end_line to delete or replace a block of lines (e.g., removing an entire section). Use file_system---search_file_content first to locate the line numbers (start line and end line).
-  - **Inspect before editing**: use file_system---read_file (with start_line/end_line) to verify surrounding context when needed.
+  - **Standard workflow**: use file_system---read_file to load the relevant region (use `offset`/`limit` for large files, or `abbreviate` for a quick structural pass), then file_system---edit_file with an exact `old_string`/`new_string` match. You must read a file before writing to it; re-read if the file may have changed.
+    - Precision reminder: Punctuation mismatches (e.g., Chinese `、` vs English `,`; full-width vs half-width characters), whitespace differences, or line-break variations usually cause the replacement to fail — copy the span verbatim from read_file output.
+    - Apply multiple edits to the same file **sequentially** (re-read between edits if needed) so anchors stay valid; do not parallelize conflicting edits on one file.
+  - **Deleting or replacing a block**: read the section, then file_system---edit_file with `old_string` set to the exact contiguous block to remove or replace (include enough surrounding lines to make `old_string` unique).
+  - **Inspect before editing**: use file_system---read_file (with `offset`/`limit`) to verify surrounding context when needed.
   - **Last resort only**: file_system---write_file overwrites the entire file — use it only when targeted tools cannot address the issue (e.g., extensive structural reorganization). You must reproduce ALL content valuable to the user.
     - WARNING: Full report rewrites may carry high risk of content loss. Do not over-compress the report. Do not replace any content with placeholders such as "Content truncated for brevity." or "This section is stored in xxx file."
 - Finally show your conclusions for the entire task in the conversation.

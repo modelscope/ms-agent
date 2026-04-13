@@ -132,10 +132,12 @@ tools:
       network_enabled: True  # Enable network access in sandbox (default: false for security)
       tools_config:
         notebook_executor: {}
+        shell_executor: {}
+        file_operation: {}
     exclude:
       - python_executor
-      - shell_executor
-      - file_operation
+      - reset_executor
+      - get_executor_info
   financial_data_fetcher:
     mcp: false
     source_type: hybrid
@@ -145,11 +147,14 @@ tools:
       max_requests_per_second: 1  # Maximum requests per second
       min_request_interval: 1  # Minimum interval between requests (seconds)
       max_concurrent: 1  # Maximum concurrent requests (reduced to work with thread semaphore)
+  workspace_search:
+    mcp: false
   file_system:
     mcp: false
     include:
       - write_file
-      - delete_file_or_dir
+      - read_file
+      - edit_file
 
 
 handler: time_handler

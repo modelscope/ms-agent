@@ -1,4 +1,5 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+import os
 from typing import List
 
 from file_parser import extract_code_blocks
@@ -31,7 +32,7 @@ class OrchestratorCallback(Callback):
         if messages[-1].tool_calls or messages[-1].role == 'tool':
             return
 
-        await self.file_system.create_directory()
+        os.makedirs(self.file_system.output_dir, exist_ok=True)
         content = '\n'.join([m.content for m in messages[2:]])
         all_files, _ = extract_code_blocks(content)
         results = []
