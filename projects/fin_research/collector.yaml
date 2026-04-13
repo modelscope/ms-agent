@@ -147,14 +147,14 @@ tools:
       max_requests_per_second: 1  # Maximum requests per second
       min_request_interval: 1  # Minimum interval between requests (seconds)
       max_concurrent: 1  # Maximum concurrent requests (reduced to work with thread semaphore)
-  workspace_search:
-    mcp: false
   file_system:
     mcp: false
     include:
       - write_file
       - read_file
       - edit_file
+      - grep
+      - glob
 
 
 handler: time_handler

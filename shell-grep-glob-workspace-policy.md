@@ -217,7 +217,7 @@ tools:
 | ArtifactManager | `ms_agent/utils/artifact_manager.py` |
 | TaskManager | `ms_agent/utils/task_manager.py` |
 | Shell 策略 / 产物 / 后台 | `ms_agent/tools/code/local_code_executor.py`（`set_task_manager`、`shell_executor`） |
-| Grep / Glob | `ms_agent/tools/workspace_search_tool.py`（默认注册；`tools.workspace_search.enabled: false` 可关闭） |
+| Grep / Glob | `ms_agent/tools/filesystem_tool.py` 中 `grep` / `glob` 工具（与 `read_file` / `edit_file` / `write_file` 同属 `file_system` server；用 `tools.file_system.include` / `exclude` 控制）。可选键：`grep_timeout_s`、`grep_head_limit`、`glob_max_files`；`include` 短名 `read` / `edit` / `write` 分别等价 `read_file` / `edit_file` / `write_file`。 |
 | `__call_id` 注入 shell | `ms_agent/tools/tool_manager.py` |
 | TaskManager 与通知 | `ms_agent/agent/llm_agent.py`（`prepare_tools` / `cleanup_tools` / `_append_task_notifications`） |
 | 单测 | `tests/utils/test_workspace_policy.py` |

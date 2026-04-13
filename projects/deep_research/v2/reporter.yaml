@@ -29,14 +29,14 @@ prompt:
   family: gpt5
 
 tools:
-  workspace_search:
-    mcp: false
   file_system:
     mcp: false
     include:
       - write_file
       - read_file
       - edit_file
+      - grep
+      - glob
   evidence_store:
     mcp: false
     evidence_dir: evidence

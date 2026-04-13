@@ -91,14 +91,14 @@ tools:
       - file_operation
       - reset_executor
       - get_executor_info
-  workspace_search:
-    mcp: false
   file_system:
     mcp: false
     include:
       - read_file
       - write_file
       - edit_file
+      - grep
+      - glob
     edit_file_config:
       diff_model: morph-v3-fast
       api_key:

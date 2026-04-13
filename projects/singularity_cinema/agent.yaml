@@ -275,8 +275,6 @@ fonts:
   - Microsoft YaHei
 
 tools:
-  workspace_search:
-    mcp: false
   file_system:
     mcp: false
     allow_read_all_files: true

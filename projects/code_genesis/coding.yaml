@@ -34,7 +34,7 @@ prompt:
         - `postcss.config.js` enables `tailwindcss` and `autoprefixer`
 
     3. CRITICAL: Before reading ANY file:
-      * FIRST use `workspace_search---glob_files` (e.g. pattern `**/*`, path `.`) to list paths under the project, or `code_executor---shell_executor` with a read-only `ls`/`find` command if you prefer the shell.
+      * FIRST use `file_system---glob` (e.g. pattern `**/*`, path `.`) to list paths under the project, or `code_executor---shell_executor` with a read-only `ls`/`find` command if you prefer the shell.
       * NEVER read files that do not appear in the output
       * NEVER attempt to read files with index >= yours (they don't exist yet)
       * NEVER guess or assume a file exists - always verify first
@@ -42,7 +42,7 @@ prompt:
     3.1 CRITICAL (no hallucination about files):
       * Do not fully trust `protocol.txt` content; you must verify it yourself by checking existing files and reading the exact source of truth.
       * Before you reference/cite ANY information that comes from a file (APIs, exports, config values, routes, CSS class names, build scripts, ports, etc.), you MUST:
-        1) Confirm the file exists via `glob_files` (or shell listing), AND
+        1) Confirm the file exists via `file_system---glob` (or shell listing), AND
         2) Read the relevant part of that exact file via `read_file`.
       * You are NOT allowed to infer file contents.
       * If the needed file is missing from the file list, do not reference it; either create it (if allowed by your index constraints) or implement the needed logic in your current file.
@@ -113,15 +113,15 @@ prompt:
     2. [Secondary] Use as few tokens as possible.
 
 tools:
-  workspace_search:
-    mcp: false
   file_system:
     mcp: false
     allow_read_all_files: true
     include:
-      - read_file
-      - edit_file
-      - write_file
+      - read
+      - edit
+      - write
+      - grep
+      - glob
     edit_file_config:
       diff_model: morph-v3-fast
       api_key:

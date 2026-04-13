@@ -28,13 +28,13 @@ prompt:
 
 
 tools:
-  workspace_search:
-    mcp: false
   file_system:
     mcp: false
     include:
       - write_file
       - read_file
+      - grep
+      - glob
   web_search:
     mcp: false
     engines:
