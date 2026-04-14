@@ -1,6 +1,6 @@
 # ms-agent × nanobot Integration
 
-This directory contains everything needed to use ms-agent's 14 MCP capabilities
+This directory contains everything needed to use ms-agent's 30 MCP capabilities
 from within nanobot.
 
 ## Prerequisites
@@ -19,7 +19,7 @@ cd /path/to/ms-agent
 python3 -m ms_agent.capabilities.mcp_server --check
 ```
 
-Expected output: JSON listing all 14 capabilities.
+Expected output: JSON listing all 30 capabilities.
 
 ### Step 2: Install the ms-agent skill into nanobot's workspace
 
@@ -50,6 +50,10 @@ nanobot agent -c examples/nanobot_integration/config.json
 python3 test_mcp_tools.py
 python3 test_mcp_tools.py --list          # List tools only
 python3 test_mcp_tools.py --test ws       # Test web search only
+python3 test_mcp_tools.py --test cg       # Test code genesis only
+python3 test_mcp_tools.py --test fr       # Test financial research only
+python3 test_mcp_tools.py --test vg       # Test video generation only
+python3 test_mcp_tools.py --test docr     # Test document research only
 ```
 
 ## How It Works
@@ -76,13 +80,15 @@ python3 test_mcp_tools.py --test ws       # Test web search only
 │  ms-agent MCP Server (python -m ms_agent.capabilities.   │
 │                        mcp_server)                        │
 │  ┌────────────────────────────────────────────────────┐  │
-│  │  CapabilityRegistry (14 tools)                     │  │
+│  │  CapabilityRegistry (30 tools)                     │  │
 │  │  ├── web_search           (arxiv/exa/serpapi)      │  │
 │  │  ├── delegate_task        (sync agent)             │  │
-│  │  ├── submit_agent_task    (async agent)            │  │
-│  │  ├── check/get/cancel_agent_task                   │  │
-│  │  ├── submit_research_task (async research)         │  │
-│  │  ├── check/get_research_progress/report            │  │
+│  │  ├── submit/check/get/cancel_agent_task            │  │
+│  │  ├── submit/check/get_research_*  (deep research)  │  │
+│  │  ├── submit/check/get_doc_research_* (doc)         │  │
+│  │  ├── submit/check/get_fin_research_* (finance)     │  │
+│  │  ├── submit/check/get_code_genesis_* (codegen)     │  │
+│  │  ├── submit/check/get_video_generation_* (video)   │  │
 │  │  ├── lsp_check_directory  (code validation)        │  │
 │  │  ├── lsp_update_and_check                          │  │
 │  │  ├── replace_file_contents (concurrent-safe edit)  │  │
@@ -94,7 +100,7 @@ python3 test_mcp_tools.py --test ws       # Test web search only
 ### Two Integration Layers
 
 1. **MCP Tools** — nanobot connects to ms-agent's MCP server via stdio.
-   All 14 capabilities appear as tools (prefixed `mcp_ms-agent_<name>`).
+   All 30 capabilities appear as tools (prefixed `mcp_ms-agent_<name>`).
    The agent can call them directly during the ReAct loop.
 
 2. **Skill Context** — the `ms-agent-skills/SKILL.md` is installed into
@@ -130,6 +136,24 @@ python3 test_mcp_tools.py --test ws       # Test web search only
 
 > Submit an agent task to analyze the architecture of this project and suggest
 > improvements. Check on it periodically and show me the results when done.
+
+### Code Generation (10-30 min)
+
+> Generate a todo app with React frontend, Express backend, and SQLite database.
+> Use the standard 7-stage workflow.
+
+### Financial Research (20-60 min)
+
+> Analyze CATL (300750.SZ) profitability over the past four quarters and compare
+> with BYD and Gotion High-Tech.
+
+### Document Research (1-20 min)
+
+> Analyze and summarize this paper: https://arxiv.org/pdf/2504.17432
+
+### Video Generation (~20 min)
+
+> Create a short educational video about GDP economics, about 3 minutes long.
 
 ## Environment & API Keys
 

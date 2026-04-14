@@ -24,6 +24,30 @@ class Tool(TypedDict, total=False):
     parameters: Dict[str, Any] = dict()
 
 
+def collect_response(response):
+    """Normalize an LLM ``generate()`` return value to a single complete
+    :class:`Message`.
+
+    ``LLM.generate()`` returns either a ``Message`` (non-streaming) or a
+    ``Generator[Message, None, None]`` (streaming).  In the streaming case
+    the generator yields progressively accumulated ``Message`` objects and
+    the last one contains the full response.  This helper transparently
+    consumes the generator so callers that only need the final result can
+    work identically regardless of the ``stream`` config.
+
+    Usage::
+
+        response = collect_response(llm.generate(messages))
+        text = response.content
+    """
+    if isinstance(response, Message):
+        return response
+    msg = None
+    for msg in response:
+        pass
+    return msg
+
+
 @dataclass
 class Message:
     role: Literal['system', 'user', 'assistant', 'tool']

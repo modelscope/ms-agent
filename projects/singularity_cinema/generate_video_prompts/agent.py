@@ -5,7 +5,7 @@ from typing import List, Union
 
 import json
 from ms_agent.agent import CodeAgent
-from ms_agent.llm import LLM, Message
+from ms_agent.llm import LLM, Message, collect_response
 from ms_agent.utils import get_logger
 from omegaconf import DictConfig
 
@@ -104,7 +104,7 @@ Requirements:
             Message(role='system', content=system),
             Message(role='user', content=query),
         ]
-        _response_message = llm.generate(inputs)
+        _response_message = collect_response(llm.generate(inputs))
         response = _response_message.content
         prompt = response.strip()
         with open(

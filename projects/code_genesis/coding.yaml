@@ -154,3 +154,5 @@ lsp_check: true
 max_chat_round: 99
 
 tool_call_timeout: 30000
+
+output_dir: ./output

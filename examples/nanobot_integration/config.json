@@ -19,7 +19,7 @@
         "env": {
           "PYTHONPATH": "../../"
         },
-        "toolTimeout": 300,
+        "toolTimeout": 600,
         "enabledTools": ["*"]
       }
     }

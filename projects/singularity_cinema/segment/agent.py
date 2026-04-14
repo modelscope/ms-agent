@@ -4,7 +4,7 @@ from copy import deepcopy
 
 import json
 from ms_agent.agent import LLMAgent
-from ms_agent.llm import Message
+from ms_agent.llm import Message, collect_response
 from ms_agent.utils import get_logger
 from omegaconf import DictConfig
 
@@ -247,7 +247,7 @@ class Segment(LLMAgent):
             Message(role='system', content=system),
             Message(role='user', content=query),
         ]
-        message = self.llm.generate(messages, **kwargs)
+        message = collect_response(self.llm.generate(messages, **kwargs))
         response = message.content
         if '```json' in response:
             response = response.split('```json')[1].split('```')[0]

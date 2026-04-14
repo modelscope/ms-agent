@@ -8,7 +8,7 @@ from typing import List, Optional, Union
 
 import json
 from ms_agent.agent import CodeAgent
-from ms_agent.llm import LLM, Message
+from ms_agent.llm import LLM, Message, collect_response
 from ms_agent.utils import get_logger
 from omegaconf import DictConfig
 
@@ -123,7 +123,7 @@ class GenerateIllustrationPrompts(CodeAgent):
             Message(role='user', content=query),
         ]
 
-        response = llm.generate(inputs).content.strip()
+        response = collect_response(llm.generate(inputs)).content.strip()
 
         # Strip thinking tags
         response = re.sub(
@@ -162,7 +162,7 @@ class GenerateIllustrationPrompts(CodeAgent):
                 Message(role='user', content=query),
             ]
 
-            response = llm.generate(inputs).content.strip()
+            response = collect_response(llm.generate(inputs)).content.strip()
 
             # Strip thinking tags
             response = re.sub(
