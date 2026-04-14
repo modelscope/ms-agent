@@ -65,6 +65,10 @@ class TestExaSearchRequest(unittest.TestCase):
         self.assertFalse(result['highlights'])
         self.assertFalse(result['summary'])
         # Optional fields should not be present when None
+        self.assertNotIn('start_published_date', result)
+        self.assertNotIn('end_published_date', result)
+        self.assertNotIn('start_crawl_date', result)
+        self.assertNotIn('end_crawl_date', result)
         self.assertNotIn('include_domains', result)
         self.assertNotIn('exclude_domains', result)
         self.assertNotIn('category', result)

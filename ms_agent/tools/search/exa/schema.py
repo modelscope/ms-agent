@@ -62,19 +62,15 @@ class ExaSearchRequest:
             'summary': self.summary,
             'type': self.type,
             'num_results': self.num_results,
-            'start_published_date': self.start_published_date,
-            'end_published_date': self.end_published_date,
-            'start_crawl_date': self.start_crawl_date,
-            'end_crawl_date': self.end_crawl_date,
         }
-        if self.include_domains:
-            d['include_domains'] = self.include_domains
-        if self.exclude_domains:
-            d['exclude_domains'] = self.exclude_domains
-        if self.category:
-            d['category'] = self.category
-        if self.user_location:
-            d['user_location'] = self.user_location
+        for field_name in [
+                'start_published_date', 'end_published_date',
+                'start_crawl_date', 'end_crawl_date', 'include_domains',
+                'exclude_domains', 'category', 'user_location',
+        ]:
+            value = getattr(self, field_name)
+            if value:
+                d[field_name] = value
         return d
 
     def to_json(self) -> str:
@@ -108,7 +104,7 @@ class ExaSearchResult:
             print('***Warning: No query provided for search results.')
             return []
 
-        res_list: List[Any] = []
+        res_list: List[Dict[str, Any]] = []
         for res in self.response.results:
             entry: Dict[str, Any] = {
                 'url': getattr(res, 'url', ''),
