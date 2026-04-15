@@ -26,6 +26,7 @@ class ExaSearch(SearchEngine):
         assert api_key, 'EXA_API_KEY must be set either as an argument or as an environment variable'
 
         self.client = Exa(api_key=api_key)
+        self.client.headers['x-exa-integration'] = 'ms-agent'
 
     def search(self, search_request: ExaSearchRequest) -> ExaSearchResult:
         """
@@ -55,10 +56,11 @@ class ExaSearch(SearchEngine):
             tool_name=cls.get_tool_name(),
             server_name=server_name,
             description=(
-                'Search the web using Exa neural search engine. '
+                'Search the web using Exa AI-powered search engine. '
                 'Best for: semantic understanding, finding relevant content, '
                 'recent web pages with date filtering. '
-                'Supports neural search (meaning-based) and keyword search.'),
+                'Supports neural search (meaning-based) and multiple '
+                'search modes including fast, deep, and instant.'),
             parameters={
                 'type': 'object',
                 'properties': {
@@ -67,7 +69,7 @@ class ExaSearch(SearchEngine):
                         'string',
                         'description':
                         ('The search query. For neural search, use natural language '
-                         'descriptions. For keyword search, use Google-style queries.'
+                         'descriptions. For fast search, use Google-style queries.'
                          ),
                     },
                     'num_results': {
@@ -83,11 +85,57 @@ class ExaSearch(SearchEngine):
                     'type': {
                         'type':
                         'string',
-                        'enum': ['auto', 'neural', 'keyword'],
+                        'enum': [
+                            'auto', 'neural', 'fast', 'deep-lite', 'deep',
+                            'deep-reasoning', 'instant'
+                        ],
                         'description':
                         ('Search type. "neural" for semantic similarity, '
-                         '"keyword" for exact matching, "auto" to let Exa decide. '
-                         'Default is "auto".'),
+                         '"fast" for quick results, "deep" for thorough search, '
+                         '"auto" to let Exa decide. Default is "auto".'),
+                    },
+                    'category': {
+                        'type':
+                        'string',
+                        'enum': [
+                            'company', 'research paper', 'news',
+                            'personal site', 'financial report', 'people'
+                        ],
+                        'description':
+                        'Filter results by content category.',
+                    },
+                    'include_domains': {
+                        'type':
+                        'array',
+                        'items': {
+                            'type': 'string'
+                        },
+                        'description':
+                        ('Only return results from these domains '
+                         '(e.g., ["arxiv.org", "github.com"]).'),
+                    },
+                    'exclude_domains': {
+                        'type':
+                        'array',
+                        'items': {
+                            'type': 'string'
+                        },
+                        'description':
+                        'Exclude results from these domains.',
+                    },
+                    'highlights': {
+                        'type':
+                        'boolean',
+                        'description':
+                        ('Return LLM-selected key highlights from each '
+                         'result. Default is false.'),
+                    },
+                    'summary': {
+                        'type':
+                        'boolean',
+                        'description':
+                        ('Return an LLM-generated summary for each '
+                         'result. Default is false.'),
                     },
                     'start_published_date': {
                         'type':
@@ -115,7 +163,13 @@ class ExaSearch(SearchEngine):
             query=kwargs['query'],
             num_results=kwargs.get('num_results', 5),
             type=kwargs.get('type', 'auto'),
-            text=False,
+            text=kwargs.get('text', True),
+            highlights=kwargs.get('highlights', False),
+            summary=kwargs.get('summary', False),
             start_published_date=kwargs.get('start_published_date'),
             end_published_date=kwargs.get('end_published_date'),
+            include_domains=kwargs.get('include_domains'),
+            exclude_domains=kwargs.get('exclude_domains'),
+            category=kwargs.get('category'),
+            user_location=kwargs.get('user_location'),
         )

@@ -15,10 +15,17 @@ class ExaSearchRequest:
     # Include text content in the search results or not
     text: Optional[bool] = True
 
-    # Type of search to perform, can be 'auto', 'neural', or 'keyword'
+    # Include highlights in the search results
+    highlights: Optional[bool] = False
+
+    # Include summary in the search results
+    summary: Optional[bool] = False
+
+    # Type of search to perform: 'auto', 'neural', 'fast', 'deep-lite',
+    # 'deep', 'deep-reasoning', or 'instant'
     type: Optional[str] = 'auto'
 
-    # Number of results to return, default is 25
+    # Number of results to return, default is 5
     num_results: Optional[int] = 5
 
     # Date filters for search results, formatted as 'YYYY-MM-DD'
@@ -29,23 +36,42 @@ class ExaSearchRequest:
     start_crawl_date: Optional[str] = None
     end_crawl_date: Optional[str] = None
 
+    # Domain filtering
+    include_domains: Optional[List[str]] = None
+    exclude_domains: Optional[List[str]] = None
+
+    # Category filter: 'company', 'research paper', 'news',
+    # 'personal site', 'financial report', 'people'
+    category: Optional[str] = None
+
+    # User location (two-letter ISO country code)
+    user_location: Optional[str] = None
+
     # temporary field for research goal
     research_goal: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """
-        Convert the request parameters to a dictionary.
+        Convert the request parameters to a dictionary suitable for
+        exa-py's search_and_contents() call.
         """
-        return {
+        d: Dict[str, Any] = {
             'query': self.query,
             'text': self.text,
+            'highlights': self.highlights,
+            'summary': self.summary,
             'type': self.type,
             'num_results': self.num_results,
-            'start_published_date': self.start_published_date,
-            'end_published_date': self.end_published_date,
-            'start_crawl_date': self.start_crawl_date,
-            'end_crawl_date': self.end_crawl_date
         }
+        for field_name in [
+                'start_published_date', 'end_published_date',
+                'start_crawl_date', 'end_crawl_date', 'include_domains',
+                'exclude_domains', 'category', 'user_location',
+        ]:
+            value = getattr(self, field_name)
+            if value:
+                d[field_name] = value
+        return d
 
     def to_json(self) -> str:
         """
@@ -64,7 +90,6 @@ class ExaSearchResult:
     arguments: Dict[str, Any] = field(default_factory=dict)
 
     # The response from the Exa search API
-    # SearchResponse(results=[Result(url='https://arxiv.org/abs/2505.02686', id='https://arxiv.org/abs/2505.02686', title='Sailing A...search_type='neural', auto_date=None, cost_dollars=CostDollars(total=0.03, search={'neural': 0.005}, contents={'text': 0.025}))
     response: SearchResponse = None
 
     def to_list(self):
@@ -79,24 +104,30 @@ class ExaSearchResult:
             print('***Warning: No query provided for search results.')
             return []
 
-        res_list: List[Any] = []
+        res_list: List[Dict[str, Any]] = []
         for res in self.response.results:
-            res_list.append({
-                'url':
-                getattr(res, 'url', ''),
-                'id':
-                getattr(res, 'id', ''),
-                'title':
-                getattr(res, 'title'),
-                'published_date':
-                getattr(res, 'published_date', ''),
-                'summary':
-                getattr(res, 'summary', ''),
-                # 'text': getattr(res, 'text', ''),
-                # 'highlights': getattr(res, 'highlights', ''),
-                # 'highlight_scores': getattr(res, 'highlight_scores', ''),
-                # 'markdown': getattr(res, 'markdown', ''),
-            })
+            entry: Dict[str, Any] = {
+                'url': getattr(res, 'url', ''),
+                'id': getattr(res, 'id', ''),
+                'title': getattr(res, 'title', ''),
+                'published_date': getattr(res, 'published_date', ''),
+            }
+            # Include content fields when available, cascading through
+            # summary > highlights > text for snippet extraction.
+            summary = getattr(res, 'summary', None)
+            highlights = getattr(res, 'highlights', None)
+            text = getattr(res, 'text', None)
+
+            if summary:
+                entry['summary'] = summary
+            if highlights:
+                entry['highlights'] = highlights
+                entry['highlight_scores'] = getattr(
+                    res, 'highlight_scores', None)
+            if text:
+                entry['text'] = text
+
+            res_list.append(entry)
 
         return res_list
 
@@ -104,34 +135,6 @@ class ExaSearchResult:
     def load_from_disk(file_path: str) -> List[Dict[str, Any]]:
         """
         Load search results from a local file.
-
-        Example:
-        [
-            {
-              "query": "Survey of Agent RL in last 3 months",
-              "arguments": {
-                "query": "Survey of Agent RL in last 3 months",
-                "text": true,
-                "type": "auto",
-                "num_results": 25,
-                "start_published_date": "2025-05-01",
-                "end_published_date": "2025-05-29",
-                "start_crawl_date": "2025-01-01",
-                "end_crawl_date": "2025-05-29"
-              },
-              "results": [
-                {
-                  "url": "https://arxiv.org/abs/2505.17342",
-                  "id": "https://arxiv.org/abs/2505.17342",
-                  "title": "A Survey of Safe Reinforcement Learning and Constrained MDPs: A Technical Survey on Single-Agent and Multi-Agent Safety",
-                  "highlights": null,
-                  "highlight_scores": null,
-                  "summary": null,
-                  "markdown": null,
-                },
-                ]
-            },
-        ]
         """
         with open(file_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
