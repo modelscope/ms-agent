@@ -221,17 +221,23 @@ def get_search_engine(engine_type: str,
 
     Args:
         engine_type: One of 'exa', 'serpapi', 'arxiv'
-        api_key: API key for the search engine (if required)
-        **kwargs: Additional arguments passed to engine constructor
+        api_key: API key for the search engine (if required).
+            For Exa, this can be a comma-separated string of multiple keys
+            to enable automatic key rotation on credit exhaustion.
+        **kwargs: Additional arguments passed to engine constructor.
+            For Exa, ``api_keys`` (list or comma-separated str) is also
+            accepted to supply a key pool explicitly.
     """
     engine_type = engine_type.lower().strip()
 
     if engine_type == 'exa':
         from ms_agent.tools.search.exa import ExaSearch
-        return ExaSearch(api_key=api_key or os.getenv('EXA_API_KEY'))
+        return ExaSearch(
+            api_key=api_key or os.getenv('EXA_API_KEY'),
+            api_keys=kwargs.get('api_keys') or os.getenv('EXA_API_KEYS'),
+        )
     elif engine_type in ('serpapi', 'serp', 'google', 'bing', 'baidu'):
         from ms_agent.tools.search.serpapi import SerpApiSearch
-        # Allow shorthand engine_type aliases to imply provider
         default_provider = ('google' if engine_type in ('serpapi', 'serp') else
                             engine_type)
         return SerpApiSearch(
@@ -394,13 +400,18 @@ class WebSearchTool(ToolBase):
                 'No valid engines configured, falling back to arxiv')
             self._engine_types = ['arxiv']
 
-        # API keys for each engine
+        # API keys for each engine.
+        # Exa supports a key pool: exa_api_keys (list/comma-separated) takes
+        # priority over the single-key fields. The value is forwarded as-is to
+        # ExaSearch which handles parsing into a list internally.
         self._api_keys = {
             'exa': (
-                getattr(tool_cfg, 'exa_api_key', None)
+                getattr(tool_cfg, 'exa_api_keys', None)
+                or getattr(tool_cfg, 'exa_api_key', None)
                 or getattr(tool_cfg, 'api_key', None)  # backward compat
-                or os.getenv('EXA_API_KEY'))
-            if tool_cfg else os.getenv('EXA_API_KEY'),
+                or os.getenv('EXA_API_KEYS') or os.getenv('EXA_API_KEY'))
+            if tool_cfg else
+            (os.getenv('EXA_API_KEYS') or os.getenv('EXA_API_KEY')),
             'serpapi': (getattr(tool_cfg, 'serpapi_api_key', None)
                         or os.getenv('SERPAPI_API_KEY'))
             if tool_cfg else os.getenv('SERPAPI_API_KEY'),
