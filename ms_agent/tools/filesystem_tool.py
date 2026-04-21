@@ -64,8 +64,10 @@ class FileSystemTool(ToolBase):
         index_dir = getattr(config, 'index_cache_dir', DEFAULT_INDEX_DIR)
         self.index_dir = os.path.join(self.output_dir, index_dir)
         self.system = self.SYSTEM_FOR_ABBREVIATIONS
-        if hasattr(self.config.tools.file_system, 'system_for_abbreviations'):
-            self.system = self.config.tools.file_system.system_for_abbreviations
+        fs_config = getattr(
+            getattr(self.config, 'tools', None), 'file_system', None)
+        if fs_config and hasattr(fs_config, 'system_for_abbreviations'):
+            self.system = fs_config.system_for_abbreviations
 
     async def connect(self):
         logger.warning_once(

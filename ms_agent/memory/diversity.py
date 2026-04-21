@@ -5,7 +5,7 @@ from typing import List
 from ms_agent.utils import get_logger
 from omegaconf import DictConfig
 
-from ..llm import LLM, Message
+from ..llm import LLM, Message, collect_response
 from ..tools import SplitTask
 from .base import Memory
 
@@ -141,7 +141,7 @@ Here are the original query and the keywords:
             Message(role='system', content=self.div_system3),
             Message(role='user', content=_query),
         ]
-        response_message = self.llm.generate(_messages)
+        response_message = collect_response(self.llm.generate(_messages))
         pattern = r'<result>(.*?)</result>'
         suggestions = []
         for prompt in re.findall(pattern, response_message.content, re.DOTALL):

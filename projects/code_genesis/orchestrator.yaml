@@ -94,3 +94,5 @@ tools:
       - write_file
 
 tool_call_timeout: 30
+
+output_dir: ./output

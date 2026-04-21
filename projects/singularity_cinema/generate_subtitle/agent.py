@@ -6,7 +6,7 @@ from typing import List
 import json
 import matplotlib.font_manager as fm
 from ms_agent.agent import CodeAgent
-from ms_agent.llm import LLM, Message
+from ms_agent.llm import LLM, Message, collect_response
 from ms_agent.llm.openai_llm import OpenAI
 from ms_agent.utils import get_logger
 from omegaconf import DictConfig
@@ -153,7 +153,7 @@ Now translate:
             Message(role='user', content=text),
         ]
 
-        _response_message = self.llm.generate(messages)
+        _response_message = collect_response(self.llm.generate(messages))
         return _response_message.content
 
     def get_font(self, size):
