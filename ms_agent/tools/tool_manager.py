@@ -236,7 +236,14 @@ class ToolManager:
             except asyncio.TimeoutError:
                 import traceback
                 logger.warning(traceback.format_exc())
-                # TODO: How to get the information printed by the tool before hanging to return to the model?
+                logger.warning(
+                    'Tool call hit tool_call_timeout=%s; the awaiting coroutine '
+                    'was cancelled (executor threads may still run). For long '
+                    'web_search batches, lower per_url_fetch_timeout in '
+                    'tools.web_search or raise tool_call_timeout in this agent '
+                    'YAML so the model can receive partial web_search JSON.',
+                    self.tool_call_timeout,
+                )
                 return f'Execute tool call timeout: {brief_info}'
             except Exception as e:
                 import traceback

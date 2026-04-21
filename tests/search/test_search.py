@@ -143,13 +143,18 @@ class TestArxivSearchResult(unittest.TestCase):
         result_list = result.to_list()
         self.assertEqual(len(result_list), 2)
 
-        # Test first result
+        # Test first result: primary url is abs (avoids PDF fetch); PDF kept in pdf_url
         self.assertEqual(result_list[0]['url'],
+                         'http://arxiv.org/abs/1234.5678')
+        self.assertEqual(result_list[0]['pdf_url'],
                          'http://arxiv.org/pdf/1234.5678')
         self.assertEqual(result_list[0]['id'],
                          'http://arxiv.org/abs/1234.5678')
         self.assertEqual(result_list[0]['title'], 'Test Paper 1')
         self.assertEqual(result_list[0]['summary'],
+                         'This is a test paper about AI')
+        self.assertTrue(result_list[0]['fetch_success'])
+        self.assertEqual(result_list[0]['content'],
                          'This is a test paper about AI')
 
 

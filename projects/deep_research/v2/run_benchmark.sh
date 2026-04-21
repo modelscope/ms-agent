@@ -30,6 +30,11 @@ else
     echo -e "${RED}Error: Neither 'python' nor 'python3' is available in PATH.${NC}"
     exit 1
 fi
+PYTHON_BIN="/Users/luyan/software/miniconda3/bin/python"
+
+# When stdout is redirected (e.g., nohup > file), Python is block-buffered by default.
+# Force unbuffered output so progress lines like "[xx] OK" show up in logs promptly.
+export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"
 
 # Use caffeinate on macOS when available; otherwise run normally.
 RUN_PREFIX=()
@@ -62,6 +67,23 @@ set -a  # Export all variables
 source .env
 set +a
 
+# Optional: parent wrapper may set these so proxy survives ``source .env`` (e.g. SOCKS from PAC).
+if [[ -n "${MSAGENT_REAPPLY_HTTPS_PROXY:-}" ]]; then
+  export https_proxy="$MSAGENT_REAPPLY_HTTPS_PROXY"
+  export HTTPS_PROXY="$MSAGENT_REAPPLY_HTTPS_PROXY"
+fi
+if [[ -n "${MSAGENT_REAPPLY_HTTP_PROXY:-}" ]]; then
+  export http_proxy="$MSAGENT_REAPPLY_HTTP_PROXY"
+  export HTTP_PROXY="$MSAGENT_REAPPLY_HTTP_PROXY"
+fi
+if [[ -n "${MSAGENT_REAPPLY_ALL_PROXY:-}" ]]; then
+  export ALL_PROXY="$MSAGENT_REAPPLY_ALL_PROXY"
+  export all_proxy="$MSAGENT_REAPPLY_ALL_PROXY"
+fi
+if [[ -n "${MSAGENT_REAPPLY_HTTPS_PROXY:-}" ]]; then
+  echo -e "${GREEN}Re-applied https proxy from MSAGENT_REAPPLY_* (survives .env).${NC}"
+fi
+
 # Validate required environment variables
 if [ -z "$OPENAI_API_KEY" ] || [ -z "$OPENAI_BASE_URL" ]; then
     echo -e "${RED}Error: OPENAI_API_KEY or OPENAI_BASE_URL not set in .env${NC}"
@@ -81,25 +103,40 @@ echo "  EXA_API_KEY: $([ -n "$EXA_API_KEY" ] && echo "✓ Set" || echo "✗ Not 
 echo "  SERPAPI_API_KEY: $([ -n "$SERPAPI_API_KEY" ] && echo "✓ Set" || echo "✗ Not set")"
 echo ""
 
+# SOCKS in https_proxy: stdlib urllib needs PySocks + early socket patch (see scripts/benchmark_sitecustomize/).
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+_proxy_blob="${https_proxy:-}${HTTPS_PROXY:-}${ALL_PROXY:-}${all_proxy:-}"
+if echo "$_proxy_blob" | grep -qi 'socks5'; then
+  _hook="${REPO_ROOT}/scripts/benchmark_sitecustomize"
+  if [[ -d "$_hook" ]]; then
+    export PYTHONPATH="${_hook}${PYTHONPATH:+:${PYTHONPATH}}"
+    echo -e "${GREEN}SOCKS proxy detected; PYTHONPATH+=benchmark_sitecustomize (urllib + PySocks).${NC}"
+  fi
+fi
+unset _proxy_blob _hook
+
 # Check if DR_BENCH_ROOT is set
 if [ -z "$DR_BENCH_ROOT" ]; then
     echo -e "${YELLOW}Warning: DR_BENCH_ROOT not set.${NC}"
     echo -e "${YELLOW}Using default benchmark query...${NC}"
     echo ""
 
-    # Run a simple benchmark query
-    QUERY="Provide a comprehensive survey of recent advances in large language models (LLMs), covering key developments in the last 12 months including architecture innovations, training techniques, and real-world applications."
-    OUTPUT_DIR="output/deep_research/benchmark_run"
+    # Run a simple benchmark query (override with BENCH_QUERY for smoke tests)
+    DEFAULT_QUERY="Provide a comprehensive survey of recent advances in large language models (LLMs), covering key developments in the last 12 months including architecture innovations, training techniques, and real-world applications."
+    QUERY="${BENCH_QUERY:-$DEFAULT_QUERY}"
+    OUTPUT_DIR="${BENCH_OUTPUT_DIR:-output/deep_research/benchmark_run}"
 
     echo -e "${GREEN}Running benchmark with query:${NC}"
     echo "  \"$QUERY\""
     echo ""
     echo -e "${GREEN}Output directory: $OUTPUT_DIR${NC}"
+    RESEARCHER_CONFIG="${RESEARCHER_CONFIG:-projects/deep_research/v2/researcher.yaml}"
+    echo -e "${GREEN}Researcher config: $RESEARCHER_CONFIG${NC}"
     echo ""
 
-    # Run the benchmark
-    PYTHONPATH=. "$PYTHON_BIN" ms_agent/cli/cli.py run \
-        --config projects/deep_research/v2/researcher.yaml \
+    # Run the benchmark (override RESEARCHER_CONFIG / BENCH_OUTPUT_DIR as needed)
+    PYTHONPATH=. "$PYTHON_BIN" -u ms_agent/cli/cli.py run \
+        --config "$RESEARCHER_CONFIG" \
         --query "$QUERY" \
         --trust_remote_code true \
         --output_dir "$OUTPUT_DIR"
@@ -118,7 +155,7 @@ else
 
     # Benchmark subprocess tuning (override via env vars if needed)
     export DR_BENCH_POST_FINISH_GRACE_S="${DR_BENCH_POST_FINISH_GRACE_S:-180}"
-    export DR_BENCH_POST_REPORT_EXIT_GRACE_S="${DR_BENCH_POST_REPORT_EXIT_GRACE_S:-3600}"
+    export DR_BENCH_POST_REPORT_EXIT_GRACE_S="${DR_BENCH_POST_REPORT_EXIT_GRACE_S:-7200}"
     export DR_BENCH_REPORT_STABLE_WINDOW_S="${DR_BENCH_REPORT_STABLE_WINDOW_S:-10}"
     export DR_BENCH_SUBPROCESS_POLL_INTERVAL_S="${DR_BENCH_SUBPROCESS_POLL_INTERVAL_S:-0.5}"
     export DR_BENCH_SUBPROCESS_TERMINATE_TIMEOUT_S="${DR_BENCH_SUBPROCESS_TERMINATE_TIMEOUT_S:-30}"
@@ -161,13 +198,16 @@ else
     echo "  Work root: $WORK_ROOT"
     echo "  Workers: $WORKERS"
     echo "  Limit: $LIMIT (0 = no limit)"
+    RESEARCHER_CONFIG="${RESEARCHER_CONFIG:-projects/deep_research/v2/researcher.yaml}"
+    echo "  Researcher config: $RESEARCHER_CONFIG"
     echo ""
 
     # Run the full benchmark
-    PYTHONPATH=. "${RUN_PREFIX[@]}" "$PYTHON_BIN" projects/deep_research/v2/eval/dr_bench_runner.py \
+    PYTHONPATH=. "${RUN_PREFIX[@]}" "$PYTHON_BIN" -u projects/deep_research/v2/eval/dr_bench_runner.py \
         --query_file "$QUERY_FILE" \
         --output_jsonl "$OUTPUT_JSONL" \
         --model_name "$MODEL_NAME" \
+        --config "$RESEARCHER_CONFIG" \
         --work_root "$WORK_ROOT" \
         --limit "$LIMIT" \
         --workers "$WORKERS" \

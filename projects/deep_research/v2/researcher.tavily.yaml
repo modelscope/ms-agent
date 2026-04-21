@@ -74,7 +74,7 @@ tools:
           Invoke the Searcher sub-agent to perform an in-depth research task on a specific topic.
           Searcher is capable of autonomously executing a research loop until sufficient evidence is collected and a research report is produced (search -> parse -> evidence discovery & storage -> progressive search -> ...).
           Returns a JSON result containing: task completion status, core findings, issues or limitations encountered, research report body, and evidence storage locations.
-        config_path: searcher.yaml
+        config_path: searcher.tavily.yaml
         parameters:
           type: object
           properties:

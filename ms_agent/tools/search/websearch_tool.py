@@ -10,17 +10,42 @@ from typing import Any, Dict, List, Optional, Tuple, Type
 
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
-from ms_agent.tools.jina_reader import JinaReaderConfig, fetch_single_text
+from ms_agent.tools.jina_reader import (JinaReaderConfig,
+                                        fetch_single_text_with_meta)
 from ms_agent.tools.search.content_optimizer import (ContentOptimizer,
                                                      ContentOptimizerConfig,
                                                      SearchResultReranker)
 from ms_agent.tools.search.search_base import ENGINE_TOOL_NAMES, SearchEngine
+from ms_agent.tools.search.web_search_spill import maybe_spill_web_search_payload
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.thread_util import DaemonThreadPoolExecutor
 
 logger = get_logger()
 
 MAX_FETCH_CHARS = int(os.getenv('MAX_FETCH_CHARS', 100000))
+
+
+def default_per_url_fetch_timeout_s(
+    fetch_timeout: float,
+    fetch_retries: int,
+    direct_fetch_timeout: float,
+    playwright_timeout_ms: int,
+) -> float:
+    """
+    Default asyncio cap for a single URL fetch (Jina → optional direct → optional PW).
+
+    Must exceed a worst-case Jina-only path (``fetch_timeout`` × (retries+1) attempts
+    plus backoff headroom) before tier-2/3, otherwise logs show all TIMEOUT and no
+    ``fetch_done``. Clamped to keep runaway tabs bounded.
+    """
+    ft = max(5.0, float(fetch_timeout))
+    retries = max(0, int(fetch_retries))
+    # Up to (retries+1) attempts each up to ``ft``; 1.35 leaves slack for urllib backoff.
+    jina_budget = ft * float(retries + 1) * 1.35
+    tail = max(10.0, float(direct_fetch_timeout)) + (
+        float(playwright_timeout_ms) / 1000.0) + 30.0
+    raw = jina_budget + tail
+    return max(210.0, min(720.0, raw))
 
 
 def _json_dumps(data: Any) -> str:
@@ -148,10 +173,11 @@ class JinaContentFetcher(ContentFetcher):
         url: str,
         max_chars: Optional[int] = MAX_FETCH_CHARS
     ) -> Tuple[str, Dict[str, Any]]:
-        content = fetch_single_text(url, self.config)
+        content, source_meta = fetch_single_text_with_meta(url, self.config)
         metadata: Dict[str, Any] = {
             'fetcher': 'jina_reader',
             'fetched_at': time.strftime('%Y-%m-%dT%H:%M:%S'),
+            **source_meta,
         }
 
         if max_chars:
@@ -171,10 +197,32 @@ def get_content_fetcher(fetcher_type: str = 'jina_reader',
     """Factory function to get content fetcher by type."""
     if fetcher_type == 'jina_reader':
         config = JinaReaderConfig(
-            timeout=kwargs.get('timeout', 30.0),
+            timeout=kwargs.get('timeout', 45.0),
             retries=kwargs.get('retries', 3),
+            direct_fetch_fallback=bool(kwargs.get('direct_fetch_fallback', True)),
+            direct_fetch_timeout=float(kwargs.get('direct_fetch_timeout', 15.0)),
+            playwright_fetch_fallback=bool(
+                kwargs.get('playwright_fetch_fallback', True)),
+            playwright_retry_min_chars=int(
+                kwargs.get('playwright_retry_min_chars', 400) or 400),
+            playwright_timeout_ms=int(
+                kwargs.get('playwright_timeout_ms', 30_000) or 30_000),
+            playwright_settle_ms=int(kwargs.get('playwright_settle_ms', 350)),
+            use_system_proxy=bool(kwargs.get('use_system_proxy', True)),
         )
         return JinaContentFetcher(config)
+    if fetcher_type == 'tavily_extract':
+        from ms_agent.tools.search.tavily.fetcher import TavilyExtractFetcher
+        return TavilyExtractFetcher(
+            api_key=kwargs.get('tavily_api_key'),
+            extract_depth=str(kwargs.get('tavily_extract_depth', 'advanced')),
+            format=str(kwargs.get('tavily_extract_format', 'markdown')),
+            timeout=float(kwargs.get('timeout', 45.0)),
+            chunks_per_source=int(kwargs.get('tavily_extract_chunks_per_source', 3)),
+            include_images=bool(kwargs.get('tavily_extract_include_images', False)),
+            include_favicon=bool(kwargs.get('tavily_extract_include_favicon', False)),
+            include_usage=bool(kwargs.get('tavily_extract_include_usage', False)),
+        )
     # Future: add more fetchers
     # elif fetcher_type == 'docling':
     #     return DoclingContentFetcher(**kwargs)
@@ -182,7 +230,24 @@ def get_content_fetcher(fetcher_type: str = 'jina_reader',
         logger.warning(
             f"Unknown fetcher type '{fetcher_type}', falling back to jina_reader"
         )
-        return JinaContentFetcher()
+        return JinaContentFetcher(
+            JinaReaderConfig(
+                timeout=kwargs.get('timeout', 45.0),
+                retries=kwargs.get('retries', 3),
+                direct_fetch_fallback=bool(kwargs.get('direct_fetch_fallback',
+                                                     True)),
+                direct_fetch_timeout=float(
+                    kwargs.get('direct_fetch_timeout', 15.0)),
+                playwright_fetch_fallback=bool(
+                    kwargs.get('playwright_fetch_fallback', True)),
+                playwright_retry_min_chars=int(
+                    kwargs.get('playwright_retry_min_chars', 400) or 400),
+                playwright_timeout_ms=int(
+                    kwargs.get('playwright_timeout_ms', 30_000) or 30_000),
+                playwright_settle_ms=int(
+                    kwargs.get('playwright_settle_ms', 350)),
+                use_system_proxy=bool(kwargs.get('use_system_proxy', True)),
+            ))
 
 
 def get_search_engine_class(engine_type: str) -> Type[SearchEngine]:
@@ -206,6 +271,9 @@ def get_search_engine_class(engine_type: str) -> Type[SearchEngine]:
     elif engine_type == 'arxiv':
         from ms_agent.tools.search.arxiv import ArxivSearch
         return ArxivSearch
+    elif engine_type == 'tavily':
+        from ms_agent.tools.search.tavily import TavilySearch
+        return TavilySearch
     else:
         logger.warning(
             f"Unknown search engine '{engine_type}', falling back to arxiv")
@@ -221,17 +289,23 @@ def get_search_engine(engine_type: str,
 
     Args:
         engine_type: One of 'exa', 'serpapi', 'arxiv'
-        api_key: API key for the search engine (if required)
-        **kwargs: Additional arguments passed to engine constructor
+        api_key: API key for the search engine (if required).
+            For Exa, this can be a comma-separated string of multiple keys
+            to enable automatic key rotation on credit exhaustion.
+        **kwargs: Additional arguments passed to engine constructor.
+            For Exa, ``api_keys`` (list or comma-separated str) is also
+            accepted to supply a key pool explicitly.
     """
     engine_type = engine_type.lower().strip()
 
     if engine_type == 'exa':
         from ms_agent.tools.search.exa import ExaSearch
-        return ExaSearch(api_key=api_key or os.getenv('EXA_API_KEY'))
+        return ExaSearch(
+            api_key=api_key or os.getenv('EXA_API_KEY'),
+            api_keys=kwargs.get('api_keys') or os.getenv('EXA_API_KEYS'),
+        )
     elif engine_type in ('serpapi', 'serp', 'google', 'bing', 'baidu'):
         from ms_agent.tools.search.serpapi import SerpApiSearch
-        # Allow shorthand engine_type aliases to imply provider
         default_provider = ('google' if engine_type in ('serpapi', 'serp') else
                             engine_type)
         return SerpApiSearch(
@@ -241,6 +315,12 @@ def get_search_engine(engine_type: str,
     elif engine_type == 'arxiv':
         from ms_agent.tools.search.arxiv import ArxivSearch
         return ArxivSearch()
+    elif engine_type == 'tavily':
+        from ms_agent.tools.search.tavily import TavilySearch
+        return TavilySearch(
+            api_key=api_key or os.getenv('TAVILY_API_KEY'),
+            request_timeout=float(kwargs.get('request_timeout', 120.0)),
+        )
     else:
         logger.warning(
             f"Unknown search engine '{engine_type}', falling back to arxiv")
@@ -265,7 +345,7 @@ def build_search_request(engine_type: str,
 class WebSearchTool(ToolBase):
     """
     Unified web search tool for agents. It can search the web and fetch page content.
-    - Search via multiple engines (Exa, SerpAPI, Arxiv)
+    - Search via multiple engines (Exa, SerpAPI, Arxiv, Tavily)
     - Dynamic tool definitions based on configured engines
     - Auto-fetch and parse page content
     - Configurable content fetcher (jina_reader, docling, etc.)
@@ -291,12 +371,14 @@ class WebSearchTool(ToolBase):
             exa_api_key: $EXA_API_KEY
             serpapi_api_key: $SERPAPI_API_KEY
             fetch_content: true
+            # Optional: asyncio deadline per URL (omit = auto from fetch_timeout/retries).
+            # per_url_fetch_timeout: 0
     """
 
     SERVER_NAME = 'web_search'
 
     # Registry of supported search engines
-    SUPPORTED_ENGINES = ('exa', 'serpapi', 'arxiv')
+    SUPPORTED_ENGINES = ('exa', 'serpapi', 'arxiv', 'tavily')
 
     # Process-wide (class-level) usage tracking for summarization calls.
     # This is intentionally separate from LLMAgent usage totals.
@@ -394,17 +476,45 @@ class WebSearchTool(ToolBase):
                 'No valid engines configured, falling back to arxiv')
             self._engine_types = ['arxiv']
 
-        # API keys for each engine
+        # API keys for each engine.
+        # Exa supports a key pool: exa_api_keys (list/comma-separated) takes
+        # priority over the single-key fields. The value is forwarded as-is to
+        # ExaSearch which handles parsing into a list internally.
         self._api_keys = {
             'exa': (
-                getattr(tool_cfg, 'exa_api_key', None)
+                getattr(tool_cfg, 'exa_api_keys', None)
+                or getattr(tool_cfg, 'exa_api_key', None)
                 or getattr(tool_cfg, 'api_key', None)  # backward compat
-                or os.getenv('EXA_API_KEY'))
-            if tool_cfg else os.getenv('EXA_API_KEY'),
+                or os.getenv('EXA_API_KEYS') or os.getenv('EXA_API_KEY'))
+            if tool_cfg else
+            (os.getenv('EXA_API_KEYS') or os.getenv('EXA_API_KEY')),
             'serpapi': (getattr(tool_cfg, 'serpapi_api_key', None)
                         or os.getenv('SERPAPI_API_KEY'))
             if tool_cfg else os.getenv('SERPAPI_API_KEY'),
+            'tavily': (getattr(tool_cfg, 'tavily_api_key', None)
+                       or os.getenv('TAVILY_API_KEY')) if tool_cfg else
+            os.getenv('TAVILY_API_KEY'),
         }
+
+        # Tavily search defaults from optional `tavily:` sub-block in YAML
+        self._tavily_defaults: Dict[str, Any] = {}
+        if tool_cfg is not None:
+            tv = getattr(tool_cfg, 'tavily', None)
+            if tv is not None:
+                try:
+                    from omegaconf import OmegaConf
+                    if OmegaConf.is_config(tv):
+                        self._tavily_defaults = dict(
+                            OmegaConf.to_container(tv, resolve=True))
+                    elif isinstance(tv, dict):
+                        self._tavily_defaults = dict(tv)
+                except Exception:
+                    if isinstance(tv, dict):
+                        self._tavily_defaults = dict(tv)
+
+        self._tavily_request_timeout = float(
+            getattr(tool_cfg, 'tavily_request_timeout', 120.0)
+            or 120.0) if tool_cfg else 120.0
 
         # SerpApi provider (google, bing, baidu)
         self._serpapi_provider = getattr(tool_cfg, 'serpapi_provider',
@@ -418,9 +528,34 @@ class WebSearchTool(ToolBase):
         self._fetcher_type = getattr(
             tool_cfg, 'fetcher', 'jina_reader') if tool_cfg else 'jina_reader'
         self._fetch_timeout = float(
-            getattr(tool_cfg, 'fetch_timeout', 30) or 30) if tool_cfg else 30.0
+            getattr(tool_cfg, 'fetch_timeout', 45) or 45) if tool_cfg else 45.0
         self._fetch_retries = int(getattr(tool_cfg, 'fetch_retries', 3)
                                   or 3) if tool_cfg else 3
+        self._jina_direct_fetch_fallback = bool(
+            getattr(tool_cfg, 'jina_direct_fetch_fallback', True)
+        ) if tool_cfg else True
+        if tool_cfg is not None and hasattr(tool_cfg, 'jina_direct_fetch_timeout'):
+            self._jina_direct_fetch_timeout = float(
+                tool_cfg.jina_direct_fetch_timeout)
+        else:
+            self._jina_direct_fetch_timeout = 15.0
+        self._jina_playwright_fetch_fallback = bool(
+            getattr(tool_cfg, 'jina_playwright_fetch_fallback', True)
+        ) if tool_cfg else True
+        self._jina_playwright_retry_min_chars = int(
+            getattr(tool_cfg, 'jina_playwright_retry_min_chars', 400) or 400
+        ) if tool_cfg else 400
+        self._jina_playwright_timeout_ms = int(
+            getattr(tool_cfg, 'jina_playwright_timeout_ms', 30000) or 30000
+        ) if tool_cfg else 30000
+        if tool_cfg is not None and hasattr(tool_cfg, 'jina_playwright_settle_ms'):
+            self._jina_playwright_settle_ms = int(
+                tool_cfg.jina_playwright_settle_ms)
+        else:
+            self._jina_playwright_settle_ms = 350
+        self._jina_use_system_proxy = bool(
+            getattr(tool_cfg, 'jina_use_system_proxy', True)
+        ) if tool_cfg else True
         self._fetch_content_default = bool(
             getattr(tool_cfg, 'fetch_content', True)) if tool_cfg else True
 
@@ -437,6 +572,20 @@ class WebSearchTool(ToolBase):
         self._max_concurrent_fetch = int(
             getattr(tool_cfg, 'max_concurrent_fetch', 3)
             or 3) if tool_cfg else 3
+        # Hard cap (seconds) per URL for asyncio.wait_for around run_in_executor.
+        # When hit, this URL gets empty content + fetch_error; other URLs in the
+        # same web_search call keep their already-fetched bodies. Set 0 to disable
+        # the asyncio cap (underlying urllib/Jina timeouts still apply).
+        if tool_cfg is not None and hasattr(tool_cfg, 'per_url_fetch_timeout'):
+            self._per_url_fetch_timeout_s = float(
+                tool_cfg.per_url_fetch_timeout)
+        else:
+            self._per_url_fetch_timeout_s = default_per_url_fetch_timeout_s(
+                self._fetch_timeout,
+                self._fetch_retries,
+                self._jina_direct_fetch_timeout,
+                self._jina_playwright_timeout_ms,
+            )
         self._max_concurrent_summarization = int(
             getattr(tool_cfg, 'max_concurrent_summarization', 5)
             or 5) if tool_cfg else 5
@@ -463,6 +612,19 @@ class WebSearchTool(ToolBase):
         self._summarization_timeout = float(
             getattr(tool_cfg, 'summarization_timeout', 90.0)
             or 90.0) if tool_cfg else 90.0
+
+        # Large payload spill (write bodies to disk; keep JSON small)
+        self._spill_enabled = bool(
+            getattr(tool_cfg, 'spill_large_results', True)) if tool_cfg else True
+        self._spill_max_inline_chars = int(
+            getattr(tool_cfg, 'spill_max_inline_chars', 120000)
+            or 120000) if tool_cfg else 120000
+        self._spill_subdir = str(
+            getattr(tool_cfg, 'spill_subdir', 'web_search_artifacts')
+            or 'web_search_artifacts') if tool_cfg else 'web_search_artifacts'
+        self._spill_preview_chars = int(
+            getattr(tool_cfg, 'spill_preview_chars', 600)
+            or 600) if tool_cfg else 600
 
         # Reranking config
         self._enable_rerank = bool(getattr(tool_cfg, 'enable_rerank',
@@ -508,6 +670,11 @@ class WebSearchTool(ToolBase):
                         api_key=self._api_keys.get('serpapi'),
                         provider=self._serpapi_provider,
                     )
+                elif engine_type == 'tavily':
+                    self._engines[engine_type] = engine_cls(
+                        api_key=self._api_keys.get('tavily'),
+                        request_timeout=self._tavily_request_timeout,
+                    )
                 else:  # arxiv
                     self._engines[engine_type] = engine_cls()
 
@@ -519,11 +686,35 @@ class WebSearchTool(ToolBase):
         if not self._engines:
             raise RuntimeError('No search engines could be initialized')
 
-        self._content_fetcher = get_content_fetcher(
-            self._fetcher_type,
-            timeout=self._fetch_timeout,
-            retries=self._fetch_retries,
-        )
+        wcfg = getattr(getattr(self.config, 'tools', None), 'web_search', None)
+        _fk: Dict[str, Any] = {
+            'timeout': self._fetch_timeout,
+            'retries': self._fetch_retries,
+            'tavily_api_key': self._api_keys.get('tavily'),
+            'direct_fetch_fallback': self._jina_direct_fetch_fallback,
+            'direct_fetch_timeout': self._jina_direct_fetch_timeout,
+            'playwright_fetch_fallback': self._jina_playwright_fetch_fallback,
+            'playwright_retry_min_chars': self._jina_playwright_retry_min_chars,
+            'playwright_timeout_ms': self._jina_playwright_timeout_ms,
+            'playwright_settle_ms': self._jina_playwright_settle_ms,
+            'use_system_proxy': self._jina_use_system_proxy,
+        }
+        if wcfg is not None:
+            _fk.update({
+                'tavily_extract_depth':
+                getattr(wcfg, 'tavily_extract_depth', 'advanced'),
+                'tavily_extract_format':
+                getattr(wcfg, 'tavily_extract_format', 'markdown'),
+                'tavily_extract_chunks_per_source':
+                int(getattr(wcfg, 'tavily_extract_chunks_per_source', 3) or 3),
+                'tavily_extract_include_images':
+                bool(getattr(wcfg, 'tavily_extract_include_images', False)),
+                'tavily_extract_include_favicon':
+                bool(getattr(wcfg, 'tavily_extract_include_favicon', False)),
+                'tavily_extract_include_usage':
+                bool(getattr(wcfg, 'tavily_extract_include_usage', False)),
+            })
+        self._content_fetcher = get_content_fetcher(self._fetcher_type, **_fk)
         # Use daemon threads: tool-call timeouts can cancel the awaiting coroutine,
         # but not the underlying sync network calls running in executor threads.
         self._executor = DaemonThreadPoolExecutor(
@@ -716,6 +907,59 @@ class WebSearchTool(ToolBase):
         return await loop.run_in_executor(self._executor,
                                           self._fetch_content_sync, url)
 
+    def _url_log_preview(self, url: str, max_len: int = 220) -> str:
+        u = (url or '').strip()
+        if len(u) <= max_len:
+            return u
+        return u[:max_len] + '...'
+
+    async def _fetch_content_async_bounded(self, url: str) -> Dict[str, Any]:
+        """
+        Fetch one URL with optional asyncio deadline and progress logs.
+
+        Executor threads are not cancelled on timeout; the model still receives
+        partial results for other URLs in the same batch.
+        """
+        u = (url or '').strip()
+        preview = self._url_log_preview(u)
+        t0 = time.perf_counter()
+        cap = float(self._per_url_fetch_timeout_s)
+        logger.info('[web_search] fetch start url=%s', preview)
+        try:
+            if cap > 0:
+                out = await asyncio.wait_for(
+                    self._fetch_content_async(u),
+                    timeout=cap,
+                )
+            else:
+                out = await self._fetch_content_async(u)
+        except asyncio.TimeoutError:
+            elapsed = time.perf_counter() - t0
+            logger.warning(
+                '[web_search] fetch TIMEOUT url=%s elapsed=%.1fs cap=%.1fs — '
+                'this URL is dropped for this response; others are unchanged',
+                preview, elapsed, cap)
+            return {
+                'url': u,
+                'content': '',
+                'fetch_success': False,
+                'fetcher': 'web_search',
+                'fetch_error': f'per_url_fetch_timeout ({cap:g}s)',
+                'fetch_timed_out': True,
+            }
+        elapsed = time.perf_counter() - t0
+        src = (out or {}).get('content_source') or (out or {}).get(
+            'fetcher', '') or ''
+        ok = bool((out or {}).get('fetch_success'))
+        logger.info(
+            '[web_search] fetch done url=%s elapsed=%.2fs ok=%s source=%s',
+            preview, elapsed, ok, src)
+        return out if out is not None else {
+            'url': u,
+            'content': '',
+            'fetch_success': False,
+        }
+
     async def _fetch_multiple_async(self,
                                     urls: List[str]) -> List[Dict[str, Any]]:
         """Fetch multiple URLs concurrently with semaphore."""
@@ -723,23 +967,41 @@ class WebSearchTool(ToolBase):
 
         async def _bounded_fetch(url: str) -> Dict[str, Any]:
             async with semaphore:
-                return await self._fetch_content_async(url)
+                return await self._fetch_content_async_bounded(url)
 
         tasks = [_bounded_fetch(url) for url in urls]
         return await asyncio.gather(*tasks)
 
-    def _do_search(self, engine_type: str, engine: SearchEngine,
-                   engine_cls: Type[SearchEngine],
-                   tool_args: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Perform search using the specified engine and return raw results."""
+    def _do_search(
+            self, engine_type: str, engine: SearchEngine,
+            engine_cls: Type[SearchEngine],
+            tool_args: Dict[str, Any]
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        """Perform search; returns (result rows, extra top-level metadata e.g. Tavily)."""
         try:
-            # Build request using engine's method
-            request = engine_cls.build_request_from_args(**tool_args)
+            merged = dict(tool_args)
+            if engine_type == 'tavily' and getattr(self, '_tavily_defaults',
+                                                   None):
+                merged = {**self._tavily_defaults, **merged}
+                # Keys only for engine / fetcher YAML, not TavilySearchRequest
+                for _k in ('request_timeout', 'tavily_extract_depth',
+                           'tavily_extract_format',
+                           'tavily_extract_chunks_per_source',
+                           'tavily_extract_include_images',
+                           'tavily_extract_include_favicon',
+                           'tavily_extract_include_usage'):
+                    merged.pop(_k, None)
+            request = engine_cls.build_request_from_args(**merged)
             result = engine.search(request)
-            return result.to_list()
+            rows = result.to_list()
+            extra: Dict[str, Any] = {}
+            from ms_agent.tools.search.tavily.schema import TavilySearchResult
+            if isinstance(result, TavilySearchResult):
+                extra = result.extra_response_fields()
+            return rows, extra
         except Exception as e:
             logger.error(f'Search failed ({engine_type}): {e}')
-            return []
+            return [], {}
 
     async def _execute_search(self, engine_type: str,
                               tool_args: Dict[str, Any]) -> str:
@@ -762,6 +1024,8 @@ class WebSearchTool(ToolBase):
                 'status': 'error',
                 'message': 'Query is required.'
             })
+
+        call_id_for_spill = str(tool_args.pop('__call_id', '') or '')
 
         # Get fetch_content preference, default to configured value
         fetch_content = tool_args.pop('fetch_content',
@@ -787,20 +1051,22 @@ class WebSearchTool(ToolBase):
 
         # Perform search
         loop = asyncio.get_event_loop()
-        search_results = await loop.run_in_executor(self._executor,
-                                                    self._do_search,
-                                                    engine_type, engine,
-                                                    engine_cls, tool_args)
+        search_results, tavily_extra = await loop.run_in_executor(
+            self._executor, self._do_search, engine_type, engine, engine_cls,
+            tool_args)
 
         if not search_results:
-            return _json_dumps({
+            out_empty: Dict[str, Any] = {
                 'status': 'ok',
                 'query': query,
                 'engine': engine_type,
                 'count': 0,
                 'results': [],
                 'message': 'No search results found.',
-            })
+            }
+            if tavily_extra:
+                out_empty.update(tavily_extra)
+            return _json_dumps(out_empty)
 
         original_count = len(search_results)
 
@@ -816,13 +1082,25 @@ class WebSearchTool(ToolBase):
                 f'Reranked {original_count} results to top {len(search_results)} '
                 f'for query: {query[:50]}...')
 
-        # Step 3: Fetch content for (filtered) results
+        # Step 3: Fetch content for (filtered) results (skip URLs already filled e.g. Tavily raw_content)
+        fetch_attempts = 0
+        fetch_timeouts = 0
         if fetch_content and self._content_fetcher:
             search_results = SearchResultReranker.deduplicate_by_url(
                 search_results)
-            urls = [r.get('url') for r in search_results if r.get('url')]
+            urls: List[str] = []
+            for r in search_results:
+                u = r.get('url')
+                if not u:
+                    continue
+                if r.get('fetch_success') and (r.get('content') or '').strip():
+                    continue
+                urls.append(u)
             if urls:
+                fetch_attempts = len(urls)
                 fetch_results = await self._fetch_multiple_async(urls)
+                fetch_timeouts = sum(
+                    1 for r in fetch_results if r.get('fetch_timed_out'))
 
                 # Merge search metadata with fetched content
                 url_to_fetch = {r['url']: r for r in fetch_results}
@@ -833,6 +1111,16 @@ class WebSearchTool(ToolBase):
                         sr['content'] = fetched.get('content', '')
                         sr['fetch_success'] = fetched.get(
                             'fetch_success', False)
+                        if fetched.get('fetch_error'):
+                            sr['fetch_error'] = fetched['fetch_error']
+                        else:
+                            sr.pop('fetch_error', None)
+                        if fetched.get('fetch_timed_out'):
+                            sr['fetch_timed_out'] = True
+                        else:
+                            sr.pop('fetch_timed_out', None)
+                        if fetched.get('content_source'):
+                            sr['content_source'] = fetched['content_source']
                         if fetched.get('published_at'
                                        ) and not sr.get('published_date'):
                             sr['published_at'] = fetched['published_at']
@@ -979,6 +1267,8 @@ class WebSearchTool(ToolBase):
                     sr.get('arxiv_id', '') or '',  # arXiv short id
                     'abs_url':
                     sr.get('id', '') or '',  # entry_id (abstract page)
+                    'pdf_url':
+                    sr.get('pdf_url', '') or '',
                     'abstract':
                     sr.get('summary', '') or '',
                     'authors':
@@ -994,6 +1284,12 @@ class WebSearchTool(ToolBase):
             if fetch_content:
                 item['content'] = sr.get('content', '')
                 item['fetch_success'] = sr.get('fetch_success', False)
+                if sr.get('fetch_error'):
+                    item['fetch_error'] = sr.get('fetch_error')
+                if sr.get('fetch_timed_out'):
+                    item['fetch_timed_out'] = True
+                if sr.get('content_source'):
+                    item['content_source'] = sr.get('content_source')
                 # Add summarization metadata if applicable
                 if sr.get('content_summarized'):
                     item['content_summarized'] = True
@@ -1006,6 +1302,14 @@ class WebSearchTool(ToolBase):
                 # Include snippet if available for non-arxiv engines
                 item['summary'] = sr.get('summary', '')
 
+            if engine_type == 'tavily':
+                if sr.get('score') is not None:
+                    item['score'] = sr.get('score')
+                if sr.get('tavily_images'):
+                    item['images'] = sr.get('tavily_images')
+                if sr.get('favicon'):
+                    item['favicon'] = sr.get('favicon')
+
             # Add item to results for all engines
             output_results.append(item)
 
@@ -1017,6 +1321,17 @@ class WebSearchTool(ToolBase):
             'count': len(output_results),
             'results': output_results,
         }
+        if fetch_content and self._content_fetcher:
+            response['fetch_stats'] = {
+                'per_url_timeout_s':
+                self._per_url_fetch_timeout_s,
+                'urls_fetched_this_call':
+                fetch_attempts,
+                'urls_timed_out':
+                fetch_timeouts,
+            }
+        if tavily_extra:
+            response.update(tavily_extra)
 
         # Add optimization info
         if self._enable_rerank or self._enable_summarization:
@@ -1059,6 +1374,29 @@ class WebSearchTool(ToolBase):
                     'summarization_usage_process_total'
                 ] = WebSearchTool.get_global_summarization_usage()  # yapf: disable
 
+        if self._spill_enabled:
+            od = getattr(self, 'output_dir', None) or getattr(
+                getattr(self, 'config', None), 'output_dir', '') or ''
+            if od:
+                try:
+                    new_results, spill_meta = maybe_spill_web_search_payload(
+                        output_dir=od,
+                        spill_subdir=self._spill_subdir,
+                        spill_max_inline_chars=self._spill_max_inline_chars,
+                        spill_preview_chars=self._spill_preview_chars,
+                        query=query,
+                        engine=engine_type,
+                        results=response['results'],
+                        call_id=call_id_for_spill,
+                    )
+                    if spill_meta:
+                        response['results'] = new_results
+                        response['spill'] = spill_meta
+                except Exception as e:
+                    logger.warning(
+                        f'web_search spill failed (returning full inline JSON): {e}'
+                    )
+
         return _json_dumps(response)
 
     async def fetch_page(self, url: str) -> str:
@@ -1069,7 +1407,7 @@ class WebSearchTool(ToolBase):
                 'message': 'URL is required.'
             })
 
-        result = await self._fetch_content_async(url.strip())
+        result = await self._fetch_content_async_bounded(url.strip())
 
         return _json_dumps({
             'status':
@@ -1082,6 +1420,10 @@ class WebSearchTool(ToolBase):
             result.get('published_at', ''),
             'fetch_success':
             result.get('fetch_success', False),
+            'fetch_error':
+            result.get('fetch_error', ''),
+            'fetch_timed_out':
+            bool(result.get('fetch_timed_out')),
             'chunks':
             result.get('chunks') if self._enable_chunking else None,
         })
@@ -1122,3 +1464,7 @@ class WebSearchTool(ToolBase):
     async def serpapi_search(self, **kwargs) -> str:
         """Search using SerpApi engine."""
         return await self._execute_search('serpapi', kwargs)
+
+    async def tavily_search(self, **kwargs) -> str:
+        """Search using Tavily engine."""
+        return await self._execute_search('tavily', kwargs)

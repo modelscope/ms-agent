@@ -1,3 +1,8 @@
+# Tavily-only web search (no Exa / no Jina Reader).
+# Use: cp projects/deep_research/v2/searcher.tavily.yaml projects/deep_research/v2/searcher.yaml
+# Or point researcher.yaml searcher_tool config_path to this file.
+# Requires TAVILY_API_KEY in .env.
+
 llm:
   service: openai
   model: qwen3.5-plus
@@ -9,14 +14,10 @@ generation_config:
   stream: true
   stream_options:
     include_usage: true
-  # Enable explicit prefix caching (auto-detects provider from openai_base_url)
   force_prefix_cache: true
-  # Supports role names: system, user, assistant, tool, last_message
   prefix_cache_roles: [system, user, assistant, tool]
   extra_body:
     enable_thinking: false
-    # show_reasoning: true
-    # reasoning_output: stdout
 
 
 tag: deep-research
@@ -38,32 +39,28 @@ tools:
       - list_files
   web_search:
     mcp: false
-    # For Tavily-only search, copy or symlink `searcher.tavily.yaml` over this file
-    # (see projects/deep_research/v2/searcher.tavily.yaml; summarization default off there).
     engines:
-      - exa
-      - arxiv
-    api_key: <EXA_API_KEY>
-    max_results: 5
-    fetcher: jina_reader
+      - tavily
+    tavily_api_key: <TAVILY_API_KEY>
+    max_results: 10
+    fetcher: tavily_extract
     fetch_content: true
     fetch_timeout: 60
     fetch_retries: 3
-    # Per-URL asyncio cap (s). Omit to auto-scale from fetch_timeout/retries + direct/PW budget (~300–420 with fetch_timeout=60).
     per_url_fetch_timeout: 400
-    # When Jina (r.jina.ai) returns empty, try HTTP GET on the target URL (default true).
-    # jina_direct_fetch_fallback: true
-    # Tier-2 urllib timeout (seconds); omit for 15. Set 0 to use fetch_timeout instead.
-    # jina_direct_fetch_timeout: 15
-    # If direct HTTP text is empty / too short / looks like a JS shell, retry with headless Chromium (optional: pip install playwright).
-    # jina_playwright_fetch_fallback: true
-    # jina_playwright_retry_min_chars: 400
-    # jina_playwright_timeout_ms: 30000
-    # Milliseconds to wait after domcontentloaded before reading innerText (lower = faster).
-    # jina_playwright_settle_ms: 350
     _max_concurrent_fetch: 5
+    tavily:
+      search_depth: advanced
+      include_raw_content: markdown
+      include_answer: advanced
+      chunks_per_source: 3
+      max_results: 10
+    tavily_request_timeout: 120
+    tavily_extract_depth: advanced
+    tavily_extract_format: markdown
     enable_chunking: false
-    enable_summarization: true
+    # Off by default: Tavily raw_content is enough; summarizer may hit provider filters.
+    enable_summarization: false
     summarizer_model: qwen3.5-flash
     summarizer_base_url: <OPENAI_BASE_URL>
     summarizer_api_key: <OPENAI_API_KEY>
@@ -71,6 +68,11 @@ tools:
     summarizer_max_workers: 15
     summarization_timeout: 360
     _max_concurrent_summarization: 15
+    # Optional: spill oversized tool JSON to output_dir/web_search_artifacts/…
+    # spill_large_results: true
+    # spill_max_inline_chars: 120000
+    # spill_preview_chars: 600
+    # spill_subdir: web_search_artifacts
   evidence_store:
     mcp: false
     evidence_dir: evidence
@@ -94,7 +96,6 @@ callbacks:
 
 max_chat_round: 30
 
-# Round-aware reminder injected via SearcherCallback.on_generate_response.
 round_reminder:
   enabled: true
   remind_at_round: 28
