@@ -1,0 +1,18 @@
+llm:
+  service: openai
+  model: qwen-plus
+  openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+
+generation_config:
+  temperature: 0.1
+  stream: true
+
+prompt:
+  system: |
+    You are a concise assistant. Answer questions briefly and directly.
+
+max_chat_round: 3
+
+callbacks: []
+
+tools:
