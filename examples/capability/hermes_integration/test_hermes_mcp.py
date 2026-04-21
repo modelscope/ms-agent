@@ -1,5 +1,21 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
-# yapf: disable
+"""
+ms-agent × Hermes Agent  —  MCP integration test
+
+Validates that the ms-agent MCP server works correctly when spawned
+the same way Hermes Agent would launch it (stdio subprocess from
+config.yaml mcp_servers).
+
+Hermes prefixes tools as  mcp_<server>_<tool_name>  but the underlying
+MCP JSON-RPC calls are identical, so this test connects as a generic
+MCP client and validates the server-side behaviour.
+
+Usage:
+  python test_hermes_mcp.py               # run all tests
+  python test_hermes_mcp.py --list        # list tools only
+  python test_hermes_mcp.py --test ws     # test web_search only
+  python test_hermes_mcp.py --test fs,ws  # combined tests
+"""
 import argparse
 import asyncio
 import json
@@ -7,22 +23,18 @@ import os
 import sys
 import tempfile
 
-MS_AGENT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+MS_AGENT_ROOT = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
 if MS_AGENT_ROOT not in sys.path:
     sys.path.insert(0, MS_AGENT_ROOT)
 
-# Load .env so the client side can also detect API keys (server loads separately)
 from dotenv import load_dotenv
 load_dotenv(os.path.join(MS_AGENT_ROOT, '.env'), override=False)
 
 
 async def connect(stack):
-    """Start an MCP Server subprocess, establish a stdio connection, and return a ClientSession.
-
-    Equivalent to the nanobot config.json entry:
-      { "command": "python3", "args": ["-m", "ms_agent.capabilities.mcp_server"] }
-    """
+    """Start an MCP Server subprocess the same way Hermes Agent would."""
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
 
@@ -39,23 +51,20 @@ async def connect(stack):
 
 
 async def list_tools(session):
-    """Call the tools/list protocol method and print all registered MCP tools."""
     result = await session.list_tools()
     print(f'\n{"=" * 64}')
     print(f'  MCP Server registered tools ({len(result.tools)})')
+    print(f'  (Hermes will prefix these as mcp_ms-agent_<name>)')
     print(f'{"=" * 64}\n')
     for tool in result.tools:
-        desc = (tool.description or '')[:60]
-        print(f'  {tool.name:38s} {desc}')
+        desc = (tool.description or '')[:55]
+        hermes_name = f'mcp_ms-agent_{tool.name}'
+        print(f'  {hermes_name:48s} {desc}')
     print()
     return result.tools
 
 
 async def call_tool(session, name: str, args: dict, timeout: int = 120):
-    """Call an MCP tool, parse the JSON result, and print it.
-
-    Corresponds to the tools/call JSON-RPC request inside nanobot.
-    """
     from mcp import types
 
     brief = json.dumps(args, ensure_ascii=False)
@@ -68,7 +77,6 @@ async def call_tool(session, name: str, args: dict, timeout: int = 120):
         timeout=timeout,
     )
 
-    # MCP return value is a list of content blocks; extract text parts
     text = '\n'.join(
         block.text for block in result.content
         if isinstance(block, types.TextContent)
@@ -76,16 +84,12 @@ async def call_tool(session, name: str, args: dict, timeout: int = 120):
 
     try:
         parsed = json.loads(text)
-        # Print only key fields to avoid flooding the console
         preview = json.dumps(parsed, indent=2, ensure_ascii=False)
         if len(preview) > 600:
             preview = preview[:597] + '...'
         print(f'  <<< {preview}')
-        # Print error message if present
         if isinstance(parsed, dict) and parsed.get('error'):
-            print(f'  ⚠ ERROR: {parsed["error"][:200]}')
-        if isinstance(parsed, dict) and parsed.get('log_tail'):
-            print(f'  📋 LOG: {parsed["log_tail"][:300]}')
+            print(f'  !! ERROR: {parsed["error"][:200]}')
         return parsed
     except json.JSONDecodeError:
         print(f'  <<< {text[:400]}')
@@ -99,31 +103,26 @@ def section(title: str):
 
 
 def ok(msg: str):
-    print(f'  ✓ {msg}')
+    print(f'  [PASS] {msg}')
 
 
 def skip(msg: str):
-    print(f'  ⊘ {msg}')
+    print(f'  [SKIP] {msg}')
 
 
 def fail(msg: str):
-    print(f'  ✗ {msg}')
+    print(f'  [FAIL] {msg}')
 
 
 async def test_filesystem(session):
-    """Test filesystem atomic tools:
-    - replace_file_contents: content-based replacement (concurrency-safe)
-    - replace_file_lines:    line-number-based replace / insert / append
-    """
     section('Filesystem Tools')
 
-    # Prepare a temporary file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.py',
+                                     delete=False) as f:
         f.write('def hello():\n    print("Hello, World!")\n\nhello()\n')
         test_file = f.name
     print(f'  Temp file: {test_file}')
 
-    # 1. replace_file_contents — content-based replacement
     r = await call_tool(session, 'replace_file_contents', {
         'path': test_file,
         'source': 'def hello():\n    print("Hello, World!")',
@@ -132,7 +131,6 @@ async def test_filesystem(session):
     assert 'error' not in r, r
     ok('replace_file_contents replacement succeeded')
 
-    # 2. replace_file_lines — insert a line at the beginning of the file
     r = await call_tool(session, 'replace_file_lines', {
         'path': test_file,
         'content': '# Generated by ms-agent\n',
@@ -141,10 +139,10 @@ async def test_filesystem(session):
     assert 'error' not in r, r
     ok('replace_file_lines header insertion succeeded')
 
-    # 3. Error path: non-existent file
     r = await call_tool(session, 'replace_file_contents', {
         'path': '/nonexistent/path.txt',
-        'source': 'x', 'target': 'y',
+        'source': 'x',
+        'target': 'y',
     })
     assert 'error' in r
     ok('Non-existent file correctly returned error')
@@ -153,13 +151,8 @@ async def test_filesystem(session):
 
 
 async def test_web_search(session):
-    """Test the web_search tool:
-    - arxiv engine: no API key required, searches academic papers
-    - exa engine:   requires EXA_API_KEY, searches general web pages
-    """
     section('Web Search')
 
-    # 1. arxiv — no API key required
     r = await call_tool(session, 'web_search', {
         'query': 'large language model agent framework',
         'engine_type': 'arxiv',
@@ -167,13 +160,10 @@ async def test_web_search(session):
     })
     if 'error' not in r:
         assert r['status'] == 'ok'
-        for i, item in enumerate(r.get('results', []), 1):
-            print(f'      {i}. {item.get("title", "")[:55]}')
         ok(f'arxiv search returned {r["count"]} results')
     else:
         fail(f'arxiv: {r["error"]}')
 
-    # 2. exa — requires EXA_API_KEY
     if os.environ.get('EXA_API_KEY'):
         r = await call_tool(session, 'web_search', {
             'query': 'ModelScope agent framework',
@@ -189,27 +179,18 @@ async def test_web_search(session):
 
 
 async def test_agent_delegate(session):
-    """Test Agent delegation capabilities:
-    - delegate_task:  synchronous LLM Agent call (blocks until completion)
-    - submit / check / get / cancel: asynchronous call mode
-
-    Full lifecycle of async mode:
-      submit_agent_task -> check_agent_task -> get_agent_result
-    """
     section('Agent Delegate')
 
-    # 1. Error handling: unknown task_id
-    for tool_name in ['check_agent_task', 'get_agent_result', 'cancel_agent_task']:
+    for tool_name in ['check_agent_task', 'get_agent_result',
+                      'cancel_agent_task']:
         r = await call_tool(session, tool_name, {'task_id': 'nonexistent'})
         assert 'error' in r
     ok('check/get/cancel with unknown task_id all correctly returned errors')
 
-    # 2. Empty query rejection
     r = await call_tool(session, 'delegate_task', {'query': ''})
     assert 'error' in r
     ok('Empty query correctly rejected')
 
-    # 3. Real LLM call: submit async task, wait for completion, read result
     if not os.environ.get('OPENAI_API_KEY'):
         skip('OPENAI_API_KEY not set, skipping real LLM call')
         return
@@ -222,16 +203,16 @@ async def test_agent_delegate(session):
     task_id = r['task_id']
     ok(f'Async task submitted: {task_id}')
 
-    # Poll until completion (up to 30s)
     for _ in range(10):
         await asyncio.sleep(3)
-        progress = await call_tool(session, 'check_agent_task', {'task_id': task_id})
+        progress = await call_tool(session, 'check_agent_task',
+                                   {'task_id': task_id})
         if progress.get('status') != 'running':
             break
     ok(f'Task status: {progress.get("status")}')
 
-    # Get result
-    result = await call_tool(session, 'get_agent_result', {'task_id': task_id})
+    result = await call_tool(session, 'get_agent_result',
+                             {'task_id': task_id})
     if result.get('status') == 'completed':
         ok(f'LLM response: {result.get("response", "")[:100]}')
     else:
@@ -239,13 +220,6 @@ async def test_agent_delegate(session):
 
 
 async def test_deep_research(session):
-    """Test Deep Research async trio:
-      submit_research_task    -> submit a background research task (returns task_id)
-      check_research_progress -> poll progress
-      get_research_report     -> retrieve the final report
-
-    Since research takes 20-60 minutes, this only validates the submit and poll interfaces.
-    """
     section('Deep Research (Async)')
 
     r = await call_tool(session, 'submit_research_task', {
@@ -255,47 +229,39 @@ async def test_deep_research(session):
         task_id = r['task_id']
         ok(f'Task submitted: {task_id}')
         await asyncio.sleep(2)
-        progress = await call_tool(session, 'check_research_progress', {'task_id': task_id})
+        progress = await call_tool(session, 'check_research_progress',
+                                   {'task_id': task_id})
         ok(f'Poll status: {progress.get("status")}')
     elif 'error' in r:
-        # Expected error when config file is missing
         ok(f'Expected error (no config): {r["error"][:80]}')
-        r2 = await call_tool(session, 'check_research_progress', {'task_id': 'fake'})
+        r2 = await call_tool(session, 'check_research_progress',
+                             {'task_id': 'fake'})
         assert 'error' in r2
         ok('Unknown task_id correctly returned error')
 
 
 async def test_code_genesis(session):
-    """Test Code Genesis (code generation) async trio:
-      submit_code_genesis_task     -> submit a code generation task
-      check_code_genesis_progress  -> check generation progress (file count)
-      get_code_genesis_result      -> get generation result (file tree + key contents)
-
-    Requires a Docker environment; this only validates the interface layer and initial generation.
-    """
     section('Code Genesis (Async)')
 
-    # Error handling
-    r = await call_tool(session, 'check_code_genesis_progress', {'task_id': 'fake'})
+    r = await call_tool(session, 'check_code_genesis_progress',
+                        {'task_id': 'fake'})
     assert 'error' in r
-    r = await call_tool(session, 'get_code_genesis_result', {'task_id': 'fake'})
+    r = await call_tool(session, 'get_code_genesis_result',
+                        {'task_id': 'fake'})
     assert 'error' in r
     ok('check/get with unknown task_id both correctly returned errors')
 
-    # Submit task
     r = await call_tool(session, 'submit_code_genesis_task', {
         'query': 'Create a hello world Python CLI tool',
     })
     if 'task_id' in r:
         task_id = r['task_id']
-        ok(f'Task submitted: {task_id}, output_dir: {r.get("output_dir", "?")}')
+        ok(f'Task submitted: {task_id}')
 
-        # Wait for initial file generation (user_story stage takes ~10-20s)
         for i in range(6):
             await asyncio.sleep(5)
-            progress = await call_tool(session, 'check_code_genesis_progress', {
-                'task_id': task_id,
-            })
+            progress = await call_tool(session, 'check_code_genesis_progress',
+                                       {'task_id': task_id})
             status = progress.get('status', '?')
             total_files = progress.get('total_files', 0)
             print(f'      [{(i+1)*5}s] status={status}, files={total_files}')
@@ -307,7 +273,7 @@ async def test_code_genesis(session):
         if total_files > 0:
             ok(f'Code generation in progress, {total_files} files generated')
         elif status == 'running':
-            ok(f'Task still running (status={status}), initial stage takes longer')
+            ok(f'Task still running (status={status})')
         else:
             fail(f'Task abnormal: status={status}')
     else:
@@ -315,18 +281,13 @@ async def test_code_genesis(session):
 
 
 async def test_fin_research(session):
-    """Test Financial Research async trio:
-      submit_fin_research_task    -> submit a financial analysis task
-      check_fin_research_progress -> check progress (plan/sections/data)
-      get_fin_research_report     -> retrieve the final report
-
-    Validates that the DAG workflow's orchestrator stage can correctly generate plan.json.
-    """
     section('Financial Research (Async)')
 
-    r = await call_tool(session, 'check_fin_research_progress', {'task_id': 'fake'})
+    r = await call_tool(session, 'check_fin_research_progress',
+                        {'task_id': 'fake'})
     assert 'error' in r
-    r = await call_tool(session, 'get_fin_research_report', {'task_id': 'fake'})
+    r = await call_tool(session, 'get_fin_research_report',
+                        {'task_id': 'fake'})
     assert 'error' in r
     ok('check/get with unknown task_id both correctly returned errors')
 
@@ -337,40 +298,34 @@ async def test_fin_research(session):
         task_id = r['task_id']
         ok(f'Task submitted: {task_id}')
 
-        # Wait for orchestrator to generate plan.json (usually 10-15s)
         for i in range(6):
             await asyncio.sleep(5)
-            progress = await call_tool(session, 'check_fin_research_progress', {
-                'task_id': task_id,
-            })
+            progress = await call_tool(
+                session, 'check_fin_research_progress',
+                {'task_id': task_id})
             status = progress.get('status', '?')
             has_plan = progress.get('has_plan', False)
             print(f'      [{(i+1)*5}s] status={status}, has_plan={has_plan}')
             if has_plan or status in ('completed', 'failed'):
                 break
         if has_plan:
-            ok('orchestrator generated plan.json, DAG workflow started successfully')
+            ok('Orchestrator generated plan.json')
         elif status == 'failed':
             fail(f'Task failed: {progress.get("error", "")[:100]}')
         else:
             ok(f'Task still running (status={status}), exiting early')
     else:
-        ok(f'Submission returned (possibly missing config): {r.get("error", "ok")[:80]}')
+        ok(f'Submission returned: {r.get("error", "ok")[:80]}')
 
 
 async def test_video_generation(session):
-    """Test Singularity Cinema (video generation) async trio:
-      submit_video_generation_task     -> submit a video generation task
-      check_video_generation_progress  -> check pipeline progress
-      get_video_generation_result      -> retrieve the final video path
-
-    Validates that the generate_script stage completes successfully (produces script.txt).
-    """
     section('Video Generation / Singularity Cinema (Async)')
 
-    r = await call_tool(session, 'check_video_generation_progress', {'task_id': 'fake'})
+    r = await call_tool(session, 'check_video_generation_progress',
+                        {'task_id': 'fake'})
     assert 'error' in r
-    r = await call_tool(session, 'get_video_generation_result', {'task_id': 'fake'})
+    r = await call_tool(session, 'get_video_generation_result',
+                        {'task_id': 'fake'})
     assert 'error' in r
     ok('check/get with unknown task_id both correctly returned errors')
 
@@ -379,26 +334,27 @@ async def test_video_generation(session):
     })
     if 'task_id' in r:
         task_id = r['task_id']
-        ok(f'Task submitted: {task_id}, output_dir: {r.get("output_dir", "?")}')
+        ok(f'Task submitted: {task_id}')
 
-        # generate_script stage usually takes 15-30s
         for i in range(8):
             await asyncio.sleep(5)
-            progress = await call_tool(session, 'check_video_generation_progress', {
-                'task_id': task_id,
-            })
+            progress = await call_tool(
+                session, 'check_video_generation_progress',
+                {'task_id': task_id})
             status = progress.get('status', '?')
             steps = progress.get('completed_steps', [])
-            print(f'      [{(i+1)*5}s] status={status}, steps={len(steps)}/9 {steps}')
+            print(f'      [{(i+1)*5}s] status={status}, '
+                  f'steps={len(steps)}/9 {steps}')
             if status == 'failed':
-                fail(f'Video generation failed: {progress.get("error", "")[:200]}')
+                fail(f'Video generation failed: '
+                     f'{progress.get("error", "")[:200]}')
                 return
             if len(steps) > 0 or status == 'completed':
                 break
         if steps:
-            ok(f'Pipeline in progress, completed steps: {", ".join(steps)}')
+            ok(f'Pipeline in progress, completed: {", ".join(steps)}')
         elif status == 'running':
-            ok(f'Task still running (status={status}), LLM generating script...')
+            ok(f'Task still running (status={status})')
         else:
             fail(f'Task abnormal: status={status}')
     else:
@@ -406,61 +362,50 @@ async def test_video_generation(session):
 
 
 async def test_doc_research(session):
-    """Test Document Research async trio:
-      submit_doc_research_task    -> submit a document analysis task (supports URL / local files)
-      check_doc_research_progress -> check progress
-      get_doc_research_report     -> retrieve the Markdown report
-
-    Validates that ResearchWorkflow can correctly parse an arxiv URL and start analysis.
-    Note: paper download + docling parsing + LLM analysis usually takes 60-120 seconds.
-    """
     section('Document Research (Async)')
 
-    r = await call_tool(session, 'check_doc_research_progress', {'task_id': 'fake'})
+    r = await call_tool(session, 'check_doc_research_progress',
+                        {'task_id': 'fake'})
     assert 'error' in r
-    r = await call_tool(session, 'get_doc_research_report', {'task_id': 'fake'})
+    r = await call_tool(session, 'get_doc_research_report',
+                        {'task_id': 'fake'})
     assert 'error' in r
     ok('check/get with unknown task_id both correctly returned errors')
 
-    # Empty query rejection
     r = await call_tool(session, 'submit_doc_research_task', {'query': ''})
     assert 'error' in r
     ok('Empty query correctly rejected')
 
-    # Submit a real task (analyze an arxiv paper)
     r = await call_tool(session, 'submit_doc_research_task', {
         'query': 'Summarize the key contributions of this paper',
         'urls': 'https://arxiv.org/abs/2504.17432',
     })
     if 'task_id' in r:
         task_id = r['task_id']
-        ok(f'Task submitted: {task_id}, output_dir: {r.get("output_dir", "?")}')
+        ok(f'Task submitted: {task_id}')
 
-        # Paper download + parsing + analysis takes longer, poll more rounds
         for i in range(12):
             await asyncio.sleep(10)
-            progress = await call_tool(session, 'check_doc_research_progress', {
-                'task_id': task_id,
-            })
+            progress = await call_tool(
+                session, 'check_doc_research_progress',
+                {'task_id': task_id})
             status = progress.get('status', '?')
-            images = progress.get('images', 0)
             has_report = progress.get('report_available', False)
-            print(f'      [{(i+1)*10}s] status={status}, images={images}, report={has_report}')
-            if status in ('completed', 'failed'):
-                break
-            if has_report:
+            print(f'      [{(i+1)*10}s] status={status}, '
+                  f'report={has_report}')
+            if status in ('completed', 'failed') or has_report:
                 break
         if status == 'failed':
-            fail(f'Document research failed: {progress.get("error", "possibly missing docling dependency")[:200]}')
+            fail(f'Document research failed: '
+                 f'{progress.get("error", "")[:200]}')
         elif has_report:
-            ok('Report generated, workflow completed!')
+            ok('Report generated!')
         else:
-            ok(f'Workflow still running (status={status}), parsing paper...')
+            ok(f'Workflow still running (status={status})')
     else:
         fail(f'Submission failed: {r.get("error", "unknown")[:80]}')
 
 
-# Test registry: abbreviation -> (test function, display name)
 TESTS = {
     'fs':   (test_filesystem,       'Filesystem Tools'),
     'ws':   (test_web_search,       'Web Search'),
@@ -474,47 +419,28 @@ TESTS = {
 
 
 async def main():
-    """
-    ms-agent MCP capability gateway -- end-to-end integration test
-
-    This script simulates nanobot's real invocation path:
-    nanobot  --stdio-->  MCP Server  -->  CapabilityRegistry  -->  Wrapper
-                                                                        |
-                                                                subprocess / in-process
-
-    Test approach: start an MCP stdio subprocess server, then use MCP ClientSession to
-    issue JSON-RPC calls, identical to how nanobot connects to the MCP server via config.json.
-
-    Usage:
-    python test_mcp_tools.py               # run all tests
-    python test_mcp_tools.py --list        # list available tools only
-    python test_mcp_tools.py --test ws     # test web_search only
-    python test_mcp_tools.py --test fs,ws  # combined tests
-
-    Required environment variables (auto-loaded from project root .env):
-    OPENAI_API_KEY       -- DashScope or OpenAI-compatible API key
-    EXA_API_KEY          -- Exa search engine (optional, skips exa test if missing)
-    """
     parser = argparse.ArgumentParser(
-        description='ms-agent MCP capability gateway end-to-end integration test',
+        description='ms-agent x Hermes Agent MCP integration test',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='Examples:\n'
-               '  python test_mcp_tools.py --list        # list all tools\n'
-               '  python test_mcp_tools.py --test ws     # test web_search only\n'
-               '  python test_mcp_tools.py --test fs,ws  # combined tests\n'
-               '  python test_mcp_tools.py               # all tests\n',
+               '  python test_hermes_mcp.py --list        # list tools\n'
+               '  python test_hermes_mcp.py --test ws     # web search\n'
+               '  python test_hermes_mcp.py --test fs,ws  # combined\n'
+               '  python test_hermes_mcp.py               # all tests\n',
     )
-    parser.add_argument('--list', action='store_true', help='list available MCP tools only')
+    parser.add_argument('--list', action='store_true',
+                        help='list available MCP tools only')
     parser.add_argument(
         '--test', default='all',
-        help=f'tests to run (comma-separated): {", ".join(TESTS)} or all (default: all)',
+        help=f'tests to run (comma-separated): '
+             f'{", ".join(TESTS)} or all (default: all)',
     )
     args = parser.parse_args()
 
     try:
         from mcp import ClientSession  # noqa: F401
     except ImportError:
-        print('ERROR: mcp package not installed. Please run: pip install mcp')
+        print('ERROR: mcp package not installed.  pip install mcp')
         sys.exit(1)
 
     from contextlib import AsyncExitStack
@@ -526,7 +452,6 @@ async def main():
         if args.list:
             return
 
-        # Parse tests to run
         if args.test == 'all':
             selected = list(TESTS.keys())
         else:
@@ -537,7 +462,6 @@ async def main():
                 print(f'Available: {", ".join(TESTS)}')
                 sys.exit(1)
 
-        # Run tests sequentially
         passed, failed_list = 0, []
         for key in selected:
             test_fn, name = TESTS[key]
@@ -550,14 +474,13 @@ async def main():
                 traceback.print_exc()
                 failed_list.append(name)
 
-        # Summary
         total = len(selected)
         print(f'\n{"=" * 64}')
         print(f'  Result: {passed}/{total} passed', end='')
         if failed_list:
             print(f', failed: {", ".join(failed_list)}')
         else:
-            print(' — ALL PASSED')
+            print(' -- ALL PASSED')
         print(f'{"=" * 64}\n')
 
 

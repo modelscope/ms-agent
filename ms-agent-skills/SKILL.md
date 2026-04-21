@@ -1,5 +1,6 @@
 ---
 name: ms-agent
+version: 1.0.0
 description: >-
   Access ms-agent's advanced AI capabilities via MCP tools: deep research,
   document research, financial research, code generation, video generation,
@@ -7,9 +8,16 @@ description: >-
   concurrent-safe file editing, and agent delegation. All project-level
   capabilities support async submit/check/get patterns. Use when the user
   asks to research a topic, analyze documents, generate code or videos,
-  validate code, edit files, or delegate tasks. Requires ms-agent
-  (pip install ms-agent).
-metadata: {"nanobot":{"emoji":"🤖","requires":{"bins":["python3"],"env":[]}}}
+  validate code, edit files, or delegate tasks. Requires ms-agent (pip install ms-agent).
+metadata:
+  nanobot:
+    emoji: "🤖"
+    requires:
+      bins: ["python3"]
+      env: []
+  hermes:
+    tags: [research, codegen, tools, mcp]
+    category: ai-tools
 ---
 
 # ms-agent Skills
@@ -26,8 +34,8 @@ Verify ms-agent is installed:
 python scripts/check_ms_agent.py
 ```
 
-The MCP server must be configured in your agent's config. See below for
-nanobot-specific setup.
+The MCP server must be configured in your agent's config. Pick the section
+that matches your agent host.
 
 ### nanobot config.json
 
@@ -38,7 +46,7 @@ nanobot-specific setup.
       "ms-agent": {
         "command": "python3",
         "args": ["-m", "ms_agent.capabilities.mcp_server"],
-        "env": {"MS_AGENT_OUTPUT_DIR": "/path/to/workspace"},
+        "env": {"PYTHONPATH": "/path/to/ms-agent"},
         "toolTimeout": 300,
         "enabledTools": ["*"]
       }
@@ -47,8 +55,42 @@ nanobot-specific setup.
 }
 ```
 
-Once configured, all 30 capabilities below are available as MCP tools
-(prefixed `mcp_ms-agent_<tool_name>` in nanobot).
+### OpenClaw openclaw.json
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "ms-agent": {
+        "command": "/absolute/path/to/python",
+        "args": ["-m", "ms_agent.capabilities.mcp_server"],
+        "env": {"PYTHONPATH": "/path/to/ms-agent"}
+      }
+    }
+  }
+}
+```
+
+### Hermes Agent config.yaml
+
+```yaml
+mcp_servers:
+  ms-agent:
+    command: "python3"
+    args: ["-m", "ms_agent.capabilities.mcp_server"]
+    env:
+      PYTHONPATH: "/path/to/ms-agent"
+```
+
+Once configured, all 30 capabilities below are available as MCP tools.
+The tool prefix depends on your agent host:
+
+| Agent | Tool name format | Example |
+|-------|-----------------|---------|
+| nanobot | `mcp_ms-agent_<tool>` | `mcp_ms-agent_web_search` |
+| OpenClaw | `ms-agent_<tool>` | `ms-agent_web_search` |
+| Hermes | `mcp_ms-agent_<tool>` | `mcp_ms-agent_web_search` |
+| Cursor / Claude Desktop | `<tool>` (no prefix) | `web_search` |
 
 ## Capability Index
 

@@ -24,23 +24,47 @@ def _protect_stdout() -> None:
 
 
 def _load_env(env_file: str | None = None) -> None:
-    """Load environment variables from a ``.env`` file.
+    """Load environment variables from ``.env`` files.
 
     *Existing* environment variables are **not** overwritten (``override=False``),
     so values set via the MCP client's ``env`` block or ``export`` always win.
+
+    When no explicit ``env_file`` is given, **two** sources are loaded (both
+    with ``override=False``, so the first one to set a key wins):
+
+    1. ``find_dotenv(usecwd=True)`` — walk up from the current working directory.
+    2. ``.env`` in the ms-agent package root (three levels up from this file).
+
+    Loading both is necessary because the host agent (Hermes, OpenClaw, etc.)
+    may set the CWD to its own project directory, where a *different* ``.env``
+    exists that does not contain ms-agent-specific keys like
+    ``MODELSCOPE_API_KEY``.
     """
+    loaded_any = False
+
     if env_file:
         if not os.path.isfile(env_file):
             logger.warning('--env-file %s does not exist, skipping', env_file)
-            return
-        loaded_path = env_file
+        else:
+            load_dotenv(env_file, override=False)
+            logger.debug('Loaded env from %s', env_file)
+            loaded_any = True
     else:
-        loaded_path = find_dotenv(usecwd=True)
+        cwd_dotenv = find_dotenv(usecwd=True)
+        if cwd_dotenv:
+            load_dotenv(cwd_dotenv, override=False)
+            logger.debug('Loaded env from %s', cwd_dotenv)
+            loaded_any = True
 
-    if loaded_path:
-        load_dotenv(loaded_path, override=False)
-        logger.debug('Loaded env from %s', loaded_path)
-    else:
+    package_root = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    pkg_dotenv = os.path.join(package_root, '.env')
+    if os.path.isfile(pkg_dotenv):
+        load_dotenv(pkg_dotenv, override=False)
+        logger.debug('Loaded env from package root %s', pkg_dotenv)
+        loaded_any = True
+
+    if not loaded_any:
         logger.debug('No .env file found')
 
 
@@ -98,19 +122,42 @@ def main() -> None:
             "tools": {
                 "mcpServers": {
                     "ms-agent": {
-                        "command": "python",
+                        "command": "python3",
                         "args": ["-m", "ms_agent.capabilities.mcp_server"],
-                        "env": {"MS_AGENT_OUTPUT_DIR": "/path/to/workspace"}
+                        "env": {"PYTHONPATH": "/path/to/ms-agent"}
                     }
                 }
             }
         }
 
-    Configure in CoPaw MCP settings::
+    Configure in OpenClaw ``openclaw.json``::
+
+        {
+            "mcp": {
+                "servers": {
+                    "ms-agent": {
+                        "command": "/absolute/path/to/python",
+                        "args": ["-m", "ms_agent.capabilities.mcp_server"],
+                        "env": {"PYTHONPATH": "/path/to/ms-agent"}
+                    }
+                }
+            }
+        }
+
+    Configure in Hermes Agent ``config.yaml``::
+
+        mcp_servers:
+          ms-agent:
+            command: "python3"
+            args: ["-m", "ms_agent.capabilities.mcp_server"]
+            env:
+              PYTHONPATH: "/path/to/ms-agent"
+
+    Configure in CoPaw / Cursor / Claude Desktop MCP settings::
 
         {
             "transport": "stdio",
-            "command": "python",
+            "command": "python3",
             "args": ["-m", "ms_agent.capabilities.mcp_server"]
         }
     """
