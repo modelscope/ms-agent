@@ -45,11 +45,13 @@ MS-Agent是一个轻量级框架，旨在为智能体提供自主探索能力。
 
 > 历史存档版本，请参考：https://github.com/modelscope/ms-agent/tree/0.8.0
 
-|  微信群
-|:-------------------------:
-|  <img src="asset/ms-agent.jpg" width="200" height="200">
+[Discord Group](https://discord.gg/qmTFPY9byM)             |  微信群
+:-------------------------:|:-------------------------:
+<img src="asset/discord_qr.jpg" width="200" height="200">  |  <img src="asset/ms-agent.jpg" width="200" height="200">
 
 ## 🎉 新闻
+
+- 🏆 **2026年4月9日**：Agentic Insight v2 在 [DeepResearch Bench](https://github.com/Ayanami0730/deep_research_bench) 上位列**开源方案 #2**（总榜 #5）——提交版本得分 **55.31**（Qwen3.5-Plus + GPT 5.2）。[排行榜](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard) | [Agentic Insight v2](projects/deep_research/v2/README.md)。
 
 - 🚀 **2026年3月23日：发布 MS-Agent v1.6.0，主要更新内容如下：**
   - **上下文压缩**：新增上下文压缩机制，支持 Token 用量监控与溢出检测，通过裁剪历史工具输出和 LLM 摘要自动压缩对话上下文。
@@ -333,7 +335,7 @@ asyncio.run(main())
 
 #### 🚀 Agentic Insight v2（推荐）
 
-- **性能表现** - 基于 qwen3-max/plus/flash 多模型协同（低成本组合），在 DeepResearch Bench 上取得 **49.94** 分，性能位于同类框架一线水平
+- **性能表现** - [DeepResearch Bench](https://github.com/Ayanami0730/deep_research_bench) **开源 #2**（总榜 #5），提交版本得分 **55.31**（Qwen3.5-Plus + GPT 5.2）
 - **Deep Agents 架构** - "Researcher + 工具化子 Agent（Searcher/Reporter）"模式，支持任务灵活分配与高效并发
 - **文件系统即上下文** - 中间产物结构化存储到文件系统，实现低损耗上下文传递和长链路任务稳定运行
 - **证据驱动写作** - 自主建立带索引的证据库，报告以证据为唯一事实基础，实现报告高可信度与来源可追溯
