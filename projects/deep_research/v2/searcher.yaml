@@ -38,6 +38,8 @@ tools:
       - list_files
   web_search:
     mcp: false
+    # For Tavily-only search, copy or symlink `searcher.tavily.yaml` over this file
+    # (see projects/deep_research/v2/searcher.tavily.yaml; summarization default off there).
     engines:
       - exa
       - arxiv
@@ -46,6 +48,19 @@ tools:
     fetcher: jina_reader
     fetch_content: true
     fetch_timeout: 60
+    fetch_retries: 3
+    # Per-URL asyncio cap (s). Omit to auto-scale from fetch_timeout/retries + direct/PW budget (~300–420 with fetch_timeout=60).
+    per_url_fetch_timeout: 400
+    # When Jina (r.jina.ai) returns empty, try HTTP GET on the target URL (default true).
+    # jina_direct_fetch_fallback: true
+    # Tier-2 urllib timeout (seconds); omit for 15. Set 0 to use fetch_timeout instead.
+    # jina_direct_fetch_timeout: 15
+    # If direct HTTP text is empty / too short / looks like a JS shell, retry with headless Chromium (optional: pip install playwright).
+    # jina_playwright_fetch_fallback: true
+    # jina_playwright_retry_min_chars: 400
+    # jina_playwright_timeout_ms: 30000
+    # Milliseconds to wait after domcontentloaded before reading innerText (lower = faster).
+    # jina_playwright_settle_ms: 350
     _max_concurrent_fetch: 5
     enable_chunking: false
     enable_summarization: true
@@ -84,6 +99,6 @@ round_reminder:
   enabled: true
   remind_at_round: 28
 
-tool_call_timeout: 300
+tool_call_timeout: 2600
 
 output_dir: ./output

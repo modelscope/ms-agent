@@ -208,6 +208,7 @@ def get_content_fetcher(fetcher_type: str = 'jina_reader',
             playwright_timeout_ms=int(
                 kwargs.get('playwright_timeout_ms', 30_000) or 30_000),
             playwright_settle_ms=int(kwargs.get('playwright_settle_ms', 350)),
+            use_system_proxy=bool(kwargs.get('use_system_proxy', True)),
         )
         return JinaContentFetcher(config)
     if fetcher_type == 'tavily_extract':
@@ -245,6 +246,7 @@ def get_content_fetcher(fetcher_type: str = 'jina_reader',
                     kwargs.get('playwright_timeout_ms', 30_000) or 30_000),
                 playwright_settle_ms=int(
                     kwargs.get('playwright_settle_ms', 350)),
+                use_system_proxy=bool(kwargs.get('use_system_proxy', True)),
             ))
 
 
@@ -551,6 +553,9 @@ class WebSearchTool(ToolBase):
                 tool_cfg.jina_playwright_settle_ms)
         else:
             self._jina_playwright_settle_ms = 350
+        self._jina_use_system_proxy = bool(
+            getattr(tool_cfg, 'jina_use_system_proxy', True)
+        ) if tool_cfg else True
         self._fetch_content_default = bool(
             getattr(tool_cfg, 'fetch_content', True)) if tool_cfg else True
 
@@ -692,6 +697,7 @@ class WebSearchTool(ToolBase):
             'playwright_retry_min_chars': self._jina_playwright_retry_min_chars,
             'playwright_timeout_ms': self._jina_playwright_timeout_ms,
             'playwright_settle_ms': self._jina_playwright_settle_ms,
+            'use_system_proxy': self._jina_use_system_proxy,
         }
         if wcfg is not None:
             _fk.update({

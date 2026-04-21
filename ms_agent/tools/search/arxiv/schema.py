@@ -1,4 +1,5 @@
 # flake8: noqa
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, Generator, List, Optional
 
@@ -10,6 +11,14 @@ from ms_agent.tools.search.search_base import (BaseResult, SearchRequest,
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
+
+
+def _arxiv_abstract_plain(summary: str) -> str:
+    """Strip lightweight HTML/XML tags from arXiv API abstract text."""
+    if not summary:
+        return ''
+    t = re.sub(r'<[^>]+>', ' ', summary)
+    return re.sub(r'\s+', ' ', t).strip()
 
 
 class ArxivSearchRequest(SearchRequest):
@@ -228,17 +237,26 @@ class ArxivSearchResult(SearchResult):
 
             categories = getattr(res, 'categories', None) or []
 
+            summary_raw = getattr(res, 'summary', None) or ''
+            abstract_plain = _arxiv_abstract_plain(summary_raw)
+            entry_id = getattr(res, 'entry_id', None) or ''
+            pdf_url = getattr(res, 'pdf_url', None) or ''
+            # Prefer abs page URL so any accidental refetch is HTML, not multi‑MB PDF.
+            primary_url = entry_id or pdf_url
+            body = abstract_plain or summary_raw.strip()
+
             res_list.append({
-                'url': (getattr(res, 'pdf_url', None)
-                        or getattr(res, 'entry_id', None) or ''),
-                'id':
-                getattr(res, 'entry_id', None) or '',
+                'url': primary_url,
+                'id': entry_id,
                 'title':
                 getattr(res, 'title', None) or '',
                 'published_date':
                 published_date,
-                'summary':
-                getattr(res, 'summary', None) or '',
+                'summary': summary_raw,
+                # Pre-filled so web_search skips Jina/direct/PDF fetch (abstract is enough).
+                'content': body,
+                'fetch_success': bool(body),
+                'pdf_url': pdf_url,
                 'highlights':
                 None,
                 'highlight_scores':

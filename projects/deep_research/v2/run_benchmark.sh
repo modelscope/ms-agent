@@ -67,6 +67,23 @@ set -a  # Export all variables
 source .env
 set +a
 
+# Optional: parent wrapper may set these so proxy survives ``source .env`` (e.g. SOCKS from PAC).
+if [[ -n "${MSAGENT_REAPPLY_HTTPS_PROXY:-}" ]]; then
+  export https_proxy="$MSAGENT_REAPPLY_HTTPS_PROXY"
+  export HTTPS_PROXY="$MSAGENT_REAPPLY_HTTPS_PROXY"
+fi
+if [[ -n "${MSAGENT_REAPPLY_HTTP_PROXY:-}" ]]; then
+  export http_proxy="$MSAGENT_REAPPLY_HTTP_PROXY"
+  export HTTP_PROXY="$MSAGENT_REAPPLY_HTTP_PROXY"
+fi
+if [[ -n "${MSAGENT_REAPPLY_ALL_PROXY:-}" ]]; then
+  export ALL_PROXY="$MSAGENT_REAPPLY_ALL_PROXY"
+  export all_proxy="$MSAGENT_REAPPLY_ALL_PROXY"
+fi
+if [[ -n "${MSAGENT_REAPPLY_HTTPS_PROXY:-}" ]]; then
+  echo -e "${GREEN}Re-applied https proxy from MSAGENT_REAPPLY_* (survives .env).${NC}"
+fi
+
 # Validate required environment variables
 if [ -z "$OPENAI_API_KEY" ] || [ -z "$OPENAI_BASE_URL" ]; then
     echo -e "${RED}Error: OPENAI_API_KEY or OPENAI_BASE_URL not set in .env${NC}"
@@ -85,6 +102,18 @@ echo "  OPENAI_BASE_URL: $OPENAI_BASE_URL"
 echo "  EXA_API_KEY: $([ -n "$EXA_API_KEY" ] && echo "✓ Set" || echo "✗ Not set")"
 echo "  SERPAPI_API_KEY: $([ -n "$SERPAPI_API_KEY" ] && echo "✓ Set" || echo "✗ Not set")"
 echo ""
+
+# SOCKS in https_proxy: stdlib urllib needs PySocks + early socket patch (see scripts/benchmark_sitecustomize/).
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+_proxy_blob="${https_proxy:-}${HTTPS_PROXY:-}${ALL_PROXY:-}${all_proxy:-}"
+if echo "$_proxy_blob" | grep -qi 'socks5'; then
+  _hook="${REPO_ROOT}/scripts/benchmark_sitecustomize"
+  if [[ -d "$_hook" ]]; then
+    export PYTHONPATH="${_hook}${PYTHONPATH:+:${PYTHONPATH}}"
+    echo -e "${GREEN}SOCKS proxy detected; PYTHONPATH+=benchmark_sitecustomize (urllib + PySocks).${NC}"
+  fi
+fi
+unset _proxy_blob _hook
 
 # Check if DR_BENCH_ROOT is set
 if [ -z "$DR_BENCH_ROOT" ]; then

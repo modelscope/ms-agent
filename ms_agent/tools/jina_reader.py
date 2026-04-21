@@ -2,19 +2,26 @@ import asyncio
 import html as html_module
 import random
 import re
+import subprocess
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import (ProxyHandler, Request, build_opener, getproxies,
+                            getproxies_environment, urlopen)
 
 from ms_agent.tools.fetch_playwright_fallback import (looks_like_spa_shell_html,
                                                       try_playwright_inner_text)
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
+
+# Cached macOS ``scutil --proxy`` parse (subprocess); refreshed periodically.
+_SCUTIL_PROXY_CACHE: Optional[Tuple[float, Dict[str, str]]] = None
+_SCUTIL_PROXY_TTL_SEC = 45.0
 
 DEFAULT_HEADERS: Dict[str, str] = {
     'User-Agent':
@@ -32,6 +39,117 @@ _DIRECT_FETCH_HEADERS: Dict[str, str] = {
     'text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7',
     'Accept-Language': DEFAULT_HEADERS['Accept-Language'],
 }
+
+
+def _parse_scutil_proxy_stdout(stdout: str) -> Dict[str, str]:
+    """Parse key / value lines from ``scutil --proxy`` output into a flat dict."""
+    kv: Dict[str, str] = {}
+    for raw in stdout.splitlines():
+        line = raw.strip()
+        if ':' not in line or line.startswith('<'):
+            continue
+        key, _, val = line.partition(':')
+        key, val = key.strip(), val.strip()
+        if key and val:
+            kv[key] = val
+    return kv
+
+
+def _scutil_kv_to_urllib_proxies(kv: Dict[str, str]) -> Dict[str, str]:
+    """
+    Build urllib ``http`` / ``https`` proxy URLs from parsed ``scutil --proxy``.
+
+    Local MITM tools (Clash, Surge, corporate proxies) expose an HTTP proxy
+    that speaks CONNECT for HTTPS targets, hence ``http://host:port`` for both.
+    """
+    if not kv:
+        return {}
+    # PAC-only without explicit HTTP(S) proxy: urllib cannot evaluate PAC.
+    if (kv.get('ProxyAutoConfigEnable') == '1' and kv.get('HTTPEnable') != '1'
+            and kv.get('HTTPSEnable') != '1'):
+        return {}
+    out: Dict[str, str] = {}
+    https_on = kv.get('HTTPSEnable') == '1'
+    http_on = kv.get('HTTPEnable') == '1'
+    if https_on and kv.get('HTTPSProxy'):
+        host = kv['HTTPSProxy']
+        port = kv.get('HTTPSPort') or kv.get('HTTPPort') or '443'
+        out['https'] = f'http://{host}:{port}'
+    if http_on and kv.get('HTTPProxy'):
+        host = kv['HTTPProxy']
+        port = kv.get('HTTPPort') or '80'
+        out['http'] = f'http://{host}:{port}'
+    if 'https' not in out and 'http' in out:
+        out['https'] = out['http']
+    if 'http' not in out and 'https' in out:
+        out['http'] = out['https']
+    return out
+
+
+def _macos_scutil_proxy_dict() -> Dict[str, str]:
+    global _SCUTIL_PROXY_CACHE
+    now = time.monotonic()
+    if _SCUTIL_PROXY_CACHE is not None:
+        ts, cached = _SCUTIL_PROXY_CACHE
+        if (now - ts) < _SCUTIL_PROXY_TTL_SEC:
+            return dict(cached)
+    if sys.platform != 'darwin':
+        _SCUTIL_PROXY_CACHE = (now, {})
+        return {}
+    try:
+        proc = subprocess.run(
+            ['scutil', '--proxy'],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        logger.debug(f'scutil --proxy failed: {e}')
+        _SCUTIL_PROXY_CACHE = (now, {})
+        return {}
+    if proc.returncode != 0 or not (proc.stdout or '').strip():
+        _SCUTIL_PROXY_CACHE = (now, {})
+        return {}
+    merged_kv = _parse_scutil_proxy_stdout(proc.stdout)
+    proxies = _scutil_kv_to_urllib_proxies(merged_kv)
+    _SCUTIL_PROXY_CACHE = (now, proxies)
+    if proxies:
+        logger.debug('Using HTTP(S) proxy from macOS system settings for urllib')
+    return dict(proxies)
+
+
+def _merged_urllib_proxy_dict(config: 'JinaReaderConfig') -> Dict[str, str]:
+    """
+    Proxies for ``urllib.request.ProxyHandler``: env and ``getproxies()`` first,
+    then macOS system proxy when enabled. Environment wins on key conflicts.
+    """
+    env = {k: v for k, v in getproxies_environment().items() if v}
+    gp: Dict[str, str] = {}
+    try:
+        gp = {k: v for k, v in getproxies().items() if v}
+    except Exception:
+        gp = {}
+    mac: Dict[str, str] = {}
+    if getattr(config, 'use_system_proxy', True) and sys.platform == 'darwin':
+        mac = _macos_scutil_proxy_dict()
+    merged: Dict[str, str] = {**mac, **gp, **env}
+    merged = {k: v for k, v in merged.items() if v}
+    if merged.get('http') and not merged.get('https'):
+        merged['https'] = merged['http']
+    if merged.get('https') and not merged.get('http'):
+        merged['http'] = merged['https']
+    return merged
+
+
+def _urlopen_with_proxy(req: Request, timeout: float,
+                        config: 'JinaReaderConfig'):
+    """Like ``urlopen`` but honors system / env proxies (unlike bare defaults)."""
+    proxies = _merged_urllib_proxy_dict(config)
+    if not proxies:
+        return urlopen(req, timeout=timeout)
+    opener = build_opener(ProxyHandler(proxies))
+    return opener.open(req, timeout=timeout)
 
 
 @dataclass
@@ -53,6 +171,8 @@ class JinaReaderConfig:
     playwright_timeout_ms: int = 30_000
     # After domcontentloaded, brief wait for client hydration (lower = faster).
     playwright_settle_ms: int = 350
+    # Read macOS system HTTP(S) proxy (``scutil --proxy``) when env has none.
+    use_system_proxy: bool = True
 
 
 def _build_reader_url(target_url: str, base_endpoint: str) -> str:
@@ -112,7 +232,11 @@ def _html_to_plaintext(html: str) -> str:
 _DIRECT_HTML_HEURISTIC_CAP = 120_000
 
 
-def _fetch_direct_http_pair(url: str, timeout: float) -> Tuple[str, str]:
+def _fetch_direct_http_pair(
+        url: str,
+        timeout: float,
+        config: Optional['JinaReaderConfig'] = None,
+) -> Tuple[str, str]:
     """
     Fetch the target URL over HTTP(S) without Jina.
 
@@ -122,9 +246,10 @@ def _fetch_direct_http_pair(url: str, timeout: float) -> Tuple[str, str]:
     """
     if not _is_direct_http_allowed(url):
         return '', ''
+    cfg = config or JinaReaderConfig()
     try:
         req = Request(url, headers=_DIRECT_FETCH_HEADERS)
-        with urlopen(req, timeout=timeout) as resp:
+        with _urlopen_with_proxy(req, timeout, cfg) as resp:
             raw = resp.read(_MAX_DIRECT_RESPONSE_BYTES + 1)
             if len(raw) > _MAX_DIRECT_RESPONSE_BYTES:
                 raw = raw[:_MAX_DIRECT_RESPONSE_BYTES]
@@ -163,7 +288,7 @@ def _fetch_via_jina(url: str, config: JinaReaderConfig) -> str:
         attempt += 1
         try:
             req = Request(request_url, headers=config.headers)
-            with urlopen(req, timeout=config.timeout) as resp:
+            with _urlopen_with_proxy(req, config.timeout, config) as resp:
                 data = resp.read()
                 return data.decode('utf-8', errors='replace')
         except HTTPError as e:
@@ -211,7 +336,7 @@ def fetch_single_text_with_meta(url: str,
         return '', {'content_source': 'none'}
     d_timeout = (float(config.timeout) if float(config.direct_fetch_timeout or 0)
                    <= 0 else float(config.direct_fetch_timeout))
-    direct_plain, raw_html = _fetch_direct_http_pair(url, d_timeout)
+    direct_plain, raw_html = _fetch_direct_http_pair(url, d_timeout, config)
     direct_text = _postprocess_text(direct_plain)
 
     try_playwright = (
