@@ -178,7 +178,7 @@ explicitly:
 
 ## MCP Configuration
 
-The key block in `config.json`:
+The key block in `nanobot_mcp_config.json`:
 
 ```json
 {

@@ -125,7 +125,7 @@ The MCP server loads environment variables from `.env` files on startup (see `_l
 The loading chain (in order):
 
 1. **Host MCP config `env` block** — values set here become process environment variables *before* the server starts. They always win.
-2. `**--env-file` (if provided)** — if you pass `--env-file /path/to/.env`, only that file is loaded. Skips step 3a.
+2. **`--env-file` (if provided)** — if you pass `--env-file /path/to/.env`, this file is loaded. Skips step 3a.
 3. **Automatic `.env` discovery (if `--env-file` is not provided):**
   - **3a. CWD walk-up** — `find_dotenv(usecwd=True)` walks up from the current working directory to find the nearest `.env`. This may be the host agent's own `.env` (e.g. Hermes's project directory).
   - **3b. ms-agent package root** — always loads `<ms-agent-root>/.env` (three directories up from `mcp_server.py`). This is the recommended location for ms-agent-specific keys.
