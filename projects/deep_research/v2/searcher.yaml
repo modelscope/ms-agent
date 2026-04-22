@@ -35,6 +35,7 @@ tools:
     include:
       - write_file
       - read_file
+      - edit_file
       - grep
       - glob
   web_search:
