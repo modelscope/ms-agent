@@ -226,6 +226,13 @@ class ToolManager:
                     call_args = dict(tool_args or {})
                     call_id = tool_info.get('id') or str(uuid.uuid4())
                     call_args['__call_id'] = call_id
+                elif isinstance(
+                        tool_ins,
+                        LocalCodeExecutionTool) and tool_name.endswith(
+                            f'{self.TOOL_SPLITER}shell_executor'):
+                    call_args = dict(tool_args or {})
+                    call_args['__call_id'] = tool_info.get('id') or str(
+                        uuid.uuid4())
                 response = await asyncio.wait_for(
                     tool_ins.call_tool(
                         server_name,

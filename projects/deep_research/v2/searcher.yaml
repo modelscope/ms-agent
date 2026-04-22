@@ -35,7 +35,8 @@ tools:
     include:
       - write_file
       - read_file
-      - list_files
+      - grep
+      - glob
   web_search:
     mcp: false
     engines:

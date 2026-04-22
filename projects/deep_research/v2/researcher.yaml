@@ -36,10 +36,9 @@ tools:
     include:
       - write_file
       - read_file
-      - list_files
-      - search_file_content
-      - replace_file_contents
-      - replace_file_lines
+      - edit_file
+      - grep
+      - glob
   code_executor:
     mcp: false
     implementation: python_env

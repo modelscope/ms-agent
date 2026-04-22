@@ -34,8 +34,9 @@ tools:
     include:
       - write_file
       - read_file
-      - list_files
-      - replace_file_lines
+      - edit_file
+      - grep
+      - glob
   evidence_store:
     mcp: false
     evidence_dir: evidence
