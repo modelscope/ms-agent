@@ -8,6 +8,7 @@ from ms_agent.tools.search.arxiv import ArxivSearch
 from ms_agent.tools.search.exa import ExaSearch
 from ms_agent.tools.search.search_base import SearchEngineType
 from ms_agent.tools.search.serpapi import SerpApiSearch
+from ms_agent.tools.search.tavily import TavilySearch
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
@@ -23,7 +24,8 @@ def set_search_env_overrides(env_overrides: Optional[Dict[str, str]]) -> None:
     Expected keys (all optional):
       - 'EXA_API_KEY'
       - 'SERPAPI_API_KEY'
-      - SEARCH_ENGINE_OVERRIDE_ENV (e.g. 'exa' / 'serpapi' / 'arxiv')
+      - 'TAVILY_API_KEY'
+      - SEARCH_ENGINE_OVERRIDE_ENV (e.g. 'exa' / 'serpapi' / 'arxiv' / 'tavily')
     """
     if not env_overrides:
         if hasattr(_search_env_local, 'overrides'):
@@ -135,7 +137,8 @@ def get_web_search_tool(config_file: str):
                            or '')).strip().lower()
     if engine_override and engine_override in (SearchEngineType.EXA.value,
                                                SearchEngineType.SERPAPI.value,
-                                               SearchEngineType.ARXIV.value):
+                                               SearchEngineType.ARXIV.value,
+                                               SearchEngineType.TAVILY.value):
         search_config['engine'] = engine_override
 
     engine_name = (search_config.get('engine', '') or '').lower()
@@ -143,6 +146,7 @@ def get_web_search_tool(config_file: str):
     # Per-request API key overrides (thread-local) take precedence
     override_exa_key = local_env.get('EXA_API_KEY')
     override_serp_key = local_env.get('SERPAPI_API_KEY')
+    override_tavily_key = local_env.get('TAVILY_API_KEY')
 
     if engine_name == SearchEngineType.EXA.value:
         return ExaSearch(
@@ -153,6 +157,10 @@ def get_web_search_tool(config_file: str):
             api_key=override_serp_key or search_config.get(
                 'serpapi_api_key', os.getenv('SERPAPI_API_KEY', None)),
             provider=search_config.get('provider', 'google').lower())
+    elif engine_name == SearchEngineType.TAVILY.value:
+        return TavilySearch(
+            api_key=override_tavily_key or search_config.get(
+                'tavily_api_key', os.getenv('TAVILY_API_KEY', None)))
     elif engine_name == SearchEngineType.ARXIV.value:
         return ArxivSearch()
     else:
