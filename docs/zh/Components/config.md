@@ -102,6 +102,24 @@ tools:
     url: https://mcp.api-inference.modelscope.net/xxx/sse
     exclude:
       - map_geo
+  # 本地代码库/文档搜索（sirchmunk），对应模型可调用的 `localsearch` 工具
+  localsearch:
+    mcp: false
+    paths:
+      - ./src
+      - ./docs
+    work_path: ./.sirchmunk
+    mode: FAST
+    # 可选：llm_api_key、llm_base_url、llm_model_name（不填则从 `llm` 继承）
+    # 为 true 时，在工具连接阶段用 sirchmunk DirectoryScanner 做浅层扫描，把文件标题/预览写入
+    # `localsearch` 工具 description，便于模型知道本地知识库里大致有哪些内容（默认 false）
+    # description_catalog: false
+    # description_catalog_max_files: 120
+    # description_catalog_max_depth: 5
+    # description_catalog_max_chars: 10000
+    # description_catalog_max_preview_chars: 400
+    # description_catalog_cache_ttl_seconds: 300
+    # description_catalog_exclude: []  # 额外 glob / 目录名，与 sirchmunk 默认排除合并
 ```
 
 支持的完整工具列表，以及自定义工具请参考 [这里](./tools)
@@ -218,13 +236,13 @@ handler: custom_handler
       }
     }
     ```
-- knowledge_search_paths: 知识搜索路径，逗号分隔的多个路径。传入后会自动启用 SirchmunkSearch 进行知识检索，LLM 配置自动从 `llm` 模块复用
+- knowledge_search_paths: 知识搜索路径，逗号分隔。会合并到 `tools.localsearch.paths` 并注册 **`localsearch`** 工具（sirchmunk），由模型按需调用；如未配置 `tools.localsearch.llm_*`， LLM 从 `llm` 模块复用
 
 > agent.yaml 中的任意一个配置，都可以使用命令行传入新的值，也支持从同名（大小写不敏感）环境变量中读取，例如 `--llm.modelscope_api_key xxx-xxx`。
 
 ### 知识搜索快速使用
 
-通过 `--knowledge_search_paths` 参数，可以快速启用基于本地文档的知识搜索：
+通过 `--knowledge_search_paths` 或在 yaml 中配置 `tools.localsearch`，启用本地知识搜索（模型按需调用 `localsearch`）：
 
 ```bash
 # 使用默认 agent.yaml 配置，自动复用 LLM 设置
@@ -235,4 +253,4 @@ ms-agent run --config /path/to/agent.yaml --query "你的问题" --knowledge_sea
 ```
 
 LLM 相关参数（api_key, base_url, model）会自动从配置文件的 `llm` 模块继承，无需重复配置。
-如果需要在 `knowledge_search` 模块中使用独立的 LLM 配置，可以在 yaml 中显式配置 `knowledge_search.llm_api_key` 等参数。
+若 sirchmunk 需独立 LLM，可在 yaml 的 `tools.localsearch` 下设置 `llm_api_key`、`llm_base_url`、`llm_model_name`。

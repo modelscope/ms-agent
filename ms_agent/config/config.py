@@ -16,6 +16,20 @@ from .env import Env
 
 logger = get_logger()
 
+# ``tools.<name>`` entries implemented as in-process ToolBase classes, not MCP transports.
+_BUILTIN_TOOL_SERVERS = frozenset({
+    'localsearch',
+    'web_search',
+    'split_task',
+    'file_system',
+    'code_executor',
+    'financial_data_fetcher',
+    'agent_tools',
+    'todo_list',
+    'image_generator',
+    'video_generator',
+})
+
 
 class ConfigLifecycleHandler:
 
@@ -253,6 +267,10 @@ class Config:
             for server, server_config in config.tools.items():
                 if server == TOOL_PLUGIN_NAME:
                     continue
-                if getattr(server_config, 'mcp', True):
+                if server in _BUILTIN_TOOL_SERVERS:
+                    use_mcp = getattr(server_config, 'mcp', False)
+                else:
+                    use_mcp = getattr(server_config, 'mcp', True)
+                if use_mcp:
                     servers['mcpServers'][server] = deepcopy(server_config)
         return servers

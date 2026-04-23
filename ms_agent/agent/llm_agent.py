@@ -13,7 +13,6 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
 import json
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback, callbacks_mapping
-from ms_agent.knowledge_search import SirchmunkSearch
 from ms_agent.llm.llm import LLM
 from ms_agent.llm.utils import Message, ToolResult
 from ms_agent.memory import Memory, get_memory_meta_safe, memory_mapping
@@ -107,7 +106,6 @@ class LLMAgent(Agent):
         self.tool_manager: Optional[ToolManager] = None
         self.memory_tools: List[Memory] = []
         self.rag: Optional[RAG] = None
-        self.knowledge_search: Optional[SirschmunkSearch] = None
         self.llm: Optional[LLM] = None
         self.runtime: Optional[Runtime] = None
         self.max_chat_round: int = 0
@@ -528,6 +526,7 @@ class LLMAgent(Agent):
                 tool_call_id=tool_call_query['id'],
                 name=tool_call_query['tool_name'],
                 resources=tool_call_result_format.resources,
+                tool_detail=tool_call_result_format.tool_detail,
             )
 
             if _new_message.tool_call_id is None:
@@ -537,6 +536,63 @@ class LLMAgent(Agent):
             messages.append(_new_message)
             self.log_output(_new_message.content)
         return messages
+
+    async def parallel_tool_call_streaming(
+            self, messages: List[Message]) -> AsyncGenerator:
+        """Streaming variant of parallel_tool_call.
+
+        Yields messages list snapshots during tool execution:
+        - While tools are running: yields messages with the latest incremental
+          ``tool_detail`` on a temporary placeholder Message (content='') so the
+          caller can stream logs to the frontend.
+        - After all tools finish: yields the final messages list (with proper
+          tool result Messages appended), same as parallel_tool_call.
+        """
+        tool_calls = messages[-1].tool_calls
+
+        # Map call_id -> tool_call_query for final message construction.
+        call_id_to_query = {tc['id']: tc for tc in tool_calls}
+
+        # Accumulate final results keyed by call_id.
+        final_results: dict = {}
+
+        async for call_id, item, is_final in self.tool_manager.parallel_call_tool_streaming(
+                tool_calls):
+            if is_final:
+                # Final result for this call_id (any type; not inferred from content).
+                final_results[call_id] = item
+            else:
+                # Intermediate log line: one incremental chunk in tool_detail.
+                log_message = Message(
+                    role='tool',
+                    content='',
+                    tool_call_id=call_id,
+                    name=call_id_to_query.get(call_id,
+                                              {}).get('tool_name', ''),
+                    tool_detail=item,
+                )
+                yield messages + [log_message]
+
+        # All tools done — build final tool messages and yield.
+        for tool_call_query in tool_calls:
+            cid = tool_call_query['id']
+            raw_result = final_results.get(
+                cid, f'Tool call missing result for id {cid}')
+            tool_call_result_format = ToolResult.from_raw(raw_result)
+            _new_message = Message(
+                role='tool',
+                content=tool_call_result_format.text,
+                tool_call_id=cid,
+                name=tool_call_query['tool_name'],
+                resources=tool_call_result_format.resources,
+            )
+            if _new_message.tool_call_id is None:
+                _new_message.tool_call_id = str(uuid.uuid4())[:8]
+                tool_call_query['id'] = _new_message.tool_call_id
+            messages.append(_new_message)
+            self.log_output(_new_message.content)
+
+        yield messages
 
     async def prepare_tools(self):
         """Initialize and connect the tool manager."""
@@ -636,11 +692,7 @@ class LLMAgent(Agent):
         return messages
 
     async def do_rag(self, messages: List[Message]):
-        """Process RAG or knowledge search to enrich the user query with context.
-
-        This method handles both traditional RAG and sirchmunk-based knowledge search.
-        For knowledge search, it also populates searching_detail and search_result
-        fields in the message for frontend display and next-turn LLM context.
+        """Process RAG to enrich the user query with context.
 
         Args:
             messages (List[Message]): The message list to process.
@@ -654,23 +706,6 @@ class LLMAgent(Agent):
         # Handle traditional RAG
         if self.rag is not None:
             user_message.content = await self.rag.query(query)
-        # Handle sirchmunk knowledge search
-        if self.knowledge_search is not None:
-            # Perform search and get results
-            search_result = await self.knowledge_search.query(query)
-            search_details = self.knowledge_search.get_search_details()
-
-            # Store search details in the message for frontend display
-            user_message.searching_detail = search_details
-            user_message.search_result = search_result
-
-            # Build enriched context from search results
-            if search_result:
-                # Append search context to user query
-                context = search_result
-                user_message.content = (
-                    f'Relevant context retrieved from codebase search:\n\n{context}\n\n'
-                    f'User question: {query}')
 
     async def do_skill(self,
                        messages: List[Message]) -> Optional[List[Message]]:
@@ -756,18 +791,6 @@ class LLMAgent(Agent):
                     f'{rag.name} not in rag_mapping, '
                     f'which supports: {list(rag_mapping.keys())}')
                 self.rag: RAG = rag_mapping(rag.name)(self.config)
-
-    async def prepare_knowledge_search(self):
-        """Load and initialize the knowledge search component from the config."""
-        if self.knowledge_search is not None:
-            # Already initialized (e.g. by caller before run_loop), skip to avoid
-            # overwriting a configured instance (e.g. one with streaming callbacks set).
-            return
-        if hasattr(self.config, 'knowledge_search'):
-            ks_config = self.config.knowledge_search
-            if ks_config is not None:
-                self.knowledge_search: SirchmunkSearch = SirchmunkSearch(
-                    self.config)
 
     async def condense_memory(self, messages: List[Message]) -> List[Message]:
         """
@@ -931,7 +954,15 @@ class LLMAgent(Agent):
         self.save_history(messages)
 
         if _response_message.tool_calls:
-            messages = await self.parallel_tool_call(messages)
+            # Use the streaming variant so intermediate tool logs are yielded
+            # back to the caller while the tools are still running.
+            async for messages in self.parallel_tool_call_streaming(messages):
+                _lm = messages[-1]
+                _progress = (
+                    _lm.role == 'tool' and _lm.content == ''
+                    and _lm.tool_detail is not None)
+                if _progress:
+                    yield messages
 
         await self.after_tool_call(messages)
 
@@ -1111,7 +1142,6 @@ class LLMAgent(Agent):
             await self.prepare_tools()
             await self.load_memory()
             await self.prepare_rag()
-            await self.prepare_knowledge_search()
             self.runtime.tag = self.tag
 
             if messages is None:

@@ -1,11 +1,11 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
-"""Knowledge search module based on sirchmunk.
+"""Backward-compatible re-exports for sirchmunk local search.
 
 This module provides integration between sirchmunk's AgenticSearch
-and the ms_agent framework, enabling intelligent codebase search
-capabilities similar to RAG.
+and the ms_agent framework, enabling intelligent local path search
+capabilities.
 """
 
-from .sirchmunk_search import SirchmunkSearch
+from ms_agent.tools.search.sirchmunk_search import SirchmunkSearch
 
 __all__ = ['SirchmunkSearch']
