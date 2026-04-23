@@ -26,6 +26,7 @@ from ms_agent.utils.task_manager import TaskManager
 from ms_agent.utils.constants import DEFAULT_TAG, DEFAULT_USER
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.snapshot import take_snapshot
+from ms_agent.utils.task_manager import TaskManager
 from omegaconf import DictConfig, OmegaConf
 
 from ..config.config import Config, ConfigLifecycleHandler
@@ -113,6 +114,7 @@ class LLMAgent(Agent):
         self.knowledge_search: Optional[SirchmunkSearch] = None
         self.llm: Optional[LLM] = None
         self.runtime: Optional[Runtime] = None
+        self.task_manager: Optional[TaskManager] = None
         self.max_chat_round: int = 0
         self.load_cache = kwargs.get('load_cache', False)
         self.config.load_cache = self.load_cache
@@ -1204,6 +1206,11 @@ class LLMAgent(Agent):
             await self.prepare_knowledge_search()
             self.runtime.tag = self.tag
 
+            self.task_manager = TaskManager()
+            for tool in self.tool_manager.extra_tools:
+                if hasattr(tool, 'set_task_manager'):
+                    tool.set_task_manager(self.task_manager)
+
             if messages is None:
                 messages = self.query
 
@@ -1232,6 +1239,10 @@ class LLMAgent(Agent):
                     self.log_output('[' + message.role + ']:')
                     self.log_output(message.content)
             while not self.runtime.should_stop:
+                if self.task_manager is not None:
+                    notifications = self.task_manager.drain_notifications()
+                    if notifications:
+                        messages.append(Message(role='user', content='\n'.join(notifications)))
                 async for messages in self.step(messages):
                     yield messages
                 self.runtime.round += 1

@@ -1,8 +1,4 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
-"""Process-wide background tasks (agent subprocess, shell subprocess, etc.)."""
-
-from __future__ import annotations
-
 import asyncio
 import multiprocessing as mp
 import time
@@ -18,11 +14,11 @@ logger = get_logger()
 @dataclass
 class BackgroundTask:
     task_id: str
-    task_type: str  # 'agent' | 'shell' | ...
-    tool_name: str
+    task_type: str          # 'agent' | 'shell'
+    tool_name: str          # which tool spawned this
     description: str
-    status: str = 'running'  # running | completed | failed | killed
-    proc: Optional[Any] = field(default=None, repr=False)
+    status: str = 'running'  # 'running' | 'completed' | 'failed' | 'killed'
+    proc: Optional[Any] = field(default=None, repr=False)  # mp.Process or asyncio.Task
     result: Optional[str] = None
     error: Optional[str] = None
     started_at: float = field(default_factory=time.monotonic)
@@ -30,10 +26,15 @@ class BackgroundTask:
 
 
 class TaskManager:
-    """Registry for background tasks; optional completion notifications queue."""
+    """
+    Agent-level registry for background tasks (agent sub-tasks, shell tasks, etc.).
+    Holds a notification queue that LLMAgent drains each turn to inject
+    completion notices into the conversation.
+    """
 
-    def __init__(self) -> None:
+    def __init__(self):
         self._tasks: Dict[str, BackgroundTask] = {}
+        self._lock = asyncio.Lock()
         self._notification_queue: asyncio.Queue = asyncio.Queue()
 
     def register(
@@ -53,8 +54,7 @@ class TaskManager:
             proc=proc,
         )
         self._tasks[task_id] = task
-        logger.info('[TaskManager] registered %s task %s: %s', task_type,
-                    task_id, description[:200])
+        logger.info(f'[TaskManager] registered {task_type} task {task_id}: {description}')
         return task_id
 
     async def complete(self, task_id: str, result: str) -> None:
@@ -85,15 +85,10 @@ class TaskManager:
             try:
                 if isinstance(task.proc, mp.Process):
                     task.proc.terminate()
-                else:
-                    # asyncio.subprocess.Process or similar
-                    if hasattr(task.proc, 'returncode') and task.proc.returncode is None:
-                        if hasattr(task.proc, 'kill'):
-                            task.proc.kill()
-                        elif hasattr(task.proc, 'terminate'):
-                            task.proc.terminate()
-            except (ProcessLookupError, OSError) as e:
-                logger.warning('[TaskManager] kill %s: %s', task_id, e)
+                elif asyncio.isfuture(task.proc) or asyncio.iscoroutine(task.proc):
+                    task.proc.cancel()
+            except Exception as e:
+                logger.warning(f'[TaskManager] kill {task_id} failed: {e}')
         task.status = 'killed'
         task.ended_at = time.monotonic()
 
@@ -103,8 +98,9 @@ class TaskManager:
                 self.kill(task_id)
 
     def drain_notifications(self) -> List[str]:
-        notifications: List[str] = []
-        while True:
+        """Drain all pending notifications synchronously. Called from run_loop."""
+        notifications = []
+        while not self._notification_queue.empty():
             try:
                 notifications.append(self._notification_queue.get_nowait())
             except asyncio.QueueEmpty:
@@ -132,4 +128,5 @@ class TaskManager:
             f'<description>{task.description}</description>\n'
             f'<status>{task.status}</status>'
             f'{result_line}{error_line}{duration}\n'
-            f'</task-notification>')
+            f'</task-notification>'
+        )
