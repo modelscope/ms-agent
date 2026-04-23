@@ -24,6 +24,7 @@ from ms_agent.tools import ToolManager
 from ms_agent.utils import async_retry, read_history, save_history
 from ms_agent.utils.constants import DEFAULT_TAG, DEFAULT_USER
 from ms_agent.utils.logger import get_logger
+from ms_agent.utils.snapshot import take_snapshot
 from omegaconf import DictConfig, OmegaConf
 
 from ..config.config import Config, ConfigLifecycleHandler
@@ -351,6 +352,24 @@ class LLMAgent(Agent):
 
         return messages
 
+    def rollback(self, commit_hash: str) -> bool:
+        """Restore output_dir to snapshot and truncate message history."""
+        from ms_agent.utils.snapshot import restore_snapshot
+        ok, message_count = restore_snapshot(self.output_dir, commit_hash)
+        if not ok:
+            return False
+        # Truncate saved history to the message count at snapshot time
+        _, saved_messages = read_history(self.output_dir, self.tag)
+        if saved_messages and message_count < len(saved_messages):
+            save_history(self.output_dir, self.tag, self.config,
+                         saved_messages[:message_count])
+        # Clear read cache on FileSystemTool so stale entries don't block edits
+        if self.tool_manager is not None:
+            for tool in self.tool_manager.tools.values():
+                if hasattr(tool, '_read_cache'):
+                    tool._read_cache.clear()
+        return True
+
     def register_callback(self, callback: Callback):
         """
         Register a new callback to be triggered during the agent's lifecycle.
@@ -477,6 +496,17 @@ class LLMAgent(Agent):
 
     async def on_task_begin(self, messages: List[Message]):
         self.log_output(f'Agent {self.tag} task beginning.')
+        if getattr(self.config, 'enable_snapshots', True):
+            _user_content = next(
+                ((getattr(m, 'content', '') or '')[:80]
+                 for m in messages if getattr(m, 'role', '') == 'user'),
+                '',
+            )
+            take_snapshot(
+                self.output_dir,
+                f'[pre] {_user_content}' if _user_content else '[pre] new task',
+                message_count=len(messages),
+            )
         await self.loop_callback('on_task_begin', messages)
 
     async def on_task_end(self, messages: List[Message]):

@@ -74,6 +74,15 @@ class Agent(ABC):
             return
         save_history(self.output_dir, self.tag, self.config, messages)
 
+    def list_snapshots(self) -> list:
+        """Return snapshots for this agent's output_dir, most recent first."""
+        from ms_agent.utils.snapshot import list_snapshots
+        return list_snapshots(self.output_dir)
+
+    def rollback(self, commit_hash: str) -> bool:
+        """Restore output_dir to a previous snapshot and truncate history."""
+        raise NotImplementedError()
+
     def next_flow(self, idx: int) -> int:
         """Used in workflow, decide which agent goes next."""
         return idx + 1
