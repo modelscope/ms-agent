@@ -1,4 +1,4 @@
-## Search Engine, Supported values: EXA, SERPAPI, ARXIV ##
+## Search Engine, Supported values: EXA, SERPAPI, ARXIV, TAVILY ##
 
 #SEARCH_ENGINE:
 #  engine: exa
@@ -8,6 +8,12 @@
 #  engine: serpapi
 #  serpapi_api_key: $SERPAPI_API_KEY
 #  provider: google
+
+# NOTE: Tavily requires tavily-python package (pip install tavily-python)
+# and a valid TAVILY_API_KEY in your .env file.
+#SEARCH_ENGINE:
+#  engine: tavily
+#  tavily_api_key: $TAVILY_API_KEY
 
 SEARCH_ENGINE:
   engine: arxiv

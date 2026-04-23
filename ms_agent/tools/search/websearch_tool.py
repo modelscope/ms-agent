@@ -190,7 +190,7 @@ def get_search_engine_class(engine_type: str) -> Type[SearchEngine]:
     Get search engine class by type.
 
     Args:
-        engine_type: One of 'exa', 'serpapi', 'arxiv'
+        engine_type: One of 'exa', 'serpapi', 'arxiv', 'tavily'
 
     Returns:
         SearchEngine class (not instance)
@@ -206,6 +206,9 @@ def get_search_engine_class(engine_type: str) -> Type[SearchEngine]:
     elif engine_type == 'arxiv':
         from ms_agent.tools.search.arxiv import ArxivSearch
         return ArxivSearch
+    elif engine_type == 'tavily':
+        from ms_agent.tools.search.tavily import TavilySearch
+        return TavilySearch
     else:
         logger.warning(
             f"Unknown search engine '{engine_type}', falling back to arxiv")
@@ -220,7 +223,7 @@ def get_search_engine(engine_type: str,
     Get search engine instance by type.
 
     Args:
-        engine_type: One of 'exa', 'serpapi', 'arxiv'
+        engine_type: One of 'exa', 'serpapi', 'arxiv', 'tavily'
         api_key: API key for the search engine (if required)
         **kwargs: Additional arguments passed to engine constructor
     """
@@ -241,6 +244,9 @@ def get_search_engine(engine_type: str,
     elif engine_type == 'arxiv':
         from ms_agent.tools.search.arxiv import ArxivSearch
         return ArxivSearch()
+    elif engine_type == 'tavily':
+        from ms_agent.tools.search.tavily import TavilySearch
+        return TavilySearch(api_key=api_key or os.getenv('TAVILY_API_KEY'))
     else:
         logger.warning(
             f"Unknown search engine '{engine_type}', falling back to arxiv")
@@ -265,7 +271,7 @@ def build_search_request(engine_type: str,
 class WebSearchTool(ToolBase):
     """
     Unified web search tool for agents. It can search the web and fetch page content.
-    - Search via multiple engines (Exa, SerpAPI, Arxiv)
+    - Search via multiple engines (Exa, SerpAPI, Arxiv, Tavily)
     - Dynamic tool definitions based on configured engines
     - Auto-fetch and parse page content
     - Configurable content fetcher (jina_reader, docling, etc.)
@@ -296,7 +302,7 @@ class WebSearchTool(ToolBase):
     SERVER_NAME = 'web_search'
 
     # Registry of supported search engines
-    SUPPORTED_ENGINES = ('exa', 'serpapi', 'arxiv')
+    SUPPORTED_ENGINES = ('exa', 'serpapi', 'arxiv', 'tavily')
 
     # Process-wide (class-level) usage tracking for summarization calls.
     # This is intentionally separate from LLMAgent usage totals.
@@ -404,6 +410,9 @@ class WebSearchTool(ToolBase):
             'serpapi': (getattr(tool_cfg, 'serpapi_api_key', None)
                         or os.getenv('SERPAPI_API_KEY'))
             if tool_cfg else os.getenv('SERPAPI_API_KEY'),
+            'tavily': (getattr(tool_cfg, 'tavily_api_key', None)
+                       or os.getenv('TAVILY_API_KEY'))
+            if tool_cfg else os.getenv('TAVILY_API_KEY'),
         }
 
         # SerpApi provider (google, bing, baidu)
@@ -508,6 +517,9 @@ class WebSearchTool(ToolBase):
                         api_key=self._api_keys.get('serpapi'),
                         provider=self._serpapi_provider,
                     )
+                elif engine_type == 'tavily':
+                    self._engines[engine_type] = engine_cls(
+                        api_key=self._api_keys.get('tavily'))
                 else:  # arxiv
                     self._engines[engine_type] = engine_cls()
 
