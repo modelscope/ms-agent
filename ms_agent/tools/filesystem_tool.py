@@ -81,7 +81,7 @@ class FileSystemTool(ToolBase):
         self.system = self.SYSTEM_FOR_ABBREVIATIONS
         if hasattr(self.config.tools.file_system, 'system_for_abbreviations'):
             self.system = self.config.tools.file_system.system_for_abbreviations
-        # {real_path: {"mtime": float, "offset": int|None, "limit": int|None}}
+        # read_file dedup only: {real_path: {"mtime", "offset", "limit"}}
         self._read_cache: dict[str, dict] = {}
 
         fs_cfg = getattr(config.tools, 'file_system', None)
@@ -139,7 +139,8 @@ class FileSystemTool(ToolBase):
                         'Usage:\n'
                         '- Prefer `edit_file` for modifying existing files — it only changes the relevant section.\n'
                         '- Use this tool to create new files or perform a complete rewrite.\n'
-                        '- Parent directories are created automatically if they do not exist.'
+                        '- Parent directories are created automatically if they do not exist.\n\n'
+                        'No prior `read_file` is required; the path is resolved and the given `content` is written as-is.'
                     ),
                     parameters={
                         'type': 'object',
@@ -207,6 +208,10 @@ class FileSystemTool(ToolBase):
                     server_name='file_system',
                     description=(
                         'Edit an existing file by replacing an exact string with new content.\n\n'
+                        'The tool reads the file from disk and checks that `old_string` appears in the current '
+                        'contents before applying the edit — you do not need a prior `read_file` call for '
+                        'staleness. Still use `read_file` or `grep` when you need the exact snippet in the '
+                        'conversation so you can form a correct `old_string`.\n\n'
                         'You must provide the exact text to find (`old_string`) and the replacement (`new_string`).\n'
                         '`old_string` must match the file content EXACTLY — including whitespace and line breaks.\n'
                         'If `old_string` appears multiple times and `replace_all` is false, the call will fail '
@@ -582,27 +587,6 @@ class FileSystemTool(ToolBase):
         )
         return json.dumps(packed, ensure_ascii=False, indent=2, default=str)
 
-    def _check_staleness(self, real_path: str) -> str | None:
-        """Return an error string if the file has not been read or has changed since last read.
-        Returns None if the write is safe to proceed.
-        Only applies to existing files — new file creation is always allowed.
-        """
-        if not os.path.exists(real_path):
-            return None  # new file, no staleness concern
-        cached = self._read_cache.get(real_path)
-        if cached is None:
-            return (
-                'Error: File has not been read yet. '
-                'Read it first before writing to it.'
-            )
-        current_mtime = os.path.getmtime(real_path)
-        if current_mtime > cached['mtime']:
-            return (
-                'Error: File has been modified since last read. '
-                'Read it again before writing to it.'
-            )
-        return None
-
     def _normalize_quotes(self, s: str) -> str:
         for curly, straight in self.CURLY_QUOTE_MAP.items():
             s = s.replace(curly, straight)
@@ -663,15 +647,11 @@ class FileSystemTool(ToolBase):
             real_path = self.get_real_path(path)
             if real_path is None:
                 return f'<{original_path}> is out of the valid project path: {self.output_dir}'
-            err = self._check_staleness(real_path)
-            if err:
-                return err
             dirname = os.path.dirname(real_path)
             if dirname:
                 os.makedirs(dirname, exist_ok=True)
             with open(real_path, 'w', encoding='utf-8') as f:
                 f.write(content)
-            self._read_cache.pop(real_path, None)
             return f'Save file <{path}> successfully.'
         except Exception as e:
             return f'Write file <{path}> failed, error: ' + str(e)
@@ -902,15 +882,10 @@ class FileSystemTool(ToolBase):
                     )
                 with open(target_path_real, 'w', encoding='utf-8') as f:
                     f.write(new_string)
-                self._read_cache.pop(target_path_real, None)
                 return f'Edit file <{path}> successfully (filled empty file).'
 
             if not os.path.exists(target_path_real):
                 return f'Error: File <{path}> does not exist.'
-
-            err = self._check_staleness(target_path_real)
-            if err:
-                return err
 
             with open(target_path_real, 'rb') as f:
                 raw = f.read()
@@ -966,9 +941,6 @@ class FileSystemTool(ToolBase):
 
             with open(target_path_real, 'w', encoding='utf-8') as f:
                 f.write(updated)
-
-            # Invalidate dedup cache for this file
-            self._read_cache.pop(target_path_real, None)
 
             replaced = count if replace_all else 1
             return f'Edit file <{path}> successfully ({replaced} occurrence(s) replaced).'

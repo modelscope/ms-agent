@@ -267,7 +267,7 @@ class TestLLMAgentSnapshotInterface(unittest.TestCase):
             fake_tool = MagicMock()
             fake_tool._read_cache = {'some/path': {'mtime': 123}}
             fake_manager = MagicMock()
-            fake_manager.tools = {'fs': fake_tool}
+            fake_manager.extra_tools = [fake_tool]
             agent.tool_manager = fake_manager
 
             agent.rollback(h)
