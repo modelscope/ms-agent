@@ -75,9 +75,17 @@ def _message_from_data(data: Any) -> Message:
 
 def _build_sub_agent(spec: _AgentToolSpec, default_trust_remote_code: bool):
     if spec.inline_config is not None:
-        config_override = OmegaConf.create(spec.inline_config)
+        container = _to_container(spec.inline_config)
+        base_override = OmegaConf.create(container) if isinstance(
+            container, dict) else OmegaConf.create({})
     else:
-        config_override = None
+        base_override = OmegaConf.create({})
+    # Sub-agents default snapshots off in LLMAgent unless enable_snapshots is set
+    # on the merged agent config (e.g. in the sub-agent YAML).
+    config_override = OmegaConf.merge(
+        base_override,
+        OmegaConf.create({'ms_agent_subagent': True}),
+    )
 
     trust_remote_code = spec.trust_remote_code
     if trust_remote_code is None:
@@ -736,6 +744,9 @@ class AgentTool(ToolBase):
             system = task.get('system', '')
             query = task.get('query', '')
             task_config = dict(base_config) if isinstance(base_config, dict) else {}
+            # Avoid inheriting the parent agent's snapshot preference into each
+            # split sub-task; sub-agents use ms_agent_subagent defaults instead.
+            task_config.pop('enable_snapshots', None)
             if 'prompt' not in task_config or not isinstance(task_config.get('prompt'), dict):
                 task_config['prompt'] = {}
             task_config['prompt']['system'] = system

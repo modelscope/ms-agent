@@ -26,13 +26,14 @@ from ms_agent.utils.task_manager import TaskManager
 from ms_agent.utils.constants import DEFAULT_TAG, DEFAULT_USER
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.snapshot import take_snapshot
-from ms_agent.utils.task_manager import TaskManager
 from omegaconf import DictConfig, OmegaConf
 
 from ..config.config import Config, ConfigLifecycleHandler
 from .base import Agent
 
 logger = get_logger()
+
+_MISSING_ENABLE_SNAPSHOTS = object()
 
 
 class LLMAgent(Agent):
@@ -87,6 +88,36 @@ class LLMAgent(Agent):
 
     DEFAULT_MAX_CHAT_ROUND = 20
 
+    @staticmethod
+    def _coerce_enable_snapshots_value(value: Any) -> bool:
+        if isinstance(value, str):
+            return value.strip().lower() in ('1', 'true', 'yes', 'on')
+        return bool(value)
+
+    @staticmethod
+    def resolve_enable_snapshots(config: Any) -> bool:
+        """Resolve whether to take automatic pre-task snapshots.
+
+        Tool-spawned sub-agents (``ms_agent_subagent`` in config) default to
+        ``False``; all other agents default to ``True``. An explicit
+        ``enable_snapshots`` in config always wins (including string forms
+        like ``\"false\"`` coerced to boolean).
+        """
+        if OmegaConf.is_config(config):
+            raw = OmegaConf.select(config, 'enable_snapshots',
+                                   default=_MISSING_ENABLE_SNAPSHOTS)
+            if raw is not _MISSING_ENABLE_SNAPSHOTS and raw is not None:
+                return LLMAgent._coerce_enable_snapshots_value(raw)
+            sub = bool(
+                OmegaConf.select(config, 'ms_agent_subagent', default=False))
+            return not sub
+        if isinstance(config, dict):
+            if 'enable_snapshots' in config and config['enable_snapshots'] is not None:
+                return LLMAgent._coerce_enable_snapshots_value(
+                    config['enable_snapshots'])
+            return not bool(config.get('ms_agent_subagent'))
+        return True
+
     TOTAL_PROMPT_TOKENS = 0
     TOTAL_COMPLETION_TOKENS = 0
     TOTAL_CACHED_TOKENS = 0
@@ -114,7 +145,6 @@ class LLMAgent(Agent):
         self.knowledge_search: Optional[SirchmunkSearch] = None
         self.llm: Optional[LLM] = None
         self.runtime: Optional[Runtime] = None
-        self.task_manager: Optional[TaskManager] = None
         self.max_chat_round: int = 0
         self.load_cache = kwargs.get('load_cache', False)
         self.config.load_cache = self.load_cache
@@ -500,7 +530,7 @@ class LLMAgent(Agent):
 
     async def on_task_begin(self, messages: List[Message]):
         self.log_output(f'Agent {self.tag} task beginning.')
-        if getattr(self.config, 'enable_snapshots', True):
+        if self.resolve_enable_snapshots(self.config):
             _user_content = next(
                 ((getattr(m, 'content', '') or '')[:80]
                  for m in messages if getattr(m, 'role', '') == 'user'),

@@ -105,3 +105,6 @@ round_reminder:
 tool_call_timeout: 2600
 
 output_dir: ./output
+
+# bench experiment: disable snapshot for searcher sub-agent
+enable_snapshots: false

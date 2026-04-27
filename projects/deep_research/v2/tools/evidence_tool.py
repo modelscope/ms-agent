@@ -379,7 +379,8 @@ class EvidenceTool(ToolBase):
                                 'type':
                                 'string',
                                 'description':
-                                'Brief title describing this evidence (e.g., "Tesla Q3 revenue growth").',
+                                ('Brief title describing this evidence (e.g., "Tesla Q3 revenue growth"). '
+                                 'Optional: if omitted, a title is derived from the first line of `content`.'),
                             },
                             'content': {
                                 'type':
@@ -464,10 +465,7 @@ class EvidenceTool(ToolBase):
                                 'Optional: Confidence/quality score (0-100).',
                             },
                         },
-                        'required': [
-                            'title', 'content', 'sources', 'summary',
-                            'task_id', 'tags'
-                        ],
+                        'required': ['content'],
                         'additionalProperties':
                         False,
                     },
@@ -849,8 +847,8 @@ class EvidenceTool(ToolBase):
 
     async def write_note(
         self,
-        title: str,
         content: str,
+        title: Optional[str] = None,
         contradicts: Optional[str] = None,
         sources: Optional[List[Dict[str, Any]]] = None,
         summary: Optional[str] = None,
@@ -863,12 +861,27 @@ class EvidenceTool(ToolBase):
         _ensure_dir(paths['notes_dir'])
         _ensure_dir(paths['lock_dir'])
 
+        content = (content or '').strip()
+        if not content:
+            return _json_dumps({
+                'status': 'error',
+                'message': 'write_note requires non-empty content.',
+            })
+
+        if title is None or not str(title).strip():
+            first_line = content.split('\n', 1)[0].strip()
+            if len(first_line) > 120:
+                first_line = first_line[:117] + '...'
+            title_resolved = first_line or 'Evidence note'
+        else:
+            title_resolved = str(title).strip()
+
         # Generate ID and build note
         note_id = _generate_note_id()
         note: Dict[str, Any] = {
             'note_id': note_id,
-            'title': title.strip(),
-            'content': content.strip(),
+            'title': title_resolved,
+            'content': content,
             'created_at': _now_iso(),
         }
 

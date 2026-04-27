@@ -162,7 +162,8 @@ class FileSystemTool(ToolBase):
                     server_name='file_system',
                     description=(
                         'Read the content of one or more files.\n\n'
-                        '- `paths`: list of relative file paths to read.\n'
+                        '- `paths`: list of relative file paths to read (preferred).\n'
+                        '- `path`: single relative file path (alias when the model passes one file).\n'
                         '- For image files (png/jpg/jpeg/gif/webp), returns base64-encoded content.\n'
                         '- `offset`: line number to start reading from (1-based). '
                         'Only effective when paths has exactly one element. Omit to read from the beginning.\n'
@@ -179,7 +180,13 @@ class FileSystemTool(ToolBase):
                                 'type': 'array',
                                 'items': {'type': 'string'},
                                 'description':
-                                'List of relative file path(s) to read',
+                                'List of relative file path(s) to read. '
+                                'Use this OR `path` (single file).',
+                            },
+                            'path': {
+                                'type': 'string',
+                                'description':
+                                'Single relative file path to read (alias for `paths` of length 1).',
                             },
                             'offset': {
                                 'type': 'integer',
@@ -200,7 +207,7 @@ class FileSystemTool(ToolBase):
                                 'Useful for large files or quick structural overview.',
                             },
                         },
-                        'required': ['paths'],
+                        'required': [],
                         'additionalProperties': False
                     }),
                 Tool(
@@ -345,6 +352,28 @@ class FileSystemTool(ToolBase):
         except WorkspacePolicyError as e:
             return json.dumps({'success': False, 'error': str(e)}, indent=2)
 
+        if pattern is None or (isinstance(pattern, str) and not pattern.strip()):
+            return json.dumps(
+                {
+                    'success': False,
+                    'error': 'grep requires a non-empty pattern string.',
+                },
+                indent=2,
+            )
+        if isinstance(pattern, str) and ('\n' in pattern or '\r' in pattern):
+            return json.dumps(
+                {
+                    'success': False,
+                    'error': (
+                        'grep pattern must not contain raw newline characters; '
+                        'ripgrep rejects them unless multiline mode is enabled server-side. '
+                        'Use several single-line patterns, escape newlines as needed, '
+                        'or search with read_file for fixed multi-line text.'
+                    ),
+                },
+                indent=2,
+            )
+
         lines: List[str] = []
         try:
             rg = shutil.which('rg')
@@ -367,7 +396,15 @@ class FileSystemTool(ToolBase):
                     case_insensitive,
                 )
         except Exception as e:
-            logger.warning('grep failed: %s', e, exc_info=True)
+            err = str(e)
+            # Expected user/tooling failures (bad regex, rg rules) — log without traceback noise.
+            _quiet = (
+                'rg:' in err
+                or 'exited' in err.lower()
+                or 'regex' in err.lower()
+                or 'pattern' in err.lower()
+            )
+            logger.warning('grep failed: %s', e, exc_info=not _quiet)
             return json.dumps({'success': False, 'error': str(e)}, indent=2)
 
         text = '\n'.join(lines)
@@ -679,8 +716,24 @@ class FileSystemTool(ToolBase):
         else:
             return target_path_real
 
+    def _normalize_read_paths(self, paths, path) -> List[str]:
+        """Accept `paths` (list or lone string) or legacy `path` kwarg."""
+        out: List[str] = []
+        if paths is not None:
+            if isinstance(paths, str) and paths.strip():
+                out = [paths.strip()]
+            elif isinstance(paths, list):
+                out = [
+                    p.strip() for p in paths
+                    if isinstance(p, str) and p.strip()
+                ]
+        if not out and path is not None and isinstance(path, str) and path.strip():
+            out = [path.strip()]
+        return out
+
     async def read_file(self,
-                        paths: list[str],
+                        paths: Optional[List[str]] = None,
+                        path: Optional[str] = None,
                         offset: int = None,
                         limit: int = None,
                         abbreviate: bool = False):
@@ -688,6 +741,7 @@ class FileSystemTool(ToolBase):
 
         Args:
             paths: List of relative file path(s) to read.
+            path: Single path (alias); used when `paths` is omitted.
             offset: Line number to start reading from (1-based). Only effective for a single file.
             limit: Number of lines to read. Only effective for a single file.
             abbreviate: If True, return an LLM-generated summary instead of raw content.
@@ -695,6 +749,18 @@ class FileSystemTool(ToolBase):
         Returns:
             Dictionary mapping file path(s) to their content or error messages.
         """
+        paths = self._normalize_read_paths(paths, path)
+        if not paths:
+            return json.dumps(
+                {
+                    'success': False,
+                    'error': (
+                        'read_file requires `paths` (list of strings) or `path` (single string). '
+                        'Example: {"paths": ["a.md"]} or {"path": "a.md"}.'
+                    ),
+                },
+                indent=2,
+            )
         if abbreviate:
             return await self._read_files_abbreviated(paths)
 

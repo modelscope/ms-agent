@@ -88,3 +88,6 @@ self_reflection:
 tool_call_timeout: 300
 
 output_dir: ./output
+
+# bench experiment: disable snapshot for reporter sub-agent
+enable_snapshots: false

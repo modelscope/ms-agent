@@ -42,6 +42,23 @@ def _snapshot_git_dir(output_dir: str) -> str:
     return os.path.join(output_dir, _SNAPSHOT_DIR_NAME)
 
 
+def _configure_snapshot_repo_for_automation(work_tree: str, git_dir: str) -> None:
+    """Disable hook execution for the nested snapshot repo.
+
+    Without this, Git can inherit ``init.templateDir`` / global ``core.hooksPath``
+    (e.g. lefthook), so ``git commit`` runs hooks and races under concurrency
+    (``cannot lock ref 'HEAD'`` / hook failures). ``os.devnull`` is the portable
+    Git-supported way to disable hooks (POSIX ``/dev/null``, Windows ``nul``).
+    """
+    try:
+        _git(['config', 'core.hooksPath', os.devnull],
+             work_tree=work_tree,
+             git_dir=git_dir,
+             check=False)
+    except Exception:
+        pass
+
+
 def _ensure_repo(output_dir: str) -> str:
     """Initialize the snapshot repo if it doesn't exist. Returns git_dir."""
     git_dir = _snapshot_git_dir(output_dir)
@@ -60,6 +77,8 @@ def _ensure_repo(output_dir: str) -> str:
         exclude_file = os.path.join(info_dir, 'exclude')
         with open(exclude_file, 'a', encoding='utf-8') as f:
             f.write(f'\n{_SNAPSHOT_DIR_NAME}/\n')
+    # Always (re)apply: repos created before this fix may still inherit hooks.
+    _configure_snapshot_repo_for_automation(output_dir, git_dir)
     return git_dir
 
 
@@ -115,7 +134,7 @@ def take_snapshot(output_dir: str, message: str,
 
         # Truncate message to keep commit subject readable
         subject = message.strip().replace('\n', ' ')[:120]
-        result = _git(['commit', '-m', subject],
+        result = _git(['commit', '--no-verify', '-m', subject],
                       work_tree=output_dir, git_dir=git_dir)
 
         commit_hash = None
