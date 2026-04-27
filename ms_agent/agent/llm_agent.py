@@ -21,14 +21,18 @@ from ms_agent.rag.base import RAG
 from ms_agent.rag.utils import rag_mapping
 from ms_agent.tools import ToolManager
 from ms_agent.utils import async_retry, read_history, save_history
+from ms_agent.utils.task_manager import TaskManager
 from ms_agent.utils.constants import DEFAULT_TAG, DEFAULT_USER
 from ms_agent.utils.logger import get_logger
+from ms_agent.utils.snapshot import take_snapshot
 from omegaconf import DictConfig, OmegaConf
 
 from ..config.config import Config, ConfigLifecycleHandler
 from .base import Agent
 
 logger = get_logger()
+
+_MISSING_ENABLE_SNAPSHOTS = object()
 
 
 class LLMAgent(Agent):
@@ -83,6 +87,36 @@ class LLMAgent(Agent):
 
     DEFAULT_MAX_CHAT_ROUND = 20
 
+    @staticmethod
+    def _coerce_enable_snapshots_value(value: Any) -> bool:
+        if isinstance(value, str):
+            return value.strip().lower() in ('1', 'true', 'yes', 'on')
+        return bool(value)
+
+    @staticmethod
+    def resolve_enable_snapshots(config: Any) -> bool:
+        """Resolve whether to take automatic pre-task snapshots.
+
+        Tool-spawned sub-agents (``ms_agent_subagent`` in config) default to
+        ``False``; all other agents default to ``True``. An explicit
+        ``enable_snapshots`` in config always wins (including string forms
+        like ``\"false\"`` coerced to boolean).
+        """
+        if OmegaConf.is_config(config):
+            raw = OmegaConf.select(config, 'enable_snapshots',
+                                   default=_MISSING_ENABLE_SNAPSHOTS)
+            if raw is not _MISSING_ENABLE_SNAPSHOTS and raw is not None:
+                return LLMAgent._coerce_enable_snapshots_value(raw)
+            sub = bool(
+                OmegaConf.select(config, 'ms_agent_subagent', default=False))
+            return not sub
+        if isinstance(config, dict):
+            if 'enable_snapshots' in config and config['enable_snapshots'] is not None:
+                return LLMAgent._coerce_enable_snapshots_value(
+                    config['enable_snapshots'])
+            return not bool(config.get('ms_agent_subagent'))
+        return True
+
     TOTAL_PROMPT_TOKENS = 0
     TOTAL_COMPLETION_TOKENS = 0
     TOTAL_CACHED_TOKENS = 0
@@ -104,6 +138,7 @@ class LLMAgent(Agent):
         super().__init__(config, tag, trust_remote_code)
         self.callbacks: List[Callback] = []
         self.tool_manager: Optional[ToolManager] = None
+        self.task_manager: Optional[TaskManager] = None
         self.memory_tools: List[Memory] = []
         self.rag: Optional[RAG] = None
         self.llm: Optional[LLM] = None
@@ -349,6 +384,24 @@ class LLMAgent(Agent):
 
         return messages
 
+    def rollback(self, commit_hash: str) -> bool:
+        """Restore output_dir to snapshot and truncate message history."""
+        from ms_agent.utils.snapshot import restore_snapshot
+        ok, message_count = restore_snapshot(self.output_dir, commit_hash)
+        if not ok:
+            return False
+        # Truncate saved history to the message count at snapshot time
+        _, saved_messages = read_history(self.output_dir, self.tag)
+        if saved_messages and message_count < len(saved_messages):
+            save_history(self.output_dir, self.tag, self.config,
+                         saved_messages[:message_count])
+        # Clear read cache on FileSystemTool so stale entries don't block edits
+        if self.tool_manager is not None:
+            for tool in self.tool_manager.extra_tools:
+                if hasattr(tool, '_read_cache'):
+                    tool._read_cache.clear()
+        return True
+
     def register_callback(self, callback: Callback):
         """
         Register a new callback to be triggered during the agent's lifecycle.
@@ -475,6 +528,17 @@ class LLMAgent(Agent):
 
     async def on_task_begin(self, messages: List[Message]):
         self.log_output(f'Agent {self.tag} task beginning.')
+        if self.resolve_enable_snapshots(self.config):
+            _user_content = next(
+                ((getattr(m, 'content', '') or '')[:80]
+                 for m in messages if getattr(m, 'role', '') == 'user'),
+                '',
+            )
+            take_snapshot(
+                self.output_dir,
+                f'[pre] {_user_content}' if _user_content else '[pre] new task',
+                message_count=len(messages),
+            )
         await self.loop_callback('on_task_begin', messages)
 
     async def on_task_end(self, messages: List[Message]):
@@ -539,6 +603,7 @@ class LLMAgent(Agent):
 
     async def prepare_tools(self):
         """Initialize and connect the tool manager."""
+        self.task_manager = TaskManager()
         self.tool_manager = ToolManager(
             self.config,
             self.mcp_config,
@@ -546,10 +611,16 @@ class LLMAgent(Agent):
             trust_remote_code=self.trust_remote_code,
         )
         await self.tool_manager.connect()
+        for tool in self.tool_manager.extra_tools:
+            if hasattr(tool, 'set_task_manager'):
+                tool.set_task_manager(self.task_manager)
 
     async def cleanup_tools(self):
         """Cleanup resources used by the tool manager."""
-        await self.tool_manager.cleanup()
+        if self.task_manager is not None:
+            self.task_manager.kill_all()
+        if self.tool_manager is not None:
+            await self.tool_manager.cleanup()
 
     @property
     def stream(self):
@@ -581,16 +652,41 @@ class LLMAgent(Agent):
                                     DictConfig({}))
         return str(getattr(generation_config, 'reasoning_output', 'stdout'))
 
-    def _write_reasoning(self, text: str):
+    _THINKING_SEP = '─' * 40
+
+    def _reasoning_stream(self):
+        if self.reasoning_output.lower() == 'stdout':
+            return sys.stdout
+        return sys.stderr
+
+    def _write_reasoning(self, text: str, dim: bool = False):
         if not text:
             return
-        if self.reasoning_output.lower() == 'stdout':
-            sys.stdout.write(text)
-            sys.stdout.flush()
+        stream = self._reasoning_stream()
+        use_ansi = hasattr(stream, 'isatty') and stream.isatty()
+        if dim and use_ansi:
+            text = f'\033[2m{text}\033[0m'
+        stream.write(text)
+        stream.flush()
+
+    def _write_thinking_header(self):
+        stream = self._reasoning_stream()
+        use_ansi = hasattr(stream, 'isatty') and stream.isatty()
+        line = f'{self._THINKING_SEP[:15]} thinking {self._THINKING_SEP[25:]}'
+        if use_ansi:
+            stream.write(f'\033[2m{line}\033[0m\n')
         else:
-            # default: stderr
-            sys.stderr.write(text)
-            sys.stderr.flush()
+            stream.write(line + '\n')
+        stream.flush()
+
+    def _write_thinking_footer(self):
+        stream = self._reasoning_stream()
+        use_ansi = hasattr(stream, 'isatty') and stream.isatty()
+        if use_ansi:
+            stream.write(f'\n\033[2m{self._THINKING_SEP}\033[0m\n')
+        else:
+            stream.write(f'\n{self._THINKING_SEP}\n')
+        stream.flush()
 
     @property
     def system(self):
@@ -802,6 +898,17 @@ class LLMAgent(Agent):
                 and response_message.tool_calls):
             messages[-1].content = 'Let me do a tool calling.'
 
+    def _append_task_notifications(self, messages: List[Message]) -> List[Message]:
+        """Inject drained TaskManager completion notices as a user message."""
+        if self.task_manager is None:
+            return messages
+        notes = self.task_manager.drain_notifications()
+        if not notes:
+            return messages
+        body = '[Background task updates]\n' + '\n'.join(notes)
+        messages.append(Message(role='user', content=body))
+        return messages
+
     @async_retry(max_attempts=Agent.retry_count, delay=1.0)
     async def step(
         self, messages: List[Message]
@@ -829,6 +936,7 @@ class LLMAgent(Agent):
             List[Message]: Updated message history after this step.
         """
         messages = deepcopy(messages)
+        messages = self._append_task_notifications(messages)
         if (not self.load_cache) or messages[-1].role != 'assistant':
             messages = await self.condense_memory(messages)
             await self.on_generate_response(messages)
@@ -841,13 +949,13 @@ class LLMAgent(Agent):
                 is_first = True
                 _response_message = None
                 _printed_reasoning_header = False
+                _printed_reasoning_footer = False
                 for _response_message in self.llm.generate(
                         messages, tools=tools):
                     if is_first:
                         messages.append(_response_message)
                         is_first = False
 
-                    # Optional: stream model "thinking/reasoning" if available.
                     if self.show_reasoning:
                         reasoning_text = (
                             getattr(_response_message, 'reasoning_content', '')
@@ -858,19 +966,33 @@ class LLMAgent(Agent):
                         new_reasoning = reasoning_text[len(_reasoning):]
                         if new_reasoning:
                             if not _printed_reasoning_header:
-                                self._write_reasoning('[thinking]:\n')
+                                self._write_thinking_header()
                                 _printed_reasoning_header = True
-                            self._write_reasoning(new_reasoning)
+                            self._write_reasoning(new_reasoning, dim=True)
                             _reasoning = reasoning_text
 
                     new_content = _response_message.content[len(_content):]
-                    sys.stdout.write(new_content)
-                    sys.stdout.flush()
+                    if new_content:
+                        if _printed_reasoning_header and not _printed_reasoning_footer:
+                            self._write_thinking_footer()
+                            _printed_reasoning_footer = True
+                        sys.stdout.write(new_content)
+                        sys.stdout.flush()
                     _content = _response_message.content
                     messages[-1] = _response_message
                     yield messages
-                if self.show_reasoning and _printed_reasoning_header:
-                    self._write_reasoning('\n')
+                if _printed_reasoning_header and not _printed_reasoning_footer:
+                    self._write_thinking_footer()
+
+                # Handle reasoning summaries that arrive after content
+                if self.show_reasoning and _response_message is not None:
+                    final_reasoning = getattr(_response_message,
+                                              'reasoning_content', '') or ''
+                    if final_reasoning and not _printed_reasoning_header:
+                        self._write_thinking_header()
+                        self._write_reasoning(final_reasoning, dim=True)
+                        self._write_thinking_footer()
+
                 sys.stdout.write('\n')
             else:
                 _response_message = self.llm.generate(messages, tools=tools)
@@ -879,9 +1001,9 @@ class LLMAgent(Agent):
                         getattr(_response_message, 'reasoning_content', '')
                         or '')
                     if reasoning_text:
-                        self._write_reasoning('[thinking]:\n')
-                        self._write_reasoning(reasoning_text)
-                        self._write_reasoning('\n')
+                        self._write_thinking_header()
+                        self._write_reasoning(reasoning_text, dim=True)
+                        self._write_thinking_footer()
                 if _response_message.content:
                     self.log_output('[assistant]:')
                     self.log_output(_response_message.content)
@@ -1079,6 +1201,11 @@ class LLMAgent(Agent):
             await self.prepare_rag()
             self.runtime.tag = self.tag
 
+            self.task_manager = TaskManager()
+            for tool in self.tool_manager.extra_tools:
+                if hasattr(tool, 'set_task_manager'):
+                    tool.set_task_manager(self.task_manager)
+
             if messages is None:
                 messages = self.query
 
@@ -1107,6 +1234,10 @@ class LLMAgent(Agent):
                     self.log_output('[' + message.role + ']:')
                     self.log_output(message.content)
             while not self.runtime.should_stop:
+                if self.task_manager is not None:
+                    notifications = self.task_manager.drain_notifications()
+                    if notifications:
+                        messages.append(Message(role='user', content='\n'.join(notifications)))
                 async for messages in self.step(messages):
                     yield messages
                 self.runtime.round += 1

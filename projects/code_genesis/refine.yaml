@@ -46,9 +46,9 @@ prompt:
         a. Write test cases to verify correctness
 
     3. Use your tools effectively
-      * Use `read_file` to read the original file. When using `read_file`, specify `start_line` and `end_line` to reduce token usage
+      * Use `read_file` to read the original file. When using `read_file`, specify `offset` (1-based start line) and `limit` (line count) to reduce token usage
       * If an HTTP API is unclear, use `workflow/api_search` to locate the implementation
-      * Use `search_file_content` to search the project for keywords you care about
+      * To scan the project for keywords without a dedicated search tool, use `read_file` with `abbreviate: true` on candidate files, or read likely paths with `offset`/`limit`
       * Shell commands must not use system directories (except `/dev/null`)
 
     4. When run successfully, you can use EdgeOne Pages MCP tools to deploy the project. Available tools from `edgeone-pages-mcp` include:
@@ -96,8 +96,9 @@ tools:
     include:
       - read_file
       - write_file
-      - list_files
       - edit_file
+      - grep
+      - glob
     edit_file_config:
       diff_model: morph-v3-fast
       api_key:

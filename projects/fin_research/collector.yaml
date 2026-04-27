@@ -132,10 +132,12 @@ tools:
       network_enabled: True  # Enable network access in sandbox (default: false for security)
       tools_config:
         notebook_executor: {}
+        shell_executor: {}
+        file_operation: {}
     exclude:
       - python_executor
-      - shell_executor
-      - file_operation
+      - reset_executor
+      - get_executor_info
   financial_data_fetcher:
     mcp: false
     source_type: hybrid
@@ -149,7 +151,10 @@ tools:
     mcp: false
     include:
       - write_file
-      - delete_file_or_dir
+      - read_file
+      - edit_file
+      - grep
+      - glob
 
 
 handler: time_handler

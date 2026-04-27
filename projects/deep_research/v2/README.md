@@ -2,6 +2,8 @@
 
 Agentic Insight v2 provides a more scalable framework for deep research, enabling agents to autonomously explore and execute complex tasks.
 
+> 🏆 **Benchmark**: **#2 Open-Source** (#5 Overall) on [DeepResearch Bench](https://github.com/Ayanami0730/deep_research_bench) — **55.31** with the submitted version (Qwen3.5-Plus + GPT 5.2). See [Leaderboard](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard).
+
 ### 🌟 Features
 
 Agentic Insight v2 is designed around:

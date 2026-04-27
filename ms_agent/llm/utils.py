@@ -40,6 +40,10 @@ class Message:
     # needed for output
     reasoning_content: str = ''
 
+    # Opaque output items from the Responses API that must be passed back
+    # in multi-turn tool-calling conversations (e.g. reasoning items).
+    _responses_output_items: List[Dict[str, Any]] = field(default_factory=list)
+
     # request id
     id: str = ''
 
@@ -88,7 +92,7 @@ class Message:
         # Never send UI-only fields to model providers.
         rm = [
             'completion_tokens', 'prompt_tokens', 'api_calls', 'tool_detail',
-            'searching_detail', 'search_result'
+            'searching_detail', 'search_result', '_responses_output_items',
         ]
         return {
             key: value

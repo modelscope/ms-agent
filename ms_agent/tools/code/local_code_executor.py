@@ -3,18 +3,21 @@ import asyncio.subprocess as ai_subprocess
 import inspect
 import io
 import os
+import shlex
 import shutil
 import time
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 import json
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils import get_logger
+from ms_agent.utils.artifact_manager import ArtifactManager
 from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR
 from ms_agent.utils.utils import install_package
+from ms_agent.utils.workspace_policy import WorkspacePolicyError, WorkspacePolicyKernel
 
 logger = get_logger()
 
@@ -231,7 +234,7 @@ class LocalCodeExecutionTool(ToolBase):
     def __init__(self, config):
         super().__init__(config)
         self.output_dir = Path(
-            getattr(config, 'output_dir', DEFAULT_OUTPUT_DIR)).expanduser()
+            getattr(config, 'output_dir', DEFAULT_OUTPUT_DIR)).expanduser().resolve()
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.tool_config = getattr(
@@ -250,6 +253,37 @@ class LocalCodeExecutionTool(ToolBase):
         self.shell_env = shell_env
         self._kernel_lock = asyncio.Lock()
         self._initialized = False
+        self._task_manager = None
+        self._watcher_tasks: Set[asyncio.Task] = set()
+
+        wp = getattr(getattr(config, 'tools', None), 'workspace_policy', None)
+        extra_allow: List[str] = []
+        deny_globs = None
+        if wp is not None:
+            extra_allow = list(getattr(wp, 'allow_roots', []) or [])
+            dg = getattr(wp, 'deny_globs', None)
+            if dg:
+                deny_globs = list(dg)
+        shell_cfg = getattr(self.tool_config, 'shell', None) if self.tool_config else None
+        shell_mode = getattr(shell_cfg, 'default_mode',
+                             'workspace_write') if shell_cfg else 'workspace_write'
+        net = bool(getattr(shell_cfg, 'network_enabled', False)
+                   ) if shell_cfg else False
+        max_cmd = int(getattr(shell_cfg, 'max_command_chars', 8192)
+                      ) if shell_cfg else 8192
+        self._policy = WorkspacePolicyKernel(
+            self.output_dir,
+            extra_allow_roots=extra_allow,
+            deny_globs=deny_globs,
+            shell_default_mode=str(shell_mode),
+            shell_network_enabled=net,
+            max_command_chars=max_cmd,
+        )
+        max_kb = 256
+        if shell_cfg and getattr(shell_cfg, 'max_output_kb', None):
+            max_kb = int(shell_cfg.max_output_kb)
+        self._artifacts = ArtifactManager(
+            self.output_dir, max_combined_bytes=max_kb * 1024)
 
         self.exclude_func(
             getattr(getattr(config, 'tools', None), 'code_executor', None))
@@ -263,6 +297,10 @@ class LocalCodeExecutionTool(ToolBase):
                     f'Make sure to install the missing dependencies.')
 
         logger.info('LocalCodeExecutionTool initialized (ipykernel based)')
+
+    def set_task_manager(self, task_manager) -> None:
+        """Attach process-wide TaskManager for background shell (see shell_executor)."""
+        self._task_manager = task_manager
 
     def _check_dependencies(self) -> None:
         import importlib
@@ -341,6 +379,10 @@ class LocalCodeExecutionTool(ToolBase):
         self._initialized = True
 
     async def cleanup(self) -> None:
+        for t in list(self._watcher_tasks):
+            if not t.done():
+                t.cancel()
+        self._watcher_tasks.clear()
         if not self._initialized:
             return
         await self.kernel_session.stop()
@@ -421,9 +463,12 @@ class LocalCodeExecutionTool(ToolBase):
                 Tool(
                     tool_name='shell_executor',
                     server_name='code_executor',
-                    description=('Execute shell commands locally using bash. '
-                                 'Supports basic shell operations like ls, '
-                                 'cd, mkdir, rm, etc. '),
+                    description=(
+                        'Execute shell commands locally under the workspace output directory (cwd). '
+                        'Subject to policy (read_only vs workspace_write, network toggle). '
+                        'Large stdout/stderr may be spilled to .ms_agent_artifacts. '
+                        'Use run_in_background=true to return immediately with task_id; poll via task notifications.'
+                    ),
                     parameters={
                         'type': 'object',
                         'properties': {
@@ -435,7 +480,17 @@ class LocalCodeExecutionTool(ToolBase):
                                 'type': 'integer',
                                 'description': 'Execution timeout in seconds',
                                 'default': self._shell_timeout
-                            }
+                            },
+                            'run_in_background': {
+                                'type': 'boolean',
+                                'description':
+                                'If true, start the command asynchronously and return task_id (requires TaskManager).',
+                                'default': False,
+                            },
+                            '__call_id': {
+                                'type': 'string',
+                                'description': 'Optional correlation id (injected by host when supported).',
+                            },
                         },
                         'required': ['command'],
                         'additionalProperties': False
@@ -630,16 +685,117 @@ class LocalCodeExecutionTool(ToolBase):
 
     async def shell_executor(self,
                              command: str,
-                             timeout: Optional[int] = None) -> str:
+                             timeout: Optional[int] = None,
+                             run_in_background: bool = False,
+                             __call_id: Optional[str] = None) -> str:
         exec_timeout = timeout or self._shell_timeout
+        call_id = __call_id or f'shell-{os.urandom(4).hex()}'
+
+        try:
+            self._policy.assert_shell_command_allowed(command)
+        except WorkspacePolicyError as e:
+            return json.dumps(
+                {
+                    'success': False,
+                    'error': str(e)
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        shell_cmd = self._prepare_shell_command(command)
+
+        if run_in_background:
+            if self._task_manager is None:
+                return json.dumps(
+                    {
+                        'success': False,
+                        'error':
+                        'run_in_background requires TaskManager (host must wire LLMAgent.task_manager).',
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            try:
+                process = await asyncio.create_subprocess_shell(
+                    shell_cmd,
+                    stdout=ai_subprocess.PIPE,
+                    stderr=ai_subprocess.PIPE,
+                    cwd=str(self._policy.workspace_root),
+                    env=self.shell_env,
+                )
+            except FileNotFoundError as exc:
+                return json.dumps(
+                    {
+                        'success': False,
+                        'error': f'Shell not available: {exc}'
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+
+            task_id = self._task_manager.register(
+                task_type='shell',
+                tool_name='shell_executor',
+                description=command[:200],
+                proc=process,
+            )
+
+            async def _watcher() -> None:
+                try:
+                    stdout, stderr = await asyncio.wait_for(
+                        process.communicate(), timeout=exec_timeout)
+                    stdout_text = _coerce_str(stdout).strip('\n')
+                    stderr_text = _coerce_str(stderr).strip('\n')
+                    success = process.returncode == 0
+                    payload = {
+                        'success': success,
+                        'output': stdout_text,
+                        'error': stderr_text or None,
+                        'return_code': process.returncode,
+                    }
+                    text = self._artifacts.pack_json_shell_result(
+                        tool_name='shell_executor',
+                        call_id=task_id,
+                        payload=payload,
+                    )
+                    await self._task_manager.complete(task_id, text)
+                except asyncio.TimeoutError:
+                    try:
+                        process.kill()
+                        await process.communicate()
+                    except Exception:  # noqa: B902
+                        pass
+                    await self._task_manager.fail(
+                        task_id,
+                        f'Shell command timed out after {exec_timeout} seconds',
+                    )
+                except Exception as exc:  # noqa: B902
+                    await self._task_manager.fail(task_id, str(exc))
+
+            t = asyncio.create_task(_watcher())
+            self._watcher_tasks.add(t)
+            t.add_done_callback(self._watcher_tasks.discard)
+
+            return json.dumps(
+                {
+                    'status': 'async_launched',
+                    'task_id': task_id,
+                    'tool_name': 'shell_executor',
+                    'call_id': call_id,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
 
         try:
             process = await asyncio.create_subprocess_shell(
-                command,
+                shell_cmd,
                 stdout=ai_subprocess.PIPE,
                 stderr=ai_subprocess.PIPE,
-                cwd=str(self.output_dir),
-                env=self.shell_env)
+                cwd=str(self._policy.workspace_root),
+                env=self.shell_env,
+            )
         except FileNotFoundError as exc:
             return json.dumps(
                 {
@@ -647,7 +803,8 @@ class LocalCodeExecutionTool(ToolBase):
                     'error': f'Shell not available: {exc}'
                 },
                 ensure_ascii=False,
-                indent=2)
+                indent=2,
+            )
 
         try:
             stdout, stderr = await asyncio.wait_for(
@@ -666,20 +823,23 @@ class LocalCodeExecutionTool(ToolBase):
                     f'Shell command timed out after {exec_timeout} seconds'
                 },
                 ensure_ascii=False,
-                indent=2)
+                indent=2,
+            )
 
         stdout_text = _coerce_str(stdout).strip('\n')
         stderr_text = _coerce_str(stderr).strip('\n')
         success = process.returncode == 0
-        return json.dumps(
-            {
-                'success': success,
-                'output': stdout_text,
-                'error': stderr_text or None,
-                'return_code': process.returncode
-            },
-            ensure_ascii=False,
-            indent=2)
+        payload = {
+            'success': success,
+            'output': stdout_text,
+            'error': stderr_text or None,
+            'return_code': process.returncode,
+        }
+        return self._artifacts.pack_json_shell_result(
+            tool_name='shell_executor',
+            call_id=call_id,
+            payload=payload,
+        )
 
     async def file_operation(self,
                              operation: str,
