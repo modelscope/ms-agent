@@ -2,6 +2,7 @@
 import asyncio
 import importlib
 import inspect
+import json
 import os
 import sys
 import uuid
@@ -9,7 +10,6 @@ from copy import copy
 from types import TracebackType
 from typing import Any, Dict, List, Optional
 
-import json
 from ms_agent.llm.utils import Tool, ToolCall
 from ms_agent.tools.agent_tool import AgentTool
 from ms_agent.tools.base import ToolBase
@@ -18,7 +18,8 @@ from ms_agent.tools.filesystem_tool import FileSystemTool
 from ms_agent.tools.image_generator import ImageGenerator
 from ms_agent.tools.mcp_client import MCPClient
 from ms_agent.tools.search.localsearch_tool import LocalSearchTool
-from ms_agent.tools.search.sirchmunk_search import effective_localsearch_settings
+from ms_agent.tools.search.sirchmunk_search import \
+    effective_localsearch_settings
 from ms_agent.tools.search.websearch_tool import WebSearchTool
 from ms_agent.tools.todolist_tool import TodoListTool
 from ms_agent.tools.video_generator import VideoGenerator
@@ -75,11 +76,12 @@ class ToolManager:
                 self.extra_tools.append(CodeExecutionTool(config))
         if hasattr(config, 'tools') and hasattr(config.tools,
                                                 'financial_data_fetcher'):
-            from ms_agent.tools.findata.findata_fetcher import FinancialDataFetcher
+            from ms_agent.tools.findata.findata_fetcher import \
+                FinancialDataFetcher
             self.extra_tools.append(FinancialDataFetcher(config))
-        if hasattr(config, 'tools') and (
-                getattr(config.tools, 'agent_tools', None)
-                or hasattr(config.tools, 'split_task')):
+        if hasattr(config,
+                   'tools') and (getattr(config.tools, 'agent_tools', None)
+                                 or hasattr(config.tools, 'split_task')):
             agent_tool = AgentTool(
                 config, trust_remote_code=self.trust_remote_code)
             if agent_tool.enabled:
@@ -231,10 +233,9 @@ class ToolManager:
                     call_args = dict(tool_args or {})
                     call_id = tool_info.get('id') or str(uuid.uuid4())
                     call_args['__call_id'] = call_id
-                elif isinstance(
-                        tool_ins,
-                        LocalCodeExecutionTool) and tool_name.endswith(
-                            f'{self.TOOL_SPLITER}shell_executor'):
+                elif isinstance(tool_ins,
+                                LocalCodeExecutionTool) and tool_name.endswith(
+                                    f'{self.TOOL_SPLITER}shell_executor'):
                     call_args = dict(tool_args or {})
                     call_args['__call_id'] = tool_info.get('id') or str(
                         uuid.uuid4())

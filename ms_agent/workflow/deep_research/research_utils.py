@@ -1,8 +1,7 @@
-from typing import Dict, List, Optional
-
 from pydantic import BaseModel, Field
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
+from typing import Dict, List, Optional
 
 console = Console()
 

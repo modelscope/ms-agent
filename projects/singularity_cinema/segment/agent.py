@@ -1,12 +1,12 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+import json
 import os
 from copy import deepcopy
+from omegaconf import DictConfig
 
-import json
 from ms_agent.agent import LLMAgent
 from ms_agent.llm import Message
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
 
 logger = get_logger()
 

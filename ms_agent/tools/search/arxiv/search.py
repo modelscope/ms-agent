@@ -1,10 +1,10 @@
 # flake8: noqa
+import arxiv
 import os
+from arxiv import SortCriterion, SortOrder
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
-import arxiv
-from arxiv import SortCriterion, SortOrder
 from ms_agent.tools.search.arxiv.schema import (ArxivSearchRequest,
                                                 ArxivSearchResult)
 from ms_agent.tools.search.search_base import SearchEngine, SearchEngineType

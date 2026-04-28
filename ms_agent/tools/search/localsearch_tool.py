@@ -5,12 +5,10 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ms_agent.tools.search.sirchmunk_search import (
-    SirchmunkSearch,
-    effective_localsearch_settings,
-)
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
+from ms_agent.tools.search.sirchmunk_search import (
+    SirchmunkSearch, effective_localsearch_settings)
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
@@ -60,9 +58,8 @@ def _resolved_localsearch_paths_from_config(config) -> List[str]:
 
 def _format_configured_roots(paths: List[str]) -> str:
     if not paths:
-        return (
-            '(none — set tools.localsearch.paths in agent config, '
-            'or legacy knowledge_search.paths)')
+        return ('(none — set tools.localsearch.paths in agent config, '
+                'or legacy knowledge_search.paths)')
     return '\n'.join(f'- {p}' for p in paths)
 
 
@@ -87,7 +84,8 @@ class LocalSearchTool(ToolBase):
     def __init__(self, config, **kwargs):
         super().__init__(config)
         tools_root = getattr(config, 'tools', None)
-        tool_cfg = getattr(tools_root, 'localsearch', None) if tools_root else None
+        tool_cfg = getattr(tools_root, 'localsearch',
+                           None) if tools_root else None
         if tool_cfg is not None:
             self.exclude_func(tool_cfg)
         self._searcher: Optional[SirchmunkSearch] = None
@@ -122,8 +120,7 @@ class LocalSearchTool(ToolBase):
                     server_name=_SERVER,
                     description=self._tool_description(),
                     parameters={
-                        'type':
-                        'object',
+                        'type': 'object',
                         'properties': {
                             'query': {
                                 'type':
@@ -132,13 +129,11 @@ class LocalSearchTool(ToolBase):
                                 'Search keywords or natural-language question about local content.',
                             },
                             'paths': {
-                                'type':
-                                'array',
+                                'type': 'array',
                                 'items': {
                                     'type': 'string'
                                 },
-                                'description':
-                                self._paths_param_description(),
+                                'description': self._paths_param_description(),
                             },
                             'mode': {
                                 'type':
@@ -148,21 +143,28 @@ class LocalSearchTool(ToolBase):
                                 'Search mode; omit to use agent default (usually FAST).',
                             },
                             'max_depth': {
-                                'type': 'integer',
-                                'minimum': 1,
-                                'maximum': 20,
+                                'type':
+                                'integer',
+                                'minimum':
+                                1,
+                                'maximum':
+                                20,
                                 'description':
                                 'Max directory depth for filesystem search.',
                             },
                             'top_k_files': {
-                                'type': 'integer',
-                                'minimum': 1,
-                                'maximum': 20,
+                                'type':
+                                'integer',
+                                'minimum':
+                                1,
+                                'maximum':
+                                20,
                                 'description':
                                 'Max files for evidence / filename hits.',
                             },
                             'include': {
-                                'type': 'array',
+                                'type':
+                                'array',
                                 'items': {
                                     'type': 'string'
                                 },
@@ -170,7 +172,8 @@ class LocalSearchTool(ToolBase):
                                 'Glob patterns to include (e.g. *.py, *.md).',
                             },
                             'exclude': {
-                                'type': 'array',
+                                'type':
+                                'array',
                                 'items': {
                                     'type': 'string'
                                 },
@@ -219,8 +222,7 @@ class LocalSearchTool(ToolBase):
             if paths_arg:
                 resolved_paths = searcher.resolve_tool_paths(paths_arg)
                 if not resolved_paths:
-                    roots = _format_configured_roots(
-                        self._configured_roots)
+                    roots = _format_configured_roots(self._configured_roots)
                     return (
                         'Error: `paths` are invalid. Each path must exist on disk and lie '
                         'under one of these configured roots:\n' + roots)
@@ -266,8 +268,7 @@ class LocalSearchTool(ToolBase):
                 result_parts.append('\nSource paths:')
                 for item in excerpts[:12]:
                     meta = item.get('metadata') or {}
-                    result_parts.append(
-                        f'- {meta.get("source", "?")}')
+                    result_parts.append(f'- {meta.get("source", "?")}')
             result_text = '\n'.join(result_parts)
 
             return {
@@ -279,4 +280,3 @@ class LocalSearchTool(ToolBase):
         except Exception as exc:
             logger.warning(f'localsearch failed: {exc}')
             return f'Local search failed: {exc}'
-

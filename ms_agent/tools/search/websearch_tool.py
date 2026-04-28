@@ -16,7 +16,8 @@ from ms_agent.tools.search.content_optimizer import (ContentOptimizer,
                                                      ContentOptimizerConfig,
                                                      SearchResultReranker)
 from ms_agent.tools.search.search_base import ENGINE_TOOL_NAMES, SearchEngine
-from ms_agent.tools.search.web_search_spill import maybe_spill_web_search_payload
+from ms_agent.tools.search.web_search_spill import \
+    maybe_spill_web_search_payload
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.thread_util import DaemonThreadPoolExecutor
 
@@ -199,8 +200,10 @@ def get_content_fetcher(fetcher_type: str = 'jina_reader',
         config = JinaReaderConfig(
             timeout=kwargs.get('timeout', 45.0),
             retries=kwargs.get('retries', 3),
-            direct_fetch_fallback=bool(kwargs.get('direct_fetch_fallback', True)),
-            direct_fetch_timeout=float(kwargs.get('direct_fetch_timeout', 15.0)),
+            direct_fetch_fallback=bool(
+                kwargs.get('direct_fetch_fallback', True)),
+            direct_fetch_timeout=float(
+                kwargs.get('direct_fetch_timeout', 15.0)),
             playwright_fetch_fallback=bool(
                 kwargs.get('playwright_fetch_fallback', True)),
             playwright_retry_min_chars=int(
@@ -217,10 +220,14 @@ def get_content_fetcher(fetcher_type: str = 'jina_reader',
             extract_depth=str(kwargs.get('tavily_extract_depth', 'advanced')),
             format=str(kwargs.get('tavily_extract_format', 'markdown')),
             timeout=float(kwargs.get('timeout', 45.0)),
-            chunks_per_source=int(kwargs.get('tavily_extract_chunks_per_source', 3)),
-            include_images=bool(kwargs.get('tavily_extract_include_images', False)),
-            include_favicon=bool(kwargs.get('tavily_extract_include_favicon', False)),
-            include_usage=bool(kwargs.get('tavily_extract_include_usage', False)),
+            chunks_per_source=int(
+                kwargs.get('tavily_extract_chunks_per_source', 3)),
+            include_images=bool(
+                kwargs.get('tavily_extract_include_images', False)),
+            include_favicon=bool(
+                kwargs.get('tavily_extract_include_favicon', False)),
+            include_usage=bool(
+                kwargs.get('tavily_extract_include_usage', False)),
         )
     # Future: add more fetchers
     # elif fetcher_type == 'docling':
@@ -233,8 +240,8 @@ def get_content_fetcher(fetcher_type: str = 'jina_reader',
             JinaReaderConfig(
                 timeout=kwargs.get('timeout', 45.0),
                 retries=kwargs.get('retries', 3),
-                direct_fetch_fallback=bool(kwargs.get('direct_fetch_fallback',
-                                                     True)),
+                direct_fetch_fallback=bool(
+                    kwargs.get('direct_fetch_fallback', True)),
                 direct_fetch_timeout=float(
                     kwargs.get('direct_fetch_timeout', 15.0)),
                 playwright_fetch_fallback=bool(
@@ -490,8 +497,8 @@ class WebSearchTool(ToolBase):
                         or os.getenv('SERPAPI_API_KEY'))
             if tool_cfg else os.getenv('SERPAPI_API_KEY'),
             'tavily': (getattr(tool_cfg, 'tavily_api_key', None)
-                       or os.getenv('TAVILY_API_KEY')) if tool_cfg else
-            os.getenv('TAVILY_API_KEY'),
+                       or os.getenv('TAVILY_API_KEY'))
+            if tool_cfg else os.getenv('TAVILY_API_KEY'),
         }
 
         # Tavily search defaults from optional `tavily:` sub-block in YAML
@@ -530,23 +537,25 @@ class WebSearchTool(ToolBase):
         self._fetch_retries = int(getattr(tool_cfg, 'fetch_retries', 3)
                                   or 3) if tool_cfg else 3
         self._jina_direct_fetch_fallback = bool(
-            getattr(tool_cfg, 'jina_direct_fetch_fallback', True)
-        ) if tool_cfg else True
-        if tool_cfg is not None and hasattr(tool_cfg, 'jina_direct_fetch_timeout'):
+            getattr(tool_cfg, 'jina_direct_fetch_fallback',
+                    True)) if tool_cfg else True
+        if tool_cfg is not None and hasattr(tool_cfg,
+                                            'jina_direct_fetch_timeout'):
             self._jina_direct_fetch_timeout = float(
                 tool_cfg.jina_direct_fetch_timeout)
         else:
             self._jina_direct_fetch_timeout = 15.0
         self._jina_playwright_fetch_fallback = bool(
-            getattr(tool_cfg, 'jina_playwright_fetch_fallback', True)
-        ) if tool_cfg else True
+            getattr(tool_cfg, 'jina_playwright_fetch_fallback',
+                    True)) if tool_cfg else True
         self._jina_playwright_retry_min_chars = int(
-            getattr(tool_cfg, 'jina_playwright_retry_min_chars', 400) or 400
-        ) if tool_cfg else 400
+            getattr(tool_cfg, 'jina_playwright_retry_min_chars', 400)
+            or 400) if tool_cfg else 400
         self._jina_playwright_timeout_ms = int(
-            getattr(tool_cfg, 'jina_playwright_timeout_ms', 30000) or 30000
-        ) if tool_cfg else 30000
-        if tool_cfg is not None and hasattr(tool_cfg, 'jina_playwright_settle_ms'):
+            getattr(tool_cfg, 'jina_playwright_timeout_ms', 30000)
+            or 30000) if tool_cfg else 30000
+        if tool_cfg is not None and hasattr(tool_cfg,
+                                            'jina_playwright_settle_ms'):
             self._jina_playwright_settle_ms = int(
                 tool_cfg.jina_playwright_settle_ms)
         else:
@@ -610,7 +619,8 @@ class WebSearchTool(ToolBase):
 
         # Large payload spill (write bodies to disk; keep JSON small)
         self._spill_enabled = bool(
-            getattr(tool_cfg, 'spill_large_results', True)) if tool_cfg else True
+            getattr(tool_cfg, 'spill_large_results',
+                    True)) if tool_cfg else True
         self._spill_max_inline_chars = int(
             getattr(tool_cfg, 'spill_max_inline_chars', 120000)
             or 120000) if tool_cfg else 120000
@@ -689,7 +699,8 @@ class WebSearchTool(ToolBase):
             'direct_fetch_fallback': self._jina_direct_fetch_fallback,
             'direct_fetch_timeout': self._jina_direct_fetch_timeout,
             'playwright_fetch_fallback': self._jina_playwright_fetch_fallback,
-            'playwright_retry_min_chars': self._jina_playwright_retry_min_chars,
+            'playwright_retry_min_chars':
+            self._jina_playwright_retry_min_chars,
             'playwright_timeout_ms': self._jina_playwright_timeout_ms,
             'playwright_settle_ms': self._jina_playwright_settle_ms,
         }
@@ -967,10 +978,10 @@ class WebSearchTool(ToolBase):
         return await asyncio.gather(*tasks)
 
     def _do_search(
-            self, engine_type: str, engine: SearchEngine,
-            engine_cls: Type[SearchEngine],
-            tool_args: Dict[str, Any]
-    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        self, engine_type: str, engine: SearchEngine,
+        engine_cls: Type[SearchEngine],
+        tool_args: Dict[str,
+                        Any]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """Perform search; returns (result rows, extra top-level metadata e.g. Tavily)."""
         try:
             merged = dict(tool_args)
@@ -1093,8 +1104,8 @@ class WebSearchTool(ToolBase):
             if urls:
                 fetch_attempts = len(urls)
                 fetch_results = await self._fetch_multiple_async(urls)
-                fetch_timeouts = sum(
-                    1 for r in fetch_results if r.get('fetch_timed_out'))
+                fetch_timeouts = sum(1 for r in fetch_results
+                                     if r.get('fetch_timed_out'))
 
                 # Merge search metadata with fetched content
                 url_to_fetch = {r['url']: r for r in fetch_results}
@@ -1317,12 +1328,9 @@ class WebSearchTool(ToolBase):
         }
         if fetch_content and self._content_fetcher:
             response['fetch_stats'] = {
-                'per_url_timeout_s':
-                self._per_url_fetch_timeout_s,
-                'urls_fetched_this_call':
-                fetch_attempts,
-                'urls_timed_out':
-                fetch_timeouts,
+                'per_url_timeout_s': self._per_url_fetch_timeout_s,
+                'urls_fetched_this_call': fetch_attempts,
+                'urls_timed_out': fetch_timeouts,
             }
         if tavily_extra:
             response.update(tavily_extra)

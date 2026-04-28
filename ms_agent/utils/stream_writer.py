@@ -55,7 +55,8 @@ class SubAgentStreamWriter:
         subagents_dir = os.path.join(output_dir, 'subagents')
         os.makedirs(subagents_dir, exist_ok=True)
         safe_id = self._call_id.replace('/', '_').replace('\\', '_')
-        self._path: str = os.path.join(subagents_dir, f'{safe_id}.stream.jsonl')
+        self._path: str = os.path.join(subagents_dir,
+                                       f'{safe_id}.stream.jsonl')
 
     @property
     def stream_path(self) -> str:
@@ -84,8 +85,8 @@ class SubAgentStreamWriter:
                     'ts': _now_iso(),
                 })
             except Exception as exc:
-                logger.warning(
-                    'SubAgentStreamWriter: failed to open %s: %s', self._path, exc)
+                logger.warning('SubAgentStreamWriter: failed to open %s: %s',
+                               self._path, exc)
                 self._file = None
 
     def on_chunk(self, history: Any) -> None:
@@ -137,7 +138,8 @@ class SubAgentStreamWriter:
                     self._file.close()
                 except Exception as exc:
                     logger.warning(
-                        'SubAgentStreamWriter: close error on %s: %s', self._path, exc)
+                        'SubAgentStreamWriter: close error on %s: %s',
+                        self._path, exc)
                 finally:
                     self._file = None
 

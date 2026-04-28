@@ -1,10 +1,10 @@
 # flake8: noqa
 import sys
-from pathlib import Path
-
 from bs4 import Tag
 from docling_core.types import DoclingDocument
 from docling_core.types.doc import DocItemLabel, ImageRef
+from pathlib import Path
+
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.utils import (load_image_from_uri_to_pil,
                                   load_image_from_url_to_pil, validate_url)

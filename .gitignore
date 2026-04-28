@@ -150,6 +150,7 @@ apps/agentfabric/config/local_user/*
 *.pt
 .run/
 .run/*
+.claude*
 
 # ast template
 ast_index_file.py

@@ -1,15 +1,15 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import json
 import os
 import re
 import uuid
+from omegaconf import DictConfig
 from typing import Any, List, Optional
 
-import json
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback
 from ms_agent.llm.utils import Message
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
 
 logger = get_logger()
 
@@ -31,7 +31,8 @@ def _parse_search_result_json(text: str) -> Optional[Any]:
         return json.loads(text)
     except (json.JSONDecodeError, TypeError):
         pass
-    m = re.search(r'```(?:json)?\s*\r?\n(.*?)```', text, flags=re.DOTALL | re.IGNORECASE)
+    m = re.search(
+        r'```(?:json)?\s*\r?\n(.*?)```', text, flags=re.DOTALL | re.IGNORECASE)
     if m:
         block = m.group(1).strip()
         if block:
@@ -275,9 +276,13 @@ class SearcherCallback(Callback):
                         try:
                             with open(json_path, 'x', encoding='utf-8') as f:
                                 json.dump(
-                                    parsed_json, f, ensure_ascii=False, indent=2)
+                                    parsed_json,
+                                    f,
+                                    ensure_ascii=False,
+                                    indent=2)
                             logger.info(
-                                f'Searcher: Search result saved to {json_path}')
+                                f'Searcher: Search result saved to {json_path}'
+                            )
                         except FileExistsError:
                             logger.info(
                                 f'Search result already exists at {json_path}')

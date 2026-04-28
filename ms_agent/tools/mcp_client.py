@@ -2,18 +2,18 @@
 import os
 from contextlib import AsyncExitStack
 from datetime import timedelta
-from types import TracebackType
-from typing import Any, Dict, Literal, Optional
-
 from mcp import ClientSession, ListToolsResult, StdioServerParameters
 from mcp.client.sse import sse_client
 from mcp.client.stdio import stdio_client
+from omegaconf import DictConfig
+from types import TracebackType
+from typing import Any, Dict, Literal, Optional
+
 from ms_agent.config import Config
 from ms_agent.config.env import Env
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils import enhance_error, get_logger
-from omegaconf import DictConfig
 
 logger = get_logger()
 
@@ -184,7 +184,8 @@ class MCPClient(ToolBase):
                     'Using streamable_http transport. To configure a different transport such as sse, please'
                     'set the `type` or `transport` variable to "sse".')
                 try:
-                    from mcp.client.streamable_http import streamablehttp_client
+                    from mcp.client.streamable_http import \
+                        streamablehttp_client
                 except ImportError:
                     raise ImportError(
                         'Could not import streamablehttp_client. '

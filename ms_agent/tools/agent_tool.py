@@ -1,5 +1,6 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import asyncio
+import json
 import multiprocessing as mp
 import os
 import threading
@@ -7,11 +8,11 @@ import traceback
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass
+from omegaconf import DictConfig, ListConfig, OmegaConf
 from queue import Empty as QueueEmpty
 from queue import Full as QueueFull
 from typing import Any, Callable, Dict, List, Optional, Union
 
-import json
 from ms_agent.agent.loader import AgentLoader
 from ms_agent.llm.utils import Message, Tool
 from ms_agent.tools.base import ToolBase
@@ -20,7 +21,6 @@ from ms_agent.utils.stats import (append_stats, build_timing_record,
                                   get_stats_path, monotonic, now_iso,
                                   summarize_usage)
 from ms_agent.utils.stream_writer import SubAgentStreamWriter
-from omegaconf import DictConfig, ListConfig, OmegaConf
 
 logger = get_logger()
 
@@ -232,15 +232,18 @@ class AgentTool(ToolBase):
         'type': 'object',
         'properties': {
             'tasks': {
-                'type': 'array',
-                'description': (
-                    'MANDATORY: Each element is a dict, which must contains two fields: '
-                    '`system`(str) and `query`(str) to start one sub task.'),
+                'type':
+                'array',
+                'description':
+                ('MANDATORY: Each element is a dict, which must contains two fields: '
+                 '`system`(str) and `query`(str) to start one sub task.'),
             },
             'execution_mode': {
-                'type': 'string',
+                'type':
+                'string',
                 'enum': ['sequential', 'parallel'],
-                'description': 'Whether to run sub-tasks sequentially or in parallel.',
+                'description':
+                'Whether to run sub-tasks sequentially or in parallel.',
             },
         },
         'required': ['tasks'],
@@ -255,7 +258,8 @@ class AgentTool(ToolBase):
             split_cfg = tools_cfg.split_task
             tag_prefix = getattr(split_cfg, 'tag_prefix', 'worker-')
             run_in_thread = bool(getattr(split_cfg, 'run_in_thread', True))
-            run_in_process = bool(getattr(split_cfg, 'run_in_process', run_in_thread))
+            run_in_process = bool(
+                getattr(split_cfg, 'run_in_process', run_in_thread))
             builtin_spec = _AgentToolSpec(
                 tool_name='split_to_sub_task',
                 description=self._SPLIT_TASK_DESCRIPTION,
@@ -391,7 +395,8 @@ class AgentTool(ToolBase):
         env_cfg = _to_container(env_cfg) if env_cfg is not None else None
 
         disallowed_raw = getattr(cfg, 'disallowed_tools', None)
-        disallowed_tools = _to_container(disallowed_raw) if disallowed_raw is not None else None
+        disallowed_tools = _to_container(
+            disallowed_raw) if disallowed_raw is not None else None
         if isinstance(disallowed_tools, list):
             disallowed_tools = [str(t) for t in disallowed_tools]
         elif disallowed_tools is not None:
@@ -541,24 +546,28 @@ class AgentTool(ToolBase):
         payload = self._build_payload(tool_args, spec)
 
         if spec.run_in_background:
-            return await self._launch_background(payload, spec, effective_call_id)
+            return await self._launch_background(payload, spec,
+                                                 effective_call_id)
 
         use_subprocess = spec.run_in_thread and spec.run_in_process
         if use_subprocess:
             messages = await self._run_agent(
                 None, payload, spec, call_id=effective_call_id)
             result_str = self._format_output(messages, spec)
-            return self._maybe_append_stream_path(result_str, effective_call_id)
+            return self._maybe_append_stream_path(result_str,
+                                                  effective_call_id)
 
         # Pure async/await with optional escape-to-background support.
-        result = await self._run_sync_escapable(payload, spec, effective_call_id)
+        result = await self._run_sync_escapable(payload, spec,
+                                                effective_call_id)
         if isinstance(result, str):
             # Already formatted: escaped to background, returns async_launched JSON.
             return result
         result_str = self._format_output(result, spec)
         return self._maybe_append_stream_path(result_str, effective_call_id)
 
-    def _maybe_append_stream_path(self, result_str: str, effective_call_id: str) -> str:
+    def _maybe_append_stream_path(self, result_str: str,
+                                  effective_call_id: str) -> str:
         """Append a human- and LLM-readable note about the step-by-step execution
         log to *result_str* if streaming is enabled.
 
@@ -575,15 +584,14 @@ class AgentTool(ToolBase):
             result_str += (
                 f'\n\n[Note: The sub-agent\'s step-by-step execution trace '
                 f'(messages, tool calls, intermediate reasoning) was streamed '
-                f'incrementally to: {path}]'
-            )
+                f'incrementally to: {path}]')
         return result_str
 
     def _build_agent(self, spec: _AgentToolSpec):
         return _build_sub_agent(spec, self._trust_remote_code)
 
     async def _run_sync_escapable(self, payload: Any, spec: _AgentToolSpec,
-                                   call_id: Optional[str]) -> Any:
+                                  call_id: Optional[str]) -> Any:
         """Run sub-agent inline (pure async/await).
 
         If spec.sync_timeout_s is set, the call auto-escapes to background after
@@ -600,7 +608,7 @@ class AgentTool(ToolBase):
             self._run_agent(None, payload, spec, call_id=effective_call_id))
 
         self._active_sync_tasks[effective_call_id] = (run_task, spec, payload,
-                                                       escape_event)
+                                                      escape_event)
 
         try:
             if spec.sync_timeout_s and spec.sync_timeout_s > 0:
@@ -634,9 +642,8 @@ class AgentTool(ToolBase):
             self._active_sync_tasks.pop(effective_call_id, None)
 
     async def _escape_running_task(self, call_id: str,
-                                    run_task: 'asyncio.Task[Any]',
-                                    spec: _AgentToolSpec,
-                                    payload: Any) -> str:
+                                   run_task: 'asyncio.Task[Any]',
+                                   spec: _AgentToolSpec, payload: Any) -> str:
         """Cancel the in-progress sync task and re-launch it as a background subprocess."""
         if self._task_manager is None:
             raise RuntimeError(
@@ -673,7 +680,7 @@ class AgentTool(ToolBase):
         return True
 
     async def _launch_background(self, payload: Any, spec: _AgentToolSpec,
-                                  call_id: Optional[str]) -> str:
+                                 call_id: Optional[str]) -> str:
         """Fire-and-forget: start subprocess, register with TaskManager, return immediately."""
         if self._task_manager is None:
             raise RuntimeError(
@@ -704,7 +711,9 @@ class AgentTool(ToolBase):
             try:
                 result = await self._wait_process_result(proc, result_queue)
                 if result is None or not result.get('ok'):
-                    err = (result or {}).get('error', 'subprocess exited without result')
+                    err = (result
+                           or {}).get('error',
+                                      'subprocess exited without result')
                     tb = (result or {}).get('traceback', '')
                     if tb:
                         logger.warning(tb)
@@ -728,13 +737,16 @@ class AgentTool(ToolBase):
         self._watcher_tasks.add(t)
         t.add_done_callback(self._watcher_tasks.discard)
 
-        return json.dumps({
-            'status': 'async_launched',
-            'task_id': task_id,
-            'tool_name': spec.tool_name,
-        }, ensure_ascii=False)
+        return json.dumps(
+            {
+                'status': 'async_launched',
+                'task_id': task_id,
+                'tool_name': spec.tool_name,
+            },
+            ensure_ascii=False)
 
-    async def _call_dynamic(self, tool_args: dict, spec: '_AgentToolSpec') -> str:
+    async def _call_dynamic(self, tool_args: dict,
+                            spec: '_AgentToolSpec') -> str:
         tasks = tool_args.get('tasks', [])
         execution_mode = tool_args.get('execution_mode', 'sequential')
 
@@ -743,11 +755,13 @@ class AgentTool(ToolBase):
         async def _run_one(i: int, task: dict) -> str:
             system = task.get('system', '')
             query = task.get('query', '')
-            task_config = dict(base_config) if isinstance(base_config, dict) else {}
+            task_config = dict(base_config) if isinstance(base_config,
+                                                          dict) else {}
             # Avoid inheriting the parent agent's snapshot preference into each
             # split sub-task; sub-agents use ms_agent_subagent defaults instead.
             task_config.pop('enable_snapshots', None)
-            if 'prompt' not in task_config or not isinstance(task_config.get('prompt'), dict):
+            if 'prompt' not in task_config or not isinstance(
+                    task_config.get('prompt'), dict):
                 task_config['prompt'] = {}
             task_config['prompt']['system'] = system
             sub_spec = _AgentToolSpec(
@@ -925,7 +939,9 @@ class AgentTool(ToolBase):
             )
             logger.info(
                 '[stream] %s (call_id=%s) streaming to %s',
-                spec.tool_name, _effective_call_id, _writer.stream_path,
+                spec.tool_name,
+                _effective_call_id,
+                _writer.stream_path,
             )
         # ───────────────────────────────────────────────────────────────────
 
@@ -1174,7 +1190,8 @@ class AgentTool(ToolBase):
                     f'Failed to write agent tool stats for {spec.tool_name}: {exc}'
                 )
 
-    def _save_transcript(self, messages: Any, agent_tag: Optional[str]) -> None:
+    def _save_transcript(self, messages: Any,
+                         agent_tag: Optional[str]) -> None:
         if not isinstance(messages, list) or not agent_tag:
             return
         try:
@@ -1185,9 +1202,12 @@ class AgentTool(ToolBase):
             with open(path, 'w', encoding='utf-8') as f:
                 for msg in messages:
                     if hasattr(msg, 'to_dict'):
-                        f.write(json.dumps(msg.to_dict(), ensure_ascii=False) + '\n')
+                        f.write(
+                            json.dumps(msg.to_dict(), ensure_ascii=False)
+                            + '\n')
         except Exception as exc:
-            logger.warning(f'Failed to save sub-agent transcript for {agent_tag}: {exc}')
+            logger.warning(
+                f'Failed to save sub-agent transcript for {agent_tag}: {exc}')
 
     def _build_payload(self, tool_args: dict, spec: _AgentToolSpec):
         if spec.input_mode == 'messages':

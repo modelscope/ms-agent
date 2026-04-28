@@ -4,7 +4,8 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from ms_agent.tools.search.search_base import SearchEngine, SearchEngineType
 from ms_agent.tools.search.tavily.http import post_json
-from ms_agent.tools.search.tavily.schema import TavilySearchRequest, TavilySearchResult
+from ms_agent.tools.search.tavily.schema import (TavilySearchRequest,
+                                                 TavilySearchResult)
 from ms_agent.utils.logger import get_logger
 
 if TYPE_CHECKING:
@@ -39,7 +40,8 @@ class TavilySearch(SearchEngine):
         self._api_key = key
         self._request_timeout = float(request_timeout)
 
-    def search(self, search_request: TavilySearchRequest) -> TavilySearchResult:
+    def search(self,
+               search_request: TavilySearchRequest) -> TavilySearchResult:
         body = search_request.to_api_body(self._api_key)
         try:
             data = post_json(
@@ -64,7 +66,8 @@ class TavilySearch(SearchEngine):
                 'Search the web using Tavily (built for AI agents). '
                 'Returns ranked results with optional full-page markdown via '
                 '`include_raw_content`. Use `search_depth` advanced for best '
-                'relevance and richer `content` chunks (higher API credit use).'),
+                'relevance and richer `content` chunks (higher API credit use).'
+            ),
             parameters={
                 'type': 'object',
                 'properties': {
@@ -73,28 +76,36 @@ class TavilySearch(SearchEngine):
                         'description': 'Search query.',
                     },
                     'num_results': {
-                        'type': 'integer',
-                        'minimum': 1,
-                        'maximum': 20,
-                        'description': 'Max results (maps to Tavily max_results). Default 10.',
+                        'type':
+                        'integer',
+                        'minimum':
+                        1,
+                        'maximum':
+                        20,
+                        'description':
+                        'Max results (maps to Tavily max_results). Default 10.',
                     },
                     'search_depth': {
-                        'type': 'string',
+                        'type':
+                        'string',
                         'enum': ['advanced', 'basic', 'fast', 'ultra-fast'],
                         'description':
                         ('advanced: best quality, 2 credits; '
                          'basic/fast/ultra-fast: 1 credit (see Tavily docs).'),
                     },
                     'topic': {
-                        'type': 'string',
+                        'type':
+                        'string',
                         'enum': ['general', 'news', 'finance'],
                         'description':
                         'Search category (`news` / `finance` for focused verticals).',
                     },
                     'time_range': {
-                        'type': 'string',
+                        'type':
+                        'string',
                         'description':
-                        ('Filter by recency: day, week, month, year or d,w,m,y.'),
+                        ('Filter by recency: day, week, month, year or d,w,m,y.'
+                         ),
                     },
                     'start_date': {
                         'type': 'string',
@@ -105,24 +116,28 @@ class TavilySearch(SearchEngine):
                         'description': 'Results before YYYY-MM-DD.',
                     },
                     'include_answer': {
-                        'type': 'string',
+                        'type':
+                        'string',
                         'enum': ['false', 'true', 'basic', 'advanced'],
                         'description':
                         ('LLM answer: true/basic for short, advanced for detailed. '
                          'Use false to skip.'),
                     },
                     'include_raw_content': {
-                        'type': 'string',
-                        'enum':
-                        ['false', 'true', 'markdown', 'text'],
+                        'type':
+                        'string',
+                        'enum': ['false', 'true', 'markdown', 'text'],
                         'description':
                         ('full page text: markdown (recommended) or text; '
                          'false to skip raw content.'),
                     },
                     'chunks_per_source': {
-                        'type': 'integer',
-                        'minimum': 1,
-                        'maximum': 3,
+                        'type':
+                        'integer',
+                        'minimum':
+                        1,
+                        'maximum':
+                        3,
                         'description':
                         ('Relevant chunks per URL when search_depth=advanced. '
                          'Each chunk up to ~500 chars in `content` field.'),
@@ -142,13 +157,15 @@ class TavilySearch(SearchEngine):
                         'description': 'Exclude domains (max 150).',
                     },
                     'country': {
-                        'type': 'string',
+                        'type':
+                        'string',
                         'description':
                         ('Boost results from country (e.g. united states). '
                          'See Tavily docs for enum.'),
                     },
                     'exact_match': {
-                        'type': 'boolean',
+                        'type':
+                        'boolean',
                         'description':
                         'Only results with exact quoted phrases in query.',
                     },

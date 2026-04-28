@@ -16,18 +16,58 @@ from ms_agent.tools.base import ToolBase
 from ms_agent.utils import get_logger
 from ms_agent.utils.artifact_manager import ArtifactManager
 from ms_agent.utils.constants import DEFAULT_INDEX_DIR, DEFAULT_OUTPUT_DIR
-from ms_agent.utils.workspace_policy import WorkspacePolicyError, WorkspacePolicyKernel
+from ms_agent.utils.workspace_policy import (WorkspacePolicyError,
+                                             WorkspacePolicyKernel)
 
 logger = get_logger()
 
-_FS_TOOL_ALIASES = {'read': 'read_file', 'edit': 'edit_file', 'write': 'write_file'}
+_FS_TOOL_ALIASES = {
+    'read': 'read_file',
+    'edit': 'edit_file',
+    'write': 'write_file'
+}
 
 _TEXT_SUFFIXES = {
-    '.py', '.md', '.txt', '.yaml', '.yml', '.json', '.toml', '.cfg', '.ini',
-    '.sh', '.bash', '.js', '.ts', '.tsx', '.jsx', '.css', '.html', '.xml',
-    '.rs', '.go', '.java', '.c', '.h', '.cpp', '.hpp', '.cs', '.rb', '.php',
-    '.sql', '.vue', '.svelte', '.m', '.swift', '.kt', '.gradle', '.properties',
-    '.env', '.gitignore', '.dockerignore', 'Dockerfile',
+    '.py',
+    '.md',
+    '.txt',
+    '.yaml',
+    '.yml',
+    '.json',
+    '.toml',
+    '.cfg',
+    '.ini',
+    '.sh',
+    '.bash',
+    '.js',
+    '.ts',
+    '.tsx',
+    '.jsx',
+    '.css',
+    '.html',
+    '.xml',
+    '.rs',
+    '.go',
+    '.java',
+    '.c',
+    '.h',
+    '.cpp',
+    '.hpp',
+    '.cs',
+    '.rb',
+    '.php',
+    '.sql',
+    '.vue',
+    '.svelte',
+    '.m',
+    '.swift',
+    '.kt',
+    '.gradle',
+    '.properties',
+    '.env',
+    '.gitignore',
+    '.dockerignore',
+    'Dockerfile',
 }
 
 
@@ -38,8 +78,10 @@ class FileSystemTool(ToolBase):
     IMAGE_EXTENSIONS = frozenset({'png', 'jpg', 'jpeg', 'gif', 'webp'})
     # Curly quote → straight quote mapping for fuzzy matching
     CURLY_QUOTE_MAP = {
-        '\u2018': "'", '\u2019': "'",  # ' '
-        '\u201c': '"', '\u201d': '"',  # " "
+        '\u2018': "'",
+        '\u2019': "'",  # ' '
+        '\u201c': '"',
+        '\u201d': '"',  # " "
     }
 
     SYSTEM_FOR_ABBREVIATIONS = """你是一个帮我简化文件信息并返回缩略的机器人，你需要根据输入文件内容来生成压缩过的文件内容。
@@ -88,7 +130,8 @@ class FileSystemTool(ToolBase):
         self._grep_timeout = int(getattr(fs_cfg, 'grep_timeout_s', 120) or 120)
         self._default_grep_head = int(
             getattr(fs_cfg, 'grep_head_limit', 250) or 250)
-        self._glob_max_files = int(getattr(fs_cfg, 'glob_max_files', 100) or 100)
+        self._glob_max_files = int(
+            getattr(fs_cfg, 'glob_max_files', 100) or 100)
 
         wp = getattr(getattr(config, 'tools', None), 'workspace_policy', None)
         extra = list(getattr(wp, 'allow_roots', []) or []) if wp else []
@@ -96,12 +139,13 @@ class FileSystemTool(ToolBase):
 
         shell_cfg = getattr(
             getattr(config.tools, 'code_executor', None), 'shell', None)
-        shell_mode = getattr(shell_cfg, 'default_mode',
-                             'workspace_write') if shell_cfg else 'workspace_write'
-        net = bool(getattr(shell_cfg, 'network_enabled', False)
-                   ) if shell_cfg else False
-        max_cmd = int(getattr(shell_cfg, 'max_command_chars', 8192)
-                      ) if shell_cfg else 8192
+        shell_mode = getattr(
+            shell_cfg, 'default_mode',
+            'workspace_write') if shell_cfg else 'workspace_write'
+        net = bool(getattr(shell_cfg, 'network_enabled',
+                           False)) if shell_cfg else False
+        max_cmd = int(getattr(shell_cfg, 'max_command_chars',
+                              8192)) if shell_cfg else 8192
 
         _out_p = Path(self.output_dir).expanduser().resolve()
         try:
@@ -133,25 +177,29 @@ class FileSystemTool(ToolBase):
                 Tool(
                     tool_name='write_file',
                     server_name='file_system',
-                    description=(
-                        'Write content to a file. Creates the file if it does not exist, '
-                        'or overwrites it if it does.\n\n'
-                        'Usage:\n'
-                        '- Prefer `edit_file` for modifying existing files — it only changes the relevant section.\n'
-                        '- Use this tool to create new files or perform a complete rewrite.\n'
-                        '- Parent directories are created automatically if they do not exist.\n\n'
-                        'No prior `read_file` is required; the path is resolved and the given `content` is written as-is.'
-                    ),
+                    description=
+                    ('Write content to a file. Creates the file if it does not exist, '
+                     'or overwrites it if it does.\n\n'
+                     'Usage:\n'
+                     '- Prefer `edit_file` for modifying existing files — it only changes the relevant section.\n'
+                     '- Use this tool to create new files or perform a complete rewrite.\n'
+                     '- Parent directories are created automatically if they do not exist.\n\n'
+                     'No prior `read_file` is required; the path is resolved and the given `content` is written as-is.'
+                     ),
                     parameters={
                         'type': 'object',
                         'properties': {
                             'path': {
-                                'type': 'string',
-                                'description': 'The relative path of the file to write',
+                                'type':
+                                'string',
+                                'description':
+                                'The relative path of the file to write',
                             },
                             'content': {
-                                'type': 'string',
-                                'description': 'The full content to write into the file',
+                                'type':
+                                'string',
+                                'description':
+                                'The full content to write into the file',
                             },
                         },
                         'required': ['path', 'content'],
@@ -160,48 +208,55 @@ class FileSystemTool(ToolBase):
                 Tool(
                     tool_name='read_file',
                     server_name='file_system',
-                    description=(
-                        'Read the content of one or more files.\n\n'
-                        '- `paths`: list of relative file paths to read (preferred).\n'
-                        '- `path`: single relative file path (alias when the model passes one file).\n'
-                        '- For image files (png/jpg/jpeg/gif/webp), returns base64-encoded content.\n'
-                        '- `offset`: line number to start reading from (1-based). '
-                        'Only effective when paths has exactly one element. Omit to read from the beginning.\n'
-                        '- `limit`: number of lines to read. '
-                        'Only effective when paths has exactly one element. Omit to read to the end.\n'
-                        '- `abbreviate`: if true, use an LLM to return a condensed summary of each file '
-                        'instead of the raw content. Cached after first call. '
-                        'Use this for a quick structural overview; read the full file if more detail is needed.'
-                    ),
+                    description=
+                    ('Read the content of one or more files.\n\n'
+                     '- `paths`: list of relative file paths to read (preferred).\n'
+                     '- `path`: single relative file path (alias when the model passes one file).\n'
+                     '- For image files (png/jpg/jpeg/gif/webp), returns base64-encoded content.\n'
+                     '- `offset`: line number to start reading from (1-based). '
+                     'Only effective when paths has exactly one element. Omit to read from the beginning.\n'
+                     '- `limit`: number of lines to read. '
+                     'Only effective when paths has exactly one element. Omit to read to the end.\n'
+                     '- `abbreviate`: if true, use an LLM to return a condensed summary of each file '
+                     'instead of the raw content. Cached after first call. '
+                     'Use this for a quick structural overview; read the full file if more detail is needed.'
+                     ),
                     parameters={
                         'type': 'object',
                         'properties': {
                             'paths': {
-                                'type': 'array',
-                                'items': {'type': 'string'},
+                                'type':
+                                'array',
+                                'items': {
+                                    'type': 'string'
+                                },
                                 'description':
                                 'List of relative file path(s) to read. '
                                 'Use this OR `path` (single file).',
                             },
                             'path': {
-                                'type': 'string',
+                                'type':
+                                'string',
                                 'description':
                                 'Single relative file path to read (alias for `paths` of length 1).',
                             },
                             'offset': {
-                                'type': 'integer',
+                                'type':
+                                'integer',
                                 'description':
                                 'Line number to start reading from (1-based). '
                                 'Only provide if the file is too large to read at once.',
                             },
                             'limit': {
-                                'type': 'integer',
+                                'type':
+                                'integer',
                                 'description':
                                 'Number of lines to read. '
                                 'Only provide if the file is too large to read at once.',
                             },
                             'abbreviate': {
-                                'type': 'boolean',
+                                'type':
+                                'boolean',
                                 'description':
                                 'If true, return an LLM-generated summary instead of raw content. '
                                 'Useful for large files or quick structural overview.',
@@ -213,38 +268,44 @@ class FileSystemTool(ToolBase):
                 Tool(
                     tool_name='edit_file',
                     server_name='file_system',
-                    description=(
-                        'Edit an existing file by replacing an exact string with new content.\n\n'
-                        'The tool reads the file from disk and checks that `old_string` appears in the current '
-                        'contents before applying the edit — you do not need a prior `read_file` call for '
-                        'staleness. Still use `read_file` or `grep` when you need the exact snippet in the '
-                        'conversation so you can form a correct `old_string`.\n\n'
-                        'You must provide the exact text to find (`old_string`) and the replacement (`new_string`).\n'
-                        '`old_string` must match the file content EXACTLY — including whitespace and line breaks.\n'
-                        'If `old_string` appears multiple times and `replace_all` is false, the call will fail '
-                        'with the match count so you can add more context to make it unique.\n\n'
-                        'Special case — `old_string=""`:\n'
-                        '- File does not exist: creates the file with `new_string` as its content.\n'
-                        '- File exists and is empty: fills it with `new_string`.\n'
-                        '- File exists and has content: returns an error. Use `write_file` for a full rewrite.'
-                    ),
+                    description=
+                    ('Edit an existing file by replacing an exact string with new content.\n\n'
+                     'The tool reads the file from disk and checks that `old_string` appears in the current '
+                     'contents before applying the edit — you do not need a prior `read_file` call for '
+                     'staleness. Still use `read_file` or `grep` when you need the exact snippet in the '
+                     'conversation so you can form a correct `old_string`.\n\n'
+                     'You must provide the exact text to find (`old_string`) and the replacement (`new_string`).\n'
+                     '`old_string` must match the file content EXACTLY — including whitespace and line breaks.\n'
+                     'If `old_string` appears multiple times and `replace_all` is false, the call will fail '
+                     'with the match count so you can add more context to make it unique.\n\n'
+                     'Special case — `old_string=""`:\n'
+                     '- File does not exist: creates the file with `new_string` as its content.\n'
+                     '- File exists and is empty: fills it with `new_string`.\n'
+                     '- File exists and has content: returns an error. Use `write_file` for a full rewrite.'
+                     ),
                     parameters={
                         'type': 'object',
                         'properties': {
                             'path': {
-                                'type': 'string',
-                                'description': 'The relative path of the file to edit.',
+                                'type':
+                                'string',
+                                'description':
+                                'The relative path of the file to edit.',
                             },
                             'old_string': {
-                                'type': 'string',
-                                'description': 'The exact string to find and replace.',
+                                'type':
+                                'string',
+                                'description':
+                                'The exact string to find and replace.',
                             },
                             'new_string': {
                                 'type': 'string',
-                                'description': 'The string to replace it with.',
+                                'description':
+                                'The string to replace it with.',
                             },
                             'replace_all': {
-                                'type': 'boolean',
+                                'type':
+                                'boolean',
                                 'description':
                                 'If true, replace all occurrences. Default is false (replace only the first).',
                             },
@@ -255,40 +316,50 @@ class FileSystemTool(ToolBase):
                 Tool(
                     tool_name='grep',
                     server_name='file_system',
-                    description=(
-                        'Search file contents under the workspace using ripgrep when available, '
-                        'otherwise a safe Python scan. Paths must stay under the configured output/workspace roots. '
-                        'Read-only.'
-                    ),
+                    description=
+                    ('Search file contents under the workspace using ripgrep when available, '
+                     'otherwise a safe Python scan. Paths must stay under the configured output/workspace roots. '
+                     'Read-only.'),
                     parameters={
                         'type': 'object',
                         'properties': {
                             'pattern': {
-                                'type': 'string',
-                                'description': 'Regular expression (Rust regex if rg is used).',
+                                'type':
+                                'string',
+                                'description':
+                                'Regular expression (Rust regex if rg is used).',
                             },
                             'path': {
-                                'type': 'string',
+                                'type':
+                                'string',
                                 'description':
                                 'Directory or file to search (relative to output_dir if not absolute). Default ".".',
                             },
                             'glob': {
-                                'type': 'string',
-                                'description': 'Optional glob filter for files, e.g. "*.py"',
+                                'type':
+                                'string',
+                                'description':
+                                'Optional glob filter for files, e.g. "*.py"',
                             },
                             'output_mode': {
-                                'type': 'string',
-                                'enum': ['content', 'files_with_matches', 'count'],
+                                'type':
+                                'string',
+                                'enum':
+                                ['content', 'files_with_matches', 'count'],
                                 'description':
                                 'content: matching lines; files_with_matches: paths only; count: per-file counts',
                             },
                             'head_limit': {
-                                'type': 'integer',
-                                'description': 'Max lines (content) or paths/count entries to return',
+                                'type':
+                                'integer',
+                                'description':
+                                'Max lines (content) or paths/count entries to return',
                             },
                             'offset': {
-                                'type': 'integer',
-                                'description': 'Skip first N lines/entries after collect',
+                                'type':
+                                'integer',
+                                'description':
+                                'Skip first N lines/entries after collect',
                             },
                             'case_insensitive': {
                                 'type': 'boolean',
@@ -302,10 +373,10 @@ class FileSystemTool(ToolBase):
                 Tool(
                     tool_name='glob',
                     server_name='file_system',
-                    description=(
-                        'List files under a workspace directory matching a glob pattern '
-                        '(e.g. "**/*.py", "*.md"). Read-only; results are capped.'
-                    ),
+                    description=
+                    ('List files under a workspace directory matching a glob pattern '
+                     '(e.g. "**/*.py", "*.md"). Read-only; results are capped.'
+                     ),
                     parameters={
                         'type': 'object',
                         'properties': {
@@ -314,7 +385,8 @@ class FileSystemTool(ToolBase):
                                 'description': 'Glob pattern relative to path',
                             },
                             'path': {
-                                'type': 'string',
+                                'type':
+                                'string',
                                 'description':
                                 'Base directory (relative to output_dir if not absolute).',
                             },
@@ -323,7 +395,6 @@ class FileSystemTool(ToolBase):
                         'additionalProperties': False,
                     },
                 ),
-
             ]
         }
         return tools
@@ -343,8 +414,8 @@ class FileSystemTool(ToolBase):
         case_insensitive: bool = False,
     ) -> str:
         call_id = f'grep-{pattern[:40]}'
-        head_limit = (head_limit if head_limit is not None else
-                      self._default_grep_head)
+        head_limit = (
+            head_limit if head_limit is not None else self._default_grep_head)
         offset = offset or 0
         path = path or '.'
         try:
@@ -352,7 +423,8 @@ class FileSystemTool(ToolBase):
         except WorkspacePolicyError as e:
             return json.dumps({'success': False, 'error': str(e)}, indent=2)
 
-        if pattern is None or (isinstance(pattern, str) and not pattern.strip()):
+        if pattern is None or (isinstance(pattern, str)
+                               and not pattern.strip()):
             return json.dumps(
                 {
                     'success': False,
@@ -363,13 +435,13 @@ class FileSystemTool(ToolBase):
         if isinstance(pattern, str) and ('\n' in pattern or '\r' in pattern):
             return json.dumps(
                 {
-                    'success': False,
-                    'error': (
-                        'grep pattern must not contain raw newline characters; '
-                        'ripgrep rejects them unless multiline mode is enabled server-side. '
-                        'Use several single-line patterns, escape newlines as needed, '
-                        'or search with read_file for fixed multi-line text.'
-                    ),
+                    'success':
+                    False,
+                    'error':
+                    ('grep pattern must not contain raw newline characters; '
+                     'ripgrep rejects them unless multiline mode is enabled server-side. '
+                     'Use several single-line patterns, escape newlines as needed, '
+                     'or search with read_file for fixed multi-line text.'),
                 },
                 indent=2,
             )
@@ -398,12 +470,8 @@ class FileSystemTool(ToolBase):
         except Exception as e:
             err = str(e)
             # Expected user/tooling failures (bad regex, rg rules) — log without traceback noise.
-            _quiet = (
-                'rg:' in err
-                or 'exited' in err.lower()
-                or 'regex' in err.lower()
-                or 'pattern' in err.lower()
-            )
+            _quiet = ('rg:' in err or 'exited' in err.lower()
+                      or 'regex' in err.lower() or 'pattern' in err.lower())
             logger.warning('grep failed: %s', e, exc_info=not _quiet)
             return json.dumps({'success': False, 'error': str(e)}, indent=2)
 
@@ -449,8 +517,8 @@ class FileSystemTool(ToolBase):
             stderr=asyncio.subprocess.PIPE,
             cwd=str(self._fs_policy.workspace_root),
         )
-        out_b, err_b = await asyncio.wait_for(proc.communicate(),
-                                              timeout=self._grep_timeout)
+        out_b, err_b = await asyncio.wait_for(
+            proc.communicate(), timeout=self._grep_timeout)
         out = (out_b or b'').decode('utf-8', errors='replace').strip('\n')
         err = (err_b or b'').decode('utf-8', errors='replace').strip('\n')
         if proc.returncode not in (0, 1):
@@ -486,8 +554,8 @@ class FileSystemTool(ToolBase):
             stderr=asyncio.subprocess.PIPE,
             cwd=str(self._fs_policy.workspace_root),
         )
-        out_b, err_b = await asyncio.wait_for(proc.communicate(),
-                                              timeout=self._grep_timeout)
+        out_b, err_b = await asyncio.wait_for(
+            proc.communicate(), timeout=self._grep_timeout)
         out = (out_b or b'').decode('utf-8', errors='replace').strip('\n')
         err = (err_b or b'').decode('utf-8', errors='replace').strip('\n')
         if proc.returncode not in (0, 1):
@@ -516,8 +584,9 @@ class FileSystemTool(ToolBase):
         def consider_file(fp: Path) -> bool:
             if glob_pat:
                 rel = str(fp.relative_to(root)) if root.is_dir() else fp.name
-                if not fnmatch.fnmatch(fp.name, glob_pat) and not fnmatch.fnmatch(
-                        rel, glob_pat):
+                if not fnmatch.fnmatch(fp.name,
+                                       glob_pat) and not fnmatch.fnmatch(
+                                           rel, glob_pat):
                     return False
             suf = fp.suffix.lower()
             if suf not in _TEXT_SUFFIXES and fp.suffix == '':
@@ -539,9 +608,9 @@ class FileSystemTool(ToolBase):
                 text = fp.read_text(encoding='utf-8', errors='replace')
             except OSError:
                 continue
-            rel = str(fp.relative_to(self._fs_policy.workspace_root)
-                      ) if _is_relative(fp, self._fs_policy.workspace_root) else str(
-                          fp)
+            rel = str(fp.relative_to(
+                self._fs_policy.workspace_root)) if _is_relative(
+                    fp, self._fs_policy.workspace_root) else str(fp)
             if output_mode == 'files_with_matches':
                 if rx.search(text):
                     lines_out.append(rel)
@@ -589,9 +658,9 @@ class FileSystemTool(ToolBase):
                     continue
                 if _is_denied_path(rp, base, deny):
                     continue
-                rel = str(p.relative_to(self._fs_policy.workspace_root)
-                          ) if _is_relative(p, self._fs_policy.workspace_root
-                                            ) else str(p)
+                rel = str(p.relative_to(
+                    self._fs_policy.workspace_root)) if _is_relative(
+                        p, self._fs_policy.workspace_root) else str(p)
                 matches.append(rel)
                 if len(matches) >= self._glob_max_files:
                     truncated = True
@@ -629,7 +698,8 @@ class FileSystemTool(ToolBase):
             s = s.replace(curly, straight)
         return s
 
-    def _preserve_quote_style(self, old_string: str, actual_old: str, new_string: str) -> str:
+    def _preserve_quote_style(self, old_string: str, actual_old: str,
+                              new_string: str) -> str:
         """If old_string matched via quote normalization, apply the same curly quotes to new_string."""
         if old_string == actual_old:
             return new_string
@@ -727,7 +797,8 @@ class FileSystemTool(ToolBase):
                     p.strip() for p in paths
                     if isinstance(p, str) and p.strip()
                 ]
-        if not out and path is not None and isinstance(path, str) and path.strip():
+        if not out and path is not None and isinstance(path,
+                                                       str) and path.strip():
             out = [path.strip()]
         return out
 
@@ -753,11 +824,11 @@ class FileSystemTool(ToolBase):
         if not paths:
             return json.dumps(
                 {
-                    'success': False,
-                    'error': (
-                        'read_file requires `paths` (list of strings) or `path` (single string). '
-                        'Example: {"paths": ["a.md"]} or {"path": "a.md"}.'
-                    ),
+                    'success':
+                    False,
+                    'error':
+                    ('read_file requires `paths` (list of strings) or `path` (single string). '
+                     'Example: {"paths": ["a.md"]} or {"path": "a.md"}.'),
                 },
                 indent=2,
             )
@@ -802,8 +873,7 @@ class FileSystemTool(ToolBase):
                 # Dedup: return stub if file unchanged since last read
                 mtime = os.path.getmtime(target_path_real)
                 cached = self._read_cache.get(target_path_real)
-                if (cached
-                        and cached['mtime'] == mtime
+                if (cached and cached['mtime'] == mtime
                         and cached['offset'] == offset
                         and cached['limit'] == limit):
                     results[path] = {
@@ -830,10 +900,13 @@ class FileSystemTool(ToolBase):
 
                 if use_line_range:
                     actual_start = max(1, offset) if offset is not None else 1
-                    actual_end = min(actual_start + limit - 1, total_lines) if limit is not None else total_lines
+                    actual_end = min(
+                        actual_start + limit
+                        - 1, total_lines) if limit is not None else total_lines
 
                     if actual_start > total_lines:
-                        results[path] = f'Error: offset {offset} exceeds file length ({total_lines} lines)'
+                        results[
+                            path] = f'Error: offset {offset} exceeds file length ({total_lines} lines)'
                         continue
                     selected = lines[actual_start - 1:actual_end]
                     start_lineno = actual_start
@@ -841,10 +914,8 @@ class FileSystemTool(ToolBase):
                     selected = lines
                     start_lineno = 1
 
-                results[path] = ''.join(
-                    f'{start_lineno + i}\t{line}'
-                    for i, line in enumerate(selected)
-                )
+                results[path] = ''.join(f'{start_lineno + i}\t{line}'
+                                        for i, line in enumerate(selected))
 
                 # Update dedup cache
                 self._read_cache[target_path_real] = {
@@ -881,7 +952,10 @@ class FileSystemTool(ToolBase):
 
                 messages = [
                     Message(role='system', content=self.system),
-                    Message(role='user', content='The content to be abbreviated:\n\n' + content),
+                    Message(
+                        role='user',
+                        content='The content to be abbreviated:\n\n'
+                        + content),
                 ]
                 response = self.llm.generate(messages=messages, stream=False)
                 os.makedirs(os.path.dirname(index_file), exist_ok=True)
@@ -894,7 +968,10 @@ class FileSystemTool(ToolBase):
                 return path, f'Process file <{path}> failed, error: ' + str(e)
 
         with ThreadPoolExecutor(max_workers=4) as executor:
-            future_to_path = {executor.submit(process_file, p): p for p in paths}
+            future_to_path = {
+                executor.submit(process_file, p): p
+                for p in paths
+            }
             for future in as_completed(future_to_path):
                 path, result = future.result()
                 results[path] = result
@@ -931,7 +1008,8 @@ class FileSystemTool(ToolBase):
             if old_string == '':
                 if not os.path.exists(target_path_real):
                     # Create new file
-                    os.makedirs(os.path.dirname(target_path_real), exist_ok=True)
+                    os.makedirs(
+                        os.path.dirname(target_path_real), exist_ok=True)
                     with open(target_path_real, 'w', encoding='utf-8') as f:
                         f.write(new_string)
                     return f'Created file <{path}> successfully.'
@@ -989,10 +1067,12 @@ class FileSystemTool(ToolBase):
                 )
 
             # Apply quote style preservation to new_string
-            actual_new = self._preserve_quote_style(old_string, actual_old, new_string)
+            actual_new = self._preserve_quote_style(old_string, actual_old,
+                                                    new_string)
 
             # --- Fallback 3: smart delete — strip trailing newline when deleting ---
-            if actual_new == '' and not actual_old.endswith('\n') and actual_old + '\n' in content:
+            if actual_new == '' and not actual_old.endswith(
+                    '\n') and actual_old + '\n' in content:
                 actual_old = actual_old + '\n'
 
             # Strip trailing whitespace from new_string (skip markdown files)

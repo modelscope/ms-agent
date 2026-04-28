@@ -1,11 +1,10 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import os
 from abc import abstractmethod
+from omegaconf import DictConfig
 from typing import Any, Dict, List, Optional
 
 from ms_agent.config import Config
-from omegaconf import DictConfig
-
 from ..utils.constants import DEFAULT_RETRY_COUNT
 from .utils import Message, Tool
 
@@ -69,7 +68,7 @@ class LLM:
         Returns:
             The LLM instance.
         """
-        from .model_mapping import all_services_mapping, OpenAI
+        from .model_mapping import OpenAI, all_services_mapping
         if config.llm.get('service') in all_services_mapping:
             return all_services_mapping[config.llm.service](config)
         else:

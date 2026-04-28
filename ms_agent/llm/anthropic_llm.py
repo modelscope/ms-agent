@@ -1,13 +1,13 @@
+import httpx
 import inspect
+import json
+from omegaconf import DictConfig, OmegaConf
 from typing import Any, Dict, Generator, Iterator, List, Optional, Union
 
-import httpx
-import json
 from ms_agent.llm import LLM
 from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.utils import assert_package_exist, retry
 from ms_agent.utils.constants import get_service_config
-from omegaconf import DictConfig, OmegaConf
 
 
 class _SSEEventInjector(httpx.SyncByteStream):

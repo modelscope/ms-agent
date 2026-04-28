@@ -2,15 +2,16 @@
 import asyncio
 import importlib
 import inspect
+import json
 import os.path
 import sys
 import threading
 import uuid
 from contextlib import contextmanager
 from copy import deepcopy
+from omegaconf import DictConfig, OmegaConf
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
 
-import json
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback, callbacks_mapping
 from ms_agent.llm.llm import LLM
@@ -21,12 +22,10 @@ from ms_agent.rag.base import RAG
 from ms_agent.rag.utils import rag_mapping
 from ms_agent.tools import ToolManager
 from ms_agent.utils import async_retry, read_history, save_history
-from ms_agent.utils.task_manager import TaskManager
 from ms_agent.utils.constants import DEFAULT_TAG, DEFAULT_USER
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.snapshot import take_snapshot
-from omegaconf import DictConfig, OmegaConf
-
+from ms_agent.utils.task_manager import TaskManager
 from ..config.config import Config, ConfigLifecycleHandler
 from .base import Agent
 
@@ -103,15 +102,16 @@ class LLMAgent(Agent):
         like ``\"false\"`` coerced to boolean).
         """
         if OmegaConf.is_config(config):
-            raw = OmegaConf.select(config, 'enable_snapshots',
-                                   default=_MISSING_ENABLE_SNAPSHOTS)
+            raw = OmegaConf.select(
+                config, 'enable_snapshots', default=_MISSING_ENABLE_SNAPSHOTS)
             if raw is not _MISSING_ENABLE_SNAPSHOTS and raw is not None:
                 return LLMAgent._coerce_enable_snapshots_value(raw)
             sub = bool(
                 OmegaConf.select(config, 'ms_agent_subagent', default=False))
             return not sub
         if isinstance(config, dict):
-            if 'enable_snapshots' in config and config['enable_snapshots'] is not None:
+            if 'enable_snapshots' in config and config[
+                    'enable_snapshots'] is not None:
                 return LLMAgent._coerce_enable_snapshots_value(
                     config['enable_snapshots'])
             return not bool(config.get('ms_agent_subagent'))
@@ -195,7 +195,8 @@ class LLMAgent(Agent):
             # Check sandbox requirements
             use_sandbox = getattr(skills_config, 'use_sandbox', True)
             if use_sandbox:
-                from ms_agent.utils.docker_utils import is_docker_daemon_running
+                from ms_agent.utils.docker_utils import \
+                    is_docker_daemon_running
 
                 if not is_docker_daemon_running():
                     logger.warning(
@@ -536,7 +537,8 @@ class LLMAgent(Agent):
             )
             take_snapshot(
                 self.output_dir,
-                f'[pre] {_user_content}' if _user_content else '[pre] new task',
+                f'[pre] {_user_content}'
+                if _user_content else '[pre] new task',
                 message_count=len(messages),
             )
         await self.loop_callback('on_task_begin', messages)
@@ -898,7 +900,8 @@ class LLMAgent(Agent):
                 and response_message.tool_calls):
             messages[-1].content = 'Let me do a tool calling.'
 
-    def _append_task_notifications(self, messages: List[Message]) -> List[Message]:
+    def _append_task_notifications(self,
+                                   messages: List[Message]) -> List[Message]:
         """Inject drained TaskManager completion notices as a user message."""
         if self.task_manager is None:
             return messages
@@ -1237,7 +1240,9 @@ class LLMAgent(Agent):
                 if self.task_manager is not None:
                     notifications = self.task_manager.drain_notifications()
                     if notifications:
-                        messages.append(Message(role='user', content='\n'.join(notifications)))
+                        messages.append(
+                            Message(
+                                role='user', content='\n'.join(notifications)))
                 async for messages in self.step(messages):
                     yield messages
                 self.runtime.round += 1

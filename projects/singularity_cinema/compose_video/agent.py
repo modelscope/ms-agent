@@ -1,18 +1,18 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import base64
+import json
 import math
+import moviepy as mp
 import os
 import shutil
 from copy import deepcopy
-
-import json
-import moviepy as mp
 from moviepy import AudioClip
+from omegaconf import DictConfig
+from PIL import Image
+
 from ms_agent.agent import CodeAgent
 from ms_agent.llm import LLM, Message
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
-from PIL import Image
 
 logger = get_logger()
 

@@ -1,11 +1,10 @@
 import asyncio
 import re
 from copy import deepcopy
+from omegaconf import DictConfig
 from typing import List
 
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
-
 from ..llm import LLM, Message
 from .base import Memory
 

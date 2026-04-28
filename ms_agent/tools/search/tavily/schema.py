@@ -50,7 +50,8 @@ class TavilySearchRequest:
         }
         # chunks_per_source only meaningful for advanced (per Tavily docs)
         if self.search_depth == 'advanced':
-            body['chunks_per_source'] = max(1, min(3, int(self.chunks_per_source)))
+            body['chunks_per_source'] = max(
+                1, min(3, int(self.chunks_per_source)))
         if self.time_range:
             body['time_range'] = self.time_range
         if self.start_date:

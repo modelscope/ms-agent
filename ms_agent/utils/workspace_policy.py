@@ -35,7 +35,7 @@ class WorkspacePolicyKernel:
                 if p not in self._roots:
                     self._roots.append(p)
         if deny_globs is None or len(tuple(deny_globs)) == 0:
-            self._deny_globs: tuple[str, ...] = ('**/.git/**',)
+            self._deny_globs: tuple[str, ...] = ('**/.git/**', )
         else:
             self._deny_globs = tuple(deny_globs)
         self.shell_default_mode = shell_default_mode
@@ -113,13 +113,13 @@ class WorkspacePolicyKernel:
 
         mode = self.shell_default_mode
         if mode == 'read_only':
-            if _shell_looks_mutating_or_network(command,
-                                                allow_network=False):
+            if _shell_looks_mutating_or_network(command, allow_network=False):
                 raise WorkspacePolicyError(
                     'Shell is in read_only mode: mutating or network commands are not allowed'
                 )
         elif mode == 'workspace_write':
-            if not self.shell_network_enabled and _shell_looks_network(command):
+            if not self.shell_network_enabled and _shell_looks_network(
+                    command):
                 raise WorkspacePolicyError(
                     'Network commands are disabled for shell (enable tools.code_executor.shell.network_enabled)'
                 )

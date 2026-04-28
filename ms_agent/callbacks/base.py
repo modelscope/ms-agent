@@ -1,9 +1,9 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+from omegaconf import DictConfig
 from typing import List
 
 from ms_agent.agent.runtime import Runtime
 from ms_agent.llm.utils import Message
-from omegaconf import DictConfig
 
 
 class Callback:

@@ -45,7 +45,9 @@ class TavilyExtractFetcher:
         self._include_favicon = include_favicon
         self._include_usage = include_usage
 
-    def fetch(self, url: str, query: Optional[str] = None) -> Tuple[str, Dict[str, Any]]:
+    def fetch(self,
+              url: str,
+              query: Optional[str] = None) -> Tuple[str, Dict[str, Any]]:
         """
         Extract one URL. Optional ``query`` enables chunk reranking (more relevant raw_content).
         """
@@ -64,7 +66,8 @@ class TavilyExtractFetcher:
             body['chunks_per_source'] = self._chunks_per_source
 
         try:
-            data = post_json(TAVILY_EXTRACT_URL, body, timeout=self._timeout + 30.0)
+            data = post_json(
+                TAVILY_EXTRACT_URL, body, timeout=self._timeout + 30.0)
         except Exception as e:
             logger.warning(f'Tavily extract failed for {url[:80]}: {e}')
             return '', {

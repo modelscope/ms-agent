@@ -3,13 +3,12 @@ import argparse
 import asyncio
 import os
 from importlib import resources as importlib_resources
+from omegaconf import OmegaConf
 
 from ms_agent.config import Config
 from ms_agent.config.env import Env
 from ms_agent.utils import get_logger, strtobool
 from ms_agent.utils.constants import AGENT_CONFIG_FILE, MS_AGENT_ASCII
-from omegaconf import OmegaConf
-
 from .base import CLICommand
 
 logger = get_logger()
@@ -152,9 +151,7 @@ class RunCMD(CLICommand):
             required=False,
             type=str,
             default=None,
-            help=
-            'Comma-separated list of paths for knowledge search.'
-        )
+            help='Comma-separated list of paths for knowledge search.')
         parser.set_defaults(func=subparser_func)
 
     def execute(self):

@@ -1,12 +1,12 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import os
 from abc import ABC, abstractmethod
+from omegaconf import DictConfig
 from typing import Any, AsyncGenerator, List, Tuple, Union
 
 from ms_agent.llm import Message
 from ms_agent.utils import read_history, save_history
 from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR, DEFAULT_RETRY_COUNT
-from omegaconf import DictConfig
 
 
 class Agent(ABC):

@@ -49,8 +49,8 @@ class ArtifactManager:
                 out.update(extra)
             return out
 
-        safe_id = ''.join(c if c.isalnum() or c in '-_' else '_' for c in call_id
-                          )[:120] or 'call'
+        safe_id = ''.join(c if c.isalnum() or c in '-_' else '_'
+                          for c in call_id)[:120] or 'call'
         rel_dir = Path(tool_name) / safe_id
         out_dir = self._artifact_root / rel_dir
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -63,10 +63,10 @@ class ArtifactManager:
         preview = _make_preview(body, self.preview_head_chars,
                                 self.preview_tail_chars)
         result = {
-            'output': stdout[:self.preview_head_chars]
+            'output':
+            stdout[:self.preview_head_chars]
             if len(stdout) > self.preview_head_chars else stdout,
-            'error':
-            (stderr[:self.preview_head_chars] if stderr else None),
+            'error': (stderr[:self.preview_head_chars] if stderr else None),
             'truncated':
             True,
             'artifact_path':
@@ -102,16 +102,11 @@ class ArtifactManager:
         )
         # pack_text_result merged extra into top level; rebuild standard shell shape
         out = {
-            'success':
-            payload.get('success'),
-            'output':
-            packed.get('output'),
-            'error':
-            packed.get('error'),
-            'return_code':
-            payload.get('return_code'),
-            'truncated':
-            packed.get('truncated', False),
+            'success': payload.get('success'),
+            'output': packed.get('output'),
+            'error': packed.get('error'),
+            'return_code': payload.get('return_code'),
+            'truncated': packed.get('truncated', False),
         }
         if packed.get('artifact_path'):
             out['artifact_path'] = packed['artifact_path']

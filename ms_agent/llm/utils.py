@@ -1,8 +1,7 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+import json
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Union
-
-import json
 from typing_extensions import Literal, Required, TypedDict
 
 
@@ -91,8 +90,13 @@ class Message:
         required = ['content', 'role']
         # Never send UI-only fields to model providers.
         rm = [
-            'completion_tokens', 'prompt_tokens', 'api_calls', 'tool_detail',
-            'searching_detail', 'search_result', '_responses_output_items',
+            'completion_tokens',
+            'prompt_tokens',
+            'api_calls',
+            'tool_detail',
+            'searching_detail',
+            'search_result',
+            '_responses_output_items',
         ]
         return {
             key: value

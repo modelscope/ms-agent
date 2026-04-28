@@ -1,11 +1,11 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import json
 import os
 import re
 import time
 import uuid
 from typing import Any, Dict, List, Optional
 
-import json
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils.utils import file_lock, render_markdown_todo
@@ -43,7 +43,8 @@ def _write_text(path: str, content: str) -> None:
         f.write(content)
 
 
-def _coerce_chapters_argument(chapters: Any) -> tuple[List[Dict[str, Any]], Optional[str]]:
+def _coerce_chapters_argument(
+        chapters: Any) -> tuple[List[Dict[str, Any]], Optional[str]]:
     """Normalize `chapters` from the model (list, JSON string, or nested strings)."""
     if chapters is None:
         return [], (
@@ -59,19 +60,20 @@ def _coerce_chapters_argument(chapters: Any) -> tuple[List[Dict[str, Any]], Opti
                 f'or a JSON string of that array: {e}')
     if not isinstance(raw, list):
         return [], (
-            f'commit_outline `chapters` must be a list, got {type(chapters).__name__}.')
+            f'commit_outline `chapters` must be a list, got {type(chapters).__name__}.'
+        )
     out: List[Dict[str, Any]] = []
     for i, ch in enumerate(raw):
         if isinstance(ch, str):
             try:
                 ch = json.loads(ch.strip())
             except json.JSONDecodeError:
-                return [], (
-                    f'commit_outline chapters[{i}] must be an object; '
-                    'string entry is not valid JSON for an object.')
+                return [], (f'commit_outline chapters[{i}] must be an object; '
+                            'string entry is not valid JSON for an object.')
         if not isinstance(ch, dict):
             return [], (
-                f'commit_outline chapters[{i}] must be an object, got {type(ch).__name__}.')
+                f'commit_outline chapters[{i}] must be an object, got {type(ch).__name__}.'
+            )
         out.append(ch)
     return out, None
 
@@ -567,11 +569,11 @@ class ReportTool(ToolBase):
                 Tool(
                     tool_name='load_index',
                     server_name=self.SERVER_NAME,
-                    description=(
-                        'Load the full evidence index (notes + analyses metadata). '
-                        'Same data as evidence_store---load_index; provided here so calls '
-                        'mistakenly prefixed with report_generator--- still work.'
-                    ),
+                    description=
+                    ('Load the full evidence index (notes + analyses metadata). '
+                     'Same data as evidence_store---load_index; provided here so calls '
+                     'mistakenly prefixed with report_generator--- still work.'
+                     ),
                     parameters={
                         'type': 'object',
                         'properties': {},
@@ -615,7 +617,8 @@ class ReportTool(ToolBase):
             return {'notes': {}}
         return data
 
-    def _load_full_evidence_index(self, paths: Dict[str, str]) -> Dict[str, Any]:
+    def _load_full_evidence_index(self, paths: Dict[str,
+                                                    str]) -> Dict[str, Any]:
         """Load evidence/index.json with the same defaults as EvidenceTool."""
         data = _safe_read_json(paths['evidence_index'])
         if data is None or not isinstance(data, dict):
@@ -627,7 +630,8 @@ class ReportTool(ToolBase):
             }
         if 'notes' not in data or not isinstance(data.get('notes'), dict):
             data['notes'] = {}
-        if 'analyses' not in data or not isinstance(data.get('analyses'), dict):
+        if 'analyses' not in data or not isinstance(
+                data.get('analyses'), dict):
             data['analyses'] = {}
         legacy = data.get('conclusions')
         if isinstance(legacy, dict) and legacy and not data.get('analyses'):
@@ -809,24 +813,26 @@ class ReportTool(ToolBase):
         notes_meta = evidence_index.get('notes', {})
         _known_sorted = sorted(notes_meta.keys())
         _sample = _known_sorted[:48]
-        _note_id_hint = (
-            'Known note ids in evidence index (sample): '
-            + (', '.join(_sample) if _sample else '(none)')
-        )
+        _note_id_hint = ('Known note ids in evidence index (sample): ' +
+                         (', '.join(_sample) if _sample else '(none)'))
         if len(_known_sorted) > len(_sample):
             _note_id_hint += f' … (+{len(_known_sorted) - len(_sample)} more)'
 
-        def _missing_note_entry(note_id: str, meta: Dict[str, Any]) -> Dict[str, Any]:
+        def _missing_note_entry(note_id: str,
+                                meta: Dict[str, Any]) -> Dict[str, Any]:
             return {
-                'note_id': note_id,
-                'error': f'Note {note_id} not found',
-                'title': meta.get('title', ''),
-                'summary': meta.get('summary', ''),
-                'hint': (
-                    f'{_note_id_hint}. '
-                    'Align outline candidate_evidence with filenames under evidence_store, '
-                    'or list existing notes before referencing ids.'
-                ),
+                'note_id':
+                note_id,
+                'error':
+                f'Note {note_id} not found',
+                'title':
+                meta.get('title', ''),
+                'summary':
+                meta.get('summary', ''),
+                'hint':
+                (f'{_note_id_hint}. '
+                 'Align outline candidate_evidence with filenames under evidence_store, '
+                 'or list existing notes before referencing ids.'),
             }
 
         notes_content = []
@@ -913,20 +919,13 @@ class ReportTool(ToolBase):
             self._save_outline(paths, outline)
 
         out_bundle: Dict[str, Any] = {
-            'status':
-            'ok',
-            'chapter_id':
-            chapter_id,
-            'chapter_title':
-            chapter['title'],
-            'chapter_goals':
-            chapter.get('goals', []),
-            'evidence_count':
-            len(notes_content),
-            'meta_path':
-            os.path.relpath(meta_path, self.output_dir),
-            'notes_content':
-            notes_content,
+            'status': 'ok',
+            'chapter_id': chapter_id,
+            'chapter_title': chapter['title'],
+            'chapter_goals': chapter.get('goals', []),
+            'evidence_count': len(notes_content),
+            'meta_path': os.path.relpath(meta_path, self.output_dir),
+            'notes_content': notes_content,
         }
         skipped: Dict[str, List[str]] = {}
         if cand_dropped:
@@ -1116,8 +1115,7 @@ class ReportTool(ToolBase):
             out['invalid_candidate_evidence_removed'] = invalid_candidate_removed
             out['invalid_candidate_evidence_note'] = (
                 'These ids were removed from candidate_evidence because no '
-                'matching evidence/notes/note_<id>.md exists.'
-            )
+                'matching evidence/notes/note_<id>.md exists.')
         return _json_dumps(out)
 
     async def assemble_draft(

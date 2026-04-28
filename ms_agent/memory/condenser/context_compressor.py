@@ -1,8 +1,8 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 
+import json
 from typing import List, Optional
 
-import json
 from ms_agent.llm import LLM, Message
 from ms_agent.memory import Memory
 from ms_agent.utils.logger import logger

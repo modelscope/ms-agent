@@ -1,9 +1,9 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 from abc import abstractmethod
+from omegaconf import DictConfig
 from typing import Any, Dict
 
 from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR
-from omegaconf import DictConfig
 
 
 class ToolBase:

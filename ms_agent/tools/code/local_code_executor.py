@@ -2,6 +2,7 @@ import asyncio
 import asyncio.subprocess as ai_subprocess
 import inspect
 import io
+import json
 import os
 import shlex
 import shutil
@@ -10,14 +11,14 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-import json
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils import get_logger
 from ms_agent.utils.artifact_manager import ArtifactManager
 from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR
 from ms_agent.utils.utils import install_package
-from ms_agent.utils.workspace_policy import WorkspacePolicyError, WorkspacePolicyKernel
+from ms_agent.utils.workspace_policy import (WorkspacePolicyError,
+                                             WorkspacePolicyKernel)
 
 logger = get_logger()
 
@@ -234,7 +235,8 @@ class LocalCodeExecutionTool(ToolBase):
     def __init__(self, config):
         super().__init__(config)
         self.output_dir = Path(
-            getattr(config, 'output_dir', DEFAULT_OUTPUT_DIR)).expanduser().resolve()
+            getattr(config, 'output_dir',
+                    DEFAULT_OUTPUT_DIR)).expanduser().resolve()
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.tool_config = getattr(
@@ -264,13 +266,15 @@ class LocalCodeExecutionTool(ToolBase):
             dg = getattr(wp, 'deny_globs', None)
             if dg:
                 deny_globs = list(dg)
-        shell_cfg = getattr(self.tool_config, 'shell', None) if self.tool_config else None
-        shell_mode = getattr(shell_cfg, 'default_mode',
-                             'workspace_write') if shell_cfg else 'workspace_write'
-        net = bool(getattr(shell_cfg, 'network_enabled', False)
-                   ) if shell_cfg else False
-        max_cmd = int(getattr(shell_cfg, 'max_command_chars', 8192)
-                      ) if shell_cfg else 8192
+        shell_cfg = getattr(self.tool_config, 'shell',
+                            None) if self.tool_config else None
+        shell_mode = getattr(
+            shell_cfg, 'default_mode',
+            'workspace_write') if shell_cfg else 'workspace_write'
+        net = bool(getattr(shell_cfg, 'network_enabled',
+                           False)) if shell_cfg else False
+        max_cmd = int(getattr(shell_cfg, 'max_command_chars',
+                              8192)) if shell_cfg else 8192
         self._policy = WorkspacePolicyKernel(
             self.output_dir,
             extra_allow_roots=extra_allow,
@@ -463,12 +467,12 @@ class LocalCodeExecutionTool(ToolBase):
                 Tool(
                     tool_name='shell_executor',
                     server_name='code_executor',
-                    description=(
-                        'Execute shell commands locally under the workspace output directory (cwd). '
-                        'Subject to policy (read_only vs workspace_write, network toggle). '
-                        'Large stdout/stderr may be spilled to .ms_agent_artifacts. '
-                        'Use run_in_background=true to return immediately with task_id; poll via task notifications.'
-                    ),
+                    description=
+                    ('Execute shell commands locally under the workspace output directory (cwd). '
+                     'Subject to policy (read_only vs workspace_write, network toggle). '
+                     'Large stdout/stderr may be spilled to .ms_agent_artifacts. '
+                     'Use run_in_background=true to return immediately with task_id; poll via task notifications.'
+                     ),
                     parameters={
                         'type': 'object',
                         'properties': {
@@ -488,8 +492,10 @@ class LocalCodeExecutionTool(ToolBase):
                                 'default': False,
                             },
                             '__call_id': {
-                                'type': 'string',
-                                'description': 'Optional correlation id (injected by host when supported).',
+                                'type':
+                                'string',
+                                'description':
+                                'Optional correlation id (injected by host when supported).',
                             },
                         },
                         'required': ['command'],
@@ -709,7 +715,8 @@ class LocalCodeExecutionTool(ToolBase):
             if self._task_manager is None:
                 return json.dumps(
                     {
-                        'success': False,
+                        'success':
+                        False,
                         'error':
                         'run_in_background requires TaskManager (host must wire LLMAgent.task_manager).',
                     },

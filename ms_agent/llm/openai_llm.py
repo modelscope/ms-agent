@@ -1,18 +1,18 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+import httpx
 import inspect
+import json
 from copy import deepcopy
+from omegaconf import DictConfig, OmegaConf
+from openai.types.chat.chat_completion_message_tool_call import (
+    ChatCompletionMessageToolCall, Function)
 from typing import Any, Dict, Generator, Iterable, List, Optional
 
-import httpx
-import json
 from ms_agent.llm import LLM
 from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.utils import (MAX_CONTINUE_RUNS, assert_package_exist,
                             get_logger, retry)
 from ms_agent.utils.constants import get_service_config
-from omegaconf import DictConfig, OmegaConf
-from openai.types.chat.chat_completion_message_tool_call import (
-    ChatCompletionMessageToolCall, Function)
 
 logger = get_logger()
 

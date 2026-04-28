@@ -206,9 +206,8 @@ def maybe_spill_web_search_payload(
         work[idx]['content_path'] = rel_body
         work[idx]['content_chars_spilled'] = before_chars
 
-        preview_src = (
-            item.get('content') or item.get('summary') or item.get('abstract')
-            or '')[:4000]
+        preview_src = (item.get('content') or item.get('summary')
+                       or item.get('abstract') or '')[:4000]
         manifest_rows.append({
             'index':
             idx,
@@ -251,8 +250,8 @@ def maybe_spill_web_search_payload(
         'rows':
         manifest_rows,
     }
-    rel_manifest = os.path.join(spill_subdir, run_key, 'manifest.json').replace(
-        '\\', '/')
+    rel_manifest = os.path.join(spill_subdir, run_key,
+                                'manifest.json').replace('\\', '/')
     abs_manifest = os.path.normpath(
         os.path.join(output_dir, rel_manifest.replace('/', os.sep)))
     with open(abs_manifest, 'w', encoding='utf-8') as mf:
@@ -274,19 +273,12 @@ def maybe_spill_web_search_payload(
     digest = '\n'.join(lines)
 
     spill_meta = {
-        'spilled':
-        True,
-        'run_key':
-        run_key,
-        'artifact_dir':
-        f'{spill_subdir}/{run_key}'.replace('\\', '/'),
-        'manifest_path':
-        rel_manifest,
-        'digest':
-        digest,
-        'inline_chars_before_spill':
-        total,
-        'inline_chars_after_spill':
-        _total_inline_chars(work),
+        'spilled': True,
+        'run_key': run_key,
+        'artifact_dir': f'{spill_subdir}/{run_key}'.replace('\\', '/'),
+        'manifest_path': rel_manifest,
+        'digest': digest,
+        'inline_chars_before_spill': total,
+        'inline_chars_after_spill': _total_inline_chars(work),
     }
     return work, spill_meta

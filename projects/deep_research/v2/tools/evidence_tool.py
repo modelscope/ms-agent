@@ -1,11 +1,11 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import json
 import os
 import re
 import time
 import uuid
 from typing import Any, Dict, List, Optional
 
-import json
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils.utils import file_lock
@@ -372,15 +372,15 @@ class EvidenceTool(ToolBase):
                      'Each note represents ONE piece of evidence: a claim/observation with supporting text. '
                      'Returns the generated note_id.'),
                     parameters={
-                        'type':
-                        'object',
+                        'type': 'object',
                         'properties': {
                             'title': {
                                 'type':
                                 'string',
                                 'description':
                                 ('Brief title describing this evidence (e.g., "Tesla Q3 revenue growth"). '
-                                 'Optional: if omitted, a title is derived from the first line of `content`.'),
+                                 'Optional: if omitted, a title is derived from the first line of `content`.'
+                                 ),
                             },
                             'content': {
                                 'type':
@@ -466,8 +466,7 @@ class EvidenceTool(ToolBase):
                             },
                         },
                         'required': ['content'],
-                        'additionalProperties':
-                        False,
+                        'additionalProperties': False,
                     },
                 ),
                 Tool(
@@ -864,8 +863,10 @@ class EvidenceTool(ToolBase):
         content = (content or '').strip()
         if not content:
             return _json_dumps({
-                'status': 'error',
-                'message': 'write_note requires non-empty content.',
+                'status':
+                'error',
+                'message':
+                'write_note requires non-empty content.',
             })
 
         if title is None or not str(title).strip():

@@ -1,19 +1,19 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 # yapf: disable
+import json
 import os
 import re
 import shutil
-from typing import Any, Dict, List, Optional, Set
-
-import json
 from callbacks.quality_checker import (ReportQualityChecker,
                                        build_quality_checkers)
+from omegaconf import DictConfig
+from typing import Any, Dict, List, Optional, Set
+
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback
 from ms_agent.llm.utils import Message
 from ms_agent.utils import get_logger
 from ms_agent.utils.constants import DEFAULT_MEMORY_DIR
-from omegaconf import DictConfig
 
 logger = get_logger()
 

@@ -10,8 +10,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
-from ms_agent.tools.fetch_playwright_fallback import (looks_like_spa_shell_html,
-                                                      try_playwright_inner_text)
+from ms_agent.tools.fetch_playwright_fallback import (
+    looks_like_spa_shell_html, try_playwright_inner_text)
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
@@ -194,8 +194,8 @@ def _fetch_via_jina(url: str, config: JinaReaderConfig) -> str:
             return ''
 
 
-def fetch_single_text_with_meta(url: str,
-                                config: JinaReaderConfig) -> Tuple[str, Dict[str, Any]]:
+def fetch_single_text_with_meta(
+        url: str, config: JinaReaderConfig) -> Tuple[str, Dict[str, Any]]:
     """
     Tiered fetch: Jina Reader → direct HTTP → optional Playwright (empty / short / SPA shell).
 
@@ -209,15 +209,16 @@ def fetch_single_text_with_meta(url: str,
         return jina_text, {'content_source': 'jina_reader'}
     if not config.direct_fetch_fallback:
         return '', {'content_source': 'none'}
-    d_timeout = (float(config.timeout) if float(config.direct_fetch_timeout or 0)
-                   <= 0 else float(config.direct_fetch_timeout))
+    d_timeout = (
+        float(config.timeout) if float(config.direct_fetch_timeout or 0) <= 0
+        else float(config.direct_fetch_timeout))
     direct_plain, raw_html = _fetch_direct_http_pair(url, d_timeout)
     direct_text = _postprocess_text(direct_plain)
 
     try_playwright = (
         bool(config.playwright_fetch_fallback) and _is_direct_http_allowed(url)
-        and _should_try_playwright_after_direct(direct_text, raw_html,
-                                                config.playwright_retry_min_chars))
+        and _should_try_playwright_after_direct(
+            direct_text, raw_html, config.playwright_retry_min_chars))
 
     if try_playwright:
         pw_text = _postprocess_text(

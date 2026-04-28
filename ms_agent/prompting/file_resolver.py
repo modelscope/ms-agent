@@ -1,9 +1,8 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import os
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
-
 from omegaconf import DictConfig
+from typing import List, Optional, Tuple
 
 
 @dataclass(frozen=True)

@@ -100,7 +100,8 @@ def _thread_browser() -> object:
     except ImportError:
         logger.debug(
             'playwright is not installed; skip headless fetch. '
-            'Install with: pip install playwright && playwright install chromium')
+            'Install with: pip install playwright && playwright install chromium'
+        )
         raise RuntimeError('playwright not installed') from None
 
     pw = sync_playwright().start()
@@ -135,7 +136,8 @@ def try_playwright_inner_text(
     except ImportError:
         logger.debug(
             'playwright is not installed; skip headless fetch. '
-            'Install with: pip install playwright && playwright install chromium')
+            'Install with: pip install playwright && playwright install chromium'
+        )
         return ''
 
     text = ''
@@ -147,13 +149,11 @@ def try_playwright_inner_text(
             page.goto(url, wait_until='domcontentloaded', timeout=timeout_ms)
             if settle_ms:
                 page.wait_for_timeout(settle_ms)
-            raw = page.evaluate(
-                """() => {
+            raw = page.evaluate("""() => {
                     const b = document.body;
                     if (!b) return '';
                     return b.innerText || '';
-                }"""
-            )
+                }""")
             if isinstance(raw, str):
                 text = raw[:_MAX_INNER_TEXT_CHARS]
         finally:
@@ -180,9 +180,8 @@ def looks_like_spa_shell_html(raw_html: str) -> bool:
         return False
     low = raw_html.lower()
     if any(
-            x in low
-            for x in ('enable javascript', 'javascript is required',
-                      'you need to enable javascript')):
+            x in low for x in ('enable javascript', 'javascript is required',
+                               'you need to enable javascript')):
         return True
     if re.search(r'<div[^>]+\bid=["\']root["\'][^>]*>\s*</div>', low):
         return True

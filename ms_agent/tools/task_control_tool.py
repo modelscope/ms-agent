@@ -1,11 +1,11 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import json
+from omegaconf import DictConfig
 from typing import Any, Dict, Optional
 
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils.logger import get_logger
-from omegaconf import DictConfig
 
 logger = get_logger()
 
@@ -45,9 +45,10 @@ class TaskControlTool(ToolBase):
                 Tool(
                     tool_name='list_tasks',
                     server_name=_SERVER,
-                    description=(
-                        'List all background tasks and their current status. '
-                        'Returns task_id, tool_name, description, status, and duration.'),
+                    description=
+                    ('List all background tasks and their current status. '
+                     'Returns task_id, tool_name, description, status, and duration.'
+                     ),
                     parameters={
                         'type': 'object',
                         'properties': {},
@@ -58,13 +59,16 @@ class TaskControlTool(ToolBase):
                 Tool(
                     tool_name='cancel_task',
                     server_name=_SERVER,
-                    description='Cancel a running background task by its task_id.',
+                    description=
+                    'Cancel a running background task by its task_id.',
                     parameters={
                         'type': 'object',
                         'properties': {
                             'task_id': {
-                                'type': 'string',
-                                'description': 'The task_id returned by the async_launched response.',
+                                'type':
+                                'string',
+                                'description':
+                                'The task_id returned by the async_launched response.',
                             }
                         },
                         'required': ['task_id'],
