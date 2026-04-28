@@ -14,8 +14,8 @@ logger = get_logger()
 @dataclass
 class BackgroundTask:
     task_id: str
-    task_type: str  # 'agent' | 'shell'
-    tool_name: str  # which tool spawned this
+    task_type: str          # 'agent' | 'shell'
+    tool_name: str          # which tool spawned this
     description: str
     status: str = 'running'  # 'running' | 'completed' | 'failed' | 'killed'
     proc: Optional[Any] = field(default=None, repr=False)  # mp.Process or asyncio.Task

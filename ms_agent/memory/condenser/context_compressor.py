@@ -1,8 +1,8 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 
-import json
 from typing import List, Optional
 
+import json
 from ms_agent.llm import LLM, Message
 from ms_agent.memory import Memory
 from ms_agent.utils.logger import logger
@@ -44,7 +44,8 @@ class ContextCompressor(Memory):
         self.reserved_buffer = getattr(mem_config, 'reserved_buffer', 20000)
 
         # Summary prompt
-        self.summary_prompt = getattr(mem_config, 'summary_prompt', SUMMARY_PROMPT)
+        self.summary_prompt = getattr(mem_config, 'summary_prompt',
+                                      SUMMARY_PROMPT)
 
         # LLM for summarization
         self.llm: Optional[LLM] = None
@@ -66,7 +67,9 @@ class ContextCompressor(Memory):
         """Heuristic token count from message body (no API usage fields)."""
         total = 0
         if msg.content:
-            content = msg.content if isinstance(msg.content, str) else json.dumps(msg.content, ensure_ascii=False)
+            content = msg.content if isinstance(
+                msg.content, str) else json.dumps(
+                    msg.content, ensure_ascii=False)
             total += self.estimate_tokens(content)
         if msg.tool_calls:
             total += self.estimate_tokens(json.dumps(msg.tool_calls))
@@ -96,8 +99,11 @@ class ContextCompressor(Memory):
                 break
         if last_usage_idx >= 0:
             m = messages[last_usage_idx]
-            base = int(getattr(m, 'prompt_tokens', 0) or 0) + int(getattr(m, 'completion_tokens', 0) or 0)
-            tail = sum(self._estimate_message_tokens_from_content(x) for x in messages[last_usage_idx + 1 :])
+            base = int(getattr(m, 'prompt_tokens', 0) or 0) + int(
+                getattr(m, 'completion_tokens', 0) or 0)
+            tail = sum(
+                self._estimate_message_tokens_from_content(x)
+                for x in messages[last_usage_idx + 1:])
             return base + tail
         return sum(self.estimate_message_tokens(m) for m in messages)
 
@@ -122,7 +128,9 @@ class ContextCompressor(Memory):
             msg = messages[idx]
             if msg.role != 'tool' or not msg.content:
                 continue
-            content_str = msg.content if isinstance(msg.content, str) else json.dumps(msg.content, ensure_ascii=False)
+            content_str = msg.content if isinstance(
+                msg.content, str) else json.dumps(
+                    msg.content, ensure_ascii=False)
             tokens = self.estimate_tokens(content_str)
             total_tool_tokens += tokens
 
@@ -144,7 +152,8 @@ class ContextCompressor(Memory):
         conv_parts = []
         for msg in messages:
             role = msg.role.upper()
-            content = msg.content if isinstance(msg.content, str) else str(msg.content)
+            content = msg.content if isinstance(msg.content, str) else str(
+                msg.content)
             if content:
                 conv_parts.append(f'{role}: {content[:2000]}')
 
@@ -152,7 +161,8 @@ class ContextCompressor(Memory):
         query = f'{self.summary_prompt}\n\n---\n{conversation}'
 
         try:
-            response = self.llm.generate([Message(role='user', content=query)], stream=False)
+            response = self.llm.generate([Message(role='user', content=query)],
+                                         stream=False)
             return response.content
         except Exception as e:
             logger.error(f'Summary generation failed: {e}')
@@ -189,8 +199,10 @@ class ContextCompressor(Memory):
                 break
 
         result.append(
-            Message(role='user', content=f'[Conversation Summary]\n{summary}\n\nPlease continue based on this summary.')
-        )
+            Message(
+                role='user',
+                content=f'[Conversation Summary]\n{summary}\n\n'
+                'Please continue based on this summary.'))
 
         # Keep the most recent user message if different
         if messages and messages[-1].role == 'user':
@@ -198,7 +210,8 @@ class ContextCompressor(Memory):
             if last_user.content and last_user.content != result[-1].content:
                 result.append(last_user)
 
-        logger.info(f'Compressed {len(messages)} messages to {len(result)} messages')
+        logger.info(
+            f'Compressed {len(messages)} messages to {len(result)} messages')
         return result
 
     async def run(self, messages: List[Message]) -> List[Message]:

@@ -2,7 +2,6 @@
 import asyncio
 import importlib
 import inspect
-import json
 import os
 import sys
 import uuid
@@ -10,6 +9,7 @@ from copy import copy
 from types import TracebackType
 from typing import Any, Dict, List, Optional
 
+import json
 from ms_agent.llm.utils import Tool, ToolCall
 from ms_agent.tools.agent_tool import AgentTool
 from ms_agent.tools.base import ToolBase
@@ -33,42 +33,55 @@ MAX_CONCURRENT_TOOLS = int(os.getenv('MAX_CONCURRENT_TOOLS', 20))
 
 
 class ToolManager:
-    """Interacting with Agent class, hold all tools"""
+    """Interacting with Agent class, hold all tools
+    """
 
     TOOL_SPLITER = '---'
 
-    def __init__(
-        self, config, mcp_config: Optional[Dict[str, Any]] = None, mcp_client: Optional[MCPClient] = None, **kwargs
-    ):
+    def __init__(self,
+                 config,
+                 mcp_config: Optional[Dict[str, Any]] = None,
+                 mcp_client: Optional[MCPClient] = None,
+                 **kwargs):
         self.config = config
         self.trust_remote_code = kwargs.get('trust_remote_code', False)
 
         self.extra_tools: List[ToolBase] = []
         self.has_split_task_tool = False
-        if hasattr(config, 'tools') and hasattr(config.tools, 'image_generator'):
+        if hasattr(config, 'tools') and hasattr(config.tools,
+                                                'image_generator'):
             self.extra_tools.append(ImageGenerator(config))
-        if hasattr(config, 'tools') and hasattr(config.tools, 'video_generator'):
+        if hasattr(config, 'tools') and hasattr(config.tools,
+                                                'video_generator'):
             self.extra_tools.append(VideoGenerator(config))
         if hasattr(config, 'tools') and hasattr(config.tools, 'file_system'):
-            self.extra_tools.append(FileSystemTool(config, trust_remote_code=self.trust_remote_code))
+            self.extra_tools.append(
+                FileSystemTool(
+                    config, trust_remote_code=self.trust_remote_code))
         if hasattr(config, 'tools') and hasattr(config.tools, 'code_executor'):
             code_exec_cfg = getattr(config.tools, 'code_executor')
-            implementation = getattr(code_exec_cfg, 'implementation', 'sandbox')
-            if isinstance(implementation, str) and implementation.lower() == 'python_env':
+            implementation = getattr(code_exec_cfg, 'implementation',
+                                     'sandbox')
+            if isinstance(implementation,
+                          str) and implementation.lower() == 'python_env':
                 self.extra_tools.append(LocalCodeExecutionTool(config))
-            elif isinstance(implementation, str) and implementation.lower() == 'sandbox':
+            elif isinstance(implementation,
+                            str) and implementation.lower() == 'sandbox':
                 self.extra_tools.append(CodeExecutionTool(config))
             else:
-                logger.warning(f'Unknown code execution implementation: {implementation},using sandbox instead.')
+                logger.warning(
+                    f'Unknown code execution implementation: {implementation},'
+                    f'using sandbox instead.')
                 self.extra_tools.append(CodeExecutionTool(config))
-        if hasattr(config, 'tools') and hasattr(config.tools, 'financial_data_fetcher'):
+        if hasattr(config, 'tools') and hasattr(config.tools,
+                                                'financial_data_fetcher'):
             from ms_agent.tools.findata.findata_fetcher import FinancialDataFetcher
-
             self.extra_tools.append(FinancialDataFetcher(config))
         if hasattr(config, 'tools') and (
-            getattr(config.tools, 'agent_tools', None) or hasattr(config.tools, 'split_task')
-        ):
-            agent_tool = AgentTool(config, trust_remote_code=self.trust_remote_code)
+                getattr(config.tools, 'agent_tools', None)
+                or hasattr(config.tools, 'split_task')):
+            agent_tool = AgentTool(
+                config, trust_remote_code=self.trust_remote_code)
             if agent_tool.enabled:
                 self.extra_tools.append(agent_tool)
         if hasattr(config, 'tools') and hasattr(config.tools, 'todo_list'):
@@ -79,11 +92,13 @@ class ToolManager:
             self.extra_tools.append(LocalSearchTool(config))
         if hasattr(config, 'tools') and hasattr(config.tools, 'task_control'):
             from ms_agent.tools.task_control_tool import TaskControlTool
-
             self.extra_tools.append(TaskControlTool(config))
-        self.tool_call_timeout = getattr(config, 'tool_call_timeout', TOOL_CALL_TIMEOUT)
-        local_dir = self.config.local_dir if hasattr(self.config, 'local_dir') else None
-        if hasattr(config, 'tools') and hasattr(config.tools, TOOL_PLUGIN_NAME):
+        self.tool_call_timeout = getattr(config, 'tool_call_timeout',
+                                         TOOL_CALL_TIMEOUT)
+        local_dir = self.config.local_dir if hasattr(self.config,
+                                                     'local_dir') else None
+        if hasattr(config, 'tools') and hasattr(config.tools,
+                                                TOOL_PLUGIN_NAME):
             plugins = getattr(config.tools, TOOL_PLUGIN_NAME)
             for plugin in plugins:
                 subdir = os.path.dirname(plugin)
@@ -104,7 +119,11 @@ class ToolManager:
                 if _plugin.endswith('.py'):
                     _plugin = _plugin[:-3]
                 plugin_file = importlib.import_module(_plugin)
-                module_classes = {name: cls for name, cls in inspect.getmembers(plugin_file, inspect.isclass)}
+                module_classes = {
+                    name: cls
+                    for name, cls in inspect.getmembers(
+                        plugin_file, inspect.isclass)
+                }
                 for name, cls in module_classes.items():
                     # Find cls which base class is `ToolBase`
                     if issubclass(cls, ToolBase) and cls.__module__ == _plugin:
@@ -154,12 +173,15 @@ class ToolManager:
                 pass
 
     async def reindex_tool(self):
-        def extend_tool(tool_ins: ToolBase, server_name: str, tool_list: List[Tool]):
+
+        def extend_tool(tool_ins: ToolBase, server_name: str,
+                        tool_list: List[Tool]):
             for tool in tool_list:
                 # Subtract the length of the tool name splitter
-                max_server_len = MAX_TOOL_NAME_LEN - len(tool['tool_name']) - len(self.TOOL_SPLITER)
+                max_server_len = MAX_TOOL_NAME_LEN - len(
+                    tool['tool_name']) - len(self.TOOL_SPLITER)
                 if len(server_name) > max_server_len:
-                    key = f"{server_name[: max(0, max_server_len)]}{self.TOOL_SPLITER}{tool['tool_name']}"
+                    key = f"{server_name[:max(0, max_server_len)]}{self.TOOL_SPLITER}{tool['tool_name']}"
                 else:
                     key = f"{server_name}{self.TOOL_SPLITER}{tool['tool_name']}"
                 assert key not in self._tool_index, f'Tool name duplicated {tool["tool_name"]}'
@@ -179,7 +201,7 @@ class ToolManager:
         # Return tools in deterministic order to improve prompt/prefix cache hit rate
         # across process restarts and across different MCP tool listing orders.
         tools = [value[2] for value in self._tool_index.values()]
-        return sorted(tools, key=lambda t: (t.get('tool_name', ''),))
+        return sorted(tools, key=lambda t: (t.get('tool_name', ''), ))
 
     async def single_call_tool(self, tool_info: ToolCall):
         if self._concurrent_limiter is None:
@@ -187,7 +209,8 @@ class ToolManager:
                 self._init_lock = asyncio.Lock()
             async with self._init_lock:
                 if self._concurrent_limiter is None:
-                    self._concurrent_limiter = asyncio.Semaphore(MAX_CONCURRENT_TOOLS)
+                    self._concurrent_limiter = asyncio.Semaphore(
+                        MAX_CONCURRENT_TOOLS)
 
         async with self._concurrent_limiter:
             brief_info = json.dumps(tool_info, ensure_ascii=False)
@@ -208,27 +231,27 @@ class ToolManager:
                     call_args = dict(tool_args or {})
                     call_id = tool_info.get('id') or str(uuid.uuid4())
                     call_args['__call_id'] = call_id
-                elif isinstance(tool_ins, LocalCodeExecutionTool) and tool_name.endswith(
-                    f'{self.TOOL_SPLITER}shell_executor'
-                ):
+                elif isinstance(
+                        tool_ins,
+                        LocalCodeExecutionTool) and tool_name.endswith(
+                            f'{self.TOOL_SPLITER}shell_executor'):
                     call_args = dict(tool_args or {})
-                    call_args['__call_id'] = tool_info.get('id') or str(uuid.uuid4())
+                    call_args['__call_id'] = tool_info.get('id') or str(
+                        uuid.uuid4())
                 response = await asyncio.wait_for(
                     tool_ins.call_tool(
-                        server_name, tool_name=tool_name.split(self.TOOL_SPLITER)[1], tool_args=call_args
-                    ),
-                    timeout=self.tool_call_timeout,
-                )
+                        server_name,
+                        tool_name=tool_name.split(self.TOOL_SPLITER)[1],
+                        tool_args=call_args),
+                    timeout=self.tool_call_timeout)
                 return response
             except asyncio.TimeoutError:
                 import traceback
-
                 logger.warning(traceback.format_exc())
                 # TODO: How to get the information printed by the tool before hanging to return to the model?
                 return f'Execute tool call timeout: {brief_info}'
             except Exception as e:
                 import traceback
-
                 logger.warning(traceback.format_exc())
                 return f'Tool calling failed: {brief_info}, details: {str(e)}'
 
@@ -238,6 +261,7 @@ class ToolManager:
         return result
 
     async def __aenter__(self) -> 'ToolManager':
+
         return self
 
     async def __aexit__(

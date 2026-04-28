@@ -1,6 +1,5 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import asyncio
-import json
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -9,12 +8,12 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
-from omegaconf import DictConfig, OmegaConf
-
+import json
 from ms_agent.llm.openai_llm import OpenAI
 from ms_agent.llm.utils import Message
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.thread_util import DaemonThreadPoolExecutor
+from omegaconf import DictConfig, OmegaConf
 
 logger = get_logger()
 
@@ -144,7 +143,6 @@ Today's date is {date}.
 @dataclass
 class SearchResultMeta:
     """Metadata for a search result used in reranking."""
-
     url: str
     title: str
     snippet: str = ''
@@ -157,7 +155,6 @@ class SearchResultMeta:
 @dataclass
 class SummaryResult:
     """Result of content summarization."""
-
     summary: str
     key_excerpts: str
     original_length: int
@@ -181,7 +178,6 @@ class SummaryResult:
 @dataclass
 class ContentOptimizerConfig:
     """Configuration for content optimization."""
-
     # Summarization settings
     summarizer_model: str = 'qwen-flash'
     summarizer_base_url: str = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
@@ -204,8 +200,7 @@ class ContentOptimizerConfig:
             'blog': 0.6,  # Technical blogs
             'forum': 0.4,  # Forums, Q&A sites
             'unknown': 0.5,
-        }
-    )
+        })
 
 
 # Domain patterns for source classification
@@ -311,7 +306,8 @@ def classify_source(url: str) -> str:
                 return 'paper'
 
         # Check for documentation indicators
-        if any(doc_pattern in domain for doc_pattern in ['docs.', 'documentation.', 'developer.']):
+        if any(doc_pattern in domain
+               for doc_pattern in ['docs.', 'documentation.', 'developer.']):
             return 'official'
 
         for news_domain in NEWS_DOMAINS:
@@ -379,7 +375,11 @@ class ContentSummarizer:
                 'openai_base_url': self.config.summarizer_base_url,
                 'openai_api_key': self.config.summarizer_api_key,
             },
-            'generation_config': {'extra_body': {'enable_thinking': False}},
+            'generation_config': {
+                'extra_body': {
+                    'enable_thinking': False
+                }
+            },
         }
         return OmegaConf.create(config_dict)
 
@@ -396,7 +396,9 @@ class ContentSummarizer:
                 thread_name_prefix='content_summarizer_',
             )
             self._initialized = True
-            logger.info(f'ContentSummarizer initialized with model: {self.config.summarizer_model}')
+            logger.info(
+                f'ContentSummarizer initialized with model: {self.config.summarizer_model}'
+            )
         except Exception as e:
             logger.error(f'Failed to initialize ContentSummarizer: {e}')
             raise
@@ -428,7 +430,8 @@ class ContentSummarizer:
             Tuple of (summary, key_excerpts)
         """
         # Try to find JSON in the response
-        json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+        json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```',
+                               response_text, re.DOTALL)
         if json_match:
             try:
                 data = json.loads(json_match.group(1))
@@ -442,7 +445,7 @@ class ContentSummarizer:
             start_idx = response_text.find('{')
             end_idx = response_text.rfind('}')
             if start_idx != -1 and end_idx != -1:
-                json_str = response_text[start_idx : end_idx + 1]
+                json_str = response_text[start_idx:end_idx + 1]
                 data = json.loads(json_str)
                 return data.get('summary', ''), data.get('key_excerpts', '')
         except json.JSONDecodeError:
@@ -465,7 +468,10 @@ class ContentSummarizer:
         response = self._llm.generate(messages)
         return response
 
-    async def summarize(self, content: str, task_context: str = '', language: str = 'auto') -> SummaryResult:
+    async def summarize(self,
+                        content: str,
+                        task_context: str = '',
+                        language: str = 'auto') -> SummaryResult:
         """
         Summarize webpage content using the configured LLM.
 
@@ -494,12 +500,13 @@ class ContentSummarizer:
             )
 
         # Truncate content if too long
-        content_to_summarize = content[: self.config.max_content_chars]
+        content_to_summarize = content[:self.config.max_content_chars]
 
         # Detect language and select prompt
         if language == 'auto':
             # Simple heuristic: check for Chinese characters
-            chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', content_to_summarize[:1000]))
+            chinese_chars = len(
+                re.findall(r'[\u4e00-\u9fff]', content_to_summarize[:1000]))
             language = 'zh' if chinese_chars > 30 else 'en'
 
         prompt_template = SUMMARIZE_WEBPAGE_PROMPT if language == 'zh' else SUMMARIZE_WEBPAGE_PROMPT_EN
@@ -517,7 +524,8 @@ class ContentSummarizer:
             # Run synchronous LLM call in executor with timeout
             loop = asyncio.get_event_loop()
             response_msg: Message = await asyncio.wait_for(
-                loop.run_in_executor(self._executor, self._call_llm_sync, prompt),
+                loop.run_in_executor(self._executor, self._call_llm_sync,
+                                     prompt),
                 timeout=self.config.summarization_timeout,
             )
 
@@ -532,8 +540,8 @@ class ContentSummarizer:
             compression_ratio = compressed_length / original_length if original_length > 0 else 1.0
 
             logger.debug(
-                f'Content summarized: {original_length} -> {compressed_length} chars (ratio: {compression_ratio:.2%})'
-            )
+                f'Content summarized: {original_length} -> {compressed_length} chars '
+                f'(ratio: {compression_ratio:.2%})')
 
             return SummaryResult(
                 summary=summary,
@@ -542,19 +550,25 @@ class ContentSummarizer:
                 compressed_length=compressed_length,
                 compression_ratio=compression_ratio,
                 success=True,
-                model=str(getattr(self._llm, 'model', '') or self.config.summarizer_model),
-                prompt_tokens=int(getattr(response_msg, 'prompt_tokens', 0) or 0),
-                completion_tokens=int(getattr(response_msg, 'completion_tokens', 0) or 0),
-                cached_tokens=int(getattr(response_msg, 'cached_tokens', 0) or 0),
-                cache_creation_input_tokens=int(getattr(response_msg, 'cache_creation_input_tokens', 0) or 0),
+                model=str(
+                    getattr(self._llm, 'model', '')
+                    or self.config.summarizer_model),
+                prompt_tokens=int(
+                    getattr(response_msg, 'prompt_tokens', 0) or 0),
+                completion_tokens=int(
+                    getattr(response_msg, 'completion_tokens', 0) or 0),
+                cached_tokens=int(
+                    getattr(response_msg, 'cached_tokens', 0) or 0),
+                cache_creation_input_tokens=int(
+                    getattr(response_msg, 'cache_creation_input_tokens', 0)
+                    or 0),
                 api_calls=int(getattr(response_msg, 'api_calls', 0) or 0),
             )
 
         except asyncio.TimeoutError:
             logger.warning(
                 f'Summarization timed out after {self.config.summarization_timeout}s, '
-                'returning truncated original content'
-            )
+                'returning truncated original content')
             # Return truncated original content
             truncated = content_to_summarize[:100000]
             return SummaryResult(
@@ -569,7 +583,9 @@ class ContentSummarizer:
             )
 
         except Exception as e:
-            logger.warning(f'Summarization failed: {e}, returning truncated original content')
+            logger.warning(
+                f'Summarization failed: {e}, returning truncated original content'
+            )
             truncated = content_to_summarize[:100000]
             return SummaryResult(
                 summary=truncated,
@@ -604,7 +620,8 @@ class ContentSummarizer:
 
         semaphore = asyncio.Semaphore(max_concurrent)
 
-        async def _bounded_summarize(url: str, content: str) -> Tuple[str, SummaryResult]:
+        async def _bounded_summarize(
+                url: str, content: str) -> Tuple[str, SummaryResult]:
             async with semaphore:
                 result = await self.summarize(content, task_context)
                 return url, result
@@ -727,7 +744,8 @@ class SearchResultReranker:
 
                 # Calculate months difference
                 if month:
-                    months_diff = (current_year - year) * 12 + (current_month - month)
+                    months_diff = (current_year - year) * 12 + (
+                        current_month - month)
                 else:
                     months_diff = (current_year - year) * 12
 
@@ -768,7 +786,8 @@ class SearchResultReranker:
         url = result.get('url', '')
         title = result.get('title', '')
         snippet = result.get('summary', '') or result.get('snippet', '')
-        published_at = result.get('published_date', '') or result.get('published_at', '')
+        published_at = result.get('published_date', '') or result.get(
+            'published_at', '')
 
         source_type = classify_source(url)
 
@@ -780,7 +799,9 @@ class SearchResultReranker:
 
         # Weighted combination
         # Title relevance: 40%, Source type: 30%, Recency: 20%, Snippet: 10%
-        relevance_score = title_relevance * 0.4 + source_weight * 0.3 + recency_score * 0.2 + snippet_relevance * 0.1
+        relevance_score = (
+            title_relevance * 0.4 + source_weight * 0.3 + recency_score * 0.2
+            + snippet_relevance * 0.1)
 
         return SearchResultMeta(
             url=url,
@@ -818,7 +839,10 @@ class SearchResultReranker:
             return results[:k]
 
         # Build metadata for all results
-        metas = [self._build_result_meta(result, idx, query) for idx, result in enumerate(results)]
+        metas = [
+            self._build_result_meta(result, idx, query)
+            for idx, result in enumerate(results)
+        ]
 
         # Sort by relevance score (descending)
         sorted_pairs = sorted(
@@ -843,7 +867,8 @@ class SearchResultReranker:
         return top_results
 
     @staticmethod
-    def deduplicate_by_url(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def deduplicate_by_url(
+            results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Remove duplicate results based on URL.
 
@@ -965,15 +990,16 @@ class ContentOptimizer:
         if not self._initialized:
             await self.initialize()
 
-        results = await self.summarizer.summarize_batch(contents, task_context, max_concurrent)
+        results = await self.summarizer.summarize_batch(
+            contents, task_context, max_concurrent)
 
         # Convert SummaryResult to formatted strings
         formatted = {}
         for url, result in results.items():
             if result.key_excerpts:
                 formatted[url] = (
-                    f'<summary>\n{result.summary}\n</summary>\n\n<key_excerpts>\n{result.key_excerpts}\n</key_excerpts>'
-                )
+                    f'<summary>\n{result.summary}\n</summary>\n\n'
+                    f'<key_excerpts>\n{result.key_excerpts}\n</key_excerpts>')
             else:
                 formatted[url] = result.summary
 
@@ -994,7 +1020,8 @@ class ContentOptimizer:
         if not self._initialized:
             await self.initialize()
 
-        results = await self.summarizer.summarize_batch(contents, task_context, max_concurrent)
+        results = await self.summarizer.summarize_batch(
+            contents, task_context, max_concurrent)
 
         formatted: Dict[str, str] = {}
         # Aggregate usage across results (best-effort; failures may have 0 usage)
@@ -1008,8 +1035,8 @@ class ContentOptimizer:
         for url, result in results.items():
             if result.key_excerpts:
                 formatted[url] = (
-                    f'<summary>\n{result.summary}\n</summary>\n\n<key_excerpts>\n{result.key_excerpts}\n</key_excerpts>'
-                )
+                    f'<summary>\n{result.summary}\n</summary>\n\n'
+                    f'<key_excerpts>\n{result.key_excerpts}\n</key_excerpts>')
             else:
                 formatted[url] = result.summary
 
@@ -1038,7 +1065,8 @@ class ContentOptimizer:
 
 def create_content_optimizer(
     summarizer_model: str = 'qwen-flash',
-    summarizer_base_url: str = 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    summarizer_base_url:
+    str = 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     summarizer_api_key: Optional[str] = None,
     max_content_chars: int = 500000,
     enable_rerank: bool = False,

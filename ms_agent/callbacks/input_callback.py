@@ -1,12 +1,11 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 from typing import List
 
-from omegaconf import DictConfig
-
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback
 from ms_agent.llm.utils import Message
 from ms_agent.utils import get_logger
+from omegaconf import DictConfig
 
 logger = get_logger()
 

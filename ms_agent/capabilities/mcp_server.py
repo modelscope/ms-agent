@@ -1,12 +1,11 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import argparse
-import json
 import logging
 import os
 import sys
 
+import json
 from dotenv import find_dotenv, load_dotenv
-
 from ms_agent.capabilities import create_registry
 
 logger = logging.getLogger(__name__)
@@ -50,15 +49,13 @@ def _print_check() -> None:
     registry = create_registry()
     caps = registry.list_all()
     info = {
-        'status': 'ok',
-        'capabilities': [
-            {
-                'name': c.name,
-                'granularity': c.granularity,
-                'summary': c.summary,
-            }
-            for c in caps
-        ],
+        'status':
+        'ok',
+        'capabilities': [{
+            'name': c.name,
+            'granularity': c.granularity,
+            'summary': c.summary,
+        } for c in caps],
     }
     print(json.dumps(info, indent=2))
 
@@ -119,8 +116,7 @@ def main() -> None:
     """
 
     parser = argparse.ArgumentParser(
-        description='ms-agent MCP Capability Server',
-    )
+        description='ms-agent MCP Capability Server', )
     parser.add_argument(
         '--check',
         action='store_true',
@@ -155,7 +151,8 @@ def main() -> None:
         from mcp.server.fastmcp import FastMCP
     except ImportError:
         print(
-            'ERROR: The "mcp" package is required.  Install it with:\n  pip install mcp\n',
+            'ERROR: The "mcp" package is required.  Install it with:\n'
+            '  pip install mcp\n',
             file=sys.stderr,
         )
         sys.exit(1)
@@ -165,9 +162,8 @@ def main() -> None:
 
     server = FastMCP(
         'ms-agent-capabilities',
-        instructions=(
-            'ms-agent Capability Gateway. Provides deep research, LSP code validation, and advanced file-editing tools.'
-        ),
+        instructions=('ms-agent Capability Gateway. Provides deep research, '
+                      'LSP code validation, and advanced file-editing tools.'),
     )
 
     for cap in registry.list_all():
@@ -208,13 +204,18 @@ def _build_handler(registry, cap, workspace: str):
     for pname, pschema in properties.items():
         py_type = type_map.get(pschema.get('type', 'string'), str)
         if pname in required_params:
-            params.append(inspect.Parameter(pname, inspect.Parameter.KEYWORD_ONLY, annotation=py_type))
+            params.append(
+                inspect.Parameter(
+                    pname, inspect.Parameter.KEYWORD_ONLY, annotation=py_type))
         else:
             opt_type = typing.Optional[py_type]
             default = pschema.get('default')
             params.append(
-                inspect.Parameter(pname, inspect.Parameter.KEYWORD_ONLY, default=default, annotation=opt_type)
-            )
+                inspect.Parameter(
+                    pname,
+                    inspect.Parameter.KEYWORD_ONLY,
+                    default=default,
+                    annotation=opt_type))
         annotations[pname] = params[-1].annotation
 
     cap_name = cap.name

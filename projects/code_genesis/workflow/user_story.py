@@ -6,6 +6,7 @@ from ms_agent.llm import Message
 
 
 class SplitModuleAgent(LLMAgent):
+
     async def on_task_end(self, messages: List[Message]):
         assert os.path.isfile(os.path.join(self.output_dir, 'user_story.txt'))
         topic = ''

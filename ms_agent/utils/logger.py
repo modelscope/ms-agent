@@ -30,8 +30,10 @@ def warning_once(self, msg, *args, **kwargs):
     self.warning(msg)
 
 
-def get_logger(log_file: Optional[str] = None, log_level: Optional[int] = None, file_mode: str = 'w'):
-    """Get logging logger
+def get_logger(log_file: Optional[str] = None,
+               log_level: Optional[int] = None,
+               file_mode: str = 'w'):
+    """ Get logging logger
 
     Args:
         log_file: Log filename, if specified, file handler will be added to

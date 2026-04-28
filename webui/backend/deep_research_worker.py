@@ -1,6 +1,5 @@
 import argparse
 import asyncio
-import json
 import os
 import signal
 import sys
@@ -8,11 +7,11 @@ import traceback
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import json
 from deep_research_eventizer import HistoryEventizer  # noqa: E402
-from omegaconf import OmegaConf
-
 from ms_agent.agent.loader import AgentLoader
 from ms_agent.tools.agent_tool import AgentTool
+from omegaconf import OmegaConf
 
 BACKEND_DIR = Path(__file__).resolve().parent
 if str(BACKEND_DIR) not in sys.path:
@@ -22,6 +21,7 @@ STOP_REQUESTED = False
 
 
 class NullWriter:
+
     def write(self, _: str) -> int:
         return 0
 
@@ -30,6 +30,7 @@ class NullWriter:
 
 
 class NDJSONEmitter:
+
     def __init__(self, stream) -> None:
         self._stream = stream
 
@@ -70,16 +71,21 @@ def _normalize_agent_override(raw: Optional[Dict[str, Any]]) -> Dict[str, str]:
     }
 
 
-def _resolve_agent_llm_config(role: str, llm_config: Dict[str, Any], dr_config: Dict[str, Any]) -> Dict[str, str]:
+def _resolve_agent_llm_config(role: str, llm_config: Dict[str, Any],
+                              dr_config: Dict[str, Any]) -> Dict[str, str]:
     overrides = _normalize_agent_override((dr_config or {}).get(role))
     return {
-        'model': overrides.get('model') or str(llm_config.get('model') or ''),
-        'api_key': overrides.get('api_key') or str(llm_config.get('api_key') or ''),
-        'base_url': overrides.get('base_url') or str(llm_config.get('base_url') or ''),
+        'model':
+        overrides.get('model') or str(llm_config.get('model') or ''),
+        'api_key':
+        overrides.get('api_key') or str(llm_config.get('api_key') or ''),
+        'base_url':
+        overrides.get('base_url') or str(llm_config.get('base_url') or ''),
     }
 
 
-def _normalize_search_override(raw: Optional[Dict[str, Any]]) -> Dict[str, str]:
+def _normalize_search_override(
+        raw: Optional[Dict[str, Any]]) -> Dict[str, str]:
     raw = raw or {}
     return {
         'summarizer_model': str(raw.get('summarizer_model') or ''),
@@ -89,8 +95,8 @@ def _normalize_search_override(raw: Optional[Dict[str, Any]]) -> Dict[str, str]:
 
 
 def _build_config_override(
-    llm_config: Dict[str, Any], output_dir: str, dr_config: Dict[str, Any]
-) -> Optional[Dict[str, Any]]:
+        llm_config: Dict[str, Any], output_dir: str,
+        dr_config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     override: Dict[str, Any] = {}
     if output_dir:
         override['output_dir'] = output_dir
@@ -126,7 +132,8 @@ def _build_config_override(
     return override or None
 
 
-async def _watch_artifacts(output_dir: str, emitter: NDJSONEmitter, session_id: str) -> None:
+async def _watch_artifacts(output_dir: str, emitter: NDJSONEmitter,
+                           session_id: str) -> None:
     last_snapshot: Dict[str, tuple[int, float]] = {}
     output_path = Path(output_dir)
     ignore_dirs = {'.locks', '__pycache__'}
@@ -148,23 +155,25 @@ async def _watch_artifacts(output_dir: str, emitter: NDJSONEmitter, session_id: 
                 except OSError:
                     continue
                 snapshot[rel_path] = (stat.st_size, stat.st_mtime)
-                files.append(
-                    {
-                        'path': rel_path,
-                        'relative_path': rel_path,
-                        'size': stat.st_size,
-                        'modified': stat.st_mtime,
-                    }
-                )
+                files.append({
+                    'path': rel_path,
+                    'relative_path': rel_path,
+                    'size': stat.st_size,
+                    'modified': stat.st_mtime,
+                })
 
         if snapshot != last_snapshot:
-            emitter.emit(
-                {
-                    'type': 'dr.artifact.updated',
-                    'payload': {'files': sorted(files, key=lambda x: x.get('modified', 0), reverse=True)},
-                    'session_id': session_id,
-                }
-            )
+            emitter.emit({
+                'type': 'dr.artifact.updated',
+                'payload': {
+                    'files':
+                    sorted(
+                        files,
+                        key=lambda x: x.get('modified', 0),
+                        reverse=True)
+                },
+                'session_id': session_id,
+            })
             last_snapshot = snapshot
 
         await asyncio.sleep(1.0)
@@ -172,14 +181,16 @@ async def _watch_artifacts(output_dir: str, emitter: NDJSONEmitter, session_id: 
 
 async def run_worker(args: argparse.Namespace) -> None:
     emitter = NDJSONEmitter(sys.__stdout__)
-    main_eventizer = HistoryEventizer(emitter.emit, channel='main', session_id=args.session_id)
+    main_eventizer = HistoryEventizer(
+        emitter.emit, channel='main', session_id=args.session_id)
     subagent_eventizers: Dict[str, HistoryEventizer] = {}
 
     loop = asyncio.get_running_loop()
     subagent_queue: asyncio.Queue = asyncio.Queue()
 
     def chunk_callback(*, event_type: str, data: Dict[str, Any]) -> None:
-        loop.call_soon_threadsafe(subagent_queue.put_nowait, (event_type, data))
+        loop.call_soon_threadsafe(subagent_queue.put_nowait,
+                                  (event_type, data))
 
     async def consume_subagent_events():
         while True:
@@ -204,8 +215,10 @@ async def run_worker(args: argparse.Namespace) -> None:
 
     llm_config = _load_llm_config()
     dr_config = _load_deep_research_config()
-    config_override = _build_config_override(llm_config, args.output_dir, dr_config)
-    config_override = OmegaConf.create(config_override) if config_override else None
+    config_override = _build_config_override(llm_config, args.output_dir,
+                                             dr_config)
+    config_override = OmegaConf.create(
+        config_override) if config_override else None
 
     agent = AgentLoader.build(
         config_dir_or_id=args.config,
@@ -233,10 +246,13 @@ async def run_worker(args: argparse.Namespace) -> None:
 
                     tool_name = str(spec.tool_name or '')
                     if 'searcher' in tool_name:
-                        resolved = _resolve_agent_llm_config('searcher', llm_config, dr_config)
-                        search_override = _normalize_search_override((dr_config or {}).get('search'))
+                        resolved = _resolve_agent_llm_config(
+                            'searcher', llm_config, dr_config)
+                        search_override = _normalize_search_override(
+                            (dr_config or {}).get('search'))
                     elif 'reporter' in tool_name:
-                        resolved = _resolve_agent_llm_config('reporter', llm_config, dr_config)
+                        resolved = _resolve_agent_llm_config(
+                            'reporter', llm_config, dr_config)
                         search_override = {}
                     else:
                         resolved = {}
@@ -257,11 +273,16 @@ async def run_worker(args: argparse.Namespace) -> None:
                             tools_cfg = dict(updated.get('tools') or {})
                             web_cfg = dict(tools_cfg.get('web_search') or {})
                             if search_override.get('summarizer_model'):
-                                web_cfg['summarizer_model'] = search_override['summarizer_model']
+                                web_cfg['summarizer_model'] = search_override[
+                                    'summarizer_model']
                             if search_override.get('summarizer_api_key'):
-                                web_cfg['summarizer_api_key'] = search_override['summarizer_api_key']
+                                web_cfg[
+                                    'summarizer_api_key'] = search_override[
+                                        'summarizer_api_key']
                             if search_override.get('summarizer_base_url'):
-                                web_cfg['summarizer_base_url'] = search_override['summarizer_base_url']
+                                web_cfg[
+                                    'summarizer_base_url'] = search_override[
+                                        'summarizer_base_url']
                             if web_cfg:
                                 tools_cfg['web_search'] = web_cfg
                                 updated['tools'] = tools_cfg
@@ -276,7 +297,8 @@ async def run_worker(args: argparse.Namespace) -> None:
 
     agent.prepare_tools = prepare_tools_with_callback
 
-    artifact_task = asyncio.create_task(_watch_artifacts(args.output_dir, emitter, args.session_id))
+    artifact_task = asyncio.create_task(
+        _watch_artifacts(args.output_dir, emitter, args.session_id))
     subagent_task = asyncio.create_task(consume_subagent_events())
 
     had_error = False
@@ -290,48 +312,40 @@ async def run_worker(args: argparse.Namespace) -> None:
             main_eventizer.process(result)
     except Exception as exc:
         had_error = True
-        emitter.emit(
-            {
-                'type': 'dr.worker.error',
-                'payload': {
-                    'error': str(exc),
-                    'traceback': traceback.format_exc(),
-                },
-                'session_id': args.session_id,
-            }
-        )
-        emitter.emit(
-            {
-                'type': 'error',
-                'message': str(exc),
-            }
-        )
+        emitter.emit({
+            'type': 'dr.worker.error',
+            'payload': {
+                'error': str(exc),
+                'traceback': traceback.format_exc(),
+            },
+            'session_id': args.session_id,
+        })
+        emitter.emit({
+            'type': 'error',
+            'message': str(exc),
+        })
         raise
     finally:
         main_eventizer.finalize()
-        emitter.emit(
-            {
-                'type': 'dr.worker.exited',
-                'payload': {'status': 'completed'},
-                'session_id': args.session_id,
-            }
-        )
+        emitter.emit({
+            'type': 'dr.worker.exited',
+            'payload': {
+                'status': 'completed'
+            },
+            'session_id': args.session_id,
+        })
         if STOP_REQUESTED:
-            emitter.emit(
-                {
-                    'type': 'status',
-                    'status': 'stopped',
-                }
-            )
+            emitter.emit({
+                'type': 'status',
+                'status': 'stopped',
+            })
         elif not had_error:
-            emitter.emit(
-                {
-                    'type': 'complete',
-                    'result': {
-                        'status': 'success',
-                    },
-                }
-            )
+            emitter.emit({
+                'type': 'complete',
+                'result': {
+                    'status': 'success',
+                },
+            })
         subagent_queue.put_nowait((None, None))
         artifact_task.cancel()
         subagent_task.cancel()

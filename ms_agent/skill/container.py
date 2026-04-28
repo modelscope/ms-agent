@@ -10,7 +10,6 @@ Execution modes:
 - use_sandbox=True: Execute in Docker sandbox (default, recommended for untrusted code)
 - use_sandbox=False: Execute locally with security checks (for trusted code or no Docker)
 """
-
 import asyncio
 import os
 import platform
@@ -55,7 +54,6 @@ ALLOWED_SCRIPT_EXTENSIONS = {'.py', '.sh', '.bash', '.js', '.mjs'}
 
 class ExecutorType(Enum):
     """Supported executor types for skill execution."""
-
     PYTHON_SCRIPT = 'python_script'
     PYTHON_CODE = 'python_code'
     PYTHON_FUNCTION = 'python_function'
@@ -65,7 +63,6 @@ class ExecutorType(Enum):
 
 class ExecutionStatus(Enum):
     """Execution status codes."""
-
     PENDING = 'pending'
     RUNNING = 'running'
     SUCCESS = 'success'
@@ -89,7 +86,6 @@ class ExecutionInput:
         working_dir: Working directory for execution.
         requirements: Python packages to install before execution.
     """
-
     args: List[Any] = field(default_factory=list)
     kwargs: Dict[str, Any] = field(default_factory=dict)
     env_vars: Dict[str, str] = field(default_factory=dict)
@@ -103,7 +99,8 @@ class ExecutionInput:
             'args': self.args,
             'kwargs': self.kwargs,
             'env_vars': self.env_vars,
-            'input_files': {k: str(v) for k, v in self.input_files.items()},
+            'input_files': {k: str(v)
+                            for k, v in self.input_files.items()},
             'stdin': self.stdin,
             'working_dir': str(self.working_dir) if self.working_dir else None,
             'requirements': self.requirements,
@@ -124,7 +121,6 @@ class ExecutionOutput:
         artifacts: Any generated artifacts (data, objects, etc.).
         duration_ms: Execution duration in milliseconds.
     """
-
     return_value: Any = None
     stdout: str = ''
     stderr: str = ''
@@ -135,11 +131,13 @@ class ExecutionOutput:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            'return_value': str(self.return_value) if self.return_value else None,
+            'return_value':
+            str(self.return_value) if self.return_value else None,
             'stdout': self.stdout,
             'stderr': self.stderr,
             'exit_code': self.exit_code,
-            'output_files': {k: str(v) for k, v in self.output_files.items()},
+            'output_files': {k: str(v)
+                             for k, v in self.output_files.items()},
             'artifacts': list(self.artifacts.keys()),
             'duration_ms': self.duration_ms,
         }
@@ -164,7 +162,6 @@ class ExecutionRecord:
         error_message: Error message if failed.
         sandbox_used: Whether sandbox was used for execution.
     """
-
     execution_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
     skill_id: str = ''
     executor_type: ExecutorType = ExecutorType.PYTHON_SCRIPT
@@ -212,7 +209,8 @@ class ExecutionRecord:
             for name, path in self.input_spec.input_files.items():
                 lines.append(f'  - `{name}`: `{path}`')
         if self.input_spec.requirements:
-            lines.append(f'- **Requirements**: `{self.input_spec.requirements}`')
+            lines.append(
+                f'- **Requirements**: `{self.input_spec.requirements}`')
 
         # Output section
         lines.extend(['', '#### Output', ''])
@@ -230,7 +228,8 @@ class ExecutionRecord:
                 lines.append(f'  - `{name}`: `{path}`')
 
         if self.error_message:
-            lines.extend(['', '#### Error', '', f'```\n{self.error_message}\n```'])
+            lines.extend(
+                ['', '#### Error', '', f'```\n{self.error_message}\n```'])
 
         lines.append('')
         return '\n'.join(lines)
@@ -249,7 +248,6 @@ class ExecutionSpec:
         created_at: Creation timestamp.
         upstream_outputs: Outputs from upstream skills available as inputs.
     """
-
     spec_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
     title: str = 'Skill Execution Spec'
     description: str = ''
@@ -287,25 +285,26 @@ class ExecutionSpec:
 
         # Summary
         total = len(self.records)
-        success = sum(1 for r in self.records if r.status == ExecutionStatus.SUCCESS)
-        failed = sum(1 for r in self.records if r.status == ExecutionStatus.FAILED)
-        blocked = sum(1 for r in self.records if r.status == ExecutionStatus.SECURITY_BLOCKED)
+        success = sum(1 for r in self.records
+                      if r.status == ExecutionStatus.SUCCESS)
+        failed = sum(1 for r in self.records
+                     if r.status == ExecutionStatus.FAILED)
+        blocked = sum(1 for r in self.records
+                      if r.status == ExecutionStatus.SECURITY_BLOCKED)
 
-        lines.extend(
-            [
-                '## Summary',
-                '',
-                f'- **Total Executions**: {total}',
-                f'- **Successful**: {success}',
-                f'- **Failed**: {failed}',
-                f'- **Security Blocked**: {blocked}',
-                '',
-                '---',
-                '',
-                '## Execution Records',
-                '',
-            ]
-        )
+        lines.extend([
+            '## Summary',
+            '',
+            f'- **Total Executions**: {total}',
+            f'- **Successful**: {success}',
+            f'- **Failed**: {failed}',
+            f'- **Security Blocked**: {blocked}',
+            '',
+            '---',
+            '',
+            '## Execution Records',
+            '',
+        ])
 
         for record in self.records:
             lines.append(record.to_markdown())
@@ -343,16 +342,14 @@ class SkillContainer:
     SANDBOX_OUTPUT_DIR = '/sandbox/outputs'
     SANDBOX_WORK_DIR = '/sandbox/scripts'
 
-    def __init__(
-        self,
-        workspace_dir: Optional[Union[str, Path]] = None,
-        timeout: int = 300,
-        image: str = 'python:3.11-slim',
-        memory_limit: str = '512m',
-        enable_security_check: bool = True,
-        network_enabled: bool = False,
-        use_sandbox: bool = True,
-    ):
+    def __init__(self,
+                 workspace_dir: Optional[Union[str, Path]] = None,
+                 timeout: int = 300,
+                 image: str = 'python:3.11-slim',
+                 memory_limit: str = '512m',
+                 enable_security_check: bool = True,
+                 network_enabled: bool = False,
+                 use_sandbox: bool = True):
         """
         Initialize the skill container.
 
@@ -369,7 +366,8 @@ class SkillContainer:
         if workspace_dir:
             self.workspace_dir = Path(workspace_dir).resolve()
         else:
-            self.workspace_dir = Path(tempfile.mkdtemp(prefix='skill_container_')).resolve()
+            self.workspace_dir = Path(
+                tempfile.mkdtemp(prefix='skill_container_')).resolve()
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
 
         self.timeout = timeout
@@ -399,12 +397,10 @@ class SkillContainer:
             logger.warning(
                 'SkillContainer running in LOCAL mode (use_sandbox=False). '
                 'Scripts will execute directly on this machine. '
-                'Ensure you trust the code being executed!'
-            )
+                'Ensure you trust the code being executed!')
 
-        logger.info(
-            f'SkillContainer initialized at: {self.workspace_dir} [mode: {"sandbox" if self.use_sandbox else "local"}]'
-        )
+        logger.info(f'SkillContainer initialized at: {self.workspace_dir} '
+                    f'[mode: {"sandbox" if self.use_sandbox else "local"}]')
 
     def _get_sandbox(self):
         """
@@ -427,7 +423,8 @@ class SkillContainer:
             for skill_id, skill_dir in self._skill_dirs.items():
                 safe_id = skill_id.replace('@', '_').replace('/', '_')
                 sandbox_path = f'{self.SANDBOX_ROOT}/skills/{safe_id}'
-                volumes.append((str(Path(skill_dir).resolve()), sandbox_path, 'ro'))
+                volumes.append(
+                    (str(Path(skill_dir).resolve()), sandbox_path, 'ro'))
 
             self._sandbox = EnclaveSandbox(
                 image=self.image,
@@ -436,7 +433,8 @@ class SkillContainer:
             )
         return self._sandbox
 
-    def mount_skill_directory(self, skill_id: str, skill_dir: Union[str, Path]):
+    def mount_skill_directory(self, skill_id: str, skill_dir: Union[str,
+                                                                    Path]):
         """
         Mount a skill directory for sandbox access.
 
@@ -461,7 +459,9 @@ class SkillContainer:
         safe_id = skill_id.replace('@', '_').replace('/', '_')
         return f'{self.SANDBOX_ROOT}/skills/{safe_id}'
 
-    def _security_check(self, code: str, is_local: bool = False) -> tuple[bool, str]:
+    def _security_check(self,
+                        code: str,
+                        is_local: bool = False) -> tuple[bool, str]:
         """
         Check code for potentially dangerous patterns.
 
@@ -523,15 +523,13 @@ class SkillContainer:
                     outputs[f.name] = f
         return outputs
 
-    def _create_record(
-        self,
-        skill_id: str,
-        executor_type: ExecutorType,
-        input_spec: ExecutionInput,
-        script_path: str = None,
-        function_name: str = None,
-        sandbox_used: bool = None,
-    ) -> ExecutionRecord:
+    def _create_record(self,
+                       skill_id: str,
+                       executor_type: ExecutorType,
+                       input_spec: ExecutionInput,
+                       script_path: str = None,
+                       function_name: str = None,
+                       sandbox_used: bool = None) -> ExecutionRecord:
         """Create a new execution record."""
         return ExecutionRecord(
             skill_id=skill_id,
@@ -540,16 +538,18 @@ class SkillContainer:
             function_name=function_name,
             input_spec=input_spec,
             status=ExecutionStatus.PENDING,
-            sandbox_used=sandbox_used if sandbox_used is not None else self.use_sandbox,
-        )
+            sandbox_used=sandbox_used
+            if sandbox_used is not None else self.use_sandbox)
 
     # -------------------------------------------------------------------------
     # Local Execution Helpers (for use_sandbox=False mode)
     # -------------------------------------------------------------------------
 
-    def _local_run_subprocess(
-        self, cmd: List[str], env: Dict[str, str] = None, cwd: Path = None, stdin_input: str = None
-    ) -> tuple[str, str, int]:
+    def _local_run_subprocess(self,
+                              cmd: List[str],
+                              env: Dict[str, str] = None,
+                              cwd: Path = None,
+                              stdin_input: str = None) -> tuple[str, str, int]:
         """
         Run subprocess locally with security restrictions.
 
@@ -607,7 +607,8 @@ class SkillContainer:
             return 'node.exe'
         return 'node'
 
-    async def _local_install_requirements(self, requirements: List[str]) -> tuple[bool, str]:
+    async def _local_install_requirements(
+            self, requirements: List[str]) -> tuple[bool, str]:
         """
         Install Python requirements locally using pip.
 
@@ -622,12 +623,8 @@ class SkillContainer:
 
         try:
             cmd = [
-                self._get_python_executable(),
-                '-m',
-                'pip',
-                'install',
-                '--quiet',
-                '--disable-pip-version-check',
+                self._get_python_executable(), '-m', 'pip', 'install',
+                '--quiet', '--disable-pip-version-check'
             ] + requirements
 
             stdout, stderr, exit_code = self._local_run_subprocess(cmd)
@@ -642,7 +639,9 @@ class SkillContainer:
             logger.error(f'Error installing requirements: {e}')
             return False, str(e)
 
-    async def _local_execute_python_code(self, code: str, input_spec: ExecutionInput) -> tuple[str, str, int]:
+    async def _local_execute_python_code(
+            self, code: str,
+            input_spec: ExecutionInput) -> tuple[str, str, int]:
         """
         Execute Python code locally.
 
@@ -655,7 +654,8 @@ class SkillContainer:
         """
         # Install requirements first if any
         if input_spec.requirements:
-            success, error = await self._local_install_requirements(input_spec.requirements)
+            success, error = await self._local_install_requirements(
+                input_spec.requirements)
             if not success:
                 return '', f'Failed to install requirements: {error}', -1
 
@@ -677,8 +677,10 @@ class SkillContainer:
             cwd = input_spec.working_dir if input_spec.working_dir else None
 
             stdout, stderr, exit_code = self._local_run_subprocess(
-                cmd, env=input_spec.env_vars, cwd=cwd, stdin_input=input_spec.stdin
-            )
+                cmd,
+                env=input_spec.env_vars,
+                cwd=cwd,
+                stdin_input=input_spec.stdin)
 
             # Keep script in scripts folder for logging/debugging
             return stdout, stderr, exit_code
@@ -686,7 +688,9 @@ class SkillContainer:
             logger.error(f'Local Python execution failed: {e}')
             raise
 
-    async def _local_execute_shell(self, command: str, input_spec: ExecutionInput) -> tuple[str, str, int]:
+    async def _local_execute_shell(
+            self, command: str,
+            input_spec: ExecutionInput) -> tuple[str, str, int]:
         """
         Execute shell command locally.
 
@@ -703,20 +707,30 @@ class SkillContainer:
         if platform.system() == 'Windows':
             # Windows: use set for environment
             env_cmds = [f'set {k}={v}' for k, v in input_spec.env_vars.items()]
-            full_cmd = ' && '.join(env_cmds + [command]) if env_cmds else command
+            full_cmd = ' && '.join(env_cmds
+                                   + [command]) if env_cmds else command
             cmd = shell_exec + [full_cmd]
         else:
             # Unix: use export
-            env_cmds = [f"export {k}='{v}'" for k, v in input_spec.env_vars.items()]
-            full_cmd = ' && '.join(env_cmds + [command]) if env_cmds else command
+            env_cmds = [
+                f"export {k}='{v}'" for k, v in input_spec.env_vars.items()
+            ]
+            full_cmd = ' && '.join(env_cmds
+                                   + [command]) if env_cmds else command
             cmd = shell_exec + [full_cmd]
 
         # Use working_dir from input_spec for proper resource access
         cwd = input_spec.working_dir if input_spec.working_dir else None
 
-        return self._local_run_subprocess(cmd, env=input_spec.env_vars, cwd=cwd, stdin_input=input_spec.stdin)
+        return self._local_run_subprocess(
+            cmd,
+            env=input_spec.env_vars,
+            cwd=cwd,
+            stdin_input=input_spec.stdin)
 
-    async def _local_execute_javascript(self, js_code: str, input_spec: ExecutionInput) -> tuple[str, str, int]:
+    async def _local_execute_javascript(
+            self, js_code: str,
+            input_spec: ExecutionInput) -> tuple[str, str, int]:
         """
         Execute JavaScript code locally via Node.js.
 
@@ -745,7 +759,11 @@ class SkillContainer:
             cwd = input_spec.working_dir if input_spec.working_dir else None
 
             # Keep script in scripts folder for logging/debugging
-            return self._local_run_subprocess(cmd, env=input_spec.env_vars, cwd=cwd, stdin_input=input_spec.stdin)
+            return self._local_run_subprocess(
+                cmd,
+                env=input_spec.env_vars,
+                cwd=cwd,
+                stdin_input=input_spec.stdin)
         except Exception as e:
             logger.error(f'Local JavaScript execution failed: {e}')
             raise
@@ -772,18 +790,16 @@ class SkillContainer:
         # Add working directory to sys.path for imports and change to it
         if input_spec.working_dir:
             work_dir = str(input_spec.working_dir)
-            lines.extend(
-                [
-                    '',
-                    '# Setup working directory for resource access (READ-ONLY for resources)',
-                    f'_skill_dir = {repr(work_dir)}',
-                    "os.environ['SKILL_DIR'] = _skill_dir",
-                    'SKILL_DIR = _skill_dir',
-                    'if _skill_dir not in sys.path:',
-                    '    sys.path.insert(0, _skill_dir)',
-                    'os.chdir(_skill_dir)',
-                ]
-            )
+            lines.extend([
+                '',
+                '# Setup working directory for resource access (READ-ONLY for resources)',
+                f'_skill_dir = {repr(work_dir)}',
+                "os.environ['SKILL_DIR'] = _skill_dir",
+                'SKILL_DIR = _skill_dir',
+                'if _skill_dir not in sys.path:',
+                '    sys.path.insert(0, _skill_dir)',
+                'os.chdir(_skill_dir)',
+            ])
 
         # Add custom env vars
         for key, value in input_spec.env_vars.items():
@@ -814,7 +830,8 @@ class SkillContainer:
         lines.append('')
         return '\n'.join(lines)
 
-    def _parse_sandbox_result(self, results: Dict[str, Any]) -> tuple[str, str, int]:
+    def _parse_sandbox_result(self,
+                              results: Dict[str, Any]) -> tuple[str, str, int]:
         """Parse sandbox execution results into stdout, stderr, exit_code."""
         stdout_parts = []
         stderr_parts = []
@@ -833,20 +850,22 @@ class SkillContainer:
         return '\n'.join(stdout_parts), '\n'.join(stderr_parts), exit_code
 
     async def _execute_in_sandbox(
-        self,
-        python_code: Union[str, List[str]] = None,
-        shell_command: Union[str, List[str]] = None,
-        requirements: List[str] = None,
-    ) -> Dict[str, Any]:
+            self,
+            python_code: Union[str, List[str]] = None,
+            shell_command: Union[str, List[str]] = None,
+            requirements: List[str] = None) -> Dict[str, Any]:
         """Execute code in EnclaveSandbox."""
         sandbox = self._get_sandbox()
         return await sandbox.async_execute(
-            python_code=python_code, shell_command=shell_command, requirements=requirements
-        )
+            python_code=python_code,
+            shell_command=shell_command,
+            requirements=requirements)
 
     async def execute_python_script(
-        self, script_path: Union[str, Path], skill_id: str = 'unknown', input_spec: ExecutionInput = None
-    ) -> ExecutionOutput:
+            self,
+            script_path: Union[str, Path],
+            skill_id: str = 'unknown',
+            input_spec: ExecutionInput = None) -> ExecutionOutput:
         """
         Execute a Python script file.
 
@@ -867,8 +886,7 @@ class SkillContainer:
             skill_id=skill_id,
             executor_type=ExecutorType.PYTHON_SCRIPT,
             input_spec=input_spec,
-            script_path=str(script_path),
-        )
+            script_path=str(script_path))
 
         record.start_time = datetime.now()
         record.status = ExecutionStatus.RUNNING
@@ -879,11 +897,13 @@ class SkillContainer:
                 code = f.read()
 
             # Security check (stricter for local mode)
-            is_safe, reason = self._security_check(code, is_local=not self.use_sandbox)
+            is_safe, reason = self._security_check(
+                code, is_local=not self.use_sandbox)
             if not is_safe:
                 record.status = ExecutionStatus.SECURITY_BLOCKED
                 record.error_message = reason
-                output = ExecutionOutput(stderr=f'Security check failed: {reason}', exit_code=-1)
+                output = ExecutionOutput(
+                    stderr=f'Security check failed: {reason}', exit_code=-1)
                 record.end_time = datetime.now()
                 record.output_spec = output
                 self.spec.add_record(record)
@@ -896,11 +916,14 @@ class SkillContainer:
                 env_setup = self._generate_env_setup(input_spec, {})
                 full_code = env_setup + '\n' + code
 
-                results = await self._execute_in_sandbox(python_code=full_code, requirements=input_spec.requirements)
+                results = await self._execute_in_sandbox(
+                    python_code=full_code,
+                    requirements=input_spec.requirements)
                 stdout, stderr, exit_code = self._parse_sandbox_result(results)
             else:
                 # Local mode: execute directly
-                stdout, stderr, exit_code = await self._local_execute_python_code(code, input_spec)
+                stdout, stderr, exit_code = await self._local_execute_python_code(
+                    code, input_spec)
 
             end_time = datetime.now()
 
@@ -909,10 +932,11 @@ class SkillContainer:
                 stderr=stderr,
                 exit_code=exit_code,
                 output_files=self._collect_output_files(),
-                duration_ms=(end_time - start_time).total_seconds() * 1000,
-            )
+                duration_ms=(end_time - start_time).total_seconds() * 1000)
 
-            record.status = ExecutionStatus.SUCCESS if exit_code == 0 else ExecutionStatus.FAILED
+            record.status = (
+                ExecutionStatus.SUCCESS
+                if exit_code == 0 else ExecutionStatus.FAILED)
 
         except Exception as e:
             output = ExecutionOutput(stderr=str(e), exit_code=-1)
@@ -926,8 +950,10 @@ class SkillContainer:
         return output
 
     async def execute_python_code(
-        self, code: str, skill_id: str = 'unknown', input_spec: ExecutionInput = None
-    ) -> ExecutionOutput:
+            self,
+            code: str,
+            skill_id: str = 'unknown',
+            input_spec: ExecutionInput = None) -> ExecutionOutput:
         """
         Execute Python code string.
 
@@ -944,19 +970,23 @@ class SkillContainer:
         input_spec = input_spec or ExecutionInput()
 
         record = self._create_record(
-            skill_id=skill_id, executor_type=ExecutorType.PYTHON_CODE, input_spec=input_spec, script_path='<inline>'
-        )
+            skill_id=skill_id,
+            executor_type=ExecutorType.PYTHON_CODE,
+            input_spec=input_spec,
+            script_path='<inline>')
 
         record.start_time = datetime.now()
         record.status = ExecutionStatus.RUNNING
 
         try:
             # Security check (stricter for local mode)
-            is_safe, reason = self._security_check(code, is_local=not self.use_sandbox)
+            is_safe, reason = self._security_check(
+                code, is_local=not self.use_sandbox)
             if not is_safe:
                 record.status = ExecutionStatus.SECURITY_BLOCKED
                 record.error_message = reason
-                output = ExecutionOutput(stderr=f'Security check failed: {reason}', exit_code=-1)
+                output = ExecutionOutput(
+                    stderr=f'Security check failed: {reason}', exit_code=-1)
                 record.end_time = datetime.now()
                 record.output_spec = output
                 self.spec.add_record(record)
@@ -969,11 +999,14 @@ class SkillContainer:
                 env_setup = self._generate_env_setup(input_spec, {})
                 full_code = env_setup + '\n' + code
 
-                results = await self._execute_in_sandbox(python_code=full_code, requirements=input_spec.requirements)
+                results = await self._execute_in_sandbox(
+                    python_code=full_code,
+                    requirements=input_spec.requirements)
                 stdout, stderr, exit_code = self._parse_sandbox_result(results)
             else:
                 # Local mode
-                stdout, stderr, exit_code = await self._local_execute_python_code(code, input_spec)
+                stdout, stderr, exit_code = await self._local_execute_python_code(
+                    code, input_spec)
 
             end_time = datetime.now()
 
@@ -982,10 +1015,11 @@ class SkillContainer:
                 stderr=stderr,
                 exit_code=exit_code,
                 output_files=self._collect_output_files(),
-                duration_ms=(end_time - start_time).total_seconds() * 1000,
-            )
+                duration_ms=(end_time - start_time).total_seconds() * 1000)
 
-            record.status = ExecutionStatus.SUCCESS if exit_code == 0 else ExecutionStatus.FAILED
+            record.status = (
+                ExecutionStatus.SUCCESS
+                if exit_code == 0 else ExecutionStatus.FAILED)
 
         except Exception as e:
             output = ExecutionOutput(stderr=str(e), exit_code=-1)
@@ -998,7 +1032,8 @@ class SkillContainer:
         self.spec.add_record(record)
         return output
 
-    def _generate_env_setup(self, input_spec: ExecutionInput, sandbox_files: Dict[str, str]) -> str:
+    def _generate_env_setup(self, input_spec: ExecutionInput,
+                            sandbox_files: Dict[str, str]) -> str:
         """Generate Python code to setup environment variables and paths."""
         sandbox_logs_dir = f'{self.SANDBOX_ROOT}/logs'
         lines = [
@@ -1036,8 +1071,10 @@ class SkillContainer:
         return '\n'.join(lines)
 
     def execute_python_function(
-        self, func: Callable, skill_id: str = 'unknown', input_spec: ExecutionInput = None
-    ) -> ExecutionOutput:
+            self,
+            func: Callable,
+            skill_id: str = 'unknown',
+            input_spec: ExecutionInput = None) -> ExecutionOutput:
         """
         Execute a Python function directly (local execution, not sandboxed).
 
@@ -1058,8 +1095,7 @@ class SkillContainer:
             skill_id=skill_id,
             executor_type=ExecutorType.PYTHON_FUNCTION,
             input_spec=input_spec,
-            function_name=func.__name__,
-        )
+            function_name=func.__name__)
         record.sandbox_used = False  # Local execution
 
         record.start_time = datetime.now()
@@ -1078,8 +1114,7 @@ class SkillContainer:
                 return_value=return_value,
                 exit_code=0,
                 output_files=self._collect_output_files(),
-                duration_ms=(end_time - start_time).total_seconds() * 1000,
-            )
+                duration_ms=(end_time - start_time).total_seconds() * 1000)
 
             record.status = ExecutionStatus.SUCCESS
 
@@ -1095,8 +1130,10 @@ class SkillContainer:
         return output
 
     async def execute_shell(
-        self, command: Union[str, List[str]], skill_id: str = 'unknown', input_spec: ExecutionInput = None
-    ) -> ExecutionOutput:
+            self,
+            command: Union[str, List[str]],
+            skill_id: str = 'unknown',
+            input_spec: ExecutionInput = None) -> ExecutionOutput:
         """
         Execute a shell command.
 
@@ -1115,19 +1152,23 @@ class SkillContainer:
         cmd_str = command if isinstance(command, str) else ' && '.join(command)
 
         record = self._create_record(
-            skill_id=skill_id, executor_type=ExecutorType.SHELL, input_spec=input_spec, script_path=cmd_str[:200]
-        )
+            skill_id=skill_id,
+            executor_type=ExecutorType.SHELL,
+            input_spec=input_spec,
+            script_path=cmd_str[:200])
 
         record.start_time = datetime.now()
         record.status = ExecutionStatus.RUNNING
 
         try:
             # Security check (stricter for local mode)
-            is_safe, reason = self._security_check(cmd_str, is_local=not self.use_sandbox)
+            is_safe, reason = self._security_check(
+                cmd_str, is_local=not self.use_sandbox)
             if not is_safe:
                 record.status = ExecutionStatus.SECURITY_BLOCKED
                 record.error_message = reason
-                output = ExecutionOutput(stderr=f'Security check failed: {reason}', exit_code=-1)
+                output = ExecutionOutput(
+                    stderr=f'Security check failed: {reason}', exit_code=-1)
                 record.end_time = datetime.now()
                 record.output_spec = output
                 self.spec.add_record(record)
@@ -1146,11 +1187,13 @@ class SkillContainer:
 
                 full_cmd = ' && '.join(env_exports + [cmd_str])
 
-                results = await self._execute_in_sandbox(shell_command=full_cmd)
+                results = await self._execute_in_sandbox(shell_command=full_cmd
+                                                         )
                 stdout, stderr, exit_code = self._parse_sandbox_result(results)
             else:
                 # Local mode
-                stdout, stderr, exit_code = await self._local_execute_shell(cmd_str, input_spec)
+                stdout, stderr, exit_code = await self._local_execute_shell(
+                    cmd_str, input_spec)
 
             end_time = datetime.now()
 
@@ -1159,10 +1202,11 @@ class SkillContainer:
                 stderr=stderr,
                 exit_code=exit_code,
                 output_files=self._collect_output_files(),
-                duration_ms=(end_time - start_time).total_seconds() * 1000,
-            )
+                duration_ms=(end_time - start_time).total_seconds() * 1000)
 
-            record.status = ExecutionStatus.SUCCESS if exit_code == 0 else ExecutionStatus.FAILED
+            record.status = (
+                ExecutionStatus.SUCCESS
+                if exit_code == 0 else ExecutionStatus.FAILED)
 
         except Exception as e:
             output = ExecutionOutput(stderr=str(e), exit_code=-1)
@@ -1175,14 +1219,12 @@ class SkillContainer:
         self.spec.add_record(record)
         return output
 
-    async def execute_javascript(
-        self,
-        script_path: Union[str, Path] = None,
-        code: str = None,
-        skill_id: str = 'unknown',
-        input_spec: ExecutionInput = None,
-        runtime: str = 'node',
-    ) -> ExecutionOutput:
+    async def execute_javascript(self,
+                                 script_path: Union[str, Path] = None,
+                                 code: str = None,
+                                 skill_id: str = 'unknown',
+                                 input_spec: ExecutionInput = None,
+                                 runtime: str = 'node') -> ExecutionOutput:
         """
         Execute JavaScript code via Node.js.
 
@@ -1204,8 +1246,7 @@ class SkillContainer:
             skill_id=skill_id,
             executor_type=ExecutorType.JAVASCRIPT,
             input_spec=input_spec,
-            script_path=str(script_path) if script_path else '<inline>',
-        )
+            script_path=str(script_path) if script_path else '<inline>')
 
         record.start_time = datetime.now()
         record.status = ExecutionStatus.RUNNING
@@ -1221,11 +1262,13 @@ class SkillContainer:
                 raise ValueError('Either script_path or code must be provided')
 
             # Security check (stricter for local mode)
-            is_safe, reason = self._security_check(js_code, is_local=not self.use_sandbox)
+            is_safe, reason = self._security_check(
+                js_code, is_local=not self.use_sandbox)
             if not is_safe:
                 record.status = ExecutionStatus.SECURITY_BLOCKED
                 record.error_message = reason
-                output = ExecutionOutput(stderr=f'Security check failed: {reason}', exit_code=-1)
+                output = ExecutionOutput(
+                    stderr=f'Security check failed: {reason}', exit_code=-1)
                 record.end_time = datetime.now()
                 record.output_spec = output
                 self.spec.add_record(record)
@@ -1250,11 +1293,13 @@ class SkillContainer:
                 args_str = ' '.join(f'"{arg}"' for arg in input_spec.args)
                 shell_cmd = f'{runtime} {sandbox_js_path} {args_str}'
 
-                results = await self._execute_in_sandbox(shell_command=shell_cmd)
+                results = await self._execute_in_sandbox(
+                    shell_command=shell_cmd)
                 stdout, stderr, exit_code = self._parse_sandbox_result(results)
             else:
                 # Local mode
-                stdout, stderr, exit_code = await self._local_execute_javascript(js_code, input_spec)
+                stdout, stderr, exit_code = await self._local_execute_javascript(
+                    js_code, input_spec)
 
             end_time = datetime.now()
 
@@ -1263,10 +1308,11 @@ class SkillContainer:
                 stderr=stderr,
                 exit_code=exit_code,
                 output_files=self._collect_output_files(),
-                duration_ms=(end_time - start_time).total_seconds() * 1000,
-            )
+                duration_ms=(end_time - start_time).total_seconds() * 1000)
 
-            record.status = ExecutionStatus.SUCCESS if exit_code == 0 else ExecutionStatus.FAILED
+            record.status = (
+                ExecutionStatus.SUCCESS
+                if exit_code == 0 else ExecutionStatus.FAILED)
 
         except Exception as e:
             output = ExecutionOutput(stderr=str(e), exit_code=-1)
@@ -1279,7 +1325,8 @@ class SkillContainer:
         self.spec.add_record(record)
         return output
 
-    def _generate_js_env_setup(self, input_spec: ExecutionInput, sandbox_files: Dict[str, str]) -> str:
+    def _generate_js_env_setup(self, input_spec: ExecutionInput,
+                               sandbox_files: Dict[str, str]) -> str:
         """Generate JavaScript code to setup environment."""
         lines = [
             '// Environment setup',
@@ -1293,17 +1340,15 @@ class SkillContainer:
         lines.append('')
         return '\n'.join(lines)
 
-    async def execute(
-        self,
-        executor_type: ExecutorType,
-        skill_id: str = 'unknown',
-        script_path: Union[str, Path] = None,
-        func: Callable = None,
-        command: Union[str, List[str]] = None,
-        code: str = None,
-        input_spec: ExecutionInput = None,
-        **kwargs,
-    ) -> ExecutionOutput:
+    async def execute(self,
+                      executor_type: ExecutorType,
+                      skill_id: str = 'unknown',
+                      script_path: Union[str, Path] = None,
+                      func: Callable = None,
+                      command: Union[str, List[str]] = None,
+                      code: str = None,
+                      input_spec: ExecutionInput = None,
+                      **kwargs) -> ExecutionOutput:
         """
         Unified async execution interface.
 
@@ -1321,25 +1366,40 @@ class SkillContainer:
             ExecutionOutput with results.
         """
         if executor_type == ExecutorType.PYTHON_SCRIPT:
-            return await self.execute_python_script(script_path=script_path, skill_id=skill_id, input_spec=input_spec)
+            return await self.execute_python_script(
+                script_path=script_path,
+                skill_id=skill_id,
+                input_spec=input_spec)
         elif executor_type == ExecutorType.PYTHON_CODE:
-            return await self.execute_python_code(code=code, skill_id=skill_id, input_spec=input_spec)
+            return await self.execute_python_code(
+                code=code, skill_id=skill_id, input_spec=input_spec)
         elif executor_type == ExecutorType.PYTHON_FUNCTION:
-            return self.execute_python_function(func=func, skill_id=skill_id, input_spec=input_spec)
+            return self.execute_python_function(
+                func=func, skill_id=skill_id, input_spec=input_spec)
         elif executor_type == ExecutorType.SHELL:
-            return await self.execute_shell(command=command, skill_id=skill_id, input_spec=input_spec)
+            return await self.execute_shell(
+                command=command, skill_id=skill_id, input_spec=input_spec)
         elif executor_type == ExecutorType.JAVASCRIPT:
             return await self.execute_javascript(
-                script_path=script_path, code=code, skill_id=skill_id, input_spec=input_spec, **kwargs
-            )
+                script_path=script_path,
+                code=code,
+                skill_id=skill_id,
+                input_spec=input_spec,
+                **kwargs)
         else:
             raise ValueError(f'Unsupported executor type: {executor_type}')
 
-    def execute_sync(self, executor_type: ExecutorType, skill_id: str = 'unknown', **kwargs) -> ExecutionOutput:
+    def execute_sync(self,
+                     executor_type: ExecutorType,
+                     skill_id: str = 'unknown',
+                     **kwargs) -> ExecutionOutput:
         """Synchronous wrapper for execute()."""
         return asyncio.run(self.execute(executor_type, skill_id, **kwargs))
 
-    def link_skills(self, upstream_skill_id: str, downstream_input_key: str, output_key: str = None) -> Optional[Any]:
+    def link_skills(self,
+                    upstream_skill_id: str,
+                    downstream_input_key: str,
+                    output_key: str = None) -> Optional[Any]:
         """
         Link output from upstream skill to downstream skill input.
 

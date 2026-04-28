@@ -1,13 +1,14 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 from typing import Any, AsyncGenerator, List, Union
 
-from omegaconf import DictConfig
-
 from ms_agent.agent.llm_agent import LLMAgent
 from ms_agent.llm.utils import Message
 from ms_agent.utils import get_logger
 from ms_agent.utils.constants import DEFAULT_TAG
-from ms_agent.utils.stats import append_stats, build_timing_record, get_stats_path, monotonic, now_iso, summarize_usage
+from ms_agent.utils.stats import (append_stats, build_timing_record,
+                                  get_stats_path, monotonic, now_iso,
+                                  summarize_usage)
+from omegaconf import DictConfig
 
 logger = get_logger()
 
@@ -17,12 +18,15 @@ class ResearcherAgent(LLMAgent):
     Researcher Agent that conducts deep research tasks using LLMs and various tools.
     """
 
-    def __init__(
-        self, config: DictConfig = DictConfig({}), tag: str = DEFAULT_TAG, trust_remote_code: bool = False, **kwargs
-    ):
+    def __init__(self,
+                 config: DictConfig = DictConfig({}),
+                 tag: str = DEFAULT_TAG,
+                 trust_remote_code: bool = False,
+                 **kwargs):
         super().__init__(config, tag, trust_remote_code, **kwargs)
 
-    async def run_loop(self, messages: Union[List[Message], str], **kwargs) -> AsyncGenerator[Any, Any]:
+    async def run_loop(self, messages: Union[List[Message], str],
+                       **kwargs) -> AsyncGenerator[Any, Any]:
         start_ts = now_iso()
         start_time = monotonic()
         last_messages: List[Message] = []
@@ -62,7 +66,7 @@ class ResearcherAgent(LLMAgent):
         await super().on_task_end(messages)
         try:
             from ms_agent.tools.search.websearch_tool import WebSearchTool
-
             WebSearchTool.log_global_summarization_usage()
         except Exception as exc:
-            logger.warning(f'Failed to log web search summarization usage: {exc}')
+            logger.warning(
+                f'Failed to log web search summarization usage: {exc}')

@@ -3,11 +3,10 @@ import os
 from abc import ABC, abstractmethod
 from typing import Any, AsyncGenerator, List, Tuple, Union
 
-from omegaconf import DictConfig
-
 from ms_agent.llm import Message
 from ms_agent.utils import read_history, save_history
 from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR, DEFAULT_RETRY_COUNT
+from omegaconf import DictConfig
 
 
 class Agent(ABC):
@@ -19,31 +18,36 @@ class Agent(ABC):
 
     retry_count = int(os.environ.get('AGENT_RETRY_COUNT', DEFAULT_RETRY_COUNT))
 
-    def __init__(self, config: DictConfig, tag: str, trust_remote_code: bool = False, **kwargs):
+    def __init__(self,
+                 config: DictConfig,
+                 tag: str,
+                 trust_remote_code: bool = False,
+                 **kwargs):
         """
-        Base class for all agents. Provides core functionality such as configuration loading,
-        lifecycle handling via external code, and defining the interface for agent execution.
+         Base class for all agents. Provides core functionality such as configuration loading,
+         lifecycle handling via external code, and defining the interface for agent execution.
 
-        The agent can be initialized either with a config object directly or by loading from a config directory or ID.
-        If external code (e.g., custom handlers) is involved, the agent must be explicitly trusted via
-        `trust_remote_code=True`.
+         The agent can be initialized either with a config object directly or by loading from a config directory or ID.
+         If external code (e.g., custom handlers) is involved, the agent must be explicitly trusted via
+         `trust_remote_code=True`.
 
-        Base class for all agents. Make sure your custom agents are derived from this class.
-        Args:
-            config (DictConfig): Pre-loaded configuration object.
-            tag (str): A custom tag for identifying this agent run.
-            trust_remote_code (bool): Whether to allow loading of external code (e.g., custom handler modules).
-        """
+         Base class for all agents. Make sure your custom agents are derived from this class.
+         Args:
+             config (DictConfig): Pre-loaded configuration object.
+             tag (str): A custom tag for identifying this agent run.
+             trust_remote_code (bool): Whether to allow loading of external code (e.g., custom handler modules).
+         """
         self.config = config
         self.tag = tag
         self.trust_remote_code = trust_remote_code
         self.config.tag = tag
         self.config.trust_remote_code = trust_remote_code
-        self.output_dir = getattr(self.config, 'output_dir', DEFAULT_OUTPUT_DIR)
+        self.output_dir = getattr(self.config, 'output_dir',
+                                  DEFAULT_OUTPUT_DIR)
 
     @abstractmethod
     async def run(
-        self, inputs: Union[str, List[Message]], **kwargs
+            self, inputs: Union[str, List[Message]], **kwargs
     ) -> Union[List[Message], AsyncGenerator[List[Message], Any]]:
         """
         Main method to execute the agent.
@@ -61,7 +65,8 @@ class Agent(ABC):
         """
         raise NotImplementedError()
 
-    def read_history(self, messages: Any, **kwargs) -> Tuple[DictConfig, List[Message]]:
+    def read_history(self, messages: Any,
+                     **kwargs) -> Tuple[DictConfig, List[Message]]:
         return read_history(self.output_dir, self.tag)
 
     def save_history(self, messages: Any, **kwargs):
@@ -72,7 +77,6 @@ class Agent(ABC):
     def list_snapshots(self) -> list:
         """Return snapshots for this agent's output_dir, most recent first."""
         from ms_agent.utils.snapshot import list_snapshots
-
         return list_snapshots(self.output_dir)
 
     def rollback(self, commit_hash: str) -> bool:

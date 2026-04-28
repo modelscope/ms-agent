@@ -1,10 +1,11 @@
 # flake8: noqa
 import enum
-import json
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, Generic, List, Optional, TypeVar
+
+import json
 
 if TYPE_CHECKING:
     from ms_agent.llm.utils import Tool
@@ -62,7 +63,10 @@ class SearchResponse(Generic[T]):
 class SearchRequest(ABC):
     """Abstract base class for search requests."""
 
-    def __init__(self, query: str, num_results: Optional[int] = 10, **kwargs: Any):
+    def __init__(self,
+                 query: str,
+                 num_results: Optional[int] = 10,
+                 **kwargs: Any):
         """
         Initialize SearchRequest with search parameters.
 
@@ -92,7 +96,10 @@ class SearchRequest(ABC):
 class SearchResult(ABC):
     """Base class for search results."""
 
-    def __init__(self, query: str, arguments: Optional[Dict[str, Any]] = None, response: Any = None):
+    def __init__(self,
+                 query: str,
+                 arguments: Optional[Dict[str, Any]] = None,
+                 response: Any = None):
         """
         Initialize SearchResult.
 
@@ -130,17 +137,15 @@ class SearchResult(ABC):
 
         res_list: List[Dict[str, Any]] = []
         for res in self.response.results:
-            res_list.append(
-                {
-                    'url': res.url,
-                    'id': res.id,
-                    'title': res.title,
-                    'highlights': res.highlights,
-                    'highlight_scores': res.highlight_scores,
-                    'summary': res.summary,
-                    'markdown': res.markdown,
-                }
-            )
+            res_list.append({
+                'url': res.url,
+                'id': res.id,
+                'title': res.title,
+                'highlights': res.highlights,
+                'highlight_scores': res.highlight_scores,
+                'summary': res.summary,
+                'markdown': res.markdown,
+            })
 
         return res_list
 
@@ -196,7 +201,6 @@ class SearchEngine(ABC):
             Tool definition dict
         """
         from ms_agent.llm.utils import Tool
-
         return Tool(
             tool_name=cls.get_tool_name(),
             server_name=server_name,
@@ -231,4 +235,5 @@ class SearchEngine(ABC):
         Returns:
             SearchRequest instance
         """
-        raise NotImplementedError(f'{cls.__name__} must implement build_request_from_args')
+        raise NotImplementedError(
+            f'{cls.__name__} must implement build_request_from_args')

@@ -6,6 +6,7 @@ from ms_agent.llm import Message
 
 
 class ArchitectureAgent(LLMAgent):
+
     async def run(self, messages, **kwargs):
         with open(os.path.join(self.output_dir, 'topic.txt'), 'r') as f:
             topic = f.read()

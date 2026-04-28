@@ -2,10 +2,9 @@
 # !/usr/bin/env python
 import os
 import shutil
-from typing import List
-
 from setuptools import find_packages, setup
 from setuptools.command.build_py import build_py as _build_py
+from typing import List
 
 
 def readme():
@@ -42,7 +41,6 @@ def parse_requirements(fname='requirements.txt', with_version=True):
     import re
     import sys
     from os.path import exists
-
     require_fpath = fname
 
     def parse_line(line):
@@ -72,7 +70,8 @@ def parse_requirements(fname='requirements.txt', with_version=True):
                     if ';' in rest:
                         # Handle platform specific dependencies
                         # http://setuptools.readthedocs.io/en/latest/setuptools.html#declaring-platform-specific-dependencies
-                        version, platform_deps = map(str.strip, rest.split(';'))
+                        version, platform_deps = map(str.strip,
+                                                     rest.split(';'))
                         info['platform_deps'] = platform_deps
                     else:
                         version = rest  # NOQA
@@ -86,7 +85,8 @@ def parse_requirements(fname='requirements.txt', with_version=True):
                 if line.startswith('http'):
                     print('skip http requirements %s' % line)
                     continue
-                if line and not line.startswith('#') and not line.startswith('--'):
+                if line and not line.startswith('#') and not line.startswith(
+                        '--'):
                     for info in parse_line(line):
                         yield info
                 elif line and line.startswith('--find-links'):
@@ -121,6 +121,7 @@ def parse_requirements(fname='requirements.txt', with_version=True):
 
 
 class build_py(_build_py):
+
     def run(self):
         super().run()
 
@@ -146,7 +147,8 @@ class build_py(_build_py):
         webui_src = os.path.join(repo_root, 'webui')
 
         if not os.path.isdir(webui_src):
-            print('Warning: webui directory not found, skipping webui packaging')
+            print(
+                'Warning: webui directory not found, skipping webui packaging')
             return
 
         frontend_src = os.path.join(webui_src, 'frontend')
@@ -154,11 +156,17 @@ class build_py(_build_py):
 
         # Check if npm is available
         try:
-            subprocess.run(['npm', '--version'], capture_output=True, check=True, timeout=5)
+            subprocess.run(['npm', '--version'],
+                           capture_output=True,
+                           check=True,
+                           timeout=5)
             npm_available = True
-        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        except (subprocess.CalledProcessError, FileNotFoundError,
+                subprocess.TimeoutExpired):
             npm_available = False
-            print('Warning: npm not found, cannot build frontend. WebUI may not work properly.')
+            print(
+                'Warning: npm not found, cannot build frontend. WebUI may not work properly.'
+            )
 
         # Build frontend if npm is available
         if npm_available and os.path.isdir(frontend_src):
@@ -169,16 +177,24 @@ class build_py(_build_py):
             if not os.path.exists(node_modules):
                 print('Installing frontend dependencies...')
                 try:
-                    subprocess.run(['npm', 'install'], cwd=frontend_src, check=True, timeout=300)
-                except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+                    subprocess.run(['npm', 'install'],
+                                   cwd=frontend_src,
+                                   check=True,
+                                   timeout=300)
+                except (subprocess.CalledProcessError,
+                        subprocess.TimeoutExpired) as e:
                     print(f'Warning: npm install failed: {e}')
                     return
 
             # Build frontend
             try:
-                subprocess.run(['npm', 'run', 'build'], cwd=frontend_src, check=True, timeout=300)
+                subprocess.run(['npm', 'run', 'build'],
+                               cwd=frontend_src,
+                               check=True,
+                               timeout=300)
                 print('Frontend built successfully')
-            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            except (subprocess.CalledProcessError,
+                    subprocess.TimeoutExpired) as e:
                 print(f'Warning: npm build failed: {e}')
                 return
 
@@ -203,17 +219,23 @@ class build_py(_build_py):
             shutil.copytree(frontend_dist_src, frontend_dst)
             print(f'Copied frontend dist to {frontend_dst}')
         else:
-            print('Warning: frontend dist not found, WebUI may not work in production mode')
+            print(
+                'Warning: frontend dist not found, WebUI may not work in production mode'
+            )
 
 
 if __name__ == '__main__':
-    print('Usage: `python setup.py sdist bdist_wheel` or `pip install .[framework]` from source code')
+    print(
+        'Usage: `python setup.py sdist bdist_wheel` or `pip install .[framework]` from source code'
+    )
 
-    install_requires, deps_link = parse_requirements('requirements/framework.txt')
+    install_requires, deps_link = parse_requirements(
+        'requirements/framework.txt')
 
     extra_requires = {}
     all_requires = []
-    extra_requires['research'], _ = parse_requirements('requirements/research.txt')
+    extra_requires['research'], _ = parse_requirements(
+        'requirements/research.txt')
     extra_requires['code'], _ = parse_requirements('requirements/code.txt')
     extra_requires['webui'], _ = parse_requirements('requirements/webui.txt')
     all_requires.extend(install_requires)
@@ -225,7 +247,8 @@ if __name__ == '__main__':
     setup(
         name='ms-agent',
         version=get_version(),
-        description='MS-Agent: Lightweight Framework for Empowering Agents with Autonomous Exploration',
+        description=
+        'MS-Agent: Lightweight Framework for Empowering Agents with Autonomous Exploration',
         long_description=readme(),
         long_description_content_type='text/markdown',
         author='The ModelScope teams',
@@ -257,7 +280,8 @@ if __name__ == '__main__':
         license='Apache License 2.0',
         install_requires=install_requires,
         extras_require=extra_requires,
-        entry_points={'console_scripts': ['ms-agent=ms_agent.cli.cli:run_cmd']},
+        entry_points={
+            'console_scripts': ['ms-agent=ms_agent.cli.cli:run_cmd']
+        },
         dependency_links=deps_link,
-        zip_safe=False,
-    )
+        zip_safe=False)

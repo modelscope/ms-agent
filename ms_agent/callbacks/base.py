@@ -1,17 +1,18 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 from typing import List
 
-from omegaconf import DictConfig
-
 from ms_agent.agent.runtime import Runtime
 from ms_agent.llm.utils import Message
+from omegaconf import DictConfig
 
 
 class Callback:
+
     def __init__(self, config: DictConfig):
         self.config = config
 
-    async def on_task_begin(self, runtime: Runtime, messages: List[Message]) -> None:
+    async def on_task_begin(self, runtime: Runtime,
+                            messages: List[Message]) -> None:
         """Called when a task begins.
 
         Args:
@@ -23,7 +24,8 @@ class Callback:
         """
         pass
 
-    async def on_generate_response(self, runtime: Runtime, messages: List[Message]):
+    async def on_generate_response(self, runtime: Runtime,
+                                   messages: List[Message]):
         """Called before LLM generates response.
 
         Args:

@@ -1,11 +1,11 @@
 # flake8: noqa
 # yapf: disable
 import copy
-import json
 import os
 import re
 from typing import Any, Dict, List, Optional, Union
 
+import json
 from ms_agent.llm.openai import OpenAIChat
 from ms_agent.utils import get_logger
 
@@ -484,4 +484,4 @@ class ResearchWorkflow:
         # Dump report to markdown file
         with open(self.workdir_structure['report_md'], 'w', encoding='utf-8') as f_report:
             f_report.write(resp_content)
-        logger.info(f'Report saved to {self.workdir_structure['report_md']}')
+        logger.info(f'Report saved to {self.workdir_structure["report_md"]}')

@@ -33,7 +33,11 @@ class RAG(ABC):
         pass
 
     @abstractmethod
-    async def retrieve(self, query: str, limit: int = 5, score_threshold: float = 0.7, **filters) -> List[Any]:
+    async def retrieve(self,
+                       query: str,
+                       limit: int = 5,
+                       score_threshold: float = 0.7,
+                       **filters) -> List[Any]:
         """Retrieve documents
 
         Args:

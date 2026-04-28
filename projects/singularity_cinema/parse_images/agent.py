@@ -1,39 +1,45 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import base64
 import hashlib
-import json
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from urllib.request import urlretrieve
 
-from omegaconf import DictConfig
-from PIL import Image
-
+import json
 from ms_agent.agent import CodeAgent
 from ms_agent.llm import LLM, Message
 from ms_agent.llm.openai_llm import OpenAI
 from ms_agent.utils import get_logger
+from omegaconf import DictConfig
+from PIL import Image
 
 logger = get_logger()
 
 
 class ParseImages(CodeAgent):
-    def __init__(self, config: DictConfig, tag: str, trust_remote_code: bool = False, **kwargs):
+
+    def __init__(self,
+                 config: DictConfig,
+                 tag: str,
+                 trust_remote_code: bool = False,
+                 **kwargs):
         super().__init__(config, tag, trust_remote_code, **kwargs)
         self.work_dir = getattr(self.config, 'output_dir', 'output')
         _config = deepcopy(config)
         delattr(_config, 'llm')
         _config.llm = DictConfig({})
         for key, value in _config.mllm.items():
-            key = key[len('mllm_') :]
+            key = key[len('mllm_'):]
             setattr(_config.llm, key, value)
         _config.generation_config = DictConfig({'temperature': 0.3})
         if 'extra_body' in config.generation_config:
             _config.generation_config.extra_body = config.generation_config.extra_body
         self.mllm: OpenAI = LLM.from_config(_config)
-        logger.info(f"Using MLLM for image parsing: {getattr(self.mllm, 'model', None)}")
+        logger.info(
+            f"Using MLLM for image parsing: {getattr(self.mllm, 'model', None)}"
+        )
         self.image_dir = os.path.join(self.work_dir, 'images')
         os.makedirs(self.image_dir, exist_ok=True)
 
@@ -124,18 +130,22 @@ class ParseImages(CodeAgent):
             image_data = image_file.read()
             base64_image = base64.b64encode(image_data).decode('utf-8')
 
-        _content = [
-            {
-                'type': 'text',
-                'text': (
-                    'Describe this image in under 50 words. Be objective and accurate. For charts/graphs, '
-                    'analyze axis labels and data to explain what the chart shows and its purpose, '
-                    'not just the chart type. Provide enough detail to distinguish it from other images.'
-                    'Return only the requested image description. Do not add any other content.'
-                ),
-            },
-            {'type': 'image_url', 'image_url': {'url': f'data:image/png;base64,{base64_image}', 'detail': 'high'}},
-        ]
+        _content = [{
+            'type':
+            'text',
+            'text':
+            ('Describe this image in under 50 words. Be objective and accurate. For charts/graphs, '
+             'analyze axis labels and data to explain what the chart shows and its purpose, '
+             'not just the chart type. Provide enough detail to distinguish it from other images.'
+             'Return only the requested image description. Do not add any other content.'
+             )
+        }, {
+            'type': 'image_url',
+            'image_url': {
+                'url': f'data:image/png;base64,{base64_image}',
+                'detail': 'high'
+            }
+        }]
 
         messages = [
             Message(role='user', content=_content),

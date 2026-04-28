@@ -2,7 +2,9 @@ import re
 from typing import List, Optional, Tuple
 
 
-def extract_code_blocks(text: str, target_filename: Optional[str] = None) -> Tuple[List, str]:
+def extract_code_blocks(text: str,
+                        target_filename: Optional[str] = None
+                        ) -> Tuple[List, str]:
     """Extract code blocks from the given text.
 
     ```py:a.py

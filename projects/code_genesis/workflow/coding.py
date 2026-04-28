@@ -1,6 +1,5 @@
 import asyncio
 import dataclasses
-import json
 import os
 import re
 import shutil
@@ -9,17 +8,18 @@ from copy import deepcopy
 from pathlib import Path
 from typing import List, Optional, Set
 
-from omegaconf import DictConfig
-
+import json
 from ms_agent import LLMAgent
 from ms_agent.agent import CodeAgent
 from ms_agent.llm import Message
 from ms_agent.memory.condenser.code_condenser import CodeCondenser
 from ms_agent.tools.code_server import LSPCodeServer
 from ms_agent.utils import get_logger
-from ms_agent.utils.constants import DEFAULT_INDEX_DIR, DEFAULT_LOCK_DIR, DEFAULT_TAG
+from ms_agent.utils.constants import (DEFAULT_INDEX_DIR, DEFAULT_LOCK_DIR,
+                                      DEFAULT_TAG)
 from ms_agent.utils.parser_utils import ImportInfo, parse_imports
 from ms_agent.utils.utils import extract_code_blocks, file_lock
+from omegaconf import DictConfig
 
 logger = get_logger()
 
@@ -54,14 +54,13 @@ stop_words = [
 
 
 class Programmer(LLMAgent):
-    def __init__(
-        self,
-        config: DictConfig = DictConfig({}),
-        tag: str = DEFAULT_TAG,
-        trust_remote_code: bool = False,
-        code_file: str = None,
-        **kwargs,
-    ):
+
+    def __init__(self,
+                 config: DictConfig = DictConfig({}),
+                 tag: str = DEFAULT_TAG,
+                 trust_remote_code: bool = False,
+                 code_file: str = None,
+                 **kwargs):
         # Validate and adjust config before passing to parent
         config = self._validate_config(config)
         super().__init__(config, tag, trust_remote_code, **kwargs)
@@ -91,19 +90,22 @@ class Programmer(LLMAgent):
         # Check edit_file_config.api_key
         edit_file_api_key = None
         try:
-            edit_file_api_key = (
-                config.get('tools', {}).get('file_system', {}).get('edit_file_config', {}).get('api_key')
-            )
+            edit_file_api_key = config.get('tools', {}).get(
+                'file_system', {}).get('edit_file_config', {}).get('api_key')
         except Exception:
             pass
 
         if not edit_file_api_key:
             # Remove edit_file from include list
             try:
-                include_list = config.get('tools', {}).get('file_system', {}).get('include', [])
+                include_list = config.get('tools',
+                                          {}).get('file_system',
+                                                  {}).get('include', [])
                 if include_list and 'edit_file' in include_list:
                     include_list.remove('edit_file')
-                    logger.warning('[coding] edit_file_config.api_key not set, removing edit_file from tools')
+                    logger.warning(
+                        '[coding] edit_file_config.api_key not set, removing edit_file from tools'
+                    )
             except Exception:
                 pass
         else:
@@ -131,7 +133,8 @@ class Programmer(LLMAgent):
         self.llm.args['extra_body']['stop_sequences'] = self.stop_words[1]
 
     def is_stop_imports(self):
-        return self.llm.args['extra_body']['stop_sequences'] == self.stop_words[0]
+        return self.llm.args['extra_body'][
+            'stop_sequences'] == self.stop_words[0]
 
     def find_all_files(self):
         self.all_code_files = []
@@ -180,28 +183,36 @@ class Programmer(LLMAgent):
 
         contents = content.split('\n')
         comments = ['*', '#', '-', '%', '/']
-        contents = [c for c in contents if not any(c.strip().startswith(cm) for cm in comments)]
-        all_files = parse_imports(code_file, '\n'.join(contents), self.output_dir) or []
+        contents = [
+            c for c in contents
+            if not any(c.strip().startswith(cm) for cm in comments)
+        ]
+        all_files = parse_imports(code_file, '\n'.join(contents),
+                                  self.output_dir) or []
         all_read_files = find_all_read_files()
         all_notes = []
         for file in all_files:
             if 'react' in file.source_file or 'vue' in file.source_file:
                 continue
             if file.source_file == code_file:
-                all_notes.append(f'You should not import the file itself: {code_file}')
+                all_notes.append(
+                    f'You should not import the file itself: {code_file}')
                 continue
 
-            file.imported_items = [item for item in file.imported_items if item not in ('*', 'default')]
+            file.imported_items = [
+                item for item in file.imported_items
+                if item not in ('*', 'default')
+            ]
             filename = os.path.join(self.output_dir, file.source_file)
             if not os.path.exists(filename):
                 if file.source_file in self.all_code_files:
                     all_notes.append(
-                        f'The dependency you import: {file.source_file} does not exist, the order may be incorrect.'
-                    )
+                        f'The dependency you import: {file.source_file} does not exist, '
+                        f'the order may be incorrect.')
                 else:
                     all_notes.append(
-                        f'The dependency you import: {file.source_file} is not in the code plan, stop importing it.'
-                    )
+                        f'The dependency you import: {file.source_file} is not in the code plan, '
+                        f'stop importing it.')
             elif os.path.isfile(filename):
                 if file.source_file not in all_read_files:
                     all_notes.append(
@@ -210,7 +221,8 @@ class Programmer(LLMAgent):
             elif os.path.isdir(filename):
                 index_file_path = self.find_index_file(filename)
                 if index_file_path:
-                    index_file_path = str(Path(index_file_path).relative_to(self.output_dir))
+                    index_file_path = str(
+                        Path(index_file_path).relative_to(self.output_dir))
                     if index_file_path not in all_read_files:
                         all_notes.append(
                             f'Extra file {index_file_path} content in imports:\n{read_file(index_file_path)}'
@@ -218,9 +230,9 @@ class Programmer(LLMAgent):
 
         if all_notes:
             all_notes = '\n'.join(all_notes)
-            user_content = (
-                f'Problems found in your imports:\n\n{all_notes}\nCorrect the errors and regenerate the code:\n'
-            )
+            user_content = (f'Problems found in your imports:\n'
+                            f'\n{all_notes}\n'
+                            f'Correct the errors and regenerate the code:\n')
             messages.append(Message(role='user', content=user_content))
         else:
             messages.pop(-1)
@@ -230,12 +242,14 @@ class Programmer(LLMAgent):
 
     async def _incremental_check(self, code_file: str, partial_code: str):
         if self.lsp_check:
-            lsp_result = await self._incremental_lsp_check(code_file, partial_code)
+            lsp_result = await self._incremental_lsp_check(
+                code_file, partial_code)
         else:
             lsp_result = None
 
         if self.post_import_check:
-            import_result = await self._after_import_check(code_file, partial_code)
+            import_result = await self._after_import_check(
+                code_file, partial_code)
         else:
             import_result = None
         return (lsp_result or '') + '\n' + (import_result or '')
@@ -246,27 +260,38 @@ class Programmer(LLMAgent):
             return None
         else:
             result = None
-            for index_file in ['index.ts', 'index.tsx', 'index.js', 'index.jsx', 'index.vue', '__init__.py']:
+            for index_file in [
+                    'index.ts', 'index.tsx', 'index.js', 'index.jsx',
+                    'index.vue', '__init__.py'
+            ]:
                 index_path = os.path.join(full_path, index_file)
                 if os.path.exists(index_path):
                     result = index_path
                     break
             return result
 
-    async def _after_import_check(self, code_file: str, partial_code: str) -> Optional[str]:
+    async def _after_import_check(self, code_file: str,
+                                  partial_code: str) -> Optional[str]:
         errors = []
         partial_code = partial_code.split('\n')
         comments = ['*', '#', '-', '%', '/']
-        contents = [c for c in partial_code if not any(c.strip().startswith(cm) for cm in comments)]
+        contents = [
+            c for c in partial_code
+            if not any(c.strip().startswith(cm) for cm in comments)
+        ]
         partial_code = '\n'.join(contents)
-        all_imports: List[ImportInfo] = parse_imports(code_file, partial_code, self.output_dir)
+        all_imports: List[ImportInfo] = parse_imports(code_file, partial_code,
+                                                      self.output_dir)
 
         for info in all_imports:
             source_file = info.source_file
             if not source_file or 'react' in source_file or 'vue' in source_file:
                 continue
 
-            info.imported_items = [item for item in info.imported_items if item not in ('*', 'default')]
+            info.imported_items = [
+                item for item in info.imported_items
+                if item not in ('*', 'default')
+            ]
 
             if not os.path.isabs(source_file):
                 full_path = os.path.join(self.output_dir, source_file)
@@ -283,17 +308,14 @@ class Programmer(LLMAgent):
                         errors.append(
                             f'Import error in {code_file}:\n'
                             f"  Directory '{source_file}' exists but has no index file (__init__.py, index.ts, etc.)\n"
-                            f'  Statement: {info.raw_statement}\n'
-                        )
+                            f'  Statement: {info.raw_statement}\n')
                         continue
                     else:
                         full_path = index_file_path
                 else:
-                    errors.append(
-                        f'Import error in {code_file}:\n'
-                        f"  File '{source_file}' does not exist\n"
-                        f'  Statement: {info.raw_statement}\n'
-                    )
+                    errors.append(f'Import error in {code_file}:\n'
+                                  f"  File '{source_file}' does not exist\n"
+                                  f'  Statement: {info.raw_statement}\n')
                     continue
 
             # 2. Check if imported symbols exist in the file
@@ -315,12 +337,12 @@ class Programmer(LLMAgent):
                 errors.append(
                     f'Import error in {code_file}:\n'
                     f"  Items {missing_items} not found in '{source_file}'\n"
-                    f'  Statement: {info.raw_statement}\n'
-                )
+                    f'  Statement: {info.raw_statement}\n')
 
         return '\n'.join(errors) if errors else None
 
-    async def _incremental_lsp_check(self, code_file: str, partial_code: str) -> Optional[str]:
+    async def _incremental_lsp_check(self, code_file: str,
+                                     partial_code: str) -> Optional[str]:
         lsp_servers = self.shared_lsp_context.get('lsp_servers', {})
         if not lsp_servers:
             return None
@@ -357,8 +379,11 @@ class Programmer(LLMAgent):
             return await lsp_server.call_tool(
                 'lsp_code_server',
                 tool_name='update_and_check',
-                tool_args={'file_path': code_file, 'content': partial_code, 'language': lang},
-            )
+                tool_args={
+                    'file_path': code_file,
+                    'content': partial_code,
+                    'language': lang
+                })
 
     def filter_code_files(self):
         code_files = []
@@ -378,20 +403,20 @@ class Programmer(LLMAgent):
                 self.unchecked_files.pop(key)
                 logger.error(
                     f"Unchecked file {key} still have problem:\n{self.unchecked_issues.get('key')}\n"
-                    f'But the checking limit has reached.'
-                )
+                    f'But the checking limit has reached.')
 
     async def after_tool_call(self, messages: List[Message]):
-        is_prepare = len(messages[-1].tool_calls or []) > 0 or messages[-1].role != 'assistant'
-        is_code_finish = '<result>' in messages[-1].content and '</result>' in messages[-1].content and not is_prepare
+        is_prepare = len(messages[-1].tool_calls
+                         or []) > 0 or messages[-1].role != 'assistant'
+        is_code_finish = '<result>' in messages[
+            -1].content and '</result>' in messages[
+                -1].content and not is_prepare
         is_import = (
-            self.is_stop_imports()
-            and not is_code_finish
-            and not is_prepare
+            self.is_stop_imports() and not is_code_finish and not is_prepare
             and '<result>' in messages[-1].content
-            and '</result>' not in messages[-1].content
-        )
-        is_check = messages[-1].role == 'assistant' and len(messages[-1].tool_calls or []) == 0 and not is_import
+            and '</result>' not in messages[-1].content)
+        is_check = messages[-1].role == 'assistant' and len(
+            messages[-1].tool_calls or []) == 0 and not is_import
         message = messages[-1]
         all_issues = []
 
@@ -399,6 +424,7 @@ class Programmer(LLMAgent):
             self._before_import_check(messages)
 
         if is_code_finish:
+
             # Saving code
             result, remaining_text = extract_code_blocks(message.content)
             if result:
@@ -430,12 +456,15 @@ class Programmer(LLMAgent):
         if is_check:
             # After checking when fix ended or write ended
             for uncheck_file in list(self.unchecked_files.keys()):
-                with open(os.path.join(self.output_dir, uncheck_file), 'r') as f:
+                with open(os.path.join(self.output_dir, uncheck_file),
+                          'r') as f:
                     _code = f.read()
-                lsp_feedback = await self._incremental_check(uncheck_file, _code)
+                lsp_feedback = await self._incremental_check(
+                    uncheck_file, _code)
                 lsp_feedback = lsp_feedback.strip()
                 if lsp_feedback:
-                    all_issues.append(f'❎Issues in {uncheck_file}:' + lsp_feedback)
+                    all_issues.append(f'❎Issues in {uncheck_file}:'
+                                      + lsp_feedback)
                     self.unchecked_issues[uncheck_file] = lsp_feedback
                 else:
                     logger.info(f'✅No issues found in {uncheck_file}.')
@@ -477,15 +506,16 @@ class Programmer(LLMAgent):
         if self.error_counter > 2:
             raise RuntimeError('The model does not output any response!')
 
-        new_task = is_code_finish and self.code_files and (not self.unchecked_files)
+        new_task = is_code_finish and self.code_files and (
+            not self.unchecked_files)
         if new_task:
             last_file = self.code_files[-1]
             messages.append(
                 Message(
                     role='user',
-                    content=f'\nA code file in your imports not found, you should write it first: {last_file}\n',
-                )
-            )
+                    content=
+                    f'\nA code file in your imports not found, you should write it first: {last_file}\n'
+                ))
 
         # Condense code block and prepare index files
         # await self.code_condenser.run(messages)
@@ -493,6 +523,7 @@ class Programmer(LLMAgent):
 
 @dataclasses.dataclass
 class FileRelation:
+
     name: str
     description: str
     done: bool = False
@@ -500,6 +531,7 @@ class FileRelation:
 
 
 class CodingAgent(CodeAgent):
+
     def __init__(self, config, tag, trust_remote_code, **kwargs):
         super().__init__(config, tag, trust_remote_code, **kwargs)
         # Shared LSP context across all Programmers
@@ -517,23 +549,31 @@ class CodingAgent(CodeAgent):
         # Detect all languages in the project
         detected_languages = set()
 
-        if any(kw in framework for kw in ['typescript', 'javascript', 'react', 'node', 'npm', 'html']):
+        if any(kw in framework for kw in
+               ['typescript', 'javascript', 'react', 'node', 'npm', 'html']):
             detected_languages.add('typescript')
 
-        if any(kw in framework for kw in ['python', 'django', 'flask', 'fastapi']):
+        if any(kw in framework
+               for kw in ['python', 'django', 'flask', 'fastapi']):
             detected_languages.add('python')
 
-        if any(kw in framework for kw in ['java ', 'java\n', 'spring', 'maven', 'gradle']):
+        if any(kw in framework
+               for kw in ['java ', 'java\n', 'spring', 'maven', 'gradle']):
             detected_languages.add('java')
 
         if not detected_languages:
             logger.info('No supported languages detected in framework.txt')
             return
 
-        logger.info(f"Initializing LSP servers for languages: {', '.join(detected_languages)}")
+        logger.info(
+            f"Initializing LSP servers for languages: {', '.join(detected_languages)}"
+        )
 
         # Initialize LSP server for each detected language
-        lsp_config = DictConfig({'workspace_dir': self.output_dir, 'output_dir': self.output_dir})
+        lsp_config = DictConfig({
+            'workspace_dir': self.output_dir,
+            'output_dir': self.output_dir
+        })
 
         lsp_servers = {}
         for lang in detected_languages:
@@ -545,8 +585,12 @@ class CodingAgent(CodeAgent):
         for lang, lsp_server in lsp_servers.items():
             logger.info(f'Building LSP index for {lang}...')
             await lsp_server.call_tool(
-                'lsp_code_server', tool_name='check_directory', tool_args={'directory': '', 'language': lang}
-            )
+                'lsp_code_server',
+                tool_name='check_directory',
+                tool_args={
+                    'directory': '',
+                    'language': lang
+                })
             logger.info(f'LSP index built for {lang}')
 
         self.shared_lsp_context['lsp_servers'] = lsp_servers
@@ -563,20 +607,9 @@ class CodingAgent(CodeAgent):
                 except Exception:  # noqa
                     pass
 
-    async def write_code(
-        self,
-        topic,
-        user_story,
-        framework,
-        protocol,
-        file_order,
-        name,
-        description,
-        index,
-        last_batch,
-        siblings,
-        next_batch,
-    ):
+    async def write_code(self, topic, user_story, framework, protocol,
+                         file_order, name, description, index, last_batch,
+                         siblings, next_batch):
         logger.info(f'Writing {name}')
         _config = deepcopy(self.config)
         messages = [
@@ -593,8 +626,7 @@ class CodingAgent(CodeAgent):
                 f'File description: {description}\n'
                 f'Previous batch output:\n{last_batch}\n'
                 f'Other workers writing in parallel:\n{siblings}\n'
-                f'Next batch planned:\n{next_batch}\n',
-            ),
+                f'Next batch planned:\n{next_batch}\n'),
         ]
 
         _config = deepcopy(self.config)
@@ -605,8 +637,7 @@ class CodingAgent(CodeAgent):
             tag=f'programmer-{name.replace(os.sep, "-")}',
             trust_remote_code=True,
             code_file=name,
-            shared_lsp_context=self.shared_lsp_context,
-        )  # Pass shared context
+            shared_lsp_context=self.shared_lsp_context)  # Pass shared context
         await programmer.run(messages)
 
     async def execute_code(self, inputs, **kwargs):
@@ -625,7 +656,8 @@ class CodingAgent(CodeAgent):
         file_orders = self.construct_file_orders()
         file_relation = OrderedDict()
         self.refresh_file_status(file_relation)
-        shutil.rmtree(os.path.join(self.output_dir, 'locks'), ignore_errors=True)
+        shutil.rmtree(
+            os.path.join(self.output_dir, 'locks'), ignore_errors=True)
 
         for idx, files in enumerate(file_orders):
             while True:
@@ -657,8 +689,7 @@ class CodingAgent(CodeAgent):
                         index=idx,
                         last_batch=last_batch,
                         siblings='\n'.join(set(files) - {name}),
-                        next_batch=next_batch,
-                    )
+                        next_batch=next_batch)
                     for name, description in files.items()
                 ]
 
@@ -718,7 +749,8 @@ class CodingAgent(CodeAgent):
                 description = file['description']
                 file_path = os.path.join(self.output_dir, file_name)
                 if file_name not in file_relation:
-                    file_relation[file_name] = FileRelation(name=file_name, description=description)
+                    file_relation[file_name] = FileRelation(
+                        name=file_name, description=description)
                 file_relation[file_name].done = os.path.exists(file_path)
 
     def construct_file_information(self, file_relation, add_output_dir=False):

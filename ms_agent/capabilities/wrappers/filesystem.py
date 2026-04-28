@@ -9,40 +9,44 @@ REPLACE_CONTENTS_DESCRIPTOR = CapabilityDescriptor(
     name='replace_file_contents',
     version='0.1.0',
     granularity='tool',
-    summary=(
-        'Replace exact content in a file without line numbers. '
-        'Concurrent-safe: matches by content instead of line numbers, '
-        'so parallel edits on the same file do not conflict.'
-    ),
-    description=(
-        'Performs an exact-string replacement inside a file.  The caller supplies '
-        'the verbatim `source` text to find and the `target` text to replace it with.  '
-        'An `occurrence` parameter controls which match to replace (1-based) or '
-        '-1 for all.  Because it relies on content matching rather than line numbers, '
-        'it is safe to use from multiple agents editing the same file concurrently.'
-    ),
+    summary=('Replace exact content in a file without line numbers. '
+             'Concurrent-safe: matches by content instead of line numbers, '
+             'so parallel edits on the same file do not conflict.'),
+    description=
+    ('Performs an exact-string replacement inside a file.  The caller supplies '
+     'the verbatim `source` text to find and the `target` text to replace it with.  '
+     'An `occurrence` parameter controls which match to replace (1-based) or '
+     '-1 for all.  Because it relies on content matching rather than line numbers, '
+     'it is safe to use from multiple agents editing the same file concurrently.'
+     ),
     input_schema={
         'type': 'object',
         'properties': {
             'path': {
-                'type': 'string',
-                'description': 'Path to the file to modify (relative to workspace or absolute)',
+                'type':
+                'string',
+                'description':
+                'Path to the file to modify (relative to workspace or absolute)',
             },
             'source': {
-                'type': 'string',
-                'description': (
-                    'Exact content to find. Must match the file content verbatim '
-                    'including whitespace, punctuation, and line breaks.'
-                ),
+                'type':
+                'string',
+                'description':
+                ('Exact content to find. Must match the file content verbatim '
+                 'including whitespace, punctuation, and line breaks.'),
             },
             'target': {
                 'type': 'string',
                 'description': 'New content to replace the source with',
             },
             'occurrence': {
-                'type': 'integer',
-                'description': ('Which occurrence to replace (1-based). Use -1 to replace all occurrences. Default: 1'),
-                'default': 1,
+                'type':
+                'integer',
+                'description':
+                ('Which occurrence to replace (1-based). '
+                 'Use -1 to replace all occurrences. Default: 1'),
+                'default':
+                1,
             },
         },
         'required': ['path', 'source', 'target'],
@@ -50,7 +54,9 @@ REPLACE_CONTENTS_DESCRIPTOR = CapabilityDescriptor(
     output_schema={
         'type': 'object',
         'properties': {
-            'result': {'type': 'string'},
+            'result': {
+                'type': 'string'
+            },
         },
     },
     tags=['filesystem', 'edit', 'replace', 'diff', 'concurrent-safe'],
@@ -61,10 +67,10 @@ REPLACE_LINES_DESCRIPTOR = CapabilityDescriptor(
     name='replace_file_lines',
     version='0.1.0',
     granularity='tool',
-    summary=(
-        'Replace, insert, or append content by line range. '
-        'Supports insert-at-beginning (start_line=0) and append-at-end (start_line=-1).'
-    ),
+    summary=
+    ('Replace, insert, or append content by line range. '
+     'Supports insert-at-beginning (start_line=0) and append-at-end (start_line=-1).'
+     ),
     description=(
         'Replaces a range of lines in a file with new content.  '
         'Special modes: start_line=0 inserts at the beginning, '
@@ -82,12 +88,17 @@ REPLACE_LINES_DESCRIPTOR = CapabilityDescriptor(
                 'description': 'New content to insert or replace with',
             },
             'start_line': {
-                'type': 'integer',
-                'description': ('Start line (1-based inclusive). 0 = insert at beginning, -1 = append at end.'),
+                'type':
+                'integer',
+                'description':
+                ('Start line (1-based inclusive). '
+                 '0 = insert at beginning, -1 = append at end.'),
             },
             'end_line': {
-                'type': 'integer',
-                'description': 'End line (1-based inclusive). Required unless start_line is 0 or -1.',
+                'type':
+                'integer',
+                'description':
+                'End line (1-based inclusive). Required unless start_line is 0 or -1.',
             },
         },
         'required': ['path', 'content', 'start_line'],
@@ -95,7 +106,9 @@ REPLACE_LINES_DESCRIPTOR = CapabilityDescriptor(
     output_schema={
         'type': 'object',
         'properties': {
-            'result': {'type': 'string'},
+            'result': {
+                'type': 'string'
+            },
         },
     },
     tags=['filesystem', 'edit', 'replace', 'lines'],
@@ -112,8 +125,10 @@ def _resolve_path(path: str, workspace: str | None) -> str:
     return os.path.abspath(path)
 
 
-async def _handle_replace_contents(args: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
-    workspace = kwargs.get('workspace') or os.environ.get('MS_AGENT_OUTPUT_DIR', '')
+async def _handle_replace_contents(args: dict[str, Any],
+                                   **kwargs: Any) -> dict[str, Any]:
+    workspace = kwargs.get('workspace') or os.environ.get(
+        'MS_AGENT_OUTPUT_DIR', '')
     path = _resolve_path(args['path'], workspace)
     source: str = args['source']
     target: str = args['target']
@@ -130,7 +145,9 @@ async def _handle_replace_contents(args: dict[str, Any], **kwargs: Any) -> dict[
         content = f.read()
 
     if source not in content:
-        return {'error': f'Could not find the exact content to replace in {path}'}
+        return {
+            'error': f'Could not find the exact content to replace in {path}'
+        }
 
     count = content.count(source)
 
@@ -143,7 +160,8 @@ async def _handle_replace_contents(args: dict[str, Any], **kwargs: Any) -> dict[
         return {'error': f'occurrence {occurrence} exceeds total ({count})'}
     else:
         parts = content.split(source, occurrence)
-        updated = source.join(parts[:occurrence]) + target + source.join(parts[occurrence:])
+        updated = source.join(parts[:occurrence]) + target + source.join(
+            parts[occurrence:])
         msg = f'Replaced occurrence {occurrence} of {count}'
 
     with open(path, 'w', encoding='utf-8') as f:
@@ -152,8 +170,10 @@ async def _handle_replace_contents(args: dict[str, Any], **kwargs: Any) -> dict[
     return {'result': f'{msg} in {path}'}
 
 
-async def _handle_replace_lines(args: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
-    workspace = kwargs.get('workspace') or os.environ.get('MS_AGENT_OUTPUT_DIR', '')
+async def _handle_replace_lines(args: dict[str, Any],
+                                **kwargs: Any) -> dict[str, Any]:
+    workspace = kwargs.get('workspace') or os.environ.get(
+        'MS_AGENT_OUTPUT_DIR', '')
     path = _resolve_path(args['path'], workspace)
     new_content: str = args['content']
     start_line: int = args['start_line']

@@ -3,7 +3,6 @@
 Project discovery module for MS-Agent Web UI
 Discovers and manages available projects from the ms-agent/projects directory.
 """
-
 import os
 import re
 from typing import Any, Dict, List, Optional
@@ -19,7 +18,8 @@ class ProjectDiscovery:
         self.projects_dir = projects_dir
         self._projects_cache: Optional[List[Dict[str, Any]]] = None
 
-    def discover_projects(self, force_refresh: bool = False) -> List[Dict[str, Any]]:
+    def discover_projects(self,
+                          force_refresh: bool = False) -> List[Dict[str, Any]]:
         """Discover all available projects"""
         if self._projects_cache is not None and not force_refresh:
             return self._projects_cache
@@ -32,7 +32,8 @@ class ProjectDiscovery:
         for item in os.listdir(self.projects_dir):
             item_path = os.path.join(self.projects_dir, item)
             # Only show projects in the whitelist
-            if os.path.isdir(item_path) and not item.startswith('.') and item in self.VISIBLE_PROJECTS:
+            if os.path.isdir(item_path) and not item.startswith(
+                    '.') and item in self.VISIBLE_PROJECTS:
                 project_info = self._analyze_project(item, item_path)
                 if project_info:
                     projects.append(project_info)
@@ -52,24 +53,24 @@ class ProjectDiscovery:
         researcher_yaml = os.path.join(v2_root, 'researcher.yaml')
         if os.path.exists(researcher_yaml):
             readme_path = os.path.join(v2_root, 'README.md')
-            description = self._extract_description(readme_path) if os.path.exists(readme_path) else ''
-            projects.append(
-                {
-                    'id': 'deep_research_v2',
-                    'name': 'deep_research_v2',
-                    'display_name': 'Deep Research',
-                    'description': description,
-                    'type': 'agent',
-                    'path': v2_root,
-                    'has_readme': os.path.exists(readme_path),
-                    'config_file': researcher_yaml,
-                    'supports_workflow_switch': False,
-                }
-            )
+            description = self._extract_description(
+                readme_path) if os.path.exists(readme_path) else ''
+            projects.append({
+                'id': 'deep_research_v2',
+                'name': 'deep_research_v2',
+                'display_name': 'Deep Research',
+                'description': description,
+                'type': 'agent',
+                'path': v2_root,
+                'has_readme': os.path.exists(readme_path),
+                'config_file': researcher_yaml,
+                'supports_workflow_switch': False
+            })
 
         return projects
 
-    def _analyze_project(self, name: str, path: str) -> Optional[Dict[str, Any]]:
+    def _analyze_project(self, name: str,
+                         path: str) -> Optional[Dict[str, Any]]:
         """Analyze a project directory and extract its information"""
         # Check for workflow.yaml or agent.yaml
         workflow_file = os.path.join(path, 'workflow.yaml')
@@ -94,14 +95,16 @@ class ProjectDiscovery:
 
         # Check if project supports workflow switching (e.g., code_genesis)
         supports_workflow_switch = False
-        if project_type == 'workflow' and name == 'code_genesis' and os.path.exists(simple_workflow_file):
+        if project_type == 'workflow' and name == 'code_genesis' and os.path.exists(
+                simple_workflow_file):
             supports_workflow_switch = True
 
         # Generate display name from directory name
         display_name = self._format_display_name(name)
 
         # Extract description from README if available
-        description = self._extract_description(readme_file) if os.path.exists(readme_file) else ''
+        description = self._extract_description(readme_file) if os.path.exists(
+            readme_file) else ''
 
         return {
             'id': name,
@@ -112,7 +115,7 @@ class ProjectDiscovery:
             'path': path,
             'has_readme': os.path.exists(readme_file),
             'config_file': config_file,
-            'supports_workflow_switch': supports_workflow_switch,
+            'supports_workflow_switch': supports_workflow_switch
         }
 
     def _format_display_name(self, name: str) -> str:
@@ -138,7 +141,8 @@ class ProjectDiscovery:
                 stripped = line.strip()
                 # Skip headers and empty lines at the beginning
                 if not in_description:
-                    if stripped and not stripped.startswith('#') and not stripped.startswith('['):
+                    if stripped and not stripped.startswith(
+                            '#') and not stripped.startswith('['):
                         in_description = True
                         description_lines.append(stripped)
                 else:
@@ -184,7 +188,6 @@ class ProjectDiscovery:
 
         try:
             import yaml
-
             with open(project['config_file'], 'r', encoding='utf-8') as f:
                 return yaml.safe_load(f)
         except Exception:

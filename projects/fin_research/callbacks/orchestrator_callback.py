@@ -3,19 +3,19 @@ import os
 from typing import List
 
 from file_parser import extract_code_blocks
-from omegaconf import DictConfig
-
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback
 from ms_agent.llm.utils import Message
 from ms_agent.tools.filesystem_tool import FileSystemTool
 from ms_agent.utils import get_logger
+from omegaconf import DictConfig
 
 logger = get_logger()
 
 
 class OrchestratorCallback(Callback):
-    """Save output plan to local disk."""
+    """Save output plan to local disk.
+    """
 
     def __init__(self, config: DictConfig):
         super().__init__(config)
@@ -37,7 +37,8 @@ class OrchestratorCallback(Callback):
         all_files, _ = extract_code_blocks(content)
         results = []
         for f in all_files:
-            result = await self.file_system.write_file(f['filename'], f['code'])
+            result = await self.file_system.write_file(f['filename'],
+                                                       f['code'])
             results.append(result)
 
         r = '\n'.join(results)

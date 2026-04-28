@@ -2076,7 +2076,7 @@ def create_interface():
                 session_status_html = f"""
                 <div class="status-indicator status-info">
                     📊 会话状态: {'已加载历史数据' if any(session_data.values()) else '新会话'}
-                    {f'| 最后更新: {session_data.get('timestamp', '未知')}' if session_data.get('timestamp') else ''}
+                    {f'| 最后更新: {session_data.get("timestamp", "未知")}' if session_data.get("timestamp") else ''}
                 </div>
                 """ if any(session_data.values()) else """
                 <div class="status-indicator status-info">

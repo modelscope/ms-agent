@@ -1,12 +1,13 @@
-import json
 import os
 from typing import List
 
+import json
 from ms_agent import LLMAgent
 from ms_agent.llm import Message
 
 
 class FileOrderAgent(LLMAgent):
+
     async def run(self, messages, **kwargs):
         with open(os.path.join(self.output_dir, 'topic.txt'), 'r') as f:
             topic = f.read()
@@ -32,10 +33,14 @@ class FileOrderAgent(LLMAgent):
             query = None
 
             if os.path.isfile(os.path.join(self.output_dir, 'file_order.txt')):
-                with open(os.path.join(self.output_dir, 'file_order.txt'), 'r') as f:
+                with open(
+                        os.path.join(self.output_dir, 'file_order.txt'),
+                        'r') as f:
                     file_order = json.load(f)
 
-                with open(os.path.join(self.output_dir, 'file_design.txt'), 'r') as f:
+                with open(
+                        os.path.join(self.output_dir, 'file_design.txt'),
+                        'r') as f:
                     file_design = json.load(f)
 
                 files1 = set()
@@ -58,7 +63,8 @@ class FileOrderAgent(LLMAgent):
                         f'please provide the correct file order without these files.'
                     )
             else:
-                query = 'The file order you provided is missing, please provide the complete file order.'
+                query = ('The file order you provided is missing, '
+                         'please provide the complete file order.')
 
             if query:
                 messages.append(Message(role='user', content=query))

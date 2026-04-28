@@ -37,9 +37,9 @@ async def connect(stack):
 async def list_tools(session):
     """List all available MCP tools."""
     result = await session.list_tools()
-    print(f'\n{'=' * 60}')
+    print(f'\n{"=" * 60}')
     print(f'  Available MCP Tools ({len(result.tools)} total)')
-    print(f'{'=' * 60}\n')
+    print(f'{"=" * 60}\n')
     for tool in result.tools:
         desc = (tool.description or '')[:70]
         print(f'  {tool.name:35s}  {desc}')
@@ -72,9 +72,9 @@ async def call_tool(session, name: str, args: dict):
 
 async def test_filesystem(session):
     """Test filesystem tools: write a file, then replace contents."""
-    print(f'\n{'=' * 60}')
+    print(f'\n{"=" * 60}')
     print('  TEST: Filesystem Tools')
-    print(f'{'=' * 60}')
+    print(f'{"=" * 60}')
 
     with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
         f.write('def hello():\n    print("Hello, World!")\n\nhello()\n')
@@ -117,9 +117,9 @@ async def test_filesystem(session):
 
 async def test_deep_research_async(session):
     """Test async deep research tools (submit/check/get without actually running)."""
-    print(f'\n{'=' * 60}')
+    print(f'\n{"=" * 60}')
     print('  TEST: Deep Research Async Tools')
-    print(f'{'=' * 60}')
+    print(f'{"=" * 60}')
 
     # submit_research_task should return immediately with a task_id
     # (it will fail to find the config in CI, but the response format is testable)
@@ -128,7 +128,7 @@ async def test_deep_research_async(session):
     })
 
     if 'error' in result:
-        print(f'\n  submit_research_task returned error (expected if no config): {result['error']}')
+        print(f'\n  submit_research_task returned error (expected if no config): {result["error"]}')
         print('  Testing check/get with a fake task_id...')
 
         result = await call_tool(session, 'check_research_progress', {
@@ -151,21 +151,21 @@ async def test_deep_research_async(session):
         progress = await call_tool(session, 'check_research_progress', {
             'task_id': task_id,
         })
-        print(f'  Progress check: status={progress['status']}')
+        print(f'  Progress check: status={progress["status"]}')
 
         report = await call_tool(session, 'get_research_report', {
             'task_id': task_id,
         })
-        print(f'  Report check: status={report['status']}')
+        print(f'  Report check: status={report["status"]}')
 
     print('\n  DEEP RESEARCH ASYNC TESTS: PASSED')
 
 
 async def test_web_search(session):
     """Test web_search tool with arxiv (no API key required)."""
-    print(f'\n{'=' * 60}')
+    print(f'\n{"=" * 60}')
     print('  TEST: Web Search')
-    print(f'{'=' * 60}')
+    print(f'{"=" * 60}')
 
     result = await call_tool(session, 'web_search', {
         'query': 'large language model agent framework',
@@ -174,24 +174,24 @@ async def test_web_search(session):
     })
 
     if 'error' in result:
-        print(f'\n  web_search returned error: {result['error']}')
+        print(f'\n  web_search returned error: {result["error"]}')
         print('  (This may happen if arxiv is unreachable)')
     else:
-        assert result['status'] == 'ok', f'Unexpected status: {result['status']}'
+        assert result['status'] == 'ok', f'Unexpected status: {result["status"]}'
         assert result['engine'] == 'arxiv'
-        print(f'\n  Returned {result['count']} results:')
+        print(f'\n  Returned {result["count"]} results:')
         for i, r in enumerate(result.get('results', []), 1):
-            print(f'    {i}. {r.get('title', 'No title')[:60]}')
-            print(f'       {r.get('url', '')}')
+            print(f'    {i}. {r.get("title", "No title")[:60]}')
+            print(f'       {r.get("url", "")}')
 
     print('\n  WEB SEARCH TESTS: PASSED')
 
 
 async def test_agent_delegate(session):
     """Test agent delegate tools (async pattern only, to avoid blocking)."""
-    print(f'\n{'=' * 60}')
+    print(f'\n{"=" * 60}')
     print('  TEST: Agent Delegate (Async)')
-    print(f'{'=' * 60}')
+    print(f'{"=" * 60}')
 
     # Test check/get/cancel with unknown task_id (safe, no LLM needed)
     result = await call_tool(session, 'check_agent_task', {
@@ -251,9 +251,9 @@ async def main():
         if args.test in ('ad', 'all'):
             await test_agent_delegate(session)
 
-        print(f'\n{'=' * 60}')
+        print(f'\n{"=" * 60}')
         print('  ALL TESTS PASSED')
-        print(f'{'=' * 60}\n')
+        print(f'{"=" * 60}\n')
 
 
 if __name__ == '__main__':

@@ -16,7 +16,6 @@ def _get_engine(engine_type: str) -> Any:
     """Return a cached :class:`SearchEngine` instance for *engine_type*."""
     if engine_type not in _engines:
         from ms_agent.tools.search.websearch_tool import get_search_engine
-
         _engines[engine_type] = get_search_engine(engine_type)
     return _engines[engine_type]
 
@@ -26,7 +25,6 @@ def _get_fetcher() -> Any:
     global _fetcher
     if _fetcher is None:
         from ms_agent.tools.search.websearch_tool import get_content_fetcher
-
         _fetcher = get_content_fetcher('jina_reader')
     return _fetcher
 
@@ -35,13 +33,13 @@ WEB_SEARCH_DESCRIPTOR = CapabilityDescriptor(
     name='web_search',
     version='0.1.0',
     granularity='tool',
-    summary=('Search the web using multiple engines (exa, serpapi, arxiv) and optionally fetch full page content.'),
+    summary=('Search the web using multiple engines (exa, serpapi, arxiv) '
+             'and optionally fetch full page content.'),
     description=(
         'Performs a web search and returns structured results including '
         'title, URL, and summary for each hit.  Supports exa, serpapi, '
         'and arxiv backends.  Set fetch_content=true to additionally '
-        'retrieve and return page text (truncated to 10 000 chars).'
-    ),
+        'retrieve and return page text (truncated to 10 000 chars).'),
     input_schema={
         'type': 'object',
         'properties': {
@@ -55,14 +53,22 @@ WEB_SEARCH_DESCRIPTOR = CapabilityDescriptor(
                 'default': 5,
             },
             'engine_type': {
-                'type': 'string',
-                'description': ("Search engine to use: 'exa', 'serpapi', or 'arxiv' (default: 'arxiv')"),
-                'default': 'arxiv',
+                'type':
+                'string',
+                'description':
+                ("Search engine to use: 'exa', 'serpapi', or 'arxiv' "
+                 "(default: 'arxiv')"),
+                'default':
+                'arxiv',
             },
             'fetch_content': {
-                'type': 'boolean',
-                'description': ('Whether to fetch full page content for each result (default: false)'),
-                'default': False,
+                'type':
+                'boolean',
+                'description':
+                ('Whether to fetch full page content for each result '
+                 '(default: false)'),
+                'default':
+                False,
             },
         },
         'required': ['query'],
@@ -70,11 +76,21 @@ WEB_SEARCH_DESCRIPTOR = CapabilityDescriptor(
     output_schema={
         'type': 'object',
         'properties': {
-            'status': {'type': 'string'},
-            'query': {'type': 'string'},
-            'engine': {'type': 'string'},
-            'count': {'type': 'integer'},
-            'results': {'type': 'array'},
+            'status': {
+                'type': 'string'
+            },
+            'query': {
+                'type': 'string'
+            },
+            'engine': {
+                'type': 'string'
+            },
+            'count': {
+                'type': 'integer'
+            },
+            'results': {
+                'type': 'array'
+            },
         },
     },
     tags=['search', 'web', 'research'],
@@ -82,7 +98,8 @@ WEB_SEARCH_DESCRIPTOR = CapabilityDescriptor(
 )
 
 
-async def _handle_web_search(args: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+async def _handle_web_search(args: dict[str, Any],
+                             **kwargs: Any) -> dict[str, Any]:
     """Execute a web search and return structured results."""
     query = (args.get('query') or '').strip()
     if not query:
@@ -96,7 +113,10 @@ async def _handle_web_search(args: dict[str, Any], **kwargs: Any) -> dict[str, A
     try:
         engine = _get_engine(engine_type)
     except Exception as exc:
-        return {'error': f'Failed to initialise search engine {engine_type!r}: {exc}'}
+        return {
+            'error':
+            f'Failed to initialise search engine {engine_type!r}: {exc}'
+        }
 
     # Build request via the engine's class method
     engine_cls = type(engine)
@@ -123,13 +143,11 @@ async def _handle_web_search(args: dict[str, Any], **kwargs: Any) -> dict[str, A
     raw_list = search_result.to_list() if search_result else []
     results: list[dict[str, Any]] = []
     for item in raw_list[:num_results]:
-        results.append(
-            {
-                'title': item.get('title', ''),
-                'url': item.get('url', ''),
-                'summary': item.get('summary', ''),
-            }
-        )
+        results.append({
+            'title': item.get('title', ''),
+            'url': item.get('url', ''),
+            'summary': item.get('summary', ''),
+        })
 
     # Optional content fetching
     if fetch_content and results:

@@ -11,15 +11,15 @@ logger = get_logger()
 T = TypeVar('T')
 
 
-def retry(
-    max_attempts: int = 3,
-    delay: float = 1.0,
-    backoff_factor: float = 2.0,
-    exceptions: Union[Type[Exception], Tuple[Type[Exception], ...]] = Exception,
-):
+def retry(max_attempts: int = 3,
+          delay: float = 1.0,
+          backoff_factor: float = 2.0,
+          exceptions: Union[Type[Exception], Tuple[Type[Exception],
+                                                   ...]] = Exception):
     """Retry doing something"""
 
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
+
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> T:
             current_delay = delay
@@ -30,7 +30,6 @@ def retry(
                     return func(*args, **kwargs)
                 except exceptions as e:
                     import traceback
-
                     logger.warning(traceback.format_exc())
                     last_exception = e
                     if attempt < max_attempts:
@@ -43,8 +42,7 @@ def retry(
                     else:
                         logger.error(
                             f'Attempt to call {func.__name__} over {max_attempts} times. '
-                            f'The last exception message: {e}'
-                        )
+                            f'The last exception message: {e}')
             raise last_exception
 
         return wrapper
@@ -52,15 +50,15 @@ def retry(
     return decorator
 
 
-def async_retry(
-    max_attempts: int = 3,
-    delay: float = 1.0,
-    backoff_factor: float = 2.0,
-    exceptions: Union[Type[Exception], Tuple[Type[Exception], ...]] = Exception,
-):
+def async_retry(max_attempts: int = 3,
+                delay: float = 1.0,
+                backoff_factor: float = 2.0,
+                exceptions: Union[Type[Exception], Tuple[Type[Exception],
+                                                         ...]] = Exception):
     """Retry doing something"""
 
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
+
         @functools.wraps(func)
         async def wrapper(*args, **kwargs) -> AsyncGenerator[T, Any]:
             current_delay = delay
@@ -73,7 +71,6 @@ def async_retry(
                     return
                 except exceptions as e:
                     import traceback
-
                     logger.warning(traceback.format_exc())
                     last_exception = e
                     if attempt < max_attempts:
@@ -86,8 +83,7 @@ def async_retry(
                     else:
                         logger.error(
                             f'Attempt to call {func.__name__} over {max_attempts} times. '
-                            f'The last exception message: {e}'
-                        )
+                            f'The last exception message: {e}')
             raise last_exception
 
         return wrapper

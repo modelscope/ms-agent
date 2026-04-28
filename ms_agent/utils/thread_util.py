@@ -5,16 +5,19 @@ import weakref
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import wraps
 
-from tqdm.auto import tqdm
-
 from ms_agent.utils.logger import get_logger
+from tqdm.auto import tqdm
 
 logger = get_logger()
 
-DEFAULT_MAX_WORKERS = int(os.getenv('DEFAULT_MAX_WORKERS', min(8, os.cpu_count() + 4)))
+DEFAULT_MAX_WORKERS = int(
+    os.getenv('DEFAULT_MAX_WORKERS', min(8,
+                                         os.cpu_count() + 4)))
 
 
-def thread_executor(max_workers: int = DEFAULT_MAX_WORKERS, disable_tqdm: bool = False, tqdm_desc: str = None):
+def thread_executor(max_workers: int = DEFAULT_MAX_WORKERS,
+                    disable_tqdm: bool = False,
+                    tqdm_desc: str = None):
     """
     A decorator to execute a function in a threaded manner using ThreadPoolExecutor.
 
@@ -40,22 +43,26 @@ def thread_executor(max_workers: int = DEFAULT_MAX_WORKERS, disable_tqdm: bool =
     """
 
     def decorator(func):
+
         @wraps(func)
         def wrapper(iterable, *args, **kwargs):
             results = []
             # Create a tqdm progress bar with the total number of items to process
             with tqdm(
-                unit_scale=True,
-                unit_divisor=1024,
-                initial=0,
-                total=len(iterable),
-                desc=tqdm_desc or f'Processing {len(iterable)} items',
-                disable=disable_tqdm,
+                    unit_scale=True,
+                    unit_divisor=1024,
+                    initial=0,
+                    total=len(iterable),
+                    desc=tqdm_desc or f'Processing {len(iterable)} items',
+                    disable=disable_tqdm,
             ) as pbar:
                 # Define a wrapper function to update the progress bar
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
                     # Submit all tasks
-                    futures = {executor.submit(func, item, *args, **kwargs): item for item in iterable}
+                    futures = {
+                        executor.submit(func, item, *args, **kwargs): item
+                        for item in iterable
+                    }
 
                     # Update the progress bar as tasks complete
                     for future in as_completed(futures):
@@ -92,14 +99,16 @@ class DaemonThreadPoolExecutor(ThreadPoolExecutor):
 
         num_threads = len(self._threads)
         if num_threads < self._max_workers:
-            thread_name = '%s_%d' % (self._thread_name_prefix or self, num_threads)
+            thread_name = '%s_%d' % (self._thread_name_prefix
+                                     or self, num_threads)
             # Import internal helpers from stdlib to keep behavior consistent.
-            from concurrent.futures.thread import _threads_queues, _worker  # type: ignore
+            from concurrent.futures.thread import _worker, _threads_queues  # type: ignore
 
             t = threading.Thread(
                 name=thread_name,
                 target=_worker,
-                args=(weakref.ref(self, weakref_cb), self._work_queue, self._initializer, self._initargs),
+                args=(weakref.ref(self, weakref_cb), self._work_queue,
+                      self._initializer, self._initargs),
             )
             t.daemon = True
             t.start()

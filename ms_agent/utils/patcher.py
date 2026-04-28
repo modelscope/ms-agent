@@ -4,7 +4,8 @@ from typing import Any, Callable, TypeVar
 T = TypeVar('T')
 
 
-def patch(target_object: Any, attribute_name: str, patch_value: Any) -> Callable[[Callable[..., T]], Callable[..., T]]:
+def patch(target_object: Any, attribute_name: str,
+          patch_value: Any) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """
     A decorator factory that patches an attribute of an object for the duration
     of a function's execution.
@@ -29,7 +30,9 @@ def patch(target_object: Any, attribute_name: str, patch_value: Any) -> Callable
             """
             # Check if the target attribute exists
             if not hasattr(target_object, attribute_name):
-                raise AttributeError(f'{target_object} does not have attribute {attribute_name}')
+                raise AttributeError(
+                    f'{target_object} does not have attribute {attribute_name}'
+                )
 
             # 1. Save the original value (similar to __enter__)
             original_value = getattr(target_object, attribute_name)

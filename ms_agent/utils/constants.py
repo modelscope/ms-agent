@@ -61,30 +61,36 @@ class ServiceConfig:
 
 @dataclass
 class ModelscopeConfig(ServiceConfig):
+
     def __init__(self):
         super().__init__(base_url='https://api-inference.modelscope.cn/v1')
 
 
 @dataclass
 class DashscopeConfig(ServiceConfig):
+
     def __init__(self):
-        super().__init__(base_url='https://dashscope.aliyuncs.com/compatible-mode/v1')
+        super().__init__(
+            base_url='https://dashscope.aliyuncs.com/compatible-mode/v1')
 
 
 @dataclass
 class DeepseekConfig(ServiceConfig):
+
     def __init__(self):
         super().__init__(base_url='https://api.deepseek.com/v1')
 
 
 @dataclass
 class AnthropicConfig(ServiceConfig):
+
     def __init__(self):
         # without /v1, using Anthropic API
         super().__init__(base_url='https://api.anthropic.com')
 
 
 class OpenaiConfig(ServiceConfig):
+
     def __init__(self):
         super().__init__(base_url='https://api.openai.com/v1')
 

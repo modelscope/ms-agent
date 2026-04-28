@@ -1,20 +1,20 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
-import json
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Union
 
-from omegaconf import DictConfig
-
+import json
 from ms_agent.agent import CodeAgent
 from ms_agent.llm import LLM, Message
 from ms_agent.utils import get_logger
+from omegaconf import DictConfig
 
 logger = get_logger()
 
 
 class GenerateVideoPrompts(CodeAgent):
-    system = """
+
+    system = ("""
 You are an expert in creating scene descriptions for video generation. Based on given knowledge points or
 storyboard scripts, generate detailed English descriptions for creating text-to-video content that align with
 specified themes and styles.
@@ -33,16 +33,21 @@ Requirements:
 - Output approximately 200 words in English.
 - Return ONLY the prompt description. Do not include style keywords unless requested, and do not add
     explanations or markers.
-    """
+    """)
 
-    def __init__(self, config: DictConfig, tag: str, trust_remote_code: bool = False, **kwargs):
+    def __init__(self,
+                 config: DictConfig,
+                 tag: str,
+                 trust_remote_code: bool = False,
+                 **kwargs):
         super().__init__(config, tag, trust_remote_code, **kwargs)
         self.work_dir = getattr(self.config, 'output_dir', 'output')
         self.num_parallel = getattr(self.config, 'llm_num_parallel', 10)
         self.video_prompts_dir = os.path.join(self.work_dir, 'video_prompts')
         os.makedirs(self.video_prompts_dir, exist_ok=True)
 
-    async def execute_code(self, messages: Union[str, List[Message]], **kwargs) -> List[Message]:
+    async def execute_code(self, messages: Union[str, List[Message]],
+                           **kwargs) -> List[Message]:
         if not self.config.use_text2video:
             return messages
         with open(os.path.join(self.work_dir, 'segments.txt'), 'r') as f:
@@ -55,30 +60,27 @@ Requirements:
 
         with ThreadPoolExecutor(max_workers=self.num_parallel) as executor:
             futures = {
-                executor.submit(
-                    self._generate_video_prompts_static,
-                    i,
-                    segment,
-                    self.config,
-                    topic,
-                    self.system,
-                    self.video_prompts_dir,
-                ): i
-                for i, segment in tasks
-                if 'video' in segment
+                executor.submit(self._generate_video_prompts_static, i,
+                                segment, self.config, topic, self.system,
+                                self.video_prompts_dir): i
+                for i, segment in tasks if 'video' in segment
             }
             for future in as_completed(futures):
                 future.result()
         return messages
 
     @staticmethod
-    def _generate_video_prompts_static(i, segment, config, topic, system, video_prompts_dir):
+    def _generate_video_prompts_static(i, segment, config, topic, system,
+                                       video_prompts_dir):
         llm = LLM.from_config(config)
-        GenerateVideoPrompts._generate_video_prompt_impl(llm, i, segment, topic, system, video_prompts_dir, config)
+        GenerateVideoPrompts._generate_video_prompt_impl(
+            llm, i, segment, topic, system, video_prompts_dir, config)
 
     @staticmethod
-    def _generate_video_prompt_impl(llm, i, segment, topic, system, video_prompts_dir, config):
-        if os.path.exists(os.path.join(video_prompts_dir, f'segment_{i + 1}.txt')):
+    def _generate_video_prompt_impl(llm, i, segment, topic, system,
+                                    video_prompts_dir, config):
+        if os.path.exists(
+                os.path.join(video_prompts_dir, f'segment_{i+1}.txt')):
             return
 
         work_dir = os.path.dirname(video_prompts_dir)
@@ -93,12 +95,10 @@ Requirements:
                 break
 
         video = segment['video']
-        query = (
-            f'The user original request is: {topic}, '
-            f'illustration based on: {segment["content"]}, '
-            f'Video duration: {fit_duration}, '
-            f'Requirements from the storyboard designer: {video}'
-        )
+        query = (f'The user original request is: {topic}, '
+                 f'illustration based on: {segment["content"]}, '
+                 f'Video duration: {fit_duration}, '
+                 f'Requirements from the storyboard designer: {video}')
         logger.info(f'Generating video prompt for : {segment["content"]}.')
         inputs = [
             Message(role='system', content=system),
@@ -107,5 +107,7 @@ Requirements:
         _response_message = llm.generate(inputs)
         response = _response_message.content
         prompt = response.strip()
-        with open(os.path.join(video_prompts_dir, f'segment_{i + 1}.txt'), 'w') as f:
+        with open(
+                os.path.join(video_prompts_dir, f'segment_{i + 1}.txt'),
+                'w') as f:
             f.write(prompt)

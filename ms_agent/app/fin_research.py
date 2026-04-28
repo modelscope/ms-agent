@@ -443,14 +443,14 @@ def build_fin_prompt(
         sections.append(f'Market / region focus: {markets.strip()}')
     if focus_areas:
         sections.append(
-            f'Priority analytical pillars: {', '.join(focus_areas)}')
+            f'Priority analytical pillars: {", ".join(focus_areas)}')
     if macro_view:
         sections.append(f'Macro sensitivity preference: {macro_view}')
     if extra_notes.strip():
         sections.append(f'Additional analyst notes:\n{extra_notes.strip()}')
 
     instructions = [
-        f'Desired deliverable style: {deliverable_style or 'Balanced'}',
+        f'Desired deliverable style: {deliverable_style or "Balanced"}',
         f'Analytical depth target (1-5): {analysis_depth}'
     ]
     if output_language:
@@ -1137,7 +1137,7 @@ def format_result_summary(workdir: str, include_sentiment: bool,
         f'- 工作目录: {workdir}',
     ]
     if focus_areas:
-        lines.append(f'- 关注领域: {', '.join(focus_areas)}')
+        lines.append(f'- 关注领域: {", ".join(focus_areas)}')
     lines.append('请查阅过程报告及最终综合报告。')
     return '\n'.join(lines)
 

@@ -1,11 +1,10 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import os
 
-from omegaconf import DictConfig
-
 from ms_agent.agent.loader import AgentLoader
 from ms_agent.utils import get_logger
 from ms_agent.workflow.base import Workflow
+from omegaconf import DictConfig
 
 logger = get_logger()
 
@@ -27,7 +26,9 @@ class ChainWorkflow(Workflow):
                 if isinstance(next_tasks, str):
                     has_next.add(next_tasks)
                 else:
-                    assert len(next_tasks) == 1, 'ChainWorkflow only supports one next task'
+                    assert len(
+                        next_tasks
+                    ) == 1, 'ChainWorkflow only supports one next task'
                     has_next.update(next_tasks)
 
         for task_name in self.config.keys():
@@ -88,7 +89,8 @@ class ChainWorkflow(Workflow):
             init_args['task'] = task
             init_args['load_cache'] = self.load_cache
             if isinstance(config, str):
-                init_args['config_dir_or_id'] = os.path.join(self.config.local_dir, config)
+                init_args['config_dir_or_id'] = os.path.join(
+                    self.config.local_dir, config)
             else:
                 init_args['config'] = config
             init_args['env'] = self.env

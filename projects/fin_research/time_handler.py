@@ -2,9 +2,8 @@
 from datetime import datetime
 from typing import Any
 
-from omegaconf import DictConfig
-
 from ms_agent.config.config import ConfigLifecycleHandler
+from omegaconf import DictConfig
 
 
 class TimeHandler(ConfigLifecycleHandler):
@@ -25,7 +24,8 @@ class TimeHandler(ConfigLifecycleHandler):
         def traverse_and_replace(_config: Any):
             if isinstance(_config, DictConfig):
                 for name, value in _config.items():
-                    if isinstance(value, DictConfig) or isinstance(value, list):
+                    if isinstance(value, DictConfig) or isinstance(
+                            value, list):
                         traverse_and_replace(value)
                     elif isinstance(value, str):
                         new_value = value
@@ -33,7 +33,8 @@ class TimeHandler(ConfigLifecycleHandler):
                         for var_name, var_value in time_vars.items():
                             placeholder = f'<{var_name}>'
                             if placeholder in new_value:
-                                new_value = new_value.replace(placeholder, var_value)
+                                new_value = new_value.replace(
+                                    placeholder, var_value)
                         setattr(_config, name, new_value)
 
             elif isinstance(_config, list):
@@ -46,7 +47,8 @@ class TimeHandler(ConfigLifecycleHandler):
                         for var_name, var_value in time_vars.items():
                             placeholder = f'<{var_name}>'
                             if placeholder in new_value:
-                                new_value = new_value.replace(placeholder, var_value)
+                                new_value = new_value.replace(
+                                    placeholder, var_value)
                         _config[i] = new_value
 
         traverse_and_replace(config)

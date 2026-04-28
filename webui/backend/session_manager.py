@@ -3,7 +3,6 @@
 Session management for MS-Agent Web UI
 Handles session lifecycle and message history.
 """
-
 import uuid
 from datetime import datetime
 from threading import Lock
@@ -20,9 +19,11 @@ class SessionManager:
         self._dr_event_counters: Dict[str, int] = {}
         self._lock = Lock()
 
-    def create_session(
-        self, project_id: str, project_name: str, workflow_type: str = 'standard', session_type: str = 'project'
-    ) -> Dict[str, Any]:
+    def create_session(self,
+                       project_id: str,
+                       project_name: str,
+                       workflow_type: str = 'standard',
+                       session_type: str = 'project') -> Dict[str, Any]:
         """Create a new session"""
         session_id = str(uuid.uuid4())
         session = {
@@ -35,7 +36,7 @@ class SessionManager:
             'file_progress': None,
             'current_step': None,
             'workflow_type': workflow_type,  # 'standard' or 'simple'
-            'session_type': session_type,  # 'project' or 'chat'
+            'session_type': session_type  # 'project' or 'chat'
         }
 
         with self._lock:
@@ -77,9 +78,12 @@ class SessionManager:
         """List all sessions"""
         return list(self._sessions.values())
 
-    def add_message(
-        self, session_id: str, role: str, content: str, message_type: str = 'text', metadata: Dict[str, Any] = None
-    ) -> bool:
+    def add_message(self,
+                    session_id: str,
+                    role: str,
+                    content: str,
+                    message_type: str = 'text',
+                    metadata: Dict[str, Any] = None) -> bool:
         """Add a message to a session"""
         if session_id not in self._sessions:
             return False
@@ -90,7 +94,7 @@ class SessionManager:
             'content': content,
             'type': message_type,  # text, tool_call, tool_result, error, log
             'timestamp': datetime.now().isoformat(),
-            'metadata': metadata or {},
+            'metadata': metadata or {}
         }
 
         with self._lock:
@@ -106,7 +110,8 @@ class SessionManager:
             return None
         return self._messages.get(session_id, [])
 
-    def add_dr_event(self, session_id: str, event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def add_dr_event(self, session_id: str,
+                     event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Add a deep research event for replay."""
         if session_id not in self._sessions:
             return None
@@ -118,14 +123,19 @@ class SessionManager:
             self._dr_events.setdefault(session_id, []).append(stored)
         return stored
 
-    def list_dr_events(self, session_id: str, after_id: Optional[int] = None) -> Optional[List[Dict[str, Any]]]:
+    def list_dr_events(
+            self,
+            session_id: str,
+            after_id: Optional[int] = None) -> Optional[List[Dict[str, Any]]]:
         """List deep research events for a session."""
         if session_id not in self._sessions:
             return None
         events = self._dr_events.get(session_id, [])
         if after_id is None:
             return list(events)
-        return [event for event in events if event.get('event_id', 0) > after_id]
+        return [
+            event for event in events if event.get('event_id', 0) > after_id
+        ]
 
     def update_last_message(self, session_id: str, content: str) -> bool:
         """Update the content of the last message (for streaming)"""
@@ -136,7 +146,8 @@ class SessionManager:
             self._messages[session_id][-1]['content'] = content
         return True
 
-    def set_workflow_progress(self, session_id: str, progress: Dict[str, Any]) -> bool:
+    def set_workflow_progress(self, session_id: str,
+                              progress: Dict[str, Any]) -> bool:
         """Set workflow progress for a session"""
         if session_id not in self._sessions:
             return False
@@ -145,7 +156,8 @@ class SessionManager:
             self._sessions[session_id]['workflow_progress'] = progress
         return True
 
-    def set_file_progress(self, session_id: str, progress: Dict[str, Any]) -> bool:
+    def set_file_progress(self, session_id: str, progress: Dict[str,
+                                                                Any]) -> bool:
         """Set file writing progress for a session"""
         if session_id not in self._sessions:
             return False

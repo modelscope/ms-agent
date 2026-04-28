@@ -5,20 +5,19 @@ Skill Directory Schema
 Defines the data structure and validation logic for Agent Skills.
 Each Skill is represented as a self-contained directory with metadata.
 """
-
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import yaml
-
 from ms_agent.utils.logger import logger
 
 from .spec import Spec
 
 SUPPORTED_SCRIPT_EXT = ('.py', '.sh', '.js')
-SUPPORTED_READ_EXT = ('.md', '.txt', '.py', '.json', '.yaml', '.yml', '.sh', '.js', '.html', '.xml')
+SUPPORTED_READ_EXT = ('.md', '.txt', '.py', '.json', '.yaml', '.yml', '.sh',
+                      '.js', '.html', '.xml')
 
 
 @dataclass
@@ -32,7 +31,6 @@ class SkillFile:
         path: Relative path within Skill directory
         required: Whether this file is required
     """
-
     name: str
     type: str
     path: Path
@@ -57,7 +55,12 @@ class SkillFile:
         Returns:
             Dictionary containing file information
         """
-        return {'name': self.name, 'type': self.type, 'path': str(self.path), 'required': self.required}
+        return {
+            'name': self.name,
+            'type': self.type,
+            'path': str(self.path),
+            'required': self.required
+        }
 
 
 @dataclass
@@ -78,7 +81,6 @@ class SkillSchema:
         scripts: List of script files (optional)
         references: List of reference documents (optional)
     """
-
     skill_id: str
     name: str
     description: str
@@ -139,7 +141,8 @@ class SkillSchema:
             return True
 
         except Exception as e:
-            logger.error(f'Skill validation failed with an unexpected error: {e}')
+            logger.error(
+                f'Skill validation failed with an unexpected error: {e}')
             return False
 
     def get_file_by_name(self, name: str) -> Optional[SkillFile]:
@@ -165,17 +168,32 @@ class SkillSchema:
             Dictionary containing all schema information
         """
         return {
-            'skill_id': self.skill_id,
-            'name': self.name,
-            'description': self.description,
-            'version': self.version,
-            'author': self.author,
-            'tags': self.tags,
-            'skill_path': str(self.skill_path),
-            'files': [{'name': f.name, 'type': f.type, 'path': f.path, 'required': f.required} for f in self.files],
-            'scripts': self.scripts,
-            'references': self.references,
-            'resources': self.resources,
+            'skill_id':
+            self.skill_id,
+            'name':
+            self.name,
+            'description':
+            self.description,
+            'version':
+            self.version,
+            'author':
+            self.author,
+            'tags':
+            self.tags,
+            'skill_path':
+            str(self.skill_path),
+            'files': [{
+                'name': f.name,
+                'type': f.type,
+                'path': f.path,
+                'required': f.required
+            } for f in self.files],
+            'scripts':
+            self.scripts,
+            'references':
+            self.references,
+            'resources':
+            self.resources,
         }
 
 
@@ -217,7 +235,10 @@ class SkillSchemaParser:
         Returns:
             True if path should be ignored, False otherwise
         """
-        ignored_names = {'.DS_Store', '__pycache__', '.git', '.gitignore', '.pytest_cache', '.mypy_cache'}
+        ignored_names = {
+            '.DS_Store', '__pycache__', '.git', '.gitignore', '.pytest_cache',
+            '.mypy_cache'
+        }
         ignored_suffixes = {'.pyc', '.pyo'}
 
         return (p.name in ignored_names) or (p.suffix in ignored_suffixes)
@@ -266,14 +287,17 @@ class SkillSchemaParser:
                 file_type = file_path.suffix if file_path.suffix else '.unknown'
 
                 skill_file = SkillFile(
-                    name=file_path.name, type=file_type, path=file_path, required=(file_path.name == 'SKILL.md')
-                )
+                    name=file_path.name,
+                    type=file_type,
+                    path=file_path,
+                    required=(file_path.name == 'SKILL.md'))
                 files.append(skill_file)
 
                 # Get scripts, references and resources
                 if skill_file.type in SUPPORTED_SCRIPT_EXT:
                     scripts.append(skill_file)
-                elif skill_file.type in ['.md'] and skill_file.name != 'SKILL.md':
+                elif skill_file.type in ['.md'
+                                         ] and skill_file.name != 'SKILL.md':
                     references.append(skill_file)
                 else:
                     resources.append(skill_file)
@@ -346,7 +370,6 @@ class SkillExecutionPlan:
         parameters: Parameters extracted from user query.
         reasoning: Explanation of the plan.
     """
-
     can_handle: bool = False
     plan_summary: str = ''
     steps: List[Dict[str, Any]] = field(default_factory=list)
@@ -373,7 +396,8 @@ class SkillContext:
     query: str = ''
 
     # The working directory (absolute path to skills folder's parent directory)
-    root_path: Path = field(default_factory=lambda: Path.cwd().parent.resolve())
+    root_path: Path = field(
+        default_factory=lambda: Path.cwd().parent.resolve())
 
     # Execution plan from progressive analysis
     plan: Optional[SkillExecutionPlan] = None
@@ -440,7 +464,10 @@ class SkillContext:
 
     def get_resources_list(self) -> List[str]:
         """Get list of available resource names without loading content."""
-        return [r.name for r in self.skill.resources if r.name not in ['SKILL.md', 'LICENSE.txt']]
+        return [
+            r.name for r in self.skill.resources
+            if r.name not in ['SKILL.md', 'LICENSE.txt']
+        ]
 
     def _get_resource_path(self, file_path: Path) -> str:
         """
@@ -478,15 +505,13 @@ class SkillContext:
         loaded = []
         for script in target_scripts:
             abs_path = script.path.resolve()
-            loaded.append(
-                {
-                    'name': script.name,
-                    'file': script.to_dict(),
-                    'path': self._get_resource_path(script.path),
-                    'abs_path': str(abs_path),
-                    'content': self._read_file_content(abs_path),
-                }
-            )
+            loaded.append({
+                'name': script.name,
+                'file': script.to_dict(),
+                'path': self._get_resource_path(script.path),
+                'abs_path': str(abs_path),
+                'content': self._read_file_content(abs_path),
+            })
         self.scripts.extend(loaded)
         return loaded
 
@@ -507,15 +532,13 @@ class SkillContext:
         loaded = []
         for ref in target_refs:
             abs_path = ref.path.resolve()
-            loaded.append(
-                {
-                    'name': ref.name,
-                    'file': ref.to_dict(),
-                    'path': self._get_resource_path(ref.path),
-                    'abs_path': str(abs_path),
-                    'content': self._read_file_content(abs_path),
-                }
-            )
+            loaded.append({
+                'name': ref.name,
+                'file': ref.to_dict(),
+                'path': self._get_resource_path(ref.path),
+                'abs_path': str(abs_path),
+                'content': self._read_file_content(abs_path),
+            })
         self.references.extend(loaded)
         return loaded
 
@@ -529,22 +552,23 @@ class SkillContext:
         Returns:
             List of loaded resource dictionaries with content.
         """
-        target_res = [r for r in self.skill.resources if r.name not in ['SKILL.md', 'LICENSE.txt']]
+        target_res = [
+            r for r in self.skill.resources
+            if r.name not in ['SKILL.md', 'LICENSE.txt']
+        ]
         if names:
             target_res = [r for r in target_res if r.name in names]
 
         loaded = []
         for res in target_res:
             abs_path = res.path.resolve()
-            loaded.append(
-                {
-                    'name': res.name,
-                    'file': res.to_dict(),
-                    'path': self._get_resource_path(res.path),
-                    'abs_path': str(abs_path),
-                    'content': self._read_file_content(abs_path),
-                }
-            )
+            loaded.append({
+                'name': res.name,
+                'file': res.to_dict(),
+                'path': self._get_resource_path(res.path),
+                'abs_path': str(abs_path),
+                'content': self._read_file_content(abs_path),
+            })
         self.resources.extend(loaded)
         return loaded
 

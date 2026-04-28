@@ -1,12 +1,13 @@
-import json
 import os
 from typing import List
 
+import json
 from ms_agent import LLMAgent
 from ms_agent.llm import Message
 
 
 class FileDesignAgent(LLMAgent):
+
     async def run(self, messages, **kwargs):
         with open(os.path.join(self.output_dir, 'topic.txt'), 'r') as f:
             topic = f.read()
@@ -31,11 +32,15 @@ class FileDesignAgent(LLMAgent):
         if self.runtime.should_stop:
             query = None
 
-            if os.path.isfile(os.path.join(self.output_dir, 'file_design.txt')):
-                with open(os.path.join(self.output_dir, 'file_design.txt'), 'r') as f:
+            if os.path.isfile(
+                    os.path.join(self.output_dir, 'file_design.txt')):
+                with open(
+                        os.path.join(self.output_dir, 'file_design.txt'),
+                        'r') as f:
                     file_design = json.load(f)
 
-                with open(os.path.join(self.output_dir, 'modules.txt'), 'r') as f:
+                with open(os.path.join(self.output_dir, 'modules.txt'),
+                          'r') as f:
                     modules = f.readlines()
 
                 files1 = set()
@@ -58,7 +63,8 @@ class FileDesignAgent(LLMAgent):
                         f'please provide the correct file order without these files.'
                     )
             else:
-                query = 'The file design you provided is missing, please provide the complete file design.'
+                query = ('The file design you provided is missing, '
+                         'please provide the complete file design.')
 
             if query:
                 messages.append(Message(role='user', content=query))

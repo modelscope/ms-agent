@@ -3,11 +3,11 @@
 Configuration management for MS-Agent Web UI
 Handles global settings, LLM configuration, and MCP server configuration.
 """
-
-import json
 import os
 from threading import Lock
 from typing import Any, Dict, Optional
+
+import json
 
 
 class ConfigManager:
@@ -21,23 +21,46 @@ class ConfigManager:
             'base_url': 'https://api-inference.modelscope.cn/v1/',
             'temperature': None,
             'temperature_enabled': False,
-            'max_tokens': None,
+            'max_tokens': None
         },
         'deep_research': {
-            'researcher': {'model': '', 'api_key': '', 'base_url': ''},
-            'searcher': {'model': '', 'api_key': '', 'base_url': ''},
-            'reporter': {'model': '', 'api_key': '', 'base_url': ''},
-            'search': {'summarizer_model': '', 'summarizer_api_key': '', 'summarizer_base_url': ''},
+            'researcher': {
+                'model': '',
+                'api_key': '',
+                'base_url': ''
+            },
+            'searcher': {
+                'model': '',
+                'api_key': '',
+                'base_url': ''
+            },
+            'reporter': {
+                'model': '',
+                'api_key': '',
+                'base_url': ''
+            },
+            'search': {
+                'summarizer_model': '',
+                'summarizer_api_key': '',
+                'summarizer_base_url': ''
+            }
         },
-        'edit_file_config': {'api_key': '', 'base_url': 'https://api.morphllm.com/v1', 'diff_model': 'morph-v3-fast'},
-        'edgeone_pages': {'api_token': '', 'project_name': ''},
+        'edit_file_config': {
+            'api_key': '',
+            'base_url': 'https://api.morphllm.com/v1',
+            'diff_model': 'morph-v3-fast'
+        },
+        'edgeone_pages': {
+            'api_token': '',
+            'project_name': ''
+        },
         'search_keys': {
             'exa_api_key': '',
             'serpapi_api_key': '',
         },
         'mcp_servers': {},
         'theme': 'dark',
-        'output_dir': './output',
+        'output_dir': './output'
     }
 
     def __init__(self, config_dir: str):
@@ -85,7 +108,10 @@ class ConfigManager:
         """Save configuration to file"""
         with self._lock:
             # Save main config (without mcp_servers)
-            config_to_save = {k: v for k, v in self._config.items() if k != 'mcp_servers'}
+            config_to_save = {
+                k: v
+                for k, v in self._config.items() if k != 'mcp_servers'
+            }
             with open(self.config_file, 'w', encoding='utf-8') as f:
                 json.dump(config_to_save, f, indent=2)
 
@@ -132,7 +158,8 @@ class ConfigManager:
     def get_edit_file_config(self) -> Dict[str, Any]:
         """Get edit_file_config configuration"""
         config = self._load_config()
-        return config.get('edit_file_config', self.DEFAULT_CONFIG['edit_file_config'])
+        return config.get('edit_file_config',
+                          self.DEFAULT_CONFIG['edit_file_config'])
 
     def update_edit_file_config(self, edit_file_config: Dict[str, Any]):
         """Update edit_file_config configuration"""
@@ -143,9 +170,11 @@ class ConfigManager:
     def get_edgeone_pages_config(self) -> Dict[str, Any]:
         """Get EdgeOne Pages configuration"""
         config = self._load_config()
-        return config.get('edgeone_pages', self.DEFAULT_CONFIG['edgeone_pages'])
+        return config.get('edgeone_pages',
+                          self.DEFAULT_CONFIG['edgeone_pages'])
 
-    def update_edgeone_pages_config(self, edgeone_pages_config: Dict[str, Any]):
+    def update_edgeone_pages_config(self, edgeone_pages_config: Dict[str,
+                                                                     Any]):
         """Update EdgeOne Pages configuration"""
         self._load_config()
         self._config['edgeone_pages'] = edgeone_pages_config
@@ -165,9 +194,11 @@ class ConfigManager:
     def get_deep_research_config(self) -> Dict[str, Any]:
         """Get deep research configuration"""
         config = self._load_config()
-        return config.get('deep_research', self.DEFAULT_CONFIG['deep_research'])
+        return config.get('deep_research',
+                          self.DEFAULT_CONFIG['deep_research'])
 
-    def update_deep_research_config(self, deep_research_config: Dict[str, Any]):
+    def update_deep_research_config(self, deep_research_config: Dict[str,
+                                                                     Any]):
         """Update deep research configuration"""
         self._load_config()
         self._config['deep_research'] = deep_research_config

@@ -2,9 +2,8 @@
 from abc import abstractmethod
 from typing import Any, Dict
 
-from omegaconf import DictConfig
-
 from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR
+from omegaconf import DictConfig
 
 
 class ToolBase:
@@ -17,16 +16,17 @@ class ToolBase:
         self.config = config
         self.exclude_functions = []
         self.include_functions = []
-        self.output_dir = getattr(self.config, 'output_dir', DEFAULT_OUTPUT_DIR)
+        self.output_dir = getattr(self.config, 'output_dir',
+                                  DEFAULT_OUTPUT_DIR)
 
     def exclude_func(self, tool_config: DictConfig):
         if tool_config is not None:
             self.exclude_functions = getattr(tool_config, 'exclude', [])
             self.include_functions = getattr(tool_config, 'include', [])
 
-        assert (not self.exclude_functions) or (not self.include_functions), (
-            'Set either `include` or `exclude` in tools config.'
-        )
+        assert (not self.exclude_functions) or (
+            not self.include_functions
+        ), 'Set either `include` or `exclude` in tools config.'
 
     @abstractmethod
     async def connect(self) -> None:
@@ -76,7 +76,8 @@ class ToolBase:
         pass
 
     @abstractmethod
-    async def call_tool(self, server_name: str, *, tool_name: str, tool_args: dict) -> str:
+    async def call_tool(self, server_name: str, *, tool_name: str,
+                        tool_args: dict) -> str:
         """Call a tool.
 
         Args:

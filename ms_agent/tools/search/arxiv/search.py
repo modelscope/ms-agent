@@ -1,11 +1,12 @@
 # flake8: noqa
-import arxiv
 import os
-from arxiv import SortCriterion, SortOrder
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
-from ms_agent.tools.search.arxiv.schema import ArxivSearchRequest, ArxivSearchResult
+import arxiv
+from arxiv import SortCriterion, SortOrder
+from ms_agent.tools.search.arxiv.schema import (ArxivSearchRequest,
+                                                ArxivSearchResult)
 from ms_agent.tools.search.search_base import SearchEngine, SearchEngineType
 from ms_agent.utils.logger import get_logger
 
@@ -131,16 +132,20 @@ class ArxivSearch(SearchEngine):
             date_from_dt = None
             date_to_dt = None
             if getattr(search_request, 'date_from', None):
-                date_from_dt = _parse_yyyy_mm_dd(search_request.date_from, end_of_day=False)
+                date_from_dt = _parse_yyyy_mm_dd(
+                    search_request.date_from, end_of_day=False)
             if getattr(search_request, 'date_to', None):
-                date_to_dt = _parse_yyyy_mm_dd(search_request.date_to, end_of_day=True)
+                date_to_dt = _parse_yyyy_mm_dd(
+                    search_request.date_to, end_of_day=True)
 
             if date_from_dt or date_to_dt:
                 desired = int(search_request.num_results or 10)
-                search_args['max_results'] = min(max(desired + 10, desired), 50)
+                search_args['max_results'] = min(
+                    max(desired + 10, desired), 50)
 
             response = []
-            for paper in self.client.results(search=arxiv.Search(**search_args)):
+            for paper in self.client.results(
+                    search=arxiv.Search(**search_args)):
                 if date_from_dt or date_to_dt:
                     paper_date = getattr(paper, 'published', None)
                     if paper_date is None:
@@ -170,8 +175,7 @@ class ArxivSearch(SearchEngine):
                     **search_args,
                     **extra_args,
                 },
-                response=response,
-            )
+                response=response)
         except Exception as e:
             raise RuntimeError(f'Failed to perform search: {e}') from e
 
@@ -181,7 +185,6 @@ class ArxivSearch(SearchEngine):
     def get_tool_definition(cls, server_name: str = 'web_search') -> 'Tool':
         """Return the tool definition for arXiv search engine."""
         from ms_agent.llm.utils import Tool
-
         return Tool(
             tool_name=cls.get_tool_name(),
             server_name=server_name,
@@ -190,52 +193,62 @@ class ArxivSearch(SearchEngine):
                 'type': 'object',
                 'properties': {
                     'query': {
-                        'type': 'string',
-                        'description': (
-                            'Search query using quoted phrases for exact matches '
-                            '(e.g., \'"machine learning" OR "deep learning"\') or '
-                            'specific technical terms. Avoid overly broad or generic terms.'
-                        ),
+                        'type':
+                        'string',
+                        'description':
+                        ('Search query using quoted phrases for exact matches '
+                         '(e.g., \'"machine learning" OR "deep learning"\') or '
+                         'specific technical terms. Avoid overly broad or generic terms.'
+                         ),
                     },
                     'num_results': {
-                        'type': 'integer',
-                        'minimum': 1,
-                        'maximum': 15,
-                        'description': (
-                            'Maximum number of results to return. Default is 5.Use 5-15 for comprehensive searches.'
-                        ),
+                        'type':
+                        'integer',
+                        'minimum':
+                        1,
+                        'maximum':
+                        15,
+                        'description':
+                        ('Maximum number of results to return. Default is 5.'
+                         'Use 5-15 for comprehensive searches.'),
                     },
                     'date_from': {
-                        'type': 'string',
-                        'description': (
-                            'Start date for papers (YYYY-MM-DD format). Use to find recent work, e.g., "2023-01-01".'
-                        ),
+                        'type':
+                        'string',
+                        'description':
+                        ('Start date for papers (YYYY-MM-DD format). '
+                         'Use to find recent work, e.g., "2023-01-01".'),
                     },
                     'date_to': {
-                        'type': 'string',
-                        'description': (
-                            'End date for papers (YYYY-MM-DD format). '
-                            'Use with date_from for historical windows, e.g., "2020-12-31".'
-                        ),
+                        'type':
+                        'string',
+                        'description':
+                        ('End date for papers (YYYY-MM-DD format). '
+                         'Use with date_from for historical windows, e.g., "2020-12-31".'
+                         ),
                     },
                     'categories': {
-                        'type': 'array',
-                        'items': {'type': 'string'},
-                        'description': (
-                            'Strongly recommended: arXiv categories to focus search '
-                            '(e.g., ["cs.AI", "cs.MA"] for agent research, ["cs.LG"] for ML, '
-                            '["cs.CL"] for NLP, ["cs.CV"] for computer vision). '
-                            'Greatly improves relevance.'
-                        ),
+                        'type':
+                        'array',
+                        'items': {
+                            'type': 'string'
+                        },
+                        'description':
+                        ('Strongly recommended: arXiv categories to focus search '
+                         '(e.g., ["cs.AI", "cs.MA"] for agent research, ["cs.LG"] for ML, '
+                         '["cs.CL"] for NLP, ["cs.CV"] for computer vision). '
+                         'Greatly improves relevance.'),
                     },
                     'sort_by': {
-                        'type': 'string',
-                        'enum': ['relevance', 'submittedDate', 'lastUpdatedDate'],
-                        'description': (
-                            'How to sort results. "relevance" for best match, '
-                            '"submittedDate" for newest submissions, '
-                            '"lastUpdatedDate" for recently updated. Default is "relevance".'
-                        ),
+                        'type':
+                        'string',
+                        'enum':
+                        ['relevance', 'submittedDate', 'lastUpdatedDate'],
+                        'description':
+                        ('How to sort results. "relevance" for best match, '
+                         '"submittedDate" for newest submissions, '
+                         '"lastUpdatedDate" for recently updated. Default is "relevance".'
+                         ),
                     },
                     'sort_order': {
                         'type': 'string',
@@ -257,8 +270,8 @@ class ArxivSearch(SearchEngine):
             categories = [str(c).strip() for c in categories if str(c).strip()]
             if not _validate_categories(categories):
                 logger.warning(
-                    f"Invalid arXiv categories provided: {kwargs.get('categories')}. Ignoring categories filter."
-                )
+                    f"Invalid arXiv categories provided: {kwargs.get('categories')}. "
+                    'Ignoring categories filter.')
                 categories = None
 
         # Build final query by AND-ing base query with category filter (OR across categories)

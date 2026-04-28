@@ -5,14 +5,14 @@ import re
 import shutil
 from typing import List, Optional
 
-from omegaconf import DictConfig, OmegaConf
-
-from callbacks.quality_checker import ReportQualityChecker, build_quality_checkers
+from callbacks.quality_checker import (ReportQualityChecker,
+                                       build_quality_checkers)
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback
 from ms_agent.llm.openai_llm import OpenAI as OpenAILLM
 from ms_agent.llm.utils import Message
 from ms_agent.utils import get_logger
+from omegaconf import DictConfig, OmegaConf
 
 logger = get_logger()
 

@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 import signal
 import sys
@@ -7,9 +6,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Optional
 
+import json
+
 
 class DeepResearchWorkerManager:
-    def __init__(self, send_event: Callable[[str, Dict[str, Any]], Awaitable[None]]):
+
+    def __init__(self, send_event: Callable[[str, Dict[str, Any]],
+                                            Awaitable[None]]):
         self._send_event = send_event
         self._processes: Dict[str, asyncio.subprocess.Process] = {}
         self._stdout_tasks: Dict[str, asyncio.Task] = {}
@@ -23,18 +26,18 @@ class DeepResearchWorkerManager:
         return Path(__file__).resolve().parent / 'deep_research_worker.py'
 
     def _build_env(
-        self,
-        env_vars: Optional[Dict[str, str]],
-        llm_config: Optional[Dict[str, Any]],
-        deep_research_config: Optional[Dict[str, Any]],
-    ) -> Dict[str, str]:
+            self, env_vars: Optional[Dict[str, str]],
+            llm_config: Optional[Dict[str, Any]],
+            deep_research_config: Optional[Dict[str, Any]]) -> Dict[str, str]:
         env = os.environ.copy()
         if env_vars:
             env.update({k: v for k, v in env_vars.items() if v})
         if llm_config:
-            env['MS_AGENT_LLM_CONFIG'] = json.dumps(llm_config, ensure_ascii=False)
+            env['MS_AGENT_LLM_CONFIG'] = json.dumps(
+                llm_config, ensure_ascii=False)
         if deep_research_config:
-            env['MS_AGENT_DEEP_RESEARCH_CONFIG'] = json.dumps(deep_research_config, ensure_ascii=False)
+            env['MS_AGENT_DEEP_RESEARCH_CONFIG'] = json.dumps(
+                deep_research_config, ensure_ascii=False)
 
         api_key = (llm_config or {}).get('api_key')
         base_url = (llm_config or {}).get('base_url')
@@ -46,20 +49,20 @@ class DeepResearchWorkerManager:
         repo_root = str(self._get_repo_root())
         existing_path = env.get('PYTHONPATH', '')
         if repo_root not in existing_path.split(os.pathsep):
-            env['PYTHONPATH'] = repo_root + (os.pathsep + existing_path if existing_path else '')
+            env['PYTHONPATH'] = repo_root + (
+                os.pathsep + existing_path if existing_path else '')
         return env
 
     async def start(
-        self,
-        session_id: str,
-        *,
-        query: str,
-        config_path: str,
-        output_dir: str,
-        env_vars: Optional[Dict[str, str]] = None,
-        llm_config: Optional[Dict[str, Any]] = None,
-        deep_research_config: Optional[Dict[str, Any]] = None,
-    ) -> None:
+            self,
+            session_id: str,
+            *,
+            query: str,
+            config_path: str,
+            output_dir: str,
+            env_vars: Optional[Dict[str, str]] = None,
+            llm_config: Optional[Dict[str, Any]] = None,
+            deep_research_config: Optional[Dict[str, Any]] = None) -> None:
         if session_id in self._processes:
             await self.stop(session_id)
 
@@ -92,17 +95,17 @@ class DeepResearchWorkerManager:
         )
 
         self._processes[session_id] = process
-        self._stdout_tasks[session_id] = asyncio.create_task(self._read_stdout(session_id, process))
-        self._stderr_tasks[session_id] = asyncio.create_task(self._read_stderr(session_id, process))
+        self._stdout_tasks[session_id] = asyncio.create_task(
+            self._read_stdout(session_id, process))
+        self._stderr_tasks[session_id] = asyncio.create_task(
+            self._read_stderr(session_id, process))
         await self._send_event(
-            session_id,
-            {
+            session_id, {
                 'type': 'log',
                 'level': 'info',
                 'message': f'Deep research worker started (pid={process.pid})',
                 'timestamp': datetime.now().isoformat(),
-            },
-        )
+            })
 
     async def stop(self, session_id: str) -> None:
         process = self._processes.get(session_id)
@@ -132,7 +135,8 @@ class DeepResearchWorkerManager:
         finally:
             self._cleanup(session_id)
 
-    async def _read_stdout(self, session_id: str, process: asyncio.subprocess.Process) -> None:
+    async def _read_stdout(self, session_id: str,
+                           process: asyncio.subprocess.Process) -> None:
         if not process.stdout:
             return
         while True:
@@ -158,16 +162,20 @@ class DeepResearchWorkerManager:
                 return_code = None
         if return_code not in (None, 0) and session_id not in self._stopping:
             await self._send_event(
-                session_id,
-                {
-                    'type': 'error',
-                    'message': f'Deep research worker exited with code {return_code}',
-                },
-            )
-            await self._send_event(session_id, {'type': 'status', 'status': 'error'})
+                session_id, {
+                    'type':
+                    'error',
+                    'message':
+                    f'Deep research worker exited with code {return_code}',
+                })
+            await self._send_event(session_id, {
+                'type': 'status',
+                'status': 'error'
+            })
         self._cleanup(session_id)
 
-    async def _read_stderr(self, session_id: str, process: asyncio.subprocess.Process) -> None:
+    async def _read_stderr(self, session_id: str,
+                           process: asyncio.subprocess.Process) -> None:
         if not process.stderr:
             return
         while True:
@@ -180,14 +188,12 @@ class DeepResearchWorkerManager:
                 sys.stderr.write(text)
                 sys.stderr.flush()
                 await self._send_event(
-                    session_id,
-                    {
+                    session_id, {
                         'type': 'log',
                         'level': 'error',
                         'message': f'[deep_research_worker] {text.strip()}',
                         'timestamp': datetime.now().isoformat(),
-                    },
-                )
+                    })
             except Exception:
                 pass
 

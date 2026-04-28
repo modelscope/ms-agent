@@ -23,7 +23,6 @@ Quick start::
 """
 
 from __future__ import annotations
-
 from typing import Any
 
 from ms_agent.capabilities.descriptor import CapabilityDescriptor
@@ -40,7 +39,13 @@ def create_registry(config: Any = None) -> CapabilityRegistry:
     """
     registry = CapabilityRegistry()
 
-    from ms_agent.capabilities.wrappers import agent_delegate, deep_research, filesystem, lsp_code_server, web_search
+    from ms_agent.capabilities.wrappers import (
+        agent_delegate,
+        deep_research,
+        filesystem,
+        lsp_code_server,
+        web_search,
+    )
 
     filesystem.register_all(registry, config)
     lsp_code_server.register_all(registry, config)

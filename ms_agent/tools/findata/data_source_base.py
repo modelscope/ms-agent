@@ -7,13 +7,11 @@ import pandas as pd
 
 class DataSourceError(Exception):
     """Base data source error class"""
-
     pass
 
 
 class NoDataFoundError(DataSourceError):
     """Data not found exception"""
-
     pass
 
 
@@ -65,17 +63,22 @@ class FinancialDataSource(ABC):
         pass
 
     @abstractmethod
-    def get_dividend_data(self, code: str, year: str, year_type: str = 'report') -> pd.DataFrame:
+    def get_dividend_data(self,
+                          code: str,
+                          year: str,
+                          year_type: str = 'report') -> pd.DataFrame:
         """Get dividend information"""
         pass
 
     @abstractmethod
-    def get_adjust_factor_data(self, code: str, start_date: str, end_date: str) -> pd.DataFrame:
+    def get_adjust_factor_data(self, code: str, start_date: str,
+                               end_date: str) -> pd.DataFrame:
         """Get adjustment factor data"""
         pass
 
     @abstractmethod
-    def get_financial_data(self, code: str, year: str, quarter: int, data_types: List[str]) -> Dict[str, pd.DataFrame]:
+    def get_financial_data(self, code: str, year: str, quarter: int,
+                           data_types: List[str]) -> Dict[str, pd.DataFrame]:
         """Get financial data for multiple categories in one call
 
         Returns:
@@ -84,9 +87,11 @@ class FinancialDataSource(ABC):
         pass
 
     @abstractmethod
-    def get_report(
-        self, code: str, start_date: str, end_date: str, report_type: str = 'performance_express'
-    ) -> pd.DataFrame:
+    def get_report(self,
+                   code: str,
+                   start_date: str,
+                   end_date: str,
+                   report_type: str = 'performance_express') -> pd.DataFrame:
         """Get report data (performance express/forecast)"""
         pass
 
@@ -111,8 +116,8 @@ class FinancialDataSource(ABC):
         start_date: str,
         end_date: str,
         data_types: Optional[List[str]] = None,
-        extra_kwargs: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, pd.DataFrame]:
+        extra_kwargs: Optional[Dict[str,
+                                    Any]] = None) -> Dict[str, pd.DataFrame]:
         """Get macroeconomic data for multiple categories in one call"""
         pass
 

@@ -1,11 +1,11 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
-import json
 import os
 import re
 import time
 import uuid
 from typing import Any, Dict, List, Optional
 
+import json
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils.utils import file_lock, render_markdown_todo
@@ -46,17 +46,20 @@ def _write_text(path: str, content: str) -> None:
 def _coerce_chapters_argument(chapters: Any) -> tuple[List[Dict[str, Any]], Optional[str]]:
     """Normalize `chapters` from the model (list, JSON string, or nested strings)."""
     if chapters is None:
-        return [], ('commit_outline requires `chapters` (array of chapter objects, or a JSON string of that array).')
+        return [], (
+            'commit_outline requires `chapters` (array of chapter objects, '
+            'or a JSON string of that array).')
     raw: Any = chapters
     if isinstance(raw, str):
         try:
             raw = json.loads(raw.strip())
         except json.JSONDecodeError as e:
             return [], (
-                f'commit_outline `chapters` must be a JSON array of objects, or a JSON string of that array: {e}'
-            )
+                'commit_outline `chapters` must be a JSON array of objects, '
+                f'or a JSON string of that array: {e}')
     if not isinstance(raw, list):
-        return [], (f'commit_outline `chapters` must be a list, got {type(chapters).__name__}.')
+        return [], (
+            f'commit_outline `chapters` must be a list, got {type(chapters).__name__}.')
     out: List[Dict[str, Any]] = []
     for i, ch in enumerate(raw):
         if isinstance(ch, str):
@@ -64,10 +67,11 @@ def _coerce_chapters_argument(chapters: Any) -> tuple[List[Dict[str, Any]], Opti
                 ch = json.loads(ch.strip())
             except json.JSONDecodeError:
                 return [], (
-                    f'commit_outline chapters[{i}] must be an object; string entry is not valid JSON for an object.'
-                )
+                    f'commit_outline chapters[{i}] must be an object; '
+                    'string entry is not valid JSON for an object.')
         if not isinstance(ch, dict):
-            return [], (f'commit_outline chapters[{i}] must be an object, got {type(ch).__name__}.')
+            return [], (
+                f'commit_outline chapters[{i}] must be an object, got {type(ch).__name__}.')
         out.append(ch)
     return out, None
 
@@ -77,9 +81,14 @@ def _render_outline_md(outline: Dict[str, Any]) -> str:
     lines = [f"# {outline.get('title', 'Report Outline')}", '']
 
     for ch in outline.get('chapters', []):
-        status_icon = {'pending': '⏳', 'in_progress': '🔄', 'completed': '✅'}.get(ch.get('status', 'pending'), '⏳')
+        status_icon = {
+            'pending': '⏳',
+            'in_progress': '🔄',
+            'completed': '✅'
+        }.get(ch.get('status', 'pending'), '⏳')
 
-        lines.append(f"## Chapter {ch['chapter_id']}: {ch['title']} {status_icon}")
+        lines.append(
+            f"## Chapter {ch['chapter_id']}: {ch['title']} {status_icon}")
 
         if ch.get('goals'):
             lines.append('')
@@ -94,7 +103,8 @@ def _render_outline_md(outline: Dict[str, Any]) -> str:
 
         if ch.get('candidate_evidence'):
             lines.append('')
-            lines.append(f"**Related evidence:** {', '.join(ch['candidate_evidence'])}")
+            lines.append(
+                f"**Related evidence:** {', '.join(ch['candidate_evidence'])}")
 
         lines.append('')
 
@@ -106,19 +116,27 @@ def _render_outline_progress_md(outline: Dict[str, Any]) -> str:
     chapters = outline.get('chapters', [])
     total = len(chapters)
     completed = sum(1 for ch in chapters if ch.get('status') == 'completed')
-    in_progress = sum(1 for ch in chapters if ch.get('status') == 'in_progress')
+    in_progress = sum(1 for ch in chapters
+                      if ch.get('status') == 'in_progress')
     pending = total - completed - in_progress
 
     lines = [f"# {outline.get('title', 'Report Outline')}", '']
-    lines.append(f'Progress: {completed}/{total} completed | {in_progress} in progress | {pending} pending')
+    lines.append(
+        f'Progress: {completed}/{total} completed | {in_progress} in progress | {pending} pending'
+    )
     lines.append('')
     lines.append('## Chapters')
     lines.append('')
 
     for ch in chapters:
         status = ch.get('status', 'pending')
-        status_icon = {'pending': '⏳', 'in_progress': '🔄', 'completed': '✅'}.get(status, '⏳')
-        lines.append(f"- {status_icon} Chapter {ch['chapter_id']}: {ch['title']}")
+        status_icon = {
+            'pending': '⏳',
+            'in_progress': '🔄',
+            'completed': '✅'
+        }.get(status, '⏳')
+        lines.append(
+            f"- {status_icon} Chapter {ch['chapter_id']}: {ch['title']}")
 
     lines.append('')
     return '\n'.join(lines)
@@ -154,28 +172,43 @@ class ReportTool(ToolBase):
         self.exclude_func(tool_cfg)
 
         # Configurable paths
-        self._reports_dir = getattr(tool_cfg, 'reports_dir', 'reports') if tool_cfg else 'reports'
-        self._evidence_dir = getattr(tool_cfg, 'evidence_dir', 'evidence') if tool_cfg else 'evidence'
-        self._lock_subdir = getattr(tool_cfg, 'lock_subdir', '.locks') if tool_cfg else '.locks'
+        self._reports_dir = getattr(tool_cfg, 'reports_dir',
+                                    'reports') if tool_cfg else 'reports'
+        self._evidence_dir = getattr(tool_cfg, 'evidence_dir',
+                                     'evidence') if tool_cfg else 'evidence'
+        self._lock_subdir = getattr(tool_cfg, 'lock_subdir',
+                                    '.locks') if tool_cfg else '.locks'
 
     async def connect(self) -> None:
         """Initialize directory structure."""
         _ensure_dir(self.output_dir)
-        _ensure_dir(os.path.join(self.output_dir, self._reports_dir, 'chapters'))
+        _ensure_dir(
+            os.path.join(self.output_dir, self._reports_dir, 'chapters'))
         _ensure_dir(os.path.join(self.output_dir, self._lock_subdir))
 
     def _paths(self) -> Dict[str, str]:
         return {
-            'outline_json': os.path.join(self.output_dir, self._reports_dir, 'outline.json'),
-            'outline_md': os.path.join(self.output_dir, self._reports_dir, 'outline.md'),
-            'outline_progress_md': os.path.join(self.output_dir, self._reports_dir, 'outline_progress.md'),
-            'chapters_dir': os.path.join(self.output_dir, self._reports_dir, 'chapters'),
-            'conflict_json': os.path.join(self.output_dir, self._reports_dir, 'conflict.json'),
-            'draft_md': os.path.join(self.output_dir, self._reports_dir, 'draft.md'),
-            'report_md': os.path.join(self.output_dir, self._reports_dir, 'report.md'),
-            'evidence_index': os.path.join(self.output_dir, self._evidence_dir, 'index.json'),
-            'evidence_notes_dir': os.path.join(self.output_dir, self._evidence_dir, 'notes'),
-            'lock_dir': os.path.join(self.output_dir, self._lock_subdir),
+            'outline_json':
+            os.path.join(self.output_dir, self._reports_dir, 'outline.json'),
+            'outline_md':
+            os.path.join(self.output_dir, self._reports_dir, 'outline.md'),
+            'outline_progress_md':
+            os.path.join(self.output_dir, self._reports_dir,
+                         'outline_progress.md'),
+            'chapters_dir':
+            os.path.join(self.output_dir, self._reports_dir, 'chapters'),
+            'conflict_json':
+            os.path.join(self.output_dir, self._reports_dir, 'conflict.json'),
+            'draft_md':
+            os.path.join(self.output_dir, self._reports_dir, 'draft.md'),
+            'report_md':
+            os.path.join(self.output_dir, self._reports_dir, 'report.md'),
+            'evidence_index':
+            os.path.join(self.output_dir, self._evidence_dir, 'index.json'),
+            'evidence_notes_dir':
+            os.path.join(self.output_dir, self._evidence_dir, 'notes'),
+            'lock_dir':
+            os.path.join(self.output_dir, self._lock_subdir),
         }
 
     def _filter_candidate_evidence(
@@ -215,11 +248,11 @@ class ReportTool(ToolBase):
                 Tool(
                     tool_name='commit_outline',
                     server_name=self.SERVER_NAME,
-                    description=(
-                        'Generate the report outline with chapter structure. '
-                        'Each chapter must be bound to relevant evidence (note_ids). '
-                        'Ensures all evidence is covered by at least one chapter.'
-                    ),
+                    description=
+                    ('Generate the report outline with chapter structure. '
+                     'Each chapter must be bound to relevant evidence (note_ids). '
+                     'Ensures all evidence is covered by at least one chapter.'
+                     ),
                     parameters={
                         'type': 'object',
                         'properties': {
@@ -231,38 +264,52 @@ class ReportTool(ToolBase):
                                 'type': 'array',
                                 'description': 'List of chapter definitions.',
                                 'items': {
-                                    'type': 'object',
+                                    'type':
+                                    'object',
                                     'properties': {
                                         'title': {
                                             'type': 'string',
                                             'description': 'Chapter title.',
                                         },
                                         'goals': {
-                                            'type': 'array',
-                                            'items': {'type': 'string'},
-                                            'description': 'Main objectives of this chapter.',
+                                            'type':
+                                            'array',
+                                            'items': {
+                                                'type': 'string'
+                                            },
+                                            'description':
+                                            'Main objectives of this chapter.',
                                         },
                                         'sections_description': {
-                                            'type': 'string',
-                                            'description': (
-                                                'Detailed section-by-section plan for this chapter '
-                                                '(NOT a single-sentence summary). '
-                                                'Write subsections as a numbered list in markdown. '
-                                                'For EACH subsection include: '
-                                                '(a) subsection title, (b) 2-5 bullet key '
-                                                'points / questions to answer, '
-                                                '(c) expected output form: narrative synthesis is required; '
-                                                'optionally add an artifact '
-                                                '(e.g., table/checklist) to support the narrative.'
-                                            ),
+                                            'type':
+                                            'string',
+                                            'description':
+                                            ('Detailed section-by-section plan for this chapter '
+                                             '(NOT a single-sentence summary). '
+                                             'Write subsections as a numbered list in markdown. '
+                                             'For EACH subsection include: '
+                                             '(a) subsection title, (b) 2-5 bullet key '
+                                             'points / questions to answer, '
+                                             '(c) expected output form: narrative synthesis is required; '
+                                             'optionally add an artifact '
+                                             '(e.g., table/checklist) to support the narrative.'
+                                             ),
                                         },
                                         'candidate_evidence': {
-                                            'type': 'array',
-                                            'items': {'type': 'string'},
-                                            'description': 'List of note_ids relevant to this chapter.',
+                                            'type':
+                                            'array',
+                                            'items': {
+                                                'type': 'string'
+                                            },
+                                            'description':
+                                            'List of note_ids relevant to this chapter.',
                                         },
                                     },
-                                    'required': ['title', 'goals', 'sections_description', 'candidate_evidence'],
+                                    'required': [
+                                        'title', 'goals',
+                                        'sections_description',
+                                        'candidate_evidence'
+                                    ],
                                 },
                             },
                         },
@@ -273,11 +320,11 @@ class ReportTool(ToolBase):
                 Tool(
                     tool_name='prepare_chapter_bundle',
                     server_name=self.SERVER_NAME,
-                    description=(
-                        'Prepare metadata and evidence content for writing a specific chapter. '
-                        'Returns the chapter info with full evidence details for review. '
-                        'Call this before commit_chapter to review evidence quality.'
-                    ),
+                    description=
+                    ('Prepare metadata and evidence content for writing a specific chapter. '
+                     'Returns the chapter info with full evidence details for review. '
+                     'Call this before commit_chapter to review evidence quality.'
+                     ),
                     parameters={
                         'type': 'object',
                         'properties': {
@@ -286,12 +333,15 @@ class ReportTool(ToolBase):
                                 'description': 'The chapter number (1-based).',
                             },
                             'relevant_evidence': {
-                                'type': 'array',
-                                'items': {'type': 'string'},
-                                'description': (
-                                    'List of note_ids maybe used in this chapter. '
-                                    'The note_ids in this list will be loaded for review.'
-                                ),
+                                'type':
+                                'array',
+                                'items': {
+                                    'type': 'string'
+                                },
+                                'description':
+                                ('List of note_ids maybe used in this chapter. '
+                                 'The note_ids in this list will be loaded for review.'
+                                 ),
                             },
                             # 'need_raw_chunks': {
                             #     'type': 'boolean',
@@ -306,57 +356,70 @@ class ReportTool(ToolBase):
                 Tool(
                     tool_name='commit_chapter',
                     server_name=self.SERVER_NAME,
-                    description=(
-                        'Write the content of a specific chapter. '
-                        'The chapter will be saved as chapter_XX.md and status updated to completed.'
-                    ),
+                    description=
+                    ('Write the content of a specific chapter. '
+                     'The chapter will be saved as chapter_XX.md and status updated to completed.'
+                     ),
                     parameters={
-                        'type': 'object',
+                        'type':
+                        'object',
                         'properties': {
                             'chapter_id': {
                                 'type': 'integer',
                                 'description': 'The chapter number (1-based).',
                             },
                             'reranked_evidence': {
-                                'type': 'array',
-                                'items': {'type': 'string'},
-                                'description': 'List of note_ids reranked and chosen for this chapter.',
+                                'type':
+                                'array',
+                                'items': {
+                                    'type': 'string'
+                                },
+                                'description':
+                                'List of note_ids reranked and chosen for this chapter.',
                             },
                             'content': {
-                                'type': 'string',
-                                'description': (
-                                    'The markdown content of the chapter. '
-                                    'The content should include citations to the resources used in this chapter.'
-                                    'Make sure the content is based on the reranked evidence.'
-                                ),
+                                'type':
+                                'string',
+                                'description':
+                                ('The markdown content of the chapter. '
+                                 'The content should include citations to the resources used in this chapter.'
+                                 'Make sure the content is based on the reranked evidence.'
+                                 ),
                             },
                             'cited_urls': {
-                                'type': 'array',
-                                'items': {'type': 'string'},
-                                'description': (
-                                    'List of resource urls actually cited in this chapter.'
-                                    'Keep the same order as cited in content.'
-                                ),
+                                'type':
+                                'array',
+                                'items': {
+                                    'type': 'string'
+                                },
+                                'description':
+                                ('List of resource urls actually cited in this chapter.'
+                                 'Keep the same order as cited in content.'),
                             },
                         },
                         # Keep schema consistent with Python signature (reranked_evidence has no default)
-                        'required': ['chapter_id', 'reranked_evidence', 'content', 'cited_urls'],
-                        'additionalProperties': False,
+                        'required': [
+                            'chapter_id', 'reranked_evidence', 'content',
+                            'cited_urls'
+                        ],
+                        'additionalProperties':
+                        False,
                     },
                 ),
                 Tool(
                     tool_name='load_chunk',
                     server_name=self.SERVER_NAME,
-                    description=(
-                        'Load raw chunk content when evidence summaries are insufficient. '
-                        'Reserved for future implementation.'
-                    ),
+                    description=
+                    ('Load raw chunk content when evidence summaries are insufficient. '
+                     'Reserved for future implementation.'),
                     parameters={
                         'type': 'object',
                         'properties': {
                             'chunk_ids': {
                                 'type': 'array',
-                                'items': {'type': 'string'},
+                                'items': {
+                                    'type': 'string'
+                                },
                                 'description': 'List of chunk IDs to load.',
                             },
                         },
@@ -367,7 +430,8 @@ class ReportTool(ToolBase):
                 Tool(
                     tool_name='commit_conflict',
                     server_name=self.SERVER_NAME,
-                    description='Record a conflict or contradiction between evidence.',
+                    description=
+                    'Record a conflict or contradiction between evidence.',
                     parameters={
                         'type': 'object',
                         'properties': {
@@ -376,17 +440,24 @@ class ReportTool(ToolBase):
                                 'description': 'Description of the conflict.',
                             },
                             'evidence_ids': {
-                                'type': 'array',
-                                'items': {'type': 'string'},
-                                'description': 'Note IDs involved in the conflict.',
+                                'type':
+                                'array',
+                                'items': {
+                                    'type': 'string'
+                                },
+                                'description':
+                                'Note IDs involved in the conflict.',
                             },
                             'chapter_id': {
                                 'type': 'integer',
-                                'description': 'Optional: Related chapter number.',
+                                'description':
+                                'Optional: Related chapter number.',
                             },
                             'resolution': {
-                                'type': 'string',
-                                'description': 'Optional: How the conflict was resolved.',
+                                'type':
+                                'string',
+                                'description':
+                                'Optional: How the conflict was resolved.',
                             },
                         },
                         'required': ['description', 'evidence_ids'],
@@ -396,7 +467,8 @@ class ReportTool(ToolBase):
                 Tool(
                     tool_name='update_outline',
                     server_name=self.SERVER_NAME,
-                    description='Update a specific chapter in the outline (title, goals, or evidence bindings).',
+                    description=
+                    'Update a specific chapter in the outline (title, goals, or evidence bindings).',
                     parameters={
                         'type': 'object',
                         'properties': {
@@ -406,35 +478,45 @@ class ReportTool(ToolBase):
                             },
                             'updates': {
                                 'type': 'object',
-                                'description': 'Fields to update (title, goals, sections_description, candidate_evidence).',
+                                'description':
+                                'Fields to update (title, goals, sections_description, candidate_evidence).',
                                 'properties': {
                                     'title': {
                                         'type': 'string',
                                         'description': 'Title of the chapter.',
                                     },
                                     'goals': {
-                                        'type': 'array',
-                                        'items': {'type': 'string'},
-                                        'description': 'Main objectives of this chapter.',
+                                        'type':
+                                        'array',
+                                        'items': {
+                                            'type': 'string'
+                                        },
+                                        'description':
+                                        'Main objectives of this chapter.',
                                     },
                                     'sections_description': {
-                                        'type': 'string',
-                                        'description': (
-                                            'Detailed section-by-section plan for '
-                                            'this chapter (NOT a single-sentence summary). '
-                                            'Write subsections as a numbered list in markdown. '
-                                            'For EACH subsection include: '
-                                            '(a) subsection title, (b) 2-5 bullet key '
-                                            'points / questions to answer, '
-                                            '(c) expected output form: narrative synthesis '
-                                            'is required; optionally add an artifact '
-                                            '(e.g., table/checklist) to support the narrative.'
-                                        ),
+                                        'type':
+                                        'string',
+                                        'description':
+                                        ('Detailed section-by-section plan for '
+                                         'this chapter (NOT a single-sentence summary). '
+                                         'Write subsections as a numbered list in markdown. '
+                                         'For EACH subsection include: '
+                                         '(a) subsection title, (b) 2-5 bullet key '
+                                         'points / questions to answer, '
+                                         '(c) expected output form: narrative synthesis '
+                                         'is required; optionally add an artifact '
+                                         '(e.g., table/checklist) to support the narrative.'
+                                         ),
                                     },
                                     'candidate_evidence': {
-                                        'type': 'array',
-                                        'items': {'type': 'string'},
-                                        'description': 'List of note_ids relevant to this chapter.',
+                                        'type':
+                                        'array',
+                                        'items': {
+                                            'type': 'string'
+                                        },
+                                        'description':
+                                        'List of note_ids relevant to this chapter.',
                                     },
                                 },
                             },
@@ -446,22 +528,24 @@ class ReportTool(ToolBase):
                 Tool(
                     tool_name='assemble_draft',
                     server_name=self.SERVER_NAME,
-                    description=(
-                        'Assemble all chapters into a draft (draft.md) with TOC and references. '
-                        'Returns the draft path along with a summary of recorded conflicts. '
-                        'The model should then review the draft and conflicts to produce the final report.'
-                    ),
+                    description=
+                    ('Assemble all chapters into a draft (draft.md) with TOC and references. '
+                     'Returns the draft path along with a summary of recorded conflicts. '
+                     'The model should then review the draft and conflicts to produce the final report.'
+                     ),
                     parameters={
                         'type': 'object',
                         'properties': {
                             'include_toc': {
                                 'type': 'boolean',
-                                'description': 'Whether to include table of contents.',
+                                'description':
+                                'Whether to include table of contents.',
                                 'default': True,
                             },
                             'include_references': {
                                 'type': 'boolean',
-                                'description': 'Whether to include references section.',
+                                'description':
+                                'Whether to include references section.',
                                 'default': True,
                             },
                         },
@@ -499,22 +583,30 @@ class ReportTool(ToolBase):
         }
         return tools
 
-    async def call_tool(self, server_name: str, *, tool_name: str, tool_args: dict) -> str:
+    async def call_tool(self, server_name: str, *, tool_name: str,
+                        tool_args: dict) -> str:
         return await getattr(self, tool_name)(**(tool_args or {}))
 
     def _load_outline(self, paths: Dict[str, str]) -> Optional[Dict[str, Any]]:
         """Load outline.json."""
         return _safe_read_json(paths['outline_json'])
 
-    def _save_outline(self, paths: Dict[str, str], outline: Dict[str, Any], render: bool = True) -> None:
+    def _save_outline(self,
+                      paths: Dict[str, str],
+                      outline: Dict[str, Any],
+                      render: bool = True) -> None:
         """Save outline.json and render outline.md."""
         outline['updated_at'] = _now_iso()
         _write_text(paths['outline_json'], _json_dumps(outline))
         _write_text(paths['outline_md'], _render_outline_md(outline))
-        _write_text(paths['outline_progress_md'], _render_outline_progress_md(outline))
+        _write_text(paths['outline_progress_md'],
+                    _render_outline_progress_md(outline))
 
         if render:
-            render_markdown_todo(paths['outline_progress_md'], title='CURRENT REPORT OUTLINE', use_pager=False)
+            render_markdown_todo(
+                paths['outline_progress_md'],
+                title='CURRENT REPORT OUTLINE',
+                use_pager=False)
 
     def _load_evidence_index(self, paths: Dict[str, str]) -> Dict[str, Any]:
         """Load evidence index."""
@@ -542,9 +634,11 @@ class ReportTool(ToolBase):
             data['analyses'] = legacy
         return data
 
-    def _load_note_content(self, paths: Dict[str, str], note_id: str) -> Optional[Dict[str, Any]]:
+    def _load_note_content(self, paths: Dict[str, str],
+                           note_id: str) -> Optional[Dict[str, Any]]:
         """Load a single note's full content from markdown file."""
-        note_path = os.path.join(paths['evidence_notes_dir'], f'note_{note_id}.md')
+        note_path = os.path.join(paths['evidence_notes_dir'],
+                                 f'note_{note_id}.md')
         if not os.path.exists(note_path):
             return None
 
@@ -563,7 +657,8 @@ class ReportTool(ToolBase):
             return {'updated_at': _now_iso(), 'conflicts': []}
         return data
 
-    def _save_conflict(self, paths: Dict[str, str], conflict: Dict[str, Any]) -> None:
+    def _save_conflict(self, paths: Dict[str, str],
+                       conflict: Dict[str, Any]) -> None:
         """Save conflict.json."""
         conflict['updated_at'] = _now_iso()
         _write_text(paths['conflict_json'], _json_dumps(conflict))
@@ -576,16 +671,14 @@ class ReportTool(ToolBase):
             index = self._load_full_evidence_index(paths)
         notes = index.get('notes', {})
         analyses = index.get('analyses', {})
-        return _json_dumps(
-            {
-                'status': 'ok',
-                'updated_at': index.get('updated_at', ''),
-                'total_notes': len(notes),
-                'total_analyses': len(analyses),
-                'notes': notes,
-                'analyses': analyses,
-            }
-        )
+        return _json_dumps({
+            'status': 'ok',
+            'updated_at': index.get('updated_at', ''),
+            'total_notes': len(notes),
+            'total_analyses': len(analyses),
+            'notes': notes,
+            'analyses': analyses,
+        })
 
     async def commit_outline(
         self,
@@ -612,27 +705,34 @@ class ReportTool(ToolBase):
 
         for idx, ch in enumerate(chapters_list, start=1):
             candidate_raw = ch.get('candidate_evidence', [])
-            kept, dropped = self._filter_candidate_evidence(paths, candidate_raw)
+            kept, dropped = self._filter_candidate_evidence(
+                paths, candidate_raw)
             if dropped:
                 invalid_candidate_by_chapter[str(idx)] = dropped
             covered_evidence.update(kept)
 
-            outline_chapters.append(
-                {
-                    'chapter_id': idx,
-                    'title': ch.get('title', f'Chapter {idx}'),
-                    'goals': ch.get('goals', []),
-                    'sections_description': ch.get('sections_description', ''),
-                    'candidate_evidence': kept,
-                    'status': 'pending',
-                }
-            )
+            outline_chapters.append({
+                'chapter_id':
+                idx,
+                'title':
+                ch.get('title', f'Chapter {idx}'),
+                'goals':
+                ch.get('goals', []),
+                'sections_description':
+                ch.get('sections_description', ''),
+                'candidate_evidence':
+                kept,
+                'status':
+                'pending',
+            })
 
         # Check coverage
         uncovered = all_note_ids - covered_evidence
         coverage_warning = None
         if uncovered:
-            coverage_warning = f'Warning: the following evidence is not covered by any chapter: {list(uncovered)}'
+            coverage_warning = (
+                f'Warning: the following evidence is not covered by any chapter: {list(uncovered)}'
+            )
 
         outline = {
             'title': title,
@@ -646,7 +746,8 @@ class ReportTool(ToolBase):
 
         result = {
             'status': 'ok',
-            'outline_path': os.path.relpath(paths['outline_json'], self.output_dir),
+            'outline_path': os.path.relpath(paths['outline_json'],
+                                            self.output_dir),
             'chapters_count': len(outline_chapters),
             'total_evidence': len(all_note_ids),
             'covered_evidence': len(covered_evidence),
@@ -678,9 +779,12 @@ class ReportTool(ToolBase):
         # Load outline
         outline = self._load_outline(paths)
         if outline is None:
-            return _json_dumps(
-                {'status': 'error', 'message': 'Outline not created yet. Please call commit_outline first.'}
-            )
+            return _json_dumps({
+                'status':
+                'error',
+                'message':
+                'Outline not created yet. Please call commit_outline first.'
+            })
 
         # Find chapter
         chapter = None
@@ -690,17 +794,25 @@ class ReportTool(ToolBase):
                 break
 
         if chapter is None:
-            return _json_dumps({'status': 'error', 'message': f'Chapter {chapter_id} not found.'})
+            return _json_dumps({
+                'status': 'error',
+                'message': f'Chapter {chapter_id} not found.'
+            })
 
-        cand_kept, cand_dropped = self._filter_candidate_evidence(paths, chapter.get('candidate_evidence', []))
-        rel_kept, rel_dropped = self._filter_candidate_evidence(paths, relevant_evidence or [])
+        cand_kept, cand_dropped = self._filter_candidate_evidence(
+            paths, chapter.get('candidate_evidence', []))
+        rel_kept, rel_dropped = self._filter_candidate_evidence(
+            paths, relevant_evidence or [])
 
         # Load evidence content
         evidence_index = self._load_evidence_index(paths)
         notes_meta = evidence_index.get('notes', {})
         _known_sorted = sorted(notes_meta.keys())
         _sample = _known_sorted[:48]
-        _note_id_hint = 'Known note ids in evidence index (sample): ' + (', '.join(_sample) if _sample else '(none)')
+        _note_id_hint = (
+            'Known note ids in evidence index (sample): '
+            + (', '.join(_sample) if _sample else '(none)')
+        )
         if len(_known_sorted) > len(_sample):
             _note_id_hint += f' … (+{len(_known_sorted) - len(_sample)} more)'
 
@@ -724,18 +836,24 @@ class ReportTool(ToolBase):
             note_data = self._load_note_content(paths, note_id)
 
             if note_data:
-                notes_content.append(
-                    {
-                        'note_id': note_id,
-                        'title': meta.get('title', note_data.get('title', '')),
-                        'content': note_data.get('content', ''),
-                        'contradicts': note_data.get('contradicts', ''),
-                        'summary': meta.get('summary', note_data.get('summary', '')),
-                        'sources': meta.get('sources', note_data.get('sources', [])),
-                        'quality_score': meta.get('quality_score', note_data.get('quality_score')),
-                        'tags': meta.get('tags', note_data.get('tags', [])),
-                    }
-                )
+                notes_content.append({
+                    'note_id':
+                    note_id,
+                    'title':
+                    meta.get('title', note_data.get('title', '')),
+                    'content':
+                    note_data.get('content', ''),
+                    'contradicts':
+                    note_data.get('contradicts', ''),
+                    'summary':
+                    meta.get('summary', note_data.get('summary', '')),
+                    'sources':
+                    meta.get('sources', note_data.get('sources', [])),
+                    'quality_score':
+                    meta.get('quality_score', note_data.get('quality_score')),
+                    'tags':
+                    meta.get('tags', note_data.get('tags', [])),
+                })
             else:
                 notes_content.append(_missing_note_entry(note_id, meta))
 
@@ -747,23 +865,31 @@ class ReportTool(ToolBase):
                 note_data = self._load_note_content(paths, note_id)
 
                 if note_data:
-                    notes_content.append(
-                        {
-                            'note_id': note_id,
-                            'title': meta.get('title', note_data.get('title', '')),
-                            'content': note_data.get('content', ''),
-                            'contradicts': note_data.get('contradicts', ''),
-                            'summary': meta.get('summary', note_data.get('summary', '')),
-                            'sources': meta.get('sources', note_data.get('sources', [])),
-                            'quality_score': meta.get('quality_score', note_data.get('quality_score')),
-                            'tags': meta.get('tags', note_data.get('tags', [])),
-                        }
-                    )
+                    notes_content.append({
+                        'note_id':
+                        note_id,
+                        'title':
+                        meta.get('title', note_data.get('title', '')),
+                        'content':
+                        note_data.get('content', ''),
+                        'contradicts':
+                        note_data.get('contradicts', ''),
+                        'summary':
+                        meta.get('summary', note_data.get('summary', '')),
+                        'sources':
+                        meta.get('sources', note_data.get('sources', [])),
+                        'quality_score':
+                        meta.get('quality_score',
+                                 note_data.get('quality_score')),
+                        'tags':
+                        meta.get('tags', note_data.get('tags', [])),
+                    })
                 else:
                     notes_content.append(_missing_note_entry(note_id, meta))
 
         # Build meta (only ids that resolved to on-disk notes for this bundle)
-        candidate_evidence = list(dict.fromkeys(list(cand_kept) + list(rel_kept)))
+        candidate_evidence = list(
+            dict.fromkeys(list(cand_kept) + list(rel_kept)))
         meta = {
             'chapter_id': chapter_id,
             'chapter_title': chapter['title'],
@@ -776,7 +902,8 @@ class ReportTool(ToolBase):
         }
 
         # Save meta.json
-        meta_path = os.path.join(paths['chapters_dir'], f'chapter_{chapter_id:02d}_meta.json')
+        meta_path = os.path.join(paths['chapters_dir'],
+                                 f'chapter_{chapter_id:02d}_meta.json')
         with file_lock(paths['lock_dir'], f'chapter_{chapter_id}_meta'):
             _write_text(meta_path, _json_dumps(meta))
 
@@ -786,13 +913,20 @@ class ReportTool(ToolBase):
             self._save_outline(paths, outline)
 
         out_bundle: Dict[str, Any] = {
-            'status': 'ok',
-            'chapter_id': chapter_id,
-            'chapter_title': chapter['title'],
-            'chapter_goals': chapter.get('goals', []),
-            'evidence_count': len(notes_content),
-            'meta_path': os.path.relpath(meta_path, self.output_dir),
-            'notes_content': notes_content,
+            'status':
+            'ok',
+            'chapter_id':
+            chapter_id,
+            'chapter_title':
+            chapter['title'],
+            'chapter_goals':
+            chapter.get('goals', []),
+            'evidence_count':
+            len(notes_content),
+            'meta_path':
+            os.path.relpath(meta_path, self.output_dir),
+            'notes_content':
+            notes_content,
         }
         skipped: Dict[str, List[str]] = {}
         if cand_dropped:
@@ -821,7 +955,10 @@ class ReportTool(ToolBase):
         # Validate outline exists
         outline = self._load_outline(paths)
         if outline is None:
-            return _json_dumps({'status': 'error', 'message': 'Outline not created yet.'})
+            return _json_dumps({
+                'status': 'error',
+                'message': 'Outline not created yet.'
+            })
 
         # Find and update chapter
         chapter_found = False
@@ -836,10 +973,14 @@ class ReportTool(ToolBase):
                 break
 
         if not chapter_found:
-            return _json_dumps({'status': 'error', 'message': f'Chapter {chapter_id} not found.'})
+            return _json_dumps({
+                'status': 'error',
+                'message': f'Chapter {chapter_id} not found.'
+            })
 
         # Write chapter file
-        chapter_path = os.path.join(paths['chapters_dir'], f'chapter_{chapter_id:02d}.md')
+        chapter_path = os.path.join(paths['chapters_dir'],
+                                    f'chapter_{chapter_id:02d}.md')
 
         with file_lock(paths['lock_dir'], f'chapter_{chapter_id}'):
             _write_text(chapter_path, content)
@@ -847,7 +988,8 @@ class ReportTool(ToolBase):
         with file_lock(paths['lock_dir'], 'report_outline'):
             self._save_outline(paths, outline)
 
-        meta_path = os.path.join(paths['chapters_dir'], f'chapter_{chapter_id:02d}_meta.json')
+        meta_path = os.path.join(paths['chapters_dir'],
+                                 f'chapter_{chapter_id:02d}_meta.json')
         meta = _safe_read_json(meta_path)
         meta = meta if isinstance(meta, dict) else {}
         meta['reranked_evidence'] = list(reranked_evidence or [])
@@ -855,27 +997,31 @@ class ReportTool(ToolBase):
         with file_lock(paths['lock_dir'], f'chapter_{chapter_id}_meta'):
             _write_text(meta_path, _json_dumps(meta))
 
-        return _json_dumps(
-            {
-                'status': 'ok',
-                'chapter_id': chapter_id,
-                'chapter_title': chapter_title,
-                'path': os.path.relpath(chapter_path, self.output_dir),
-                'content_length': len(content),
-                'reranked_evidence': reranked_evidence or [],
-                'cited_urls': cited_urls or [],
-            }
-        )
+        return _json_dumps({
+            'status':
+            'ok',
+            'chapter_id':
+            chapter_id,
+            'chapter_title':
+            chapter_title,
+            'path':
+            os.path.relpath(chapter_path, self.output_dir),
+            'content_length':
+            len(content),
+            'reranked_evidence':
+            reranked_evidence or [],
+            'cited_urls':
+            cited_urls or [],
+        })
 
     async def load_chunk(self, chunk_ids: List[str]) -> str:
         """Load raw chunk content. Reserved for future implementation."""
-        return _json_dumps(
-            {
-                'status': 'not_implemented',
-                'message': 'Chunk storage not enabled in this version. Use evidence notes directly.',
-                'chunk_ids': chunk_ids,
-            }
-        )
+        return _json_dumps({
+            'status': 'not_implemented',
+            'message':
+            'Chunk storage not enabled in this version. Use evidence notes directly.',
+            'chunk_ids': chunk_ids,
+        })
 
     async def commit_conflict(
         self,
@@ -904,14 +1050,16 @@ class ReportTool(ToolBase):
             conflicts['conflicts'].append(conflict_entry)
             self._save_conflict(paths, conflicts)
 
-        return _json_dumps(
-            {
-                'status': 'ok',
-                'conflict_id': conflict_id,
-                'total_conflicts': len(conflicts['conflicts']),
-                'conflict_path': os.path.relpath(paths['conflict_json'], self.output_dir),
-            }
-        )
+        return _json_dumps({
+            'status':
+            'ok',
+            'conflict_id':
+            conflict_id,
+            'total_conflicts':
+            len(conflicts['conflicts']),
+            'conflict_path':
+            os.path.relpath(paths['conflict_json'], self.output_dir),
+        })
 
     async def update_outline(
         self,
@@ -925,7 +1073,10 @@ class ReportTool(ToolBase):
         with file_lock(paths['lock_dir'], 'report_outline'):
             outline = self._load_outline(paths)
             if outline is None:
-                return _json_dumps({'status': 'error', 'message': 'Outline not created yet.'})
+                return _json_dumps({
+                    'status': 'error',
+                    'message': 'Outline not created yet.'
+                })
 
             chapter_found = False
             invalid_candidate_removed: List[str] = []
@@ -936,16 +1087,23 @@ class ReportTool(ToolBase):
                     if 'goals' in updates:
                         ch['goals'] = updates['goals']
                     if 'sections_description' in updates:
-                        ch['sections_description'] = updates['sections_description']
+                        ch['sections_description'] = updates[
+                            'sections_description']
                     if 'candidate_evidence' in updates:
-                        kept, dropped = self._filter_candidate_evidence(paths, updates['candidate_evidence'])
+                        kept, dropped = self._filter_candidate_evidence(
+                            paths, updates['candidate_evidence'])
                         ch['candidate_evidence'] = kept
                         invalid_candidate_removed = dropped
                     chapter_found = True
                     break
 
             if not chapter_found:
-                return _json_dumps({'status': 'error', 'message': f'Chapter {chapter_id} not found.'})
+                return _json_dumps({
+                    'status':
+                    'error',
+                    'message':
+                    f'Chapter {chapter_id} not found.'
+                })
 
             self._save_outline(paths, outline)
 
@@ -957,7 +1115,8 @@ class ReportTool(ToolBase):
         if invalid_candidate_removed:
             out['invalid_candidate_evidence_removed'] = invalid_candidate_removed
             out['invalid_candidate_evidence_note'] = (
-                'These ids were removed from candidate_evidence because no matching evidence/notes/note_<id>.md exists.'
+                'These ids were removed from candidate_evidence because no '
+                'matching evidence/notes/note_<id>.md exists.'
             )
         return _json_dumps(out)
 
@@ -971,38 +1130,47 @@ class ReportTool(ToolBase):
 
         outline = self._load_outline(paths)
         if outline is None:
-            return _json_dumps({'status': 'error', 'message': 'Outline not created yet.'})
+            return _json_dumps({
+                'status': 'error',
+                'message': 'Outline not created yet.'
+            })
 
         # Collect chapter contents
         chapters_content = []
         missing_chapters = []
 
         for ch in outline.get('chapters', []):
-            chapter_path = os.path.join(paths['chapters_dir'], f"chapter_{ch['chapter_id']:02d}.md")
+            chapter_path = os.path.join(paths['chapters_dir'],
+                                        f"chapter_{ch['chapter_id']:02d}.md")
             if os.path.exists(chapter_path):
                 with open(chapter_path, 'r', encoding='utf-8') as f:
-                    chapters_content.append(
-                        {
-                            'id': ch['chapter_id'],
-                            'title': ch['title'],
-                            'content': f.read(),
-                            'reranked_evidence': ch.get('reranked_evidence', []),
-                            'cited_urls': ch.get('cited_urls', []),
-                        }
-                    )
+                    chapters_content.append({
+                        'id':
+                        ch['chapter_id'],
+                        'title':
+                        ch['title'],
+                        'content':
+                        f.read(),
+                        'reranked_evidence':
+                        ch.get('reranked_evidence', []),
+                        'cited_urls':
+                        ch.get('cited_urls', []),
+                    })
             else:
                 missing_chapters.append(ch['chapter_id'])
 
         if missing_chapters:
-            return _json_dumps(
-                {
-                    'status': 'error',
-                    'message': f'The following chapters are not completed yet: {missing_chapters}',
-                }
-            )
+            return _json_dumps({
+                'status':
+                'error',
+                'message':
+                f'The following chapters are not completed yet: {missing_chapters}',
+            })
 
         # Build draft
-        draft_lines = [f"# {outline.get('title', 'Research Report')} (Draft)", '']
+        draft_lines = [
+            f"# {outline.get('title', 'Research Report')} (Draft)", ''
+        ]
 
         # Table of contents
         if include_toc:
@@ -1010,7 +1178,8 @@ class ReportTool(ToolBase):
             draft_lines.append('')
             for ch in chapters_content:
                 anchor = ch['title'].replace(' ', '-').lower()
-                draft_lines.append(f"- [Chapter {ch['id']} {ch['title']}](#{anchor})")
+                draft_lines.append(
+                    f"- [Chapter {ch['id']} {ch['title']}](#{anchor})")
             draft_lines.append('')
 
         # Chapters
@@ -1025,7 +1194,7 @@ class ReportTool(ToolBase):
 
             cited_urls = set()
             for ch in chapters_content:
-                for url in ch.get('cited_urls') or []:
+                for url in (ch.get('cited_urls') or []):
                     cited_urls.add(url)
 
             all_cited = set()
@@ -1057,31 +1226,33 @@ class ReportTool(ToolBase):
         conflicts_list = conflicts_data.get('conflicts', [])
         conflicts_summary = []
         for c in conflicts_list:
-            conflicts_summary.append(
-                {
-                    'id': c.get('id'),
-                    'description': c.get('description'),
-                    'chapter_id': c.get('chapter_id'),
-                    'resolution': c.get('resolution'),
-                }
-            )
+            conflicts_summary.append({
+                'id': c.get('id'),
+                'description': c.get('description'),
+                'chapter_id': c.get('chapter_id'),
+                'resolution': c.get('resolution'),
+            })
 
-        return _json_dumps(
-            {
-                'status': 'ok',
-                'draft_path': os.path.relpath(paths['draft_md'], self.output_dir),
-                'chapters_count': len(chapters_content),
-                'content_length': len(draft_content),
-                'conflicts_count': len(conflicts_list),
-                'conflicts_summary': conflicts_summary,
-                'next_step_reminder': (
-                    'Review the draft and conflicts, then generate the final report. '
-                    'Note: the draft cannot be used as the final report; '
-                    'do not replace report content with references or pointers to other content or files '
-                    '(e.g., "details are in chapter_2.md", "see draft.md for more details").'
-                ),
-            }
-        )
+        return _json_dumps({
+            'status':
+            'ok',
+            'draft_path':
+            os.path.relpath(paths['draft_md'], self.output_dir),
+            'chapters_count':
+            len(chapters_content),
+            'content_length':
+            len(draft_content),
+            'conflicts_count':
+            len(conflicts_list),
+            'conflicts_summary':
+            conflicts_summary,
+            'next_step_reminder':
+            ('Review the draft and conflicts, then generate the final report. '
+             'Note: the draft cannot be used as the final report; '
+             'do not replace report content with references or pointers to other content or files '
+             '(e.g., "details are in chapter_2.md", "see draft.md for more details").'
+             ),
+        })
 
     async def get_status(self) -> str:
         """Get current report generation progress."""
@@ -1091,40 +1262,52 @@ class ReportTool(ToolBase):
         conflicts = self._load_conflict(paths)
 
         if outline is None:
-            return _json_dumps(
-                {
-                    'status': 'not_started',
-                    'outline_exists': False,
-                    'chapters': [],
-                    'conflicts_count': len(conflicts.get('conflicts', [])),
-                }
-            )
+            return _json_dumps({
+                'status':
+                'not_started',
+                'outline_exists':
+                False,
+                'chapters': [],
+                'conflicts_count':
+                len(conflicts.get('conflicts', [])),
+            })
 
         chapters_status = []
         for ch in outline.get('chapters', []):
-            chapter_path = os.path.join(paths['chapters_dir'], f"chapter_{ch['chapter_id']:02d}.md")
-            chapters_status.append(
-                {
-                    'chapter_id': ch['chapter_id'],
-                    'title': ch['title'],
-                    'status': ch.get('status', 'pending'),
-                    'file_exists': os.path.exists(chapter_path),
-                    'candidate_evidence_count': len(ch.get('candidate_evidence', [])),
-                }
-            )
+            chapter_path = os.path.join(paths['chapters_dir'],
+                                        f"chapter_{ch['chapter_id']:02d}.md")
+            chapters_status.append({
+                'chapter_id':
+                ch['chapter_id'],
+                'title':
+                ch['title'],
+                'status':
+                ch.get('status', 'pending'),
+                'file_exists':
+                os.path.exists(chapter_path),
+                'candidate_evidence_count':
+                len(ch.get('candidate_evidence', [])),
+            })
 
-        completed = sum(1 for ch in chapters_status if ch['status'] == 'completed')
+        completed = sum(1 for ch in chapters_status
+                        if ch['status'] == 'completed')
         total = len(chapters_status)
 
-        return _json_dumps(
-            {
-                'status': 'in_progress' if completed < total else 'completed',
-                'outline_exists': True,
-                'report_title': outline.get('title', ''),
-                'progress': f'{completed}/{total}',
-                'chapters': chapters_status,
-                'conflicts_count': len(conflicts.get('conflicts', [])),
-                'draft_exists': os.path.exists(paths['draft_md']),
-                'report_exists': os.path.exists(paths['report_md']),
-            }
-        )
+        return _json_dumps({
+            'status':
+            'in_progress' if completed < total else 'completed',
+            'outline_exists':
+            True,
+            'report_title':
+            outline.get('title', ''),
+            'progress':
+            f'{completed}/{total}',
+            'chapters':
+            chapters_status,
+            'conflicts_count':
+            len(conflicts.get('conflicts', [])),
+            'draft_exists':
+            os.path.exists(paths['draft_md']),
+            'report_exists':
+            os.path.exists(paths['report_md']),
+        })

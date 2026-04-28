@@ -1,8 +1,8 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
-import json
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Union
 
+import json
 from typing_extensions import Literal, Required, TypedDict
 
 
@@ -86,20 +86,19 @@ class Message:
                     'function': {
                         'name': tool_call['tool_name'],
                         'arguments': tool_call['arguments'],
-                    },
+                    }
                 }
         required = ['content', 'role']
         # Never send UI-only fields to model providers.
         rm = [
-            'completion_tokens',
-            'prompt_tokens',
-            'api_calls',
-            'tool_detail',
-            'searching_detail',
-            'search_result',
-            '_responses_output_items',
+            'completion_tokens', 'prompt_tokens', 'api_calls', 'tool_detail',
+            'searching_detail', 'search_result', '_responses_output_items',
         ]
-        return {key: value for key, value in raw_dict.items() if (value or key in required) and key not in rm}
+        return {
+            key: value
+            for key, value in raw_dict.items()
+            if (value or key in required) and key not in rm
+        }
 
 
 @dataclass
@@ -128,6 +127,9 @@ class ToolResult:
                 text=str(model_text),
                 resources=raw.get('resources', []),
                 tool_detail=None if td is None else str(td),
-                extra={k: v for k, v in raw.items() if k not in ['text', 'resources', 'result', 'tool_detail']},
-            )
+                extra={
+                    k: v
+                    for k, v in raw.items()
+                    if k not in ['text', 'resources', 'result', 'tool_detail']
+                })
         raise TypeError('tool_call_result must be str or dict')

@@ -1,12 +1,13 @@
 # flake8: noqa
 import sys
+from pathlib import Path
+
 from bs4 import Tag
 from docling_core.types import DoclingDocument
 from docling_core.types.doc import DocItemLabel, ImageRef
-from pathlib import Path
-
 from ms_agent.utils.logger import get_logger
-from ms_agent.utils.utils import load_image_from_uri_to_pil, load_image_from_url_to_pil, validate_url
+from ms_agent.utils.utils import (load_image_from_uri_to_pil,
+                                  load_image_from_url_to_pil, validate_url)
 
 logger = get_logger()
 
@@ -15,7 +16,9 @@ def html_handle_figure(self, element: Tag, doc: DoclingDocument) -> None:
     """
     Patch the `docling.backend.html_backend.HTMLDocumentBackend.handle_figure` method.
     """
-    logger.debug(f'Patching HTMLDocumentBackend.handle_figure for {doc.origin.filename}')
+    logger.debug(
+        f'Patching HTMLDocumentBackend.handle_figure for {doc.origin.filename}'
+    )
 
     img_element: Tag = element.find('img')
     if isinstance(img_element, Tag):
@@ -29,7 +32,8 @@ def html_handle_figure(self, element: Tag, doc: DoclingDocument) -> None:
         else:
             if not img_url.startswith('http'):
                 img_url = validate_url(img_url=img_url, backend=self)
-            img_pil = load_image_from_url_to_pil(img_url) if img_url.startswith('http') else None
+            img_pil = load_image_from_url_to_pil(
+                img_url) if img_url.startswith('http') else None
     else:
         img_pil = None
 
@@ -73,7 +77,8 @@ def html_handle_image(self, element: Tag, doc: DoclingDocument) -> None:
     """
     Patch the `docling.backend.html_backend.HTMLDocumentBackend.handle_image` method to use the custom.
     """
-    logger.debug(f'Patching HTMLDocumentBackend.handle_image for {doc.origin.filename}')
+    logger.debug(
+        f'Patching HTMLDocumentBackend.handle_image for {doc.origin.filename}')
 
     # Get the image from element
     img_url: str = element.attrs.get('src', None)
@@ -142,41 +147,30 @@ def patch_easyocr_models():
     logger.info('Patching EasyOCR models URLs for ModelScope...')
 
     # Patch detection models
-    detection_models['craft']['url'] = (
-        'https://modelscope.cn/models/ms-agent/craft_mlt_25k/resolve/master/craft_mlt_25k.zip'
-    )
-    detection_models['dbnet18']['url'] = (
-        'https://modelscope.cn/models/ms-agent/pretrained_ic15_res18/resolve/master/pretrained_ic15_res18.zip'
-    )
-    detection_models['dbnet50']['url'] = (
-        'https://modelscope.cn/models/ms-agent/pretrained_ic15_res50/resolve/master/pretrained_ic15_res50.zip'
-    )
+    detection_models['craft'][
+        'url'] = 'https://modelscope.cn/models/ms-agent/craft_mlt_25k/resolve/master/craft_mlt_25k.zip'
+    detection_models['dbnet18'][
+        'url'] = 'https://modelscope.cn/models/ms-agent/pretrained_ic15_res18/resolve/master/pretrained_ic15_res18.zip'
+    detection_models['dbnet50'][
+        'url'] = 'https://modelscope.cn/models/ms-agent/pretrained_ic15_res50/resolve/master/pretrained_ic15_res50.zip'
 
     # Patch recognition models
-    recognition_models['gen2']['english_g2']['url'] = (
-        'https://modelscope.cn/models/ms-agent/english_g2/resolve/master/english_g2.zip'
-    )
-    recognition_models['gen2']['latin_g2']['url'] = (
-        'https://modelscope.cn/models/ms-agent/latin_g2/resolve/master/latin_g2.zip'
-    )
-    recognition_models['gen2']['zh_sim_g2']['url'] = (
-        'https://modelscope.cn/models/ms-agent/zh_sim_g2/resolve/master/zh_sim_g2.zip'
-    )
-    recognition_models['gen2']['japanese_g2']['url'] = (
-        'https://modelscope.cn/models/ms-agent/japanese_g2/resolve/master/japanese_g2.zip'
-    )
-    recognition_models['gen2']['korean_g2']['url'] = (
-        'https://modelscope.cn/models/ms-agent/korean_g2/resolve/master/korean_g2.zip'
-    )
-    recognition_models['gen2']['telugu_g2']['url'] = (
-        'https://modelscope.cn/models/ms-agent/telugu_g2/resolve/master/telugu_g2.zip'
-    )
-    recognition_models['gen2']['kannada_g2']['url'] = (
-        'https://modelscope.cn/models/ms-agent/kannada_g2/resolve/master/kannada_g2.zip'
-    )
-    recognition_models['gen2']['cyrillic_g2']['url'] = (
-        'https://modelscope.cn/models/ms-agent/cyrillic_g2/resolve/master/cyrillic_g2.zip'
-    )
+    recognition_models['gen2']['english_g2'][
+        'url'] = 'https://modelscope.cn/models/ms-agent/english_g2/resolve/master/english_g2.zip'
+    recognition_models['gen2']['latin_g2'][
+        'url'] = 'https://modelscope.cn/models/ms-agent/latin_g2/resolve/master/latin_g2.zip'
+    recognition_models['gen2']['zh_sim_g2'][
+        'url'] = 'https://modelscope.cn/models/ms-agent/zh_sim_g2/resolve/master/zh_sim_g2.zip'
+    recognition_models['gen2']['japanese_g2'][
+        'url'] = 'https://modelscope.cn/models/ms-agent/japanese_g2/resolve/master/japanese_g2.zip'
+    recognition_models['gen2']['korean_g2'][
+        'url'] = 'https://modelscope.cn/models/ms-agent/korean_g2/resolve/master/korean_g2.zip'
+    recognition_models['gen2']['telugu_g2'][
+        'url'] = 'https://modelscope.cn/models/ms-agent/telugu_g2/resolve/master/telugu_g2.zip'
+    recognition_models['gen2']['kannada_g2'][
+        'url'] = 'https://modelscope.cn/models/ms-agent/kannada_g2/resolve/master/kannada_g2.zip'
+    recognition_models['gen2']['cyrillic_g2'][
+        'url'] = 'https://modelscope.cn/models/ms-agent/cyrillic_g2/resolve/master/cyrillic_g2.zip'
 
 
 def requests_get_with_timeout(

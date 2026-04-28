@@ -625,7 +625,7 @@ class DAGExecutor:
                 skill_id=skill_id,
                 success=False,
                 error=
-                f'Skill cannot handle query: {context.plan.reasoning if context.plan else 'No plan'}'
+                f'Skill cannot handle query: {context.plan.reasoning if context.plan else "No plan"}'
             )
 
         if not commands:
@@ -872,7 +872,7 @@ class DAGExecutor:
                     additional_reqs = analysis.get('additional_requirements', [])
 
                     logger.info(
-                        f'[{skill_id}] Error analysis: type={error_info.get('error_type')}, '
+                        f'[{skill_id}] Error analysis: type={error_info.get("error_type")}, '
                         f'fixable={is_fixable}')
 
                     # Apply fix if available
@@ -1402,13 +1402,13 @@ class AutoSkills:
                 else:
                     logger.info(
                         f'Removing skill [{sid}]: cannot execute - '
-                        f'{analysis.get('reason', '')[:200]}'
+                        f'{analysis.get("reason", "")[:200]}'
                     )
             filtered_ids = final_ids
 
         logger.info(
             f'Filter ({mode}): {len(skill_ids)} -> {len(filtered_ids)} skills. '
-            f'Reason: {parsed.get('reasoning', '')[:1000]}'
+            f'Reason: {parsed.get("reasoning", "")[:1000]}'
         )
 
         return set(filtered_ids)

@@ -1,6 +1,5 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import base64
-import json
 import os
 import re
 import shutil
@@ -10,41 +9,48 @@ from copy import deepcopy
 from os import getcwd
 from typing import List, Union
 
+import json
 from moviepy import VideoFileClip
-from omegaconf import DictConfig
-from PIL import Image
-
 from ms_agent.agent import CodeAgent
 from ms_agent.llm import LLM, Message
 from ms_agent.utils import get_logger
+from omegaconf import DictConfig
+from PIL import Image
 
 logger = get_logger()
 
 
 class RenderManim(CodeAgent):
+
     window_size = (1250, 700)
 
-    def __init__(self, config: DictConfig, tag: str, trust_remote_code: bool = False, **kwargs):
+    def __init__(self,
+                 config: DictConfig,
+                 tag: str,
+                 trust_remote_code: bool = False,
+                 **kwargs):
         super().__init__(config, tag, trust_remote_code, **kwargs)
         if not self.config.use_subtitle:
             self.window_size = (1450, 800)
         self.work_dir = getattr(self.config, 'output_dir', 'output')
         self.num_parallel = getattr(self.config, 'llm_num_parallel', 10)
         self.manim_render_timeout = getattr(
-            self.config, 'animation_render_timeout', getattr(self.config, 'manim_render_timeout', 300)
-        )
+            self.config, 'animation_render_timeout',
+            getattr(self.config, 'manim_render_timeout', 300))
         self.render_dir = os.path.join(self.work_dir, 'manim_render')
         self.code_fix_round = getattr(self.config, 'code_fix_round', 5)
         self.mllm_check_round = getattr(self.config, 'mllm_fix_round', 1)
         os.makedirs(self.render_dir, exist_ok=True)
 
-    async def execute_code(self, messages: Union[str, List[Message]], **kwargs) -> List[Message]:
+    async def execute_code(self, messages: Union[str, List[Message]],
+                           **kwargs) -> List[Message]:
         with open(os.path.join(self.work_dir, 'segments.txt'), 'r') as f:
             segments = json.load(f)
         manim_code_dir = os.path.join(self.work_dir, 'manim_code')
         manim_code = []
         for i in range(len(segments)):
-            with open(os.path.join(manim_code_dir, f'segment_{i + 1}.py'), 'r') as f:
+            with open(os.path.join(manim_code_dir, f'segment_{i+1}.py'),
+                      'r') as f:
                 manim_code.append(f.read())
         with open(os.path.join(self.work_dir, 'audio_info.txt'), 'r') as f:
             audio_infos = json.load(f)
@@ -53,25 +59,17 @@ class RenderManim(CodeAgent):
 
         tasks = [
             (i, segment, code, audio_info['audio_duration'])
-            for i, (segment, code, audio_info) in enumerate(zip(segments, manim_code, audio_infos))
+            for i, (segment, code, audio_info
+                    ) in enumerate(zip(segments, manim_code, audio_infos))
         ]
 
         with ThreadPoolExecutor(max_workers=self.num_parallel) as executor:
             futures = {
-                executor.submit(
-                    self._render_manim_scene_static,
-                    i,
-                    segment,
-                    code,
-                    duration,
-                    self.config,
-                    self.work_dir,
-                    self.render_dir,
-                    self.window_size,
-                    self.manim_render_timeout,
-                    self.code_fix_round,
-                    self.mllm_check_round,
-                ): i
+                executor.submit(self._render_manim_scene_static, i, segment,
+                                code, duration, self.config, self.work_dir,
+                                self.render_dir, self.window_size,
+                                self.manim_render_timeout, self.code_fix_round,
+                                self.mllm_check_round): i
                 for i, segment, code, duration in tasks
             }
             for future in as_completed(futures):
@@ -80,54 +78,23 @@ class RenderManim(CodeAgent):
         return messages
 
     @staticmethod
-    def _render_manim_scene_static(
-        i,
-        segment,
-        code,
-        audio_duration,
-        config,
-        work_dir,
-        render_dir,
-        window_size,
-        manim_render_timeout,
-        code_fix_round,
-        mllm_check_round,
-    ):
+    def _render_manim_scene_static(i, segment, code, audio_duration, config,
+                                   work_dir, render_dir, window_size,
+                                   manim_render_timeout, code_fix_round,
+                                   mllm_check_round):
         """Static method for multiprocessing"""
         llm = LLM.from_config(config)
-        return RenderManim._render_manim_impl(
-            llm,
-            i,
-            segment,
-            code,
-            audio_duration,
-            work_dir,
-            render_dir,
-            window_size,
-            manim_render_timeout,
-            config,
-            code_fix_round,
-            mllm_check_round,
-        )
+        return RenderManim._render_manim_impl(llm, i, segment, code,
+                                              audio_duration, work_dir,
+                                              render_dir, window_size,
+                                              manim_render_timeout, config,
+                                              code_fix_round, mllm_check_round)
 
     @staticmethod
-    def _render_manim_impl(
-        llm,
-        i,
-        segment,
-        code,
-        audio_duration,
-        work_dir,
-        render_dir,
-        window_size,
-        manim_render_timeout,
-        config,
-        code_fix_round,
-        mllm_check_round,
-    ):
-        scene_name = (
-            f'Scene{i + 1}'  # sometimes actual_scene_name cannot find matched class, so do not change this name
-        )
+    def _render_manim_impl(llm, i, segment, code, audio_duration, work_dir,
+                           render_dir, window_size, manim_render_timeout,
+                           config, code_fix_round, mllm_check_round):
+        scene_name = f'Scene{i+1}'  # sometimes actual_scene_name cannot find matched class, so do not change this name
         logger.info(f'Rendering manim code for: scene_{i + 1}')
         output_dir = os.path.join(render_dir, f'scene_{i + 1}')
         os.makedirs(output_dir, exist_ok=True)
@@ -159,16 +126,10 @@ class RenderManim(CodeAgent):
             env['LC_ALL'] = 'zh_CN.UTF-8'
             window_size_str = ','.join([str(x) for x in window_size])
             cmd = [
-                'manim',
-                'render',
-                '-ql',
-                '--transparent',
-                '--format=mov',
-                f'--resolution={window_size_str}',
-                '--disable_caching',
-                f'--media_dir={os.path.dirname(code_file)}',
-                code_file,
-                actual_scene_name,
+                'manim', 'render', '-ql', '--transparent', '--format=mov',
+                f'--resolution={window_size_str}', '--disable_caching',
+                f'--media_dir={os.path.dirname(code_file)}', code_file,
+                actual_scene_name
             ]
 
             try:
@@ -180,14 +141,15 @@ class RenderManim(CodeAgent):
                     text=True,
                     encoding='utf-8',
                     errors='ignore',
-                    env=env,
-                )
+                    env=env)
 
                 # Wait for process to complete with timeout
-                stdout, stderr = process.communicate(timeout=manim_render_timeout)
+                stdout, stderr = process.communicate(
+                    timeout=manim_render_timeout)
 
                 # Create result object compatible with original logic
                 class Result:
+
                     def __init__(self, returncode, stdout, stderr):
                         self.returncode = returncode
                         self.stdout = stdout
@@ -196,64 +158,41 @@ class RenderManim(CodeAgent):
                 result = Result(process.returncode, stdout, stderr)
                 output_text = (result.stdout or '') + (result.stderr or '')
             except subprocess.TimeoutExpired as e:
-                output_text = (e.stdout.decode('utf-8', errors='ignore') if e.stdout else '') + (
-                    e.stderr.decode('utf-8', errors='ignore') if e.stderr else ''
-                )  # noqa
+                output_text = (e.stdout.decode('utf-8', errors='ignore')
+                               if e.stdout else '') + (
+                                   e.stderr.decode('utf-8', errors='ignore')
+                                   if e.stderr else '')  # noqa
                 logger.error(
                     f'Manim rendering timed out after {manim_render_timeout} '
-                    f'seconds for {actual_scene_name}, output: {output_text}'
-                )
+                    f'seconds for {actual_scene_name}, output: {output_text}')
                 logger.info('Trying to fix manim code.')
                 code, fix_history = RenderManim._fix_manim_code_impl(
-                    llm,
-                    output_text,
-                    fix_history,
-                    code,
-                    manim_requirement,
-                    class_name,
-                    content,
-                    audio_duration,
-                    segment,
-                    i,
-                    work_dir,
-                )
+                    llm, output_text, fix_history, code, manim_requirement,
+                    class_name, content, audio_duration, segment, i, work_dir)
                 continue
 
             if result.returncode != 0:
-                logger.warning(f'Manim command exited with code {result.returncode}')
+                logger.warning(
+                    f'Manim command exited with code {result.returncode}')
                 logger.warning(f'Output: {output_text}')
 
                 real_error_indicators = [
-                    'SyntaxError',
-                    'NameError',
-                    'ImportError',
-                    'AttributeError',
-                    'TypeError',
-                    'ValueError',
-                    'ModuleNotFoundError',
-                    'Traceback',
-                    'Error:',
-                    'Failed to render',
-                    'unexpected keyword argument',
-                    'got an unexpected',
-                    'invalid syntax',
+                    'SyntaxError', 'NameError', 'ImportError',
+                    'AttributeError', 'TypeError', 'ValueError',
+                    'ModuleNotFoundError', 'Traceback', 'Error:',
+                    'Failed to render', 'unexpected keyword argument',
+                    'got an unexpected', 'invalid syntax'
                 ]
 
-                if any([error_indicator in output_text for error_indicator in real_error_indicators]):
+                if any([
+                        error_indicator in output_text
+                        for error_indicator in real_error_indicators
+                ]):
                     logger.info('Trying to fix manim code.')
                     code, fix_history = RenderManim._fix_manim_code_impl(
-                        llm,
-                        output_text,
-                        fix_history,
-                        code,
-                        manim_requirement,
-                        class_name,
-                        content,
-                        audio_duration,
-                        segment,
-                        i,
-                        work_dir,
-                    )
+                        llm, output_text, fix_history, code, manim_requirement,
+                        class_name, content, audio_duration, segment, i,
+                        work_dir)
                     continue
 
             for root, dirs, files in os.walk(output_dir):
@@ -261,37 +200,31 @@ class RenderManim(CodeAgent):
                     if file == f'{actual_scene_name}.mov':
                         found_file = os.path.join(root, file)
                         if not RenderManim.verify_and_fix_mov_file(found_file):
-                            fixed_path = RenderManim.convert_mov_to_compatible(found_file)
+                            fixed_path = RenderManim.convert_mov_to_compatible(
+                                found_file)
                             if fixed_path:
                                 found_file = fixed_path
 
                         shutil.copy2(found_file, output_path)
-                        scaled_path = RenderManim.scale_video_to_fit(output_path, target_size=window_size)
+                        scaled_path = RenderManim.scale_video_to_fit(
+                            output_path, target_size=window_size)
                         if scaled_path and scaled_path != output_path:
                             shutil.rmtree(output_path, ignore_errors=True)
                             shutil.copy2(scaled_path, output_path)
                         final_file_path = output_path
             if not final_file_path:
-                logger.error(f'Manim file: {class_name} not found, trying to fix manim code.')
-                code, fix_history = RenderManim._fix_manim_code_impl(
-                    llm,
-                    output_text,
-                    fix_history,
-                    code,
-                    manim_requirement,
-                    class_name,
-                    content,
-                    audio_duration,
-                    segment,
-                    i,
-                    work_dir,
+                logger.error(
+                    f'Manim file: {class_name} not found, trying to fix manim code.'
                 )
+                code, fix_history = RenderManim._fix_manim_code_impl(
+                    llm, output_text, fix_history, code, manim_requirement,
+                    class_name, content, audio_duration, segment, i, work_dir)
             else:
                 if cur_check_round >= mllm_max_check_round:
                     break
                 output_text = RenderManim.check_manim_quality(
-                    final_file_path, work_dir, i, config, segment, cur_check_round
-                )
+                    final_file_path, work_dir, i, config, segment,
+                    cur_check_round)
                 cur_check_round += 1
                 if output_text:
                     try:
@@ -300,26 +233,18 @@ class RenderManim(CodeAgent):
                     except OSError:
                         pass
                     logger.info(
-                        f'Trying to fix manim code of segment {i + 1}, because model checking not passed: \n{output_text}'
+                        f'Trying to fix manim code of segment {i+1}, because model checking not passed: \n{output_text}'
                     )
                     code, fix_history = RenderManim._fix_manim_code_impl(
-                        llm,
-                        output_text,
-                        fix_history,
-                        code,
-                        manim_requirement,
-                        class_name,
-                        content,
-                        audio_duration,
-                        segment,
-                        i,
-                        work_dir,
-                    )
+                        llm, output_text, fix_history, code, manim_requirement,
+                        class_name, content, audio_duration, segment, i,
+                        work_dir)
                     continue
                 else:
                     break
         if final_file_path:
-            RenderManim._extract_preview_frames_static(final_file_path, i, work_dir, 'final')
+            RenderManim._extract_preview_frames_static(final_file_path, i,
+                                                       work_dir, 'final')
             manim_code_dir = os.path.join(work_dir, 'manim_code')
             manim_file = os.path.join(manim_code_dir, f'segment_{i + 1}.py')
             with open(manim_file, 'w') as f:
@@ -328,13 +253,14 @@ class RenderManim(CodeAgent):
             raise FileNotFoundError(final_file_path)
 
     @staticmethod
-    def check_manim_quality(final_file_path, work_dir, i, config, segment, cur_check_round):
+    def check_manim_quality(final_file_path, work_dir, i, config, segment,
+                            cur_check_round):
         _mm_config = deepcopy(config)
         delattr(_mm_config, 'llm')
         _mm_config.llm = DictConfig({})
         _mm_config.generation_config = DictConfig({'temperature': 0.3})
         for key, value in _mm_config.mllm.items():
-            key = key[len('mllm_') :]
+            key = key[len('mllm_'):]
             setattr(_mm_config.llm, key, value)
 
         test_system = """**Role Definition**
@@ -388,34 +314,44 @@ There are four square components in the image. The first component is approximat
 The right component is squeezed to the edge. Fix suggestion: Reduce the width of the four left components, move the right component further right...
 </result>
 ```
-"""  # noqa
+"""# noqa
 
-        test_images = RenderManim._extract_preview_frames_static(final_file_path, i, work_dir, cur_check_round)
+        test_images = RenderManim._extract_preview_frames_static(
+            final_file_path, i, work_dir, cur_check_round)
         llm = LLM.from_config(_mm_config)
-        logger.info(f"Using mllm model for manim quality check: {getattr(llm, 'model', None)}")
+        logger.info(
+            f"Using mllm model for manim quality check: {getattr(llm, 'model', None)}"
+        )
 
-        frame_names = ['the middle frame of the animation', 'the last frame of the animation']
+        frame_names = [
+            'the middle frame of the animation',
+            'the last frame of the animation'
+        ]
         content = segment['content']
         manim_requirement = segment['manim']
 
         all_issues = []
-        for idx, (image_path, frame_name) in enumerate(zip(test_images, frame_names)):
+        for idx, (image_path,
+                  frame_name) in enumerate(zip(test_images, frame_names)):
             with open(image_path, 'rb') as image_file:
                 image_data = image_file.read()
                 base64_image = base64.b64encode(image_data).decode('utf-8')
 
-            _content = [
-                {
-                    'type': 'text',
-                    'text': (
-                        f'The checked frame is: {frame_name} of this animation\n'
-                        f'The content of this animation: {content}\n'
-                        f'The manim animation requirement: {manim_requirement}\n'
-                        f'You must carefully check the animation layout issues.'
-                    ),
-                },
-                {'type': 'image_url', 'image_url': {'url': f'data:image/png;base64,{base64_image}', 'detail': 'high'}},
-            ]
+            _content = [{
+                'type':
+                'text',
+                'text':
+                (f'The checked frame is: {frame_name} of this animation\n'
+                 f'The content of this animation: {content}\n'
+                 f'The manim animation requirement: {manim_requirement}\n'
+                 f'You must carefully check the animation layout issues.')
+            }, {
+                'type': 'image_url',
+                'image_url': {
+                    'url': f'data:image/png;base64,{base64_image}',
+                    'detail': 'high'
+                }
+            }]
 
             messages = [
                 Message(role='system', content=test_system),
@@ -430,7 +366,8 @@ The right component is squeezed to the edge. Fix suggestion: Reduce the width of
                 issues.append(issue)
             issues = '\n'.join(issues).strip()
             if issues:
-                issues = f'The checked frame is: {frame_name}\nProblems found: {issues}\n'
+                issues = (f'The checked frame is: {frame_name}\n'
+                          f'Problems found: {issues}\n')
 
             pattern = r'<description>(.*?)</description>'
             desc = []
@@ -438,14 +375,17 @@ The right component is squeezed to the edge. Fix suggestion: Reduce the width of
                 desc.append(_desc)
             desc = '\n'.join(desc).strip()
             if issues and desc:
-                issues = f'{issues}The detail description of this frame: {desc}\n'
+                issues = (f'{issues}'
+                          f'The detail description of this frame: {desc}\n')
             all_issues.append(issues)
 
         all_issues = '\n\n'.join(all_issues).strip()
         return all_issues
 
     @staticmethod
-    def _extract_preview_frames_static(video_path, segment_id, work_dir, cur_check_round):
+    def _extract_preview_frames_static(video_path, segment_id, work_dir,
+                                       cur_check_round):
+
         test_dir = os.path.join(work_dir, 'manim_test')
         os.makedirs(test_dir, exist_ok=True)
         video = VideoFileClip(video_path)
@@ -455,7 +395,10 @@ The right component is squeezed to the edge. Fix suggestion: Reduce the width of
 
         preview_paths = []
         for frame_idx, timestamp in timestamps.items():
-            output_path = os.path.join(test_dir, f'segment_{segment_id + 1}_round{cur_check_round}_{frame_idx}.png')
+            output_path = os.path.join(
+                test_dir,
+                f'segment_{segment_id + 1}_round{cur_check_round}_{frame_idx}.png'
+            )
             video.save_frame(output_path, t=timestamp)
             preview_paths.append(output_path)
         video.close()
@@ -471,7 +414,8 @@ The right component is squeezed to the edge. Fix suggestion: Reduce the width of
         all_images_info = []
         foreground = segment.get('foreground', [])
         for idx, _req in enumerate(foreground):
-            foreground_image = os.path.join(image_dir, f'illustration_{i + 1}_foreground_{idx + 1}.png')
+            foreground_image = os.path.join(
+                image_dir, f'illustration_{i + 1}_foreground_{idx + 1}.png')
             size = RenderManim.get_image_size(foreground_image)
             image_info = {
                 'filename': foreground_image,
@@ -480,7 +424,8 @@ The right component is squeezed to the edge. Fix suggestion: Reduce the width of
             }
             all_images_info.append(image_info)
 
-        image_info_file = os.path.join(os.path.dirname(image_dir), 'image_info.txt')
+        image_info_file = os.path.join(
+            os.path.dirname(image_dir), 'image_info.txt')
         if os.path.exists(image_info_file):
             with open(image_info_file, 'r') as f:
                 for line in f.readlines():
@@ -492,19 +437,9 @@ The right component is squeezed to the edge. Fix suggestion: Reduce the width of
         return all_images_info
 
     @staticmethod
-    def _fix_manim_code_impl(
-        llm,
-        error_log,
-        fix_history,
-        manim_code,
-        manim_requirement,
-        class_name,
-        content,
-        audio_duration,
-        segment,
-        i,
-        work_dir,
-    ):
+    def _fix_manim_code_impl(llm, error_log, fix_history, manim_code,
+                             manim_requirement, class_name, content,
+                             audio_duration, segment, i, work_dir):
         image_dir = os.path.join(work_dir, 'images')
         images_info = RenderManim.get_all_images_info(segment, i, image_dir)
 
@@ -520,7 +455,7 @@ These images must be used.
 * Scale the images. Do not use the original size, carefully rescale the images to match the requirements below:
     * The image size on the canvas depend on its importance, important image occupies more spaces
     * Use 1/4 space of the canvas for each image
-"""  # noqa
+""" # noqa
         else:
             image_prompt = ''
 
@@ -586,7 +521,7 @@ Fixing detected issues, plus any other problems you find. Verify:
     - **don't remove any image or its effects when making modifications**
 
 Please precisely fix the detected issues while maintaining the richness and creativity of the animation.
-"""  # noqa
+""" # noqa
         inputs = [Message(role='user', content=fix_request)]
         _response_message = llm.generate(inputs)
         response = _response_message.content
@@ -599,8 +534,7 @@ Please precisely fix the detected issues while maintaining the richness and crea
         fix_history = (
             f'You have a fix history which generates the code which is given to you:\n\n{fix_request}\n\n'
             f'If last error is same with latest error, **You probably find a wrong root cause**, '
-            f'Check carefully and fix it again.**'
-        )
+            f'Check carefully and fix it again.**')
         return manim_code, fix_history
 
     @staticmethod
@@ -622,8 +556,7 @@ Please precisely fix the detected issues while maintaining the richness and crea
             fps=24,
             verbose=False,
             logger=None,
-            ffmpeg_params=['-pix_fmt', 'yuva420p'],
-        )
+            ffmpeg_params=['-pix_fmt', 'yuva420p'])
 
         clip.close()
         if RenderManim.verify_and_fix_mov_file(fixed_path):
@@ -659,8 +592,7 @@ Please precisely fix the detected issues while maintaining the richness and crea
                 audio_codec='aac' if scaled_clip.audio else None,
                 fps=24,
                 verbose=False,
-                logger=None,
-            )
+                logger=None)
 
             clip.close()
             scaled_clip.close()
