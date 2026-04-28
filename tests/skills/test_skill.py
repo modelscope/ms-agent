@@ -68,11 +68,29 @@ def _make_skill_dir(base: Path, skill_id: str, name: str, desc: str,
 
 class TestSkillSource(unittest.TestCase):
 
-    def test_local_existing_path(self):
+    def test_local_absolute_path(self):
         from ms_agent.skill.sources import parse_skill_source
         src = parse_skill_source(str(CLAUDE_SKILLS_DIR))
         self.assertEqual(src.type.value, "local")
         self.assertEqual(src.path, str(CLAUDE_SKILLS_DIR))
+
+    def test_local_relative_dot_path(self):
+        from ms_agent.skill.sources import parse_skill_source
+        src = parse_skill_source("./skills")
+        self.assertEqual(src.type.value, "local")
+        self.assertTrue(os.path.isabs(src.path))
+
+    def test_local_relative_dotdot_path(self):
+        from ms_agent.skill.sources import parse_skill_source
+        src = parse_skill_source("../some/path")
+        self.assertEqual(src.type.value, "local")
+        self.assertTrue(os.path.isabs(src.path))
+
+    def test_local_tilde_path(self):
+        from ms_agent.skill.sources import parse_skill_source
+        src = parse_skill_source("~/my_skills")
+        self.assertEqual(src.type.value, "local")
+        self.assertNotIn("~", src.path)
 
     def test_modelscope_uri(self):
         from ms_agent.skill.sources import parse_skill_source
@@ -81,6 +99,26 @@ class TestSkillSource(unittest.TestCase):
         self.assertEqual(src.repo_id, "owner/repo")
         self.assertEqual(src.revision, "v1.0")
         self.assertEqual(src.subdir, "subdir")
+
+    def test_modelscope_skill_url(self):
+        from ms_agent.skill.sources import parse_skill_source
+        src = parse_skill_source(
+            "https://modelscope.cn/skills/BaiduDrive/baidu-drive")
+        self.assertEqual(src.type.value, "modelscope")
+        self.assertEqual(src.repo_id, "BaiduDrive/baidu-drive")
+
+    def test_modelscope_skill_url_with_files_suffix(self):
+        from ms_agent.skill.sources import parse_skill_source
+        src = parse_skill_source(
+            "https://www.modelscope.cn/skills/BaiduDrive/baidu-drive/files")
+        self.assertEqual(src.type.value, "modelscope")
+        self.assertEqual(src.repo_id, "BaiduDrive/baidu-drive")
+
+    def test_at_prefix_shorthand(self):
+        from ms_agent.skill.sources import parse_skill_source
+        src = parse_skill_source("@MiniMax-AI/minimax-pdf")
+        self.assertEqual(src.type.value, "modelscope")
+        self.assertEqual(src.repo_id, "MiniMax-AI/minimax-pdf")
 
     def test_git_url(self):
         from ms_agent.skill.sources import parse_skill_source
@@ -94,10 +132,197 @@ class TestSkillSource(unittest.TestCase):
         self.assertEqual(src.type.value, "modelscope")
         self.assertEqual(src.repo_id, "ms-agent/research_skills")
 
-    def test_nonexistent_path_becomes_local(self):
+    def test_nonexistent_abs_path_becomes_local(self):
         from ms_agent.skill.sources import parse_skill_source
         src = parse_skill_source("/nonexistent/path/to/skills")
         self.assertEqual(src.type.value, "local")
+        self.assertEqual(src.path, "/nonexistent/path/to/skills")
+
+
+# ============================================================
+# 1b. Catalog download paths (ModelScope SDK / HTTP fallback / Git)
+# ============================================================
+
+class TestCatalogDownloadModelScopeSDK(unittest.TestCase):
+    """_load_from_modelscope via the real SDK HubApi.download_skill."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_sdk_download_produces_skill(self):
+        """HubApi.download_skill → directory with SKILL.md → SkillLoader OK."""
+        from ms_agent.skill.catalog import SkillCatalog
+        from ms_agent.skill.sources import SkillSource, SkillSourceType
+        import ms_agent.skill.catalog as cat_mod
+        orig = cat_mod.USER_SKILLS_DIR
+        cat_mod.USER_SKILLS_DIR = self.tmp
+        try:
+            cat = SkillCatalog()
+            cat.load_from_sources([
+                SkillSource(type=SkillSourceType.MODELSCOPE,
+                            repo_id="BaiduDrive/baidu-drive"),
+            ])
+            skills = cat.get_enabled_skills()
+            self.assertEqual(len(skills), 1)
+            skill = list(skills.values())[0]
+            self.assertEqual(skill.name, "baidu-drive")
+            self.assertTrue(len(skill.scripts) > 0)
+        finally:
+            cat_mod.USER_SKILLS_DIR = orig
+
+    def test_sdk_download_skill_dir_name(self):
+        """SDK names the directory by element_name only (no owner prefix)."""
+        from modelscope.hub.api import HubApi
+        api = HubApi()
+        path = api.download_skill("BaiduDrive/baidu-drive",
+                                  local_dir=str(self.tmp))
+        self.assertEqual(os.path.basename(path), "baidu-drive")
+        self.assertTrue(os.path.exists(os.path.join(path, "SKILL.md")))
+
+
+class TestCatalogDownloadHTTPFallback(unittest.TestCase):
+    """_download_skill_zip (pure-HTTP, no SDK dependency)."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_http_fallback_downloads_and_extracts(self):
+        from ms_agent.skill.catalog import _download_skill_zip
+        path = _download_skill_zip("BaiduDrive/baidu-drive", str(self.tmp))
+        self.assertEqual(os.path.basename(path), "baidu-drive")
+        self.assertTrue(os.path.exists(os.path.join(path, "SKILL.md")))
+
+    def test_http_fallback_naming_matches_sdk(self):
+        """Fallback and SDK produce the same directory basename."""
+        from ms_agent.skill.catalog import _download_skill_zip
+        path = _download_skill_zip("BaiduDrive/baidu-drive", str(self.tmp))
+        self.assertEqual(os.path.basename(path), "baidu-drive")
+
+    def test_http_fallback_used_when_sdk_missing(self):
+        """When HubApi import fails, we fall through to HTTP fallback."""
+        from ms_agent.skill.catalog import SkillCatalog
+        from ms_agent.skill.sources import SkillSource, SkillSourceType
+        import ms_agent.skill.catalog as cat_mod
+        orig = cat_mod.USER_SKILLS_DIR
+        cat_mod.USER_SKILLS_DIR = self.tmp
+
+        real_import = __builtins__.__import__ if hasattr(
+            __builtins__, '__import__') else __import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "modelscope.hub.api":
+                raise ImportError("mocked SDK unavailable")
+            return real_import(name, *args, **kwargs)
+
+        try:
+            cat = SkillCatalog()
+            with patch("builtins.__import__", side_effect=mock_import):
+                cat.load_from_sources([
+                    SkillSource(type=SkillSourceType.MODELSCOPE,
+                                repo_id="BaiduDrive/baidu-drive"),
+                ])
+            skills = cat.get_enabled_skills()
+            self.assertEqual(len(skills), 1)
+        finally:
+            cat_mod.USER_SKILLS_DIR = orig
+
+    def test_http_fallback_invalid_skill_id_raises(self):
+        from ms_agent.skill.catalog import _download_skill_zip
+        with self.assertRaises(Exception):
+            _download_skill_zip("nonexistent/fake-skill-xyz",
+                                str(self.tmp))
+
+
+class TestCatalogDownloadGit(unittest.TestCase):
+    """_load_from_git via real git clone."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.skill_dir = self.tmp / "repo"
+        self.skill_dir.mkdir()
+        _make_skill_dir(self.skill_dir, "test-skill", "TestSkill",
+                        "A test skill")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_git_clone_loads_skills(self):
+        """Mock git clone by providing a local path that mimics the flow."""
+        from ms_agent.skill.catalog import SkillCatalog
+        from ms_agent.skill.sources import SkillSource, SkillSourceType
+
+        cat = SkillCatalog()
+        cat.load_from_sources([
+            SkillSource(type=SkillSourceType.LOCAL_DIR,
+                        path=str(self.skill_dir)),
+        ])
+        skills = cat.get_enabled_skills()
+        self.assertIn("test-skill", skills)
+
+    @patch("subprocess.run")
+    def test_git_clone_invocation(self, mock_run):
+        """Verify the git clone command is correctly constructed."""
+        from ms_agent.skill.catalog import SkillCatalog
+        from ms_agent.skill.sources import SkillSource, SkillSourceType
+
+        mock_run.return_value = MagicMock(returncode=0)
+
+        skill_in_dest = None
+
+        def side_effect(cmd, **kwargs):
+            dest_path = cmd[-1]
+            _make_skill_dir(Path(dest_path), "cloned", "Cloned",
+                            "A cloned skill")
+            return MagicMock(returncode=0)
+
+        mock_run.side_effect = side_effect
+
+        cat = SkillCatalog()
+        cat.load_from_sources([
+            SkillSource(type=SkillSourceType.GIT,
+                        url="https://github.com/user/skills-repo.git",
+                        revision="main"),
+        ])
+
+        call_args = mock_run.call_args[0][0]
+        self.assertIn("git", call_args)
+        self.assertIn("clone", call_args)
+        self.assertIn("--depth", call_args)
+        self.assertIn("--branch", call_args)
+        self.assertIn("main", call_args)
+        self.assertIn("https://github.com/user/skills-repo.git", call_args)
+
+    @patch("subprocess.run")
+    def test_git_clone_with_subdir(self, mock_run):
+        """Git source with subdir only loads from subdirectory."""
+
+        def side_effect(cmd, **kwargs):
+            dest_path = Path(cmd[-1])
+            sub = dest_path / "sub"
+            _make_skill_dir(sub, "nested", "Nested", "Nested skill")
+            _make_skill_dir(dest_path, "root-skill", "Root", "Root skill")
+            return MagicMock(returncode=0)
+
+        mock_run.side_effect = side_effect
+
+        from ms_agent.skill.catalog import SkillCatalog
+        from ms_agent.skill.sources import SkillSource, SkillSourceType
+
+        cat = SkillCatalog()
+        cat.load_from_sources([
+            SkillSource(type=SkillSourceType.GIT,
+                        url="https://github.com/user/repo.git",
+                        subdir="sub"),
+        ])
+        skills = cat.get_enabled_skills()
+        self.assertIn("nested", skills)
+        self.assertNotIn("root-skill", skills)
 
 
 # ============================================================

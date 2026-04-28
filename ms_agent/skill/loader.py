@@ -41,12 +41,7 @@ class SkillLoader:
             logger.warning('No skills provided to load.')
             return all_skills
 
-        def is_skill_id(s: str) -> bool:
-            return '/' in s and len(s.split('/')) == 2 and all(
-                s.split('/')) and not os.path.exists(s)
-
         if isinstance(skills, str):
-            # Could be a single skill path, root path of skills, or skill ID on ModelScope hub
             skill_list = [skills]
         elif all(isinstance(s, str) for s in skills) or all(
                 isinstance(s, SkillSchema) for s in skills):
@@ -55,12 +50,6 @@ class SkillLoader:
             raise ValueError('Invalid skills input type.')
 
         for skill in skill_list:
-
-            if is_skill_id(skill):
-                from modelscope import snapshot_download
-                skill_path: str = snapshot_download(repo_id=skill)
-                skill = skill_path
-
             if isinstance(skill, SkillSchema):
                 skill_key = self._get_skill_key(skill=skill)
                 all_skills[skill_key] = skill

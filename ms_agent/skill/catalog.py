@@ -1,9 +1,13 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import os
+import shutil
 import subprocess
 import tempfile
+import zipfile
 from pathlib import Path
 from typing import Dict, List, Optional, Set
+
+import requests
 
 from ms_agent.utils.logger import get_logger
 
@@ -12,6 +16,55 @@ from .schema import SkillSchema, SkillSchemaParser
 from .sources import SkillSource, SkillSourceType, parse_skill_source
 
 logger = get_logger()
+
+MODELSCOPE_SKILL_API = (
+    "https://www.modelscope.cn/api/v1/skills/{skill_id}/archive/zip/master")
+
+
+def _download_skill_zip(skill_id: str, local_dir: str) -> str:
+    """Download a skill archive from the ModelScope skill hub and extract it.
+
+    This is a pure-HTTP fallback that does not require ``modelscope>=1.35.2``.
+    The directory naming follows the SDK convention: ``<element_name>``.
+    """
+    url = MODELSCOPE_SKILL_API.format(skill_id=skill_id)
+    os.makedirs(local_dir, exist_ok=True)
+
+    _owner, name = skill_id.split("/", 1)
+    skill_dir = os.path.join(local_dir, name)
+
+    resp = requests.get(url, stream=True, timeout=120)
+    resp.raise_for_status()
+
+    zip_path = os.path.join(local_dir, f"{name}.zip")
+    try:
+        with open(zip_path, "wb") as fh:
+            for chunk in resp.iter_content(chunk_size=8192):
+                if chunk:
+                    fh.write(chunk)
+
+        if os.path.exists(skill_dir):
+            shutil.rmtree(skill_dir)
+        os.makedirs(skill_dir, exist_ok=True)
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(skill_dir)
+
+        entries = os.listdir(skill_dir)
+        if len(entries) == 1:
+            nested = os.path.join(skill_dir, entries[0])
+            if os.path.isdir(nested):
+                for item in os.listdir(nested):
+                    shutil.move(
+                        os.path.join(nested, item),
+                        os.path.join(skill_dir, item))
+                os.rmdir(nested)
+    finally:
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+
+    logger.info(f"Skill {skill_id} downloaded to {skill_dir}")
+    return skill_dir
 
 BUILTIN_SKILLS_DIR = Path(__file__).parent.parent / "skills"
 if not BUILTIN_SKILLS_DIR.exists():
@@ -129,10 +182,16 @@ class SkillCatalog:
 
     def _load_from_modelscope(
             self, source: SkillSource) -> Dict[str, SkillSchema]:
-        from modelscope import snapshot_download
-        local_path = snapshot_download(
-            repo_id=source.repo_id,
-            revision=source.revision or "master")
+        try:
+            from modelscope.hub.api import HubApi
+            api = HubApi()
+            local_dir = str(USER_SKILLS_DIR / "installed")
+            local_path = api.download_skill(
+                skill_id=source.repo_id, local_dir=local_dir)
+        except (ImportError, AttributeError):
+            local_path = _download_skill_zip(
+                source.repo_id,
+                str(USER_SKILLS_DIR / "installed"))
         if source.subdir:
             local_path = str(Path(local_path) / source.subdir)
         return self._loader.load_skills(local_path)
