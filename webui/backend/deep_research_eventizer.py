@@ -1,6 +1,6 @@
+import json
 from typing import Any, Callable, Dict, List, Optional
 
-import json
 from ms_agent.llm.utils import Message, ToolCall
 
 
@@ -16,7 +16,6 @@ def _stringify_content(content: Any) -> str:
 
 
 class HistoryEventizer:
-
     def __init__(
         self,
         emit: Callable[[Dict[str, Any]], None],
@@ -52,8 +51,7 @@ class HistoryEventizer:
         self._tool_call_args = {}
         self._tool_call_names = {}
 
-    def _wrap_event(self, event_type: str,
-                    payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _wrap_event(self, event_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         event: Dict[str, Any] = {'type': event_type, 'payload': payload}
         if self._session_id:
             event['session_id'] = self._session_id
@@ -67,7 +65,7 @@ class HistoryEventizer:
     def _should_reset(self, messages: List[Message]) -> bool:
         if len(messages) < len(self._prev_messages):
             return True
-        for idx, msg in enumerate(messages[:len(self._prev_messages)]):
+        for idx, msg in enumerate(messages[: len(self._prev_messages)]):
             if msg.role != self._prev_messages[idx].role:
                 return True
         return False
@@ -87,8 +85,11 @@ class HistoryEventizer:
     def _is_subagent_tool(self, tool_name: str) -> bool:
         if not tool_name:
             return False
-        return tool_name.startswith('agent_tools---') or tool_name.endswith(
-            'searcher_tool') or tool_name.endswith('reporter_tool')
+        return (
+            tool_name.startswith('agent_tools---')
+            or tool_name.endswith('searcher_tool')
+            or tool_name.endswith('reporter_tool')
+        )
 
     def _extract_tool_name(self, call: ToolCall) -> str:
         if not isinstance(call, dict):
@@ -125,8 +126,7 @@ class HistoryEventizer:
             return {'request': raw}
         return {}
 
-    def _build_subagent_title(self, tool_name: str,
-                              tool_args: Dict[str, Any]) -> str:
+    def _build_subagent_title(self, tool_name: str, tool_args: Dict[str, Any]) -> str:
         if 'searcher' in tool_name:
             base = 'Searcher'
         elif 'reporter' in tool_name:
@@ -140,21 +140,18 @@ class HistoryEventizer:
             try:
                 parsed = json.loads(request)
                 if isinstance(parsed, dict):
-                    summary = parsed.get('task_id') or parsed.get(
-                        '调研目标') or parsed.get('目标')
+                    summary = parsed.get('task_id') or parsed.get('调研目标') or parsed.get('目标')
             except Exception:
                 summary = None
             if summary is None:
                 summary = request.strip().splitlines()[0][:80]
         return f'{base}: {summary}' if summary else base
 
-    def _record_tool_call(self, call_id: str, tool_name: str,
-                          tool_args: Dict[str, Any]) -> tuple[bool, bool]:
+    def _record_tool_call(self, call_id: str, tool_name: str, tool_args: Dict[str, Any]) -> tuple[bool, bool]:
         is_new = call_id not in self._seen_tool_calls
         prev_args = self._tool_call_args.get(call_id)
         prev_name = self._tool_call_names.get(call_id)
-        if (not is_new and prev_args == tool_args
-                and (not tool_name or tool_name == prev_name)):
+        if not is_new and prev_args == tool_args and (not tool_name or tool_name == prev_name):
             return False, False
         self._seen_tool_calls.add(call_id)
         self._tool_call_args[call_id] = tool_args
@@ -162,12 +159,10 @@ class HistoryEventizer:
             self._tool_call_names[call_id] = tool_name
         return True, is_new
 
-    def _maybe_emit_todos(self, tool_name: str, result_text: str,
-                          call_id: Optional[str]) -> None:
+    def _maybe_emit_todos(self, tool_name: str, result_text: str, call_id: Optional[str]) -> None:
         if not tool_name:
             return
-        if not ('todo_list---todo_write' in tool_name
-                or 'todo_list---todo_read' in tool_name):
+        if not ('todo_list---todo_write' in tool_name or 'todo_list---todo_read' in tool_name):
             return
         try:
             parsed = json.loads(result_text)
@@ -184,8 +179,7 @@ class HistoryEventizer:
                 payload['call_id'] = call_id
             self._emit_event('dr.state', payload)
 
-    def _emit_assistant_delta(self, message_id: str, delta: str,
-                              full: str) -> None:
+    def _emit_assistant_delta(self, message_id: str, delta: str, full: str) -> None:
         payload = {
             'message_id': message_id,
             'delta': delta,
@@ -193,8 +187,7 @@ class HistoryEventizer:
         }
         self._emit_event('dr.chat.message.delta', payload)
 
-    def _emit_subagent_delta(self, message_id: str, delta: str,
-                             full: str) -> None:
+    def _emit_subagent_delta(self, message_id: str, delta: str, full: str) -> None:
         payload = {
             'card_id': self._card_id,
             'message_id': message_id,
@@ -203,8 +196,7 @@ class HistoryEventizer:
         }
         self._emit_event('dr.subagent.message.delta', payload)
 
-    def _emit_subagent_message(self, message_id: str, role: str,
-                               content: str) -> None:
+    def _emit_subagent_message(self, message_id: str, role: str, content: str) -> None:
         payload = {
             'card_id': self._card_id,
             'message_id': message_id,
@@ -221,8 +213,7 @@ class HistoryEventizer:
         }
         self._emit_event('dr.chat.message.completed', payload)
 
-    def _emit_chat_message(self, message_id: str, role: str, content: str,
-                           name: Optional[str]) -> None:
+    def _emit_chat_message(self, message_id: str, role: str, content: str, name: Optional[str]) -> None:
         payload = {
             'message_id': message_id,
             'role': role,
@@ -232,19 +223,15 @@ class HistoryEventizer:
             payload['name'] = name
         self._emit_event('dr.chat.message', payload)
 
-    def _process_tool_calls(self, message_id: str,
-                            tool_calls: List[ToolCall]) -> None:
+    def _process_tool_calls(self, message_id: str, tool_calls: List[ToolCall]) -> None:
         for idx, call in enumerate(tool_calls or []):
             call_id = call.get('id') or f'{message_id}-call-{idx}'
             tool_name = self._extract_tool_name(call)
-            tool_args = self._parse_tool_args(
-                self._extract_tool_args_raw(call))
-            should_emit, is_new = self._record_tool_call(
-                call_id, tool_name, tool_args)
+            tool_args = self._parse_tool_args(self._extract_tool_args_raw(call))
+            should_emit, is_new = self._record_tool_call(call_id, tool_name, tool_args)
             if not should_emit:
                 continue
-            category = 'subagent' if self._is_subagent_tool(
-                tool_name) else 'normal'
+            category = 'subagent' if self._is_subagent_tool(tool_name) else 'normal'
             payload = {
                 'call_id': call_id,
                 'source_message_id': message_id,
@@ -289,10 +276,13 @@ class HistoryEventizer:
         self._emit_event('dr.tool.result', payload)
         if call_id in self._subagent_call_ids:
             summary = result_text.strip().splitlines()[0][:160]
-            self._emit_event('dr.subagent.card.completed', {
-                'card_id': call_id,
-                'summary': summary,
-            })
+            self._emit_event(
+                'dr.subagent.card.completed',
+                {
+                    'card_id': call_id,
+                    'summary': summary,
+                },
+            )
         self._maybe_emit_todos(tool_name, result_text, call_id)
 
     def process(self, messages: List[Message]) -> None:
@@ -312,16 +302,14 @@ class HistoryEventizer:
                     prev_content = self._assistant_contents.get(message_id, '')
                     if content and content != prev_content:
                         if content.startswith(prev_content):
-                            delta = content[len(prev_content):]
+                            delta = content[len(prev_content) :]
                         else:
                             delta = content
                         if delta:
-                            self._emit_assistant_delta(message_id, delta,
-                                                       content)
+                            self._emit_assistant_delta(message_id, delta, content)
                         self._assistant_contents[message_id] = content
                     if message.tool_calls:
-                        self._process_tool_calls(message_id,
-                                                 message.tool_calls)
+                        self._process_tool_calls(message_id, message.tool_calls)
                 elif role == 'tool':
                     self._process_tool_result(message)
                 else:
@@ -330,31 +318,25 @@ class HistoryEventizer:
                     if idx >= prev_len:
                         content = _stringify_content(message.content)
                         if content:
-                            self._emit_chat_message(
-                                message_id, role, content,
-                                getattr(message, 'name', None))
+                            self._emit_chat_message(message_id, role, content, getattr(message, 'name', None))
             else:
                 if role == 'assistant':
                     content = _stringify_content(message.content)
                     prev_content = self._assistant_contents.get(message_id, '')
                     if content and content != prev_content:
                         if content.startswith(prev_content):
-                            delta = content[len(prev_content):]
+                            delta = content[len(prev_content) :]
                         else:
                             delta = content
                         if delta:
-                            self._emit_subagent_delta(message_id, delta,
-                                                      content)
+                            self._emit_subagent_delta(message_id, delta, content)
                         self._assistant_contents[message_id] = content
                     if message.tool_calls:
                         for idx, call in enumerate(message.tool_calls or []):
-                            call_id = call.get(
-                                'id') or f'{message_id}-call-{idx}'
+                            call_id = call.get('id') or f'{message_id}-call-{idx}'
                             tool_name = self._extract_tool_name(call)
-                            tool_args = self._parse_tool_args(
-                                self._extract_tool_args_raw(call))
-                            should_emit, is_new = self._record_tool_call(
-                                call_id, tool_name, tool_args)
+                            tool_args = self._parse_tool_args(self._extract_tool_args_raw(call))
+                            should_emit, is_new = self._record_tool_call(call_id, tool_name, tool_args)
                             if not should_emit:
                                 continue
                             payload = {
@@ -375,8 +357,7 @@ class HistoryEventizer:
                     if role != 'tool' and idx >= prev_len:
                         content = _stringify_content(message.content)
                         if content:
-                            self._emit_subagent_message(
-                                message_id, role, content)
+                            self._emit_subagent_message(message_id, role, content)
                     if role == 'tool' and message.tool_call_id:
                         call_id = message.tool_call_id
                         if call_id in self._seen_tool_results:
@@ -392,11 +373,8 @@ class HistoryEventizer:
                         tool_args = self._tool_call_args.get(call_id)
                         if tool_args is not None:
                             payload['tool'] = {
-                                'name':
-                                (tool_name
-                                 or self._tool_call_names.get(call_id, '')),
-                                'arguments':
-                                tool_args,
+                                'name': (tool_name or self._tool_call_names.get(call_id, '')),
+                                'arguments': tool_args,
                             }
                         self._emit_event('dr.subagent.tool.result', payload)
 

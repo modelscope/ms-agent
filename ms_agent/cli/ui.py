@@ -11,8 +11,7 @@ from .base import CLICommand
 
 
 def subparser_func(args):
-    """ Function which will be called for a specific sub parser.
-    """
+    """Function which will be called for a specific sub parser."""
     return UICMD(args)
 
 
@@ -28,28 +27,11 @@ class UICMD(CLICommand):
     def define_args(parsers: argparse.ArgumentParser):
         """Define args for the ui command."""
         parser: argparse.ArgumentParser = parsers.add_parser(UICMD.name)
-        parser.add_argument(
-            '--host',
-            type=str,
-            default='0.0.0.0',
-            help='The server host to bind to.')
-        parser.add_argument(
-            '--port',
-            type=int,
-            default=7860,
-            help='The server port to bind to.')
-        parser.add_argument(
-            '--reload',
-            action='store_true',
-            help='Enable auto-reload for development.')
-        parser.add_argument(
-            '--production',
-            action='store_true',
-            help='Run in production mode (serve built frontend).')
-        parser.add_argument(
-            '--no-browser',
-            action='store_true',
-            help='Do not automatically open browser.')
+        parser.add_argument('--host', type=str, default='0.0.0.0', help='The server host to bind to.')
+        parser.add_argument('--port', type=int, default=7860, help='The server port to bind to.')
+        parser.add_argument('--reload', action='store_true', help='Enable auto-reload for development.')
+        parser.add_argument('--production', action='store_true', help='Run in production mode (serve built frontend).')
+        parser.add_argument('--no-browser', action='store_true', help='Do not automatically open browser.')
         parser.set_defaults(func=subparser_func)
 
     def execute(self):
@@ -59,6 +41,7 @@ class UICMD(CLICommand):
 
         if not webui_dir.exists():
             import ms_agent
+
             ms_agent_path = Path(ms_agent.__file__).parent
             webui_dir = ms_agent_path / 'webui'
 
@@ -73,13 +56,10 @@ class UICMD(CLICommand):
             sys.exit(1)
 
         frontend_dist = frontend_dir / 'dist'
-        frontend_built = frontend_dist.exists() and (frontend_dist
-                                                     / 'index.html').exists()
+        frontend_built = frontend_dist.exists() and (frontend_dist / 'index.html').exists()
 
         if self.args.production and not frontend_built:
-            print(
-                'Error: Frontend not built. Please run "npm run build" in webui/frontend first.'
-            )
+            print('Error: Frontend not built. Please run "npm run build" in webui/frontend first.')
             sys.exit(1)
 
         if not self.args.production and not frontend_built:
@@ -115,8 +95,7 @@ class UICMD(CLICommand):
                     time.sleep(1.5)
                     webbrowser.open(browser_url)
 
-                browser_thread = threading.Thread(
-                    target=open_browser, daemon=True)
+                browser_thread = threading.Thread(target=open_browser, daemon=True)
                 browser_thread.start()
 
             main()
@@ -126,6 +105,7 @@ class UICMD(CLICommand):
         except Exception as e:
             print(f'Error starting WebUI: {e}')
             import traceback
+
             traceback.print_exc()
             sys.exit(1)
         finally:
@@ -136,33 +116,33 @@ class UICMD(CLICommand):
         import subprocess
 
         try:
-            subprocess.run(['npm', '--version'],
-                           capture_output=True,
-                           check=True,
-                           timeout=5)
-        except (subprocess.TimeoutExpired, subprocess.CalledProcessError,
-                FileNotFoundError):
+            subprocess.run(['npm', '--version'], capture_output=True, check=True, timeout=5)
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
             return False
 
         node_modules = frontend_dir / 'node_modules'
         if not node_modules.exists():
             try:
-                subprocess.run(['npm', 'install'],
-                               cwd=frontend_dir,
-                               check=True,
-                               timeout=300,
-                               stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE)
+                subprocess.run(
+                    ['npm', 'install'],
+                    cwd=frontend_dir,
+                    check=True,
+                    timeout=300,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
             except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
                 return False
 
         try:
-            subprocess.run(['npm', 'run', 'build'],
-                           cwd=frontend_dir,
-                           check=True,
-                           timeout=300,
-                           stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE)
+            subprocess.run(
+                ['npm', 'run', 'build'],
+                cwd=frontend_dir,
+                check=True,
+                timeout=300,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
             return True
         except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
             return False

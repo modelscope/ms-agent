@@ -23,11 +23,46 @@ logger = get_logger()
 _FS_TOOL_ALIASES = {'read': 'read_file', 'edit': 'edit_file', 'write': 'write_file'}
 
 _TEXT_SUFFIXES = {
-    '.py', '.md', '.txt', '.yaml', '.yml', '.json', '.toml', '.cfg', '.ini',
-    '.sh', '.bash', '.js', '.ts', '.tsx', '.jsx', '.css', '.html', '.xml',
-    '.rs', '.go', '.java', '.c', '.h', '.cpp', '.hpp', '.cs', '.rb', '.php',
-    '.sql', '.vue', '.svelte', '.m', '.swift', '.kt', '.gradle', '.properties',
-    '.env', '.gitignore', '.dockerignore', 'Dockerfile',
+    '.py',
+    '.md',
+    '.txt',
+    '.yaml',
+    '.yml',
+    '.json',
+    '.toml',
+    '.cfg',
+    '.ini',
+    '.sh',
+    '.bash',
+    '.js',
+    '.ts',
+    '.tsx',
+    '.jsx',
+    '.css',
+    '.html',
+    '.xml',
+    '.rs',
+    '.go',
+    '.java',
+    '.c',
+    '.h',
+    '.cpp',
+    '.hpp',
+    '.cs',
+    '.rb',
+    '.php',
+    '.sql',
+    '.vue',
+    '.svelte',
+    '.m',
+    '.swift',
+    '.kt',
+    '.gradle',
+    '.properties',
+    '.env',
+    '.gitignore',
+    '.dockerignore',
+    'Dockerfile',
 }
 
 
@@ -38,8 +73,10 @@ class FileSystemTool(ToolBase):
     IMAGE_EXTENSIONS = frozenset({'png', 'jpg', 'jpeg', 'gif', 'webp'})
     # Curly quote → straight quote mapping for fuzzy matching
     CURLY_QUOTE_MAP = {
-        '\u2018': "'", '\u2019': "'",  # ' '
-        '\u201c': '"', '\u201d': '"',  # " "
+        '\u2018': "'",
+        '\u2019': "'",  # ' '
+        '\u201c': '"',
+        '\u201d': '"',  # " "
     }
 
     SYSTEM_FOR_ABBREVIATIONS = """你是一个帮我简化文件信息并返回缩略的机器人，你需要根据输入文件内容来生成压缩过的文件内容。
@@ -60,18 +97,12 @@ class FileSystemTool(ToolBase):
         super().__init__(config)
         self.exclude_func(getattr(config.tools, 'file_system', None))
         if self.include_functions:
-            self.include_functions = [
-                _FS_TOOL_ALIASES.get(n, n) for n in self.include_functions
-            ]
+            self.include_functions = [_FS_TOOL_ALIASES.get(n, n) for n in self.include_functions]
         if self.exclude_functions:
-            self.exclude_functions = [
-                _FS_TOOL_ALIASES.get(n, n) for n in self.exclude_functions
-            ]
+            self.exclude_functions = [_FS_TOOL_ALIASES.get(n, n) for n in self.exclude_functions]
         self.output_dir = getattr(config, 'output_dir', DEFAULT_OUTPUT_DIR)
         self.trust_remote_code = kwargs.get('trust_remote_code', False)
-        self.allow_read_all_files = getattr(
-            getattr(config.tools, 'file_system', {}), 'allow_read_all_files',
-            False)
+        self.allow_read_all_files = getattr(getattr(config.tools, 'file_system', {}), 'allow_read_all_files', False)
         if not self.trust_remote_code:
             self.allow_read_all_files = False
         if hasattr(self.config, 'llm'):
@@ -86,22 +117,17 @@ class FileSystemTool(ToolBase):
 
         fs_cfg = getattr(config.tools, 'file_system', None)
         self._grep_timeout = int(getattr(fs_cfg, 'grep_timeout_s', 120) or 120)
-        self._default_grep_head = int(
-            getattr(fs_cfg, 'grep_head_limit', 250) or 250)
+        self._default_grep_head = int(getattr(fs_cfg, 'grep_head_limit', 250) or 250)
         self._glob_max_files = int(getattr(fs_cfg, 'glob_max_files', 100) or 100)
 
         wp = getattr(getattr(config, 'tools', None), 'workspace_policy', None)
         extra = list(getattr(wp, 'allow_roots', []) or []) if wp else []
         deny = list(getattr(wp, 'deny_globs', []) or []) if wp else []
 
-        shell_cfg = getattr(
-            getattr(config.tools, 'code_executor', None), 'shell', None)
-        shell_mode = getattr(shell_cfg, 'default_mode',
-                             'workspace_write') if shell_cfg else 'workspace_write'
-        net = bool(getattr(shell_cfg, 'network_enabled', False)
-                   ) if shell_cfg else False
-        max_cmd = int(getattr(shell_cfg, 'max_command_chars', 8192)
-                      ) if shell_cfg else 8192
+        shell_cfg = getattr(getattr(config.tools, 'code_executor', None), 'shell', None)
+        shell_mode = getattr(shell_cfg, 'default_mode', 'workspace_write') if shell_cfg else 'workspace_write'
+        net = bool(getattr(shell_cfg, 'network_enabled', False)) if shell_cfg else False
+        max_cmd = int(getattr(shell_cfg, 'max_command_chars', 8192)) if shell_cfg else 8192
 
         _out_p = Path(self.output_dir).expanduser().resolve()
         try:
@@ -119,13 +145,13 @@ class FileSystemTool(ToolBase):
         max_kb = 256
         if shell_cfg and getattr(shell_cfg, 'max_output_kb', None):
             max_kb = int(shell_cfg.max_output_kb)
-        self._fs_artifacts = ArtifactManager(
-            _out_p, max_combined_bytes=max_kb * 1024)
+        self._fs_artifacts = ArtifactManager(_out_p, max_combined_bytes=max_kb * 1024)
 
     async def connect(self):
         logger.warning_once(
             '[IMPORTANT]FileSystemTool is not implemented with sandbox, please consider other similar '
-            'tools if you want to run dangerous code.')
+            'tools if you want to run dangerous code.'
+        )
 
     async def _get_tools_inner(self):
         tools = {
@@ -155,8 +181,9 @@ class FileSystemTool(ToolBase):
                             },
                         },
                         'required': ['path', 'content'],
-                        'additionalProperties': False
-                    }),
+                        'additionalProperties': False,
+                    },
+                ),
                 Tool(
                     tool_name='read_file',
                     server_name='file_system',
@@ -179,37 +206,33 @@ class FileSystemTool(ToolBase):
                             'paths': {
                                 'type': 'array',
                                 'items': {'type': 'string'},
-                                'description':
-                                'List of relative file path(s) to read. '
+                                'description': 'List of relative file path(s) to read. '
                                 'Use this OR `path` (single file).',
                             },
                             'path': {
                                 'type': 'string',
-                                'description':
-                                'Single relative file path to read (alias for `paths` of length 1).',
+                                'description': 'Single relative file path to read (alias for `paths` of length 1).',
                             },
                             'offset': {
                                 'type': 'integer',
-                                'description':
-                                'Line number to start reading from (1-based). '
+                                'description': 'Line number to start reading from (1-based). '
                                 'Only provide if the file is too large to read at once.',
                             },
                             'limit': {
                                 'type': 'integer',
-                                'description':
-                                'Number of lines to read. '
+                                'description': 'Number of lines to read. '
                                 'Only provide if the file is too large to read at once.',
                             },
                             'abbreviate': {
                                 'type': 'boolean',
-                                'description':
-                                'If true, return an LLM-generated summary instead of raw content. '
+                                'description': 'If true, return an LLM-generated summary instead of raw content. '
                                 'Useful for large files or quick structural overview.',
                             },
                         },
                         'required': [],
-                        'additionalProperties': False
-                    }),
+                        'additionalProperties': False,
+                    },
+                ),
                 Tool(
                     tool_name='edit_file',
                     server_name='file_system',
@@ -245,13 +268,13 @@ class FileSystemTool(ToolBase):
                             },
                             'replace_all': {
                                 'type': 'boolean',
-                                'description':
-                                'If true, replace all occurrences. Default is false (replace only the first).',
+                                'description': 'If true, replace all occurrences. Default is false (replace only the first).',
                             },
                         },
                         'required': ['path', 'old_string', 'new_string'],
-                        'additionalProperties': False
-                    }),
+                        'additionalProperties': False,
+                    },
+                ),
                 Tool(
                     tool_name='grep',
                     server_name='file_system',
@@ -269,8 +292,7 @@ class FileSystemTool(ToolBase):
                             },
                             'path': {
                                 'type': 'string',
-                                'description':
-                                'Directory or file to search (relative to output_dir if not absolute). Default ".".',
+                                'description': 'Directory or file to search (relative to output_dir if not absolute). Default ".".',
                             },
                             'glob': {
                                 'type': 'string',
@@ -279,8 +301,7 @@ class FileSystemTool(ToolBase):
                             'output_mode': {
                                 'type': 'string',
                                 'enum': ['content', 'files_with_matches', 'count'],
-                                'description':
-                                'content: matching lines; files_with_matches: paths only; count: per-file counts',
+                                'description': 'content: matching lines; files_with_matches: paths only; count: per-file counts',
                             },
                             'head_limit': {
                                 'type': 'integer',
@@ -315,21 +336,18 @@ class FileSystemTool(ToolBase):
                             },
                             'path': {
                                 'type': 'string',
-                                'description':
-                                'Base directory (relative to output_dir if not absolute).',
+                                'description': 'Base directory (relative to output_dir if not absolute).',
                             },
                         },
                         'required': ['pattern'],
                         'additionalProperties': False,
                     },
                 ),
-
             ]
         }
         return tools
 
-    async def call_tool(self, server_name: str, *, tool_name: str,
-                        tool_args: dict) -> str:
+    async def call_tool(self, server_name: str, *, tool_name: str, tool_args: dict) -> str:
         return await getattr(self, tool_name)(**tool_args)
 
     async def grep(
@@ -343,8 +361,7 @@ class FileSystemTool(ToolBase):
         case_insensitive: bool = False,
     ) -> str:
         call_id = f'grep-{pattern[:40]}'
-        head_limit = (head_limit if head_limit is not None else
-                      self._default_grep_head)
+        head_limit = head_limit if head_limit is not None else self._default_grep_head
         offset = offset or 0
         path = path or '.'
         try:
@@ -378,13 +395,13 @@ class FileSystemTool(ToolBase):
         try:
             rg = shutil.which('rg')
             if rg and root.is_file():
-                lines = await self._grep_rg_file(rg, pattern, root,
-                                                 case_insensitive, output_mode,
-                                                 head_limit, offset, glob)
+                lines = await self._grep_rg_file(
+                    rg, pattern, root, case_insensitive, output_mode, head_limit, offset, glob
+                )
             elif rg and root.is_dir():
-                lines = await self._grep_rg_dir(rg, pattern, root,
-                                                case_insensitive, output_mode,
-                                                head_limit, offset, glob)
+                lines = await self._grep_rg_dir(
+                    rg, pattern, root, case_insensitive, output_mode, head_limit, offset, glob
+                )
             else:
                 lines = self._grep_python(
                     pattern,
@@ -398,12 +415,7 @@ class FileSystemTool(ToolBase):
         except Exception as e:
             err = str(e)
             # Expected user/tooling failures (bad regex, rg rules) — log without traceback noise.
-            _quiet = (
-                'rg:' in err
-                or 'exited' in err.lower()
-                or 'regex' in err.lower()
-                or 'pattern' in err.lower()
-            )
+            _quiet = 'rg:' in err or 'exited' in err.lower() or 'regex' in err.lower() or 'pattern' in err.lower()
             logger.warning('grep failed: %s', e, exc_info=not _quiet)
             return json.dumps({'success': False, 'error': str(e)}, indent=2)
 
@@ -449,8 +461,7 @@ class FileSystemTool(ToolBase):
             stderr=asyncio.subprocess.PIPE,
             cwd=str(self._fs_policy.workspace_root),
         )
-        out_b, err_b = await asyncio.wait_for(proc.communicate(),
-                                              timeout=self._grep_timeout)
+        out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=self._grep_timeout)
         out = (out_b or b'').decode('utf-8', errors='replace').strip('\n')
         err = (err_b or b'').decode('utf-8', errors='replace').strip('\n')
         if proc.returncode not in (0, 1):
@@ -486,8 +497,7 @@ class FileSystemTool(ToolBase):
             stderr=asyncio.subprocess.PIPE,
             cwd=str(self._fs_policy.workspace_root),
         )
-        out_b, err_b = await asyncio.wait_for(proc.communicate(),
-                                              timeout=self._grep_timeout)
+        out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=self._grep_timeout)
         out = (out_b or b'').decode('utf-8', errors='replace').strip('\n')
         err = (err_b or b'').decode('utf-8', errors='replace').strip('\n')
         if proc.returncode not in (0, 1):
@@ -516,8 +526,7 @@ class FileSystemTool(ToolBase):
         def consider_file(fp: Path) -> bool:
             if glob_pat:
                 rel = str(fp.relative_to(root)) if root.is_dir() else fp.name
-                if not fnmatch.fnmatch(fp.name, glob_pat) and not fnmatch.fnmatch(
-                        rel, glob_pat):
+                if not fnmatch.fnmatch(fp.name, glob_pat) and not fnmatch.fnmatch(rel, glob_pat):
                     return False
             suf = fp.suffix.lower()
             if suf not in _TEXT_SUFFIXES and fp.suffix == '':
@@ -529,8 +538,7 @@ class FileSystemTool(ToolBase):
         if root.is_file():
             files = [root]
         else:
-            for fp in _walk_files_limited(root, self._fs_policy.deny_globs,
-                                          50_000):
+            for fp in _walk_files_limited(root, self._fs_policy.deny_globs, 50_000):
                 if consider_file(fp):
                     files.append(fp)
 
@@ -539,9 +547,11 @@ class FileSystemTool(ToolBase):
                 text = fp.read_text(encoding='utf-8', errors='replace')
             except OSError:
                 continue
-            rel = str(fp.relative_to(self._fs_policy.workspace_root)
-                      ) if _is_relative(fp, self._fs_policy.workspace_root) else str(
-                          fp)
+            rel = (
+                str(fp.relative_to(self._fs_policy.workspace_root))
+                if _is_relative(fp, self._fs_policy.workspace_root)
+                else str(fp)
+            )
             if output_mode == 'files_with_matches':
                 if rx.search(text):
                     lines_out.append(rel)
@@ -589,9 +599,11 @@ class FileSystemTool(ToolBase):
                     continue
                 if _is_denied_path(rp, base, deny):
                     continue
-                rel = str(p.relative_to(self._fs_policy.workspace_root)
-                          ) if _is_relative(p, self._fs_policy.workspace_root
-                                            ) else str(p)
+                rel = (
+                    str(p.relative_to(self._fs_policy.workspace_root))
+                    if _is_relative(p, self._fs_policy.workspace_root)
+                    else str(p)
+                )
                 matches.append(rel)
                 if len(matches) >= self._glob_max_files:
                     truncated = True
@@ -697,21 +709,17 @@ class FileSystemTool(ToolBase):
         # Check if path is absolute or already starts with output_dir
         if os.path.isabs(path):
             target_path = path
-        elif path.startswith(self.output_dir + os.sep) or path.startswith(
-                self.output_dir):
+        elif path.startswith(self.output_dir + os.sep) or path.startswith(self.output_dir):
             # Path already includes output_dir as prefix
             target_path = path
         else:
             target_path = os.path.join(self.output_dir, path)
         target_path_real = os.path.realpath(target_path)
         output_dir_real = os.path.realpath(self.output_dir)
-        is_in_output_dir = target_path_real.startswith(
-            output_dir_real + os.sep) or target_path_real == output_dir_real
+        is_in_output_dir = target_path_real.startswith(output_dir_real + os.sep) or target_path_real == output_dir_real
 
         if not is_in_output_dir and not self.allow_read_all_files:
-            logger.warning(
-                f'Attempt to read file outside output directory blocked: {path} -> {target_path_real}'
-            )
+            logger.warning(f'Attempt to read file outside output directory blocked: {path} -> {target_path_real}')
             return None
         else:
             return target_path_real
@@ -723,20 +731,19 @@ class FileSystemTool(ToolBase):
             if isinstance(paths, str) and paths.strip():
                 out = [paths.strip()]
             elif isinstance(paths, list):
-                out = [
-                    p.strip() for p in paths
-                    if isinstance(p, str) and p.strip()
-                ]
+                out = [p.strip() for p in paths if isinstance(p, str) and p.strip()]
         if not out and path is not None and isinstance(path, str) and path.strip():
             out = [path.strip()]
         return out
 
-    async def read_file(self,
-                        paths: Optional[List[str]] = None,
-                        path: Optional[str] = None,
-                        offset: int = None,
-                        limit: int = None,
-                        abbreviate: bool = False):
+    async def read_file(
+        self,
+        paths: Optional[List[str]] = None,
+        path: Optional[str] = None,
+        offset: int = None,
+        limit: int = None,
+        abbreviate: bool = False,
+    ):
         """Read the content of file(s).
 
         Args:
@@ -765,8 +772,7 @@ class FileSystemTool(ToolBase):
             return await self._read_files_abbreviated(paths)
 
         results = {}
-        use_line_range = len(paths) == 1 and (offset is not None
-                                              or limit is not None)
+        use_line_range = len(paths) == 1 and (offset is not None or limit is not None)
 
         for path in paths:
             try:
@@ -774,7 +780,8 @@ class FileSystemTool(ToolBase):
                 if target_path_real is None:
                     results[path] = (
                         f'Access denied: Reading file <{path}> outside output directory is not allowed. '
-                        f'Set allow_read_all_files=true in config to enable.')
+                        f'Set allow_read_all_files=true in config to enable.'
+                    )
                     continue
 
                 ext = os.path.splitext(path)[1].lstrip('.').lower()
@@ -796,16 +803,14 @@ class FileSystemTool(ToolBase):
                 if file_size > self.MAX_READ_BYTES and not use_line_range:
                     results[path] = (
                         f'Error: File <{path}> is too large ({file_size} bytes). '
-                        f'Use offset and limit to read specific portions.')
+                        f'Use offset and limit to read specific portions.'
+                    )
                     continue
 
                 # Dedup: return stub if file unchanged since last read
                 mtime = os.path.getmtime(target_path_real)
                 cached = self._read_cache.get(target_path_real)
-                if (cached
-                        and cached['mtime'] == mtime
-                        and cached['offset'] == offset
-                        and cached['limit'] == limit):
+                if cached and cached['mtime'] == mtime and cached['offset'] == offset and cached['limit'] == limit:
                     results[path] = {
                         'type': 'file_unchanged',
                         'message': 'File has not changed since last read.',
@@ -819,8 +824,8 @@ class FileSystemTool(ToolBase):
                     content = raw_bytes.decode('utf-8')
                 except UnicodeDecodeError:
                     results[path] = (
-                        f'Error: File <{path}> appears to be binary. '
-                        f'Only text and image files are supported.')
+                        f'Error: File <{path}> appears to be binary. Only text and image files are supported.'
+                    )
                     continue
 
                 # Normalize line endings
@@ -835,16 +840,13 @@ class FileSystemTool(ToolBase):
                     if actual_start > total_lines:
                         results[path] = f'Error: offset {offset} exceeds file length ({total_lines} lines)'
                         continue
-                    selected = lines[actual_start - 1:actual_end]
+                    selected = lines[actual_start - 1 : actual_end]
                     start_lineno = actual_start
                 else:
                     selected = lines
                     start_lineno = 1
 
-                results[path] = ''.join(
-                    f'{start_lineno + i}\t{line}'
-                    for i, line in enumerate(selected)
-                )
+                results[path] = ''.join(f'{start_lineno + i}\t{line}' for i, line in enumerate(selected))
 
                 # Update dedup cache
                 self._read_cache[target_path_real] = {
@@ -901,11 +903,9 @@ class FileSystemTool(ToolBase):
 
         return json.dumps(results, indent=2, ensure_ascii=False)
 
-    async def edit_file(self,
-                        path: str = None,
-                        old_string: str = None,
-                        new_string: str = None,
-                        replace_all: bool = False):
+    async def edit_file(
+        self, path: str = None, old_string: str = None, new_string: str = None, replace_all: bool = False
+    ):
         """Edit a file by replacing an exact string with new content.
 
         Args:
@@ -973,7 +973,7 @@ class FileSystemTool(ToolBase):
                 norm_content = self._normalize_quotes(content)
                 idx = norm_content.find(norm_old)
                 if idx != -1:
-                    actual_old = content[idx:idx + len(old_string)]
+                    actual_old = content[idx : idx + len(old_string)]
 
             if actual_old is None:
                 return (
@@ -1014,8 +1014,7 @@ class FileSystemTool(ToolBase):
             return f'Edit file <{path}> failed, error: ' + str(e)
 
 
-def _apply_offset_limit(lines: List[str], offset: int,
-                        head_limit: int) -> List[str]:
+def _apply_offset_limit(lines: List[str], offset: int, head_limit: int) -> List[str]:
     if offset:
         lines = lines[offset:]
     if head_limit and head_limit > 0:
@@ -1044,11 +1043,9 @@ def _is_denied_path(path: Path, root: Path, deny: tuple[str, ...]) -> bool:
     return False
 
 
-def _walk_files_limited(root: Path, deny: tuple[str, ...],
-                        max_files: int) -> List[Path]:
+def _walk_files_limited(root: Path, deny: tuple[str, ...], max_files: int) -> List[Path]:
     out: List[Path] = []
-    for dirpath, dirnames, filenames in os.walk(
-            root, topdown=True, followlinks=False):
+    for dirpath, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
         dp = Path(dirpath)
         pruned = []
         for d in list(dirnames):

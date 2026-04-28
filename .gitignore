@@ -32,7 +32,13 @@ wheels/
 /temp
 **/tmp/
 .env*
-.claude-trace/
+.claude*
+# Local Colima/Lima state when using CODE_GENESIS_COLIMA_IN_REPO=1
+.colima/
+.xdg-cache/
+.xdg-config/
+.xdg-data/
+scripts/colima_proxy.local.env
 /apps/agentfabric/tmp/
 MANIFEST
 

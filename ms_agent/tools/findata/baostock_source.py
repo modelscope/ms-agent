@@ -5,9 +5,8 @@ from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
-from ms_agent.tools.findata.data_source_base import (DataSourceError,
-                                                     FinancialDataSource,
-                                                     NoDataFoundError)
+
+from ms_agent.tools.findata.data_source_base import DataSourceError, FinancialDataSource, NoDataFoundError
 from ms_agent.utils import get_logger
 from ms_agent.utils.utils import install_package
 
@@ -16,6 +15,7 @@ logger = get_logger()
 
 class BaoStockSessionManager:
     """Thread-safe BaoStock session manager with connection reuse"""
+
     _instance = None
     _lock = threading.Lock()
     _session_lock = threading.Lock()
@@ -57,8 +57,7 @@ class BaoStockSessionManager:
             if not self._is_logged_in:
                 lg = baostock.login()
                 if lg.error_code != '0':
-                    raise DataSourceError(
-                        f'BaoStock login failed: {lg.error_msg}')
+                    raise DataSourceError(f'BaoStock login failed: {lg.error_msg}')
                 self._is_logged_in = True
                 self._login_count = 1
                 logger.debug('BaoStock session established')
@@ -66,8 +65,7 @@ class BaoStockSessionManager:
                 self._login_count += 1
                 # Someone reused the session within idle timeout; cancel scheduled logout
                 self._cancel_logout()
-                logger.debug(
-                    f'BaoStock session reused (count: {self._login_count})')
+                logger.debug(f'BaoStock session reused (count: {self._login_count})')
 
     def release(self):
         """Release session (logout only when no active users)"""
@@ -101,9 +99,24 @@ class BaoStockDataSource(FinancialDataSource):
     """
 
     DEFAULT_K_FIELDS = [
-        'date', 'code', 'open', 'high', 'low', 'close', 'preclose', 'volume',
-        'amount', 'adjustflag', 'turn', 'tradestatus', 'pctChg', 'peTTM',
-        'pbMRQ', 'psTTM', 'pcfNcfTTM', 'isST'
+        'date',
+        'code',
+        'open',
+        'high',
+        'low',
+        'close',
+        'preclose',
+        'volume',
+        'amount',
+        'adjustflag',
+        'turn',
+        'tradestatus',
+        'pctChg',
+        'peTTM',
+        'pbMRQ',
+        'psTTM',
+        'pcfNcfTTM',
+        'isST',
     ]
 
     def __init__(self):
@@ -124,11 +137,9 @@ class BaoStockDataSource(FinancialDataSource):
     def _query_to_dataframe(self, rs, data_type: str = 'data') -> pd.DataFrame:
         """Convert BaoStock query result to DataFrame"""
         if rs.error_code != '0':
-            if 'no record found' in rs.error_msg.lower(
-            ) or rs.error_code == '10002':
+            if 'no record found' in rs.error_msg.lower() or rs.error_code == '10002':
                 raise NoDataFoundError(f'No {data_type} found: {rs.error_msg}')
-            raise DataSourceError(
-                f'BaoStock API error: {rs.error_msg} (code: {rs.error_code})')
+            raise DataSourceError(f'BaoStock API error: {rs.error_msg} (code: {rs.error_code})')
 
         data_list = []
         while rs.next():
@@ -160,7 +171,8 @@ class BaoStockDataSource(FinancialDataSource):
                 start_date=start_date,
                 end_date=end_date,
                 frequency=frequency,
-                adjustflag=adjust_flag)
+                adjustflag=adjust_flag,
+            )
             return self._query_to_dataframe(rs, f'K-data for {code}')
 
     def get_stock_basic_info(self, code: str) -> pd.DataFrame:
@@ -171,40 +183,25 @@ class BaoStockDataSource(FinancialDataSource):
             rs = baostock.query_stock_basic(code=code)
             return self._query_to_dataframe(rs, f'basic info for {code}')
 
-    def get_dividend_data(self,
-                          code: str,
-                          year: Optional[str] = None,
-                          year_type: str = 'report') -> pd.DataFrame:
+    def get_dividend_data(self, code: str, year: Optional[str] = None, year_type: str = 'report') -> pd.DataFrame:
         """Get dividend data"""
         logger.info(f'Fetching dividend data for {code} ({year} {year_type})')
 
         with baostock_session():
-            rs = baostock.query_dividend_data(
-                code=code, year=year, yearType=year_type)
-            return self._query_to_dataframe(
-                rs, f'dividend data for {code} ({year} {year_type})')
+            rs = baostock.query_dividend_data(code=code, year=year, yearType=year_type)
+            return self._query_to_dataframe(rs, f'dividend data for {code} ({year} {year_type})')
 
-    def get_adjust_factor_data(self, code: str, start_date: str,
-                               end_date: str) -> pd.DataFrame:
+    def get_adjust_factor_data(self, code: str, start_date: str, end_date: str) -> pd.DataFrame:
         """Get adjustment factor data"""
-        logger.info(
-            f'Fetching adjustment factor data for {code} ({start_date} to {end_date})'
-        )
+        logger.info(f'Fetching adjustment factor data for {code} ({start_date} to {end_date})')
 
         with baostock_session():
-            rs = baostock.query_adjust_factor(
-                code=code, start_date=start_date, end_date=end_date)
-            return self._query_to_dataframe(
-                rs,
-                f'adjustment factor data for {code} ({start_date} to {end_date})'
-            )
+            rs = baostock.query_adjust_factor(code=code, start_date=start_date, end_date=end_date)
+            return self._query_to_dataframe(rs, f'adjustment factor data for {code} ({start_date} to {end_date})')
 
-    def get_financial_data(self, code: str, year: str, quarter: int,
-                           data_types: List[str]) -> Dict[str, pd.DataFrame]:
+    def get_financial_data(self, code: str, year: str, quarter: int, data_types: List[str]) -> Dict[str, pd.DataFrame]:
         """Get financial data"""
-        logger.info(
-            f'Fetching financial data for {code} ({year}Q{quarter}) {data_types}'
-        )
+        logger.info(f'Fetching financial data for {code} ({year}Q{quarter}) {data_types}')
 
         if not data_types:
             raise ValueError('data_types cannot be empty')
@@ -227,72 +224,49 @@ class BaoStockDataSource(FinancialDataSource):
                 else:
                     raise ValueError(f'Invalid data type: {data_type}')
 
-                df = self._query_financial_data(query_func, data_type, code,
-                                                year, quarter)
+                df = self._query_financial_data(query_func, data_type, code, year, quarter)
                 result[data_type] = df
 
         if not result:
-            raise NoDataFoundError(
-                f'No financial data found for {code} ({year}Q{quarter})')
+            raise NoDataFoundError(f'No financial data found for {code} ({year}Q{quarter})')
 
         return result
 
-    def _query_financial_data(self, query_func, data_type: str, code: str,
-                              year: str, quarter: int) -> pd.DataFrame:
+    def _query_financial_data(self, query_func, data_type: str, code: str, year: str, quarter: int) -> pd.DataFrame:
         """Query financial data using provided function (assumes session is already active)"""
         logger.info(f'Fetching {data_type} for {code} ({year}Q{quarter})')
 
         rs = query_func(code=code, year=year, quarter=quarter)
         return self._query_to_dataframe(rs, f'{data_type} for {code}')
 
-    def get_report(self,
-                   code: str,
-                   start_date: str,
-                   end_date: str,
-                   report_type: str = '') -> pd.DataFrame:
+    def get_report(self, code: str, start_date: str, end_date: str, report_type: str = '') -> pd.DataFrame:
         """Get report data"""
-        logger.info(
-            f'Fetching report data for {code} ({start_date} to {end_date}) {report_type}'
-        )
+        logger.info(f'Fetching report data for {code} ({start_date} to {end_date}) {report_type}')
 
         if not report_type:
             raise ValueError('report_type cannot be empty')
 
         with baostock_session():
             if report_type == 'performance_express':
-                rs = baostock.query_performance_express_report(
-                    code=code, start_date=start_date, end_date=end_date)
+                rs = baostock.query_performance_express_report(code=code, start_date=start_date, end_date=end_date)
             elif report_type == 'performance_forecast':
-                rs = baostock.query_forecast_report(
-                    code=code, start_date=start_date, end_date=end_date)
+                rs = baostock.query_forecast_report(code=code, start_date=start_date, end_date=end_date)
             else:
                 raise ValueError(f'Invalid report type: {report_type}')
 
-            return self._query_to_dataframe(
-                rs,
-                f'report data for {code} ({start_date} to {end_date}) {report_type}'
-            )
+            return self._query_to_dataframe(rs, f'report data for {code} ({start_date} to {end_date}) {report_type}')
 
-    def get_stock_industry(self,
-                           code: Optional[str] = None,
-                           date: Optional[str] = None) -> pd.DataFrame:
+    def get_stock_industry(self, code: Optional[str] = None, date: Optional[str] = None) -> pd.DataFrame:
         """Get stock industry"""
-        logger.info(
-            f"Fetching stock industry for code={code or 'all'}, date={date or 'latest'}"
-        )
+        logger.info(f"Fetching stock industry for code={code or 'all'}, date={date or 'latest'}")
 
         with baostock_session():
             rs = baostock.query_stock_industry(code=code, date=date)
-            return self._query_to_dataframe(
-                rs, f'stock industry for {code or "all"} ({date or "latest"})')
+            return self._query_to_dataframe(rs, f'stock industry for {code or "all"} ({date or "latest"})')
 
-    def get_stock_list(self,
-                       date: str,
-                       data_type: str = 'all_a_share') -> pd.DataFrame:
+    def get_stock_list(self, date: str, data_type: str = 'all_a_share') -> pd.DataFrame:
         """Get stock list or index constituents"""
-        logger.info(
-            f'Fetching stock list for {date} {data_type}, only support a_share'
-        )
+        logger.info(f'Fetching stock list for {date} {data_type}, only support a_share')
 
         with baostock_session():
             if data_type == 'sse50':
@@ -306,23 +280,17 @@ class BaoStockDataSource(FinancialDataSource):
             else:
                 raise ValueError(f'Invalid data type: {data_type}')
 
-            df = self._query_to_dataframe(
-                rs, f'stock list for {date} {data_type}')
+            df = self._query_to_dataframe(rs, f'stock list for {date} {data_type}')
             logger.info(f'Stock list for {date} {data_type}: {df.head()}')
 
             return df
 
-    def get_trade_dates(self,
-                        start_date: Optional[str] = None,
-                        end_date: Optional[str] = None) -> pd.DataFrame:
+    def get_trade_dates(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> pd.DataFrame:
         """Get trading calendar"""
-        logger.info(
-            f"Fetching trade dates ({start_date or 'default'} to {end_date or 'default'})"
-        )
+        logger.info(f"Fetching trade dates ({start_date or 'default'} to {end_date or 'default'})")
 
         with baostock_session():
-            rs = baostock.query_trade_dates(
-                start_date=start_date, end_date=end_date)
+            rs = baostock.query_trade_dates(start_date=start_date, end_date=end_date)
             return self._query_to_dataframe(rs, 'trade dates')
 
     def get_macro_data(
@@ -330,16 +298,15 @@ class BaoStockDataSource(FinancialDataSource):
         start_date: str,
         end_date: str,
         data_types: Optional[List[str]] = None,
-        extra_kwargs: Optional[Dict[str,
-                                    Any]] = None) -> Dict[str, pd.DataFrame]:
+        extra_kwargs: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, pd.DataFrame]:
         """Fetch macroeconomic data"""
         if data_types is None:
             data_types = []
         if extra_kwargs is None:
             extra_kwargs = {}
 
-        logger.info(
-            f'Fetching macro data ({start_date} to {end_date}) {data_types}')
+        logger.info(f'Fetching macro data ({start_date} to {end_date}) {data_types}')
 
         result = {}
         with baostock_session():
@@ -364,25 +331,20 @@ class BaoStockDataSource(FinancialDataSource):
 
                     elif data_type == 'money_supply_month':
                         query_func = baostock.query_money_supply_data_month
-                        parsed_start_date = pd.to_datetime(
-                            start_date).strftime('%Y-%m')
-                        parsed_end_date = pd.to_datetime(end_date).strftime(
-                            '%Y-%m')
+                        parsed_start_date = pd.to_datetime(start_date).strftime('%Y-%m')
+                        parsed_end_date = pd.to_datetime(end_date).strftime('%Y-%m')
 
                     elif data_type == 'money_supply_year':
                         query_func = baostock.query_money_supply_data_year
-                        parsed_start_date = pd.to_datetime(
-                            start_date).strftime('%Y')
-                        parsed_end_date = pd.to_datetime(end_date).strftime(
-                            '%Y')
+                        parsed_start_date = pd.to_datetime(start_date).strftime('%Y')
+                        parsed_end_date = pd.to_datetime(end_date).strftime('%Y')
 
                     else:
                         raise ValueError(f'Invalid data type: {data_type}')
 
-                    df = self._query_macro_data(query_func, data_type,
-                                                parsed_start_date,
-                                                parsed_end_date,
-                                                **parsed_extra_kwargs)
+                    df = self._query_macro_data(
+                        query_func, data_type, parsed_start_date, parsed_end_date, **parsed_extra_kwargs
+                    )
                     result[data_type] = df
 
                 except Exception as e:
@@ -391,19 +353,16 @@ class BaoStockDataSource(FinancialDataSource):
                     continue
 
         if not result:
-            raise NoDataFoundError(
-                'No macro data found for the specified criteria')
+            raise NoDataFoundError('No macro data found for the specified criteria')
         return result
 
-    def _query_macro_data(self, query_func, data_type: str, start_date: str,
-                          end_date: str, **kwargs) -> pd.DataFrame:
+    def _query_macro_data(self, query_func, data_type: str, start_date: str, end_date: str, **kwargs) -> pd.DataFrame:
         """Query macro data using provided function (assumes session is already active)"""
         logger.info(f'Fetching {data_type} for {start_date} to {end_date}')
 
         try:
             rs = query_func(start_date=start_date, end_date=end_date, **kwargs)
-            return self._query_to_dataframe(
-                rs, f'{data_type} for {start_date} to {end_date}')
+            return self._query_to_dataframe(rs, f'{data_type} for {start_date} to {end_date}')
 
         except Exception as e:
             logger.warning(f'Failed to fetch {data_type} data: {e}')

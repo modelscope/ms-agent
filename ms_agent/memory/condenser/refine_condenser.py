@@ -1,6 +1,6 @@
+import json
 from typing import List
 
-import json
 from ms_agent.llm import LLM, Message
 from ms_agent.memory import Memory
 
@@ -68,8 +68,7 @@ class RefineCondenser(Memory):
         self.threshold = getattr(mem_config, 'threshold', 60000)
 
     async def condense_memory(self, messages):
-        if len(str(messages)) > self.threshold and messages[-1].role in (
-                'user', 'tool'):
+        if len(str(messages)) > self.threshold and messages[-1].role in ('user', 'tool'):
             keep_messages = messages[:2]  # keep system and user
             keep_messages_tail = []
             i = 0
@@ -80,24 +79,23 @@ class RefineCondenser(Memory):
 
             keep_messages_tail = reversed(keep_messages_tail)
             compress_messages = json.dumps(
-                [message.to_dict_clean() for message in messages[2:-i - 1]],
-                ensure_ascii=False,
-                indent=2)
+                [message.to_dict_clean() for message in messages[2 : -i - 1]], ensure_ascii=False, indent=2
+            )
             keep_messages_json = json.dumps(
-                [message.to_dict_clean() for message in keep_messages],
-                ensure_ascii=False,
-                indent=2)
+                [message.to_dict_clean() for message in keep_messages], ensure_ascii=False, indent=2
+            )
             keep_messages_tail_json = json.dumps(
-                [message.to_dict_clean() for message in keep_messages_tail],
-                ensure_ascii=False,
-                indent=2)
+                [message.to_dict_clean() for message in keep_messages_tail], ensure_ascii=False, indent=2
+            )
 
-            query = (f'# Messages to be retained\n'
-                     f'## system and user: {keep_messages_json}\n'
-                     f'## Last assistant response: {keep_messages_tail_json}\n'
-                     f'# Messages to be compressed'
-                     f'## These messages are located between system/user '
-                     f'and the last assistant response: {compress_messages}')
+            query = (
+                f'# Messages to be retained\n'
+                f'## system and user: {keep_messages_json}\n'
+                f'## Last assistant response: {keep_messages_tail_json}\n'
+                f'# Messages to be compressed'
+                f'## These messages are located between system/user '
+                f'and the last assistant response: {compress_messages}'
+            )
 
             _messages = [
                 Message(role='system', content=self.system),
@@ -108,17 +106,21 @@ class RefineCondenser(Memory):
             keep_messages.append(
                 Message(
                     role='user',
-                    content=
-                    f'Intermediate messages are compressed, here is the compressed message:\n{content}\n'
-                ))
-            messages = keep_messages + list(keep_messages_tail) + [
-                Message(
-                    role='user',
-                    content=
-                    'History messages are compressed due to a long sequence, now '
-                    'continue solve your problem according to '
-                    'the messages and the tool calling:\n')
-            ]
+                    content=f'Intermediate messages are compressed, here is the compressed message:\n{content}\n',
+                )
+            )
+            messages = (
+                keep_messages
+                + list(keep_messages_tail)
+                + [
+                    Message(
+                        role='user',
+                        content='History messages are compressed due to a long sequence, now '
+                        'continue solve your problem according to '
+                        'the messages and the tool calling:\n',
+                    )
+                ]
+            )
             return messages
         else:
             return messages

@@ -1,27 +1,23 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import glob
+import json
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Union
 
-import json
+from omegaconf import DictConfig
+from PIL import Image
+
 from ms_agent.agent import CodeAgent
 from ms_agent.llm import LLM, Message
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
-from PIL import Image
 
 logger = get_logger()
 
 
 class GenerateRemotionCode(CodeAgent):
-
-    def __init__(self,
-                 config: DictConfig,
-                 tag: str,
-                 trust_remote_code: bool = False,
-                 **kwargs):
+    def __init__(self, config: DictConfig, tag: str, trust_remote_code: bool = False, **kwargs):
         super().__init__(config, tag, trust_remote_code, **kwargs)
         self.work_dir = getattr(self.config, 'output_dir', 'output')
         self.num_parallel = getattr(self.config, 'llm_num_parallel', 10)
@@ -29,8 +25,7 @@ class GenerateRemotionCode(CodeAgent):
         self.remotion_code_dir = os.path.join(self.work_dir, 'remotion_code')
         os.makedirs(self.remotion_code_dir, exist_ok=True)
 
-    async def execute_code(self, messages: Union[str, List[Message]],
-                           **kwargs) -> List[Message]:
+    async def execute_code(self, messages: Union[str, List[Message]], **kwargs) -> List[Message]:
         with open(os.path.join(self.work_dir, 'segments.txt'), 'r') as f:
             segments = json.load(f)
         with open(os.path.join(self.work_dir, 'audio_info.txt'), 'r') as f:
@@ -43,8 +38,7 @@ class GenerateRemotionCode(CodeAgent):
             animation_requirement = segment.get('remotion')
             if animation_requirement is not None:
                 # Check if file already exists
-                remotion_file = os.path.join(self.remotion_code_dir,
-                                             f'Segment{i + 1}.tsx')
+                remotion_file = os.path.join(self.remotion_code_dir, f'Segment{i + 1}.tsx')
                 if os.path.exists(remotion_file):
                     continue
                 tasks.append((segment, audio_info['audio_duration'], i))
@@ -53,16 +47,14 @@ class GenerateRemotionCode(CodeAgent):
 
         # Load existing files for skipped segments
         for i in range(len(segments)):
-            remotion_file = os.path.join(self.remotion_code_dir,
-                                         f'Segment{i + 1}.tsx')
+            remotion_file = os.path.join(self.remotion_code_dir, f'Segment{i + 1}.tsx')
             if os.path.exists(remotion_file):
                 with open(remotion_file, 'r', encoding='utf-8') as f:
                     remotion_code[i] = f.read()
 
         with ThreadPoolExecutor(max_workers=self.num_parallel) as executor:
             futures = {
-                executor.submit(self._generate_remotion_code_static, seg, dur,
-                                idx, self.config, self.images_dir): idx
+                executor.submit(self._generate_remotion_code_static, seg, dur, idx, self.config, self.images_dir): idx
                 for seg, dur, idx in tasks
             }
             for future in as_completed(futures):
@@ -70,19 +62,16 @@ class GenerateRemotionCode(CodeAgent):
                 remotion_code[idx] = future.result()
 
         for i, code in enumerate(remotion_code):
-            remotion_file = os.path.join(self.remotion_code_dir,
-                                         f'Segment{i + 1}.tsx')
+            remotion_file = os.path.join(self.remotion_code_dir, f'Segment{i + 1}.tsx')
             with open(remotion_file, 'w', encoding='utf-8') as f:
                 f.write(code)
         return messages
 
     @staticmethod
-    def _generate_remotion_code_static(segment, audio_duration, i, config,
-                                       image_dir):
+    def _generate_remotion_code_static(segment, audio_duration, i, config, image_dir):
         """Static method for multiprocessing"""
         llm = LLM.from_config(config)
-        return GenerateRemotionCode._generate_remotion_impl(
-            llm, segment, audio_duration, i, image_dir, config)
+        return GenerateRemotionCode._generate_remotion_impl(llm, segment, audio_duration, i, image_dir, config)
 
     @staticmethod
     def get_image_size(filename):
@@ -95,23 +84,17 @@ class GenerateRemotionCode(CodeAgent):
 
         foreground = segment.get('foreground', [])
         for idx, _req in enumerate(foreground):
-            foreground_image = os.path.join(
-                image_dir, f'illustration_{i + 1}_foreground_{idx + 1}.png')
+            foreground_image = os.path.join(image_dir, f'illustration_{i + 1}_foreground_{idx + 1}.png')
             if os.path.exists(foreground_image):
                 size = GenerateRemotionCode.get_image_size(foreground_image)
                 image_info = {
-                    'filename':
-                    os.path.join('images', os.path.basename(
-                        foreground_image)),  # Use basename for Remotion
-                    'size':
-                    size,
-                    'description':
-                    _req,
+                    'filename': os.path.join('images', os.path.basename(foreground_image)),  # Use basename for Remotion
+                    'size': size,
+                    'description': _req,
                 }
                 all_images_info.append(image_info)
 
-        image_info_file = os.path.join(
-            os.path.dirname(image_dir), 'image_info.txt')
+        image_info_file = os.path.join(os.path.dirname(image_dir), 'image_info.txt')
         if os.path.exists(image_info_file):
             with open(image_info_file, 'r') as f:
                 for line in f.readlines():
@@ -123,13 +106,11 @@ class GenerateRemotionCode(CodeAgent):
         return all_images_info
 
     @staticmethod
-    def _generate_remotion_impl(llm, segment, audio_duration, i, image_dir,
-                                config):
+    def _generate_remotion_impl(llm, segment, audio_duration, i, image_dir, config):
         component_name = f'Segment{i + 1}'
         content = segment['content']
         animation_requirement = segment['remotion']
-        images_info = GenerateRemotionCode.get_all_images_info(
-            segment, i, image_dir)
+        images_info = GenerateRemotionCode.get_all_images_info(segment, i, image_dir)
 
         # Inject image info with code snippets.
         images_info_str = ''
@@ -210,14 +191,11 @@ class GenerateRemotionCode(CodeAgent):
 """
 
         logger.info(f'正在生成 remotion 代码：{content}')
-        _response_message = llm.generate(
-            [Message(role='user', content=prompt)], temperature=0.3)
+        _response_message = llm.generate([Message(role='user', content=prompt)], temperature=0.3)
         response = _response_message.content
 
         # Robust code extraction using regex
-        code_match = re.search(
-            r'```(?:typescript|tsx|js|javascript)?\s*(.*?)```', response,
-            re.DOTALL)
+        code_match = re.search(r'```(?:typescript|tsx|js|javascript)?\s*(.*?)```', response, re.DOTALL)
         if code_match:
             code = code_match.group(1)
         else:

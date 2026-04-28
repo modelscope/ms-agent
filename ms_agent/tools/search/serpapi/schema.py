@@ -2,8 +2,7 @@
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from ms_agent.tools.search.search_base import (BaseResult, SearchRequest,
-                                               SearchResponse, SearchResult)
+from ms_agent.tools.search.search_base import BaseResult, SearchRequest, SearchResponse, SearchResult
 
 
 class SerpApiSearchRequest(SearchRequest):
@@ -11,11 +10,7 @@ class SerpApiSearchRequest(SearchRequest):
     A class representing a search request to SerpApi.
     """
 
-    def __init__(self,
-                 query: str,
-                 num_results: Optional[int] = 5,
-                 location: Optional[str] = None,
-                 **kwargs: Any):
+    def __init__(self, query: str, num_results: Optional[int] = 5, location: Optional[str] = None, **kwargs: Any):
         """
         Initialize SerpApiSearchRequest with search parameters.
 
@@ -34,21 +29,13 @@ class SerpApiSearchRequest(SearchRequest):
         Returns:
             Dict[str, Any]: The parameters as a dictionary
         """
-        return {
-            'q': self.query,
-            'num': self.num_results,
-            'location': self.location
-        }
+        return {'q': self.query, 'num': self.num_results, 'location': self.location}
 
 
 class SerpApiSearchResult(SearchResult):
     """SerpApi search result implementation."""
 
-    def __init__(self,
-                 provider: str,
-                 query: str,
-                 arguments: Dict[str, Any] = None,
-                 response: Dict[str, Any] = None):
+    def __init__(self, provider: str, query: str, arguments: Dict[str, Any] = None, response: Dict[str, Any] = None):
         """
         Initialize SerpApiSearchResult.
 
@@ -76,8 +63,7 @@ class SerpApiSearchResult(SearchResult):
         processed = []
         if self.provider.lower() in ['google', 'bing', 'baidu']:
             # Extract organic results
-            organic_results: List[Dict[str, Any]] = self.response.get(
-                'organic_results', [])
+            organic_results: List[Dict[str, Any]] = self.response.get('organic_results', [])
             for res in organic_results:
                 processed.append(
                     BaseResult(
@@ -87,9 +73,10 @@ class SerpApiSearchResult(SearchResult):
                         highlights=res.get('snippet_highlighted_words'),
                         highlight_scores=None,
                         summary=None,
-                        markdown=None))
+                        markdown=None,
+                    )
+                )
         else:
-            raise NotImplementedError(
-                f"Provider '{self.provider}' is not supported yet.")
+            raise NotImplementedError(f"Provider '{self.provider}' is not supported yet.")
 
         return SearchResponse(results=processed)

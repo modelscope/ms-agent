@@ -2,10 +2,11 @@
 import json
 from typing import Any, Dict, Optional
 
+from omegaconf import DictConfig
+
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils.logger import get_logger
-from omegaconf import DictConfig
 
 logger = get_logger()
 
@@ -47,7 +48,8 @@ class TaskControlTool(ToolBase):
                     server_name=_SERVER,
                     description=(
                         'List all background tasks and their current status. '
-                        'Returns task_id, tool_name, description, status, and duration.'),
+                        'Returns task_id, tool_name, description, status, and duration.'
+                    ),
                     parameters={
                         'type': 'object',
                         'properties': {},
@@ -74,8 +76,7 @@ class TaskControlTool(ToolBase):
             ]
         }
 
-    async def call_tool(self, server_name: str, *, tool_name: str,
-                        tool_args: dict) -> str:
+    async def call_tool(self, server_name: str, *, tool_name: str, tool_args: dict) -> str:
         if self._task_manager is None:
             return 'TaskManager not available.'
 
@@ -90,14 +91,17 @@ class TaskControlTool(ToolBase):
                     duration = f'{t.ended_at - t.started_at:.1f}s'
                 elif t.status == 'running':
                     import time
+
                     duration = f'{time.monotonic() - t.started_at:.1f}s (running)'
-                rows.append({
-                    'task_id': t.task_id,
-                    'tool_name': t.tool_name,
-                    'description': t.description,
-                    'status': t.status,
-                    'duration': duration,
-                })
+                rows.append(
+                    {
+                        'task_id': t.task_id,
+                        'tool_name': t.tool_name,
+                        'description': t.description,
+                        'status': t.status,
+                        'duration': duration,
+                    }
+                )
             return json.dumps(rows, ensure_ascii=False, indent=2)
 
         if tool_name == 'cancel_task':

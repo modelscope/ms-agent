@@ -1,9 +1,9 @@
 # flake8: noqa
 import os
 import threading
+from exa_py import Exa
 from typing import TYPE_CHECKING, List, Optional, Set, Union
 
-from exa_py import Exa
 from ms_agent.tools.search.exa.schema import ExaSearchRequest, ExaSearchResult
 from ms_agent.tools.search.search_base import SearchEngine, SearchEngineType
 from ms_agent.utils.logger import get_logger
@@ -36,13 +36,9 @@ class ExaSearch(SearchEngine):
     _global_exhausted_keys: Set[str] = set()
     _global_lock = threading.Lock()
 
-    def __init__(self,
-                 api_key: Union[str, list, None] = None,
-                 api_keys: Union[str, list, None] = None):
+    def __init__(self, api_key: Union[str, list, None] = None, api_keys: Union[str, list, None] = None):
         all_keys = self._collect_keys(api_key, api_keys)
-        assert all_keys, (
-            'EXA_API_KEY or EXA_API_KEYS must be set either as arguments '
-            'or as environment variables')
+        assert all_keys, 'EXA_API_KEY or EXA_API_KEYS must be set either as arguments or as environment variables'
 
         self._api_keys: List[str] = all_keys
         self._lock = threading.Lock()
@@ -60,11 +56,12 @@ class ExaSearch(SearchEngine):
 
         if len(all_keys) > 1:
             with ExaSearch._global_lock:
-                n_exhausted = sum(1 for k in all_keys
-                                  if k in ExaSearch._global_exhausted_keys)
-            logger.info(f'Exa key pool: {len(all_keys)} keys, '
-                        f'{n_exhausted} previously exhausted, '
-                        f'starting at key {start_idx + 1}/{len(all_keys)}')
+                n_exhausted = sum(1 for k in all_keys if k in ExaSearch._global_exhausted_keys)
+            logger.info(
+                f'Exa key pool: {len(all_keys)} keys, '
+                f'{n_exhausted} previously exhausted, '
+                f'starting at key {start_idx + 1}/{len(all_keys)}'
+            )
 
     @staticmethod
     def _collect_keys(
@@ -119,8 +116,7 @@ class ExaSearch(SearchEngine):
     def _is_credits_exhausted(error: Exception) -> bool:
         """Detect Exa 402 / NO_MORE_CREDITS errors."""
         msg = str(error)
-        return ('402' in msg
-                and ('credits' in msg.lower() or 'NO_MORE_CREDITS' in msg))
+        return '402' in msg and ('credits' in msg.lower() or 'NO_MORE_CREDITS' in msg)
 
     @staticmethod
     def _mask_key(key: str) -> str:
@@ -162,8 +158,7 @@ class ExaSearch(SearchEngine):
                 key_idx = self._current_key_idx
 
             try:
-                search_result.response = client.search_and_contents(
-                    **search_args)
+                search_result.response = client.search_and_contents(**search_args)
                 return search_result
             except Exception as e:
                 if not self._is_credits_exhausted(e):
@@ -181,28 +176,30 @@ class ExaSearch(SearchEngine):
                     )
                     rotated = False
                     for i in range(len(self._api_keys)):
-                        if i not in instance_exhausted and not self._is_key_exhausted(
-                                i):
+                        if i not in instance_exhausted and not self._is_key_exhausted(i):
                             self._current_key_idx = i
                             self.client = Exa(api_key=self._api_keys[i])
-                            logger.info(f'Rotated to Exa API key '
-                                        f'{self._mask_key(self._api_keys[i])} '
-                                        f'({i + 1}/{len(self._api_keys)})')
+                            logger.info(
+                                f'Rotated to Exa API key '
+                                f'{self._mask_key(self._api_keys[i])} '
+                                f'({i + 1}/{len(self._api_keys)})'
+                            )
                             rotated = True
                             break
                     if not rotated:
                         raise RuntimeError(
-                            f'All {len(self._api_keys)} Exa API keys have '
-                            f'been exhausted. Last error: {e}') from e
+                            f'All {len(self._api_keys)} Exa API keys have been exhausted. Last error: {e}'
+                        ) from e
 
         raise RuntimeError(
-            f'All {len(self._api_keys)} Exa API keys have been exhausted. '
-            f'Last error: {last_error}') from last_error
+            f'All {len(self._api_keys)} Exa API keys have been exhausted. Last error: {last_error}'
+        ) from last_error
 
     @classmethod
     def get_tool_definition(cls, server_name: str = 'web_search') -> 'Tool':
         """Return the tool definition for Exa search engine."""
         from ms_agent.llm.utils import Tool
+
         return Tool(
             tool_name=cls.get_tool_name(),
             server_name=server_name,
@@ -210,50 +207,44 @@ class ExaSearch(SearchEngine):
                 'Search the web using Exa neural search engine. '
                 'Best for: semantic understanding, finding relevant content, '
                 'recent web pages with date filtering. '
-                'Supports neural search (meaning-based) and keyword search.'),
+                'Supports neural search (meaning-based) and keyword search.'
+            ),
             parameters={
                 'type': 'object',
                 'properties': {
                     'query': {
-                        'type':
-                        'string',
-                        'description':
-                        ('The search query. For neural search, use natural language '
-                         'descriptions. For keyword search, use Google-style queries.'
-                         ),
+                        'type': 'string',
+                        'description': (
+                            'The search query. For neural search, use natural language '
+                            'descriptions. For keyword search, use Google-style queries.'
+                        ),
                     },
                     'num_results': {
-                        'type':
-                        'integer',
-                        'minimum':
-                        1,
-                        'maximum':
-                        10,
-                        'description':
-                        'Number of results to return. Default is 5.',
+                        'type': 'integer',
+                        'minimum': 1,
+                        'maximum': 10,
+                        'description': 'Number of results to return. Default is 5.',
                     },
                     'type': {
-                        'type':
-                        'string',
+                        'type': 'string',
                         'enum': ['auto', 'neural', 'keyword'],
-                        'description':
-                        ('Search type. "neural" for semantic similarity, '
-                         '"keyword" for exact matching, "auto" to let Exa decide. '
-                         'Default is "auto".'),
+                        'description': (
+                            'Search type. "neural" for semantic similarity, '
+                            '"keyword" for exact matching, "auto" to let Exa decide. '
+                            'Default is "auto".'
+                        ),
                     },
                     'start_published_date': {
-                        'type':
-                        'string',
-                        'description':
-                        ('Filter results published on/after this date. '
-                         'Format: YYYY-MM-DD (e.g., "2024-01-01").'),
+                        'type': 'string',
+                        'description': (
+                            'Filter results published on/after this date. Format: YYYY-MM-DD (e.g., "2024-01-01").'
+                        ),
                     },
                     'end_published_date': {
-                        'type':
-                        'string',
-                        'description':
-                        ('Filter results published on/before this date. '
-                         'Format: YYYY-MM-DD (e.g., "2024-12-31").'),
+                        'type': 'string',
+                        'description': (
+                            'Filter results published on/before this date. Format: YYYY-MM-DD (e.g., "2024-12-31").'
+                        ),
                     },
                 },
                 'required': ['query'],

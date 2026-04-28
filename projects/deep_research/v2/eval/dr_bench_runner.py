@@ -17,7 +17,9 @@ Notes:
 """
 
 from __future__ import annotations
+
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -27,8 +29,6 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple
-
-import json
 
 try:
     # Auto-load environment variables from a nearby `.env` (if present).
@@ -55,10 +55,7 @@ def _read_jsonl(path: str) -> List[Dict]:
     return items
 
 
-def _append_jsonl(path: str,
-                  obj: Dict,
-                  *,
-                  lock: Optional[threading.Lock] = None) -> None:
+def _append_jsonl(path: str, obj: Dict, *, lock: Optional[threading.Lock] = None) -> None:
     os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
     if lock is None:
         with open(path, 'a', encoding='utf-8') as f:
@@ -267,8 +264,7 @@ def _report_is_stable(
         stable_since = now_s
         return False, sig, stable_since
 
-    return (now_s - stable_since) >= max(0.0,
-                                         stable_window_s), sig, stable_since
+    return (now_s - stable_since) >= max(0.0, stable_window_s), sig, stable_since
 
 
 def _run_one_task(
@@ -324,18 +320,12 @@ def _run_one_task(
         #    (e.g. process hung at shutdown).  Force-reap to unblock
         #    the batch runner.
         #
-        post_finish_grace_s = float(
-            os.getenv('DR_BENCH_POST_FINISH_GRACE_S', '180') or 180.0)
-        post_report_exit_grace_s = float(
-            os.getenv('DR_BENCH_POST_REPORT_EXIT_GRACE_S', '3600') or 3600.0)
-        report_stable_window_s = float(
-            os.getenv('DR_BENCH_REPORT_STABLE_WINDOW_S', '2') or 2.0)
-        poll_interval_s = float(
-            os.getenv('DR_BENCH_SUBPROCESS_POLL_INTERVAL_S', '0.5') or 0.5)
-        terminate_timeout_s = float(
-            os.getenv('DR_BENCH_SUBPROCESS_TERMINATE_TIMEOUT_S', '5') or 5.0)
-        kill_timeout_s = float(
-            os.getenv('DR_BENCH_SUBPROCESS_KILL_TIMEOUT_S', '2') or 2.0)
+        post_finish_grace_s = float(os.getenv('DR_BENCH_POST_FINISH_GRACE_S', '180') or 180.0)
+        post_report_exit_grace_s = float(os.getenv('DR_BENCH_POST_REPORT_EXIT_GRACE_S', '3600') or 3600.0)
+        report_stable_window_s = float(os.getenv('DR_BENCH_REPORT_STABLE_WINDOW_S', '2') or 2.0)
+        poll_interval_s = float(os.getenv('DR_BENCH_SUBPROCESS_POLL_INTERVAL_S', '0.5') or 0.5)
+        terminate_timeout_s = float(os.getenv('DR_BENCH_SUBPROCESS_TERMINATE_TIMEOUT_S', '5') or 5.0)
+        kill_timeout_s = float(os.getenv('DR_BENCH_SUBPROCESS_KILL_TIMEOUT_S', '2') or 2.0)
 
         report_seen_stable_at: Optional[float] = None
         report_last_sig: Optional[Tuple[float, int]] = None
@@ -364,9 +354,11 @@ def _run_one_task(
                     # --- Condition 1: .researcher_task_finished marker ---
                     if marker_seen_at is None and os.path.exists(marker_path):
                         marker_seen_at = now_s
-                    if (marker_seen_at is not None and proc.poll() is None
-                            and (now_s - marker_seen_at) >= max(
-                                0.0, post_finish_grace_s)):
+                    if (
+                        marker_seen_at is not None
+                        and proc.poll() is None
+                        and (now_s - marker_seen_at) >= max(0.0, post_finish_grace_s)
+                    ):
                         _terminate_process(
                             proc,
                             terminate_timeout_s=terminate_timeout_s,
@@ -377,8 +369,7 @@ def _run_one_task(
 
                     # --- Condition 2: report stable for a long time (fallback) ---
                     report_path_hint = _find_report_md(workdir)
-                    if report_path_hint and _is_direct_final_report_path(
-                            workdir, report_path_hint):
+                    if report_path_hint and _is_direct_final_report_path(workdir, report_path_hint):
                         stable, report_last_sig, report_stable_since = _report_is_stable(
                             report_path_hint,
                             stable_window_s=report_stable_window_s,
@@ -391,10 +382,11 @@ def _run_one_task(
                                 report_seen_stable_at = now_s
                         else:
                             report_seen_stable_at = None
-                        if (report_seen_stable_at is not None
-                                and proc.poll() is None
-                                and (now_s - report_seen_stable_at) >= max(
-                                    0.0, post_report_exit_grace_s)):
+                        if (
+                            report_seen_stable_at is not None
+                            and proc.poll() is None
+                            and (now_s - report_seen_stable_at) >= max(0.0, post_report_exit_grace_s)
+                        ):
                             _terminate_process(
                                 proc,
                                 terminate_timeout_s=terminate_timeout_s,
@@ -406,8 +398,7 @@ def _run_one_task(
                     # Drain available stdout without blocking.
                     if select is not None:
                         try:
-                            r, _, _ = select.select([proc.stdout], [], [],
-                                                    poll_interval_s)
+                            r, _, _ = select.select([proc.stdout], [], [], poll_interval_s)
                         except Exception:
                             r = []
                         if r:
@@ -422,8 +413,7 @@ def _run_one_task(
                                     print(f'[{task.task_id}] {line}', end='')
                                 else:
                                     with print_lock:
-                                        print(
-                                            f'[{task.task_id}] {line}', end='')
+                                        print(f'[{task.task_id}] {line}', end='')
                                 continue
                     else:
                         # No select available; degrade to polling only.
@@ -449,9 +439,11 @@ def _run_one_task(
                     returncode = 0
             if returncode != 0:
                 tail = ''.join(tail_lines)[-20000:]
-                return task.task_id, None, (
-                    f'ms-agent exited with code={returncode}. '
-                    f'log={log_path}. output tail:\n{tail}')
+                return (
+                    task.task_id,
+                    None,
+                    (f'ms-agent exited with code={returncode}. log={log_path}. output tail:\n{tail}'),
+                )
         else:
             with open(log_path, 'w', encoding='utf-8') as logf:
                 # Use Popen+poll so we can force-reap hung-at-exit children once
@@ -470,9 +462,11 @@ def _run_one_task(
                     # --- Condition 1: .researcher_task_finished marker ---
                     if marker_seen_at is None and os.path.exists(marker_path):
                         marker_seen_at = now_s
-                    if (marker_seen_at is not None and proc2.poll() is None
-                            and (now_s - marker_seen_at) >= max(
-                                0.0, post_finish_grace_s)):
+                    if (
+                        marker_seen_at is not None
+                        and proc2.poll() is None
+                        and (now_s - marker_seen_at) >= max(0.0, post_finish_grace_s)
+                    ):
                         _terminate_process(
                             proc2,
                             terminate_timeout_s=terminate_timeout_s,
@@ -483,8 +477,7 @@ def _run_one_task(
 
                     # --- Condition 2: report stable for a long time (fallback) ---
                     report_path_hint = _find_report_md(workdir)
-                    if report_path_hint and _is_direct_final_report_path(
-                            workdir, report_path_hint):
+                    if report_path_hint and _is_direct_final_report_path(workdir, report_path_hint):
                         stable, report_last_sig, report_stable_since = _report_is_stable(
                             report_path_hint,
                             stable_window_s=report_stable_window_s,
@@ -497,10 +490,11 @@ def _run_one_task(
                                 report_seen_stable_at = now_s
                         else:
                             report_seen_stable_at = None
-                        if (report_seen_stable_at is not None
-                                and proc2.poll() is None
-                                and (now_s - report_seen_stable_at) >= max(
-                                    0.0, post_report_exit_grace_s)):
+                        if (
+                            report_seen_stable_at is not None
+                            and proc2.poll() is None
+                            and (now_s - report_seen_stable_at) >= max(0.0, post_report_exit_grace_s)
+                        ):
                             _terminate_process(
                                 proc2,
                                 terminate_timeout_s=terminate_timeout_s,
@@ -518,17 +512,23 @@ def _run_one_task(
                 returncode = 0
             if returncode != 0:
                 tail = _tail_text_from_file(log_path, max_chars=20000)
-                return task.task_id, None, (
-                    f'ms-agent exited with code={returncode}. '
-                    f'log={log_path}. output tail:\n{tail}')
+                return (
+                    task.task_id,
+                    None,
+                    (f'ms-agent exited with code={returncode}. log={log_path}. output tail:\n{tail}'),
+                )
     except Exception as e:
         return task.task_id, None, f'subprocess failed: {e}'
 
     report_path = _find_report_md(workdir)
     if not report_path:
-        return task.task_id, None, (
-            f'final_report.md not found in workdir={workdir}. '
-            f'log={log_path}. ms-agent output tail:\n{_tail_text_from_file(log_path, max_chars=20000)}'
+        return (
+            task.task_id,
+            None,
+            (
+                f'final_report.md not found in workdir={workdir}. '
+                f'log={log_path}. ms-agent output tail:\n{_tail_text_from_file(log_path, max_chars=20000)}'
+            ),
         )
 
     try:
@@ -538,28 +538,23 @@ def _run_one_task(
         return task.task_id, None, f'failed to read report: {e} (path={report_path})'
 
     if not article.strip():
-        return task.task_id, None, (
-            f'empty report content (path={report_path}). log={log_path}. '
-            f'ms-agent output tail:\n{_tail_text_from_file(log_path, max_chars=20000)}'
+        return (
+            task.task_id,
+            None,
+            (
+                f'empty report content (path={report_path}). log={log_path}. '
+                f'ms-agent output tail:\n{_tail_text_from_file(log_path, max_chars=20000)}'
+            ),
         )
 
     return task.task_id, article, None
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description=
-        'Run ms-agent v2 on dr_bench queries and dump raw_data jsonl.')
-    parser.add_argument(
-        '--query_file', required=True, help='Path to dr_bench query.jsonl')
-    parser.add_argument(
-        '--output_jsonl',
-        required=True,
-        help='Output path for dr_bench raw_data/<model>.jsonl')
-    parser.add_argument(
-        '--model_name',
-        default='ms_deepresearch',
-        help='Model/agent name used in output file naming')
+    parser = argparse.ArgumentParser(description='Run ms-agent v2 on dr_bench queries and dump raw_data jsonl.')
+    parser.add_argument('--query_file', required=True, help='Path to dr_bench query.jsonl')
+    parser.add_argument('--output_jsonl', required=True, help='Output path for dr_bench raw_data/<model>.jsonl')
+    parser.add_argument('--model_name', default='ms_deepresearch', help='Model/agent name used in output file naming')
     parser.add_argument(
         '--config',
         default='projects/deep_research/v2/researcher.yaml',
@@ -568,47 +563,31 @@ def main() -> None:
     parser.add_argument(
         '--work_root',
         default='eval/dr_bench/results/runs',
-        help=
-        'Root dir to store per-task workdirs. Will create <work_root>/<model>/<id>/',
+        help='Root dir to store per-task workdirs. Will create <work_root>/<model>/<id>/',
     )
-    parser.add_argument(
-        '--limit',
-        type=int,
-        default=0,
-        help='Limit number of tasks (0 means all)')
-    parser.add_argument(
-        '--workers',
-        type=int,
-        default=1,
-        help='Concurrency level (subprocess-based)')
+    parser.add_argument('--limit', type=int, default=0, help='Limit number of tasks (0 means all)')
+    parser.add_argument('--workers', type=int, default=1, help='Concurrency level (subprocess-based)')
     parser.add_argument(
         '--python',
         default=sys.executable,
-        help=
-        'Python executable to run ms-agent (defaults to current interpreter)',
+        help='Python executable to run ms-agent (defaults to current interpreter)',
     )
-    parser.add_argument(
-        '--trust_remote_code',
-        action='store_true',
-        help='Pass --trust_remote_code true to ms-agent')
+    parser.add_argument('--trust_remote_code', action='store_true', help='Pass --trust_remote_code true to ms-agent')
     parser.add_argument(
         '--ms_agent_root',
         default='.',
-        help=
-        'Path to ms-agent repo root (contains ms_agent/). Defaults to current working directory.',
+        help='Path to ms-agent repo root (contains ms_agent/). Defaults to current working directory.',
     )
     parser.add_argument(
         '--stream_subprocess_output',
         action='store_true',
-        help=
-        'Stream ms-agent stdout/stderr to console (also written to <workdir>/ms_agent.log).',
+        help='Stream ms-agent stdout/stderr to console (also written to <workdir>/ms_agent.log).',
     )
     parser.add_argument(
         '--extra',
         nargs=argparse.REMAINDER,
         default=[],
-        help=
-        'Extra args passed through to ms-agent (e.g. --llm.model xxx --generation_config.stream false)',
+        help='Extra args passed through to ms-agent (e.g. --llm.model xxx --generation_config.stream false)',
     )
     args = parser.parse_args()
 
@@ -642,7 +621,7 @@ def main() -> None:
         tasks.append(Task(task_id=task_id, prompt=prompt))
 
     if args.limit and args.limit > 0:
-        tasks = tasks[:args.limit]
+        tasks = tasks[: args.limit]
 
     done_ids = _load_existing_ids(output_jsonl)
     # Backfill: if a workdir already has a top-level final report file but the
@@ -677,15 +656,12 @@ def main() -> None:
         print(msg)
         return
 
-    print(
-        f'Will run {len(tasks)} tasks (workers={args.workers}). Output: {output_jsonl}'
-    )
+    print(f'Will run {len(tasks)} tasks (workers={args.workers}). Output: {output_jsonl}')
     os.makedirs(os.path.dirname(output_jsonl) or '.', exist_ok=True)
 
     # Ensure ms-agent is importable at runtime for subprocess (best-effort check)
     if not os.path.exists(os.path.join(ms_agent_root, 'ms_agent')):
-        raise FileNotFoundError(
-            f'ms_agent_root seems wrong: {ms_agent_root} (missing ms_agent/)')
+        raise FileNotFoundError(f'ms_agent_root seems wrong: {ms_agent_root} (missing ms_agent/)')
 
     extra_args = args.extra or []
     print_lock = threading.Lock()
@@ -707,13 +683,7 @@ def main() -> None:
             if err:
                 print(f'[{tid}] ERROR: {err}', file=sys.stderr)
                 continue
-            _append_jsonl(
-                output_jsonl, {
-                    'id': tid,
-                    'prompt': t.prompt,
-                    'article': article
-                },
-                lock=write_lock)
+            _append_jsonl(output_jsonl, {'id': tid, 'prompt': t.prompt, 'article': article}, lock=write_lock)
             print(f'[{tid}] OK')
         return
 
@@ -740,20 +710,12 @@ def main() -> None:
             try:
                 tid, article, err = fut.result()
             except Exception as e:
-                print(
-                    f'[{t.task_id}] ERROR: future failed: {e}',
-                    file=sys.stderr)
+                print(f'[{t.task_id}] ERROR: future failed: {e}', file=sys.stderr)
                 continue
             if err:
                 print(f'[{tid}] ERROR: {err}', file=sys.stderr)
                 continue
-            _append_jsonl(
-                output_jsonl, {
-                    'id': tid,
-                    'prompt': t.prompt,
-                    'article': article
-                },
-                lock=write_lock)
+            _append_jsonl(output_jsonl, {'id': tid, 'prompt': t.prompt, 'article': article}, lock=write_lock)
             print(f'[{tid}] OK')
 
 

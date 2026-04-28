@@ -9,8 +9,7 @@ class Sandbox:
     Base class for sandbox environments.
     """
 
-    def __init__(self):
-        ...
+    def __init__(self): ...
 
     async def async_execute(self, *args, **kwargs):
         """
@@ -46,7 +45,7 @@ class EnclaveSandbox(Sandbox):
         super().__init__()
         self._init()
 
-        from ms_enclave.sandbox import SandboxConfig, DockerSandboxConfig
+        from ms_enclave.sandbox import DockerSandboxConfig, SandboxConfig
 
         # Mount host directories into the sandbox container if provided
         _volumes = kwargs.pop('volumes', None) or []
@@ -55,19 +54,12 @@ class EnclaveSandbox(Sandbox):
             for host_path, container_path, mode in _volumes:
                 host_path = str(host_path)
                 container_path = str(container_path)
-                self.volume_dict[host_path] = {
-                    'bind': container_path,
-                    'mode': mode
-                }
+                self.volume_dict[host_path] = {'bind': container_path, 'mode': mode}
 
         self.sandbox_config: SandboxConfig = DockerSandboxConfig(
             image=kwargs.pop('image', None) or 'python:3.11-slim',
             memory_limit=kwargs.pop('memory_limit', None) or '512m',
-            tools_config={
-                'python_executor': {},
-                'file_operation': {},
-                'shell_executor': {}
-            },
+            tools_config={'python_executor': {}, 'file_operation': {}, 'shell_executor': {}},
             volumes=self.volume_dict,
         )
 
@@ -81,17 +73,16 @@ class EnclaveSandbox(Sandbox):
         """
         logger.info('Installing ms-enclave package...')
         try:
-            install_package(
-                package_name='ms-enclave',
-                import_name='ms_enclave',
-                extend_module='docker')
+            install_package(package_name='ms-enclave', import_name='ms_enclave', extend_module='docker')
         except Exception as e:
             raise e
 
-    async def async_execute(self,
-                            python_code: Union[str, List[str]] = None,
-                            shell_command: Union[str, List[str]] = None,
-                            requirements: List[str] = None) -> Dict[str, Any]:
+    async def async_execute(
+        self,
+        python_code: Union[str, List[str]] = None,
+        shell_command: Union[str, List[str]] = None,
+        requirements: List[str] = None,
+    ) -> Dict[str, Any]:
         """
         Asynchronously execute Python code and shell commands within the sandbox.
 
@@ -132,20 +123,15 @@ class EnclaveSandbox(Sandbox):
             'shell_executor': [],
         }
 
-        async with SandboxFactory.create_sandbox(
-                SandboxType.DOCKER, self.sandbox_config) as sandbox:
-
+        async with SandboxFactory.create_sandbox(SandboxType.DOCKER, self.sandbox_config) as sandbox:
             if requirements:
                 requirements_file = f'/{str(uuid.uuid4())}/requirements.txt'
                 await sandbox.execute_tool(
-                    'file_operation', {
-                        'operation': 'write',
-                        'file_path': f'{requirements_file}',
-                        'content': '\n'.join(requirements)
-                    })
+                    'file_operation',
+                    {'operation': 'write', 'file_path': f'{requirements_file}', 'content': '\n'.join(requirements)},
+                )
 
-                result_requirements = await sandbox.execute_command(
-                    f'pip install -r {requirements_file}')
+                result_requirements = await sandbox.execute_command(f'pip install -r {requirements_file}')
                 logger.info(result_requirements.stdout)
 
             if python_code:
@@ -153,17 +139,11 @@ class EnclaveSandbox(Sandbox):
                     python_code = [python_code]
 
                 for py_item in python_code:
-                    py_result = await sandbox.execute_tool(
-                        'python_executor', {'code': py_item})
+                    py_result = await sandbox.execute_tool('python_executor', {'code': py_item})
 
-                    results['python_executor'].append({
-                        'output':
-                        py_result.output,
-                        'error':
-                        py_result.error,
-                        'status':
-                        py_result.status
-                    })
+                    results['python_executor'].append(
+                        {'output': py_result.output, 'error': py_result.error, 'status': py_result.status}
+                    )
 
             if shell_command:
                 if isinstance(shell_command, str):
@@ -172,21 +152,18 @@ class EnclaveSandbox(Sandbox):
                 for shell_item in shell_command:
                     shell_result = await sandbox.execute_command(shell_item)
 
-                    results['shell_executor'].append({
-                        'output':
-                        shell_result.stdout,
-                        'error':
-                        shell_result.stderr,
-                        'status':
-                        shell_result.status
-                    })
+                    results['shell_executor'].append(
+                        {'output': shell_result.stdout, 'error': shell_result.stderr, 'status': shell_result.status}
+                    )
 
         return results
 
-    def execute(self,
-                python_code: Union[str, List[str]] = None,
-                shell_command: Union[str, List[str]] = None,
-                requirements: List[str] = None) -> Dict[str, Any]:
+    def execute(
+        self,
+        python_code: Union[str, List[str]] = None,
+        shell_command: Union[str, List[str]] = None,
+        requirements: List[str] = None,
+    ) -> Dict[str, Any]:
         """
         Synchronously execute Python code and shell commands within the sandbox.
 
@@ -203,7 +180,5 @@ class EnclaveSandbox(Sandbox):
         import asyncio
 
         return asyncio.run(
-            self.async_execute(
-                python_code=python_code,
-                shell_command=shell_command,
-                requirements=requirements))
+            self.async_execute(python_code=python_code, shell_command=shell_command, requirements=requirements)
+        )

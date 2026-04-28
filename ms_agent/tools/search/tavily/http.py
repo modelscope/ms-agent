@@ -1,5 +1,6 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 """Minimal HTTP JSON client for Tavily REST API (stdlib only)."""
+
 import json
 from typing import Any, Dict
 from urllib.error import HTTPError, URLError
@@ -44,7 +45,6 @@ def post_json(
             detail = json.loads(err_body) if err_body else {}
         except json.JSONDecodeError:
             detail = {'raw': err_body}
-        raise RuntimeError(
-            f'Tavily HTTP {e.code}: {detail}') from e
+        raise RuntimeError(f'Tavily HTTP {e.code}: {detail}') from e
     except URLError as e:
         raise RuntimeError(f'Tavily network error: {e}') from e

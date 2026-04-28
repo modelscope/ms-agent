@@ -38,8 +38,7 @@ def effective_localsearch_settings(config: DictConfig) -> Optional[Any]:
     tools = getattr(config, 'tools', None)
     tl = None
     if tools is not None:
-        tl = tools.get('localsearch') if hasattr(tools, 'get') else getattr(
-            tools, 'localsearch', None)
+        tl = tools.get('localsearch') if hasattr(tools, 'get') else getattr(tools, 'localsearch', None)
     ks = getattr(config, 'knowledge_search', None)
 
     if tl is not None and _paths_from_block(tl):
@@ -81,16 +80,13 @@ class SirchmunkSearch:
         paths = rag_config.get('paths', [])
         if isinstance(paths, str):
             paths = [paths]
-        self.search_paths: List[str] = [
-            str(Path(p).expanduser().resolve()) for p in paths
-        ]
+        self.search_paths: List[str] = [str(Path(p).expanduser().resolve()) for p in paths]
 
         _work_path = rag_config.get('work_path', './.sirchmunk')
         self.work_path: Path = Path(_work_path).expanduser().resolve()
 
         self.reuse_knowledge = rag_config.get('reuse_knowledge', True)
-        self.cluster_sim_threshold = rag_config.get('cluster_sim_threshold',
-                                                    0.85)
+        self.cluster_sim_threshold = rag_config.get('cluster_sim_threshold', 0.85)
         self.cluster_sim_top_k = rag_config.get('cluster_sim_top_k', 3)
         self.search_mode = rag_config.get('mode', 'FAST')
         self.max_loops = rag_config.get('max_loops', 10)
@@ -100,23 +96,19 @@ class SirchmunkSearch:
         self.llm_base_url = rag_config.get('llm_base_url', None)
         self.llm_model_name = rag_config.get('llm_model_name', None)
 
-        if (self.llm_api_key is None or self.llm_base_url is None
-                or self.llm_model_name is None):
+        if self.llm_api_key is None or self.llm_base_url is None or self.llm_model_name is None:
             llm_config = config.get('llm', {})
             if llm_config:
                 service = getattr(llm_config, 'service', 'dashscope')
                 if self.llm_api_key is None:
-                    self.llm_api_key = getattr(llm_config,
-                                               f'{service}_api_key', None)
+                    self.llm_api_key = getattr(llm_config, f'{service}_api_key', None)
                 if self.llm_base_url is None:
-                    self.llm_base_url = getattr(llm_config,
-                                                f'{service}_base_url', None)
+                    self.llm_base_url = getattr(llm_config, f'{service}_base_url', None)
                 if self.llm_model_name is None:
                     self.llm_model_name = getattr(llm_config, 'model', None)
 
         self.embedding_model_id = rag_config.get('embedding_model', None)
-        self.embedding_model_cache_dir = rag_config.get(
-            'embedding_model_cache_dir', None)
+        self.embedding_model_cache_dir = rag_config.get('embedding_model_cache_dir', None)
 
         self._searcher = None
         self._initialized = False
@@ -135,15 +127,15 @@ class SirchmunkSearch:
             raise ValueError(
                 'Missing localsearch configuration. Add '
                 '`tools.localsearch` with non-empty `paths` (or legacy '
-                '`knowledge_search.paths`).')
+                '`knowledge_search.paths`).'
+            )
         paths = _paths_from_block(block)
         if not paths:
             raise ValueError(
-                'tools.localsearch.paths (or legacy knowledge_search.paths) '
-                'must be specified and non-empty')
+                'tools.localsearch.paths (or legacy knowledge_search.paths) must be specified and non-empty'
+            )
 
-    def resolve_tool_paths(
-            self, paths: Optional[List[str]]) -> Optional[List[str]]:
+    def resolve_tool_paths(self, paths: Optional[List[str]]) -> Optional[List[str]]:
         """Restrict per-call paths to configured search roots."""
         if not paths:
             return None
@@ -156,12 +148,9 @@ class SirchmunkSearch:
             if not p.exists():
                 logger.warning(f'localsearch: path does not exist, skipped: {p}')
                 continue
-            allowed = any(
-                p == r or p.is_relative_to(r) for r in roots)
+            allowed = any(p == r or p.is_relative_to(r) for r in roots)
             if not allowed:
-                logger.warning(
-                    f'localsearch: path outside configured search roots, '
-                    f'skipped: {p}')
+                logger.warning(f'localsearch: path outside configured search roots, skipped: {p}')
                 continue
             cleaned.append(str(p))
         return cleaned or None
@@ -184,13 +173,9 @@ class SirchmunkSearch:
                 log_callback=self._log_callback_wrapper(),
             )
 
-            embedding_model_id = (
-                self.embedding_model_id if self.embedding_model_id else None)
-            embedding_cache_dir = (
-                self.embedding_model_cache_dir
-                if self.embedding_model_cache_dir else None)
-            embedding = EmbeddingUtil(
-                model_id=embedding_model_id, cache_dir=embedding_cache_dir)
+            embedding_model_id = self.embedding_model_id if self.embedding_model_id else None
+            embedding_cache_dir = self.embedding_model_cache_dir if self.embedding_model_cache_dir else None
+            embedding = EmbeddingUtil(model_id=embedding_model_id, cache_dir=embedding_cache_dir)
 
             self._searcher = AgenticSearch(
                 llm=llm,
@@ -205,14 +190,10 @@ class SirchmunkSearch:
             )
 
             self._initialized = True
-            logger.info(
-                f'SirschmunkSearch initialized with paths: {self.search_paths}'
-            )
+            logger.info(f'SirschmunkSearch initialized with paths: {self.search_paths}')
 
         except ImportError as e:
-            raise ImportError(
-                f'Failed to import sirchmunk: {e}. '
-                'Please install sirchmunk: pip install sirchmunk')
+            raise ImportError(f'Failed to import sirchmunk: {e}. Please install sirchmunk: pip install sirchmunk')
         except Exception as e:
             raise RuntimeError(f'Failed to initialize SirchmunkSearch: {e}')
 
@@ -279,19 +260,16 @@ class SirchmunkSearch:
             try:
                 for file_path in file_paths:
                     if Path(file_path).exists():
-                        await self._searcher.scan_directory(
-                            str(Path(file_path).parent))
+                        await self._searcher.scan_directory(str(Path(file_path).parent))
                 return True
             except Exception as e:
                 logger.error(f'Failed to scan files: {e}')
                 return False
         return True
 
-    async def retrieve(self,
-                       query: str,
-                       limit: int = 5,
-                       score_threshold: float = 0.7,
-                       **filters) -> List[Dict[str, Any]]:
+    async def retrieve(
+        self, query: str, limit: int = 5, score_threshold: float = 0.7, **filters
+    ) -> List[Dict[str, Any]]:
         """Retrieve relevant documents using sirchmunk.
 
         Args:
@@ -310,8 +288,7 @@ class SirchmunkSearch:
         try:
             mode = filters.get('mode', self.search_mode)
             max_loops = filters.get('max_loops', self.max_loops)
-            max_token_budget = filters.get('max_token_budget',
-                                           self.max_token_budget)
+            max_token_budget = filters.get('max_token_budget', self.max_token_budget)
 
             result = await self._searcher.search(
                 query=query,
@@ -324,11 +301,9 @@ class SirchmunkSearch:
             self._cluster_cache_hit = False
             self._cluster_cache_hit_time = None
             if hasattr(result, 'cluster') and result.cluster is not None:
-                self._cluster_cache_hit = getattr(result.cluster,
-                                                  '_reused_from_cache', False)
+                self._cluster_cache_hit = getattr(result.cluster, '_reused_from_cache', False)
                 if hasattr(result.cluster, 'updated_at'):
-                    self._cluster_cache_hit_time = getattr(
-                        result.cluster, 'updated_at', None)
+                    self._cluster_cache_hit_time = getattr(result.cluster, 'updated_at', None)
 
             return self._parse_search_result(result, score_threshold, limit)
 
@@ -374,8 +349,7 @@ class SirchmunkSearch:
                 mode_eff = mode_eff.strip().upper()
             allowed_modes = ('FAST', 'DEEP', 'FILENAME_ONLY')
             if mode_eff not in allowed_modes:
-                return (
-                    f'Invalid mode {mode_eff!r}; use one of {allowed_modes}.')
+                return f'Invalid mode {mode_eff!r}; use one of {allowed_modes}.'
 
             kw: Dict[str, Any] = dict(
                 query=query,
@@ -402,34 +376,29 @@ class SirchmunkSearch:
                 self._last_search_result = []
                 for item in result[:20]:
                     if isinstance(item, dict):
-                        src = (item.get('path') or item.get('file_path')
-                               or item.get('file') or '')
-                        self._last_search_result.append({
-                            'text':
-                            json.dumps(item, ensure_ascii=False),
-                            'score':
-                            1.0,
-                            'metadata': {
-                                'source': str(src),
-                                'type': 'filename_match',
-                            },
-                        })
+                        src = item.get('path') or item.get('file_path') or item.get('file') or ''
+                        self._last_search_result.append(
+                            {
+                                'text': json.dumps(item, ensure_ascii=False),
+                                'score': 1.0,
+                                'metadata': {
+                                    'source': str(src),
+                                    'type': 'filename_match',
+                                },
+                            }
+                        )
                 return json.dumps(result, ensure_ascii=False, indent=2)
 
             self._cluster_cache_hit = False
             self._cluster_cache_hit_time = None
             if hasattr(result, 'cluster') and result.cluster is not None:
-                self._cluster_cache_hit = getattr(result.cluster,
-                                                  '_reused_from_cache', False)
+                self._cluster_cache_hit = getattr(result.cluster, '_reused_from_cache', False)
                 if hasattr(result.cluster, 'updated_at'):
-                    self._cluster_cache_hit_time = getattr(
-                        result.cluster, 'updated_at', None)
+                    self._cluster_cache_hit_time = getattr(result.cluster, 'updated_at', None)
 
-            self._last_search_result = self._parse_search_result(
-                result, score_threshold=0.7, limit=5)
+            self._last_search_result = self._parse_search_result(result, score_threshold=0.7, limit=5)
 
-            if hasattr(result, 'answer') and getattr(result, 'answer',
-                                                       None) is not None:
+            if hasattr(result, 'answer') and getattr(result, 'answer', None) is not None:
                 return result.answer
 
             if isinstance(result, str):
@@ -441,8 +410,7 @@ class SirchmunkSearch:
             logger.error(f'SirschmunkSearch query failed: {e}')
             return f'Query failed: {e}'
 
-    def _parse_search_result(self, result: Any, score_threshold: float,
-                             limit: int) -> List[Dict[str, Any]]:
+    def _parse_search_result(self, result: Any, score_threshold: float, limit: int) -> List[Dict[str, Any]]:
         """Parse sirchmunk search result into standard format.
 
         Args:
@@ -468,62 +436,57 @@ class SirchmunkSearch:
                         else:
                             text_parts.append(str(snippet))
 
-                    results.append({
-                        'text':
-                        '\n'.join(text_parts) if text_parts else getattr(
-                            unit, 'summary', ''),
-                        'score':
-                        score,
-                        'metadata': {
-                            'source':
-                            source,
-                            'type':
-                            getattr(unit, 'abstraction_level', 'text')
-                            if hasattr(unit, 'abstraction_level') else 'text',
-                        },
-                    })
+                    results.append(
+                        {
+                            'text': '\n'.join(text_parts) if text_parts else getattr(unit, 'summary', ''),
+                            'score': score,
+                            'metadata': {
+                                'source': source,
+                                'type': getattr(unit, 'abstraction_level', 'text')
+                                if hasattr(unit, 'abstraction_level')
+                                else 'text',
+                            },
+                        }
+                    )
 
         elif hasattr(result, 'evidence_units'):
             for unit in result.evidence_units:
                 score = getattr(unit, 'confidence', 1.0)
                 if score >= score_threshold:
-                    results.append({
-                        'text':
-                        str(unit.content)
-                        if hasattr(unit, 'content') else str(unit),
-                        'score':
-                        score,
-                        'metadata': {
-                            'source': getattr(unit, 'source_file', 'unknown'),
-                            'type': getattr(unit, 'abstraction_level', 'text'),
-                        },
-                    })
+                    results.append(
+                        {
+                            'text': str(unit.content) if hasattr(unit, 'content') else str(unit),
+                            'score': score,
+                            'metadata': {
+                                'source': getattr(unit, 'source_file', 'unknown'),
+                                'type': getattr(unit, 'abstraction_level', 'text'),
+                            },
+                        }
+                    )
 
         elif isinstance(result, list):
             for item in result:
                 if isinstance(item, dict):
                     score = item.get('score', item.get('confidence', 1.0))
                     if score >= score_threshold:
-                        results.append({
-                            'text':
-                            item.get('content', item.get('text', str(item))),
-                            'score':
-                            score,
-                            'metadata':
-                            item.get('metadata', {}),
-                        })
+                        results.append(
+                            {
+                                'text': item.get('content', item.get('text', str(item))),
+                                'score': score,
+                                'metadata': item.get('metadata', {}),
+                            }
+                        )
 
         elif isinstance(result, dict):
             score = result.get('score', result.get('confidence', 1.0))
             if score >= score_threshold:
-                results.append({
-                    'text':
-                    result.get('content', result.get('text', str(result))),
-                    'score':
-                    score,
-                    'metadata':
-                    result.get('metadata', {}),
-                })
+                results.append(
+                    {
+                        'text': result.get('content', result.get('text', str(result))),
+                        'score': score,
+                        'metadata': result.get('metadata', {}),
+                    }
+                )
 
         results.sort(key=lambda x: x.get('score', 0), reverse=True)
         return results[:limit]

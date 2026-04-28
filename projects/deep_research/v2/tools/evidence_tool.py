@@ -1,11 +1,11 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import json
 import os
 import re
 import time
 import uuid
 from typing import Any, Dict, List, Optional
 
-import json
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils.utils import file_lock
@@ -161,8 +161,7 @@ def _render_analysis_card(analysis: Dict[str, Any]) -> str:
     if analysis.get('task_id'):
         lines.append(f"- **Task ID**: `{analysis['task_id']}`")
     if analysis.get('based_on_note_ids'):
-        ids_str = ', '.join(f'`{nid}`'
-                            for nid in analysis.get('based_on_note_ids', []))
+        ids_str = ', '.join(f'`{nid}`' for nid in analysis.get('based_on_note_ids', []))
         lines.append(f'- **Based on Notes**: {ids_str}')
     if analysis.get('tags'):
         tags_str = ', '.join(f'`{t}`' for t in analysis['tags'])
@@ -285,14 +284,15 @@ def _parse_note_from_md(content: str, note_id: str) -> Dict[str, Any]:
         elif header == 'Sources':
             sources = []
             for line in body.split('\n'):
-                match = re.search(
-                    r'- \[(\w+)\] (.+?)(?:\s+\(published: ([^)]+)\))?$', line)
+                match = re.search(r'- \[(\w+)\] (.+?)(?:\s+\(published: ([^)]+)\))?$', line)
                 if match:
-                    sources.append({
-                        'url': match.group(2).strip(),
-                        'source_tier': match.group(1),
-                        'published_at': match.group(3) or ''
-                    })
+                    sources.append(
+                        {
+                            'url': match.group(2).strip(),
+                            'source_tier': match.group(1),
+                            'published_at': match.group(3) or '',
+                        }
+                    )
             note['sources'] = sources
 
     return note
@@ -321,44 +321,31 @@ class EvidenceTool(ToolBase):
         self.exclude_func(tool_cfg)
 
         # Configurable paths
-        self._evidence_dir = getattr(tool_cfg, 'evidence_dir',
-                                     'evidence') if tool_cfg else 'evidence'
-        self._chunks_dir = getattr(tool_cfg, 'chunks_dir',
-                                   'chunks') if tool_cfg else 'chunks'
-        self._lock_subdir = getattr(tool_cfg, 'lock_subdir',
-                                    '.locks') if tool_cfg else '.locks'
+        self._evidence_dir = getattr(tool_cfg, 'evidence_dir', 'evidence') if tool_cfg else 'evidence'
+        self._chunks_dir = getattr(tool_cfg, 'chunks_dir', 'chunks') if tool_cfg else 'chunks'
+        self._lock_subdir = getattr(tool_cfg, 'lock_subdir', '.locks') if tool_cfg else '.locks'
 
         # Feature flags
-        self._enable_chunk_storage = bool(
-            getattr(tool_cfg, 'enable_chunk_storage',
-                    False)) if tool_cfg else False
+        self._enable_chunk_storage = bool(getattr(tool_cfg, 'enable_chunk_storage', False)) if tool_cfg else False
 
     async def connect(self) -> None:
         """Initialize directory structure."""
         _ensure_dir(self.output_dir)
         _ensure_dir(os.path.join(self.output_dir, self._evidence_dir, 'notes'))
-        _ensure_dir(
-            os.path.join(self.output_dir, self._evidence_dir, 'analyses'))
+        _ensure_dir(os.path.join(self.output_dir, self._evidence_dir, 'analyses'))
         # Backward-compat: older runs may have used evidence/conclusions/
-        _ensure_dir(
-            os.path.join(self.output_dir, self._evidence_dir, 'conclusions'))
+        _ensure_dir(os.path.join(self.output_dir, self._evidence_dir, 'conclusions'))
         _ensure_dir(os.path.join(self.output_dir, self._chunks_dir))
         _ensure_dir(os.path.join(self.output_dir, self._lock_subdir))
 
     def _paths(self) -> Dict[str, str]:
         return {
-            'index':
-            os.path.join(self.output_dir, self._evidence_dir, 'index.json'),
-            'notes_dir':
-            os.path.join(self.output_dir, self._evidence_dir, 'notes'),
-            'analyses_dir':
-            os.path.join(self.output_dir, self._evidence_dir, 'analyses'),
-            'legacy_conclusions_dir':
-            os.path.join(self.output_dir, self._evidence_dir, 'conclusions'),
-            'chunks_dir':
-            os.path.join(self.output_dir, self._chunks_dir),
-            'lock_dir':
-            os.path.join(self.output_dir, self._lock_subdir),
+            'index': os.path.join(self.output_dir, self._evidence_dir, 'index.json'),
+            'notes_dir': os.path.join(self.output_dir, self._evidence_dir, 'notes'),
+            'analyses_dir': os.path.join(self.output_dir, self._evidence_dir, 'analyses'),
+            'legacy_conclusions_dir': os.path.join(self.output_dir, self._evidence_dir, 'conclusions'),
+            'chunks_dir': os.path.join(self.output_dir, self._chunks_dir),
+            'lock_dir': os.path.join(self.output_dir, self._lock_subdir),
         }
 
     async def _get_tools_inner(self) -> Dict[str, Any]:
@@ -367,107 +354,85 @@ class EvidenceTool(ToolBase):
                 Tool(
                     tool_name='write_note',
                     server_name=self.SERVER_NAME,
-                    description=
-                    ('Write a new evidence note (card) to the evidence store. '
-                     'Each note represents ONE piece of evidence: a claim/observation with supporting text. '
-                     'Returns the generated note_id.'),
+                    description=(
+                        'Write a new evidence note (card) to the evidence store. '
+                        'Each note represents ONE piece of evidence: a claim/observation with supporting text. '
+                        'Returns the generated note_id.'
+                    ),
                     parameters={
-                        'type':
-                        'object',
+                        'type': 'object',
                         'properties': {
                             'title': {
-                                'type':
-                                'string',
-                                'description':
-                                ('Brief title describing this evidence (e.g., "Tesla Q3 revenue growth"). '
-                                 'Optional: if omitted, a title is derived from the first line of `content`.'),
+                                'type': 'string',
+                                'description': (
+                                    'Brief title describing this evidence (e.g., "Tesla Q3 revenue growth"). '
+                                    'Optional: if omitted, a title is derived from the first line of `content`.'
+                                ),
                             },
                             'content': {
-                                'type':
-                                'string',
-                                'description':
-                                ('The full evidence text for this note. '
-                                 'State the core finding or observation, then provide all '
-                                 'supporting details: specific data points, statistics, quotes, '
-                                 'case studies, reasoning, and any other substantive information. '
-                                 'Be thorough — preserve all valuable details from the source material. '
-                                 'Multi-paragraph allowed.'),
+                                'type': 'string',
+                                'description': (
+                                    'The full evidence text for this note. '
+                                    'State the core finding or observation, then provide all '
+                                    'supporting details: specific data points, statistics, quotes, '
+                                    'case studies, reasoning, and any other substantive information. '
+                                    'Be thorough — preserve all valuable details from the source material. '
+                                    'Multi-paragraph allowed.'
+                                ),
                             },
                             'contradicts': {
-                                'type':
-                                'string',
-                                'description':
-                                ('Optional: Evidence text that contradicts this finding. '
-                                 'Include if there are conflicting sources or caveats.'
-                                 ),
+                                'type': 'string',
+                                'description': (
+                                    'Optional: Evidence text that contradicts this finding. '
+                                    'Include if there are conflicting sources or caveats.'
+                                ),
                             },
                             'sources': {
                                 'type': 'array',
-                                'description':
-                                'List of source references for this evidence.',
+                                'description': 'List of source references for this evidence.',
                                 'items': {
                                     'type': 'object',
                                     'properties': {
-                                        'url': {
-                                            'type': 'string',
-                                            'description': 'Source URL'
-                                        },
+                                        'url': {'type': 'string', 'description': 'Source URL'},
                                         'published_at': {
-                                            'type':
-                                            'string',
-                                            'description':
-                                            'Publication date (YYYY-MM-DD)'
+                                            'type': 'string',
+                                            'description': 'Publication date (YYYY-MM-DD)',
                                         },
                                         'source_tier': {
-                                            'type':
-                                            'string',
-                                            'enum': [
-                                                'official', 'primary',
-                                                'secondary', 'unknown'
-                                            ],
-                                            'description':
-                                            ('Source credibility tier (for example, Official '
-                                             'Documents/Papers/Standards > '
-                                             'Primary News/Announcements > Secondary Blogs)'
-                                             ),
+                                            'type': 'string',
+                                            'enum': ['official', 'primary', 'secondary', 'unknown'],
+                                            'description': (
+                                                'Source credibility tier (for example, Official '
+                                                'Documents/Papers/Standards > '
+                                                'Primary News/Announcements > Secondary Blogs)'
+                                            ),
                                         },
                                     },
                                     'required': ['url'],
                                 },
                             },
                             'summary': {
-                                'type':
-                                'string',
-                                'description':
-                                'One-sentence summary of this evidence.',
+                                'type': 'string',
+                                'description': 'One-sentence summary of this evidence.',
                             },
                             'task_id': {
-                                'type':
-                                'string',
-                                'description':
-                                'The plan task this evidence relates to.',
+                                'type': 'string',
+                                'description': 'The plan task this evidence relates to.',
                             },
                             'tags': {
                                 'type': 'array',
-                                'items': {
-                                    'type': 'string'
-                                },
+                                'items': {'type': 'string'},
                                 'description': 'Tags for categorization.',
                             },
                             'quality_score': {
-                                'type':
-                                'integer',
-                                'minimum':
-                                0,
-                                'maximum':
-                                100,
-                                'description':
-                                'Optional: Confidence/quality score (0-100).',
+                                'type': 'integer',
+                                'minimum': 0,
+                                'maximum': 100,
+                                'description': 'Optional: Confidence/quality score (0-100).',
                             },
                         },
                         'required': ['content'],
-                        'additionalProperties':
-                        False,
+                        'additionalProperties': False,
                     },
                 ),
                 Tool(
@@ -479,8 +444,7 @@ class EvidenceTool(ToolBase):
                         'properties': {
                             'note_id': {
                                 'type': 'string',
-                                'description':
-                                'The ID of the note to retrieve.',
+                                'description': 'The ID of the note to retrieve.',
                             },
                         },
                         'required': ['note_id'],
@@ -490,9 +454,10 @@ class EvidenceTool(ToolBase):
                 Tool(
                     tool_name='list_notes',
                     server_name=self.SERVER_NAME,
-                    description=
-                    ('List all evidence notes, optionally filtered by task_id or tags. '
-                     'Returns a summary list (not full content).'),
+                    description=(
+                        'List all evidence notes, optionally filtered by task_id or tags. '
+                        'Returns a summary list (not full content).'
+                    ),
                     parameters={
                         'type': 'object',
                         'properties': {
@@ -501,13 +466,9 @@ class EvidenceTool(ToolBase):
                                 'description': 'Optional: Filter by task ID.',
                             },
                             'tags': {
-                                'type':
-                                'array',
-                                'items': {
-                                    'type': 'string'
-                                },
-                                'description':
-                                'Optional: Filter by tags (notes must have ALL specified tags).',
+                                'type': 'array',
+                                'items': {'type': 'string'},
+                                'description': 'Optional: Filter by tags (notes must have ALL specified tags).',
                             },
                             # 'min_quality': {
                             #     'type': 'integer',
@@ -521,8 +482,7 @@ class EvidenceTool(ToolBase):
                 Tool(
                     tool_name='search_notes',
                     server_name=self.SERVER_NAME,
-                    description=
-                    'Search notes by keyword in title, claim, or summary.',
+                    description='Search notes by keyword in title, claim, or summary.',
                     parameters={
                         'type': 'object',
                         'properties': {
@@ -554,77 +514,60 @@ class EvidenceTool(ToolBase):
                 Tool(
                     tool_name='write_analysis',
                     server_name=self.SERVER_NAME,
-                    description=
-                    ('Write an interim **analysis** record to the evidence store. '
-                     'Use this tool whenever you need to turn multiple evidence notes into reusable reasoning artifacts, e.g.: '
-                     '(1) synthesis / interim summaries; '
-                     '(2) comparisons and trade-off decisions (A vs B, pros/cons, why choose X); '
-                     '(3) framework building (typologies, evaluation rubrics, scoring criteria, checklists); '
-                     '(4) mapping & reconciliation (align competing definitions/metrics, resolve conflicts, record assumptions); '
-                     '(5) scenario framing and uncertainty tracking (what-if branches, key sensitivities/risks, open questions); '
-                     '(6) rankings/recommendations that require rationale (e.g., pick top 2–3 options and justify). '
-                     '(7) Structured / visual intermediate artifacts (e.g., mind-map-style hierarchical outlines, and '
-                     'text-based flow/relationship diagrams—prefer Mermaid syntax when possible).'
-                     '(8) other intermediate analysis that requires reasoning, justification and recording.'
-                     'This is **not** the final report; it is an intermediate analysis that should cite supporting evidence via '
-                     'based_on_note_ids when possible so downstream writing can reuse it. '
-                     'Returns the generated analysis_id.'),
+                    description=(
+                        'Write an interim **analysis** record to the evidence store. '
+                        'Use this tool whenever you need to turn multiple evidence notes into reusable reasoning artifacts, e.g.: '
+                        '(1) synthesis / interim summaries; '
+                        '(2) comparisons and trade-off decisions (A vs B, pros/cons, why choose X); '
+                        '(3) framework building (typologies, evaluation rubrics, scoring criteria, checklists); '
+                        '(4) mapping & reconciliation (align competing definitions/metrics, resolve conflicts, record assumptions); '
+                        '(5) scenario framing and uncertainty tracking (what-if branches, key sensitivities/risks, open questions); '
+                        '(6) rankings/recommendations that require rationale (e.g., pick top 2–3 options and justify). '
+                        '(7) Structured / visual intermediate artifacts (e.g., mind-map-style hierarchical outlines, and '
+                        'text-based flow/relationship diagrams—prefer Mermaid syntax when possible).'
+                        '(8) other intermediate analysis that requires reasoning, justification and recording.'
+                        'This is **not** the final report; it is an intermediate analysis that should cite supporting evidence via '
+                        'based_on_note_ids when possible so downstream writing can reuse it. '
+                        'Returns the generated analysis_id.'
+                    ),
                     parameters={
                         'type': 'object',
                         'properties': {
                             'title': {
-                                'type':
-                                'string',
-                                'description':
-                                'Brief title describing this analysis (e.g., "Interim comparison: Framework A vs B").',
+                                'type': 'string',
+                                'description': 'Brief title describing this analysis (e.g., "Interim comparison: Framework A vs B").',
                             },
                             'content': {
-                                'type':
-                                'string',
-                                'description':
-                                ('The analysis content in Markdown. '
-                                 'This should capture synthesis/comparison, constraints, assumptions, and reasoning. '
-                                 'Multi-paragraph allowed.'),
+                                'type': 'string',
+                                'description': (
+                                    'The analysis content in Markdown. '
+                                    'This should capture synthesis/comparison, constraints, assumptions, and reasoning. '
+                                    'Multi-paragraph allowed.'
+                                ),
                             },
                             'summary': {
-                                'type':
-                                'string',
-                                'description':
-                                'Optional: One-sentence summary of this analysis.',
+                                'type': 'string',
+                                'description': 'Optional: One-sentence summary of this analysis.',
                             },
                             'task_id': {
-                                'type':
-                                'string',
-                                'description':
-                                'Optional: The plan task this analysis relates to.',
+                                'type': 'string',
+                                'description': 'Optional: The plan task this analysis relates to.',
                             },
                             'based_on_note_ids': {
-                                'type':
-                                'array',
-                                'items': {
-                                    'type': 'string'
-                                },
-                                'description':
-                                'Optional: List of note_ids this analysis is based on.',
+                                'type': 'array',
+                                'items': {'type': 'string'},
+                                'description': 'Optional: List of note_ids this analysis is based on.',
                             },
                             'tags': {
-                                'type':
-                                'array',
-                                'items': {
-                                    'type': 'string'
-                                },
-                                'description':
-                                'Optional: Tags for categorization.',
+                                'type': 'array',
+                                'items': {'type': 'string'},
+                                'description': 'Optional: Tags for categorization.',
                             },
                             'quality_score': {
-                                'type':
-                                'integer',
-                                'minimum':
-                                0,
-                                'maximum':
-                                100,
-                                'description':
-                                'Optional: Confidence/quality score (0-100).',
+                                'type': 'integer',
+                                'minimum': 0,
+                                'maximum': 100,
+                                'description': 'Optional: Confidence/quality score (0-100).',
                             },
                         },
                         'required': ['title', 'content', 'summary', 'tags'],
@@ -639,16 +582,12 @@ class EvidenceTool(ToolBase):
                         'type': 'object',
                         'properties': {
                             'analysis_id': {
-                                'type':
-                                'string',
-                                'description':
-                                'The ID of the analysis to retrieve.',
+                                'type': 'string',
+                                'description': 'The ID of the analysis to retrieve.',
                             },
                             'parse_analysis': {
-                                'type':
-                                'boolean',
-                                'description':
-                                'Optional: Whether to parse stored markdown back to structured dict.',
+                                'type': 'boolean',
+                                'description': 'Optional: Whether to parse stored markdown back to structured dict.',
                             },
                         },
                         'required': ['analysis_id'],
@@ -658,9 +597,10 @@ class EvidenceTool(ToolBase):
                 Tool(
                     tool_name='list_analyses',
                     server_name=self.SERVER_NAME,
-                    description=
-                    ('List all analyses, optionally filtered by task_id or tags. '
-                     'Returns a summary list (not full content).'),
+                    description=(
+                        'List all analyses, optionally filtered by task_id or tags. '
+                        'Returns a summary list (not full content).'
+                    ),
                     parameters={
                         'type': 'object',
                         'properties': {
@@ -669,13 +609,9 @@ class EvidenceTool(ToolBase):
                                 'description': 'Optional: Filter by task ID.',
                             },
                             'tags': {
-                                'type':
-                                'array',
-                                'items': {
-                                    'type': 'string'
-                                },
-                                'description':
-                                'Optional: Filter by tags (analyses must have ALL specified tags).',
+                                'type': 'array',
+                                'items': {'type': 'string'},
+                                'description': 'Optional: Filter by tags (analyses must have ALL specified tags).',
                             },
                         },
                         'required': [],
@@ -685,8 +621,7 @@ class EvidenceTool(ToolBase):
                 Tool(
                     tool_name='search_analyses',
                     server_name=self.SERVER_NAME,
-                    description=
-                    'Search analyses by keyword in title, summary, or tags.',
+                    description='Search analyses by keyword in title, summary, or tags.',
                     parameters={
                         'type': 'object',
                         'properties': {
@@ -708,8 +643,7 @@ class EvidenceTool(ToolBase):
                         'properties': {
                             'analysis_id': {
                                 'type': 'string',
-                                'description':
-                                'The ID of the analysis to delete.',
+                                'description': 'The ID of the analysis to delete.',
                             },
                         },
                         'required': ['analysis_id'],
@@ -726,13 +660,12 @@ class EvidenceTool(ToolBase):
                         'required': [],
                         'additionalProperties': False,
                     },
-                )
+                ),
             ]
         }
         return tools
 
-    async def call_tool(self, server_name: str, *, tool_name: str,
-                        tool_args: dict) -> str:
+    async def call_tool(self, server_name: str, *, tool_name: str, tool_args: dict) -> str:
         return await getattr(self, tool_name)(**(tool_args or {}))
 
     def _load_index_locked(self, paths: Dict[str, str]) -> Dict[str, Any]:
@@ -742,16 +675,13 @@ class EvidenceTool(ToolBase):
             return {
                 'schema_version': 2,
                 'updated_at': _now_iso(),
-                'notes':
-                {},  # note_id -> {title, task_id, summary, sources, tags, quality_score, created_at}
-                'analyses':
-                {},  # analysis_id -> {title, task_id, summary, based_on_note_ids, tags, quality_score, created_at, path}
+                'notes': {},  # note_id -> {title, task_id, summary, sources, tags, quality_score, created_at}
+                'analyses': {},  # analysis_id -> {title, task_id, summary, based_on_note_ids, tags, quality_score, created_at, path}
             }
         # Backward/forward compatible defaults
         if 'notes' not in data or not isinstance(data.get('notes'), dict):
             data['notes'] = {}
-        if 'analyses' not in data or not isinstance(
-                data.get('analyses'), dict):
+        if 'analyses' not in data or not isinstance(data.get('analyses'), dict):
             data['analyses'] = {}
 
         # Backward-compat: older schema used "conclusions" key.
@@ -760,14 +690,12 @@ class EvidenceTool(ToolBase):
             data['analyses'] = legacy
         return data
 
-    def _save_index_locked(self, paths: Dict[str, str],
-                           index: Dict[str, Any]) -> None:
+    def _save_index_locked(self, paths: Dict[str, str], index: Dict[str, Any]) -> None:
         """Save index.json."""
         index['updated_at'] = _now_iso()
         _write_text(paths['index'], _json_dumps(index))
 
-    def _add_to_index(self, index: Dict[str, Any], note: Dict[str,
-                                                              Any]) -> None:
+    def _add_to_index(self, index: Dict[str, Any], note: Dict[str, Any]) -> None:
         """Add a note's metadata to the index."""
         note_id = note['note_id']
         index['notes'][note_id] = {
@@ -780,9 +708,7 @@ class EvidenceTool(ToolBase):
             'created_at': note.get('created_at', ''),
         }
 
-    def _add_analysis_to_index(self, index: Dict[str, Any],
-                               analysis: Dict[str, Any],
-                               analysis_path: str) -> None:
+    def _add_analysis_to_index(self, index: Dict[str, Any], analysis: Dict[str, Any], analysis_path: str) -> None:
         """Add an analysis' metadata to the index."""
         aid = analysis['analysis_id']
         index['analyses'][aid] = {
@@ -803,16 +729,14 @@ class EvidenceTool(ToolBase):
             return True
         return False
 
-    def _remove_analysis_from_index(self, index: Dict[str, Any],
-                                    analysis_id: str) -> bool:
+    def _remove_analysis_from_index(self, index: Dict[str, Any], analysis_id: str) -> bool:
         """Remove an analysis from the index. Returns True if found and removed."""
         if analysis_id in index.get('analyses', {}):
             del index['analyses'][analysis_id]
             return True
         return False
 
-    def _store_chunk(self, chunk_id: str, content: str,
-                     metadata: Dict[str, Any]) -> str:
+    def _store_chunk(self, chunk_id: str, content: str, metadata: Dict[str, Any]) -> str:
         """
         Store a text chunk. Reserved for future implementation.
 
@@ -863,10 +787,12 @@ class EvidenceTool(ToolBase):
 
         content = (content or '').strip()
         if not content:
-            return _json_dumps({
-                'status': 'error',
-                'message': 'write_note requires non-empty content.',
-            })
+            return _json_dumps(
+                {
+                    'status': 'error',
+                    'message': 'write_note requires non-empty content.',
+                }
+            )
 
         if title is None or not str(title).strip():
             first_line = content.split('\n', 1)[0].strip()
@@ -890,8 +816,7 @@ class EvidenceTool(ToolBase):
         if sources:
             # Validate source tiers
             for src in sources:
-                src['source_tier'] = _validate_source_tier(
-                    src.get('source_tier', 'unknown'))
+                src['source_tier'] = _validate_source_tier(src.get('source_tier', 'unknown'))
             note['sources'] = sources
         if summary:
             note['summary'] = summary.strip()
@@ -914,11 +839,13 @@ class EvidenceTool(ToolBase):
             self._add_to_index(index, note)
             self._save_index_locked(paths, index)
 
-        return _json_dumps({
-            'status': 'ok',
-            'note_id': note_id,
-            'path': os.path.relpath(note_path, self.output_dir),
-        })
+        return _json_dumps(
+            {
+                'status': 'ok',
+                'note_id': note_id,
+                'path': os.path.relpath(note_path, self.output_dir),
+            }
+        )
 
     async def write_analysis(
         self,
@@ -947,16 +874,13 @@ class EvidenceTool(ToolBase):
         if task_id:
             analysis['task_id'] = task_id.strip()
         if based_on_note_ids:
-            analysis['based_on_note_ids'] = [
-                nid.strip() for nid in based_on_note_ids if nid.strip()
-            ]
+            analysis['based_on_note_ids'] = [nid.strip() for nid in based_on_note_ids if nid.strip()]
         if tags:
             analysis['tags'] = [t.strip() for t in tags if t.strip()]
         if quality_score is not None:
             analysis['quality_score'] = max(0, min(100, quality_score))
 
-        analysis_path = os.path.join(paths['analyses_dir'],
-                                     f'analysis_{analysis_id}.md')
+        analysis_path = os.path.join(paths['analyses_dir'], f'analysis_{analysis_id}.md')
         analysis_content = _render_analysis_card(analysis)
         _write_text(analysis_path, analysis_content)
 
@@ -965,33 +889,25 @@ class EvidenceTool(ToolBase):
             self._add_analysis_to_index(index, analysis, analysis_path)
             self._save_index_locked(paths, index)
 
-        return _json_dumps({
-            'status':
-            'ok',
-            'analysis_id':
-            analysis_id,
-            'path':
-            os.path.relpath(analysis_path, self.output_dir),
-        })
+        return _json_dumps(
+            {
+                'status': 'ok',
+                'analysis_id': analysis_id,
+                'path': os.path.relpath(analysis_path, self.output_dir),
+            }
+        )
 
-    async def get_analysis(self,
-                           analysis_id: str,
-                           parse_analysis: Optional[bool] = False) -> str:
+    async def get_analysis(self, analysis_id: str, parse_analysis: Optional[bool] = False) -> str:
         """Retrieve an analysis by ID."""
         paths = self._paths()
-        analysis_path = os.path.join(paths['analyses_dir'],
-                                     f'analysis_{analysis_id}.md')
-        legacy_path = os.path.join(paths['legacy_conclusions_dir'],
-                                   f'conclusion_{analysis_id}.md')
+        analysis_path = os.path.join(paths['analyses_dir'], f'analysis_{analysis_id}.md')
+        legacy_path = os.path.join(paths['legacy_conclusions_dir'], f'conclusion_{analysis_id}.md')
 
         if not os.path.exists(analysis_path) and os.path.exists(legacy_path):
             analysis_path = legacy_path
 
         if not os.path.exists(analysis_path):
-            return _json_dumps({
-                'status': 'error',
-                'message': f'Analysis {analysis_id} not found.'
-            })
+            return _json_dumps({'status': 'error', 'message': f'Analysis {analysis_id} not found.'})
 
         with open(analysis_path, 'r', encoding='utf-8') as f:
             content = f.read()
@@ -999,16 +915,16 @@ class EvidenceTool(ToolBase):
         if not parse_analysis:
             return _json_dumps({'status': 'ok', 'raw_content': content})
         analysis = _parse_analysis_from_md(content, analysis_id)
-        return _json_dumps({
-            'status': 'ok',
-            'analysis_id': analysis_id,
-            'analysis': analysis,
-            'raw_content': content,
-        })
+        return _json_dumps(
+            {
+                'status': 'ok',
+                'analysis_id': analysis_id,
+                'analysis': analysis,
+                'raw_content': content,
+            }
+        )
 
-    async def list_analyses(self,
-                            task_id: Optional[str] = None,
-                            tags: Optional[List[str]] = None) -> str:
+    async def list_analyses(self, task_id: Optional[str] = None, tags: Optional[List[str]] = None) -> str:
         """List analyses with optional filters."""
         paths = self._paths()
         _ensure_dir(paths['lock_dir'])
@@ -1025,33 +941,28 @@ class EvidenceTool(ToolBase):
                 a_tags = set(meta.get('tags', []))
                 if not all(t in a_tags for t in tags):
                     continue
-            results.append({
-                'analysis_id':
-                aid,
-                'title':
-                meta.get('title', ''),
-                'task_id':
-                meta.get('task_id', ''),
-                'summary':
-                meta.get('summary', ''),
-                'based_on_note_ids':
-                meta.get('based_on_note_ids', []),
-                'tags':
-                meta.get('tags', []),
-                'quality_score':
-                meta.get('quality_score'),
-                'created_at':
-                meta.get('created_at', ''),
-                'path':
-                meta.get('path', ''),
-            })
+            results.append(
+                {
+                    'analysis_id': aid,
+                    'title': meta.get('title', ''),
+                    'task_id': meta.get('task_id', ''),
+                    'summary': meta.get('summary', ''),
+                    'based_on_note_ids': meta.get('based_on_note_ids', []),
+                    'tags': meta.get('tags', []),
+                    'quality_score': meta.get('quality_score'),
+                    'created_at': meta.get('created_at', ''),
+                    'path': meta.get('path', ''),
+                }
+            )
 
         results.sort(key=lambda x: x.get('created_at', ''), reverse=True)
-        return _json_dumps({
-            'status': 'ok',
-            'count': len(results),
-            'analyses': results,
-        })
+        return _json_dumps(
+            {
+                'status': 'ok',
+                'count': len(results),
+                'analyses': results,
+            }
+        )
 
     async def search_analyses(self, keyword: str) -> str:
         """Search analyses by keyword."""
@@ -1060,10 +971,7 @@ class EvidenceTool(ToolBase):
 
         keyword_lower = keyword.lower().strip()
         if not keyword_lower:
-            return _json_dumps({
-                'status': 'error',
-                'message': 'Keyword is required.'
-            })
+            return _json_dumps({'status': 'error', 'message': 'Keyword is required.'})
 
         with file_lock(paths['lock_dir'], 'evidence_index'):
             index = self._load_index_locked(paths)
@@ -1071,50 +979,48 @@ class EvidenceTool(ToolBase):
         analyses_meta = index.get('analyses', {})
         results = []
         for aid, meta in analyses_meta.items():
-            searchable = ' '.join([
-                meta.get('title', ''),
-                meta.get('summary', ''),
-            ]).lower()
+            searchable = ' '.join(
+                [
+                    meta.get('title', ''),
+                    meta.get('summary', ''),
+                ]
+            ).lower()
             a_tags = meta.get('tags', [])
             searchable += ' ' + ' '.join(a_tags).lower()
             if keyword_lower in searchable:
-                results.append({
-                    'analysis_id': aid,
-                    'title': meta.get('title', ''),
-                    'summary': meta.get('summary', ''),
-                    'task_id': meta.get('task_id', ''),
-                    'quality_score': meta.get('quality_score'),
-                })
+                results.append(
+                    {
+                        'analysis_id': aid,
+                        'title': meta.get('title', ''),
+                        'summary': meta.get('summary', ''),
+                        'task_id': meta.get('task_id', ''),
+                        'quality_score': meta.get('quality_score'),
+                    }
+                )
 
-        return _json_dumps({
-            'status': 'ok',
-            'keyword': keyword,
-            'count': len(results),
-            'analyses': results,
-        })
+        return _json_dumps(
+            {
+                'status': 'ok',
+                'keyword': keyword,
+                'count': len(results),
+                'analyses': results,
+            }
+        )
 
     async def delete_analysis(self, analysis_id: str) -> str:
         """Delete an analysis by ID."""
         paths = self._paths()
         _ensure_dir(paths['lock_dir'])
 
-        analysis_path = os.path.join(paths['analyses_dir'],
-                                     f'analysis_{analysis_id}.md')
-        legacy_path = os.path.join(paths['legacy_conclusions_dir'],
-                                   f'conclusion_{analysis_id}.md')
+        analysis_path = os.path.join(paths['analyses_dir'], f'analysis_{analysis_id}.md')
+        legacy_path = os.path.join(paths['legacy_conclusions_dir'], f'conclusion_{analysis_id}.md')
 
         with file_lock(paths['lock_dir'], 'evidence_index'):
             index = self._load_index_locked(paths)
             removed = self._remove_analysis_from_index(index, analysis_id)
 
-            if not removed and not os.path.exists(
-                    analysis_path) and not os.path.exists(legacy_path):
-                return _json_dumps({
-                    'status':
-                    'error',
-                    'message':
-                    f'Analysis {analysis_id} not found.'
-                })
+            if not removed and not os.path.exists(analysis_path) and not os.path.exists(legacy_path):
+                return _json_dumps({'status': 'error', 'message': f'Analysis {analysis_id} not found.'})
 
             self._save_index_locked(paths, index)
 
@@ -1125,18 +1031,13 @@ class EvidenceTool(ToolBase):
 
         return _json_dumps({'status': 'ok', 'deleted': analysis_id})
 
-    async def get_note(self,
-                       note_id: str,
-                       parse_note: Optional[bool] = False) -> str:
+    async def get_note(self, note_id: str, parse_note: Optional[bool] = False) -> str:
         """Retrieve a note by ID."""
         paths = self._paths()
         note_path = os.path.join(paths['notes_dir'], f'note_{note_id}.md')
 
         if not os.path.exists(note_path):
-            return _json_dumps({
-                'status': 'error',
-                'message': f'Note {note_id} not found.'
-            })
+            return _json_dumps({'status': 'error', 'message': f'Note {note_id} not found.'})
 
         with open(note_path, 'r', encoding='utf-8') as f:
             content = f.read()
@@ -1145,17 +1046,11 @@ class EvidenceTool(ToolBase):
             return _json_dumps({'status': 'ok', 'raw_content': content})
         else:
             note = _parse_note_from_md(content, note_id)
-            return _json_dumps({
-                'status': 'ok',
-                'note_id': note_id,
-                'note': note,
-                'raw_content': content
-            })
+            return _json_dumps({'status': 'ok', 'note_id': note_id, 'note': note, 'raw_content': content})
 
-    async def list_notes(self,
-                         task_id: Optional[str] = None,
-                         tags: Optional[List[str]] = None,
-                         min_quality: Optional[int] = None) -> str:
+    async def list_notes(
+        self, task_id: Optional[str] = None, tags: Optional[List[str]] = None, min_quality: Optional[int] = None
+    ) -> str:
         """List notes with optional filters.
 
         Args:
@@ -1185,25 +1080,29 @@ class EvidenceTool(ToolBase):
                 if score is None or score < min_quality:
                     continue
 
-            results.append({
-                'note_id': nid,
-                'title': meta.get('title', ''),
-                'task_id': meta.get('task_id', ''),
-                'summary': meta.get('summary', ''),
-                'sources': meta.get('sources', []),
-                'tags': meta.get('tags', []),
-                'quality_score': meta.get('quality_score'),
-                'created_at': meta.get('created_at', ''),
-            })
+            results.append(
+                {
+                    'note_id': nid,
+                    'title': meta.get('title', ''),
+                    'task_id': meta.get('task_id', ''),
+                    'summary': meta.get('summary', ''),
+                    'sources': meta.get('sources', []),
+                    'tags': meta.get('tags', []),
+                    'quality_score': meta.get('quality_score'),
+                    'created_at': meta.get('created_at', ''),
+                }
+            )
 
         # Sort by created_at descending
         results.sort(key=lambda x: x.get('created_at', ''), reverse=True)
 
-        return _json_dumps({
-            'status': 'ok',
-            'count': len(results),
-            'notes': results,
-        })
+        return _json_dumps(
+            {
+                'status': 'ok',
+                'count': len(results),
+                'notes': results,
+            }
+        )
 
     async def search_notes(self, keyword: str) -> str:
         """Search notes by keyword."""
@@ -1212,10 +1111,7 @@ class EvidenceTool(ToolBase):
 
         keyword_lower = keyword.lower().strip()
         if not keyword_lower:
-            return _json_dumps({
-                'status': 'error',
-                'message': 'Keyword is required.'
-            })
+            return _json_dumps({'status': 'error', 'message': 'Keyword is required.'})
 
         with file_lock(paths['lock_dir'], 'evidence_index'):
             index = self._load_index_locked(paths)
@@ -1225,28 +1121,34 @@ class EvidenceTool(ToolBase):
 
         for nid, meta in notes_meta.items():
             # Search in title, summary
-            searchable = ' '.join([
-                meta.get('title', ''),
-                meta.get('summary', ''),
-            ]).lower()
+            searchable = ' '.join(
+                [
+                    meta.get('title', ''),
+                    meta.get('summary', ''),
+                ]
+            ).lower()
             tags = meta.get('tags', [])
             searchable += ' ' + ' '.join(tags).lower()
 
             if keyword_lower in searchable:
-                results.append({
-                    'note_id': nid,
-                    'title': meta.get('title', ''),
-                    'summary': meta.get('summary', ''),
-                    'task_id': meta.get('task_id', ''),
-                    'quality_score': meta.get('quality_score'),
-                })
+                results.append(
+                    {
+                        'note_id': nid,
+                        'title': meta.get('title', ''),
+                        'summary': meta.get('summary', ''),
+                        'task_id': meta.get('task_id', ''),
+                        'quality_score': meta.get('quality_score'),
+                    }
+                )
 
-        return _json_dumps({
-            'status': 'ok',
-            'keyword': keyword,
-            'count': len(results),
-            'notes': results,
-        })
+        return _json_dumps(
+            {
+                'status': 'ok',
+                'keyword': keyword,
+                'count': len(results),
+                'notes': results,
+            }
+        )
 
     async def delete_note(self, note_id: str) -> str:
         """Delete a note by ID."""
@@ -1261,10 +1163,7 @@ class EvidenceTool(ToolBase):
             removed = self._remove_from_index(index, note_id)
 
             if not removed and not os.path.exists(note_path):
-                return _json_dumps({
-                    'status': 'error',
-                    'message': f'Note {note_id} not found.'
-                })
+                return _json_dumps({'status': 'error', 'message': f'Note {note_id} not found.'})
 
             self._save_index_locked(paths, index)
 
@@ -1289,11 +1188,13 @@ class EvidenceTool(ToolBase):
 
         notes = index.get('notes', {})
         analyses = index.get('analyses', {})
-        return _json_dumps({
-            'status': 'ok',
-            'updated_at': index.get('updated_at', ''),
-            'total_notes': len(notes),
-            'total_analyses': len(analyses),
-            'notes': notes,
-            'analyses': analyses,
-        })
+        return _json_dumps(
+            {
+                'status': 'ok',
+                'updated_at': index.get('updated_at', ''),
+                'total_notes': len(notes),
+                'total_analyses': len(analyses),
+                'notes': notes,
+                'analyses': analyses,
+            }
+        )

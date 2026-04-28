@@ -1,18 +1,17 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import inspect
+import json
 from copy import deepcopy
 from typing import Any, Dict, Generator, Iterable, List, Optional
 
 import httpx
-import json
+from omegaconf import DictConfig, OmegaConf
+from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall, Function
+
 from ms_agent.llm import LLM
 from ms_agent.llm.utils import Message, Tool, ToolCall
-from ms_agent.utils import (MAX_CONTINUE_RUNS, assert_package_exist,
-                            get_logger, retry)
+from ms_agent.utils import MAX_CONTINUE_RUNS, assert_package_exist, get_logger, retry
 from ms_agent.utils.constants import get_service_config
-from omegaconf import DictConfig, OmegaConf
-from openai.types.chat.chat_completion_message_tool_call import (
-    ChatCompletionMessageToolCall, Function)
 
 logger = get_logger()
 
@@ -28,8 +27,7 @@ class _DashScopeResponsesTransport(httpx.HTTPTransport):
 
     def handle_request(self, request):
         if b'/v1/responses' in request.url.raw_path:
-            new_path = request.url.raw_path.replace(b'/v1/responses',
-                                                    b'/v1/chat/completions')
+            new_path = request.url.raw_path.replace(b'/v1/responses', b'/v1/chat/completions')
             request.url = request.url.copy_with(raw_path=new_path)
         return super().handle_request(request)
 
@@ -51,9 +49,8 @@ class OpenAI(LLM):
         base_url (`Optional[str]`): Custom base URL for the API endpoint. Defaults to None.
         api_key (`Optional[str]`): Authentication key for the API. Defaults to None.
     """
-    input_msg = {
-        'role', 'content', 'tool_calls', 'partial', 'prefix', 'tool_call_id'
-    }
+
+    input_msg = {'role', 'content', 'tool_calls', 'partial', 'prefix', 'tool_call_id'}
 
     # Providers that support cache_control in structured content blocks
     CACHE_CONTROL_PROVIDERS = ['dashscope', 'anthropic']
@@ -67,12 +64,10 @@ class OpenAI(LLM):
         super().__init__(config)
         assert_package_exist('openai')
         import openai
+
         self.model: str = config.llm.model
-        self.max_continue_runs = getattr(config.llm, 'max_continue_runs',
-                                         None) or MAX_CONTINUE_RUNS
-        base_url = base_url or getattr(
-            config.llm, 'openai_base_url',
-            None) or get_service_config('openai').base_url
+        self.max_continue_runs = getattr(config.llm, 'max_continue_runs', None) or MAX_CONTINUE_RUNS
+        base_url = base_url or getattr(config.llm, 'openai_base_url', None) or get_service_config('openai').base_url
         api_key = api_key or getattr(config.llm, 'openai_api_key', None)
 
         self.client = openai.OpenAI(
@@ -80,21 +75,17 @@ class OpenAI(LLM):
             base_url=base_url,
         )
         self.base_url = base_url or ''
-        self.args: Dict = OmegaConf.to_container(
-            getattr(config, 'generation_config', DictConfig({})))
+        self.args: Dict = OmegaConf.to_container(getattr(config, 'generation_config', DictConfig({})))
 
         # Responses API support
-        self._use_responses_api = bool(
-            self.args.get('use_responses_api', False))
+        self._use_responses_api = bool(self.args.get('use_responses_api', False))
         self._responses_client = None
-        self._responses_state_mode = str(
-            self.args.get('responses_state_mode', 'stateless')).lower()
+        self._responses_state_mode = str(self.args.get('responses_state_mode', 'stateless')).lower()
         if self._responses_state_mode == 'stateful':
             self._responses_state_mode = 'previous_response_id'
 
         if self._use_responses_api:
-            self._is_dashscope = bool(base_url
-                                      and 'dashscope' in base_url.lower())
+            self._is_dashscope = bool(base_url and 'dashscope' in base_url.lower())
             if self._is_dashscope:
                 http_client = httpx.Client(
                     transport=_DashScopeResponsesTransport(),
@@ -116,8 +107,7 @@ class OpenAI(LLM):
         #     - Special values: 'last_message' (only cache the last message in the list)
         #   Default: ['system'] - system prompt is usually the longest stable prefix
         self._prefix_cache_enabled = self.args.get('force_prefix_cache', False)
-        self._prefix_cache_roles = set(
-            self.args.get('prefix_cache_roles', ['system']))
+        self._prefix_cache_roles = set(self.args.get('prefix_cache_roles', ['system']))
         self._prefix_cache_provider = self._detect_cache_provider()
 
     def _detect_cache_provider(self) -> Optional[str]:
@@ -171,8 +161,7 @@ class OpenAI(LLM):
             # Add cache_control to text blocks that don't have it
             new_list = []
             for item in content:
-                if (isinstance(item, dict) and item.get('type') == 'text'
-                        and 'cache_control' not in item):
+                if isinstance(item, dict) and item.get('type') == 'text' and 'cache_control' not in item:
                     new_item = dict(item)
                     new_item['cache_control'] = {'type': 'ephemeral'}
                     new_list.append(new_item)
@@ -183,9 +172,7 @@ class OpenAI(LLM):
         # Other types: return as-is
         return content
 
-    def format_tools(self,
-                     tools: Optional[List[Tool]] = None
-                     ) -> List[Dict[str, Any]]:
+    def format_tools(self, tools: Optional[List[Tool]] = None) -> List[Dict[str, Any]]:
         """Formats a list of tools into the structure expected by the OpenAI API.
 
         If server_name is present in a tool, it will be used as a prefix for the function name.
@@ -197,24 +184,29 @@ class OpenAI(LLM):
             List[Dict[str, Any]]: A list of formatted tool definitions suitable for OpenAI API.
         """
         if tools:
-            tools = [{
-                'type': 'function',
-                'function': {
-                    'name': tool['tool_name'],
-                    'description': tool['description'],
-                    'parameters': tool['parameters']
+            tools = [
+                {
+                    'type': 'function',
+                    'function': {
+                        'name': tool['tool_name'],
+                        'description': tool['description'],
+                        'parameters': tool['parameters'],
+                    },
                 }
-            } for tool in tools]
+                for tool in tools
+            ]
         else:
             tools = None
         return tools
 
     @retry(max_attempts=LLM.retry_count, delay=1.0)
-    def generate(self,
-                 messages: List[Message],
-                 tools: Optional[List[Tool]] = None,
-                 max_continue_runs: Optional[int] = None,
-                 **kwargs) -> Message | Generator[Message, None, None]:
+    def generate(
+        self,
+        messages: List[Message],
+        tools: Optional[List[Tool]] = None,
+        max_continue_runs: Optional[int] = None,
+        **kwargs,
+    ) -> Message | Generator[Message, None, None]:
         """Generates a response based on the given conversation history and optional tools.
 
         Args:
@@ -236,24 +228,17 @@ class OpenAI(LLM):
             else:
                 return self._responses_generate(messages, tools, **args)
 
-        parameters = inspect.signature(
-            self.client.chat.completions.create).parameters
+        parameters = inspect.signature(self.client.chat.completions.create).parameters
         args = {key: value for key, value in args.items() if key in parameters}
         completion = self._call_llm(messages, self.format_tools(tools), **args)
 
         max_continue_runs = max_continue_runs or self.max_continue_runs
         if stream:
-            return self._stream_continue_generate(messages, completion, tools,
-                                                  max_continue_runs - 1,
-                                                  **args)
+            return self._stream_continue_generate(messages, completion, tools, max_continue_runs - 1, **args)
         else:
-            return self._continue_generate(messages, completion, tools,
-                                           max_continue_runs - 1, **args)
+            return self._continue_generate(messages, completion, tools, max_continue_runs - 1, **args)
 
-    def _call_llm(self,
-                  messages: List[Message],
-                  tools: Optional[List[Tool]] = None,
-                  **kwargs) -> Any:
+    def _call_llm(self, messages: List[Message], tools: Optional[List[Tool]] = None, **kwargs) -> Any:
         """Calls the OpenAI chat completion API with the provided messages and tools.
 
         Args:
@@ -273,8 +258,7 @@ class OpenAI(LLM):
         if is_streaming and stream_options_config.get('include_usage', True):
             kwargs.setdefault('stream_options', {})['include_usage'] = True
 
-        return self.client.chat.completions.create(
-            model=self.model, messages=messages, tools=tools, **kwargs)
+        return self.client.chat.completions.create(model=self.model, messages=messages, tools=tools, **kwargs)
 
     @staticmethod
     def _extract_cache_info(usage_obj: Any) -> tuple:
@@ -300,12 +284,10 @@ class OpenAI(LLM):
             created = int(details.get('cache_creation_input_tokens', 0) or 0)
         else:
             cached = int(getattr(details, 'cached_tokens', 0) or 0)
-            created = int(
-                getattr(details, 'cache_creation_input_tokens', 0) or 0)
+            created = int(getattr(details, 'cache_creation_input_tokens', 0) or 0)
         return cached, created
 
-    def _merge_stream_message(self, pre_message_chunk: Optional[Message],
-                              message_chunk: Message) -> Optional[Message]:
+    def _merge_stream_message(self, pre_message_chunk: Optional[Message], message_chunk: Message) -> Optional[Message]:
         """Merges a new chunk of message into the previous chunks during streaming.
 
         Used to accumulate partial results into a complete Message object.
@@ -330,25 +312,17 @@ class OpenAI(LLM):
         message.content += message_chunk.content
         if message_chunk.tool_calls:
             if message.tool_calls:
-                if message.tool_calls[-1]['index'] == message_chunk.tool_calls[
-                        0]['index']:
+                if message.tool_calls[-1]['index'] == message_chunk.tool_calls[0]['index']:
                     if message_chunk.tool_calls[0]['id']:
-                        message.tool_calls[-1][
-                            'id'] = message_chunk.tool_calls[0]['id']
+                        message.tool_calls[-1]['id'] = message_chunk.tool_calls[0]['id']
                     if message_chunk.tool_calls[0]['arguments']:
                         if message.tool_calls[-1]['arguments']:
-                            message.tool_calls[-1][
-                                'arguments'] += message_chunk.tool_calls[0][
-                                    'arguments']
+                            message.tool_calls[-1]['arguments'] += message_chunk.tool_calls[0]['arguments']
                         else:
                             # message.tool_calls[-1]['arguments'] may be None
-                            message.tool_calls[-1][
-                                'arguments'] = message_chunk.tool_calls[0][
-                                    'arguments']
+                            message.tool_calls[-1]['arguments'] = message_chunk.tool_calls[0]['arguments']
                     if message_chunk.tool_calls[0]['tool_name']:
-                        message.tool_calls[-1][
-                            'tool_name'] = message_chunk.tool_calls[0][
-                                'tool_name']
+                        message.tool_calls[-1]['tool_name'] = message_chunk.tool_calls[0]['tool_name']
                 else:
                     message.tool_calls.append(
                         ToolCall(
@@ -356,17 +330,21 @@ class OpenAI(LLM):
                             arguments=message_chunk.tool_calls[0]['arguments'],
                             type='function',
                             tool_name=message_chunk.tool_calls[0]['tool_name'],
-                            index=message_chunk.tool_calls[0]['index']))
+                            index=message_chunk.tool_calls[0]['index'],
+                        )
+                    )
             else:
                 message.tool_calls = message_chunk.tool_calls
         return message
 
-    def _stream_continue_generate(self,
-                                  messages: List[Message],
-                                  completion: Iterable,
-                                  tools: Optional[List[Tool]] = None,
-                                  max_runs: Optional[int] = None,
-                                  **kwargs) -> Generator[Message, None, None]:
+    def _stream_continue_generate(
+        self,
+        messages: List[Message],
+        completion: Iterable,
+        tools: Optional[List[Tool]] = None,
+        max_runs: Optional[int] = None,
+        **kwargs,
+    ) -> Generator[Message, None, None]:
         """Recursively continues generating until the model finishes naturally in streaming mode.
 
         Args:
@@ -388,8 +366,7 @@ class OpenAI(LLM):
                 try:
                     next_chunk = next(completion)
                     message.prompt_tokens += next_chunk.usage.prompt_tokens
-                    cached, created = self._extract_cache_info(
-                        getattr(next_chunk, 'usage', None))
+                    cached, created = self._extract_cache_info(getattr(next_chunk, 'usage', None))
                     message.cached_tokens += cached
                     message.cache_creation_input_tokens += created
                     message.completion_tokens += next_chunk.usage.completion_tokens
@@ -397,21 +374,14 @@ class OpenAI(LLM):
                     # The stream may end without a final usage chunk, which is acceptable.
                     pass
                 first_run = not messages[-1].to_dict().get('partial', False)
-                if chunk.choices[0].finish_reason in [
-                        'length', 'null'
-                ] and (max_runs is None or max_runs != 0):
-                    logger.info(
-                        f'finish_reason: {chunk.choices[0].finish_reason}, continue generate.'
-                    )
-                    completion = self._call_llm_for_continue_gen(
-                        messages, message, tools, **kwargs)
+                if chunk.choices[0].finish_reason in ['length', 'null'] and (max_runs is None or max_runs != 0):
+                    logger.info(f'finish_reason: {chunk.choices[0].finish_reason}, continue generate.')
+                    completion = self._call_llm_for_continue_gen(messages, message, tools, **kwargs)
                     for chunk in self._stream_continue_generate(
-                            messages, completion, tools,
-                            max_runs - 1 if max_runs is not None else None,
-                            **kwargs):
+                        messages, completion, tools, max_runs - 1 if max_runs is not None else None, **kwargs
+                    ):
                         if first_run:
-                            yield self._merge_stream_message(
-                                messages[-1], chunk)
+                            yield self._merge_stream_message(messages[-1], chunk)
                         else:
                             yield chunk
                 elif not first_run:
@@ -436,8 +406,7 @@ class OpenAI(LLM):
         content = ''
         if completion_chunk.choices and completion_chunk.choices[0].delta:
             content = completion_chunk.choices[0].delta.content
-            reasoning_content = getattr(completion_chunk.choices[0].delta,
-                                        'reasoning_content', '')
+            reasoning_content = getattr(completion_chunk.choices[0].delta, 'reasoning_content', '')
             if completion_chunk.choices[0].delta.tool_calls:
                 func = completion_chunk.choices[0].delta.tool_calls
                 tool_calls = [
@@ -446,7 +415,8 @@ class OpenAI(LLM):
                         index=tool_call.index,
                         type=tool_call.type,
                         arguments=tool_call.function.arguments,
-                        tool_name=tool_call.function.name)
+                        tool_name=tool_call.function.name,
+                    )
                     for tool_call in func
                 ]
         content = content or ''
@@ -458,23 +428,22 @@ class OpenAI(LLM):
             tool_calls=tool_calls,
             id=completion_chunk.id,
             prompt_tokens=getattr(completion_chunk.usage, 'prompt_tokens', 0),
-            completion_tokens=getattr(completion_chunk.usage,
-                                      'completion_tokens', 0))
+            completion_tokens=getattr(completion_chunk.usage, 'completion_tokens', 0),
+        )
 
     @staticmethod
     def _format_output_message(completion) -> Message:
         """Formats the full non-streaming response into a Message object.
 
-       Args:
-           completion: The raw response from the OpenAI API.
+        Args:
+            completion: The raw response from the OpenAI API.
 
-       Returns:
-           Message: A Message object containing the final response.
-       """
+        Returns:
+            Message: A Message object containing the final response.
+        """
         content = completion.choices[0].message.content or ''
         if hasattr(completion.choices[0].message, 'reasoning_content'):
-            reasoning_content = completion.choices[
-                0].message.reasoning_content or ''
+            reasoning_content = completion.choices[0].message.reasoning_content or ''
         else:
             reasoning_content = ''
         tool_calls = None
@@ -485,11 +454,11 @@ class OpenAI(LLM):
                     index=getattr(tool_call, 'index', idx),
                     type=tool_call.type,
                     arguments=tool_call.function.arguments,
-                    tool_name=tool_call.function.name) for idx, tool_call in
-                enumerate(completion.choices[0].message.tool_calls)
+                    tool_name=tool_call.function.name,
+                )
+                for idx, tool_call in enumerate(completion.choices[0].message.tool_calls)
             ]
-        cached, created = OpenAI._extract_cache_info(
-            getattr(completion, 'usage', None))
+        cached, created = OpenAI._extract_cache_info(getattr(completion, 'usage', None))
         return Message(
             role='assistant',
             content=content,
@@ -499,7 +468,8 @@ class OpenAI(LLM):
             prompt_tokens=completion.usage.prompt_tokens,
             cached_tokens=cached,
             cache_creation_input_tokens=created,
-            completion_tokens=completion.usage.completion_tokens)
+            completion_tokens=completion.usage.completion_tokens,
+        )
 
     @staticmethod
     def _merge_partial_message(messages: List[Message], new_message: Message):
@@ -513,8 +483,7 @@ class OpenAI(LLM):
         messages[-1].content += new_message.content
         messages[-1].prompt_tokens += new_message.prompt_tokens
         messages[-1].cached_tokens += new_message.cached_tokens
-        messages[
-            -1].cache_creation_input_tokens += new_message.cache_creation_input_tokens
+        messages[-1].cache_creation_input_tokens += new_message.cache_creation_input_tokens
         messages[-1].completion_tokens += new_message.completion_tokens
         if new_message.tool_calls:
             if messages[-1].tool_calls:
@@ -522,11 +491,9 @@ class OpenAI(LLM):
             else:
                 messages[-1].tool_calls = new_message.tool_calls
 
-    def _call_llm_for_continue_gen(self,
-                                   messages: List[Message],
-                                   new_message: Message,
-                                   tools: List[Tool] = None,
-                                   **kwargs) -> Any:
+    def _call_llm_for_continue_gen(
+        self, messages: List[Message], new_message: Message, tools: List[Tool] = None, **kwargs
+    ) -> Any:
         """Prepares and calls the LLM for continuation when the response is unfinished.
 
         If the previous message marked as unfinished, it will be updated with the new content.
@@ -555,12 +522,9 @@ class OpenAI(LLM):
 
         return self._call_llm(messages, tools, **kwargs)
 
-    def _continue_generate(self,
-                           messages: List[Message],
-                           completion,
-                           tools: List[Tool] = None,
-                           max_runs: Optional[int] = None,
-                           **kwargs) -> Message:
+    def _continue_generate(
+        self, messages: List[Message], completion, tools: List[Tool] = None, max_runs: Optional[int] = None, **kwargs
+    ) -> Message:
         """Recursively continues generating until the model finishes naturally.
 
         This method checks whether the generation was stopped due to length limitations,
@@ -576,17 +540,12 @@ class OpenAI(LLM):
             Message: A fully formed Message object containing the complete response.
         """
         new_message = self._format_output_message(completion)
-        if completion.choices[0].finish_reason in [
-                'length', 'null'
-        ] and (max_runs is None or max_runs != 0):
-            logger.info(
-                f'finish_reason: {completion.choices[0].finish_reason}， continue generate.'
-            )
-            completion = self._call_llm_for_continue_gen(
-                messages, new_message, tools, **kwargs)
+        if completion.choices[0].finish_reason in ['length', 'null'] and (max_runs is None or max_runs != 0):
+            logger.info(f'finish_reason: {completion.choices[0].finish_reason}， continue generate.')
+            completion = self._call_llm_for_continue_gen(messages, new_message, tools, **kwargs)
             return self._continue_generate(
-                messages, completion, tools,
-                max_runs - 1 if max_runs is not None else None, **kwargs)
+                messages, completion, tools, max_runs - 1 if max_runs is not None else None, **kwargs
+            )
         elif messages[-1].to_dict().get('partial', False):
             self._merge_partial_message(messages, new_message)
             messages[-1].partial = False
@@ -594,8 +553,7 @@ class OpenAI(LLM):
         else:
             return new_message
 
-    def _build_responses_input(
-            self, messages: List[Message]) -> List[Dict[str, Any]]:
+    def _build_responses_input(self, messages: List[Message]) -> List[Dict[str, Any]]:
         """Convert internal Message list to the ``input`` format expected by
         the Responses API.
 
@@ -610,60 +568,66 @@ class OpenAI(LLM):
         items: List[Dict[str, Any]] = []
         for msg in messages:
             if msg.role == 'system':
-                items.append({
-                    'role': 'developer',
-                    'content': msg.content,
-                })
+                items.append(
+                    {
+                        'role': 'developer',
+                        'content': msg.content,
+                    }
+                )
             elif msg.role == 'assistant':
                 if self._responses_state_mode != 'previous_response_id':
                     # Stateless mode needs explicit passback of opaque reasoning
                     # items returned by the previous response.
-                    for raw_item in getattr(msg, '_responses_output_items',
-                                            []):
+                    for raw_item in getattr(msg, '_responses_output_items', []):
                         items.append(raw_item)
-                if msg.content and not self._is_responses_tool_placeholder(
-                        msg):
-                    items.append({
-                        'role': 'assistant',
-                        'content': msg.content,
-                    })
+                if msg.content and not self._is_responses_tool_placeholder(msg):
+                    items.append(
+                        {
+                            'role': 'assistant',
+                            'content': msg.content,
+                        }
+                    )
                 if msg.tool_calls:
                     for tc in msg.tool_calls:
                         arguments = tc.get('arguments', '{}')
                         if not isinstance(arguments, str):
-                            arguments = json.dumps(
-                                arguments, ensure_ascii=False)
-                        items.append({
-                            'type': 'function_call',
-                            'call_id': tc.get('id', ''),
-                            'name': tc.get('tool_name', ''),
-                            'arguments': arguments,
-                        })
+                            arguments = json.dumps(arguments, ensure_ascii=False)
+                        items.append(
+                            {
+                                'type': 'function_call',
+                                'call_id': tc.get('id', ''),
+                                'name': tc.get('tool_name', ''),
+                                'arguments': arguments,
+                            }
+                        )
             elif msg.role == 'tool':
                 content = msg.content
                 if not isinstance(content, str):
                     content = json.dumps(content, ensure_ascii=False)
-                items.append({
-                    'type': 'function_call_output',
-                    'call_id': msg.tool_call_id or '',
-                    'output': content,
-                })
+                items.append(
+                    {
+                        'type': 'function_call_output',
+                        'call_id': msg.tool_call_id or '',
+                        'output': content,
+                    }
+                )
             else:
-                items.append({
-                    'role': msg.role,
-                    'content': msg.content,
-                })
+                items.append(
+                    {
+                        'role': msg.role,
+                        'content': msg.content,
+                    }
+                )
         return items
 
     @staticmethod
     def _is_responses_tool_placeholder(message: Message) -> bool:
         """Return True for framework-generated assistant placeholder text."""
-        return bool(message.tool_calls
-                    ) and message.content == 'Let me do a tool calling.'
+        return bool(message.tool_calls) and message.content == 'Let me do a tool calling.'
 
     def _prepare_responses_request(
-            self, messages: List[Message],
-            args: Dict[str, Any]) -> tuple[List[Message], Dict[str, Any]]:
+        self, messages: List[Message], args: Dict[str, Any]
+    ) -> tuple[List[Message], Dict[str, Any]]:
         """Prepare message slice and request args for Responses API calls."""
         request_args = dict(args)
 
@@ -677,22 +641,23 @@ class OpenAI(LLM):
             msg = messages[idx]
             if msg.role == 'assistant' and msg.id:
                 request_args['previous_response_id'] = msg.id
-                return messages[idx + 1:], request_args
+                return messages[idx + 1 :], request_args
 
         return messages, request_args
 
-    def _build_responses_tools(
-            self,
-            tools: Optional[List[Tool]]) -> Optional[List[Dict[str, Any]]]:
+    def _build_responses_tools(self, tools: Optional[List[Tool]]) -> Optional[List[Dict[str, Any]]]:
         """Convert internal Tool list to Responses API function tool format."""
         if not tools:
             return None
-        return [{
-            'type': 'function',
-            'name': t['tool_name'],
-            'description': t.get('description', ''),
-            'parameters': t.get('parameters', {}),
-        } for t in tools]
+        return [
+            {
+                'type': 'function',
+                'name': t['tool_name'],
+                'description': t.get('description', ''),
+                'parameters': t.get('parameters', {}),
+            }
+            for t in tools
+        ]
 
     def _build_responses_kwargs(self, args: Dict) -> Dict:
         """Filter and reshape generation args for ``responses.create``."""
@@ -742,8 +707,7 @@ class OpenAI(LLM):
         return '\n'.join(parts)
 
     @staticmethod
-    def _extract_tool_calls_from_response(
-            response) -> Optional[List[ToolCall]]:
+    def _extract_tool_calls_from_response(response) -> Optional[List[ToolCall]]:
         """Extract tool calls from a completed Responses API object."""
         tool_calls: List[ToolCall] = []
         for item in getattr(response, 'output', []) or []:
@@ -753,13 +717,13 @@ class OpenAI(LLM):
                     arguments = json.dumps(arguments, ensure_ascii=False)
                 tool_calls.append(
                     ToolCall(
-                        id=getattr(item, 'call_id', '')
-                        or getattr(item, 'id', ''),
+                        id=getattr(item, 'call_id', '') or getattr(item, 'id', ''),
                         index=len(tool_calls),
                         type='function',
                         tool_name=getattr(item, 'name', ''),
                         arguments=arguments,
-                    ))
+                    )
+                )
         return tool_calls if tool_calls else None
 
     @staticmethod
@@ -781,10 +745,7 @@ class OpenAI(LLM):
         if isinstance(value, list):
             return [OpenAI._to_jsonable(item) for item in value]
         if isinstance(value, dict):
-            return {
-                key: OpenAI._to_jsonable(item)
-                for key, item in value.items()
-            }
+            return {key: OpenAI._to_jsonable(item) for key, item in value.items()}
         if hasattr(value, 'model_dump'):
             return OpenAI._to_jsonable(value.model_dump())
         if hasattr(value, 'to_dict'):
@@ -802,10 +763,8 @@ class OpenAI(LLM):
             item_type = getattr(item, 'type', None)
             if item_type == 'reasoning':
                 passback_item: Dict[str, Any] = {
-                    'type':
-                    'reasoning',
-                    'summary':
-                    self._to_jsonable(getattr(item, 'summary', []) or []),
+                    'type': 'reasoning',
+                    'summary': self._to_jsonable(getattr(item, 'summary', []) or []),
                 }
                 encrypted_content = getattr(item, 'encrypted_content', None)
                 if encrypted_content:
@@ -817,13 +776,9 @@ class OpenAI(LLM):
                 items.append(passback_item)
         return items
 
-    def _responses_generate(self,
-                            messages: List[Message],
-                            tools: Optional[List[Tool]] = None,
-                            **args) -> Message:
+    def _responses_generate(self, messages: List[Message], tools: Optional[List[Tool]] = None, **args) -> Message:
         """Non-streaming Responses API call."""
-        request_messages, request_args = self._prepare_responses_request(
-            messages, args)
+        request_messages, request_args = self._prepare_responses_request(messages, args)
         input_items = self._build_responses_input(request_messages)
         resp_tools = self._build_responses_tools(tools)
         kwargs = self._build_responses_kwargs(request_args)
@@ -838,8 +793,7 @@ class OpenAI(LLM):
         text = getattr(response, 'output_text', '') or ''
         reasoning = self._extract_reasoning_summaries_from_response(response)
         resp_tool_calls = self._extract_tool_calls_from_response(response)
-        prompt_tokens, completion_tokens = self._extract_usage_from_response(
-            response)
+        prompt_tokens, completion_tokens = self._extract_usage_from_response(response)
         passback = self._collect_passback_items(response)
 
         return Message(
@@ -863,10 +817,9 @@ class OpenAI(LLM):
                 parts.append(text)
         return '\n'.join(parts)
 
-    def _responses_stream_generate(self,
-                                   messages: List[Message],
-                                   tools: Optional[List[Tool]] = None,
-                                   **args) -> Generator[Message, None, None]:
+    def _responses_stream_generate(
+        self, messages: List[Message], tools: Optional[List[Tool]] = None, **args
+    ) -> Generator[Message, None, None]:
         """Streaming Responses API call.
 
         Yields incremental ``Message`` objects.  Reasoning summaries are
@@ -874,8 +827,7 @@ class OpenAI(LLM):
         which arrive *before* the first text delta, so the agent layer can
         display the thinking header before content begins streaming.
         """
-        request_messages, request_args = self._prepare_responses_request(
-            messages, args)
+        request_messages, request_args = self._prepare_responses_request(messages, args)
         input_items = self._build_responses_input(request_messages)
         resp_tools = self._build_responses_tools(tools)
         kwargs = self._build_responses_kwargs(request_args)
@@ -908,8 +860,7 @@ class OpenAI(LLM):
                     summary_text = self._extract_reasoning_from_item(item)
                     if summary_text:
                         reasoning_parts.append(summary_text)
-                        current_message.reasoning_content = '\n'.join(
-                            reasoning_parts)
+                        current_message.reasoning_content = '\n'.join(reasoning_parts)
                         yield current_message
 
             elif event_type == 'response.output_text.delta':
@@ -932,35 +883,29 @@ class OpenAI(LLM):
             elif event_type == 'response.failed':
                 failed_response = getattr(event, 'response', None)
                 failed_error = getattr(failed_response, 'error', None)
-                response_error_msg = getattr(failed_error, 'message',
-                                             '') or str(failed_error)
+                response_error_msg = getattr(failed_error, 'message', '') or str(failed_error)
 
         if final_response:
             if not reasoning_parts:
-                reasoning = self._extract_reasoning_summaries_from_response(
-                    final_response)
+                reasoning = self._extract_reasoning_summaries_from_response(final_response)
                 if reasoning:
                     current_message.reasoning_content = reasoning
-            resp_tool_calls = self._extract_tool_calls_from_response(
-                final_response)
+            resp_tool_calls = self._extract_tool_calls_from_response(final_response)
             if resp_tool_calls:
                 current_message.tool_calls = resp_tool_calls
             passback = self._collect_passback_items(final_response)
             if passback:
                 current_message._responses_output_items = passback
-            prompt_tokens, completion_tokens = self._extract_usage_from_response(
-                final_response)
+            prompt_tokens, completion_tokens = self._extract_usage_from_response(final_response)
             current_message.prompt_tokens = prompt_tokens
             current_message.completion_tokens = completion_tokens
             current_message.id = getattr(final_response, 'id', '')
             yield current_message
         elif response_error_msg:
             logger.error(f'Responses API failed: {response_error_msg}')
-            raise RuntimeError(
-                f'Responses API call failed: {response_error_msg}')
+            raise RuntimeError(f'Responses API call failed: {response_error_msg}')
 
-    def _format_input_message(self,
-                              messages: List[Message]) -> List[Dict[str, Any]]:
+    def _format_input_message(self, messages: List[Message]) -> List[Dict[str, Any]]:
         """Converts a list of Message objects into the format expected by the OpenAI API.
 
         Args:
@@ -982,8 +927,7 @@ class OpenAI(LLM):
             # Check for role-based caching
             role_cache = self._prefix_cache_roles - {'last_message'}
             for idx, msg in enumerate(messages):
-                msg_role = msg.role if isinstance(msg, Message) else msg.get(
-                    'role', '')
+                msg_role = msg.role if isinstance(msg, Message) else msg.get('role', '')
                 if msg_role in role_cache:
                     cache_indices.add(idx)
             cache_indice = max(cache_indices) if cache_indices else None
@@ -1007,9 +951,8 @@ class OpenAI(LLM):
             # Only for string content, multimodal content is already structured
             if cache_indice is not None and idx == cache_indice:
                 content = self._to_structured_content(
-                    content,
-                    add_cache_control=True,
-                    provider=self._prefix_cache_provider)
+                    content, add_cache_control=True, provider=self._prefix_cache_provider
+                )
 
             # Build the message dict, handling both string and multimodal content
             formatted_message = {}

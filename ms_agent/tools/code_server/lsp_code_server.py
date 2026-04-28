@@ -1,15 +1,14 @@
 import asyncio
+import json
 import os
 import shutil
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import json
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils import get_logger
-from ms_agent.utils.constants import (DEFAULT_INDEX_DIR, DEFAULT_LOCK_DIR,
-                                      DEFAULT_OUTPUT_DIR)
+from ms_agent.utils.constants import DEFAULT_INDEX_DIR, DEFAULT_LOCK_DIR, DEFAULT_OUTPUT_DIR
 
 logger = get_logger()
 
@@ -24,8 +23,7 @@ class LSPServer:
         self.stdout = None
         self.message_id = 0
         self.initialized = False
-        self.output_dir = getattr(self.config, 'output_dir',
-                                  DEFAULT_OUTPUT_DIR)
+        self.output_dir = getattr(self.config, 'output_dir', DEFAULT_OUTPUT_DIR)
         self.workspace_dir = Path(self.output_dir).resolve()
         self.index_dir = os.path.join(self.output_dir, DEFAULT_INDEX_DIR)
         self.lock_dir = os.path.join(self.output_dir, DEFAULT_LOCK_DIR)
@@ -59,12 +57,7 @@ class LSPServer:
 
         self.message_id += 1
         request_id = self.message_id
-        request = {
-            'jsonrpc': '2.0',
-            'id': request_id,
-            'method': method,
-            'params': params or {}
-        }
+        request = {'jsonrpc': '2.0', 'id': request_id, 'method': method, 'params': params or {}}
 
         content = json.dumps(request)
         message = f'Content-Length: {len(content)}\r\n\r\n{content}'
@@ -84,14 +77,10 @@ class LSPServer:
                 # It's a notification (no id) or response for different request
                 # Log and continue reading
                 if 'method' in msg:
-                    logger.debug(
-                        f"Received notification during request: {msg.get('method')}"
-                    )
+                    logger.debug(f"Received notification during request: {msg.get('method')}")
                     continue
 
-            logger.warning(
-                f'No response received for request {request_id} after {max_retries} attempts'
-            )
+            logger.warning(f'No response received for request {request_id} after {max_retries} attempts')
             return {'error': 'No response received'}
 
         except Exception as e:
@@ -103,11 +92,7 @@ class LSPServer:
         if not self.process or not self.stdin:
             raise RuntimeError('LSP server not started')
 
-        notification = {
-            'jsonrpc': '2.0',
-            'method': method,
-            'params': params or {}
-        }
+        notification = {'jsonrpc': '2.0', 'method': method, 'params': params or {}}
 
         content = json.dumps(notification)
         message = f'Content-Length: {len(content)}\r\n\r\n{content}'
@@ -147,55 +132,45 @@ class LSPServer:
     async def initialize(self):
         """Initialize the LSP server and wait for it to be ready"""
         response = await self.send_request(
-            'initialize', {
-                'processId':
-                os.getpid(),
-                'rootUri':
-                self.workspace_dir.as_uri(),
-                'rootPath':
-                str(self.workspace_dir),
-                'workspaceFolders': [{
-                    'uri': self.workspace_dir.as_uri(),
-                    'name': self.workspace_dir.name
-                }],
+            'initialize',
+            {
+                'processId': os.getpid(),
+                'rootUri': self.workspace_dir.as_uri(),
+                'rootPath': str(self.workspace_dir),
+                'workspaceFolders': [{'uri': self.workspace_dir.as_uri(), 'name': self.workspace_dir.name}],
                 'capabilities': {
                     'textDocument': {
                         'publishDiagnostics': {},
-                        'synchronization': {
-                            'didOpen': True,
-                            'didChange': True,
-                            'didClose': True
-                        }
+                        'synchronization': {'didOpen': True, 'didChange': True, 'didClose': True},
                     }
-                }
-            })
+                },
+            },
+        )
 
         if 'result' in response:
             await self.send_notification('initialized', {})
 
             # CRITICAL: Wait for server to be fully ready
             # Read and discard any startup messages
-            await asyncio.sleep(
-                1.0)  # Give server time to complete initialization
+            await asyncio.sleep(1.0)  # Give server time to complete initialization
 
             await self.send_notification(
-                'workspace/didChangeConfiguration', {
+                'workspace/didChangeConfiguration',
+                {
                     'settings': {
                         'python': {
                             'pythonPath': sys.executable,
                         },
-                        'pyright': {
-                            'extraPaths': [str(self.workspace_dir)]
-                        },
+                        'pyright': {'extraPaths': [str(self.workspace_dir)]},
                     }
-                })
+                },
+            )
 
             # Consume any pending messages (like "starting" notifications)
             try:
                 for _ in range(10):
                     try:
-                        await asyncio.wait_for(
-                            self._read_message(), timeout=2.0)
+                        await asyncio.wait_for(self._read_message(), timeout=2.0)
                     except asyncio.TimeoutError:
                         break
             except Exception as e:
@@ -208,13 +183,11 @@ class LSPServer:
         logger.error(f'LSP initialization failed: {response}')
         return False
 
-    async def open_document(self, file_path: str, content: str,
-                            language_id: str):
+    async def open_document(self, file_path: str, content: str, language_id: str):
         """Open a document in the LSP server"""
         file_uri = Path(file_path).resolve().as_uri()
         changes = [{'uri': file_uri, 'type': 1}]
-        await self.send_notification('workspace/didChangeWatchedFiles',
-                                     {'changes': changes})
+        await self.send_notification('workspace/didChangeWatchedFiles', {'changes': changes})
 
         if file_path.endswith('.tsx'):
             language_id = 'typescriptreact'
@@ -226,45 +199,25 @@ class LSPServer:
             language_id = 'javascript'
 
         await self.send_notification(
-            'textDocument/didOpen', {
-                'textDocument': {
-                    'uri': file_uri,
-                    'languageId': language_id,
-                    'version': 1,
-                    'text': content
-                }
-            })
+            'textDocument/didOpen',
+            {'textDocument': {'uri': file_uri, 'languageId': language_id, 'version': 1, 'text': content}},
+        )
         await asyncio.sleep(2.0)
 
     async def close_document(self, file_path: str):
         """Close a document to clean up old index"""
         file_uri = Path(file_path).resolve().as_uri()
-        await self.send_notification('textDocument/didClose',
-                                     {'textDocument': {
-                                         'uri': file_uri
-                                     }})
+        await self.send_notification('textDocument/didClose', {'textDocument': {'uri': file_uri}})
 
-    async def update_document(self,
-                              file_path: str,
-                              content: str,
-                              version: int = 2):
+    async def update_document(self, file_path: str, content: str, version: int = 2):
         """Update a document in the LSP server"""
         file_uri = Path(file_path).resolve().as_uri()
         await self.send_notification(
-            'textDocument/didChange', {
-                'textDocument': {
-                    'uri': file_uri,
-                    'version': version
-                },
-                'contentChanges': [{
-                    'text': content
-                }]
-            })
+            'textDocument/didChange',
+            {'textDocument': {'uri': file_uri, 'version': version}, 'contentChanges': [{'text': content}]},
+        )
 
-    async def get_diagnostics(self,
-                              file_path: str,
-                              wait_time: float = 2.0,
-                              use_cache: bool = True) -> List[dict]:
+    async def get_diagnostics(self, file_path: str, wait_time: float = 2.0, use_cache: bool = True) -> List[dict]:
         await asyncio.sleep(wait_time)
 
         file_uri = Path(file_path).resolve().as_uri()
@@ -281,8 +234,7 @@ class LSPServer:
 
                 if msg.get('method') == 'textDocument/publishDiagnostics':
                     current_uri = msg.get('params', {}).get('uri')
-                    current_diags = msg.get('params',
-                                            {}).get('diagnostics', [])
+                    current_diags = msg.get('params', {}).get('diagnostics', [])
 
                     self.diagnostics_cache[current_uri] = current_diags
                     logger.debug(f'Cached diagnostics for {current_uri}')
@@ -290,15 +242,12 @@ class LSPServer:
                     if current_uri == file_uri:
                         diagnostics = current_diags
                         found_target = True
-                        logger.debug(
-                            f'Found target diagnostics for {file_uri}')
+                        logger.debug(f'Found target diagnostics for {file_uri}')
 
             except asyncio.TimeoutError:
                 consecutive_timeouts += 1
                 if consecutive_timeouts >= 3:
-                    logger.debug(
-                        f'Stopped after {consecutive_timeouts} consecutive timeouts'
-                    )
+                    logger.debug(f'Stopped after {consecutive_timeouts} consecutive timeouts')
                     break
                 else:
                     continue
@@ -329,17 +278,12 @@ class TypeScriptLSPServer(LSPServer):
         try:
             # Check if typescript is installed
             check_process = await asyncio.create_subprocess_exec(
-                'npx',
-                'tsc',
-                '--version',
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE)
+                'npx', 'tsc', '--version', stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            )
             await check_process.communicate()
 
             if check_process.returncode != 0:
-                logger.error(
-                    'TypeScript not found. Install with: npm install -g typescript'
-                )
+                logger.error('TypeScript not found. Install with: npm install -g typescript')
                 return False
 
             # Start typescript-language-server
@@ -350,7 +294,8 @@ class TypeScriptLSPServer(LSPServer):
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                cwd=str(self.workspace_dir))
+                cwd=str(self.workspace_dir),
+            )
 
             self.stdin = self.process.stdin
             self.stdout = self.process.stdout
@@ -394,8 +339,7 @@ class PythonLSPServer(LSPServer):
         env = dict(os.environ)
         removed = env.pop('PYTHONPATH', None)
         if removed:
-            logger.debug('Removed PYTHONPATH=%r from pyright subprocess env',
-                         removed)
+            logger.debug('Removed PYTHONPATH=%r from pyright subprocess env', removed)
         return env
 
     async def start(self) -> bool:
@@ -405,15 +349,12 @@ class PythonLSPServer(LSPServer):
 
             # Check if pyright is installed
             check_process = await asyncio.create_subprocess_exec(
-                'pyright',
-                '--version',
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE)
+                'pyright', '--version', stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            )
             await check_process.communicate()
 
             if check_process.returncode != 0:
-                logger.warning(
-                    'Pyright not found. Install with: pip install pyright')
+                logger.warning('Pyright not found. Install with: pip install pyright')
                 return False
 
             # Start pyright langserver
@@ -424,7 +365,8 @@ class PythonLSPServer(LSPServer):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(self.workspace_dir),
-                env=clean_env)
+                env=clean_env,
+            )
 
             self.stdin = self.process.stdin
             self.stdout = self.process.stdout
@@ -434,8 +376,7 @@ class PythonLSPServer(LSPServer):
                     line = await process.stderr.readline()
                     if not line:
                         break
-                    logger.error(
-                        f"LSP: {line.decode(errors='ignore').rstrip()}")
+                    logger.error(f"LSP: {line.decode(errors='ignore').rstrip()}")
 
             asyncio.create_task(_read_server_stderr(self.process))
 
@@ -443,9 +384,7 @@ class PythonLSPServer(LSPServer):
             return await self.initialize()
 
         except FileNotFoundError:
-            logger.error(
-                'pyright-langserver not found. Install with: pip install pyright'
-            )
+            logger.error('pyright-langserver not found. Install with: pip install pyright')
             return False
         except Exception as e:
             logger.error(f'Failed to start Python LSP server: {e}')
@@ -475,10 +414,8 @@ class JavaLSPServer(LSPServer):
             if not jdtls_cmd:
                 # Try to find in PATH
                 check_process = await asyncio.create_subprocess_exec(
-                    'which',
-                    'jdtls',
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE)
+                    'which', 'jdtls', stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                )
                 stdout, _ = await check_process.communicate()
                 if check_process.returncode == 0:
                     jdtls_cmd = stdout.decode('utf-8').strip()
@@ -503,7 +440,8 @@ class JavaLSPServer(LSPServer):
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                cwd=str(self.workspace_dir))
+                cwd=str(self.workspace_dir),
+            )
 
             self.stdin = self.process.stdin
             self.stdout = self.process.stdout
@@ -524,12 +462,20 @@ class JavaLSPServer(LSPServer):
 
 
 class LSPCodeServer(ToolBase):
-
     skip_files = [
-        'vite.config.ts', 'vite.config.js', 'webpack.config.js',
-        'webpack.config.ts', 'rollup.config.js', 'rollup.config.ts',
-        'next.config.js', 'next.config.ts', 'tsconfig.json', 'jsconfig.json',
-        'package.json', 'pom.xml', 'build.gradle'
+        'vite.config.ts',
+        'vite.config.js',
+        'webpack.config.js',
+        'webpack.config.ts',
+        'rollup.config.js',
+        'rollup.config.ts',
+        'next.config.js',
+        'next.config.ts',
+        'tsconfig.json',
+        'jsconfig.json',
+        'package.json',
+        'pom.xml',
+        'build.gradle',
     ]
 
     language_mapping = {
@@ -544,10 +490,8 @@ class LSPCodeServer(ToolBase):
         super().__init__(config)
         self.servers: Dict[str, LSPServer] = {}
         self.file_versions: Dict[str, int] = {}
-        self.opened_documents: Dict[str, str] = {
-        }  # Track opened documents: file_path -> language
-        self.output_dir = getattr(self.config, 'output_dir',
-                                  DEFAULT_OUTPUT_DIR)
+        self.opened_documents: Dict[str, str] = {}  # Track opened documents: file_path -> language
+        self.output_dir = getattr(self.config, 'output_dir', DEFAULT_OUTPUT_DIR)
         self.workspace_dir = self.output_dir
         self.index_dir = os.path.join(self.output_dir, DEFAULT_INDEX_DIR)
         self.lock_dir = os.path.join(self.output_dir, DEFAULT_LOCK_DIR)
@@ -560,10 +504,8 @@ class LSPCodeServer(ToolBase):
     def cleanup_lsp_index_dirs(self):
         cleanup_dirs = [
             os.path.join(self.output_dir, '.jdtls_workspace'),  # Java LSP
-            os.path.join(self.output_dir,
-                         '.pyright'),  # Python LSP (if exists)
-            os.path.join(self.output_dir, 'node_modules',
-                         '.cache'),  # TypeScript LSP cache
+            os.path.join(self.output_dir, '.pyright'),  # Python LSP (if exists)
+            os.path.join(self.output_dir, 'node_modules', '.cache'),  # TypeScript LSP cache
         ]
 
         for dir_path in cleanup_dirs:
@@ -571,9 +513,7 @@ class LSPCodeServer(ToolBase):
                 try:
                     shutil.rmtree(dir_path, ignore_errors=True)
                 except Exception as e:  # noqa
-                    logger.warning(
-                        f'Failed to cleanup LSP index directory {dir_path}: {e}'
-                    )
+                    logger.warning(f'Failed to cleanup LSP index directory {dir_path}: {e}')
 
     async def cleanup(self) -> None:
         """Stop all LSP servers and clear indexes"""
@@ -599,81 +539,65 @@ class LSPCodeServer(ToolBase):
     async def _get_tools_inner(self) -> Dict[str, Any]:
         """Get available tools"""
         return {
-            'lsp_code_server': [{
-                'tool_name':
-                'check_directory',
-                'description':
-                ('Check all code files in a directory for errors and issues. '
-                 'Supports TypeScript/JavaScript, Python, Java files. '
-                 'Returns a summary of all diagnostics found.'),
-                'parameters': {
-                    'type': 'object',
-                    'properties': {
-                        'directory': {
-                            'type':
-                            'string',
-                            'description':
-                            'Path to the directory to check (relative to workspace)'
+            'lsp_code_server': [
+                {
+                    'tool_name': 'check_directory',
+                    'description': (
+                        'Check all code files in a directory for errors and issues. '
+                        'Supports TypeScript/JavaScript, Python, Java files. '
+                        'Returns a summary of all diagnostics found.'
+                    ),
+                    'parameters': {
+                        'type': 'object',
+                        'properties': {
+                            'directory': {
+                                'type': 'string',
+                                'description': 'Path to the directory to check (relative to workspace)',
+                            },
+                            'language': {
+                                'type': 'string',
+                                'enum': ['typescript', 'python', 'java'],
+                                'description': 'Programming language to check (typescript for JS/TS, python for Python, java for Java)',
+                            },
                         },
-                        'language': {
-                            'type':
-                            'string',
-                            'enum': ['typescript', 'python', 'java'],
-                            'description':
-                            'Programming language to check (typescript for JS/TS, python for Python, java for Java)'
-                        }
+                        'required': ['directory', 'language'],
                     },
-                    'required': ['directory', 'language']
-                }
-            }, {
-                'tool_name':
-                'update_and_check',
-                'description':
-                ("Incrementally update a file's content and check for errors. "
-                 'Used during code generation to validate each N lines. '
-                 'More efficient than checking from scratch each time.'),
-                'parameters': {
-                    'type': 'object',
-                    'properties': {
-                        'file_path': {
-                            'type':
-                            'string',
-                            'description':
-                            'Path to the file (relative to workspace)'
+                },
+                {
+                    'tool_name': 'update_and_check',
+                    'description': (
+                        "Incrementally update a file's content and check for errors. "
+                        'Used during code generation to validate each N lines. '
+                        'More efficient than checking from scratch each time.'
+                    ),
+                    'parameters': {
+                        'type': 'object',
+                        'properties': {
+                            'file_path': {'type': 'string', 'description': 'Path to the file (relative to workspace)'},
+                            'content': {'type': 'string', 'description': 'Updated file content'},
+                            'language': {
+                                'type': 'string',
+                                'enum': ['typescript', 'python', 'java'],
+                                'description': 'Programming language to check (typescript for JS/TS, python for Python, java for Java)',
+                            },
                         },
-                        'content': {
-                            'type': 'string',
-                            'description': 'Updated file content'
-                        },
-                        'language': {
-                            'type':
-                            'string',
-                            'enum': ['typescript', 'python', 'java'],
-                            'description':
-                            'Programming language to check (typescript for JS/TS, python for Python, java for Java)'
-                        }
+                        'required': ['file_path', 'content', 'language'],
                     },
-                    'required': ['file_path', 'content', 'language']
-                }
-            }]
+                },
+            ]
         }
 
-    async def call_tool(self, server_name: str, *, tool_name: str,
-                        tool_args: dict) -> str:
+    async def call_tool(self, server_name: str, *, tool_name: str, tool_args: dict) -> str:
         """Call a tool"""
         if tool_name == 'check_directory':
-            return await self._check_directory(tool_args['directory'],
-                                               tool_args['language'])
+            return await self._check_directory(tool_args['directory'], tool_args['language'])
 
         elif tool_name == 'update_and_check':
-            return await self._update_and_check(tool_args['file_path'],
-                                                tool_args['content'],
-                                                tool_args['language'])
+            return await self._update_and_check(tool_args['file_path'], tool_args['content'], tool_args['language'])
         else:
             return json.dumps({'error': f'Unknown tool: {tool_name}'})
 
-    async def _get_or_create_server(self,
-                                    language: str) -> Optional[LSPServer]:
+    async def _get_or_create_server(self, language: str) -> Optional[LSPServer]:
         """Get or create an LSP server for the given language"""
         if language in self.servers:
             return self.servers[language]
@@ -699,19 +623,16 @@ class LSPCodeServer(ToolBase):
             language = language.lower()
             server = await self._get_or_create_server(language)
             if not server:
-                return json.dumps(
-                    {'error': f'Failed to start LSP server for {language}'})
+                return json.dumps({'error': f'Failed to start LSP server for {language}'})
 
             dir_path = Path(self.workspace_dir) / directory
             if not dir_path.exists() or not dir_path.is_dir():
-                return json.dumps(
-                    {'error': f'Directory not found: {directory}'})
+                return json.dumps({'error': f'Directory not found: {directory}'})
 
             extensions = self.language_mapping.get(language)
 
             if not extensions:
-                return json.dumps(
-                    {'error': f'No extensions found for language: {language}'})
+                return json.dumps({'error': f'No extensions found for language: {language}'})
 
             all_files = []
             for ext in extensions:
@@ -726,26 +647,18 @@ class LSPCodeServer(ToolBase):
                 configs = ('xml', 'json', 'yaml', 'yml', 'txt', 'md', 'gradle')
                 if filename.endswith(configs):
                     continue
-                if any([
-                        filename.startswith(prefix)
-                        for prefix in self.skip_prefixes
-                ]):
+                if any([filename.startswith(prefix) for prefix in self.skip_prefixes]):
                     continue
                 rel_path = file.relative_to(dir_path)
-                if any([
-                        part.startswith(prefix) for part in rel_path.parts
-                        for prefix in self.skip_prefixes
-                ]):
+                if any([part.startswith(prefix) for part in rel_path.parts for prefix in self.skip_prefixes]):
                     continue
                 cleaned_files.append(file)
 
             all_files = cleaned_files
             if not all_files:
-                return json.dumps({
-                    'message': f'No {language} files found in {directory}',
-                    'file_count': 0,
-                    'diagnostics': []
-                })
+                return json.dumps(
+                    {'message': f'No {language} files found in {directory}', 'file_count': 0, 'diagnostics': []}
+                )
 
             all_diagnostics = []
             for file_path in all_files:
@@ -753,8 +666,7 @@ class LSPCodeServer(ToolBase):
                     content = file_path.read_text(encoding='utf-8')
                     rel_path = file_path.relative_to(Path(self.workspace_dir))
                     self.file_versions[str(rel_path)] = 1
-                    await server.open_document(
-                        str(file_path), content, language)
+                    await server.open_document(str(file_path), content, language)
                     self.opened_documents[str(file_path)] = language
 
                     # Skip diagnostics for index-only mode (trust existing files)
@@ -775,9 +687,10 @@ class LSPCodeServer(ToolBase):
                     'file_count': len(all_files),
                     'diagnostics': all_diagnostics,
                     'files_indexed': len(all_files) - len(all_diagnostics),
-                    'status': 'indexed'
+                    'status': 'indexed',
                 },
-                indent=2)
+                indent=2,
+            )
 
         except Exception as e:
             logger.error(f'Error checking directory: {e}')
@@ -785,7 +698,6 @@ class LSPCodeServer(ToolBase):
 
     @staticmethod
     def _format_diag_results(diagnostics_result):
-
         ignored_errors = [
             # 'cannot be assigned to', 'is not assignable to', 'cannot assign to',
             '"none"',
@@ -793,17 +705,17 @@ class LSPCodeServer(ToolBase):
             'unused',
             'never used',
             'never read',
-            'implicitly has'
+            'implicitly has',
         ]
 
         if diagnostics_result.get('has_errors'):
             issues = diagnostics_result.get('diagnostics', [])
             # Filter critical errors only
             critical_errors = [
-                d for d in issues if d.get('severity') == 'Error' and not any([
-                    ignore in d.get('message', '').lower()
-                    for ignore in ignored_errors
-                ])
+                d
+                for d in issues
+                if d.get('severity') == 'Error'
+                and not any([ignore in d.get('message', '').lower() for ignore in ignored_errors])
             ]
 
             if critical_errors:
@@ -818,14 +730,12 @@ class LSPCodeServer(ToolBase):
         else:
             return ''
 
-    async def _update_and_check(self, file_path: str, content: str,
-                                language: str) -> str:
+    async def _update_and_check(self, file_path: str, content: str, language: str) -> str:
         """Update file content and check for errors"""
         try:
             server = await self._get_or_create_server(language)
             if not server:
-                return json.dumps(
-                    {'error': f'Failed to start LSP server for {language}'})
+                return json.dumps({'error': f'Failed to start LSP server for {language}'})
 
             full_path = Path(self.workspace_dir) / file_path
             full_path_str = str(full_path)
@@ -836,10 +746,7 @@ class LSPCodeServer(ToolBase):
                 self.opened_documents[full_path_str] = language
             else:
                 self.file_versions[file_path] += 1
-                await server.update_document(
-                    full_path_str,
-                    content,
-                    version=self.file_versions[file_path])
+                await server.update_document(full_path_str, content, version=self.file_versions[file_path])
 
             diagnostics = await server.get_diagnostics(str(full_path))
 
@@ -849,7 +756,7 @@ class LSPCodeServer(ToolBase):
                 'version': self.file_versions[file_path],
                 'has_errors': len(diagnostics) > 0,
                 'diagnostic_count': len(diagnostics),
-                'diagnostics': self._format_diagnostics(diagnostics)
+                'diagnostics': self._format_diagnostics(diagnostics),
             }
 
             return self._format_diag_results(diagnostics_result)
@@ -863,26 +770,17 @@ class LSPCodeServer(ToolBase):
         """Format diagnostics for better readability"""
         formatted = []
         for diag in diagnostics:
-            severity_map = {
-                1: 'Error',
-                2: 'Warning',
-                3: 'Information',
-                4: 'Hint'
-            }
+            severity_map = {1: 'Error', 2: 'Warning', 3: 'Information', 4: 'Hint'}
 
-            formatted.append({
-                'severity':
-                severity_map.get(diag.get('severity', 1), 'Error'),
-                'message':
-                diag.get('message', ''),
-                'line':
-                diag.get('range', {}).get('start', {}).get('line', 0) + 1,
-                'column':
-                diag.get('range', {}).get('start', {}).get('character', 0) + 1,
-                'source':
-                diag.get('source', ''),
-                'code':
-                diag.get('code', '')
-            })
+            formatted.append(
+                {
+                    'severity': severity_map.get(diag.get('severity', 1), 'Error'),
+                    'message': diag.get('message', ''),
+                    'line': diag.get('range', {}).get('start', {}).get('line', 0) + 1,
+                    'column': diag.get('range', {}).get('start', {}).get('character', 0) + 1,
+                    'source': diag.get('source', ''),
+                    'code': diag.get('code', ''),
+                }
+            )
 
         return formatted

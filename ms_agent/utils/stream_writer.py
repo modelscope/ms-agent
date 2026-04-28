@@ -21,6 +21,7 @@ On error the footer's *status* field is ``"error"`` and an ``"error"`` field is 
 
 File path: ``{output_dir}/subagents/{call_id}.stream.jsonl``
 """
+
 import json
 import os
 import threading
@@ -76,16 +77,17 @@ class SubAgentStreamWriter:
             self._agent_tag = agent_tag
             try:
                 self._file = open(self._path, 'w', encoding='utf-8')
-                self._write_line({
-                    'type': 'header',
-                    'call_id': self._call_id,
-                    'tool_name': self._tool_name,
-                    'agent_tag': agent_tag or '',
-                    'ts': _now_iso(),
-                })
+                self._write_line(
+                    {
+                        'type': 'header',
+                        'call_id': self._call_id,
+                        'tool_name': self._tool_name,
+                        'agent_tag': agent_tag or '',
+                        'ts': _now_iso(),
+                    }
+                )
             except Exception as exc:
-                logger.warning(
-                    'SubAgentStreamWriter: failed to open %s: %s', self._path, exc)
+                logger.warning('SubAgentStreamWriter: failed to open %s: %s', self._path, exc)
                 self._file = None
 
     def on_chunk(self, history: Any) -> None:
@@ -102,13 +104,15 @@ class SubAgentStreamWriter:
         with self._lock:
             if self._closed or self._file is None:
                 return
-            for msg in messages[self._last_written_count:]:
-                self._write_line({
-                    'type': 'message',
-                    'index': self._last_written_count,
-                    'message': _msg_to_dict(msg),
-                    'ts': _now_iso(),
-                })
+            for msg in messages[self._last_written_count :]:
+                self._write_line(
+                    {
+                        'type': 'message',
+                        'index': self._last_written_count,
+                        'message': _msg_to_dict(msg),
+                        'ts': _now_iso(),
+                    }
+                )
                 self._last_written_count += 1
 
     def on_end(self, history: Any) -> None:
@@ -125,19 +129,20 @@ class SubAgentStreamWriter:
             self._closed = True
             if self._file is not None:
                 try:
-                    self._write_line({
-                        'type': 'footer',
-                        'call_id': self._call_id,
-                        'agent_tag': self._agent_tag or '',
-                        'status': 'complete',
-                        'total_messages': self._last_written_count,
-                        'ts': _now_iso(),
-                    })
+                    self._write_line(
+                        {
+                            'type': 'footer',
+                            'call_id': self._call_id,
+                            'agent_tag': self._agent_tag or '',
+                            'status': 'complete',
+                            'total_messages': self._last_written_count,
+                            'ts': _now_iso(),
+                        }
+                    )
                     self._file.flush()
                     self._file.close()
                 except Exception as exc:
-                    logger.warning(
-                        'SubAgentStreamWriter: close error on %s: %s', self._path, exc)
+                    logger.warning('SubAgentStreamWriter: close error on %s: %s', self._path, exc)
                 finally:
                     self._file = None
 
@@ -153,15 +158,17 @@ class SubAgentStreamWriter:
             self._closed = True
             if self._file is not None:
                 try:
-                    self._write_line({
-                        'type': 'footer',
-                        'call_id': self._call_id,
-                        'agent_tag': self._agent_tag or '',
-                        'status': 'error',
-                        'error': error,
-                        'total_messages': self._last_written_count,
-                        'ts': _now_iso(),
-                    })
+                    self._write_line(
+                        {
+                            'type': 'footer',
+                            'call_id': self._call_id,
+                            'agent_tag': self._agent_tag or '',
+                            'status': 'error',
+                            'error': error,
+                            'total_messages': self._last_written_count,
+                            'ts': _now_iso(),
+                        }
+                    )
                     self._file.flush()
                     self._file.close()
                 except Exception:

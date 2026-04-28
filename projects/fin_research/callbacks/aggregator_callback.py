@@ -3,19 +3,19 @@ import os
 import re
 from typing import List
 
+from omegaconf import DictConfig
+
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback
 from ms_agent.llm.utils import Message
 from ms_agent.tools.filesystem_tool import FileSystemTool
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
 
 logger = get_logger()
 
 
 class AggregatorCallback(Callback):
-    """Save output plan to local disk.
-    """
+    """Save output plan to local disk."""
 
     def __init__(self, config: DictConfig):
         super().__init__(config)
@@ -37,7 +37,8 @@ class AggregatorCallback(Callback):
                         r'\s*\[ACT=(?:outline|partial_report|final_report)\]\s*:?\s*.*?(?:\n|\.)',
                         '',
                         message.content,
-                        flags=re.MULTILINE).strip()
+                        flags=re.MULTILINE,
+                    ).strip()
                     f.write(filtered_content)
                 break
         logger.info(f'Aggregator report saved to {self.report_path}')

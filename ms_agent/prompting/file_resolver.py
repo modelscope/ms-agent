@@ -24,15 +24,14 @@ class PromptFileSpec:
 
         paths = []
         if family:
-            paths.extend([
-                os.path.join(root, agent, lang, f'{family}.txt'),
-                os.path.join(root, agent, lang, f'{family}.md'),
-            ])
+            paths.extend(
+                [
+                    os.path.join(root, agent, lang, f'{family}.txt'),
+                    os.path.join(root, agent, lang, f'{family}.md'),
+                ]
+            )
         # base fallback
-        paths.extend([
-            os.path.join(root, agent, lang, 'base.txt'),
-            os.path.join(root, agent, lang, 'base.md')
-        ])
+        paths.extend([os.path.join(root, agent, lang, 'base.txt'), os.path.join(root, agent, lang, 'base.md')])
         return paths
 
 
@@ -135,18 +134,15 @@ def _get_prompt_lang_and_family(config: DictConfig) -> Tuple[str, str]:
     prompt_cfg = getattr(config, 'prompt', None)
 
     # lang
-    env_lang = os.environ.get('MS_AGENT_PROMPT_LANG') or os.environ.get(
-        'MS_AGENT_LANG')
-    cfg_lang = getattr(prompt_cfg, 'lang', None) if isinstance(
-        prompt_cfg, DictConfig) else None
+    env_lang = os.environ.get('MS_AGENT_PROMPT_LANG') or os.environ.get('MS_AGENT_LANG')
+    cfg_lang = getattr(prompt_cfg, 'lang', None) if isinstance(prompt_cfg, DictConfig) else None
     lang = _norm_lang(cfg_lang or env_lang or 'zh')
 
     # family
     env_family = os.environ.get('MS_AGENT_PROMPT_FAMILY')
-    cfg_family = getattr(prompt_cfg, 'family', None) if isinstance(
-        prompt_cfg, DictConfig) else None
+    cfg_family = getattr(prompt_cfg, 'family', None) if isinstance(prompt_cfg, DictConfig) else None
 
-    family = (cfg_family or env_family or 'auto')
+    family = cfg_family or env_family or 'auto'
     family = str(family).strip()
     if not family:
         family = 'auto'
@@ -226,7 +222,6 @@ def apply_prompt_files(config: DictConfig) -> DictConfig:
 
     if not hasattr(config, 'prompt') or config.prompt is None:
         config.prompt = DictConfig({})
-    if getattr(config.prompt, 'system', None) is None or not str(
-            getattr(config.prompt, 'system', '')).strip():
+    if getattr(config.prompt, 'system', None) is None or not str(getattr(config.prompt, 'system', '')).strip():
         config.prompt.system = prompt_text
     return config

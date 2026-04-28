@@ -6,6 +6,7 @@ from typing import List, Tuple
 
 import faiss
 import numpy as np
+
 from ms_agent.utils.tokenizer_util import TokenizerUtil
 
 os.environ['OMP_NUM_THREADS'] = '1'
@@ -18,10 +19,7 @@ class BM25Retriever:
     Sparse retriever based on BM25 algorithm.
     """
 
-    def __init__(self,
-                 tokenized_corpus: List[List[str]],
-                 k1: float = 1.5,
-                 b: float = 0.75):
+    def __init__(self, tokenized_corpus: List[List[str]], k1: float = 1.5, b: float = 0.75):
         self.k1 = k1
         self.b = b
         self.corpus_size = len(tokenized_corpus)
@@ -50,8 +48,7 @@ class BM25Retriever:
         self.avgdl = total_length / doc_count if doc_count > 0 else 0
 
         for word, freq in self.idf.items():
-            self.idf[word] = math.log((self.corpus_size - freq + 0.5)
-                                      / (freq + 0.5) + 1)
+            self.idf[word] = math.log((self.corpus_size - freq + 0.5) / (freq + 0.5) + 1)
 
         for doc_tokens in tokenized_corpus:
             freqs = {}
@@ -68,11 +65,11 @@ class BM25Retriever:
             idf_score = self.idf[token]
             for index, doc_freqs in enumerate(self.doc_term_freqs):
                 freq = doc_freqs.get(token, 0)
-                if freq == 0: continue  # noqa: E701
+                if freq == 0:
+                    continue  # noqa: E701
                 doc_len = self.doc_len[index]
                 numerator = freq * (self.k1 + 1)
-                denominator = freq + self.k1 * (
-                    1 - self.b + self.b * (doc_len / self.avgdl))  # noqa: W504
+                denominator = freq + self.k1 * (1 - self.b + self.b * (doc_len / self.avgdl))  # noqa: W504
                 scores[index] += idf_score * (numerator / denominator)
         return scores
 
@@ -83,13 +80,13 @@ class HybridRetriever:
     """
 
     def __init__(
-            self,
-            corpus: List[str] = None,
-            embed_model:
-        str = 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',  # noqa
-            tokenizer_model_id: str = 'Qwen/Qwen3-8B',
-            bm25_k1: float = 1.5,
-            bm25_b: float = 0.75):
+        self,
+        corpus: List[str] = None,
+        embed_model: str = 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',  # noqa
+        tokenizer_model_id: str = 'Qwen/Qwen3-8B',
+        bm25_k1: float = 1.5,
+        bm25_b: float = 0.75,
+    ):
         """
         Initialize Hybrid Retriever with both Dense and Sparse indices.
 
@@ -149,10 +146,8 @@ class HybridRetriever:
         # Initialize Dense Retriever (FAISS)
         embed_model_path: str = self._load_model(
             model_id=embed_model,
-            ignore_patterns=[
-                'openvino/*', 'onnx/*', 'pytorch_model.bin', 'rust_model.ot',
-                'tf_model.h5'
-            ])
+            ignore_patterns=['openvino/*', 'onnx/*', 'pytorch_model.bin', 'rust_model.ot', 'tf_model.h5'],
+        )
 
         from sentence_transformers import SentenceTransformer
 
@@ -171,15 +166,11 @@ class HybridRetriever:
         from modelscope import snapshot_download
 
         try:
-            return snapshot_download(
-                model_id=model_id, ignore_patterns=ignore_patterns)
+            return snapshot_download(model_id=model_id, ignore_patterns=ignore_patterns)
         except Exception as e:
             raise RuntimeError(f'Failed to load model {model_id}: {e}') from e
 
-    def _init_corpus(self,
-                     corpus: List[str],
-                     bm25_k1: float = 1.5,
-                     bm25_b: float = 0.75):
+    def _init_corpus(self, corpus: List[str], bm25_k1: float = 1.5, bm25_b: float = 0.75):
         """
         Initialize corpus and build both Dense and Sparse indices.
 
@@ -204,9 +195,7 @@ class HybridRetriever:
 
         # Initialize Sparse Retriever (BM25)
         print('Building BM25 index...')
-        self.tokenized_corpus = [
-            self.tokenizer_util.segment(doc) for doc in self.corpus
-        ]
+        self.tokenized_corpus = [self.tokenizer_util.segment(doc) for doc in self.corpus]
         self.bm25 = BM25Retriever(
             tokenized_corpus=self.tokenized_corpus,
             k1=bm25_k1,
@@ -223,17 +212,17 @@ class HybridRetriever:
         faiss.normalize_L2(embeddings)
         self.index = faiss.IndexFlatIP(embeddings.shape[1])
         self.index.add(embeddings)
-        print(
-            f'Successfully indexed {len(texts)} documents for Dense Retrieval.'
-        )
+        print(f'Successfully indexed {len(texts)} documents for Dense Retrieval.')
 
     @staticmethod
     def _z_score_normalization(scores: List[float]) -> List[float]:
         """Apply Z-score normalization: z = (x - mean) / std."""
-        if not scores: return []  # noqa: E701
+        if not scores:
+            return []  # noqa: E701
         arr = np.array(scores)
         std = np.std(arr)
-        if std == 0: return [0.0] * len(scores)  # noqa: E701
+        if std == 0:
+            return [0.0] * len(scores)  # noqa: E701
         mean = np.mean(arr)
         return ((arr - mean) / std).tolist()
 
@@ -257,9 +246,7 @@ class HybridRetriever:
             if corpus is not None and corpus != self.corpus:
                 self._init_corpus(corpus=corpus)
             elif self.corpus is None:
-                raise ValueError(
-                    'Corpus is empty. Please provide a valid corpus for searching.'
-                )
+                raise ValueError('Corpus is empty. Please provide a valid corpus for searching.')
             if self.index is None:
                 raise ValueError('Index not built.')
 
@@ -278,11 +265,7 @@ class HybridRetriever:
         search_k: int = min(len(self.corpus), 500)
         dense_dists, dense_indices = self.index.search(x=query_vec, k=search_k)
 
-        dense_scores_map = {
-            idx: float(score)
-            for idx, score in zip(dense_indices[0], dense_dists[0])
-            if idx != -1
-        }
+        dense_scores_map = {idx: float(score) for idx, score in zip(dense_indices[0], dense_dists[0]) if idx != -1}
         return [dense_scores_map.get(i, 0.0) for i in range(len(self.corpus))]
 
     def _compute_sparse_scores(self, query: str) -> List[float]:
@@ -394,8 +377,7 @@ class HybridRetriever:
         raw_bm25_scores = self._compute_sparse_scores(query)
 
         # Fuse and normalize scores
-        candidates = self._fuse_and_normalize_scores(raw_dense_scores,
-                                                     raw_bm25_scores, alpha)
+        candidates = self._fuse_and_normalize_scores(raw_dense_scores, raw_bm25_scores, alpha)
 
         # Filter and rank results
         return self._filter_and_rank(candidates, top_k, min_score)
@@ -432,12 +414,10 @@ class HybridRetriever:
         dense_task = asyncio.to_thread(self._compute_dense_scores, query)
         sparse_task = asyncio.to_thread(self._compute_sparse_scores, query)
 
-        raw_dense_scores, raw_bm25_scores = await asyncio.gather(
-            dense_task, sparse_task)
+        raw_dense_scores, raw_bm25_scores = await asyncio.gather(dense_task, sparse_task)
 
         # Fuse and normalize scores
-        candidates = self._fuse_and_normalize_scores(raw_dense_scores,
-                                                     raw_bm25_scores, alpha)
+        candidates = self._fuse_and_normalize_scores(raw_dense_scores, raw_bm25_scores, alpha)
 
         # Filter and rank results
         return self._filter_and_rank(candidates, top_k, min_score)

@@ -18,7 +18,6 @@ class Spec:
     implementation: str = ''
 
     def __post_init__(self):
-
         if not self.plan:
             self.plan = DEFAULT_PLAN
 
@@ -41,20 +40,13 @@ class Spec:
         output_path: str = os.path.join(output_dir, '.spec')
         os.makedirs(output_path, exist_ok=True)
 
-        with open(
-                os.path.join(output_path, 'plan.md'), 'w',
-                encoding='utf-8') as f:
+        with open(os.path.join(output_path, 'plan.md'), 'w', encoding='utf-8') as f:
             f.write(self.plan)
 
-        with open(
-                os.path.join(output_path, 'tasks.md'), 'w',
-                encoding='utf-8') as f:
+        with open(os.path.join(output_path, 'tasks.md'), 'w', encoding='utf-8') as f:
             f.write(self.tasks)
 
-        with open(
-                os.path.join(output_path, 'implementation.md'),
-                'w',
-                encoding='utf-8') as f:
+        with open(os.path.join(output_path, 'implementation.md'), 'w', encoding='utf-8') as f:
             f.write(self.implementation)
 
         return output_path

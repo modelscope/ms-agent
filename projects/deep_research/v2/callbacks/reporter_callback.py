@@ -1,19 +1,19 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 # yapf: disable
+import json
 import os
 import re
 import shutil
 from typing import Any, Dict, List, Optional, Set
 
-import json
-from callbacks.quality_checker import (ReportQualityChecker,
-                                       build_quality_checkers)
+from omegaconf import DictConfig
+
+from callbacks.quality_checker import ReportQualityChecker, build_quality_checkers
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback
 from ms_agent.llm.utils import Message
 from ms_agent.utils import get_logger
 from ms_agent.utils.constants import DEFAULT_MEMORY_DIR
-from omegaconf import DictConfig
 
 logger = get_logger()
 
@@ -446,7 +446,7 @@ class ReporterCallback(Callback):
                     lines.append('')
 
             elif role == 'tool':
-                lines.append(f'{labels["tool_result"]} ({tool_name})')
+                lines.append(f'{labels['tool_result']} ({tool_name})')
                 # Truncate very long tool results
                 if content and len(content) > 20000:
                     content = content[:20000] + '\n...(truncated)'
@@ -485,7 +485,7 @@ class ReporterCallback(Callback):
 
                 labels = self._TRAJECTORY_LABELS.get(
                     self.lang, self._TRAJECTORY_LABELS['en'])
-                trajectory_str = (f'{labels["trajectory_intro"]}\n\n'
+                trajectory_str = (f'{labels['trajectory_intro']}\n\n'
                                   f'{trajectory_text}')
 
                 if messages[insert_pos].role == 'user':

@@ -21,9 +21,7 @@ class SkillLoader:
         self.loaded_skills: Dict[str, SkillSchema] = {}
         self.parser = SkillSchemaParser()
 
-    def load_skills(
-        self, skills: Union[str, List[str], List[SkillSchema]]
-    ) -> Dict[str, SkillSchema]:
+    def load_skills(self, skills: Union[str, List[str], List[SkillSchema]]) -> Dict[str, SkillSchema]:
         """
         Load agent skills from various sources.
 
@@ -42,30 +40,27 @@ class SkillLoader:
             return all_skills
 
         def is_skill_id(s: str) -> bool:
-            return '/' in s and len(s.split('/')) == 2 and all(
-                s.split('/')) and not os.path.exists(s)
+            return '/' in s and len(s.split('/')) == 2 and all(s.split('/')) and not os.path.exists(s)
 
         if isinstance(skills, str):
             # Could be a single skill path, root path of skills, or skill ID on ModelScope hub
             skill_list = [skills]
-        elif all(isinstance(s, str) for s in skills) or all(
-                isinstance(s, SkillSchema) for s in skills):
+        elif all(isinstance(s, str) for s in skills) or all(isinstance(s, SkillSchema) for s in skills):
             skill_list = skills
         else:
             raise ValueError('Invalid skills input type.')
 
         for skill in skill_list:
-
             if is_skill_id(skill):
                 from modelscope import snapshot_download
+
                 skill_path: str = snapshot_download(repo_id=skill)
                 skill = skill_path
 
             if isinstance(skill, SkillSchema):
                 skill_key = self._get_skill_key(skill=skill)
                 all_skills[skill_key] = skill
-                logger.info(
-                    f'Loaded skill from SkillSchema object: {skill_key}')
+                logger.info(f'Loaded skill from SkillSchema object: {skill_key}')
                 continue
 
             skill_dir: Path = Path(skill)
@@ -81,8 +76,7 @@ class SkillLoader:
                     all_skills[skill_key] = skill_schema
                     # logger.info(f'Successfully loaded skill: {skill_key}')
             else:
-                skill_schema_dict: Dict[
-                    str, SkillSchema] = self._scan_and_load_skills(skill_dir)
+                skill_schema_dict: Dict[str, SkillSchema] = self._scan_and_load_skills(skill_dir)
                 all_skills.update(skill_schema_dict)
 
         self.loaded_skills.update(all_skills)
@@ -227,9 +221,7 @@ class SkillLoader:
         return skill
 
 
-def load_skills(
-    skills: Union[str, List[str],
-                  List[SkillSchema]]) -> Dict[str, SkillSchema]:
+def load_skills(skills: Union[str, List[str], List[SkillSchema]]) -> Dict[str, SkillSchema]:
     """
     Convenience function to load skills without creating a SkillLoader instance.
 

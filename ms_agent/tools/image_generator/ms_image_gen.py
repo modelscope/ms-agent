@@ -1,33 +1,27 @@
 import asyncio
+import json
 import os
 import uuid
 from io import BytesIO
 
-import json
 from PIL import Image
 
 
 class MSImageGenerator:
-
     def __init__(self, config, temp_dir):
         self.config = config
         self.temp_dir = temp_dir
         os.makedirs(self.temp_dir, exist_ok=True)
 
-    async def generate_image(self,
-                             positive_prompt,
-                             negative_prompt=None,
-                             size=None,
-                             **kwargs):
+    async def generate_image(self, positive_prompt, negative_prompt=None, size=None, **kwargs):
         import aiohttp
+
         image_generator = self.config.tools.image_generator
-        base_url = (getattr(image_generator, 'base_url', None)
-                    or 'https://api-inference.modelscope.cn').strip('/')
+        base_url = (getattr(image_generator, 'base_url', None) or 'https://api-inference.modelscope.cn').strip('/')
         api_key = image_generator.api_key
         model_id = image_generator.model
         assert api_key is not None
-        output_file = os.path.join(self.temp_dir,
-                                   f'{str(uuid.uuid4())[:8]}.png')
+        output_file = os.path.join(self.temp_dir, f'{str(uuid.uuid4())[:8]}.png')
 
         headers = {
             'Authorization': f'Bearer {api_key}',
@@ -36,18 +30,18 @@ class MSImageGenerator:
 
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                    f'{base_url}/v1/images/generations',
-                    headers={
-                        **headers, 'X-ModelScope-Async-Mode': 'true'
+                f'{base_url}/v1/images/generations',
+                headers={**headers, 'X-ModelScope-Async-Mode': 'true'},
+                data=json.dumps(
+                    {
+                        'model': model_id,
+                        'prompt': positive_prompt,
+                        'negative_prompt': negative_prompt or '',
+                        'size': size or '',
                     },
-                    data=json.dumps(
-                        {
-                            'model': model_id,
-                            'prompt': positive_prompt,
-                            'negative_prompt': negative_prompt or '',
-                            'size': size or '',
-                        },
-                        ensure_ascii=False)) as resp:
+                    ensure_ascii=False,
+                ),
+            ) as resp:
                 resp.raise_for_status()
                 task_id = (await resp.json())['task_id']
 
@@ -61,11 +55,8 @@ class MSImageGenerator:
                 elapsed_time += poll_interval
 
                 async with session.get(
-                        f'{base_url}/v1/tasks/{task_id}',
-                        headers={
-                            **headers, 'X-ModelScope-Task-Type':
-                            'image_generation'
-                        }) as result:
+                    f'{base_url}/v1/tasks/{task_id}', headers={**headers, 'X-ModelScope-Task-Type': 'image_generation'}
+                ) as result:
                     result.raise_for_status()
                     data = await result.json()
 
@@ -82,5 +73,5 @@ class MSImageGenerator:
 
                 poll_interval = min(poll_interval * 1.5, max_poll_interval)
             return (
-                f'Retrieval timeout, consider retry the task, or waiting for '
-                f'longer time(current is {max_wait_time}s).')
+                f'Retrieval timeout, consider retry the task, or waiting for longer time(current is {max_wait_time}s).'
+            )

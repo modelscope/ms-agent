@@ -3,10 +3,11 @@ import os
 from collections import defaultdict, deque
 from typing import Any, Dict, List, Set
 
+from omegaconf import DictConfig
+
 from ms_agent.agent.loader import AgentLoader
 from ms_agent.utils import get_logger
 from ms_agent.workflow.base import Workflow
-from omegaconf import DictConfig
 
 logger = get_logger()
 
@@ -37,9 +38,7 @@ class DagWorkflow(Workflow):
         self.nodes = set(list(self.graph.keys()) + list(indegree.keys()))
 
         # Find root tasks (indegree==0)
-        self.roots = [
-            t for t in tasks if 'next' in self.config[t] and indegree[t] == 0
-        ]
+        self.roots = [t for t in tasks if 'next' in self.config[t] and indegree[t] == 0]
         if not self.roots:
             raise ValueError('No root task found for DagWorkflow')
 
@@ -76,12 +75,10 @@ class DagWorkflow(Workflow):
                 task_input = inputs
             else:
                 parent_outs = [outputs[p] for p in self.parents[task]]
-                task_input = parent_outs if len(
-                    parent_outs) > 1 else parent_outs[0]
+                task_input = parent_outs if len(parent_outs) > 1 else parent_outs[0]
 
             task_info: DictConfig = getattr(self.config, task)
-            agent_cfg_path = os.path.join(self.config.local_dir,
-                                          task_info.agent_config)
+            agent_cfg_path = os.path.join(self.config.local_dir, task_info.agent_config)
             if not hasattr(task_info, 'agent'):
                 task_info.agent = DictConfig({})
             init_args = getattr(task_info.agent, 'kwargs', {})
@@ -98,8 +95,5 @@ class DagWorkflow(Workflow):
             outputs[task] = result
 
         # Return results of terminal nodes (no outgoing edges)
-        terminals = [
-            t for t in self.config.keys()
-            if t not in self.graph and t in self.nodes
-        ]
+        terminals = [t for t in self.config.keys() if t not in self.graph and t in self.nodes]
         return {t: outputs[t] for t in terminals}

@@ -3,18 +3,15 @@ import uuid
 
 
 class GoogleImageGenerator:
-
     def __init__(self, config, temp_dir):
         self.config = config
         self.temp_dir = temp_dir
         os.makedirs(self.temp_dir, exist_ok=True)
 
-    async def generate_image(self,
-                             positive_prompt,
-                             negative_prompt=None,
-                             **kwargs):
+    async def generate_image(self, positive_prompt, negative_prompt=None, **kwargs):
         # TODO not tested
         from google import genai
+
         image_generator = self.config.tools.image_generator
         api_key = image_generator.api_key
         model_id = image_generator.model

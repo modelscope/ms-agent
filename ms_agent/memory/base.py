@@ -2,9 +2,10 @@
 from abc import ABC, abstractmethod
 from typing import List
 
+from omegaconf import DictConfig
+
 from ms_agent.llm.utils import Message
 from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR
-from omegaconf import DictConfig
 
 
 class Memory(ABC):
@@ -12,8 +13,7 @@ class Memory(ABC):
 
     def __init__(self, config):
         self.config = config
-        self.output_dir = getattr(self.config, 'output_dir',
-                                  DEFAULT_OUTPUT_DIR)
+        self.output_dir = getattr(self.config, 'output_dir', DEFAULT_OUTPUT_DIR)
         self.base_config = None
 
     @abstractmethod

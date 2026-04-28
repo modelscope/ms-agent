@@ -3,15 +3,15 @@ import os
 from abc import abstractmethod
 from typing import Any, Dict, List, Optional
 
-from ms_agent.config import Config
 from omegaconf import DictConfig
+
+from ms_agent.config import Config
 
 from ..utils.constants import DEFAULT_RETRY_COUNT
 from .utils import Message, Tool
 
 
 class LLM:
-
     retry_count = int(os.environ.get('LLM_RETRY_COUNT', DEFAULT_RETRY_COUNT))
 
     def __init__(self, config: DictConfig):
@@ -23,11 +23,9 @@ class LLM:
         self.config = config
 
     @abstractmethod
-    def generate(self,
-                 messages: List[Message],
-                 model: Optional[str] = None,
-                 tools: Optional[List[Tool]] = None,
-                 **kwargs) -> Any:
+    def generate(
+        self, messages: List[Message], model: Optional[str] = None, tools: Optional[List[Tool]] = None, **kwargs
+    ) -> Any:
         """Generate response by the given messages.
 
         Args:
@@ -42,10 +40,7 @@ class LLM:
         pass
 
     @classmethod
-    def from_task(cls,
-                  config_dir_or_id: str,
-                  *,
-                  env: Optional[Dict[str, str]] = None) -> Any:
+    def from_task(cls, config_dir_or_id: str, *, env: Optional[Dict[str, str]] = None) -> Any:
         """Instantiate an LLM instance.
 
         Args:
@@ -69,7 +64,8 @@ class LLM:
         Returns:
             The LLM instance.
         """
-        from .model_mapping import all_services_mapping, OpenAI
+        from .model_mapping import OpenAI, all_services_mapping
+
         if config.llm.get('service') in all_services_mapping:
             return all_services_mapping[config.llm.service](config)
         else:

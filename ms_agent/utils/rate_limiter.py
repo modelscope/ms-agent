@@ -73,8 +73,7 @@ class RateLimiter:
             elapsed = now - self._last_request_time
             if elapsed < self.min_request_interval:
                 wait_time = self.min_request_interval - elapsed
-                logger.debug(
-                    f'Enforcing min interval: waiting {wait_time:.3f}s')
+                logger.debug(f'Enforcing min interval: waiting {wait_time:.3f}s')
                 await asyncio.sleep(wait_time)
                 now = time.time()
 
@@ -88,18 +87,14 @@ class RateLimiter:
             # If rate limit reached, wait until oldest request expires
             if len(self._request_times) >= self.max_requests_per_second:
                 oldest_request = self._request_times[0]
-                wait_time = 1.0 - (now
-                                   - oldest_request) + 0.01  # Add 10ms margin
+                wait_time = 1.0 - (now - oldest_request) + 0.01  # Add 10ms margin
                 if wait_time > 0:
-                    logger.debug(
-                        f'Rate limit reached ({self.max_requests_per_second} req/s): '
-                        f'waiting {wait_time:.3f}s')
+                    logger.debug(f'Rate limit reached ({self.max_requests_per_second} req/s): waiting {wait_time:.3f}s')
                     await asyncio.sleep(wait_time)
                     now = time.time()
                     # Clean up expired records
                     cutoff_time = now - 1.0
-                    while self._request_times and self._request_times[
-                            0] < cutoff_time:
+                    while self._request_times and self._request_times[0] < cutoff_time:
                         self._request_times.popleft()
 
             # Record this request time
@@ -140,23 +135,15 @@ class RateLimiter:
         with self._lock:
             now = time.time()
             cutoff_time = now - 1.0
-            recent_requests = sum(1 for t in self._request_times
-                                  if t >= cutoff_time)
+            recent_requests = sum(1 for t in self._request_times if t >= cutoff_time)
 
             return {
-                'max_requests_per_second':
-                self.max_requests_per_second,
-                'min_request_interval':
-                self.min_request_interval,
-                'max_concurrent':
-                self.max_concurrent,
-                'recent_requests_count':
-                recent_requests,
-                'available_concurrent_slots':
-                self._semaphore._value,
-                'last_request_ago':
-                now - self._last_request_time
-                if self._last_request_time > 0 else None,
+                'max_requests_per_second': self.max_requests_per_second,
+                'min_request_interval': self.min_request_interval,
+                'max_concurrent': self.max_concurrent,
+                'recent_requests_count': recent_requests,
+                'available_concurrent_slots': self._semaphore._value,
+                'last_request_ago': now - self._last_request_time if self._last_request_time > 0 else None,
             }
 
     def reset(self):
@@ -215,7 +202,8 @@ class AdaptiveRateLimiter(RateLimiter):
 
         logger.info(
             f'AdaptiveRateLimiter initialized: {initial_requests_per_second} req/s '
-            f'(range: {min_requests_per_second}-{max_requests_per_second})')
+            f'(range: {min_requests_per_second}-{max_requests_per_second})'
+        )
 
     def record_success(self):
         """Record successful request"""
@@ -227,13 +215,13 @@ class AdaptiveRateLimiter(RateLimiter):
             # Consecutive successes reached threshold, attempt to increase rate
             if self._consecutive_successes >= self._success_threshold:
                 old_rps = self.max_requests_per_second
-                new_rps = min(
-                    round(old_rps * self._recovery_factor), self._max_rps)
+                new_rps = min(round(old_rps * self._recovery_factor), self._max_rps)
                 if new_rps > old_rps:
                     self.max_requests_per_second = new_rps
                     logger.info(
                         f'Rate limit increased: {old_rps} → {new_rps} req/s '
-                        f'(after {self._consecutive_successes} successes)')
+                        f'(after {self._consecutive_successes} successes)'
+                    )
                 self._consecutive_successes = 0
 
     def record_error(self, is_rate_limit_error: bool = False):
@@ -252,46 +240,41 @@ class AdaptiveRateLimiter(RateLimiter):
             # If rate limit error, immediately reduce rate
             if is_rate_limit_error:
                 old_rps = self.max_requests_per_second
-                new_rps = max(
-                    int(old_rps * self._backoff_factor), self._min_rps)
+                new_rps = max(int(old_rps * self._backoff_factor), self._min_rps)
                 if new_rps < old_rps:
                     self.max_requests_per_second = new_rps
                     # Also increase minimum request interval
-                    self.min_request_interval = min(
-                        self.min_request_interval * 1.5, 2.0)
+                    self.min_request_interval = min(self.min_request_interval * 1.5, 2.0)
                     logger.warning(
                         f'Rate limit error detected! Reducing rate: {old_rps} → {new_rps} req/s, '
-                        f'min_interval → {self.min_request_interval:.2f}s')
+                        f'min_interval → {self.min_request_interval:.2f}s'
+                    )
                 self._consecutive_errors = 0
 
             # Consecutive errors reached threshold, reduce rate
             elif self._consecutive_errors >= self._error_threshold:
                 old_rps = self.max_requests_per_second
-                new_rps = max(
-                    int(old_rps * self._backoff_factor), self._min_rps)
+                new_rps = max(int(old_rps * self._backoff_factor), self._min_rps)
                 if new_rps < old_rps:
                     self.max_requests_per_second = new_rps
                     logger.warning(
                         f'Multiple errors detected! Reducing rate: {old_rps} → {new_rps} req/s '
-                        f'(after {self._consecutive_errors} errors)')
+                        f'(after {self._consecutive_errors} errors)'
+                    )
                 self._consecutive_errors = 0
 
     def get_stats(self) -> dict:
         """Get extended statistics"""
         stats = super().get_stats()
         with self._lock:
-            stats.update({
-                'total_requests':
-                self._total_requests,
-                'total_errors':
-                self._total_errors,
-                'error_rate':
-                self._total_errors / max(self._total_requests, 1),
-                'consecutive_successes':
-                self._consecutive_successes,
-                'consecutive_errors':
-                self._consecutive_errors,
-                'current_requests_per_second':
-                self.max_requests_per_second,
-            })
+            stats.update(
+                {
+                    'total_requests': self._total_requests,
+                    'total_errors': self._total_errors,
+                    'error_rate': self._total_errors / max(self._total_requests, 1),
+                    'consecutive_successes': self._consecutive_successes,
+                    'consecutive_errors': self._consecutive_errors,
+                    'current_requests_per_second': self.max_requests_per_second,
+                }
+            )
         return stats

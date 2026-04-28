@@ -16,9 +16,7 @@ memory_mapping = {
 }
 
 
-def get_memory_meta_safe(config: DictConfig,
-                         key: str,
-                         default_user_id: str | None = None):
+def get_memory_meta_safe(config: DictConfig, key: str, default_user_id: str | None = None):
     if not hasattr(config, key):
         return None, None, None, None
     trigger_config = getattr(config, key, OmegaConf.create({}))

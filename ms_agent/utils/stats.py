@@ -1,11 +1,11 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import asyncio
+import json
 import os
 import time
 from datetime import datetime
 from typing import Any, Dict, Iterable, Optional
 
-import json
 from ms_agent.llm.utils import Message
 
 from .logger import get_logger
@@ -23,8 +23,7 @@ def _get_lock(path: str) -> asyncio.Lock:
     return lock
 
 
-def get_stats_path(config: Any,
-                   default_filename: str = 'workflow_stats.json') -> str:
+def get_stats_path(config: Any, default_filename: str = 'workflow_stats.json') -> str:
     stats_file = getattr(config, 'stats_file', None)
     output_dir = getattr(config, 'output_dir', './output')
     if stats_file:
@@ -47,8 +46,7 @@ def summarize_usage(messages: Optional[Iterable[Message]]) -> Dict[str, int]:
             prompt_tokens += int(getattr(msg, 'prompt_tokens', 0) or 0)
             completion_tokens += int(getattr(msg, 'completion_tokens', 0) or 0)
             cached_tokens += int(getattr(msg, 'cached_tokens', 0) or 0)
-            cache_creation_input_tokens += int(
-                getattr(msg, 'cache_creation_input_tokens', 0) or 0)
+            cache_creation_input_tokens += int(getattr(msg, 'cache_creation_input_tokens', 0) or 0)
             api_calls += int(getattr(msg, 'api_calls', 0) or 0)
     return {
         'prompt_tokens': prompt_tokens,
@@ -72,8 +70,7 @@ async def append_stats(path: str, record: Dict[str, Any]) -> None:
                 with open(path, 'r', encoding='utf-8') as f:
                     data = json.load(f) or []
             except Exception as exc:
-                logger.warning(
-                    f'Failed to read stats file {path}, resetting: {exc}')
+                logger.warning(f'Failed to read stats file {path}, resetting: {exc}')
                 data = []
         if not isinstance(data, list):
             data = []
@@ -85,16 +82,17 @@ async def append_stats(path: str, record: Dict[str, Any]) -> None:
 
 
 def build_timing_record(
-        *,
-        event: str,
-        agent_tag: Optional[str],
-        agent_type: Optional[str],
-        started_at: str,
-        ended_at: str,
-        duration_s: float,
-        status: str,
-        usage: Optional[Dict[str, int]] = None,
-        extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    *,
+    event: str,
+    agent_tag: Optional[str],
+    agent_type: Optional[str],
+    started_at: str,
+    ended_at: str,
+    duration_s: float,
+    status: str,
+    usage: Optional[Dict[str, int]] = None,
+    extra: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     record = {
         'event': event,
         'agent_tag': agent_tag,

@@ -1,34 +1,30 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+import json
 import os
 import re
 from pathlib import Path
 from typing import List
 
-import json
+from omegaconf import DictConfig
+
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback
 from ms_agent.llm.utils import Message
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
 
 logger = get_logger()
 
 
 class AnalystCallback(Callback):
-    """Save output plan to local disk.
-    """
+    """Save output plan to local disk."""
 
     def __init__(self, config: DictConfig):
         super().__init__(config)
-        self.report_path = self.config.get(
-            'report_path',
-            os.path.join(self.config.output_dir, 'analysis_report.md'))
+        self.report_path = self.config.get('report_path', os.path.join(self.config.output_dir, 'analysis_report.md'))
 
     def _resolve_data_root(self) -> str:
-        code_exec_cfg = getattr(
-            getattr(self.config, 'tools', {}), 'code_executor', None)
-        impl = getattr(code_exec_cfg, 'implementation',
-                       'sandbox') if code_exec_cfg else 'sandbox'
+        code_exec_cfg = getattr(getattr(self.config, 'tools', {}), 'code_executor', None)
+        impl = getattr(code_exec_cfg, 'implementation', 'sandbox') if code_exec_cfg else 'sandbox'
 
         if isinstance(impl, str) and impl.lower() == 'sandbox':
             return '/data'
@@ -40,8 +36,7 @@ class AnalystCallback(Callback):
         for message in messages:
             if message.role == 'system':
                 message.content = message.content.replace('\\\n', '')
-                message.content = message.content.replace(
-                    '<DATA_ROOT>', self._resolve_data_root())
+                message.content = message.content.replace('<DATA_ROOT>', self._resolve_data_root())
             elif message.role == 'assistant':
                 if '[ACT=summary]' in message.content:
                     summary_messages['collector_summary'] = message.content
@@ -49,32 +44,30 @@ class AnalystCallback(Callback):
                     summary_messages['collector_plan'] = message.content
 
         if os.path.exists(os.path.join(self.config.output_dir, 'plan.json')):
-            with open(os.path.join(self.config.output_dir, 'plan.json'),
-                      'r') as f:
+            with open(os.path.join(self.config.output_dir, 'plan.json'), 'r') as f:
                 plan = json.load(f)
             if not plan:
-                logger.error(
-                    'The plan.json file is empty, please check the file.')
+                logger.error('The plan.json file is empty, please check the file.')
             user_message = Message(
                 role='user',
-                content=
-                (f'The complete plan for the current overall financial analysis task is as follows:\n{plan}\n'
-                 f'Please follow the plan to complete the data analysis task.\n'
-                 f'IMPORTANT: Review the input analysis specification provided under "financial_data_dimension"'
-                 ))
+                content=(
+                    f'The complete plan for the current overall financial analysis task is as follows:\n{plan}\n'
+                    f'Please follow the plan to complete the data analysis task.\n'
+                    f'IMPORTANT: Review the input analysis specification provided under "financial_data_dimension"'
+                ),
+            )
         else:
             user_message = Message(
                 role='user',
-                content=
-                ('Please conduct data analysis in accordance with the research plan followed during the data '
-                 'collection phase and the results obtained from data collection.'
-                 ))
+                content=(
+                    'Please conduct data analysis in accordance with the research plan followed during the data '
+                    'collection phase and the results obtained from data collection.'
+                ),
+            )
 
         # Add the summary of the data collection phase to the user message (add plan if exists)
         if summary_messages['collector_summary']:
-            messages[:] = [
-                message for message in messages if message.role == 'system'
-            ]
+            messages[:] = [message for message in messages if message.role == 'system']
             summary_messages = (
                 f'The summary of the data collection phase is as follows:\n'
                 f'{json.dumps(summary_messages, ensure_ascii=False, indent=2)}'
@@ -86,15 +79,11 @@ class AnalystCallback(Callback):
         for message in messages[::-1]:
             if message.role == 'assistant' and not message.tool_calls:
                 with open(self.report_path, 'w') as f:
-                    filtered_content = re.sub(
-                        r'\s*\[ACT=(?:code|collect|report|fix)\]\s*', '',
-                        message.content).strip()
+                    filtered_content = re.sub(r'\s*\[ACT=(?:code|collect|report|fix)\]\s*', '', message.content).strip()
                     f.write(filtered_content)
                 break
 
         user_message = Message(
-            role='user',
-            content=json.dumps({'report_path': self.report_path},
-                               ensure_ascii=False,
-                               indent=2))
+            role='user', content=json.dumps({'report_path': self.report_path}, ensure_ascii=False, indent=2)
+        )
         messages.append(user_message)

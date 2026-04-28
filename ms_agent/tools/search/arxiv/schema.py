@@ -1,12 +1,11 @@
 # flake8: noqa
-from dataclasses import dataclass, field
-from typing import Any, Dict, Generator, List, Optional
-
 import arxiv
 import json
 from arxiv import SortCriterion, SortOrder
-from ms_agent.tools.search.search_base import (BaseResult, SearchRequest,
-                                               SearchResponse, SearchResult)
+from dataclasses import dataclass, field
+from typing import Any, Dict, Generator, List, Optional
+
+from ms_agent.tools.search.search_base import BaseResult, SearchRequest, SearchResponse, SearchResult
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
@@ -17,15 +16,17 @@ class ArxivSearchRequest(SearchRequest):
     A class representing a search request to ArXiv.
     """
 
-    def __init__(self,
-                 query: str = None,
-                 num_results: Optional[int] = 10,
-                 sort_strategy: SortCriterion = SortCriterion.Relevance,
-                 sort_order: SortOrder = SortOrder.Descending,
-                 categories: Optional[List[str]] = None,
-                 date_from: Optional[str] = None,
-                 date_to: Optional[str] = None,
-                 **kwargs: Any):
+    def __init__(
+        self,
+        query: str = None,
+        num_results: Optional[int] = 10,
+        sort_strategy: SortCriterion = SortCriterion.Relevance,
+        sort_order: SortOrder = SortOrder.Descending,
+        categories: Optional[List[str]] = None,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        **kwargs: Any,
+    ):
         """
         Initialize ArxivSearchRequest with search parameters.
 
@@ -47,12 +48,9 @@ class ArxivSearchRequest(SearchRequest):
         self.sort_strategy_map = {
             'relevance': SortCriterion.Relevance,
             'lastUpdatedDate': SortCriterion.LastUpdatedDate,
-            'submittedDate': SortCriterion.SubmittedDate
+            'submittedDate': SortCriterion.SubmittedDate,
         }
-        self.sort_order_map = {
-            'descending': SortOrder.Descending,
-            'ascending': SortOrder.Ascending
-        }
+        self.sort_order_map = {'descending': SortOrder.Descending, 'ascending': SortOrder.Ascending}
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -61,18 +59,16 @@ class ArxivSearchRequest(SearchRequest):
         Returns:
             Dict[str, Any]: The parameters as a dictionary
         """
-        if isinstance(self.sort_strategy, str) and self.sort_strategy_map.get(
-                self.sort_strategy):
+        if isinstance(self.sort_strategy, str) and self.sort_strategy_map.get(self.sort_strategy):
             self.sort_strategy = self.sort_strategy_map[self.sort_strategy]
-        if isinstance(self.sort_order, str) and self.sort_order_map.get(
-                self.sort_order):
+        if isinstance(self.sort_order, str) and self.sort_order_map.get(self.sort_order):
             self.sort_order = self.sort_order_map[self.sort_order]
 
         return {
             'query': self.query,
             'max_results': self.num_results,
             'sort_by': self.sort_strategy,
-            'sort_order': self.sort_order
+            'sort_order': self.sort_order,
         }
 
     def to_json(self) -> Dict[str, Any]:
@@ -87,18 +83,16 @@ class ArxivSearchRequest(SearchRequest):
                 'query': self.query,
                 'max_results': self.num_results,
                 'sort_strategy': self.sort_strategy.value,
-                'sort_order': self.sort_order.value
+                'sort_order': self.sort_order.value,
             },
-            ensure_ascii=False)
+            ensure_ascii=False,
+        )
 
 
 class ArxivSearchResult(SearchResult):
     """ArXiv search result implementation."""
 
-    def __init__(self,
-                 query: str,
-                 arguments: Dict[str, Any] = None,
-                 response: List['arxiv.Result'] = None):
+    def __init__(self, query: str, arguments: Dict[str, Any] = None, response: List['arxiv.Result'] = None):
         """
         Initialize ArxivSearchResult.
 
@@ -140,21 +134,20 @@ class ArxivSearchResult(SearchResult):
         processed = []
         for res in self.raw_response:
             if not isinstance(res, arxiv.Result):
-                print(
-                    f'***Warning: Result {res} is not an instance of arxiv.Result.'
-                )
+                print(f'***Warning: Result {res} is not an instance of arxiv.Result.')
                 continue
 
             processed.append(
                 BaseResult(
-                    url=getattr(res, 'pdf_url', None)
-                    or getattr(res, 'entry_id', None),
+                    url=getattr(res, 'pdf_url', None) or getattr(res, 'entry_id', None),
                     id=getattr(res, 'entry_id', None),
                     title=getattr(res, 'title', None),
                     highlights=None,
                     highlight_scores=None,
                     summary=getattr(res, 'summary', None),
-                    markdown=None))
+                    markdown=None,
+                )
+            )
 
         return SearchResponse(results=processed)
 
@@ -162,8 +155,7 @@ class ArxivSearchResult(SearchResult):
         """Process the search arguments to be JSON serializable."""
         sort_strategy = self.arguments.get('sort_strategy', None)
         if sort_strategy is None:
-            sort_strategy = self.arguments.get('sort_by',
-                                               SortCriterion.Relevance)
+            sort_strategy = self.arguments.get('sort_by', SortCriterion.Relevance)
         sort_order = self.arguments.get('sort_order', SortOrder.Descending)
 
         if isinstance(sort_strategy, SortCriterion):
@@ -228,31 +220,21 @@ class ArxivSearchResult(SearchResult):
 
             categories = getattr(res, 'categories', None) or []
 
-            res_list.append({
-                'url': (getattr(res, 'pdf_url', None)
-                        or getattr(res, 'entry_id', None) or ''),
-                'id':
-                getattr(res, 'entry_id', None) or '',
-                'title':
-                getattr(res, 'title', None) or '',
-                'published_date':
-                published_date,
-                'summary':
-                getattr(res, 'summary', None) or '',
-                'highlights':
-                None,
-                'highlight_scores':
-                None,
-                'markdown':
-                None,
-                'authors':
-                authors,
-                'categories':
-                categories,
-                'arxiv_id':
-                short_id or '',
-                'resource_uri':
-                f'arxiv://{short_id}' if short_id else '',
-            })
+            res_list.append(
+                {
+                    'url': (getattr(res, 'pdf_url', None) or getattr(res, 'entry_id', None) or ''),
+                    'id': getattr(res, 'entry_id', None) or '',
+                    'title': getattr(res, 'title', None) or '',
+                    'published_date': published_date,
+                    'summary': getattr(res, 'summary', None) or '',
+                    'highlights': None,
+                    'highlight_scores': None,
+                    'markdown': None,
+                    'authors': authors,
+                    'categories': categories,
+                    'arxiv_id': short_id or '',
+                    'resource_uri': f'arxiv://{short_id}' if short_id else '',
+                }
+            )
 
         return res_list

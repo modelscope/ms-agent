@@ -18,6 +18,7 @@ class KeyInformation:
         including images, tables, or other relevant data.
         [{'id': 'doc_file_name@binary_hash@self_ref', 'content': PILImage.Image}, ...]
     """
+
     text: str
 
     resources: List[Dict[str, Any]]

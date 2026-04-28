@@ -1,14 +1,12 @@
 # flake8: noqa
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
-
 import json
+from dataclasses import dataclass, field
 from exa_py.api import SearchResponse
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
 class ExaSearchRequest:
-
     # The search query string
     query: str
 
@@ -44,7 +42,7 @@ class ExaSearchRequest:
             'start_published_date': self.start_published_date,
             'end_published_date': self.end_published_date,
             'start_crawl_date': self.start_crawl_date,
-            'end_crawl_date': self.end_crawl_date
+            'end_crawl_date': self.end_crawl_date,
         }
 
     def to_json(self) -> str:
@@ -56,7 +54,6 @@ class ExaSearchRequest:
 
 @dataclass
 class ExaSearchResult:
-
     # The original search query string
     query: str
 
@@ -81,22 +78,19 @@ class ExaSearchResult:
 
         res_list: List[Any] = []
         for res in self.response.results:
-            res_list.append({
-                'url':
-                getattr(res, 'url', ''),
-                'id':
-                getattr(res, 'id', ''),
-                'title':
-                getattr(res, 'title'),
-                'published_date':
-                getattr(res, 'published_date', ''),
-                'summary':
-                getattr(res, 'summary', ''),
-                # 'text': getattr(res, 'text', ''),
-                # 'highlights': getattr(res, 'highlights', ''),
-                # 'highlight_scores': getattr(res, 'highlight_scores', ''),
-                # 'markdown': getattr(res, 'markdown', ''),
-            })
+            res_list.append(
+                {
+                    'url': getattr(res, 'url', ''),
+                    'id': getattr(res, 'id', ''),
+                    'title': getattr(res, 'title'),
+                    'published_date': getattr(res, 'published_date', ''),
+                    'summary': getattr(res, 'summary', ''),
+                    # 'text': getattr(res, 'text', ''),
+                    # 'highlights': getattr(res, 'highlights', ''),
+                    # 'highlight_scores': getattr(res, 'highlight_scores', ''),
+                    # 'markdown': getattr(res, 'markdown', ''),
+                }
+            )
 
         return res_list
 
@@ -140,18 +134,19 @@ class ExaSearchResult:
         return data
 
 
-def dump_batch_search_results(results: List[ExaSearchResult],
-                              file_path: str) -> None:
+def dump_batch_search_results(results: List[ExaSearchResult], file_path: str) -> None:
     """
     Dump a batch of search results to a local file.
     """
     out_list: List[Dict[str, Any]] = []
     for res in results:
-        out_list.append({
-            'query': res.query,
-            'arguments': res.arguments,
-            'results': res.to_list(),
-        })
+        out_list.append(
+            {
+                'query': res.query,
+                'arguments': res.arguments,
+                'results': res.to_list(),
+            }
+        )
 
     with open(file_path, 'w', encoding='utf-8') as f:
         json.dump(out_list, f, ensure_ascii=False, indent=2)

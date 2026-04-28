@@ -9,14 +9,16 @@ logger = get_logger()
 
 try:
     import ray  # type: ignore
+
     _RAY_AVAILABLE = True
 except Exception:  # pragma: no cover - optional dependency
     ray = None  # type: ignore
     _RAY_AVAILABLE = False
     logger.warning(
         'Ray is not available. Install it for faster information extraction:\n'
-        '    pip install \"ray[default]\"\n'
-        'Program will run without acceleration.')
+        '    pip install "ray[default]"\n'
+        'Program will run without acceleration.'
+    )
 
 
 class InformationExtractionManager:
@@ -24,19 +26,19 @@ class InformationExtractionManager:
     Optimized key information extraction with optional Ray acceleration.
     """
 
-    def __init__(self,
-                 verbose: bool = False,
-                 use_ray: bool = False,
-                 ray_num_workers: Optional[int] = None,
-                 ray_cpus_per_task: float = 1.0):
+    def __init__(
+        self,
+        verbose: bool = False,
+        use_ray: bool = False,
+        ray_num_workers: Optional[int] = None,
+        ray_cpus_per_task: float = 1.0,
+    ):
         self._verbose = verbose
         self._use_ray = use_ray and _RAY_AVAILABLE
         self._ray_num_workers = ray_num_workers
         self._ray_cpus_per_task = ray_cpus_per_task
 
-    def extract(
-        self, urls_or_files: List[str]
-    ) -> Tuple[List[KeyInformation], Dict[str, str]]:
+    def extract(self, urls_or_files: List[str]) -> Tuple[List[KeyInformation], Dict[str, str]]:
         """
         Extract key information from URLs or files.
 
@@ -51,38 +53,27 @@ class InformationExtractionManager:
             try:
                 return self._extract_with_ray(urls_or_files)
             except Exception as e:
-                logger.warning(
-                    f'Ray extraction failed, falling back to sequential: {e}')
+                logger.warning(f'Ray extraction failed, falling back to sequential: {e}')
 
         # Use sequential extraction if Ray is disabled or failed
         if not _RAY_AVAILABLE:
-            logger.warning(
-                'Ray is not available, falling back to sequential extraction.')
+            logger.warning('Ray is not available, falling back to sequential extraction.')
         return self._extract_sequential(urls_or_files)
 
-    def _extract_sequential(
-        self, urls_or_files: List[str]
-    ) -> Tuple[List[KeyInformation], Dict[str, str]]:
+    def _extract_sequential(self, urls_or_files: List[str]) -> Tuple[List[KeyInformation], Dict[str, str]]:
         """Sequential extraction using the original implementation."""
-        extractor = HierarchicalKeyInformationExtraction(
-            urls_or_files=urls_or_files, verbose=self._verbose)
+        extractor = HierarchicalKeyInformationExtraction(urls_or_files=urls_or_files, verbose=self._verbose)
         key_info_list = extractor.extract()
 
         return key_info_list, extractor.all_ref_items
 
-    def _extract_with_ray(
-        self, urls_or_files: List[str]
-    ) -> Tuple[List[KeyInformation], Dict[str, str]]:
+    def _extract_with_ray(self, urls_or_files: List[str]) -> Tuple[List[KeyInformation], Dict[str, str]]:
         """Ray-accelerated extraction."""
         if not ray.is_initialized():
-            ray.init(
-                ignore_reinit_error=True,
-                include_dashboard=False,
-                log_to_driver=False)
+            ray.init(ignore_reinit_error=True, include_dashboard=False, log_to_driver=False)
 
         # Determine optimal worker count
-        max_workers = self._ray_num_workers or min(
-            len(urls_or_files), (os.cpu_count() or 4))
+        max_workers = self._ray_num_workers or min(len(urls_or_files), (os.cpu_count() or 4))
         max_workers = max(1, max_workers)
 
         # Partition URLs/files among workers: should be balanced
@@ -93,7 +84,8 @@ class InformationExtractionManager:
         # Create actors and dispatch tasks
         actors = [
             _ExtractionWorker.options(num_cpus=self._ray_cpus_per_task).remote(
-                urls_or_files=partitions[i], verbose=self._verbose)
+                urls_or_files=partitions[i], verbose=self._verbose
+            )
             for i in range(max_workers)
         ]
 
@@ -101,8 +93,7 @@ class InformationExtractionManager:
         for exraction_actor in actors:
             futures.append(exraction_actor.process_partition.remote())
 
-        results: List[Tuple[List[KeyInformation],
-                            Dict[str, str]]] = ray.get(futures)
+        results: List[Tuple[List[KeyInformation], Dict[str, str]]] = ray.get(futures)
 
         # Merge results
         merged_infos: List[KeyInformation] = []
@@ -124,11 +115,9 @@ if _RAY_AVAILABLE:
         def __init__(self, urls_or_files: List[str], verbose: bool = False):
             self._verbose = verbose
             self._urls_or_files = urls_or_files
-            self.extractor = HierarchicalKeyInformationExtraction(
-                urls_or_files=self._urls_or_files, verbose=verbose)
+            self.extractor = HierarchicalKeyInformationExtraction(urls_or_files=self._urls_or_files, verbose=verbose)
 
-        def process_partition(
-                self) -> Tuple[List[KeyInformation], Dict[str, str]]:
+        def process_partition(self) -> Tuple[List[KeyInformation], Dict[str, str]]:
             """Process a partition of URLs/files and return extracted information."""
             try:
                 key_info_list_partition = self.extractor.extract()
@@ -145,7 +134,7 @@ def extract_key_information(
     use_ray: bool = False,
     verbose: bool = False,
     ray_num_workers: Optional[int] = None,
-    ray_cpus_per_task: float = 1.0
+    ray_cpus_per_task: float = 1.0,
 ) -> Tuple[List[KeyInformation], Dict[str, str]]:
     """
     High-level function to extract key information with optional Ray acceleration.
@@ -161,9 +150,7 @@ def extract_key_information(
         Tuple of (key_info_list, resource_map)
     """
     extractor = InformationExtractionManager(
-        verbose=verbose,
-        use_ray=use_ray,
-        ray_num_workers=ray_num_workers,
-        ray_cpus_per_task=ray_cpus_per_task)
+        verbose=verbose, use_ray=use_ray, ray_num_workers=ray_num_workers, ray_cpus_per_task=ray_cpus_per_task
+    )
 
     return extractor.extract(urls_or_files)

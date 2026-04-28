@@ -1,13 +1,14 @@
 import inspect
+import json
 from typing import Any, Dict, Generator, Iterator, List, Optional, Union
 
 import httpx
-import json
+from omegaconf import DictConfig, OmegaConf
+
 from ms_agent.llm import LLM
 from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.utils import assert_package_exist, retry
 from ms_agent.utils.constants import get_service_config
-from omegaconf import DictConfig, OmegaConf
 
 
 class _SSEEventInjector(httpx.SyncByteStream):
@@ -61,10 +62,7 @@ class DashScopeAnthropicTransport(httpx.BaseTransport):
     rewrites URL, auth headers, and body so the Anthropic SDK works unmodified.
     """
 
-    def __init__(self,
-                 dashscope_url: str,
-                 api_key: str,
-                 supplier: Optional[str] = None):
+    def __init__(self, dashscope_url: str, api_key: str, supplier: Optional[str] = None):
         self.dashscope_url = dashscope_url
         self.api_key = api_key
         self.supplier = supplier
@@ -83,10 +81,7 @@ class DashScopeAnthropicTransport(httpx.BaseTransport):
             'content-type': 'application/json',
             'authorization': f'Bearer {self.api_key}',
         }
-        _skip = frozenset({
-            'x-api-key', 'content-type', 'authorization', 'content-length',
-            'host', 'transfer-encoding'
-        })
+        _skip = frozenset({'x-api-key', 'content-type', 'authorization', 'content-length', 'host', 'transfer-encoding'})
         for key, value in request.headers.items():
             k = key.lower()
             if k not in _skip and not k.startswith('anthropic'):
@@ -116,7 +111,6 @@ class DashScopeAnthropicTransport(httpx.BaseTransport):
 
 
 class Anthropic(LLM):
-
     def __init__(
         self,
         config: DictConfig,
@@ -129,8 +123,7 @@ class Anthropic(LLM):
 
         self.model: str = config.llm.model
 
-        base_url = base_url or config.llm.get(
-            'anthropic_base_url') or get_service_config('anthropic').base_url
+        base_url = base_url or config.llm.get('anthropic_base_url') or get_service_config('anthropic').base_url
         api_key = api_key or config.llm.get('anthropic_api_key')
 
         if not api_key:
@@ -162,30 +155,28 @@ class Anthropic(LLM):
                 base_url=base_url,
             )
 
-        self.args: Dict = OmegaConf.to_container(
-            getattr(config, 'generation_config', DictConfig({})))
+        self.args: Dict = OmegaConf.to_container(getattr(config, 'generation_config', DictConfig({})))
 
-    def format_tools(self,
-                     tools: Optional[List[Tool]]) -> Optional[List[Dict]]:
+    def format_tools(self, tools: Optional[List[Tool]]) -> Optional[List[Dict]]:
         if not tools:
             return None
 
         formatted_tools = []
         for tool in tools:
-            formatted_tools.append({
-                'name': tool['tool_name'],
-                'description': tool.get('description', ''),
-                'input_schema': {
-                    'type': 'object',
-                    'properties': tool.get('parameters',
-                                           {}).get('properties', {}),
-                    'required': tool.get('parameters', {}).get('required', []),
+            formatted_tools.append(
+                {
+                    'name': tool['tool_name'],
+                    'description': tool.get('description', ''),
+                    'input_schema': {
+                        'type': 'object',
+                        'properties': tool.get('parameters', {}).get('properties', {}),
+                        'required': tool.get('parameters', {}).get('required', []),
+                    },
                 }
-            })
+            )
         return formatted_tools
 
-    def _format_input_message(self,
-                              messages: List[Message]) -> List[Dict[str, Any]]:
+    def _format_input_message(self, messages: List[Message]) -> List[Dict[str, Any]]:
         """Converts a list of Message objects into the format expected by the Anthropic API.
 
         Args:
@@ -203,34 +194,30 @@ class Anthropic(LLM):
 
             if msg.tool_calls:
                 for tool_call in msg.tool_calls:
-                    content.append({
-                        'type': 'tool_use',
-                        'id': tool_call['id'],
-                        'name': tool_call['tool_name'],
-                        'input': tool_call.get('arguments', {})
-                    })
+                    content.append(
+                        {
+                            'type': 'tool_use',
+                            'id': tool_call['id'],
+                            'name': tool_call['tool_name'],
+                            'input': tool_call.get('arguments', {}),
+                        }
+                    )
 
             if msg.role == 'tool':
-                formatted_messages.append({
-                    'role':
-                    'user',
-                    'content': [{
-                        'type': 'tool_result',
-                        'tool_use_id': msg.tool_call_id,
-                        'content': msg.content
-                    }]
-                })
+                formatted_messages.append(
+                    {
+                        'role': 'user',
+                        'content': [{'type': 'tool_result', 'tool_use_id': msg.tool_call_id, 'content': msg.content}],
+                    }
+                )
                 continue
 
             formatted_messages.append({'role': msg.role, 'content': content})
         return formatted_messages
 
-    def _call_llm(self,
-                  messages: List[Message],
-                  tools: Optional[List[Dict]] = None,
-                  stream: bool = False,
-                  **kwargs) -> Any:
-
+    def _call_llm(
+        self, messages: List[Message], tools: Optional[List[Dict]] = None, stream: bool = False, **kwargs
+    ) -> Any:
         formatted_messages = self._format_input_message(messages)
         formatted_messages = [m for m in formatted_messages if m['content']]
 
@@ -246,21 +233,14 @@ class Anthropic(LLM):
         thinking_type = kwargs.pop('thinking_type', None)
 
         raw_extra_body = kwargs.pop('extra_body', {}) or {}
-        extra_body = dict(raw_extra_body) if isinstance(raw_extra_body,
-                                                        dict) else {}
-        enable_thinking = bool(
-            extra_body.pop('enable_thinking', enable_thinking))
-        thinking_budget = extra_body.pop('thinking_budget',
-                                         thinking_budget) or max_tokens
+        extra_body = dict(raw_extra_body) if isinstance(raw_extra_body, dict) else {}
+        enable_thinking = bool(extra_body.pop('enable_thinking', enable_thinking))
+        thinking_budget = extra_body.pop('thinking_budget', thinking_budget) or max_tokens
         thinking_type = extra_body.pop('thinking_type', thinking_type)
         for _k in ('show_reasoning', 'reasoning_output'):
             extra_body.pop(_k, None)
 
-        params = {
-            'model': self.model,
-            'messages': formatted_messages,
-            'max_tokens': max_tokens
-        }
+        params = {'model': self.model, 'messages': formatted_messages, 'max_tokens': max_tokens}
 
         if thinking_type == 'adaptive':
             params['thinking'] = {'type': 'adaptive'}
@@ -284,12 +264,13 @@ class Anthropic(LLM):
             return self.client.messages.create(**params)
 
     @retry(max_attempts=LLM.retry_count, delay=1.0)
-    def generate(self,
-                 messages: List[Message],
-                 tools: Optional[List[Tool]] = None,
-                 max_continue_runs: Optional[int] = None,
-                 **kwargs) -> Union[Message, Generator[Message, None, None]]:
-
+    def generate(
+        self,
+        messages: List[Message],
+        tools: Optional[List[Tool]] = None,
+        max_continue_runs: Optional[int] = None,
+        **kwargs,
+    ) -> Union[Message, Generator[Message, None, None]]:
         formatted_tools = self.format_tools(tools)
         args = self.args.copy()
         args.update(kwargs)
@@ -298,16 +279,14 @@ class Anthropic(LLM):
         sig_params = inspect.signature(self.client.messages.create).parameters
         filtered_args = {k: v for k, v in args.items() if k in sig_params}
 
-        completion = self._call_llm(messages, formatted_tools, stream,
-                                    **filtered_args)
+        completion = self._call_llm(messages, formatted_tools, stream, **filtered_args)
 
         if stream:
             return self._stream_format_output_message(completion)
         else:
             return self._format_output_message(completion)
 
-    def _stream_format_output_message(self,
-                                      stream_manager) -> Iterator[Message]:
+    def _stream_format_output_message(self, stream_manager) -> Iterator[Message]:
         current_message = Message(
             role='assistant',
             content='',
@@ -360,11 +339,11 @@ class Anthropic(LLM):
                     current_message.content = full_content
                     current_message.partial = False
                     current_message.completion_tokens = getattr(
-                        final_msg.usage, 'output_tokens',
-                        current_message.completion_tokens)
+                        final_msg.usage, 'output_tokens', current_message.completion_tokens
+                    )
                     current_message.prompt_tokens = getattr(
-                        final_msg.usage, 'input_tokens',
-                        current_message.prompt_tokens)
+                        final_msg.usage, 'input_tokens', current_message.prompt_tokens
+                    )
 
                     yield current_message
 
@@ -392,11 +371,11 @@ class Anthropic(LLM):
                     ToolCall(
                         id=block.id,
                         index=len(tool_calls),  # index based on appearance
-                        type=
-                        'function',  # or "tool_use" depending on your schema
+                        type='function',  # or "tool_use" depending on your schema
                         arguments=block.input,
                         tool_name=block.name,
-                    ))
+                    )
+                )
 
         # Anthropic does not have a native "reasoning_content" field
         reasoning_content = ''
@@ -414,34 +393,31 @@ class Anthropic(LLM):
 
 if __name__ == '__main__':
     import os
+
     config = {
         'llm': {
             'model': 'Qwen/Qwen2.5-VL-72B-Instruct',
             'anthropic_api_key': os.getenv('MODELSCOPE_API_KEY'),
-            'anthropic_base_url': 'https://api-inference.modelscope.cn'
+            'anthropic_base_url': 'https://api-inference.modelscope.cn',
         },
         'generation_config': {
             'stream': True,
-        }
+        },
     }
-    tools = [{
-        'tool_name': 'get_weather',
-        'description': 'Get the current weather in a given location',
-        'parameters': {
-            'type': 'object',
-            'properties': {
-                'location': {
-                    'type': 'string',
-                    'description': 'City and state'
+    tools = [
+        {
+            'tool_name': 'get_weather',
+            'description': 'Get the current weather in a given location',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'location': {'type': 'string', 'description': 'City and state'},
+                    'unit': {'type': 'string', 'enum': ['celsius', 'fahrenheit']},
                 },
-                'unit': {
-                    'type': 'string',
-                    'enum': ['celsius', 'fahrenheit']
-                }
+                'required': ['location'],
             },
-            'required': ['location']
         }
-    }]
+    ]
 
     messages = [Message(role='user', content='描述杭州，300字')]
     # messages = [Message(role='user', content='去伦敦现在该带什么样的衣服？')]

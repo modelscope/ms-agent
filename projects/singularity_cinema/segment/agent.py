@@ -1,18 +1,18 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+import json
 import os
 from copy import deepcopy
 
-import json
+from omegaconf import DictConfig
+
 from ms_agent.agent import LLMAgent
 from ms_agent.llm import Message
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
 
 logger = get_logger()
 
 
 class Segment(LLMAgent):
-
     system = """你是一名动画分镜设计师。现在有一个短视频场景需要进行分镜设计。分镜需要满足以下条件：
 
 - 每个分镜包含：
@@ -60,7 +60,7 @@ class Segment(LLMAgent):
     ...
 ]
 ```
-""" # noqa
+"""  # noqa
 
     video_prompt = """- 你可以使用文生视频功能来渲染某些镜头，这可以增强短视频的整体趣味性和可读性
     * 当使用文生视频渲染某些镜头时，返回的结构应该只包含三个字段：index、content和video。不要包含其他字段如{animation_engine}、background等。换句话说，文生视频镜头不应该包含动画引擎或背景图片
@@ -69,13 +69,9 @@ class Segment(LLMAgent):
     * **生成具有强动态效果的视频，而不是只有镜头移动的静态场景。你需要在视频中讲好你的故事**
     * video字段包含你对文生视频生成的要求。注意生成的视频如何与前后镜头协调
     * 如果你使用多个文生视频镜头，注意保持角色、建筑、动物等的ID一致性
-    * 需要叙述摄像机和镜头信息，集中于讲述故事、推进情节和深化主题""" # noqa
+    * 需要叙述摄像机和镜头信息，集中于讲述故事、推进情节和深化主题"""  # noqa
 
-    def __init__(self,
-                 config: DictConfig,
-                 tag: str,
-                 trust_remote_code: bool = False,
-                 **kwargs):
+    def __init__(self, config: DictConfig, tag: str, trust_remote_code: bool = False, **kwargs):
         _config = deepcopy(config)
         _config.tools = DictConfig({})
         super().__init__(_config, tag, trust_remote_code, **kwargs)
@@ -89,8 +85,7 @@ class Segment(LLMAgent):
 
         video_prompt = self.video_prompt if self.config.use_text2video else ''
         video_prompt = video_prompt.format(animation_engine=self.engine)
-        system = system.format(
-            video_prompt=video_prompt, animation_engine=self.engine)
+        system = system.format(video_prompt=video_prompt, animation_engine=self.engine)
 
         return [
             Message(role='system', content=system),
@@ -110,10 +105,7 @@ class Segment(LLMAgent):
         if self.config.background != 'image':
             image_prompt = f'\n\n背景图片无需生成，是纯色：{self.config.background}\n\n'
 
-        query = (f'原始主题：\n\n{topic}\n\n'
-                 f'原始脚本：\n\n{script}\n\n'
-                 f'{image_prompt}'
-                 f'请完成你的动画分镜设计：\n')
+        query = f'原始主题：\n\n{topic}\n\n原始脚本：\n\n{script}\n\n{image_prompt}请完成你的动画分镜设计：\n'
         messages = await super().run(query, **kwargs)
         response = messages[-1].content
         if '```json' in response:
@@ -147,9 +139,10 @@ class Segment(LLMAgent):
         return messages
 
     async def add_images(self, segments, topic, script, **kwargs):
-
-        video_prompt = ('注意：不需要修改包含video字段的镜头。这些镜头是文生视频镜头，它不需要背景、动画或前景图片。'
-                        '只需在返回值中保留并返回这些镜头的index即可。')
+        video_prompt = (
+            '注意：不需要修改包含video字段的镜头。这些镜头是文生视频镜头，它不需要背景、动画或前景图片。'
+            '只需在返回值中保留并返回这些镜头的index即可。'
+        )
         if not self.config.use_text2video:
             video_prompt = ''
 
@@ -208,14 +201,13 @@ class Segment(LLMAgent):
 ]
 
 现在开始：
-""" # noqa
+"""  # noqa
         # Format the system prompt with the actual engine name
         animation_engine = self.engine
         animation_engine_cap = animation_engine.capitalize()
         system = system.format(
-            video_prompt=video_prompt,
-            animation_engine=animation_engine,
-            animation_engine_cap=animation_engine_cap)
+            video_prompt=video_prompt, animation_engine=animation_engine, animation_engine_cap=animation_engine_cap
+        )
 
         new_image_info = '未提供图片。'
         name_mapping = {}
@@ -223,9 +215,7 @@ class Segment(LLMAgent):
             with open(os.path.join(self.work_dir, 'image_info.txt'), 'r') as f:
                 image_info = f.readlines()
 
-            image_info = [
-                image.strip() for image in image_info if image.strip()
-            ]
+            image_info = [image.strip() for image in image_info if image.strip()]
             image_list = []
             for i, info in enumerate(image_info):
                 info = json.loads(info)
@@ -242,7 +232,8 @@ class Segment(LLMAgent):
             f'原始脚本：\n\n{script}\n\n'
             f'原始分镜：\n\n{json.dumps(segments, ensure_ascii=False, indent=4)}\n\n'
             f'用户提供的图片：\n\n{new_image_info}\n\n'
-            f'请完成你的图片设计：\n')
+            f'请完成你的图片设计：\n'
+        )
         messages = [
             Message(role='system', content=system),
             Message(role='user', content=query),

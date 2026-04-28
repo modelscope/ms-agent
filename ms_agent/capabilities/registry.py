@@ -21,8 +21,7 @@ class CapabilityRegistry:
         self._descriptors: dict[str, CapabilityDescriptor] = {}
         self._handlers: dict[str, Handler] = {}
 
-    def register(self, descriptor: CapabilityDescriptor,
-                 handler: Handler) -> None:
+    def register(self, descriptor: CapabilityDescriptor, handler: Handler) -> None:
         if descriptor.name in self._descriptors:
             logger.warning('Overwriting capability %s', descriptor.name)
         self._descriptors[descriptor.name] = descriptor
@@ -45,8 +44,7 @@ class CapabilityRegistry:
         results = self.list_all()
 
         if granularity is not None:
-            levels = [granularity] if isinstance(granularity,
-                                                 str) else granularity
+            levels = [granularity] if isinstance(granularity, str) else granularity
             results = [c for c in results if c.granularity in levels]
 
         if tags:
@@ -56,14 +54,12 @@ class CapabilityRegistry:
         if query:
             q = query.lower()
             results = [
-                c for c in results if q in c.name.lower()
-                or q in c.summary.lower() or q in c.description.lower()
+                c for c in results if q in c.name.lower() or q in c.summary.lower() or q in c.description.lower()
             ]
 
         return results
 
-    async def invoke(self, name: str, args: dict[str, Any],
-                     **kwargs: Any) -> dict[str, Any]:
+    async def invoke(self, name: str, args: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
         """Invoke a registered capability by name."""
         if name not in self._handlers:
             return {'error': f'Unknown capability: {name}'}

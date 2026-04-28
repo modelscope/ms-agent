@@ -27,6 +27,7 @@ Return payload
 JSON gains ``spill`` with ``digest`` (instructions + quick index) and paths relative
 to ``output_dir`` so ``read_file`` can open them.
 """
+
 from __future__ import annotations
 
 import copy
@@ -111,18 +112,18 @@ def _build_spill_markdown(item: Dict[str, Any]) -> str:
     return ''.join(lines)
 
 
-def _shrink_item_after_spill(item: Dict[str, Any],
-                             spill_preview_chars: int) -> Dict[str, Any]:
+def _shrink_item_after_spill(item: Dict[str, Any], spill_preview_chars: int) -> Dict[str, Any]:
     """Replace heavy fields with short previews + pointers."""
     out = dict(item)
     note = (
         'Full text spilled to disk; see content_path / manifest_path in parent '
-        'JSON spill block. Use read_file on content_path for this row.')
+        'JSON spill block. Use read_file on content_path for this row.'
+    )
     sm = out.get('summary')
     if isinstance(sm, str) and sm.strip():
         out['summary'] = _preview(sm, spill_preview_chars)
         out.setdefault('content_note', note)
-    main = (out.get('content') or '')
+    main = out.get('content') or ''
     if isinstance(main, str) and main.strip():
         out['content'] = _preview(main, spill_preview_chars)
         out['content_note'] = note
@@ -131,12 +132,14 @@ def _shrink_item_after_spill(item: Dict[str, Any],
         out['abstract'] = _preview(ab, min(800, spill_preview_chars))
     ch = out.get('chunks')
     if isinstance(ch, list) and ch:
-        out['chunks'] = [{
-            'chunk_id':
-            c.get('chunk_id', ''),
-            'content':
-            _preview(str(c.get('content', '')), min(400, spill_preview_chars)),
-        } for c in ch if isinstance(c, dict)]
+        out['chunks'] = [
+            {
+                'chunk_id': c.get('chunk_id', ''),
+                'content': _preview(str(c.get('content', '')), min(400, spill_preview_chars)),
+            }
+            for c in ch
+            if isinstance(c, dict)
+        ]
         out['chunks_note'] = 'Full chunk bodies are in the spilled markdown file.'
     return out
 
@@ -189,13 +192,10 @@ def maybe_spill_web_search_payload(
         if _item_inline_chars(item) == 0:
             break
         full_md = _build_spill_markdown(item)
-        rel_body = os.path.join(spill_subdir, run_key, 'bodies',
-                                f'{idx:03d}.md').replace('\\', '/')
-        abs_body = os.path.normpath(
-            os.path.join(output_dir, rel_body.replace('/', os.sep)))
+        rel_body = os.path.join(spill_subdir, run_key, 'bodies', f'{idx:03d}.md').replace('\\', '/')
+        abs_body = os.path.normpath(os.path.join(output_dir, rel_body.replace('/', os.sep)))
         os.makedirs(os.path.dirname(abs_body), exist_ok=True)
-        header = (
-            f'<!-- web_search spill | engine={engine} | row_index={idx} -->\n')
+        header = f'<!-- web_search spill | engine={engine} | row_index={idx} -->\n'
         with open(abs_body, 'w', encoding='utf-8') as bf:
             bf.write(header + full_md)
 
@@ -206,55 +206,37 @@ def maybe_spill_web_search_payload(
         work[idx]['content_path'] = rel_body
         work[idx]['content_chars_spilled'] = before_chars
 
-        preview_src = (
-            item.get('content') or item.get('summary') or item.get('abstract')
-            or '')[:4000]
-        manifest_rows.append({
-            'index':
-            idx,
-            'url':
-            item.get('url', ''),
-            'title':
-            item.get('title', ''),
-            'body_file':
-            f'bodies/{idx:03d}.md',
-            'content_path':
-            rel_body,
-            'chars_spilled':
-            before_chars,
-            'preview':
-            _preview(preview_src, min(500, spill_preview_chars)),
-        })
+        preview_src = (item.get('content') or item.get('summary') or item.get('abstract') or '')[:4000]
+        manifest_rows.append(
+            {
+                'index': idx,
+                'url': item.get('url', ''),
+                'title': item.get('title', ''),
+                'body_file': f'bodies/{idx:03d}.md',
+                'content_path': rel_body,
+                'chars_spilled': before_chars,
+                'preview': _preview(preview_src, min(500, spill_preview_chars)),
+            }
+        )
 
     manifest: Dict[str, Any] = {
-        'version':
-        1,
-        'created_at_utc':
-        time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-        'query':
-        query,
-        'engine':
-        engine,
-        'run_key':
-        run_key,
-        'lifecycle':
-        ('Ephemeral: lives under this task output_dir; delete the task directory '
-         'to remove. ms-agent does not auto-prune.'),
-        'inline_chars_before':
-        total,
-        'inline_chars_after':
-        _total_inline_chars(work),
-        'spill_threshold_chars':
-        spill_max_inline_chars,
-        'spilled_row_indices':
-        spilled_indices,
-        'rows':
-        manifest_rows,
+        'version': 1,
+        'created_at_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+        'query': query,
+        'engine': engine,
+        'run_key': run_key,
+        'lifecycle': (
+            'Ephemeral: lives under this task output_dir; delete the task directory '
+            'to remove. ms-agent does not auto-prune.'
+        ),
+        'inline_chars_before': total,
+        'inline_chars_after': _total_inline_chars(work),
+        'spill_threshold_chars': spill_max_inline_chars,
+        'spilled_row_indices': spilled_indices,
+        'rows': manifest_rows,
     }
-    rel_manifest = os.path.join(spill_subdir, run_key, 'manifest.json').replace(
-        '\\', '/')
-    abs_manifest = os.path.normpath(
-        os.path.join(output_dir, rel_manifest.replace('/', os.sep)))
+    rel_manifest = os.path.join(spill_subdir, run_key, 'manifest.json').replace('\\', '/')
+    abs_manifest = os.path.normpath(os.path.join(output_dir, rel_manifest.replace('/', os.sep)))
     with open(abs_manifest, 'w', encoding='utf-8') as mf:
         json.dump(manifest, mf, ensure_ascii=False, indent=2)
 
@@ -262,31 +244,24 @@ def maybe_spill_web_search_payload(
         'Large web_search payload was written to disk under this task output_dir.',
         f'- **Manifest (map of rows → files, sizes)**: `{rel_manifest}`',
         f'- **Bodies**: `{spill_subdir}/{run_key}/bodies/`',
-        'Read **manifest.json** first, then **read_file** on specific '
-        '`bodies/NNN.md` files as needed.',
+        'Read **manifest.json** first, then **read_file** on specific `bodies/NNN.md` files as needed.',
         '',
         '**Quick index**',
     ]
     for row in manifest_rows:
         lines.append(
             f'{row["index"]}. {row.get("title") or "(no title)"} — '
-            f'`{row["content_path"]}` ({row.get("chars_spilled", 0)} chars)')
+            f'`{row["content_path"]}` ({row.get("chars_spilled", 0)} chars)'
+        )
     digest = '\n'.join(lines)
 
     spill_meta = {
-        'spilled':
-        True,
-        'run_key':
-        run_key,
-        'artifact_dir':
-        f'{spill_subdir}/{run_key}'.replace('\\', '/'),
-        'manifest_path':
-        rel_manifest,
-        'digest':
-        digest,
-        'inline_chars_before_spill':
-        total,
-        'inline_chars_after_spill':
-        _total_inline_chars(work),
+        'spilled': True,
+        'run_key': run_key,
+        'artifact_dir': f'{spill_subdir}/{run_key}'.replace('\\', '/'),
+        'manifest_path': rel_manifest,
+        'digest': digest,
+        'inline_chars_before_spill': total,
+        'inline_chars_after_spill': _total_inline_chars(work),
     }
     return work, spill_meta

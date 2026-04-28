@@ -24,13 +24,13 @@ _DELEGATE_INPUT_PROPERTIES: dict[str, Any] = {
         'description': 'Custom system prompt for the agent (optional)',
     },
     'tools': {
-        'type':
-        'string',
-        'description':
-        ('Comma-separated basic tool component names to enable, e.g. '
-         '"web_search,file_system,todo_list". Alias "filesystem" is accepted '
-         'for backward compatibility. Leave empty to use the default agent '
-         'config tools.'),
+        'type': 'string',
+        'description': (
+            'Comma-separated basic tool component names to enable, e.g. '
+            '"web_search,file_system,todo_list". Alias "filesystem" is accepted '
+            'for backward compatibility. Leave empty to use the default agent '
+            'config tools.'
+        ),
     },
     'max_rounds': {
         'type': 'integer',
@@ -69,13 +69,13 @@ DELEGATE_TASK_DESCRIPTOR = CapabilityDescriptor(
     name='delegate_task',
     version='0.1.0',
     granularity='project',
-    summary=('Delegate a task to an LLM agent that can use tools. '
-             'Blocks until the agent completes.'),
+    summary=('Delegate a task to an LLM agent that can use tools. Blocks until the agent completes.'),
     description=(
         'Creates an LLMAgent with the given configuration, runs it on the '
         'provided query, and returns the final response text.  The agent '
         'can use tools (web search, filesystem, etc.) to accomplish the '
-        'task.  WARNING: this call blocks and may take minutes.'),
+        'task.  WARNING: this call blocks and may take minutes.'
+    ),
     input_schema={
         'type': 'object',
         'properties': _DELEGATE_INPUT_PROPERTIES,
@@ -84,12 +84,8 @@ DELEGATE_TASK_DESCRIPTOR = CapabilityDescriptor(
     output_schema={
         'type': 'object',
         'properties': {
-            'status': {
-                'type': 'string'
-            },
-            'response': {
-                'type': 'string'
-            },
+            'status': {'type': 'string'},
+            'response': {'type': 'string'},
         },
     },
     tags=['agent', 'delegate', 'llm', 'sync'],
@@ -100,11 +96,12 @@ SUBMIT_AGENT_TASK_DESCRIPTOR = CapabilityDescriptor(
     name='submit_agent_task',
     version='0.1.0',
     granularity='project',
-    summary=('Submit an agent task to run in the background. '
-             'Returns a task_id immediately.'),
-    description=('Starts an LLMAgent in the background and returns a task_id. '
-                 'Use check_agent_task(task_id) to poll progress and '
-                 'get_agent_result(task_id) to retrieve the final response.'),
+    summary=('Submit an agent task to run in the background. Returns a task_id immediately.'),
+    description=(
+        'Starts an LLMAgent in the background and returns a task_id. '
+        'Use check_agent_task(task_id) to poll progress and '
+        'get_agent_result(task_id) to retrieve the final response.'
+    ),
     input_schema={
         'type': 'object',
         'properties': _DELEGATE_INPUT_PROPERTIES,
@@ -113,12 +110,8 @@ SUBMIT_AGENT_TASK_DESCRIPTOR = CapabilityDescriptor(
     output_schema={
         'type': 'object',
         'properties': {
-            'task_id': {
-                'type': 'string'
-            },
-            'status': {
-                'type': 'string'
-            },
+            'task_id': {'type': 'string'},
+            'status': {'type': 'string'},
         },
     },
     tags=['agent', 'delegate', 'llm', 'async', 'submit'],
@@ -130,8 +123,9 @@ CHECK_AGENT_TASK_DESCRIPTOR = CapabilityDescriptor(
     version='0.1.0',
     granularity='tool',
     summary='Check progress of a background agent task.',
-    description=('Polls the status of an agent task previously submitted via '
-                 'submit_agent_task. Returns the current status.'),
+    description=(
+        'Polls the status of an agent task previously submitted via submit_agent_task. Returns the current status.'
+    ),
     input_schema={
         'type': 'object',
         'properties': {
@@ -151,8 +145,10 @@ GET_AGENT_RESULT_DESCRIPTOR = CapabilityDescriptor(
     version='0.1.0',
     granularity='tool',
     summary='Get the result of a completed agent task.',
-    description=('Retrieves the final response from a completed agent task. '
-                 'If the task is still running, returns a status message.'),
+    description=(
+        'Retrieves the final response from a completed agent task. '
+        'If the task is still running, returns a status message.'
+    ),
     input_schema={
         'type': 'object',
         'properties': {
@@ -209,8 +205,7 @@ def _build_basic_tools_config(tools_list: list[str] | None) -> dict[str, Any]:
     for raw_name in tools_list:
         tool_name = _BASIC_TOOL_ALIASES.get(raw_name)
         if tool_name is None:
-            logger.warning('Ignoring unsupported delegate tool name: %s',
-                           raw_name)
+            logger.warning('Ignoring unsupported delegate tool name: %s', raw_name)
             continue
         if tool_name in tools_cfg:
             continue
@@ -250,9 +245,7 @@ def _build_agent_config(
     # return.  OmegaConf.merge(default, ours) lets our value win.
     safe_cbs: list[str] = []
     if hasattr(config, 'callbacks') and config.callbacks:
-        safe_cbs = [
-            c for c in config.callbacks if c not in ('input_callback', )
-        ]
+        safe_cbs = [c for c in config.callbacks if c not in ('input_callback',)]
     OmegaConf.update(config, 'callbacks', safe_cbs, merge=False)
 
     OmegaConf.update(config, 'save_history', False, merge=True)
@@ -264,8 +257,7 @@ def _build_agent_config(
             # Preserve explicit config_path tool settings when already present.
             if hasattr(existing_tools, tool_name):
                 continue
-            OmegaConf.update(
-                config, f'tools.{tool_name}', tool_cfg, merge=True)
+            OmegaConf.update(config, f'tools.{tool_name}', tool_cfg, merge=True)
 
     return config
 
@@ -297,8 +289,7 @@ async def _run_agent(
     """Create, run, and clean up an LLMAgent.  Returns the response text."""
     from ms_agent.agent.llm_agent import LLMAgent
 
-    config = _build_agent_config(config_path, system_prompt, tools_list,
-                                 max_rounds)
+    config = _build_agent_config(config_path, system_prompt, tools_list, max_rounds)
     agent = LLMAgent(config=config, tag='delegate')
 
     try:
@@ -322,8 +313,7 @@ async def _run_agent(
             logger.debug('Error during agent tool cleanup', exc_info=True)
 
 
-async def _handle_delegate_task(args: dict[str, Any],
-                                **kwargs: Any) -> dict[str, Any]:
+async def _handle_delegate_task(args: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
     """Synchronous agent delegation -- blocks until the agent finishes."""
     query = (args.get('query') or '').strip()
     if not query:
@@ -355,8 +345,7 @@ async def _background_agent(task: AsyncTask) -> dict[str, Any]:
     return {'response': response}
 
 
-async def _handle_submit_agent_task(args: dict[str, Any],
-                                    **kwargs: Any) -> dict[str, Any]:
+async def _handle_submit_agent_task(args: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
     """Submit an agent task to run in the background."""
     query = (args.get('query') or '').strip()
     if not query:
@@ -374,32 +363,27 @@ async def _handle_submit_agent_task(args: dict[str, Any],
         },
     )
     return {
-        'task_id':
-        task.task_id,
-        'status':
-        'running',
-        'message':
-        (f'Agent task {task.task_id} started. '
-         f'Use check_agent_task(task_id="{task.task_id}") to poll status.'),
+        'task_id': task.task_id,
+        'status': 'running',
+        'message': (
+            f'Agent task {task.task_id} started. Use check_agent_task(task_id="{task.task_id}") to poll status.'
+        ),
     }
 
 
-async def _handle_check_agent_task(args: dict[str, Any],
-                                   **kwargs: Any) -> dict[str, Any]:
+async def _handle_check_agent_task(args: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
     """Check progress of a background agent task."""
     return _manager.check(args['task_id'])
 
 
-async def _handle_get_agent_result(args: dict[str, Any],
-                                   **kwargs: Any) -> dict[str, Any]:
+async def _handle_get_agent_result(args: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
     """Get the result of a completed agent task."""
     task_id = args['task_id']
     max_chars = args.get('max_chars', 50000)
     result = _manager.get_result(task_id)
 
     # Truncate response if needed
-    if result.get('status') == 'completed' and isinstance(
-            result.get('result'), dict):
+    if result.get('status') == 'completed' and isinstance(result.get('result'), dict):
         response = result['result'].get('response', '')
         truncated = len(response) > max_chars
         if truncated:
@@ -411,8 +395,7 @@ async def _handle_get_agent_result(args: dict[str, Any],
     return result
 
 
-async def _handle_cancel_agent_task(args: dict[str, Any],
-                                    **kwargs: Any) -> dict[str, Any]:
+async def _handle_cancel_agent_task(args: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
     """Cancel a running agent task."""
     return await _manager.cancel(args['task_id'])
 

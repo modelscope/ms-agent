@@ -1,20 +1,18 @@
 from typing import Iterable, Iterator, List, Union
 
 from docling_core.transforms.chunker import BaseChunk, DocChunk
-from docling_core.transforms.chunker.hierarchical_chunker import (
-    ChunkingDocSerializer, ChunkingSerializerProvider)
+from docling_core.transforms.chunker.hierarchical_chunker import ChunkingDocSerializer, ChunkingSerializerProvider
 from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
 from docling_core.transforms.chunker.tokenizer.base import BaseTokenizer
-from docling_core.transforms.chunker.tokenizer.huggingface import \
-    HuggingFaceTokenizer
+from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
 from docling_core.transforms.serializer.markdown import MarkdownParams
 from docling_core.types import DoclingDocument
 from docling_core.types.doc import DocItemLabel
-from ms_agent.utils.logger import get_logger
+from modelscope import AutoTokenizer
 from rich.console import Console
 from rich.panel import Panel
 
-from modelscope import AutoTokenizer
+from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
 
@@ -24,11 +22,12 @@ console = Console(
 
 
 class ImgPlaceholderSerializerProvider(ChunkingSerializerProvider):
-
     def get_serializer(self, doc):
         return ChunkingDocSerializer(
             doc=doc,
-            params=MarkdownParams(image_placeholder='<!-- image -->', ),
+            params=MarkdownParams(
+                image_placeholder='<!-- image -->',
+            ),
         )
 
 
@@ -36,13 +35,10 @@ class ImgPlaceholderSerializerProvider(ChunkingSerializerProvider):
 
 
 class HybridDocumentChunker:
-
     EMBED_MODEL_ID = 'sentence-transformers/all-MiniLM-L6-v2'
     MAX_TOKENS = 1024
 
-    def __init__(self,
-                 embed_model_id: str = EMBED_MODEL_ID,
-                 max_tokens: int = MAX_TOKENS):
+    def __init__(self, embed_model_id: str = EMBED_MODEL_ID, max_tokens: int = MAX_TOKENS):
         """
         Hybrid chunker that splits interleaved picture, table, and text into chunks.
 
@@ -66,9 +62,7 @@ class HybridDocumentChunker:
         )
 
     @staticmethod
-    def find_n_th_chunk_with_label(
-            chunks: List[BaseChunk], n: int,
-            label: DocItemLabel) -> tuple[int, BaseChunk]:
+    def find_n_th_chunk_with_label(chunks: List[BaseChunk], n: int, label: DocItemLabel) -> tuple[int, BaseChunk]:
         """
         Find the n-th chunk with the specified label in an iterable of chunks.
 
@@ -88,8 +82,7 @@ class HybridDocumentChunker:
         return None, None
 
     @staticmethod
-    def find_all_chunks_with_label(chunks: List[BaseChunk],
-                                   label: DocItemLabel) -> List[BaseChunk]:
+    def find_all_chunks_with_label(chunks: List[BaseChunk], label: DocItemLabel) -> List[BaseChunk]:
         """
         Find all chunks with the specified label in an iterable of chunks.
 
@@ -101,15 +94,11 @@ class HybridDocumentChunker:
             List[BaseChunk]: A list of BaseChunk objects that match the label.
         """
         return [
-            chunk for chunk in chunks
-            if any(it.label == label
-                   for it in DocChunk.model_validate(chunk).meta.doc_items)
+            chunk for chunk in chunks if any(it.label == label for it in DocChunk.model_validate(chunk).meta.doc_items)
         ]
 
     @staticmethod
-    def find_all_chunks_with_labels(
-            chunks: List[BaseChunk],
-            labels: List[DocItemLabel]) -> List[BaseChunk]:
+    def find_all_chunks_with_labels(chunks: List[BaseChunk], labels: List[DocItemLabel]) -> List[BaseChunk]:
         """
         Find all chunks with any of the specified labels in an iterable of chunks.
 
@@ -121,9 +110,7 @@ class HybridDocumentChunker:
             List[BaseChunk]: A list of BaseChunk objects that match any of the labels.
         """
         return [
-            chunk for chunk in chunks if any(
-                it.label in labels
-                for it in DocChunk.model_validate(chunk).meta.doc_items)
+            chunk for chunk in chunks if any(it.label in labels for it in DocChunk.model_validate(chunk).meta.doc_items)
         ]
 
     def print_chunk(self, chunks: List[BaseChunk], chunk_pos: int) -> None:
@@ -157,6 +144,7 @@ class HybridDocumentChunker:
 
 if __name__ == '__main__':
     from ms_agent.tools.docling.doc_loader import DocLoader
+
     urls = [
         'https://arxiv.org/pdf/2408.09869',
         'https://arxiv.org/pdf/2502.15214',

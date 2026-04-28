@@ -7,7 +7,6 @@ from ms_agent.llm import LLM
 
 @dataclass
 class Runtime:
-
     should_stop: bool = False
 
     llm: LLM = None

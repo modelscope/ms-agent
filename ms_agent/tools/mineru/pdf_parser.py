@@ -1,16 +1,13 @@
 import os
 
 from magic_pdf.config.enums import SupportedPdfParseMethod
-from magic_pdf.data.data_reader_writer import (FileBasedDataReader,
-                                               FileBasedDataWriter)
+from magic_pdf.data.data_reader_writer import FileBasedDataReader, FileBasedDataWriter
 from magic_pdf.data.dataset import PymuDocDataset
 from magic_pdf.model.doc_analyze_by_custom_model import doc_analyze
 
 
 class PdfParser:
-
     def __init__(self, parser_workdir: str):
-
         # e.g. "your_workdir/resources/mineru"
         self._workdir = parser_workdir
         os.makedirs(self._workdir, exist_ok=True)
@@ -18,8 +15,7 @@ class PdfParser:
         self.relative_image_dir = 'images'
         self.markdown_dir = self._workdir
 
-        self.img_writer = FileBasedDataWriter(
-            os.path.join(self._workdir, self.relative_image_dir))
+        self.img_writer = FileBasedDataWriter(os.path.join(self._workdir, self.relative_image_dir))
         self.md_writer = FileBasedDataWriter(self.markdown_dir)
 
         self.data_reader = FileBasedDataReader('')
@@ -43,8 +39,7 @@ class PdfParser:
         print(f'Processing file: {f_path}')
 
         file_name_no_suffix = os.path.splitext(os.path.basename(f_path))[0]
-        entry_md_file = os.path.join(self.markdown_dir,
-                                     f'{file_name_no_suffix}.md')
+        entry_md_file = os.path.join(self.markdown_dir, f'{file_name_no_suffix}.md')
 
         if reuse and os.path.exists(entry_md_file):
             print(f'File {entry_md_file} already exists. Skipping processing.')
@@ -68,32 +63,24 @@ class PdfParser:
             pipe_result = infer_result.pipe_txt_mode(self.img_writer)
 
         # draw model result on each page
-        infer_result.draw_model(
-            os.path.join(self.markdown_dir,
-                         f'{file_name_no_suffix}_model.pdf'))
+        infer_result.draw_model(os.path.join(self.markdown_dir, f'{file_name_no_suffix}_model.pdf'))
 
         # draw layout result on each page
-        pipe_result.draw_layout(
-            os.path.join(self.markdown_dir,
-                         f'{file_name_no_suffix}_layout.pdf'))
+        pipe_result.draw_layout(os.path.join(self.markdown_dir, f'{file_name_no_suffix}_layout.pdf'))
 
         # draw spans result on each page
-        pipe_result.draw_span(
-            os.path.join(self.markdown_dir,
-                         f'{file_name_no_suffix}_spans.pdf'))
+        pipe_result.draw_span(os.path.join(self.markdown_dir, f'{file_name_no_suffix}_spans.pdf'))
 
         # dump markdown
-        pipe_result.dump_md(self.md_writer, f'{file_name_no_suffix}.md',
-                            self.relative_image_dir)
+        pipe_result.dump_md(self.md_writer, f'{file_name_no_suffix}.md', self.relative_image_dir)
 
         # dump content list
         pipe_result.dump_content_list(
-            self.md_writer, f'{file_name_no_suffix}_content_list.json',
-            self.relative_image_dir)
+            self.md_writer, f'{file_name_no_suffix}_content_list.json', self.relative_image_dir
+        )
 
         # dump middle json
-        pipe_result.dump_middle_json(self.md_writer,
-                                     f'{file_name_no_suffix}_middle.json')
+        pipe_result.dump_middle_json(self.md_writer, f'{file_name_no_suffix}_middle.json')
 
         print(f'Finished processing file: {f_path}')
 

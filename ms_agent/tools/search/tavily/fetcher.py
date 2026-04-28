@@ -1,5 +1,6 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 """Tavily Extract API as ContentFetcher (replaces Jina for fetch_page / URL fetch)."""
+
 import os
 import time
 from typing import Any, Dict, Optional, Tuple
@@ -34,8 +35,7 @@ class TavilyExtractFetcher:
     ):
         key = api_key or os.getenv('TAVILY_API_KEY')
         if not key:
-            raise ValueError(
-                'TAVILY_API_KEY required for tavily_extract fetcher')
+            raise ValueError('TAVILY_API_KEY required for tavily_extract fetcher')
         self._api_key = key
         self._extract_depth = extract_depth
         self._format = format

@@ -6,16 +6,17 @@ from ms_agent.tools.search.search_base import SearchEngine
 from ms_agent.tools.search_engine import get_web_search_tool
 from ms_agent.workflow.deep_research.principle import MECEPrinciple
 from ms_agent.workflow.deep_research.research_workflow import ResearchWorkflow
-from ms_agent.workflow.deep_research.research_workflow_beta import \
-    ResearchWorkflowBeta
+from ms_agent.workflow.deep_research.research_workflow_beta import ResearchWorkflowBeta
 
 
-def run_workflow(user_prompt: str,
-                 task_dir: str,
-                 chat_client: OpenAIChat,
-                 search_engine: SearchEngine,
-                 reuse: bool,
-                 use_ray: bool = False):
+def run_workflow(
+    user_prompt: str,
+    task_dir: str,
+    chat_client: OpenAIChat,
+    search_engine: SearchEngine,
+    reuse: bool,
+    use_ray: bool = False,
+):
     """
     Run the deep research workflow, which follows a lightweight and efficient pipeline:
     1. Receive a user prompt and generate search queries.
@@ -43,15 +44,17 @@ def run_workflow(user_prompt: str,
     research_workflow.run(user_prompt=user_prompt)
 
 
-def run_deep_workflow(user_prompt: str,
-                      task_dir: str,
-                      chat_client: OpenAIChat,
-                      search_engine: SearchEngine,
-                      breadth: int = 4,
-                      depth: int = 2,
-                      is_report: bool = True,
-                      show_progress: bool = True,
-                      use_ray: bool = False):
+def run_deep_workflow(
+    user_prompt: str,
+    task_dir: str,
+    chat_client: OpenAIChat,
+    search_engine: SearchEngine,
+    breadth: int = 4,
+    depth: int = 2,
+    is_report: bool = True,
+    show_progress: bool = True,
+    use_ray: bool = False,
+):
     """
     Run the expandable deep research workflow (beta version).
     This version is more flexible and scalable than the original deep research workflow.
@@ -78,23 +81,17 @@ def run_deep_workflow(user_prompt: str,
     """
 
     research_workflow = ResearchWorkflowBeta(
-        client=chat_client,
-        search_engine=search_engine,
-        workdir=task_dir,
-        use_ray=use_ray,
-        enable_multimodal=True)
+        client=chat_client, search_engine=search_engine, workdir=task_dir, use_ray=use_ray, enable_multimodal=True
+    )
 
     asyncio.run(
         research_workflow.run(
-            user_prompt=user_prompt,
-            breadth=breadth,
-            depth=depth,
-            is_report=is_report,
-            show_progress=show_progress))
+            user_prompt=user_prompt, breadth=breadth, depth=depth, is_report=is_report, show_progress=show_progress
+        )
+    )
 
 
 if __name__ == '__main__':
-
     query: str = 'Survey of the AI Agent within the recent 3 month, including the latest research papers, open-source projects, and industry applications.'  # noqa
     task_workdir: str = '/path/to/your_workdir'  # Specify your task work directory here
     reuse: bool = False
@@ -110,9 +107,8 @@ if __name__ == '__main__':
         api_key='xxx-xxx',
         base_url='https://api-inference.modelscope.cn/v1/',
         model='Qwen/Qwen3-235B-A22B-Instruct-2507',
-        generation_config={'extra_body': {
-            'enable_thinking': False
-        }})
+        generation_config={'extra_body': {'enable_thinking': False}},
+    )
 
     # Get web-search engine client
     # For the ExaSearch, you can get your API key from https://exa.ai

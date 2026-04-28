@@ -145,10 +145,7 @@ class AsyncTaskManager:
         task = self._tasks.get(task_id)
         if task is None:
             known = [t.task_id for t in self._tasks.values()]
-            return {
-                'error': f'Unknown task_id: {task_id}',
-                'known_tasks': known
-            }
+            return {'error': f'Unknown task_id: {task_id}', 'known_tasks': known}
 
         info: dict[str, Any] = {
             'task_id': task.task_id,
@@ -165,8 +162,7 @@ class AsyncTaskManager:
             try:
                 info.update(progress_fn(task))
             except Exception:
-                logger.debug(
-                    'progress_fn raised for task %s', task_id, exc_info=True)
+                logger.debug('progress_fn raised for task %s', task_id, exc_info=True)
 
         return info
 
@@ -182,11 +178,7 @@ class AsyncTaskManager:
                 'message': 'Task is still in progress.',
             }
         if task.status == 'failed':
-            return {
-                'task_id': task_id,
-                'status': 'failed',
-                'error': task.error
-            }
+            return {'task_id': task_id, 'status': 'failed', 'error': task.error}
         if task.status == 'cancelled':
             return {'task_id': task_id, 'status': 'cancelled'}
         return {
@@ -202,8 +194,7 @@ class AsyncTaskManager:
             return {'error': f'Unknown task_id: {task_id}'}
         if task.status != 'running':
             return {
-                'error':
-                f'Task {task_id} is not running (status: {task.status})',
+                'error': f'Task {task_id} is not running (status: {task.status})',
             }
 
         # Cancel the asyncio task first

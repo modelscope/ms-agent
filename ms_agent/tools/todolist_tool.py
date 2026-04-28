@@ -1,9 +1,9 @@
+import json
 import os
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-import json
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils.utils import file_lock, render_markdown_todo
@@ -40,18 +40,14 @@ def _write_text(path: str, content: str) -> None:
 def _validate_status(status: str) -> str:
     allowed = {'pending', 'in_progress', 'completed', 'cancelled'}
     if status not in allowed:
-        raise ValueError(
-            f'Invalid todo status "{status}", must be one of {sorted(allowed)}.'
-        )
+        raise ValueError(f'Invalid todo status "{status}", must be one of {sorted(allowed)}.')
     return status
 
 
 def _validate_priority(priority: str) -> str:
     allowed = {'high', 'medium', 'low'}
     if priority not in allowed:
-        raise ValueError(
-            f'Invalid todo priority "{priority}", must be one of {sorted(allowed)}.'
-        )
+        raise ValueError(f'Invalid todo priority "{priority}", must be one of {sorted(allowed)}.')
     return priority
 
 
@@ -82,14 +78,10 @@ class TodoListTool(ToolBase):
         tool_cfg = getattr(getattr(config, 'tools'), 'todo_list')
         self.exclude_func(tool_cfg)
 
-        self._plan_filename = getattr(tool_cfg, 'plan_filename',
-                                      'plan.json') if tool_cfg else 'plan.json'
-        self._plan_md_filename = getattr(tool_cfg, 'plan_md_filename',
-                                         'plan.md') if tool_cfg else 'plan.md'
-        self._lock_subdir = getattr(tool_cfg, 'lock_subdir',
-                                    '.locks') if tool_cfg else '.locks'
-        self._auto_render_md = bool(getattr(tool_cfg, 'auto_render_md',
-                                            True)) if tool_cfg else True
+        self._plan_filename = getattr(tool_cfg, 'plan_filename', 'plan.json') if tool_cfg else 'plan.json'
+        self._plan_md_filename = getattr(tool_cfg, 'plan_md_filename', 'plan.md') if tool_cfg else 'plan.md'
+        self._lock_subdir = getattr(tool_cfg, 'lock_subdir', '.locks') if tool_cfg else '.locks'
+        self._auto_render_md = bool(getattr(tool_cfg, 'auto_render_md', True)) if tool_cfg else True
 
     async def connect(self) -> None:
         # Nothing to connect; file-based tool.
@@ -109,57 +101,47 @@ class TodoListTool(ToolBase):
                 Tool(
                     tool_name='todo_write',
                     server_name=self.SERVER_NAME,
-                    description=
-                    ('Create or update the structured todo list (plan.json) for this session/workdir. '
-                     'Use merge=true to merge by id (partial updates allowed for existing ids); '
-                     'merge=false replaces the list (full items required).'),
+                    description=(
+                        'Create or update the structured todo list (plan.json) for this session/workdir. '
+                        'Use merge=true to merge by id (partial updates allowed for existing ids); '
+                        'merge=false replaces the list (full items required).'
+                    ),
                     parameters={
                         'type': 'object',
                         'properties': {
                             'merge': {
-                                'type':
-                                'boolean',
-                                'description':
-                                ('If true, merge todo items into existing list by id (partial updates allowed). '
-                                 'If false, replace the list entirely.'),
-                                'default':
-                                True,
+                                'type': 'boolean',
+                                'description': (
+                                    'If true, merge todo items into existing list by id (partial updates allowed). '
+                                    'If false, replace the list entirely.'
+                                ),
+                                'default': True,
                             },
                             'todos': {
                                 'type': 'array',
-                                'description':
-                                'The updated/created todo list.',
+                                'description': 'The updated/created todo list.',
                                 'items': {
                                     'type': 'object',
                                     'properties': {
                                         'id': {
-                                            'type':
-                                            'string',
-                                            'description':
-                                            ('Unique identifier for the todo item. '
-                                             'e.g. "T_1", "T_2", ...'),
+                                            'type': 'string',
+                                            'description': (
+                                                'Unique identifier for the todo item. e.g. "T_1", "T_2", ...'
+                                            ),
                                         },
                                         'content': {
-                                            'type':
-                                            'string',
-                                            'description':
-                                            'Brief description of the task',
+                                            'type': 'string',
+                                            'description': 'Brief description of the task',
                                         },
                                         'status': {
-                                            'type':
-                                            'string',
-                                            'enum': [
-                                                'pending', 'in_progress',
-                                                'completed', 'cancelled'
-                                            ],
-                                            'description':
-                                            'Current status of the task',
+                                            'type': 'string',
+                                            'enum': ['pending', 'in_progress', 'completed', 'cancelled'],
+                                            'description': 'Current status of the task',
                                         },
                                         'priority': {
                                             'type': 'string',
                                             'enum': ['high', 'medium', 'low'],
-                                            'description':
-                                            'Priority level of the task',
+                                            'description': 'Priority level of the task',
                                             'default': 'medium',
                                         },
                                     },
@@ -178,8 +160,7 @@ class TodoListTool(ToolBase):
                 Tool(
                     tool_name='todo_read',
                     server_name=self.SERVER_NAME,
-                    description=
-                    'Read the current todo list for this session/workdir.',
+                    description='Read the current todo list for this session/workdir.',
                     parameters={
                         'type': 'object',
                         'properties': {},
@@ -190,17 +171,16 @@ class TodoListTool(ToolBase):
                 Tool(
                     tool_name='todo_render_md',
                     server_name=self.SERVER_NAME,
-                    description=
-                    'Render plan.md from plan.json (checkbox view).',
+                    description='Render plan.md from plan.json (checkbox view).',
                     parameters={
                         'type': 'object',
                         'properties': {
                             'path': {
-                                'type':
-                                'string',
-                                'description':
-                                ('Optional relative output path for the markdown file. '
-                                 'Defaults to plan.md in the workdir.'),
+                                'type': 'string',
+                                'description': (
+                                    'Optional relative output path for the markdown file. '
+                                    'Defaults to plan.md in the workdir.'
+                                ),
                             }
                         },
                         'required': [],
@@ -211,8 +191,7 @@ class TodoListTool(ToolBase):
         }
         return tools
 
-    async def call_tool(self, server_name: str, *, tool_name: str,
-                        tool_args: dict) -> str:
+    async def call_tool(self, server_name: str, *, tool_name: str, tool_args: dict) -> str:
         return await getattr(self, tool_name)(**(tool_args or {}))
 
     def _load_plan_locked(self, paths: _PlanPaths) -> Dict[str, Any]:
@@ -244,15 +223,13 @@ class TodoListTool(ToolBase):
             data['updated_at'] = _now_iso()
         return data
 
-    def _save_plan_locked(self, paths: _PlanPaths, plan: Dict[str,
-                                                              Any]) -> None:
+    def _save_plan_locked(self, paths: _PlanPaths, plan: Dict[str, Any]) -> None:
         plan = dict(plan or {})
         plan['schema_version'] = int(plan.get('schema_version', 1) or 1)
         plan['updated_at'] = _now_iso()
         _write_text(paths.plan_json, _json_dumps(plan))
 
-    def _normalize_todos(self, todos: List[Dict[str,
-                                                Any]]) -> List[Dict[str, Any]]:
+    def _normalize_todos(self, todos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         normalized: List[Dict[str, Any]] = []
         for idx, item in enumerate(todos or []):
             if not isinstance(item, dict):
@@ -262,11 +239,9 @@ class TodoListTool(ToolBase):
             status = str(item.get('status', '')).strip()
             priority = str(item.get('priority', 'medium') or 'medium').strip()
             if not todo_id:
-                raise ValueError(
-                    f'todos[{idx}].id is required and must be non-empty.')
+                raise ValueError(f'todos[{idx}].id is required and must be non-empty.')
             if not content:
-                raise ValueError(
-                    f'todos[{idx}].content is required and must be non-empty.')
+                raise ValueError(f'todos[{idx}].content is required and must be non-empty.')
             _validate_status(status)
             _validate_priority(priority)
             # Keep extra fields as-is
@@ -300,8 +275,7 @@ class TodoListTool(ToolBase):
 
             todo_id = str(item.get('id', '')).strip()
             if not todo_id:
-                raise ValueError(
-                    f'todos[{idx}].id is required and must be non-empty.')
+                raise ValueError(f'todos[{idx}].id is required and must be non-empty.')
 
             is_new = todo_id not in existing_ids
 
@@ -312,27 +286,20 @@ class TodoListTool(ToolBase):
             if 'content' in item:
                 content = str(item.get('content', '')).strip()
                 if not content:
-                    raise ValueError(
-                        f'todos[{idx}].content is required and must be non-empty.'
-                    )
+                    raise ValueError(f'todos[{idx}].content is required and must be non-empty.')
                 upd['content'] = content
             elif is_new:
-                raise ValueError(
-                    f'todos[{idx}] is a new id "{todo_id}" so content is required.'
-                )
+                raise ValueError(f'todos[{idx}] is a new id "{todo_id}" so content is required.')
 
             if 'status' in item:
                 status = str(item.get('status', '')).strip()
                 _validate_status(status)
                 upd['status'] = status
             elif is_new:
-                raise ValueError(
-                    f'todos[{idx}] is a new id "{todo_id}" so status is required.'
-                )
+                raise ValueError(f'todos[{idx}] is a new id "{todo_id}" so status is required.')
 
             if 'priority' in item:
-                priority = str(item.get('priority', 'medium')
-                               or 'medium').strip()
+                priority = str(item.get('priority', 'medium') or 'medium').strip()
                 _validate_priority(priority)
                 upd['priority'] = priority
 
@@ -340,16 +307,11 @@ class TodoListTool(ToolBase):
 
         return normalized
 
-    def _merge_todos(self, base: List[Dict[str, Any]],
-                     updates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _merge_todos(self, base: List[Dict[str, Any]], updates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         base_by_id: Dict[str, Dict[str, Any]] = {
-            str(t.get('id')): dict(t)
-            for t in (base or []) if isinstance(t, dict) and t.get('id')
+            str(t.get('id')): dict(t) for t in (base or []) if isinstance(t, dict) and t.get('id')
         }
-        order: List[str] = [
-            str(t.get('id')) for t in (base or [])
-            if isinstance(t, dict) and t.get('id')
-        ]
+        order: List[str] = [str(t.get('id')) for t in (base or []) if isinstance(t, dict) and t.get('id')]
         for upd in updates or []:
             tid = str(upd.get('id'))
             if tid in base_by_id:
@@ -386,9 +348,7 @@ class TodoListTool(ToolBase):
         lines.append('')
         return '\n'.join(lines)
 
-    async def todo_write(self,
-                         todos: List[Dict[str, Any]],
-                         merge: bool = True) -> str:
+    async def todo_write(self, todos: List[Dict[str, Any]], merge: bool = True) -> str:
         paths = self._paths()
         _ensure_dir(self.output_dir)
         _ensure_dir(paths.lock_dir)
@@ -400,8 +360,7 @@ class TodoListTool(ToolBase):
                 # For merge=true, allow partial updates for existing ids.
                 existing_full = self._normalize_todos(existing)
                 existing_ids = {str(t.get('id')) for t in existing_full}
-                updates = self._normalize_todo_updates(
-                    todos, existing_ids=existing_ids)
+                updates = self._normalize_todo_updates(todos, existing_ids=existing_ids)
                 merged = self._merge_todos(existing_full, updates)
                 plan['todos'] = self._normalize_todos(merged)
             else:
@@ -413,18 +372,16 @@ class TodoListTool(ToolBase):
                 md_text = self._render_plan_md_text(plan)
                 _write_text(paths.plan_md, md_text)
 
-                render_markdown_todo(
-                    paths.plan_md, title='CURRENT PLAN', use_pager=False)
+                render_markdown_todo(paths.plan_md, title='CURRENT PLAN', use_pager=False)
 
         # Return a JSON list (opencode-style) so the model can easily read it.
-        return _json_dumps({
-            'status':
-            'ok',
-            'plan_path':
-            os.path.relpath(paths.plan_json, self.output_dir),
-            'todos':
-            plan.get('todos', []),
-        })
+        return _json_dumps(
+            {
+                'status': 'ok',
+                'plan_path': os.path.relpath(paths.plan_json, self.output_dir),
+                'todos': plan.get('todos', []),
+            }
+        )
 
     async def todo_read(self) -> str:
         paths = self._paths()
@@ -433,8 +390,7 @@ class TodoListTool(ToolBase):
         with file_lock(paths.lock_dir, self._plan_filename):
             plan = self._load_plan_locked(paths)
             if self._auto_render_md:
-                render_markdown_todo(
-                    paths.plan_md, title='CURRENT PLAN', use_pager=False)
+                render_markdown_todo(paths.plan_md, title='CURRENT PLAN', use_pager=False)
 
         return _json_dumps(plan.get('todos', []))
 
@@ -442,8 +398,7 @@ class TodoListTool(ToolBase):
         paths = self._paths()
         _ensure_dir(self.output_dir)
         _ensure_dir(paths.lock_dir)
-        out_path = paths.plan_md if not path else os.path.join(
-            self.output_dir, path)
+        out_path = paths.plan_md if not path else os.path.join(self.output_dir, path)
 
         with file_lock(paths.lock_dir, self._plan_filename):
             plan = self._load_plan_locked(paths)

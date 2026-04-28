@@ -8,6 +8,8 @@ from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import click
+from rich.prompt import Confirm, Prompt
+
 from ms_agent.llm.openai import OpenAIChat
 from ms_agent.rag.extraction_manager import extract_key_information
 from ms_agent.tools.search.exa.schema import dump_batch_search_results
@@ -16,12 +18,13 @@ from ms_agent.tools.search.search_request import get_search_request_generator
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.utils import remove_resource_info, text_hash
 from ms_agent.workflow.deep_research.principle import MECEPrinciple, Principle
-from ms_agent.workflow.deep_research.research_utils import (LearningsResponse,
-                                                            ProgressTracker,
-                                                            ResearchProgress,
-                                                            ResearchResult)
+from ms_agent.workflow.deep_research.research_utils import (
+    LearningsResponse,
+    ProgressTracker,
+    ResearchProgress,
+    ResearchResult,
+)
 from ms_agent.workflow.deep_research.research_workflow import ResearchWorkflow
-from rich.prompt import Confirm, Prompt
 
 logger = get_logger()
 
@@ -343,7 +346,7 @@ class ResearchWorkflowBeta(ResearchWorkflow):
         if learnings:
             learnings_prompt = (
                 f'\n\nHere are some learnings from previous research, '
-                f'use them to generate more specific queries: {", ".join(learnings)}'
+                f'use them to generate more specific queries: {', '.join(learnings)}'
             )
 
         rewrite_prompt = (
@@ -592,7 +595,7 @@ class ResearchWorkflowBeta(ResearchWorkflow):
             f'information dense as possible.\n'
             f'- Make sure to include any entities like people, places, companies, products, '
             f'things, etc in the learnings, as well as any exact metrics, numbers, or dates.\n'
-            f'{multimodal_prompt if self._enable_multimodal else ""}'
+            f'{multimodal_prompt if self._enable_multimodal else ''}'
             f'- The learnings will be used to research the topic further.\n'
             f'- Do NOT repeat the query verbatim as a learning. '
             f'Do NOT invent facts not present in <contents>.\n'
@@ -620,7 +623,7 @@ class ResearchWorkflowBeta(ResearchWorkflow):
             response_data = response_data.get('learnings_extraction', {}) or response_data
         except Exception as e:
             logger.error(f'Error parsing JSON response: {e}')
-            logger.error(f'Raw response content: {response.get("content", "")}')
+            logger.error(f'Raw response content: {response.get('content', '')}')
             return LearningsResponse(learnings=[], follow_up_questions=[])
 
         learnings = response_data.get('learnings', [])[:num_learnings]
@@ -670,7 +673,7 @@ class ResearchWorkflowBeta(ResearchWorkflow):
             if new_depth > 0 and len(processed_results.follow_up_questions) > 0:
                 logger.info(
                     f'Researching deeper, breadth: {new_breadth}, '
-                    f'depth: {progress_manager.get_current().current_depth if progress_manager else "N/A"}'
+                    f'depth: {progress_manager.get_current().current_depth if progress_manager else 'N/A'}'
                 )
                 # Use atomic increment to avoid race conditions
                 if progress_manager is not None:
@@ -679,8 +682,8 @@ class ResearchWorkflowBeta(ResearchWorkflow):
                 # Create next query from follow-up questions
                 next_query = (
                     f'Previous Query: {search_request.query}\n'
-                    f'Previous research goal: {getattr(search_request, "research_goal", "")}\n'
-                    f'Follow-up research directions: {", ".join(processed_results.follow_up_questions)}'
+                    f'Previous research goal: {getattr(search_request, 'research_goal', '')}\n'
+                    f'Follow-up research directions: {', '.join(processed_results.follow_up_questions)}'
                 ).strip()
 
                 # Continue with deeper research, passing through the progress manager
@@ -869,7 +872,7 @@ class ResearchWorkflowBeta(ResearchWorkflow):
             f'<learnings>\n{learnings_text}\n</learnings>'
             f'\n\nPlease respond with valid JSON that matches provided schema:\n{json_schema}\n'
             f'Please respond in the language of the <prompt>. '
-            f'{multimodal_prompt if self._enable_multimodal else ""}'
+            f'{multimodal_prompt if self._enable_multimodal else ''}'
         )
 
         response = await self._chat_async(
@@ -888,7 +891,7 @@ class ResearchWorkflowBeta(ResearchWorkflow):
             fix_prompt = (
                 f'The response is not valid JSON. Please fix it. '
                 f'You can only return the fixed JSON, no other text. '
-                f'The response is: {response.get("content", "")}'
+                f'The response is: {response.get('content', '')}'
             )
             response = await self._chat_async(
                 messages=[
@@ -1082,7 +1085,7 @@ class ResearchWorkflowBeta(ResearchWorkflow):
                         encoding='utf-8') as f_report:
                     f_report.write(report)
                 logger.info(
-                    f'Report saved to {self.workdir_structure["report_md"]}')
+                    f'Report saved to {self.workdir_structure['report_md']}')
             else:
                 # Generate and save answer
                 answer = await self.write_final_answer(
@@ -1097,7 +1100,7 @@ class ResearchWorkflowBeta(ResearchWorkflow):
                         encoding='utf-8') as f_answer:
                     f_answer.write(answer)
                 logger.info(
-                    f'Answer saved to {self.workdir_structure["report_md"]}')
+                    f'Answer saved to {self.workdir_structure['report_md']}')
 
             return self.workdir_structure['report_md']
 

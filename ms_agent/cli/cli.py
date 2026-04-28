@@ -10,12 +10,9 @@ def run_cmd():
 
     This cmd imports all other sub commands, for example, `run` and `app`.
     """
-    parser = argparse.ArgumentParser(
-        'ModelScope-agent Command Line tool',
-        usage='ms-agent <command> [<args>]')
+    parser = argparse.ArgumentParser('ModelScope-agent Command Line tool', usage='ms-agent <command> [<args>]')
 
-    subparsers = parser.add_subparsers(
-        help='ModelScope-agent commands helpers')
+    subparsers = parser.add_subparsers(help='ModelScope-agent commands helpers')
 
     RunCMD.define_args(subparsers)
     AppCMD.define_args(subparsers)

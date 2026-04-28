@@ -8,8 +8,9 @@ so it never touches or conflicts with the user's own .git directory.
 All git commands are run with GIT_DIR and GIT_WORK_TREE explicitly set,
 so the snapshot repo is fully isolated from any surrounding repository.
 """
-import os
+
 import json
+import os
 import subprocess
 from typing import Optional
 
@@ -21,8 +22,7 @@ _SNAPSHOT_DIR_NAME = '.ms_agent_snapshots'
 _META_FILE = 'snapshot_meta.json'
 
 
-def _git(args: list[str], work_tree: str, git_dir: str,
-         check: bool = True) -> subprocess.CompletedProcess:
+def _git(args: list[str], work_tree: str, git_dir: str, check: bool = True) -> subprocess.CompletedProcess:
     env = os.environ.copy()
     env['GIT_DIR'] = git_dir
     env['GIT_WORK_TREE'] = work_tree
@@ -51,10 +51,7 @@ def _configure_snapshot_repo_for_automation(work_tree: str, git_dir: str) -> Non
     Git-supported way to disable hooks (POSIX ``/dev/null``, Windows ``nul``).
     """
     try:
-        _git(['config', 'core.hooksPath', os.devnull],
-             work_tree=work_tree,
-             git_dir=git_dir,
-             check=False)
+        _git(['config', 'core.hooksPath', os.devnull], work_tree=work_tree, git_dir=git_dir, check=False)
     except Exception:
         pass
 
@@ -67,10 +64,8 @@ def _ensure_repo(output_dir: str) -> str:
         # Use non-bare init with explicit GIT_DIR — no --bare so work tree is supported.
         # Do NOT pass a path argument; GIT_DIR env var points git at our custom dir.
         _git(['init'], work_tree=output_dir, git_dir=git_dir)
-        _git(['config', 'user.email', 'ms-agent@snapshot'],
-             work_tree=output_dir, git_dir=git_dir)
-        _git(['config', 'user.name', 'ms-agent'],
-             work_tree=output_dir, git_dir=git_dir)
+        _git(['config', 'user.email', 'ms-agent@snapshot'], work_tree=output_dir, git_dir=git_dir)
+        _git(['config', 'user.name', 'ms-agent'], work_tree=output_dir, git_dir=git_dir)
         # Exclude the snapshot dir itself from tracking
         info_dir = os.path.join(git_dir, 'info')
         os.makedirs(info_dir, exist_ok=True)
@@ -103,8 +98,7 @@ def _save_meta(output_dir: str, meta: dict) -> None:
         json.dump(meta, f, indent=2)
 
 
-def take_snapshot(output_dir: str, message: str,
-                  message_count: int = 0) -> Optional[str]:
+def take_snapshot(output_dir: str, message: str, message_count: int = 0) -> Optional[str]:
     """
     Stage all changes in output_dir and create a snapshot commit.
 
@@ -127,15 +121,13 @@ def take_snapshot(output_dir: str, message: str,
         _git(['add', '-A'], work_tree=output_dir, git_dir=git_dir)
 
         # Check if there's anything to commit
-        status = _git(['status', '--porcelain'],
-                      work_tree=output_dir, git_dir=git_dir)
+        status = _git(['status', '--porcelain'], work_tree=output_dir, git_dir=git_dir)
         if not status.stdout.strip():
             return None  # Nothing changed
 
         # Truncate message to keep commit subject readable
         subject = message.strip().replace('\n', ' ')[:120]
-        result = _git(['commit', '--no-verify', '-m', subject],
-                      work_tree=output_dir, git_dir=git_dir)
+        result = _git(['commit', '--no-verify', '-m', subject], work_tree=output_dir, git_dir=git_dir)
 
         commit_hash = None
         for line in result.stdout.splitlines():
@@ -154,8 +146,7 @@ def take_snapshot(output_dir: str, message: str,
         return commit_hash
 
     except FileNotFoundError:
-        logger.warning_once(
-            '[snapshot] git not found — snapshots disabled.')
+        logger.warning_once('[snapshot] git not found — snapshots disabled.')
         return None
     except subprocess.CalledProcessError as e:
         logger.warning(f'[snapshot] git error: {e.stderr.strip()}')
@@ -188,19 +179,20 @@ def list_snapshots(output_dir: str) -> list[dict]:
             parts = line.split('\t', 2)
             if len(parts) == 3:
                 h = parts[0]
-                snapshots.append({
-                    'hash': h,
-                    'date': parts[1],
-                    'message': parts[2],
-                    'message_count': meta.get(h, {}).get('message_count', 0),
-                })
+                snapshots.append(
+                    {
+                        'hash': h,
+                        'date': parts[1],
+                        'message': parts[2],
+                        'message_count': meta.get(h, {}).get('message_count', 0),
+                    }
+                )
         return snapshots
     except Exception:
         return []
 
 
-def restore_snapshot(output_dir: str,
-                     commit_hash: str) -> tuple[bool, int]:
+def restore_snapshot(output_dir: str, commit_hash: str) -> tuple[bool, int]:
     """
     Restore output_dir to the state at commit_hash.
 
@@ -212,8 +204,7 @@ def restore_snapshot(output_dir: str,
         logger.warning('[snapshot] No snapshot repo found.')
         return False, 0
     try:
-        _git(['checkout', commit_hash, '--', '.'],
-             work_tree=output_dir, git_dir=git_dir)
+        _git(['checkout', commit_hash, '--', '.'], work_tree=output_dir, git_dir=git_dir)
         logger.info(f'[snapshot] Restored to {commit_hash}')
         meta = _load_meta(output_dir)
         message_count = meta.get(commit_hash, {}).get('message_count', 0)

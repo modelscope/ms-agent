@@ -3,21 +3,17 @@ import os
 from copy import deepcopy
 from typing import List
 
+from omegaconf import DictConfig
+
 from ms_agent import LLMAgent
 from ms_agent.llm import LLM, Message
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
 
 logger = get_logger()
 
 
 class GenerateScript(LLMAgent):
-
-    def __init__(self,
-                 config: DictConfig,
-                 tag: str,
-                 trust_remote_code: bool = False,
-                 **kwargs):
+    def __init__(self, config: DictConfig, tag: str, trust_remote_code: bool = False, **kwargs):
         super().__init__(config, tag, trust_remote_code, **kwargs)
         self.work_dir = getattr(self.config, 'output_dir', 'output')
         extra = getattr(self.config, 'extra_requirement', '')

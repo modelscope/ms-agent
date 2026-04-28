@@ -1,16 +1,17 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+import json
 import os
 import re
 from typing import List
 
-import json
 import matplotlib.font_manager as fm
+from omegaconf import DictConfig
+from PIL import Image, ImageDraw, ImageFont
+
 from ms_agent.agent import CodeAgent
 from ms_agent.llm import LLM, Message
 from ms_agent.llm.openai_llm import OpenAI
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
-from PIL import Image, ImageDraw, ImageFont
 
 logger = get_logger()
 
@@ -38,7 +39,7 @@ def _chunk_tokens(tokens: List[str], max_len: int) -> List[str]:
         if len(t) > max_len:
             # If a single token exceeds max_len, split it
             for i in range(0, len(t), max_len):
-                sub = t[i:i + max_len]
+                sub = t[i : i + max_len]
                 if cur:
                     chunks.append(cur.strip())
                     cur = ''
@@ -51,8 +52,7 @@ def _chunk_tokens(tokens: List[str], max_len: int) -> List[str]:
             continue
 
         # If t is punctuation and can be merged with previous chunk (allowing slight overflow)
-        if _is_punct(t) and cur and len(cur) + len(
-                t) <= max_len + PUNCTUATION_OVERFLOW_ALLOWANCE:
+        if _is_punct(t) and cur and len(cur) + len(t) <= max_len + PUNCTUATION_OVERFLOW_ALLOWANCE:
             cur = (cur + t).strip() + ' '
             continue
 
@@ -81,17 +81,11 @@ def _clean_chunks(chunks: List[str], max_len: int) -> List[str]:
 
 
 class GenerateSubtitle(CodeAgent):
-
-    def __init__(self,
-                 config: DictConfig,
-                 tag: str,
-                 trust_remote_code: bool = False,
-                 **kwargs):
+    def __init__(self, config: DictConfig, tag: str, trust_remote_code: bool = False, **kwargs):
         super().__init__(config, tag, trust_remote_code, **kwargs)
         self.work_dir = getattr(self.config, 'output_dir', 'output')
         self.llm: OpenAI = LLM.from_config(self.config)
-        self.subtitle_translate = getattr(self.config, 'subtitle_translate',
-                                          None)
+        self.subtitle_translate = getattr(self.config, 'subtitle_translate', None)
         self.subtitle_dir = os.path.join(self.work_dir, 'subtitles')
         os.makedirs(self.subtitle_dir, exist_ok=True)
         self.fonts = self.config.fonts
@@ -108,20 +102,15 @@ class GenerateSubtitle(CodeAgent):
             for j, chunk_text in enumerate(text_chunks):
                 subtitle = None
                 if self.subtitle_translate:
-                    subtitle = await self.translate_text(
-                        chunk_text, self.subtitle_translate)
+                    subtitle = await self.translate_text(chunk_text, self.subtitle_translate)
 
-                output_file = os.path.join(
-                    self.subtitle_dir, f'bilingual_subtitle_{i + 1}_{j}.png')
+                output_file = os.path.join(self.subtitle_dir, f'bilingual_subtitle_{i + 1}_{j}.png')
                 if os.path.exists(output_file):
                     continue
 
                 self.create_bilingual_subtitle_image(
-                    source=chunk_text,
-                    target=subtitle,
-                    output_file=output_file,
-                    width=1720,
-                    height=180)
+                    source=chunk_text, target=subtitle, output_file=output_file, width=1720, height=180
+                )
         return messages
 
     def split_text_to_chunks(self, text, max_len: int = 30):
@@ -133,7 +122,6 @@ class GenerateSubtitle(CodeAgent):
         return _clean_chunks(chunks, max_len)
 
     async def translate_text(self, text, to_lang):
-
         prompt = f"""You are a professional translation expert specializing in accurately and fluently translating text into {to_lang}.
 
 ## Skills
@@ -147,7 +135,7 @@ class GenerateSubtitle(CodeAgent):
 - Output only the translation result without any explanations.
 
 Now translate:
-""" # noqa
+"""  # noqa
         messages = [
             Message(role='system', content=prompt),
             Message(role='user', content=text),
@@ -201,14 +189,16 @@ Now translate:
 
         return lines if lines else [text]
 
-    def create_subtitle_image(self,
-                              text,
-                              width=1720,
-                              height=120,
-                              font_size=28,
-                              text_color='black',
-                              bg_color='rgba(0,0,0,0)',
-                              chars_per_line=50):
+    def create_subtitle_image(
+        self,
+        text,
+        width=1720,
+        height=120,
+        font_size=28,
+        text_color='black',
+        bg_color='rgba(0,0,0,0)',
+        chars_per_line=50,
+    ):
         font = self.get_font(font_size)
         min_font_size = 18
         max_height = 500
@@ -217,15 +207,13 @@ Now translate:
         while font_size >= min_font_size:
             if font_size != original_font_size:
                 font = self.get_font(font_size)
-            lines = self.smart_wrap_text(
-                text, max_lines=2, chars_per_line=chars_per_line)
+            lines = self.smart_wrap_text(text, max_lines=2, chars_per_line=chars_per_line)
             line_height = font_size + 8
             total_text_height = len(lines) * line_height
 
             all_lines_fit = True
             for line in lines:
-                bbox = ImageDraw.Draw(Image.new('RGB', (1, 1))).textbbox(
-                    (0, 0), line, font=font)
+                bbox = ImageDraw.Draw(Image.new('RGB', (1, 1))).textbbox((0, 0), line, font=font)
                 line_width = bbox[2] - bbox[0]
                 if line_width > width * 0.95:
                     all_lines_fit = False
@@ -257,28 +245,18 @@ Now translate:
                 draw.text((x, y), line, fill=text_color, font=font)
         return img, actual_height
 
-    def create_bilingual_subtitle_image(self,
-                                        source,
-                                        output_file,
-                                        target='',
-                                        width=1720,
-                                        height=180):
+    def create_bilingual_subtitle_image(self, source, output_file, target='', width=1720, height=180):
         main_font_size = 32
         target_font_size = 22
         main_target_gap = 6
         pattern = r'^[a-zA-Z0-9\s.,!?;:\'"()-]+$'
         chars_per_line = 50 if not bool(re.match(pattern, source)) else 100
         if target:
-            target_chars_per_line = 50 if not bool(re.match(pattern,
-                                                            target)) else 100
+            target_chars_per_line = 50 if not bool(re.match(pattern, target)) else 100
 
         main_img, main_height = self.create_subtitle_image(
-            source,
-            width,
-            height,
-            main_font_size,
-            'black',
-            chars_per_line=chars_per_line)
+            source, width, height, main_font_size, 'black', chars_per_line=chars_per_line
+        )
 
         if target and target.strip():
             target_chars_per_line = 100
@@ -288,13 +266,12 @@ Now translate:
                 height,
                 target_font_size,
                 '#404040',  # Darker gray for better visibility
-                chars_per_line=target_chars_per_line)
+                chars_per_line=target_chars_per_line,
+            )
             total_height = main_height + target_height + main_target_gap
-            combined_img = Image.new('RGBA', (width, total_height),
-                                     (0, 0, 0, 0))
+            combined_img = Image.new('RGBA', (width, total_height), (0, 0, 0, 0))
             combined_img.paste(main_img, (0, 0), main_img)
-            combined_img.paste(target_img, (0, main_height + main_target_gap),
-                               target_img)
+            combined_img.paste(target_img, (0, main_height + main_target_gap), target_img)
             final_img = combined_img
             final_height = total_height
         else:

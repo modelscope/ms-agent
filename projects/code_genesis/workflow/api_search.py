@@ -1,16 +1,15 @@
+import json
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict
 
-import json
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils.constants import DEFAULT_INDEX_DIR
 
 
 class ApiSearch(ToolBase):
-
     def __init__(self, config):
         super().__init__(config)
         index_dir = getattr(config, 'index_cache_dir', DEFAULT_INDEX_DIR)
@@ -43,21 +42,19 @@ class ApiSearch(ToolBase):
                         'type': 'object',
                         'properties': {
                             'keywords': {
-                                'type':
-                                'string',
-                                'description':
-                                'The keywords/regex in the url to search api of.',
+                                'type': 'string',
+                                'description': 'The keywords/regex in the url to search api of.',
                             }
                         },
                         'required': [],
-                        'additionalProperties': False
-                    }),
+                        'additionalProperties': False,
+                    },
+                ),
             ]
         }
         return tools
 
-    async def call_tool(self, server_name: str, *, tool_name: str,
-                        tool_args: dict) -> str:
+    async def call_tool(self, server_name: str, *, tool_name: str, tool_args: dict) -> str:
         return await self.url_search(**tool_args)
 
     async def url_search(self, keywords: str = None):
@@ -84,9 +81,7 @@ class ApiSearch(ToolBase):
                 use_regex = True
             except re.error:
                 # Not a valid regex, treat as comma-separated keywords
-                keyword_list = [
-                    kw.strip() for kw in keywords.split(',') if kw.strip()
-                ]
+                keyword_list = [kw.strip() for kw in keywords.split(',') if kw.strip()]
                 use_regex = False
 
         def search_in_file(file_path):
@@ -107,12 +102,10 @@ class ApiSearch(ToolBase):
                             is_match = regex_pattern.search(url) is not None
                         else:
                             # Substring matching (any keyword matches)
-                            is_match = any(keyword in url
-                                           for keyword in keyword_list)
+                            is_match = any(keyword in url for keyword in keyword_list)
 
                         if is_match:
-                            matches.append(
-                                json.dumps(protocol, ensure_ascii=False))
+                            matches.append(json.dumps(protocol, ensure_ascii=False))
             except Exception:  # noqa
                 return []
             if matches:
@@ -120,7 +113,8 @@ class ApiSearch(ToolBase):
                 matches.insert(
                     0,
                     f'API{" with keywords: " + str(keywords) + " " + match_mode if keywords else ""} defined '
-                    f'in {file_path}:')
+                    f'in {file_path}:',
+                )
                 matches.append('\n')
             return matches
 
@@ -132,10 +126,7 @@ class ApiSearch(ToolBase):
         # Use thread pool to search files in parallel
         all_matches = []
         with ThreadPoolExecutor(max_workers=8) as executor:
-            future_to_file = {
-                executor.submit(search_in_file, f): f
-                for f in files_to_search
-            }
+            future_to_file = {executor.submit(search_in_file, f): f for f in files_to_search}
             for future in as_completed(future_to_file):
                 matches = future.result()
                 all_matches.extend(matches)

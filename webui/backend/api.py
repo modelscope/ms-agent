@@ -2,6 +2,7 @@
 """
 API endpoints for the MS-Agent Web UI
 """
+
 import mimetypes
 import os
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+
 # Import shared instances
 from shared import config_manager, project_discovery, session_manager
 
@@ -17,8 +19,7 @@ router = APIRouter()
 
 
 def get_backend_root() -> Path:
-    return Path(__file__).resolve().parents[
-        1]  # equal to dirname(dirname(__file__))
+    return Path(__file__).resolve().parents[1]  # equal to dirname(dirname(__file__))
 
 
 def get_session_root(session_id: str) -> Path:
@@ -46,8 +47,7 @@ class ProjectInfo(BaseModel):
 class SessionCreate(BaseModel):
     project_id: Optional[str] = None  # Optional for chat mode
     query: Optional[str] = None
-    workflow_type: Optional[
-        str] = 'standard'  # 'standard' or 'simple' for code_genesis
+    workflow_type: Optional[str] = 'standard'  # 'standard' or 'simple' for code_genesis
     session_type: Optional[str] = 'project'  # 'project' or 'chat'
 
 
@@ -99,14 +99,10 @@ class DeepResearchSearchConfig(BaseModel):
 
 
 class DeepResearchConfig(BaseModel):
-    researcher: DeepResearchAgentConfig = Field(
-        default_factory=DeepResearchAgentConfig)
-    searcher: DeepResearchAgentConfig = Field(
-        default_factory=DeepResearchAgentConfig)
-    reporter: DeepResearchAgentConfig = Field(
-        default_factory=DeepResearchAgentConfig)
-    search: DeepResearchSearchConfig = Field(
-        default_factory=DeepResearchSearchConfig)
+    researcher: DeepResearchAgentConfig = Field(default_factory=DeepResearchAgentConfig)
+    searcher: DeepResearchAgentConfig = Field(default_factory=DeepResearchAgentConfig)
+    reporter: DeepResearchAgentConfig = Field(default_factory=DeepResearchAgentConfig)
+    search: DeepResearchSearchConfig = Field(default_factory=DeepResearchSearchConfig)
 
 
 class MCPServer(BaseModel):
@@ -129,9 +125,7 @@ class GlobalConfig(BaseModel):
 @router.get('/projects', response_model=List[ProjectInfo])
 async def list_projects():
     """List all available projects"""
-    print(
-        f'project_discovery.discover_projects(): {project_discovery.discover_projects()}'
-    )
+    print(f'project_discovery.discover_projects(): {project_discovery.discover_projects()}')
     return project_discovery.discover_projects()
 
 
@@ -154,8 +148,7 @@ async def get_project_readme(project_id: str):
 
 
 @router.get('/projects/{project_id}/workflow')
-async def get_project_workflow(project_id: str,
-                               session_id: Optional[str] = None):
+async def get_project_workflow(project_id: str, session_id: Optional[str] = None):
     """Get the workflow configuration for a project
 
     If session_id is provided, returns the workflow based on the session's workflow_type.
@@ -188,12 +181,12 @@ async def get_project_workflow(project_id: str,
 
     try:
         import yaml
+
         with open(workflow_file, 'r', encoding='utf-8') as f:
             workflow_data = yaml.safe_load(f)
         return {'workflow': workflow_data, 'workflow_type': workflow_type}
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f'Error reading workflow file: {str(e)}')
+        raise HTTPException(status_code=500, detail=f'Error reading workflow file: {str(e)}')
 
 
 # Session Endpoints
@@ -204,10 +197,8 @@ async def create_session(session_data: SessionCreate):
     if session_data.session_type == 'chat':
         # Create chat session without requiring a project
         session = session_manager.create_session(
-            project_id='__chat__',
-            project_name='Chat Assistant',
-            workflow_type='standard',
-            session_type='chat')
+            project_id='__chat__', project_name='Chat Assistant', workflow_type='standard', session_type='chat'
+        )
         return session
 
     # For project mode, validate project exists
@@ -219,15 +210,14 @@ async def create_session(session_data: SessionCreate):
     workflow_type = session_data.workflow_type or 'standard'
     if project.get('supports_workflow_switch'):
         if workflow_type not in ['standard', 'simple']:
-            raise HTTPException(
-                status_code=400,
-                detail="workflow_type must be 'standard' or 'simple'")
+            raise HTTPException(status_code=400, detail="workflow_type must be 'standard' or 'simple'")
 
     session = session_manager.create_session(
         project_id=session_data.project_id,
         project_name=project['name'],
         workflow_type=workflow_type,
-        session_type='project')
+        session_type='project',
+    )
     return session
 
 
@@ -265,8 +255,7 @@ async def get_session_messages(session_id: str):
 
 
 @router.get('/sessions/{session_id}/dr_events')
-async def get_session_dr_events(session_id: str,
-                                after_id: Optional[int] = Query(None, ge=0)):
+async def get_session_dr_events(session_id: str, after_id: Optional[int] = Query(None, ge=0)):
     """Get deep research event history for a session."""
     events = session_manager.list_dr_events(session_id, after_id)
     if events is None:
@@ -369,8 +358,7 @@ async def update_deep_research_config(config: DeepResearchConfig):
 @router.post('/config/mcp/servers')
 async def add_mcp_server(server: MCPServer):
     """Add a new MCP server"""
-    config_manager.add_mcp_server(server.name,
-                                  server.model_dump(exclude={'name'}))
+    config_manager.add_mcp_server(server.name, server.model_dump(exclude={'name'}))
     return {'status': 'added'}
 
 
@@ -392,38 +380,14 @@ async def list_available_models():
             {
                 'provider': 'modelscope',
                 'model': 'Qwen/Qwen3-235B-A22B-Instruct-2507',
-                'display_name': 'Qwen3-235B (Recommended)'
+                'display_name': 'Qwen3-235B (Recommended)',
             },
-            {
-                'provider': 'modelscope',
-                'model': 'Qwen/Qwen2.5-72B-Instruct',
-                'display_name': 'Qwen2.5-72B'
-            },
-            {
-                'provider': 'modelscope',
-                'model': 'Qwen/Qwen2.5-32B-Instruct',
-                'display_name': 'Qwen2.5-32B'
-            },
-            {
-                'provider': 'modelscope',
-                'model': 'deepseek-ai/DeepSeek-V3',
-                'display_name': 'DeepSeek-V3'
-            },
-            {
-                'provider': 'openai',
-                'model': 'gpt-4o',
-                'display_name': 'GPT-4o'
-            },
-            {
-                'provider': 'openai',
-                'model': 'gpt-4o-mini',
-                'display_name': 'GPT-4o Mini'
-            },
-            {
-                'provider': 'anthropic',
-                'model': 'claude-3-5-sonnet-20241022',
-                'display_name': 'Claude 3.5 Sonnet'
-            },
+            {'provider': 'modelscope', 'model': 'Qwen/Qwen2.5-72B-Instruct', 'display_name': 'Qwen2.5-72B'},
+            {'provider': 'modelscope', 'model': 'Qwen/Qwen2.5-32B-Instruct', 'display_name': 'Qwen2.5-32B'},
+            {'provider': 'modelscope', 'model': 'deepseek-ai/DeepSeek-V3', 'display_name': 'DeepSeek-V3'},
+            {'provider': 'openai', 'model': 'gpt-4o', 'display_name': 'GPT-4o'},
+            {'provider': 'openai', 'model': 'gpt-4o-mini', 'display_name': 'GPT-4o Mini'},
+            {'provider': 'anthropic', 'model': 'claude-3-5-sonnet-20241022', 'display_name': 'Claude 3.5 Sonnet'},
         ]
     }
 
@@ -437,26 +401,22 @@ class FileReadRequest(BaseModel):
 
 @router.get('/files/list')
 async def list_output_files(
-        output_dir: Optional[str] = Query(default='output'),
-        session_id: Optional[str] = Query(default=None),
-        root_dir: Optional[str] = Query(default=None),
+    output_dir: Optional[str] = Query(default='output'),
+    session_id: Optional[str] = Query(default=None),
+    root_dir: Optional[str] = Query(default=None),
 ):
     """List all files under root_dir as a tree structure.
     root_dir: optional. If not provided, defaults to ms-agent/output.
               Also supports 'projects' or 'projects/xxx' etc.
     """
     # Excluded folders
-    exclude_dirs = {
-        'node_modules', '__pycache__', '.git', '.venv', 'venv', 'dist', 'build'
-    }
+    exclude_dirs = {'node_modules', '__pycache__', '.git', '.venv', 'venv', 'dist', 'build'}
 
     # Base directories (same way as read_file_content)
-    base_dir = os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     projects_dir = os.path.join(base_dir, 'projects')
 
     if session_id:
-
         session_root = get_session_root(session_id)
         resolved_root = (session_root / '').resolve()
 
@@ -522,14 +482,15 @@ async def list_output_files(
                 # Return RELATIVE path to resolved_root (better for frontend + read API)
                 rel_path = os.path.relpath(full_path, resolved_root)
 
-                result['files'].append({
-                    'name': item,
-                    'path': rel_path,  # <-- relative path
-                    'abs_path':
-                    full_path,  # optional: if you still want absolute for debugging
-                    'size': os.path.getsize(full_path),
-                    'modified': os.path.getmtime(full_path)
-                })
+                result['files'].append(
+                    {
+                        'name': item,
+                        'path': rel_path,  # <-- relative path
+                        'abs_path': full_path,  # optional: if you still want absolute for debugging
+                        'size': os.path.getsize(full_path),
+                        'modified': os.path.getmtime(full_path),
+                    }
+                )
 
         result['files'].sort(key=lambda x: x['modified'], reverse=True)
         return result
@@ -540,12 +501,10 @@ async def list_output_files(
 
 
 def get_allowed_roots():
-    base_dir = os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     output_dir = os.path.join(base_dir, 'output')
     projects_dir = os.path.join(base_dir, 'projects')
-    return base_dir, os.path.normpath(output_dir), os.path.normpath(
-        projects_dir)
+    return base_dir, os.path.normpath(output_dir), os.path.normpath(projects_dir)
 
 
 def resolve_root_dir(root_dir: Optional[str]) -> str:
@@ -576,8 +535,7 @@ def resolve_root_dir(root_dir: Optional[str]) -> str:
                 cand1 = os.path.join(output_dir, rd)
                 cand2 = os.path.join(projects_dir, rd)
                 # choose existing one if possible, otherwise default to cand1
-                resolved = cand1 if os.path.exists(cand1) else (
-                    cand2 if os.path.exists(cand2) else cand1)
+                resolved = cand1 if os.path.exists(cand1) else (cand2 if os.path.exists(cand2) else cand1)
 
     resolved = os.path.normpath(os.path.abspath(resolved))
 
@@ -603,14 +561,11 @@ def resolve_file_path(root_dir_abs: str, file_path: str) -> str:
     elif file_path.startswith('projects/'):
         # Special case: if path starts with 'projects/', resolve from base_dir
         # This handles: projects/code_genesis/output/config.js
-        base_dir = os.path.dirname(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        full_path = os.path.normpath(
-            os.path.abspath(os.path.join(base_dir, file_path)))
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        full_path = os.path.normpath(os.path.abspath(os.path.join(base_dir, file_path)))
     else:
         # Try multiple locations
-        base_dir = os.path.dirname(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
         candidates = [
             # First try with root_dir_abs (for session-based access)
@@ -625,8 +580,7 @@ def resolve_file_path(root_dir_abs: str, file_path: str) -> str:
                 for project_name in os.listdir(projects_dir):
                     project_path = os.path.join(projects_dir, project_name)
                     if os.path.isdir(project_path):
-                        candidates.append(
-                            os.path.join(project_path, 'output', file_path))
+                        candidates.append(os.path.join(project_path, 'output', file_path))
             except (OSError, PermissionError):
                 pass
 
@@ -660,12 +614,10 @@ async def read_file_content(request: FileReadRequest):
     full_path = resolve_file_path(root_abs, request.path)
 
     if not os.path.exists(full_path):
-        raise HTTPException(
-            status_code=404, detail=f'File not found: {full_path}')
+        raise HTTPException(status_code=404, detail=f'File not found: {full_path}')
 
     if not os.path.isfile(full_path):
-        raise HTTPException(
-            status_code=400, detail=f'Path {full_path} is not a file')
+        raise HTTPException(status_code=400, detail=f'Path {full_path} is not a file')
     # limit 1MB
     file_size = os.path.getsize(full_path)
     if file_size > 1024 * 1024:
@@ -706,19 +658,17 @@ async def read_file_content(request: FileReadRequest):
             'root_dir': root_abs,
             'filename': os.path.basename(full_path),
             'language': language,
-            'size': file_size
+            'size': file_size,
         }
     except UnicodeDecodeError:
         raise HTTPException(status_code=400, detail='File is not a text file')
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f'Error reading file: {str(e)}')
+        raise HTTPException(status_code=500, detail=f'Error reading file: {str(e)}')
 
 
 def resolve_and_check_path(file_path: str) -> str:
     """Resolve file path, trying multiple locations"""
-    base_dir = os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
     if os.path.isabs(file_path):
         full_path = file_path
@@ -748,9 +698,7 @@ def resolve_and_check_path(file_path: str) -> str:
                         project_path = os.path.join(projects_dir, project_name)
                         if os.path.isdir(project_path):
                             # Try project/output/filename
-                            candidates.append(
-                                os.path.join(project_path, 'output',
-                                             file_path))
+                            candidates.append(os.path.join(project_path, 'output', file_path))
                 except (OSError, PermissionError):
                     pass
 
@@ -764,8 +712,7 @@ def resolve_and_check_path(file_path: str) -> str:
 
         if not full_path:
             # If not found, use the first candidate for error message
-            full_path = os.path.normpath(
-                candidates[0] if candidates else file_path)
+            full_path = os.path.normpath(candidates[0] if candidates else file_path)
 
     full_path = os.path.normpath(full_path)
 
@@ -775,18 +722,15 @@ def resolve_and_check_path(file_path: str) -> str:
     # TODO: Security check: ensure `full_path` is within configured allowed roots.
 
     if not os.path.exists(full_path):
-        raise HTTPException(
-            status_code=404, detail=f'File not found: {full_path}')
+        raise HTTPException(status_code=404, detail=f'File not found: {full_path}')
     if not os.path.isfile(full_path):
-        raise HTTPException(
-            status_code=400, detail=f'Path {full_path} is not a file')
+        raise HTTPException(status_code=400, detail=f'Path {full_path} is not a file')
 
     return full_path
 
 
 @router.get('/files/stream')
-async def stream_file(path: str,
-                      session_id: Optional[str] = Query(default=None)):
+async def stream_file(path: str, session_id: Optional[str] = Query(default=None)):
     if session_id:
         session_root = get_session_root(session_id)
         root_abs = str(session_root.resolve())
@@ -800,8 +744,5 @@ async def stream_file(path: str,
         full_path,
         media_type=media_type,
         filename=os.path.basename(full_path),
-        headers={
-            'Content-Disposition':
-            f'inline; filename="{os.path.basename(full_path)}"'
-        },
+        headers={'Content-Disposition': f'inline; filename="{os.path.basename(full_path)}"'},
     )

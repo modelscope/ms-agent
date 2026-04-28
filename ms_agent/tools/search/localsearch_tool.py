@@ -5,12 +5,9 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ms_agent.tools.search.sirchmunk_search import (
-    SirchmunkSearch,
-    effective_localsearch_settings,
-)
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
+from ms_agent.tools.search.sirchmunk_search import SirchmunkSearch, effective_localsearch_settings
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
@@ -60,9 +57,7 @@ def _resolved_localsearch_paths_from_config(config) -> List[str]:
 
 def _format_configured_roots(paths: List[str]) -> str:
     if not paths:
-        return (
-            '(none — set tools.localsearch.paths in agent config, '
-            'or legacy knowledge_search.paths)')
+        return '(none — set tools.localsearch.paths in agent config, or legacy knowledge_search.paths)'
     return '\n'.join(f'- {p}' for p in paths)
 
 
@@ -91,12 +86,10 @@ class LocalSearchTool(ToolBase):
         if tool_cfg is not None:
             self.exclude_func(tool_cfg)
         self._searcher: Optional[SirchmunkSearch] = None
-        self._configured_roots: List[str] = (
-            _resolved_localsearch_paths_from_config(config))
+        self._configured_roots: List[str] = _resolved_localsearch_paths_from_config(config)
 
     def _tool_description(self) -> str:
-        return _LOCALSEARCH_DESCRIPTION.format(
-            configured_roots=_format_configured_roots(self._configured_roots))
+        return _LOCALSEARCH_DESCRIPTION.format(configured_roots=_format_configured_roots(self._configured_roots))
 
     def _paths_param_description(self) -> str:
         roots = _format_configured_roots(self._configured_roots)
@@ -104,7 +97,8 @@ class LocalSearchTool(ToolBase):
             'Optional. Narrow search to specific files or directories under the '
             'configured roots below. Each path must exist on disk and lie under '
             'one of these roots (or be exactly one of them).\n'
-            f'Configured roots:\n{roots}')
+            f'Configured roots:\n{roots}'
+        )
 
     def _ensure_searcher(self) -> SirchmunkSearch:
         if self._searcher is None:
@@ -122,60 +116,43 @@ class LocalSearchTool(ToolBase):
                     server_name=_SERVER,
                     description=self._tool_description(),
                     parameters={
-                        'type':
-                        'object',
+                        'type': 'object',
                         'properties': {
                             'query': {
-                                'type':
-                                'string',
-                                'description':
-                                'Search keywords or natural-language question about local content.',
+                                'type': 'string',
+                                'description': 'Search keywords or natural-language question about local content.',
                             },
                             'paths': {
-                                'type':
-                                'array',
-                                'items': {
-                                    'type': 'string'
-                                },
-                                'description':
-                                self._paths_param_description(),
+                                'type': 'array',
+                                'items': {'type': 'string'},
+                                'description': self._paths_param_description(),
                             },
                             'mode': {
-                                'type':
-                                'string',
+                                'type': 'string',
                                 'enum': ['FAST', 'DEEP', 'FILENAME_ONLY'],
-                                'description':
-                                'Search mode; omit to use agent default (usually FAST).',
+                                'description': 'Search mode; omit to use agent default (usually FAST).',
                             },
                             'max_depth': {
                                 'type': 'integer',
                                 'minimum': 1,
                                 'maximum': 20,
-                                'description':
-                                'Max directory depth for filesystem search.',
+                                'description': 'Max directory depth for filesystem search.',
                             },
                             'top_k_files': {
                                 'type': 'integer',
                                 'minimum': 1,
                                 'maximum': 20,
-                                'description':
-                                'Max files for evidence / filename hits.',
+                                'description': 'Max files for evidence / filename hits.',
                             },
                             'include': {
                                 'type': 'array',
-                                'items': {
-                                    'type': 'string'
-                                },
-                                'description':
-                                'Glob patterns to include (e.g. *.py, *.md).',
+                                'items': {'type': 'string'},
+                                'description': 'Glob patterns to include (e.g. *.py, *.md).',
                             },
                             'exclude': {
                                 'type': 'array',
-                                'items': {
-                                    'type': 'string'
-                                },
-                                'description':
-                                'Glob patterns to exclude (e.g. *.pyc).',
+                                'items': {'type': 'string'},
+                                'description': 'Glob patterns to exclude (e.g. *.pyc).',
                             },
                         },
                         'required': ['query'],
@@ -184,8 +161,7 @@ class LocalSearchTool(ToolBase):
             ]
         }
 
-    async def call_tool(self, server_name: str, *, tool_name: str,
-                        tool_args: dict):
+    async def call_tool(self, server_name: str, *, tool_name: str, tool_args: dict):
         del server_name
         if tool_name != _TOOL:
             return f'Unknown tool: {tool_name}'
@@ -219,11 +195,11 @@ class LocalSearchTool(ToolBase):
             if paths_arg:
                 resolved_paths = searcher.resolve_tool_paths(paths_arg)
                 if not resolved_paths:
-                    roots = _format_configured_roots(
-                        self._configured_roots)
+                    roots = _format_configured_roots(self._configured_roots)
                     return (
                         'Error: `paths` are invalid. Each path must exist on disk and lie '
-                        'under one of these configured roots:\n' + roots)
+                        'under one of these configured roots:\n' + roots
+                    )
 
             answer = await searcher.query(
                 query,
@@ -266,8 +242,7 @@ class LocalSearchTool(ToolBase):
                 result_parts.append('\nSource paths:')
                 for item in excerpts[:12]:
                     meta = item.get('metadata') or {}
-                    result_parts.append(
-                        f'- {meta.get("source", "?")}')
+                    result_parts.append(f'- {meta.get("source", "?")}')
             result_text = '\n'.join(result_parts)
 
             return {
@@ -279,4 +254,3 @@ class LocalSearchTool(ToolBase):
         except Exception as exc:
             logger.warning(f'localsearch failed: {exc}')
             return f'Local search failed: {exc}'
-

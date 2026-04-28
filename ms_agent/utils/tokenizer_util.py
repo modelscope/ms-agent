@@ -59,14 +59,10 @@ class TokenizerUtil:
 
         token_ids = self.encode(content)
         # Decode each token ID individually to get its string representation
-        token_strings = [
-            self.tokenizer.decode([tid], skip_special_tokens=True)
-            for tid in token_ids
-        ]
+        token_strings = [self.tokenizer.decode([tid], skip_special_tokens=True) for tid in token_ids]
         return token_strings
 
-    def count_tokens(self,
-                     contents: Union[str, List[str]]) -> Union[int, List[int]]:
+    def count_tokens(self, contents: Union[str, List[str]]) -> Union[int, List[int]]:
         """
         Batch count tokens for multiple texts.
 

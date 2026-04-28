@@ -5,12 +5,13 @@ from abc import abstractmethod
 from copy import deepcopy
 from typing import Any, Dict, Union
 
-from ms_agent.prompting import apply_prompt_files
-from ms_agent.utils import get_logger
+from modelscope import snapshot_download
 from omegaconf import DictConfig, ListConfig, OmegaConf
 from omegaconf.basecontainer import BaseContainer
 
-from modelscope import snapshot_download
+from ms_agent.prompting import apply_prompt_files
+from ms_agent.utils import get_logger
+
 from ..utils.constants import TOOL_PLUGIN_NAME
 from .env import Env
 
@@ -18,7 +19,6 @@ logger = get_logger()
 
 
 class ConfigLifecycleHandler:
-
     def task_begin(self, config: DictConfig, tag: str) -> DictConfig:
         """Modify config when the task begins.
 
@@ -51,14 +51,10 @@ class Config:
     """All tasks begin from a config"""
 
     tag: str = ''
-    supported_config_names = [
-        'workflow.yaml', 'workflow.yml', 'agent.yaml', 'agent.yml'
-    ]
+    supported_config_names = ['workflow.yaml', 'workflow.yml', 'agent.yaml', 'agent.yml']
 
     @classmethod
-    def from_task(cls,
-                  config_dir_or_id: str,
-                  env: Dict[str, str] = None) -> Union[DictConfig, ListConfig]:
+    def from_task(cls, config_dir_or_id: str, env: Dict[str, str] = None) -> Union[DictConfig, ListConfig]:
         """Read a task config file and return a config object.
 
         Args:
@@ -88,7 +84,8 @@ class Config:
 
         assert config is not None, (
             f'Cannot find any valid config file in {config_dir_or_id}, '
-            f'supported configs are: {Config.supported_config_names}')
+            f'supported configs are: {Config.supported_config_names}'
+        )
         envs = Env.load_env(env)
         cls._update_config(config, envs)
         _dict_config = cls.parse_args()
@@ -117,10 +114,7 @@ class Config:
     @staticmethod
     def is_workflow(config: DictConfig) -> bool:
         assert config.name is not None, 'Cannot find a valid name in this config'
-        return config.name in [
-            'workflow.yaml', 'workflow.yml', 'simple_workflow.yaml',
-            'simple_workflow.yml'
-        ]
+        return config.name in ['workflow.yaml', 'workflow.yml', 'simple_workflow.yaml', 'simple_workflow.yml']
 
     @staticmethod
     def parse_args() -> Dict[str, Any]:
@@ -131,19 +125,16 @@ class Config:
             for idx in range(1, len(unknown) - 1, 2):
                 key = unknown[idx]
                 value = unknown[idx + 1]
-                assert key.startswith(
-                    '--'), f'Parameter not correct: {unknown}'
+                assert key.startswith('--'), f'Parameter not correct: {unknown}'
                 _dict_config[key[2:]] = value
         return _dict_config
 
     @staticmethod
-    def _update_config(config: Union[DictConfig, ListConfig],
-                       extra: Dict[str, str] = None):
+    def _update_config(config: Union[DictConfig, ListConfig], extra: Dict[str, str] = None):
         if not extra:
             return config
 
-        def traverse_config(_config: Union[DictConfig, ListConfig, Any],
-                            path: str = ''):
+        def traverse_config(_config: Union[DictConfig, ListConfig, Any], path: str = ''):
             if isinstance(_config, DictConfig):
                 for name, value in _config.items():
                     current_path = f'{path}.{name}' if path else name
@@ -152,48 +143,45 @@ class Config:
                         traverse_config(value, current_path)
                     else:
                         if current_path in extra:
-                            logger.info(
-                                f'Replacing {current_path} with extra value.')
+                            logger.info(f'Replacing {current_path} with extra value.')
                             # Convert temperature to float and max_tokens to int if they're numeric strings
                             value_to_set = extra[current_path]
-                            if name == 'temperature' and isinstance(
-                                    value_to_set, str):
+                            if name == 'temperature' and isinstance(value_to_set, str):
                                 try:
                                     value_to_set = float(value_to_set)
                                 except (ValueError, TypeError):
                                     pass
-                            elif name == 'max_tokens' and isinstance(
-                                    value_to_set, str):
+                            elif name == 'max_tokens' and isinstance(value_to_set, str):
                                 try:
                                     value_to_set = int(value_to_set)
                                 except (ValueError, TypeError):
                                     pass
                             setattr(_config, name, value_to_set)
                         # Find the key in extra that matches name (case-insensitive)
-                        elif (key_match := next(
-                            (key
-                             for key in extra if key.lower() == name.lower()),
-                                None)) is not None:
+                        elif (
+                            key_match := next((key for key in extra if key.lower() == name.lower()), None)
+                        ) is not None:
                             logger.info(f'Replacing {name} with extra value.')
                             # Convert temperature to float and max_tokens to int if they're numeric strings
                             value_to_set = extra[key_match]
-                            if name == 'temperature' and isinstance(
-                                    value_to_set, str):
+                            if name == 'temperature' and isinstance(value_to_set, str):
                                 try:
                                     value_to_set = float(value_to_set)
                                 except (ValueError, TypeError):
                                     pass
-                            elif name == 'max_tokens' and isinstance(
-                                    value_to_set, str):
+                            elif name == 'max_tokens' and isinstance(value_to_set, str):
                                 try:
                                     value_to_set = int(value_to_set)
                                 except (ValueError, TypeError):
                                     pass
                             setattr(_config, name, value_to_set)
                         # Handle placeholder replacement like <api_key>
-                        elif (isinstance(value, str) and value.startswith('<')
-                              and value.endswith('>')
-                              and value[1:-1] in extra):
+                        elif (
+                            isinstance(value, str)
+                            and value.startswith('<')
+                            and value.endswith('>')
+                            and value[1:-1] in extra
+                        ):
                             logger.info(f'Replacing {value} with extra value.')
                             setattr(_config, name, extra[value[1:-1]])
 
@@ -203,9 +191,12 @@ class Config:
                     if isinstance(value, BaseContainer):
                         traverse_config(value, path)
                     else:
-                        if (isinstance(value, str) and value.startswith('<')
-                                and value.endswith('>')
-                                and value[1:-1] in extra):
+                        if (
+                            isinstance(value, str)
+                            and value.startswith('<')
+                            and value.endswith('>')
+                            and value[1:-1] in extra
+                        ):
                             logger.info(f'Replacing {value} with extra value.')
                             _config[idx] = extra[value[1:-1]]
 
@@ -217,24 +208,20 @@ class Config:
                 current = config
                 # Navigate/create nested structure
                 for i, part in enumerate(parts[:-1]):
-                    if not hasattr(current,
-                                   part) or getattr(current, part) is None:
+                    if not hasattr(current, part) or getattr(current, part) is None:
                         setattr(current, part, DictConfig({}))
                     current = getattr(current, part)
                 final_key = parts[-1]
-                if not hasattr(current, final_key) or getattr(
-                        current, final_key) is None:
+                if not hasattr(current, final_key) or getattr(current, final_key) is None:
                     logger.info(f'Adding new config key: {key}')
                     # Convert temperature to float and max_tokens to int if they're numeric strings
                     value_to_set = value
-                    if final_key == 'temperature' and isinstance(
-                            value_to_set, str):
+                    if final_key == 'temperature' and isinstance(value_to_set, str):
                         try:
                             value_to_set = float(value_to_set)
                         except (ValueError, TypeError):
                             pass
-                    elif final_key == 'max_tokens' and isinstance(
-                            value_to_set, str):
+                    elif final_key == 'max_tokens' and isinstance(value_to_set, str):
                         try:
                             value_to_set = int(value_to_set)
                         except (ValueError, TypeError):
@@ -244,9 +231,7 @@ class Config:
         return None
 
     @staticmethod
-    def convert_mcp_servers_to_json(
-            config: Union[DictConfig,
-                          ListConfig]) -> Dict[str, Dict[str, Any]]:
+    def convert_mcp_servers_to_json(config: Union[DictConfig, ListConfig]) -> Dict[str, Dict[str, Any]]:
         """Convert the mcp servers to json mcp config."""
         servers = {'mcpServers': {}}
         if getattr(config, 'tools', None):

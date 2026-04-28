@@ -10,6 +10,7 @@ Performance: Playwright ``Browser`` must be used from the creating thread only.
 We keep **one browser per thread** (e.g. each ``ThreadPoolExecutor`` worker) and
 reuse it across URLs instead of launching Chromium for every fetch.
 """
+
 from __future__ import annotations
 
 import atexit
@@ -36,9 +37,9 @@ def _chromium_launch_args() -> List[str]:
         '--blink-settings=imagesEnabled=false',
     ]
     if os.getenv('MS_AGENT_PLAYWRIGHT_NO_SANDBOX', '').lower() in (
-            '1',
-            'true',
-            'yes',
+        '1',
+        'true',
+        'yes',
     ):
         args.extend(('--no-sandbox', '--disable-setuid-sandbox'))
     return args
@@ -100,7 +101,8 @@ def _thread_browser() -> object:
     except ImportError:
         logger.debug(
             'playwright is not installed; skip headless fetch. '
-            'Install with: pip install playwright && playwright install chromium')
+            'Install with: pip install playwright && playwright install chromium'
+        )
         raise RuntimeError('playwright not installed') from None
 
     pw = sync_playwright().start()
@@ -135,7 +137,8 @@ def try_playwright_inner_text(
     except ImportError:
         logger.debug(
             'playwright is not installed; skip headless fetch. '
-            'Install with: pip install playwright && playwright install chromium')
+            'Install with: pip install playwright && playwright install chromium'
+        )
         return ''
 
     text = ''
@@ -147,13 +150,11 @@ def try_playwright_inner_text(
             page.goto(url, wait_until='domcontentloaded', timeout=timeout_ms)
             if settle_ms:
                 page.wait_for_timeout(settle_ms)
-            raw = page.evaluate(
-                """() => {
+            raw = page.evaluate("""() => {
                     const b = document.body;
                     if (!b) return '';
                     return b.innerText || '';
-                }"""
-            )
+                }""")
             if isinstance(raw, str):
                 text = raw[:_MAX_INNER_TEXT_CHARS]
         finally:
@@ -179,10 +180,7 @@ def looks_like_spa_shell_html(raw_html: str) -> bool:
     if not raw_html or len(raw_html) < 80:
         return False
     low = raw_html.lower()
-    if any(
-            x in low
-            for x in ('enable javascript', 'javascript is required',
-                      'you need to enable javascript')):
+    if any(x in low for x in ('enable javascript', 'javascript is required', 'you need to enable javascript')):
         return True
     if re.search(r'<div[^>]+\bid=["\']root["\'][^>]*>\s*</div>', low):
         return True
