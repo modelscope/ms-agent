@@ -1,14 +1,14 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+import json
 import os
+from callbacks.file_parser import extract_code_blocks
+from omegaconf import DictConfig
 from typing import Any, AsyncGenerator, List, Union
 
-import json
-from callbacks.file_parser import extract_code_blocks
 from ms_agent.agent.llm_agent import LLMAgent
 from ms_agent.llm.utils import Message
 from ms_agent.utils import get_logger
 from ms_agent.utils.constants import DEFAULT_TAG
-from omegaconf import DictConfig
 
 logger = get_logger()
 

@@ -1,10 +1,10 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 from abc import ABC, abstractmethod
+from omegaconf import DictConfig
 from typing import List
 
 from ms_agent.llm.utils import Message
 from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR
-from omegaconf import DictConfig
 
 
 class Memory(ABC):

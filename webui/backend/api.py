@@ -4,14 +4,13 @@ API endpoints for the MS-Agent Web UI
 """
 import mimetypes
 import os
-from pathlib import Path
-from typing import Any, Dict, List, Optional
-
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
+from pathlib import Path
 from pydantic import BaseModel, Field
 # Import shared instances
 from shared import config_manager, project_discovery, session_manager
+from typing import Any, Dict, List, Optional
 
 router = APIRouter()
 

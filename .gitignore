@@ -31,6 +31,8 @@ wheels/
 /package
 /temp
 **/tmp/
+.env*
+.claude-trace/
 /apps/agentfabric/tmp/
 MANIFEST
 
@@ -148,6 +150,7 @@ apps/agentfabric/config/local_user/*
 *.pt
 .run/
 .run/*
+.claude*
 
 # ast template
 ast_index_file.py

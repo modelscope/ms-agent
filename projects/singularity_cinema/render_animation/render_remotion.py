@@ -1,4 +1,5 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+import json
 import os
 import re
 import shutil
@@ -6,14 +7,13 @@ import subprocess
 import urllib.request
 import zipfile
 from collections import defaultdict
+from moviepy import VideoFileClip
+from omegaconf import DictConfig
 from typing import List, Optional, Tuple, Union
 
-import json
-from moviepy import VideoFileClip
 from ms_agent.agent import CodeAgent
 from ms_agent.llm import LLM, Message
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
 
 logger = get_logger()
 
@@ -718,8 +718,8 @@ class RenderRemotion(CodeAgent):
         Returns True if clipping detected (colored pixels at edges).
         """
         try:
-            from PIL import Image
             import numpy as np
+            from PIL import Image
 
             img = Image.open(frame_path).convert('RGB')
             pixels = np.array(img)

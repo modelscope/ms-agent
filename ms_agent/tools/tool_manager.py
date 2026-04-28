@@ -2,6 +2,7 @@
 import asyncio
 import importlib
 import inspect
+import json
 import os
 import sys
 import uuid
@@ -9,7 +10,6 @@ from copy import copy
 from types import TracebackType
 from typing import Any, Dict, List, Optional
 
-import json
 from ms_agent.llm.utils import Tool, ToolCall
 from ms_agent.tools.agent_tool import AgentTool
 from ms_agent.tools.base import ToolBase
@@ -17,8 +17,10 @@ from ms_agent.tools.code import CodeExecutionTool, LocalCodeExecutionTool
 from ms_agent.tools.filesystem_tool import FileSystemTool
 from ms_agent.tools.image_generator import ImageGenerator
 from ms_agent.tools.mcp_client import MCPClient
+from ms_agent.tools.search.localsearch_tool import LocalSearchTool
+from ms_agent.tools.search.sirchmunk_search import \
+    effective_localsearch_settings
 from ms_agent.tools.search.websearch_tool import WebSearchTool
-from ms_agent.tools.split_task import SplitTask
 from ms_agent.tools.todolist_tool import TodoListTool
 from ms_agent.tools.video_generator import VideoGenerator
 from ms_agent.utils import get_logger
@@ -47,8 +49,6 @@ class ToolManager:
 
         self.extra_tools: List[ToolBase] = []
         self.has_split_task_tool = False
-        if hasattr(config, 'tools') and hasattr(config.tools, 'split_task'):
-            self.extra_tools.append(SplitTask(config))
         if hasattr(config, 'tools') and hasattr(config.tools,
                                                 'image_generator'):
             self.extra_tools.append(ImageGenerator(config))
@@ -76,10 +76,12 @@ class ToolManager:
                 self.extra_tools.append(CodeExecutionTool(config))
         if hasattr(config, 'tools') and hasattr(config.tools,
                                                 'financial_data_fetcher'):
-            from ms_agent.tools.findata.findata_fetcher import FinancialDataFetcher
+            from ms_agent.tools.findata.findata_fetcher import \
+                FinancialDataFetcher
             self.extra_tools.append(FinancialDataFetcher(config))
-        if hasattr(config, 'tools') and getattr(config.tools, 'agent_tools',
-                                                None):
+        if hasattr(config,
+                   'tools') and (getattr(config.tools, 'agent_tools', None)
+                                 or hasattr(config.tools, 'split_task')):
             agent_tool = AgentTool(
                 config, trust_remote_code=self.trust_remote_code)
             if agent_tool.enabled:
@@ -88,6 +90,11 @@ class ToolManager:
             self.extra_tools.append(TodoListTool(config))
         if hasattr(config, 'tools') and hasattr(config.tools, 'web_search'):
             self.extra_tools.append(WebSearchTool(config))
+        if effective_localsearch_settings(config) is not None:
+            self.extra_tools.append(LocalSearchTool(config))
+        if hasattr(config, 'tools') and hasattr(config.tools, 'task_control'):
+            from ms_agent.tools.task_control_tool import TaskControlTool
+            self.extra_tools.append(TaskControlTool(config))
         self.tool_call_timeout = getattr(config, 'tool_call_timeout',
                                          TOOL_CALL_TIMEOUT)
         local_dir = self.config.local_dir if hasattr(self.config,
@@ -226,6 +233,12 @@ class ToolManager:
                     call_args = dict(tool_args or {})
                     call_id = tool_info.get('id') or str(uuid.uuid4())
                     call_args['__call_id'] = call_id
+                elif isinstance(tool_ins,
+                                LocalCodeExecutionTool) and tool_name.endswith(
+                                    f'{self.TOOL_SPLITER}shell_executor'):
+                    call_args = dict(tool_args or {})
+                    call_args['__call_id'] = tool_info.get('id') or str(
+                        uuid.uuid4())
                 response = await asyncio.wait_for(
                     tool_ins.call_tool(
                         server_name,

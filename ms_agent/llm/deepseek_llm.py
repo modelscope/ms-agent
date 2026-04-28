@@ -1,9 +1,9 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+from omegaconf import DictConfig
 from typing import List
 
 from ms_agent.llm.openai_llm import OpenAI
 from ms_agent.llm.utils import Message, Tool
-from omegaconf import DictConfig
 
 
 class DeepSeek(OpenAI):

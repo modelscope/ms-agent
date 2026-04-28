@@ -1,15 +1,15 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import base64
+import json
 import mimetypes
 import os
 import re
+import requests
 import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-import json
-import requests
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.utils import (get_files_from_dir, is_package_installed,
                                   text_hash)
@@ -353,8 +353,7 @@ class PushToModelScope(PushToHub):
                 'ModelScope package is not installed. Please install it with `pip install modelscope`.'
             )
 
-        from modelscope.hub.api import HubApi
-        from modelscope.hub.api import get_endpoint
+        from modelscope.hub.api import HubApi, get_endpoint
 
         self.api = HubApi()
         self.token = token

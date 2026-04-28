@@ -1,22 +1,22 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+import aiohttp
 import asyncio
+import json
+import numpy as np
 import os
 import re
 import shutil
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from io import BytesIO
+from omegaconf import DictConfig
+from PIL import Image
 from typing import List, Union
 
-import aiohttp
-import json
-import numpy as np
 from ms_agent.agent import CodeAgent
 from ms_agent.llm import Message
 from ms_agent.tools.image_generator import ImageGenerator
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
-from PIL import Image
 
 logger = get_logger()
 

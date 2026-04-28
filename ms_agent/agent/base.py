@@ -1,12 +1,12 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import os
 from abc import ABC, abstractmethod
+from omegaconf import DictConfig
 from typing import Any, AsyncGenerator, List, Tuple, Union
 
 from ms_agent.llm import Message
 from ms_agent.utils import read_history, save_history
 from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR, DEFAULT_RETRY_COUNT
-from omegaconf import DictConfig
 
 
 class Agent(ABC):
@@ -73,6 +73,15 @@ class Agent(ABC):
         if not getattr(self.config, 'save_history', True):
             return
         save_history(self.output_dir, self.tag, self.config, messages)
+
+    def list_snapshots(self) -> list:
+        """Return snapshots for this agent's output_dir, most recent first."""
+        from ms_agent.utils.snapshot import list_snapshots
+        return list_snapshots(self.output_dir)
+
+    def rollback(self, commit_hash: str) -> bool:
+        """Restore output_dir to a previous snapshot and truncate history."""
+        raise NotImplementedError()
 
     def next_flow(self, idx: int) -> int:
         """Used in workflow, decide which agent goes next."""

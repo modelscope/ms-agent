@@ -1,4 +1,5 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+from omegaconf import DictConfig
 from typing import Any, AsyncGenerator, List, Union
 
 from ms_agent.agent.llm_agent import LLMAgent
@@ -8,7 +9,6 @@ from ms_agent.utils.constants import DEFAULT_TAG
 from ms_agent.utils.stats import (append_stats, build_timing_record,
                                   get_stats_path, monotonic, now_iso,
                                   summarize_usage)
-from omegaconf import DictConfig
 
 logger = get_logger()
 

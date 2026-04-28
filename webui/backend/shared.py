@@ -4,7 +4,6 @@ Shared instances for backend modules.
 Ensures api.py and websocket_handler.py use the same manager instances.
 """
 import os
-
 from config_manager import ConfigManager
 from project_discovery import ProjectDiscovery
 from session_manager import SessionManager

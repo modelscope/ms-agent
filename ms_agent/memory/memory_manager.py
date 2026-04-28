@@ -1,10 +1,10 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+from omegaconf import DictConfig
 from typing import Dict
 
 from ms_agent.memory import Memory, memory_mapping
 from ms_agent.utils import get_logger
 from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR, DEFAULT_USER
-from omegaconf import DictConfig
 
 logger = get_logger()
 

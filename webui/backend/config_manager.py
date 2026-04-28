@@ -3,11 +3,10 @@
 Configuration management for MS-Agent Web UI
 Handles global settings, LLM configuration, and MCP server configuration.
 """
+import json
 import os
 from threading import Lock
 from typing import Any, Dict, Optional
-
-import json
 
 
 class ConfigManager:

@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union
 
 from ms_agent.utils.logger import logger
-
 from .schema import SkillSchema, SkillSchemaParser
 
 

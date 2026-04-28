@@ -1,13 +1,14 @@
 # yapf: disable
 import asyncio
+import click
 import os
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from rich.prompt import Confirm, Prompt
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-import click
 from ms_agent.llm.openai import OpenAIChat
 from ms_agent.rag.extraction_manager import extract_key_information
 from ms_agent.tools.search.exa.schema import dump_batch_search_results
@@ -21,7 +22,6 @@ from ms_agent.workflow.deep_research.research_utils import (LearningsResponse,
                                                             ResearchProgress,
                                                             ResearchResult)
 from ms_agent.workflow.deep_research.research_workflow import ResearchWorkflow
-from rich.prompt import Confirm, Prompt
 
 logger = get_logger()
 

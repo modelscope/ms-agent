@@ -30,6 +30,11 @@ else
     echo -e "${RED}Error: Neither 'python' nor 'python3' is available in PATH.${NC}"
     exit 1
 fi
+PYTHON_BIN="/Users/luyan/software/miniconda3/bin/python"
+
+# When stdout is redirected (e.g., nohup > file), Python is block-buffered by default.
+# Force unbuffered output so progress lines like "[xx] OK" show up in logs promptly.
+export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"
 
 # Use caffeinate on macOS when available; otherwise run normally.
 RUN_PREFIX=()
@@ -87,19 +92,22 @@ if [ -z "$DR_BENCH_ROOT" ]; then
     echo -e "${YELLOW}Using default benchmark query...${NC}"
     echo ""
 
-    # Run a simple benchmark query
-    QUERY="Provide a comprehensive survey of recent advances in large language models (LLMs), covering key developments in the last 12 months including architecture innovations, training techniques, and real-world applications."
-    OUTPUT_DIR="output/deep_research/benchmark_run"
+    # Run a simple benchmark query (override with BENCH_QUERY for smoke tests)
+    DEFAULT_QUERY="Provide a comprehensive survey of recent advances in large language models (LLMs), covering key developments in the last 12 months including architecture innovations, training techniques, and real-world applications."
+    QUERY="${BENCH_QUERY:-$DEFAULT_QUERY}"
+    OUTPUT_DIR="${BENCH_OUTPUT_DIR:-output/deep_research/benchmark_run}"
 
     echo -e "${GREEN}Running benchmark with query:${NC}"
     echo "  \"$QUERY\""
     echo ""
     echo -e "${GREEN}Output directory: $OUTPUT_DIR${NC}"
+    RESEARCHER_CONFIG="${RESEARCHER_CONFIG:-projects/deep_research/v2/researcher.yaml}"
+    echo -e "${GREEN}Researcher config: $RESEARCHER_CONFIG${NC}"
     echo ""
 
-    # Run the benchmark
-    PYTHONPATH=. "$PYTHON_BIN" ms_agent/cli/cli.py run \
-        --config projects/deep_research/v2/researcher.yaml \
+    # Run the benchmark (override RESEARCHER_CONFIG / BENCH_OUTPUT_DIR as needed)
+    PYTHONPATH=. "$PYTHON_BIN" -u ms_agent/cli/cli.py run \
+        --config "$RESEARCHER_CONFIG" \
         --query "$QUERY" \
         --trust_remote_code true \
         --output_dir "$OUTPUT_DIR"
@@ -118,7 +126,7 @@ else
 
     # Benchmark subprocess tuning (override via env vars if needed)
     export DR_BENCH_POST_FINISH_GRACE_S="${DR_BENCH_POST_FINISH_GRACE_S:-180}"
-    export DR_BENCH_POST_REPORT_EXIT_GRACE_S="${DR_BENCH_POST_REPORT_EXIT_GRACE_S:-3600}"
+    export DR_BENCH_POST_REPORT_EXIT_GRACE_S="${DR_BENCH_POST_REPORT_EXIT_GRACE_S:-7200}"
     export DR_BENCH_REPORT_STABLE_WINDOW_S="${DR_BENCH_REPORT_STABLE_WINDOW_S:-10}"
     export DR_BENCH_SUBPROCESS_POLL_INTERVAL_S="${DR_BENCH_SUBPROCESS_POLL_INTERVAL_S:-0.5}"
     export DR_BENCH_SUBPROCESS_TERMINATE_TIMEOUT_S="${DR_BENCH_SUBPROCESS_TERMINATE_TIMEOUT_S:-30}"
@@ -161,13 +169,16 @@ else
     echo "  Work root: $WORK_ROOT"
     echo "  Workers: $WORKERS"
     echo "  Limit: $LIMIT (0 = no limit)"
+    RESEARCHER_CONFIG="${RESEARCHER_CONFIG:-projects/deep_research/v2/researcher.yaml}"
+    echo "  Researcher config: $RESEARCHER_CONFIG"
     echo ""
 
     # Run the full benchmark
-    PYTHONPATH=. "${RUN_PREFIX[@]}" "$PYTHON_BIN" projects/deep_research/v2/eval/dr_bench_runner.py \
+    PYTHONPATH=. "${RUN_PREFIX[@]}" "$PYTHON_BIN" -u projects/deep_research/v2/eval/dr_bench_runner.py \
         --query_file "$QUERY_FILE" \
         --output_jsonl "$OUTPUT_JSONL" \
         --model_name "$MODEL_NAME" \
+        --config "$RESEARCHER_CONFIG" \
         --work_root "$WORK_ROOT" \
         --limit "$LIMIT" \
         --workers "$WORKERS" \
