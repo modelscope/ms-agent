@@ -7,7 +7,7 @@ import sys
 import threading
 import uuid
 from contextlib import contextmanager
-from copy import deepcopy
+from copy import deepcopy, copy
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
 
 import json
@@ -24,6 +24,9 @@ from ms_agent.tools import ToolManager
 from ms_agent.utils import async_retry, read_history, save_history
 from ms_agent.utils.constants import DEFAULT_TAG, DEFAULT_USER
 from ms_agent.utils.logger import get_logger
+from ms_agent.skill.catalog import SkillCatalog
+from ms_agent.skill.prompt_injector import SkillPromptInjector
+from ms_agent.skill.skill_tools import SkillToolSet
 from omegaconf import DictConfig, OmegaConf
 
 from ..config.config import Config, ConfigLifecycleHandler
@@ -35,17 +38,17 @@ logger = get_logger()
 class LLMAgent(Agent):
     """
     An agent designed to run LLM-based tasks with support for tools, memory,
-    planning, callbacks, and automatic skill execution.
+    planning, callbacks, and skill integration.
 
     This class provides a full lifecycle for running an LLM agent, including:
     - Prompt preparation
     - Chat history management
     - External tool calling
     - Memory retrieval and updating
-    - Planning logic
     - Stream or non-stream response generation
     - Callback hooks at various stages of execution
-    - Automatic skill detection and execution (AutoSkills integration)
+    - Skill system: skill discovery (skills_list), viewing (skill_view),
+      and management (skill_manage) as standard tools
 
     Args:
         config (DictConfig): Pre-loaded configuration object.
@@ -54,28 +57,12 @@ class LLMAgent(Agent):
         **kwargs: Additional keyword arguments passed to the parent Agent constructor.
 
     Skills Configuration (in config.skills):
-        path: Path(s) to skill directories.
-        enable_retrieve: Whether to use retriever (None=auto based on skill count).
-        retrieve_args: Arguments for HybridRetriever (top_k, min_score).
-        max_candidate_skills: Maximum candidate skills to consider.
-        max_retries: Maximum retry attempts for skill execution.
-        work_dir: Working directory for skill execution.
-        use_sandbox: Whether to use Docker sandbox.
-        auto_execute: Whether to auto-execute skills after retrieval.
-
-    Example:
-        ```python
-        config = DictConfig({
-            'llm': {...},
-            'skills': {
-                'path': '/path/to/skills',
-                'auto_execute': True,
-                'work_dir': '/path/to/workspace'
-            }
-        })
-        agent = LLMAgent(config, tag='my-agent')
-        result = await agent.run('Generate a PDF report for Q4 sales of Apple')
-        ```
+        path: Path(s) to skill directories or ModelScope repo IDs.
+        sources: Structured source list (type, path, repo_id, url, etc.).
+        auto_discover: Auto-scan CWD/skills/ directory.
+        enable_manage: Enable skill_manage tool for runtime CRUD.
+        whitelist: Skill ID whitelist (null=all, []=none, [ids]=specific).
+        disabled: List of disabled skill IDs.
     """
 
     AGENT_NAME = 'LLMAgent'
@@ -107,7 +94,7 @@ class LLMAgent(Agent):
         self.tool_manager: Optional[ToolManager] = None
         self.memory_tools: List[Memory] = []
         self.rag: Optional[RAG] = None
-        self.knowledge_search: Optional[SirschmunkSearch] = None
+        self.knowledge_search: Optional[SirchmunkSearch] = None
         self.llm: Optional[LLM] = None
         self.runtime: Optional[Runtime] = None
         self.max_chat_round: int = 0
@@ -119,237 +106,74 @@ class LLMAgent(Agent):
         self.mcp_client = kwargs.get('mcp_client', None)
         self.config_handler = self.register_config_handler()
 
-        # AutoSkills integration (lazy initialization)
-        self._auto_skills = None
-        self._auto_skills_initialized = False
-        self._last_skill_result = None
-        self._skill_mode_active = False
+        # Skill system (initialized in prepare_skills)
+        self._skill_catalog = None
+        self._skill_injector = None
 
-    def _get_skills_config(self) -> Optional[DictConfig]:
-        """Get skills configuration from agent config."""
-        if hasattr(self.config, 'skills') and self.config.skills:
-            return self.config.skills
-        return None
+    async def prepare_skills(self):
+        """Initialize the skill system from config.skills.
 
-    def _ensure_auto_skills(self) -> bool:
+        Sets up SkillCatalog, SkillPromptInjector, and registers
+        SkillToolSet into ToolManager.
         """
-        Ensure AutoSkills is initialized (lazy initialization).
+        if not hasattr(self.config, 'skills') or not self.config.skills:
+            return
 
-        Returns:
-            True if AutoSkills is available and initialized.
-        """
-        if self._auto_skills_initialized:
-            return self._auto_skills is not None
+        skills_config = self.config.skills
+        self._skill_catalog = SkillCatalog(config=skills_config)
+        self._skill_catalog.load_from_config(skills_config)
 
-        skills_config = self._get_skills_config()
-        if not skills_config:
-            self._auto_skills_initialized = True
-            return False
+        self._skill_injector = SkillPromptInjector(self._skill_catalog)
 
-        skills_path = getattr(skills_config, 'path', None)
-        if not skills_path:
-            logger.debug('No skills path configured')
-            self._auto_skills_initialized = True
-            return False
+        enable_manage = getattr(skills_config, 'enable_manage', False)
+        skill_toolset = SkillToolSet(
+            self.config, self._skill_catalog,
+            enable_manage=enable_manage)
+        await skill_toolset.connect()
+        self.tool_manager.register_tool(skill_toolset)
 
-        # Ensure LLM is initialized
-        if self.llm is None:
-            self.prepare_llm()
+        # Index the newly added tool into the live tool registry.
+        # We cannot call reindex_tool() because it would duplicate
+        # already-indexed tools; instead we index just this one.
+        tools = await skill_toolset.get_tools()
+        spliter = self.tool_manager.TOOL_SPLITER
+        for server_name, tool_list in tools.items():
+            for tool in tool_list:
+                key = f"{server_name}{spliter}{tool['tool_name']}"
+                tool = copy(tool)
+                tool['tool_name'] = key
+                self.tool_manager._tool_index[key] = (
+                    skill_toolset, server_name, tool)
 
-        try:
-            from ms_agent.skill.auto_skills import AutoSkills
+        self._check_skill_tool_dependencies()
 
-            # Check sandbox requirements
-            use_sandbox = getattr(skills_config, 'use_sandbox', True)
-            if use_sandbox:
-                from ms_agent.utils.docker_utils import is_docker_daemon_running
+    def _check_skill_tool_dependencies(self):
+        """Warn if skills are enabled but essential tools are missing."""
+        if (not self._skill_catalog
+                or not self._skill_catalog.get_enabled_skills()):
+            return
 
-                if not is_docker_daemon_running():
-                    logger.warning(
-                        'Docker not running, disabling sandbox for skills')
-                    use_sandbox = False
+        has_tools = hasattr(self.config, 'tools') and self.config.tools
+        warnings = []
 
-            # Build retrieve args
-            retrieve_args = {}
-            if hasattr(skills_config, 'retrieve_args'):
-                retrieve_args = OmegaConf.to_container(
-                    skills_config.retrieve_args)
+        if not has_tools or not hasattr(self.config.tools, 'file_system'):
+            warnings.append(
+                "file_system (read_file, write_file) - needed for "
+                "reading skill scripts and writing outputs")
 
-            self._auto_skills = AutoSkills(
-                skills=skills_path,
-                llm=self.llm,
-                enable_retrieve=getattr(skills_config, 'enable_retrieve',
-                                        None),
-                retrieve_args=retrieve_args,
-                max_candidate_skills=getattr(skills_config,
-                                             'max_candidate_skills', 10),
-                max_retries=getattr(skills_config, 'max_retries', 3),
-                work_dir=getattr(skills_config, 'work_dir', None),
-                use_sandbox=use_sandbox,
+        if not has_tools or not hasattr(self.config.tools, 'code_executor'):
+            warnings.append(
+                "code_executor (python, shell execution) - needed for "
+                "running skill scripts")
+
+        if warnings:
+            logger.warning(
+                "Skills are configured but the following recommended tools "
+                "are not enabled. Skills that depend on these tools may not "
+                "work correctly:\n"
+                + "\n".join(f"  - {w}" for w in warnings)
+                + "\nAdd them to your agent config under 'tools:' to enable."
             )
-            logger.info(
-                f'AutoSkills initialized with {len(self._auto_skills.all_skills)} skills'
-            )
-            self._auto_skills_initialized = True
-            return True
-
-        except Exception as e:
-            logger.warning(f'Failed to initialize AutoSkills: {e}')
-            self._auto_skills_initialized = True
-            return False
-
-    @property
-    def skills_available(self) -> bool:
-        """Check if AutoSkills is available."""
-        return self._ensure_auto_skills()
-
-    @property
-    def auto_skills(self):
-        """Get AutoSkills instance (maybe None if not configured)."""
-        self._ensure_auto_skills()
-        return self._auto_skills
-
-    async def should_use_skills(self, query: str) -> bool:
-        """
-        Determine if the query should use skills.
-
-        Combines keyword detection with LLM-based analysis.
-
-        Args:
-            query: User's query string.
-
-        Returns:
-            True if skills should be used for this query.
-        """
-        if not self._ensure_auto_skills():
-            return False
-
-        skills_config = self._get_skills_config()
-        if not skills_config:
-            return False
-        skills_path = getattr(skills_config, 'path', None)
-        if not skills_path:
-            return False
-
-        # Use LLM analysis for ambiguous queries
-        try:
-            needs_skills, _, _, _ = self._auto_skills._analyze_query(query)
-            return needs_skills
-        except Exception as e:
-            logger.error(f'Skill analysis error: {e}')
-            return False
-
-    async def get_skill_dag(self, query: str):
-        """
-        Get skill DAG for a query without executing.
-
-        Args:
-            query: User's query string.
-
-        Returns:
-            SkillDAGResult containing the execution plan, or None if unavailable.
-        """
-        if not self._ensure_auto_skills():
-            return None
-        return await self._auto_skills.get_skill_dag(query)
-
-    async def execute_skills(self, query: str, execution_input=None):
-        """
-        Execute skills for a query.
-
-        Args:
-            query: User's query string.
-            execution_input: Optional initial input for skills.
-
-        Returns:
-            SkillDAGResult with execution results, or None if unavailable.
-        """
-        if not self._ensure_auto_skills():
-            return None
-
-        skills_config = self._get_skills_config()
-        stop_on_failure = (
-            getattr(skills_config, 'stop_on_failure', True)
-            if skills_config else True)
-
-        result = await self._auto_skills.run(
-            query=query,
-            execution_input=execution_input,
-            stop_on_failure=stop_on_failure,
-        )
-        self._last_skill_result = result
-        return result
-
-    def _format_skill_result_as_messages(self, dag_result) -> List[Message]:
-        """
-        Format skill execution result as messages for agent history.
-
-        Args:
-            dag_result: SkillDAGResult from skill execution.
-
-        Returns:
-            List of Message objects describing the result.
-        """
-        messages = []
-
-        # Handle chat-only response
-        if dag_result.chat_response:
-            messages.append(
-                Message(role='assistant', content=dag_result.chat_response))
-            return messages
-
-        # Handle incomplete skills
-        if not dag_result.is_complete:
-            content = "I couldn't find suitable skills for this task."
-            if dag_result.clarification:
-                content += f'\n\n{dag_result.clarification}'
-            messages.append(Message(role='assistant', content=content))
-            return messages
-
-        # Format execution result
-        if dag_result.execution_result:
-            exec_result = dag_result.execution_result
-            skill_names = list(dag_result.selected_skills.keys())
-
-            if exec_result.success:
-                content = f"Successfully executed {len(skill_names)} skill(s): {', '.join(skill_names)}\n\n"
-
-                # Add output summaries
-                for skill_id, result in exec_result.results.items():
-                    if result.success and result.output:
-                        output = result.output
-                        if output.stdout:
-                            stdout_preview = output.stdout[:1000]
-                            if len(output.stdout) > 1000:
-                                stdout_preview += '...'
-                            content += f'**{skill_id} output:**\n{stdout_preview}\n\n'
-                        if output.output_files:
-                            content += f'**Generated files:** {list(output.output_files.values())}\n\n'
-
-                content += (
-                    f'Total execution time: {exec_result.total_duration_ms:.2f}ms'
-                )
-            else:
-                content = 'Skill execution completed with errors.\n\n'
-                for skill_id, result in exec_result.results.items():
-                    if not result.success:
-                        content += f'**{skill_id} failed:** {result.error}\n'
-
-            messages.append(Message(role='assistant', content=content))
-        else:
-            # DAG only, no execution
-            skill_names = list(dag_result.selected_skills.keys())
-            content = f'Found {len(skill_names)} relevant skill(s) for your task:\n'
-            for skill_id, skill in dag_result.selected_skills.items():
-                desc_preview = skill.description[:100]
-                if len(skill.description) > 100:
-                    desc_preview += '...'
-                content += f'- **{skill.name}** ({skill_id}): {desc_preview}\n'
-            content += f'\nExecution order: {dag_result.execution_order}'
-
-            messages.append(Message(role='assistant', content=content))
-
-        return messages
 
     def register_callback(self, callback: Callback):
         """
@@ -633,6 +457,13 @@ class LLMAgent(Agent):
                     content=self.system or LLMAgent.DEFAULT_SYSTEM),
                 Message(role='user', content=messages or self.query),
             ]
+
+        # Inject skill prompt section into system message
+        if self._skill_injector:
+            skill_section = self._skill_injector.build_skill_prompt_section()
+            if skill_section:
+                messages[0].content += "\n\n" + skill_section
+
         return messages
 
     async def do_rag(self, messages: List[Message]):
@@ -671,64 +502,6 @@ class LLMAgent(Agent):
                 user_message.content = (
                     f'Relevant context retrieved from codebase search:\n\n{context}\n\n'
                     f'User question: {query}')
-
-    async def do_skill(self,
-                       messages: List[Message]) -> Optional[List[Message]]:
-        """
-        Process skill-related query if applicable.
-
-        Analyzes the user query, determines if skills should be used,
-        and executes the skill pipeline if appropriate.
-
-        Args:
-            messages: Normalized message list with system and user messages
-
-        Returns:
-            Updated messages with skill results if successful and should return,
-            None if no skill processing or fallback to standard agent
-        """
-        # Extract user query from normalized messages
-        query = (
-            messages[1].content
-            if len(messages) > 1 and messages[1].role == 'user' else None)
-
-        if not query:
-            return None
-
-        # Check if skills should be used for this query
-        if not await self.should_use_skills(query):
-            return None
-
-        logger.info('Query detected as skill-related, using skill processing.')
-        self._skill_mode_active = True
-
-        try:
-            skills_config = self._get_skills_config()
-            auto_execute = (
-                getattr(skills_config, 'auto_execute', True)
-                if skills_config else True)
-
-            if auto_execute:
-                dag_result = await self.execute_skills(query)
-            else:
-                dag_result = await self.get_skill_dag(query)
-
-            if dag_result:
-                skill_messages = self._format_skill_result_as_messages(
-                    dag_result)
-                for msg in skill_messages:
-                    messages.append(msg)
-                return messages
-
-            # dag_result is None/empty, fallback to standard agent
-            self._skill_mode_active = False
-            return None
-
-        except Exception as e:
-            logger.warning(
-                f'Skill execution failed: {e}, falling back to standard agent')
-            self._skill_mode_active = False
-            return None
 
     async def load_memory(self):
         """Initialize and append memory tool instances based on the configuration provided in the global config.
@@ -1091,16 +864,14 @@ class LLMAgent(Agent):
 
     async def run_loop(self, messages: Union[List[Message], str],
                        **kwargs) -> AsyncGenerator[Any, Any]:
-        """
-        Run the agent, mainly contains a llm calling and tool calling loop.
+        """Run the agent loop (LLM generation + tool calling).
 
-        If skills are configured, skill-related queries will be automatically routed to skill execution.
+        Skills, when configured, are exposed as standard tools
+        (skills_list, skill_view, skill_manage) and injected into
+        the system prompt—no special routing needed.
 
         Args:
-            messages (Union[List[Message], str]): Input data for the agent. Can be a raw string prompt,
-                                               or a list of previous interaction messages.
-        Returns:
-            List[Message]: A list of message objects representing the agent's response or interaction history.
+            messages: Input prompt string or list of Message objects.
         """
         try:
             self.max_chat_round = getattr(self.config, 'max_chat_round',
@@ -1109,6 +880,7 @@ class LLMAgent(Agent):
             self.prepare_llm()
             self.prepare_runtime()
             await self.prepare_tools()
+            await self.prepare_skills()
             await self.load_memory()
             await self.prepare_rag()
             await self.prepare_knowledge_search()
@@ -1121,19 +893,7 @@ class LLMAgent(Agent):
             self.config, self.runtime, messages = self.read_history(messages)
 
             if self.runtime.round == 0:
-                # New task: create standardized messages first
                 messages = await self.create_messages(messages)
-
-                # Try skill processing first
-                skill_result = await self.do_skill(messages)
-                if skill_result is not None:
-                    await self.on_task_begin(skill_result)
-                    yield skill_result
-                    await self.on_task_end(skill_result)
-                    await self.cleanup_tools()
-                    return
-
-                # Standard processing continues
                 await self.do_rag(messages)
                 await self.on_task_begin(messages)
 
