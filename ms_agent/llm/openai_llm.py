@@ -499,7 +499,7 @@ class OpenAI(LLM):
             messages[-1].partial = True
         messages[-1].api_calls += 1
 
-        return self._call_llm(messages, tools, **kwargs)
+        return self._call_llm(messages, self.format_tools(tools), **kwargs)
 
     def _continue_generate(self,
                            messages: List[Message],
