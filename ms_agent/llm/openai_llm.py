@@ -343,9 +343,10 @@ class OpenAI(LLM):
                     # The stream may end without a final usage chunk, which is acceptable.
                     pass
                 first_run = not messages[-1].to_dict().get('partial', False)
-                if chunk.choices[0].finish_reason in [
+                if (not message.tool_calls
+                        and chunk.choices[0].finish_reason in [
                         'length', 'null'
-                ] and (max_runs is None or max_runs != 0):
+                ] and (max_runs is None or max_runs != 0)):
                     logger.info(
                         f'finish_reason: {chunk.choices[0].finish_reason}, continue generate.'
                     )
@@ -499,7 +500,7 @@ class OpenAI(LLM):
             messages[-1].partial = True
         messages[-1].api_calls += 1
 
-        return self._call_llm(messages, tools, **kwargs)
+        return self._call_llm(messages, self.format_tools(tools), **kwargs)
 
     def _continue_generate(self,
                            messages: List[Message],
@@ -522,6 +523,8 @@ class OpenAI(LLM):
             Message: A fully formed Message object containing the complete response.
         """
         new_message = self._format_output_message(completion)
+        if new_message.tool_calls:
+            return new_message
         if completion.choices[0].finish_reason in [
                 'length', 'null'
         ] and (max_runs is None or max_runs != 0):
