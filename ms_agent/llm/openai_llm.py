@@ -181,6 +181,8 @@ class OpenAI(LLM):
         args = self.args.copy()
         args.update(kwargs)
         stream = args.get('stream', False)
+        if not stream:
+            args.pop('stream_options', None)
 
         args = {key: value for key, value in args.items() if key in parameters}
         completion = self._call_llm(messages, self.format_tools(tools), **args)
