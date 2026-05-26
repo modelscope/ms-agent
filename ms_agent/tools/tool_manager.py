@@ -88,6 +88,11 @@ class ToolManager:
             self.extra_tools.append(TodoListTool(config))
         if hasattr(config, 'tools') and hasattr(config.tools, 'web_search'):
             self.extra_tools.append(WebSearchTool(config))
+        if hasattr(config, 'tools') and hasattr(config.tools, 'cron'):
+            cron_cfg = getattr(config.tools, 'cron', None)
+            if not getattr(cron_cfg, 'mcp', False):
+                from ms_agent.tools.cron_tool import CronTool
+                self.extra_tools.append(CronTool(config))
         self.tool_call_timeout = getattr(config, 'tool_call_timeout',
                                          TOOL_CALL_TIMEOUT)
         local_dir = self.config.local_dir if hasattr(self.config,
