@@ -108,7 +108,7 @@ class AsyncScheduler:
         for job, state in jobs_and_states:
             if not job.enabled:
                 continue
-            if state.status == 'paused':
+            if state.status in ('paused', 'running', 'completed'):
                 continue
             next_ms = _iso_to_ms(state.next_run_at)
             if next_ms is not None and next_ms <= now:

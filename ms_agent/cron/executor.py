@@ -41,15 +41,18 @@ class JobExecutor:
     ):
         self._default_timeout = default_timeout
         self._semaphore = semaphore or asyncio.Semaphore(5)
-        self._per_job_locks: dict[str, asyncio.Lock] = {}
+        self._per_job_semas: dict[str, asyncio.Semaphore] = {}
         self._active_agents: dict[str, Any] = {}
         self._output_dir = output_dir
         self._session_dir = session_dir
 
     async def execute(self, job: CronJobSpec, config: Any) -> ExecutionResult:
         async with self._semaphore:
-            lock = self._per_job_locks.setdefault(job.id, asyncio.Lock())
-            async with lock:
+            job_sema = self._per_job_semas.get(job.id)
+            if job_sema is None:
+                job_sema = asyncio.Semaphore(max(1, job.concurrency))
+                self._per_job_semas[job.id] = job_sema
+            async with job_sema:
                 return await self._do_execute(job, config)
 
     async def _do_execute(self, job: CronJobSpec, config: Any) -> ExecutionResult:
@@ -108,7 +111,7 @@ class JobExecutor:
 
     def _build_engine(self, job: CronJobSpec, config: Any) -> Any:
         """Build an agent or workflow engine based on job spec."""
-        from ms_agent.config import Config
+        load_cache = getattr(config, 'load_cache', False)
 
         if job.workflow:
             from ms_agent.workflow.loader import WorkflowLoader
@@ -123,12 +126,14 @@ class JobExecutor:
                 config_dir_or_id=job.project,
                 config=config,
                 trust_remote_code=job.trust_remote_code,
+                load_cache=load_cache,
             )
         else:
             from ms_agent.agent.loader import AgentLoader
             return AgentLoader.build(
                 config=config,
                 trust_remote_code=job.trust_remote_code,
+                load_cache=load_cache,
             )
 
     def _extract_output(self, messages: Any) -> str:

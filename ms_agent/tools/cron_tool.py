@@ -1,13 +1,13 @@
 """CronTool: agent-facing tool for managing cron jobs."""
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from pathlib import Path
 from typing import Any, Dict, List
 
 from ms_agent.cron.executor import is_in_cron_context
-from ms_agent.cron.manager import JobManager
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 
@@ -32,7 +32,9 @@ class CronTool(ToolBase):
             'MS_AGENT_CRON_WORKSPACE',
             os.path.expanduser('~/.ms_agent/cron'),
         )
-        self._manager = JobManager(Path(workspace))
+        from ms_agent.cron.service import CronService
+        self._service = CronService(workspace=workspace)
+        self._manager = self._service.manager
 
     async def connect(self) -> None:
         pass
@@ -145,8 +147,17 @@ class CronTool(ToolBase):
         job_id = args.get('job_id')
         if not job_id:
             return _json_dumps({'error': '"job_id" is required.'})
-        ok = self._manager.trigger_job(job_id)
-        return _json_dumps({'status': 'triggered' if ok else 'failed', 'job_id': job_id})
+        result = await self._service.run_job_now(job_id)
+        if result is None:
+            return _json_dumps({'error': f'Job {job_id} not found.'})
+        return _json_dumps({
+            'status': 'completed' if result.success else 'failed',
+            'job_id': job_id,
+            'success': result.success,
+            'duration_ms': result.duration_ms,
+            'output_preview': result.output[:500] if result.output else '',
+            'error': result.error,
+        })
 
     async def _action_remove(self, args: dict) -> str:
         job_id = args.get('job_id')

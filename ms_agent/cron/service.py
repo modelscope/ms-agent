@@ -103,6 +103,7 @@ class CronService:
             tick_interval=DEFAULT_TICK_INTERVAL,
         )
         self._running = False
+        self._background_tasks: set[asyncio.Task] = set()
 
         self.on_job_complete: List[Callable[[CronJobSpec, ExecutionResult], Awaitable[None]]] = []
         self.on_job_start: List[Callable[[CronJobSpec], Awaitable[None]]] = []
@@ -119,31 +120,69 @@ class CronService:
 
     async def start(self) -> None:
         self._running = True
+        self._manager.repo.import_declarative()
         self._pid_manager.write_pid()
         await self._scheduler.start()
 
-    async def stop(self) -> None:
+    async def stop(self, force: bool = False, timeout: float = 30) -> None:
+        """Stop the cron service.
+
+        Args:
+            force: If True, cancel all in-flight jobs immediately.
+                   If False, wait up to `timeout` seconds for them to finish,
+                   then cancel any that remain.
+            timeout: Seconds to wait for graceful drain (ignored if force=True).
+        """
         self._running = False
         self._scheduler.stop()
+
+        if self._background_tasks:
+            if force:
+                for t in self._background_tasks:
+                    t.cancel()
+            done, pending = await asyncio.wait(
+                self._background_tasks,
+                timeout=0 if force else timeout,
+            )
+            for t in pending:
+                t.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+
         self._pid_manager.remove_pid()
 
     def is_running(self) -> bool:
         return self._running
 
     async def run_forever(self) -> None:
-        """Run the scheduler loop until interrupted."""
+        """Run the scheduler loop until interrupted.
+
+        SIGTERM → graceful stop (wait up to 30s for in-flight jobs).
+        SIGINT  → force stop (cancel all immediately).
+        """
         await self.start()
         stop_event = asyncio.Event()
+        self._force_stop = False
+
+        def _graceful():
+            stop_event.set()
+
+        def _force():
+            self._force_stop = True
+            stop_event.set()
 
         loop = asyncio.get_event_loop()
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            try:
-                loop.add_signal_handler(sig, stop_event.set)
-            except (NotImplementedError, RuntimeError):
-                pass
+        try:
+            loop.add_signal_handler(signal.SIGTERM, _graceful)
+        except (NotImplementedError, RuntimeError):
+            pass
+        try:
+            loop.add_signal_handler(signal.SIGINT, _force)
+        except (NotImplementedError, RuntimeError):
+            pass
 
         await stop_event.wait()
-        await self.stop()
+        await self.stop(force=self._force_stop)
 
     # === Job CRUD (delegates to manager) ===
 
@@ -210,9 +249,18 @@ class CronService:
     # === Scheduler Callbacks ===
 
     async def _on_due_jobs(self, due: List[Tuple[CronJobSpec, CronJobState]]) -> None:
-        """Called by scheduler when jobs are due."""
-        tasks = [self._execute_job(job, state) for job, state in due]
-        await asyncio.gather(*tasks, return_exceptions=True)
+        """Called by scheduler when jobs are due.
+
+        Fire-and-forget: spawn tasks but do NOT await them, so the scheduler
+        tick loop can re-arm immediately and pick up newly due jobs.
+        """
+        for job, state in due:
+            task = asyncio.create_task(
+                self._execute_job(job, state),
+                name=f'cron-{job.id}',
+            )
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
 
     async def _execute_job(self, job: CronJobSpec, state: CronJobState) -> None:
         self._manager.mark_running(job.id)
@@ -225,6 +273,13 @@ class CronService:
 
         config = self._build_config(job)
         result = await self._executor.execute(job, config)
+
+        retries_left = job.max_retries
+        while not result.success and retries_left > 0:
+            retries_left -= 1
+            config = self._build_config(job)
+            result = await self._executor.execute(job, config)
+
         self._manager.record_result(job, result)
 
         for cb in self.on_job_complete:
@@ -247,11 +302,13 @@ class CronService:
     def _build_config(self, job: CronJobSpec) -> Any:
         """Build DictConfig for agent execution.
 
-        Cron jobs run non-interactively, so we force:
-          - stream=False (executor expects List[Message], not AsyncGenerator)
-          - callbacks=[] (no input_callback; stdin is unavailable)
-          - max_chat_round capped (allows tool-calling rounds, prevents runaway)
-          - output/session paths under the cron workspace
+        Config inheritance chain (later overrides earlier):
+          1. Project config (from job.project via Config.from_task)
+          2. Job-level overrides (from job.overrides dict)
+          3. Cron-mandatory overrides (stream=False, no interactive callbacks)
+
+        The project's max_chat_round is respected; a default of 50 is used
+        only when no project config sets it.
         """
         from omegaconf import OmegaConf
 
@@ -268,10 +325,20 @@ class CronService:
             config = OmegaConf.merge(config, OmegaConf.create(job.overrides))
 
         OmegaConf.update(config, 'generation_config.stream', False, merge=True)
-        OmegaConf.update(config, 'callbacks', [], merge=False)
-        current_rounds = getattr(config, 'max_chat_round', None)
-        if current_rounds is None or current_rounds > 10:
-            OmegaConf.update(config, 'max_chat_round', 10, merge=True)
+
+        existing_cbs = getattr(config, 'callbacks', None)
+        if existing_cbs:
+            safe_cbs = [
+                cb for cb in existing_cbs
+                if cb != 'input_callback' and not str(cb).endswith('input_callback')
+            ]
+            OmegaConf.update(config, 'callbacks', safe_cbs, merge=False)
+        else:
+            OmegaConf.update(config, 'callbacks', [], merge=False)
+
+        if getattr(config, 'max_chat_round', None) is None:
+            OmegaConf.update(config, 'max_chat_round', 50, merge=True)
+
         OmegaConf.update(
             config, 'session_log.dir',
             str(self._workspace / 'sessions'), merge=True
@@ -280,6 +347,11 @@ class CronService:
             config, 'output_dir',
             str(self._workspace / 'output' / job.id), merge=True
         )
+
+        if job.session_mode == 'persistent':
+            OmegaConf.update(config, 'load_cache', True, merge=True)
+            OmegaConf.update(config, 'save_history', True, merge=True)
+            OmegaConf.update(config, 'tag', f'cron-{job.id}', merge=True)
 
         return config
 
@@ -305,6 +377,13 @@ class CronService:
 
         config = self._build_config(job)
         result = await self._executor.execute(job, config)
+
+        retries_left = job.max_retries
+        while not result.success and retries_left > 0:
+            retries_left -= 1
+            config = self._build_config(job)
+            result = await self._executor.execute(job, config)
+
         self._manager.record_result(job, result)
 
         for cb in self.on_job_complete:
