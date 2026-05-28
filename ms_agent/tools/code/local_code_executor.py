@@ -482,7 +482,11 @@ class LocalCodeExecutionTool(ToolBase):
                             },
                             'timeout': {
                                 'type': 'integer',
-                                'description': 'Execution timeout in seconds',
+                                'minimum': 1,
+                                'maximum': int(
+                                    os.getenv('TOOL_CALL_TIMEOUT_MAX', '600')),
+                                'description':
+                                'Execution timeout in seconds (host-wide ceiling, default 600s; TOOL_CALL_TIMEOUT_MAX).',
                                 'default': self._shell_timeout
                             },
                             'run_in_background': {
@@ -574,7 +578,14 @@ class LocalCodeExecutionTool(ToolBase):
 
         try:
             method = getattr(self, tool_name)
-            return await method(**tool_args)
+            # Host runtimes may inject correlation metadata like ``__call_id``.
+            # Normalize it to a plain kwarg so tool methods can accept it
+            # without relying on Python dunder names (which are name-mangled
+            # in class method signatures).
+            call_args = dict(tool_args or {})
+            if '__call_id' in call_args and 'call_id' not in call_args:
+                call_args['call_id'] = call_args.pop('__call_id')
+            return await method(**call_args)
         except AttributeError:
             return json.dumps(
                 {
@@ -593,6 +604,16 @@ class LocalCodeExecutionTool(ToolBase):
                 },
                 ensure_ascii=False,
                 indent=2)
+
+    def _prepare_shell_command(self, command: str) -> str:
+        """Wrap composite shell input in ``sh -lc`` when needed (matches sandbox behavior)."""
+        shell_meta = ('&&', '||', '|', ';', '>', '<', '`', '$(', 'cd ',
+                      'export ')
+        already_wrapped = command.lstrip().startswith(
+            ('sh ', 'bash ', '/bin/sh ', '/bin/bash '))
+        if not already_wrapped and any(meta in command for meta in shell_meta):
+            return f'sh -lc {shlex.quote(command)}'
+        return command
 
     async def notebook_executor(self,
                                 code: str,
@@ -693,9 +714,9 @@ class LocalCodeExecutionTool(ToolBase):
                              command: str,
                              timeout: Optional[int] = None,
                              run_in_background: bool = False,
-                             __call_id: Optional[str] = None) -> str:
+                             call_id: Optional[str] = None) -> str:
         exec_timeout = timeout or self._shell_timeout
-        call_id = __call_id or f'shell-{os.urandom(4).hex()}'
+        call_id = call_id or f'shell-{os.urandom(4).hex()}'
 
         try:
             self._policy.assert_shell_command_allowed(command)
@@ -768,18 +789,22 @@ class LocalCodeExecutionTool(ToolBase):
                     )
                     await self._task_manager.complete(task_id, text)
                 except asyncio.TimeoutError:
+                    logger.warning(f'Shell command timed out after {exec_timeout} seconds (task {task_id})')
                     try:
                         process.kill()
                         await process.communicate()
-                    except Exception:  # noqa: B902
-                        pass
-                    await self._task_manager.fail(
-                        task_id,
-                        f'Shell command timed out after {exec_timeout} seconds',
-                    )
+                    except Exception as exc:  # noqa: B902
+                        logger.error(f'Process cleanup failed: {exc}', exc_info=True)
+                    if self._task_manager:
+                        await self._task_manager.fail(
+                            task_id,
+                            f'Shell command timed out after {exec_timeout} seconds',
+                        )
                 except Exception as exc:  # noqa: B902
-                    await self._task_manager.fail(task_id, str(exc))
-
+                    logger.error(f'Watcher task failed: {exc}', exc_info=True)
+                    if self._task_manager:
+                        await self._task_manager.fail(task_id, str(exc))
+                    
             t = asyncio.create_task(_watcher())
             self._watcher_tasks.add(t)
             t.add_done_callback(self._watcher_tasks.discard)
@@ -817,11 +842,12 @@ class LocalCodeExecutionTool(ToolBase):
             stdout, stderr = await asyncio.wait_for(
                 process.communicate(), timeout=exec_timeout)
         except asyncio.TimeoutError:
+            logger.warning(f'Shell command timed out after {exec_timeout} seconds (call {call_id})')
             process.kill()
             try:
                 await process.communicate()
-            except Exception:  # noqa: B902
-                pass
+            except Exception as exc:  # noqa: B902
+                logger.error(f'Process cleanup failed: {exc}', exc_info=True)
             return json.dumps(
                 {
                     'success':
