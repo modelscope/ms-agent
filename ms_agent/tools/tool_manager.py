@@ -17,7 +17,10 @@ from ms_agent.tools.base import ToolBase
 from ms_agent.tools.code import CodeExecutionTool, LocalCodeExecutionTool
 from ms_agent.tools.filesystem_tool import FileSystemTool
 from ms_agent.tools.image_generator import ImageGenerator
-from ms_agent.tools.mcp_client import MCPClient
+try:
+    from ms_agent.tools.mcp_client import MCPClient
+except ImportError:
+    MCPClient = None
 from ms_agent.tools.search.localsearch_tool import LocalSearchTool
 from ms_agent.tools.search.sirchmunk_search import \
     effective_localsearch_settings
@@ -196,11 +199,11 @@ class ToolManager:
         self.extra_tools.append(tool)
 
     async def connect(self):
-        if self.mcp_client and isinstance(self.mcp_client, MCPClient):
+        if self.mcp_client and MCPClient and isinstance(self.mcp_client, MCPClient):
             self.servers = self.mcp_client
             await self.servers.add_mcp_config(self.mcp_config)
             self.mcp_config = self.servers.mcp_config
-        else:
+        elif MCPClient is not None:
             self.servers = MCPClient(self.mcp_config, self.config)
             await self.servers.connect()
         for tool in self.extra_tools:
