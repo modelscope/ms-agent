@@ -244,9 +244,10 @@ class ToolManager:
                 tool['tool_name'] = key
                 self._tool_index[key] = (tool_ins, server_name, tool)
 
-        mcps = await self.servers.get_tools()
-        for server_name, tool_list in mcps.items():
-            extend_tool(self.servers, server_name, tool_list)
+        if self.servers is not None:
+            mcps = await self.servers.get_tools()
+            for server_name, tool_list in mcps.items():
+                extend_tool(self.servers, server_name, tool_list)
         for extra_tool in self.extra_tools:
             tools = await extra_tool.get_tools()
             for server_name, tool_list in tools.items():
