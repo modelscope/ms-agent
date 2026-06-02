@@ -120,6 +120,7 @@ venv.bak/
 
 .vscode
 .idea
+.cursor
 
 # custom
 *.pkl

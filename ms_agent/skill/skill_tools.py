@@ -26,10 +26,13 @@ class SkillToolSet(ToolBase):
 
     TOOL_SERVER_NAME = "skills"
 
-    def __init__(self, config, catalog, *, enable_manage: bool = False):
+    def __init__(self, config, catalog, *, enable_manage: bool = False,
+                 tool_manager=None, search_engine=None):
         super().__init__(config)
         self._catalog = catalog
         self._enable_manage = enable_manage
+        self._tool_manager = tool_manager
+        self._search_engine = search_engine
 
     async def connect(self) -> None:
         pass
@@ -47,9 +50,8 @@ class SkillToolSet(ToolBase):
         tools.append({
             "tool_name": "skills_list",
             "description": (
-                "List all available skills with their names and descriptions. "
-                "Use this to discover what skills are available before viewing "
-                "their full content."),
+                "List or search available skills. Without a query, lists all "
+                "skills. With a query, returns skills ranked by relevance."),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -57,7 +59,19 @@ class SkillToolSet(ToolBase):
                         "type": "string",
                         "description":
                             "Optional tag to filter skills by category",
-                    }
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "Search query to find relevant skills by name, "
+                            "description, or content"),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description":
+                            "Maximum number of results to return "
+                            "(default: all for listing, 10 for search)",
+                    },
                 },
             },
         })
@@ -143,6 +157,12 @@ class SkillToolSet(ToolBase):
 
     def _handle_skills_list(self, args: dict) -> str:
         tag_filter = args.get("tag")
+        query = args.get("query")
+        limit = args.get("limit")
+
+        if query and self._search_engine:
+            return self._handle_skills_search(query, tag_filter, limit)
+
         skills = self._catalog.get_enabled_skills()
 
         if tag_filter:
@@ -156,20 +176,56 @@ class SkillToolSet(ToolBase):
 
         result = []
         for sid, skill in sorted(skills.items()):
-            entry = {
-                "skill_id": sid,
-                "name": skill.name,
-                "description": skill.description,
-                "version": skill.version,
-                "tags": skill.tags or [],
-                "has_scripts": len(skill.scripts) > 0,
-                "has_references": len(skill.references) > 0,
-            }
+            entry = self._build_skill_entry(sid, skill)
             result.append(entry)
+
+        if limit:
+            result = result[:limit]
 
         return json.dumps(
             {"skills": result, "total": len(result)},
             ensure_ascii=False, indent=2)
+
+    def _handle_skills_search(self, query: str,
+                              tag_filter: Optional[str],
+                              limit: Optional[int]) -> str:
+        top_k = limit or 10
+        ranked = self._search_engine.search(query, top_k=top_k)
+
+        if not ranked:
+            return json.dumps(
+                {"skills": [], "total": 0, "query": query})
+
+        result = []
+        for sid, score in ranked:
+            skill = self._catalog.get_skill(sid)
+            if not skill:
+                continue
+            if tag_filter and tag_filter not in (skill.tags or []):
+                continue
+            entry = self._build_skill_entry(sid, skill)
+            entry["relevance_score"] = round(score, 4)
+            result.append(entry)
+
+        return json.dumps(
+            {"skills": result, "total": len(result), "query": query},
+            ensure_ascii=False, indent=2)
+
+    def _build_skill_entry(self, sid: str, skill) -> dict:
+        entry = {
+            "skill_id": sid,
+            "name": skill.name,
+            "description": skill.description,
+            "version": skill.version,
+            "tags": skill.tags or [],
+            "has_scripts": len(skill.scripts) > 0,
+            "has_references": len(skill.references) > 0,
+            "has_missing_deps": self._has_missing_deps(skill),
+        }
+        safety_report = getattr(skill, '_safety_report', None)
+        if safety_report:
+            entry["safety_status"] = safety_report.risk_level
+        return entry
 
     # ------------------------------------------------------------------ #
     #  skill_view
@@ -205,6 +261,29 @@ class SkillToolSet(ToolBase):
         dep_status = self._check_requirements(skill)
         if dep_status:
             result["requirements_status"] = dep_status
+            if dep_status.get("missing_tools"):
+                result["warning"] = (
+                    "This skill requires tools that are not available: "
+                    f"{dep_status['missing_tools']}. Some steps may not "
+                    "work.")
+            if dep_status.get("missing_env_vars"):
+                env_warning = (
+                    "Missing required environment variables: "
+                    f"{dep_status['missing_env_vars']}.")
+                result["warning"] = result.get("warning", "") + " " + env_warning
+
+        safety_report = getattr(skill, '_safety_report', None)
+        if safety_report:
+            result["safety"] = {
+                "risk_level": safety_report.risk_level,
+                "trust_level": getattr(skill, '_trust_level', 'unknown'),
+                "findings_count": len(safety_report.findings),
+                "findings": [
+                    {"category": f.category, "description": f.description,
+                     "evidence": f.evidence, "severity": f.severity}
+                    for f in safety_report.findings
+                ],
+            }
 
         return json.dumps(result, ensure_ascii=False, indent=2)
 
@@ -227,6 +306,17 @@ class SkillToolSet(ToolBase):
         except Exception as e:
             return json.dumps({"error": f"Failed to read file: {e}"})
 
+    def _get_registered_tool_names(self) -> set:
+        """Extract the set of tool names registered in the ToolManager."""
+        if not self._tool_manager or not hasattr(
+                self._tool_manager, '_tool_index'):
+            return set()
+        spliter = self._tool_manager.TOOL_SPLITER
+        return {
+            key.split(spliter, 1)[1]
+            for key in self._tool_manager._tool_index
+        }
+
     def _check_requirements(self, skill) -> Optional[dict]:
         frontmatter = SkillSchemaParser.parse_yaml_frontmatter(skill.content)
         if not frontmatter:
@@ -235,19 +325,46 @@ class SkillToolSet(ToolBase):
         requires = frontmatter.get("requires", {})
         if not requires:
             return None
+        if not isinstance(requires, dict):
+            logger.warning(
+                f"Skill '{skill.skill_id}': 'requires' field is not a dict, "
+                "skipping dependency check")
+            return None
 
         status: Dict[str, Any] = {}
         required_env = requires.get("env", [])
+        if not isinstance(required_env, list):
+            required_env = []
         if required_env:
             missing = [v for v in required_env if v not in os.environ]
             if missing:
                 status["missing_env_vars"] = missing
 
         required_tools = requires.get("tools", [])
+        if not isinstance(required_tools, list):
+            required_tools = []
         if required_tools:
-            status["required_tools"] = required_tools
+            registered = self._get_registered_tool_names()
+            if registered:
+                missing = [t for t in required_tools
+                           if t not in registered]
+                available = [t for t in required_tools
+                             if t in registered]
+                if missing:
+                    status["missing_tools"] = missing
+                if available:
+                    status["available_tools"] = available
+            else:
+                status["required_tools"] = required_tools
 
         return status if status else None
+
+    def _has_missing_deps(self, skill) -> bool:
+        """Quick check whether a skill has unmet tool dependencies."""
+        dep = self._check_requirements(skill)
+        if not dep:
+            return False
+        return bool(dep.get("missing_tools") or dep.get("missing_env_vars"))
 
     # ------------------------------------------------------------------ #
     #  skill_manage

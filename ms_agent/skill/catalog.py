@@ -12,6 +12,7 @@ import requests
 from ms_agent.utils.logger import get_logger
 
 from .loader import SkillLoader
+from .safety import SkillSafetyScanner
 from .schema import SkillSchema, SkillSchemaParser
 from .sources import SkillSource, SkillSourceType, parse_skill_source
 
@@ -91,6 +92,11 @@ class SkillCatalog:
         self._cache_version: int = 0
         self._summary_cache: Optional[str] = None
         self._summary_cache_version: int = -1
+
+        # Safety scanning
+        self._safety_scanner: Optional[SkillSafetyScanner] = None
+        self._trust_policy: str = 'permissive'
+        self._init_safety(config)
 
     # ------------------------------------------------------------------ #
     #  Loading
@@ -206,8 +212,65 @@ class SkillCatalog:
         local_path = str(dest / source.subdir) if source.subdir else str(dest)
         return self._loader.load_skills(local_path)
 
+    def _init_safety(self, config) -> None:
+        """Create the safety scanner from config if safety is enabled."""
+        if not config:
+            return
+        safety_cfg = getattr(config, 'safety', None)
+        if not safety_cfg:
+            return
+        enabled = getattr(safety_cfg, 'enabled', True)
+        if not enabled:
+            return
+
+        self._trust_policy = getattr(safety_cfg, 'trust_policy', 'permissive')
+        llm_config = {}
+        if getattr(safety_cfg, 'llm_check', False):
+            llm_config['model'] = getattr(safety_cfg, 'llm_model', 'qwen3.7-max')
+        self._safety_scanner = SkillSafetyScanner(
+            enable_llm_check=getattr(safety_cfg, 'llm_check', False),
+            llm_config=llm_config,
+            max_retries=getattr(safety_cfg, 'max_retries', 3),
+        )
+
+    @staticmethod
+    def _infer_trust_level(skill: SkillSchema, source=None) -> str:
+        """Determine trust level from the skill's source path."""
+        skill_path_str = str(skill.skill_path)
+        builtin_str = str(BUILTIN_SKILLS_DIR)
+        user_str = str(USER_SKILLS_DIR)
+
+        if skill_path_str.startswith(builtin_str):
+            return 'builtin'
+        elif skill_path_str.startswith(user_str):
+            return 'local'
+        return 'community'
+
     def _register_skill(self, skill: SkillSchema) -> None:
-        """Register a skill; later registrations override earlier ones."""
+        """Register a skill; later registrations override earlier ones.
+
+        Runs safety scanning (when enabled) and applies trust policy.
+        """
+        skill._trust_level = self._infer_trust_level(skill)
+
+        if self._safety_scanner:
+            try:
+                report = self._safety_scanner.scan_skill(skill)
+                skill._safety_report = report
+                if (report.risk_level == 'dangerous'
+                        and self._trust_policy == 'strict'):
+                    logger.warning(
+                        f"Blocked dangerous skill: {skill.skill_id}")
+                    return
+                elif report.risk_level != 'safe':
+                    logger.warning(
+                        f"Skill '{skill.skill_id}': "
+                        f"{report.risk_level} "
+                        f"({len(report.findings)} finding(s))")
+            except Exception as e:
+                logger.warning(
+                    f"Safety scan failed for {skill.skill_id}: {e}")
+
         self._skills[skill.skill_id] = skill
         self._invalidate_cache()
 

@@ -26,6 +26,7 @@ from ms_agent.utils.constants import DEFAULT_TAG, DEFAULT_USER
 from ms_agent.utils.logger import get_logger
 from ms_agent.skill.catalog import SkillCatalog
 from ms_agent.skill.prompt_injector import SkillPromptInjector
+from ms_agent.skill.search import SkillSearchEngine
 from ms_agent.skill.skill_tools import SkillToolSet
 from omegaconf import DictConfig, OmegaConf
 
@@ -123,12 +124,27 @@ class LLMAgent(Agent):
         self._skill_catalog = SkillCatalog(config=skills_config)
         self._skill_catalog.load_from_config(skills_config)
 
-        self._skill_injector = SkillPromptInjector(self._skill_catalog)
+        prompt_injection = getattr(skills_config, 'prompt_injection', 'all')
+        self._skill_injector = SkillPromptInjector(
+            self._skill_catalog, prompt_injection=prompt_injection)
+
+        search_cfg = getattr(skills_config, 'search', None)
+        search_backend = getattr(search_cfg, 'backend', 'bm25') if search_cfg else 'bm25'
+        search_kwargs = {}
+        if search_cfg:
+            if hasattr(search_cfg, 'embed_model'):
+                search_kwargs['embed_model'] = search_cfg.embed_model
+            if hasattr(search_cfg, 'fusion'):
+                search_kwargs['fusion'] = search_cfg.fusion
+        search_engine = SkillSearchEngine(
+            self._skill_catalog, backend=search_backend, **search_kwargs)
 
         enable_manage = getattr(skills_config, 'enable_manage', False)
         skill_toolset = SkillToolSet(
             self.config, self._skill_catalog,
-            enable_manage=enable_manage)
+            enable_manage=enable_manage,
+            tool_manager=self.tool_manager,
+            search_engine=search_engine)
         await skill_toolset.connect()
         self.tool_manager.register_tool(skill_toolset)
 
