@@ -24,6 +24,9 @@ from ms_agent.tools import ToolManager
 from ms_agent.utils import async_retry, read_history, save_history
 from ms_agent.utils.constants import DEFAULT_TAG, DEFAULT_USER
 from ms_agent.utils.logger import get_logger
+from ms_agent.personalization.injector import PersonalizationInjector
+from ms_agent.personalization.profile import ProfileManager
+from ms_agent.personalization.types import PersonalizationConfig
 from ms_agent.skill.catalog import SkillCatalog
 from ms_agent.skill.prompt_injector import SkillPromptInjector
 from ms_agent.skill.search import SkillSearchEngine
@@ -110,6 +113,9 @@ class LLMAgent(Agent):
         # Skill system (initialized in prepare_skills)
         self._skill_catalog = None
         self._skill_injector = None
+
+        # Personalization (lazy-loaded in _build_personalization_section)
+        self._profile_manager = ProfileManager()
 
     async def prepare_skills(self):
         """Initialize the skill system from config.skills.
@@ -474,6 +480,11 @@ class LLMAgent(Agent):
                 Message(role='user', content=messages or self.query),
             ]
 
+        # Inject personalization section (before skills)
+        personalization_section = self._build_personalization_section()
+        if personalization_section:
+            messages[0].content += "\n\n" + personalization_section
+
         # Inject skill prompt section into system message
         if self._skill_injector:
             skill_section = self._skill_injector.build_skill_prompt_section()
@@ -481,6 +492,19 @@ class LLMAgent(Agent):
                 messages[0].content += "\n\n" + skill_section
 
         return messages
+
+    def _build_personalization_section(self) -> str:
+        p_config = getattr(self.config, 'personalization', None)
+        config = PersonalizationConfig(
+            global_instruction=(
+                getattr(p_config, 'global_instruction', '') or ''
+            ) if p_config else '',
+            project_instruction=(
+                getattr(p_config, 'project_instruction', '') or ''
+            ) if p_config else '',
+            user_profile=self._profile_manager.read(),
+        )
+        return PersonalizationInjector.build(config)
 
     async def do_rag(self, messages: List[Message]):
         """Process RAG or knowledge search to enrich the user query with context.

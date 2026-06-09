@@ -121,6 +121,7 @@ venv.bak/
 .vscode
 .idea
 .cursor
+.firecrawl
 
 # custom
 *.pkl
