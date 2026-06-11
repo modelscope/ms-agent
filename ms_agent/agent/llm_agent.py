@@ -4,6 +4,7 @@ import importlib
 import inspect
 import json
 import os.path
+from pathlib import Path
 import sys
 import threading
 import uuid
@@ -603,13 +604,58 @@ class LLMAgent(Agent):
             self.log_output(_new_message.content)
         return messages
 
+    def _build_permission_objects(self):
+        """Create SafetyGuard and PermissionEnforcer from config if configured."""
+        from ms_agent.permission import (
+            AutoPermissionHandler,
+            PermissionConfig,
+            PermissionEnforcer,
+            PermissionMemory,
+            SafetyGuard,
+        )
+        from ms_agent.permission.config import SafetyConfig
+
+        raw = {}
+        if hasattr(self.config, 'permission'):
+            raw = dict(self.config.permission) if self.config.permission else {}
+
+        from ms_agent.utils.workspace_context import resolve_workspace_root
+
+        workspace_root = str(resolve_workspace_root(self.config))
+        perm_config = PermissionConfig.from_dict(raw, project_root=workspace_root)
+
+        allowed_dirs = [workspace_root]
+        for directory in perm_config.safety.allowed_directories:
+            if directory not in allowed_dirs:
+                allowed_dirs.append(directory)
+        read_only_dirs = list(perm_config.safety.read_only_directories)
+        safety_guard = SafetyGuard(
+            config=perm_config.safety,
+            allowed_dirs=allowed_dirs,
+            read_only_dirs=read_only_dirs,
+            workspace_root=workspace_root,
+        )
+
+        handler = AutoPermissionHandler()
+        memory = PermissionMemory(project_path=workspace_root)
+        enforcer = PermissionEnforcer(config=perm_config, handler=handler, memory=memory)
+
+        return safety_guard, enforcer, perm_config
+
     async def prepare_tools(self):
         """Initialize and connect the tool manager."""
         self.task_manager = TaskManager()
+
+        safety_guard, permission_enforcer, perm_config = self._build_permission_objects()
+
         self.tool_manager = ToolManager(
             self.config,
             self.mcp_config,
             self.mcp_client,
+            permission_enforcer=permission_enforcer,
+            safety_guard=safety_guard,
+            permission_mode=perm_config.mode,
+            read_policy=perm_config.safety.read_policy,
             trust_remote_code=self.trust_remote_code,
         )
         await self.tool_manager.connect()

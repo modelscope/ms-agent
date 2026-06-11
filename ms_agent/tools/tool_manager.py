@@ -94,9 +94,17 @@ class ToolManager:
                  config,
                  mcp_config: Optional[Dict[str, Any]] = None,
                  mcp_client: Optional[MCPClient] = None,
+                 permission_enforcer=None,
+                 safety_guard=None,
+                 permission_mode: str = 'auto',
+                 read_policy: str = 'loose',
                  **kwargs):
         self.config = config
         self.trust_remote_code = kwargs.get('trust_remote_code', False)
+        self._permission_enforcer = permission_enforcer
+        self._safety_guard = safety_guard
+        self._permission_mode = permission_mode
+        self._read_policy = read_policy
 
         self.extra_tools: List[ToolBase] = []
         self.has_split_task_tool = False
@@ -282,6 +290,30 @@ class ToolManager:
                         return f'The input {tool_args} is not a valid JSON, fix your arguments and try again'
                 assert tool_name in self._tool_index, f'Tool name {tool_name} not found'
                 tool_ins, server_name, _ = self._tool_index[tool_name]
+
+                # --- Permission checks ---
+                args_dict = dict(tool_args) if isinstance(tool_args, dict) else {}
+                if self._safety_guard is not None:
+                    from ms_agent.permission.ask_resolver import resolve_ask
+                    safety_decision = self._safety_guard.check(tool_name, args_dict)
+                    if safety_decision.action == 'deny':
+                        return f'Blocked by safety policy: {safety_decision.reason}'
+                    if safety_decision.action == 'ask':
+                        resolved = resolve_ask(safety_decision, self._permission_mode, self._read_policy)
+                        if resolved.action == 'deny':
+                            return f'Blocked by safety policy: {resolved.reason}'
+                        if resolved.action == 'ask':
+                            if self._permission_enforcer is None:
+                                return f'Blocked by safety policy (requires confirmation): {resolved.reason}'
+                            # interactive mode: fall through to enforcer/handler
+                if self._permission_enforcer is not None:
+                    perm_decision = await self._permission_enforcer.check(tool_name, args_dict)
+                    if perm_decision.action == 'deny':
+                        return f'Tool call denied: {perm_decision.reason}'
+                    if perm_decision.updated_args is not None:
+                        tool_args = perm_decision.updated_args
+                        tool_info['arguments'] = tool_args
+
                 raw_args = dict(tool_args) if isinstance(tool_args, dict) else {}
                 wait_sec = effective_tool_wait_seconds(
                     raw_args,
