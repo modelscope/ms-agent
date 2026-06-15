@@ -98,13 +98,17 @@ class ToolManager:
                  safety_guard=None,
                  permission_mode: str = 'auto',
                  read_policy: str = 'loose',
+                 hook_runtime=None,
+                 permission_config=None,
                  **kwargs):
         self.config = config
         self.trust_remote_code = kwargs.get('trust_remote_code', False)
         self._permission_enforcer = permission_enforcer
+        self._permission_config = permission_config
         self._safety_guard = safety_guard
         self._permission_mode = permission_mode
         self._read_policy = read_policy
+        self._hook_runtime = hook_runtime
 
         self.extra_tools: List[ToolBase] = []
         self.has_split_task_tool = False
@@ -306,13 +310,40 @@ class ToolManager:
                             if self._permission_enforcer is None:
                                 return f'Blocked by safety policy (requires confirmation): {resolved.reason}'
                             # interactive mode: fall through to enforcer/handler
-                if self._permission_enforcer is not None:
-                    perm_decision = await self._permission_enforcer.check(tool_name, args_dict)
-                    if perm_decision.action == 'deny':
-                        return f'Tool call denied: {perm_decision.reason}'
-                    if perm_decision.updated_args is not None:
-                        tool_args = perm_decision.updated_args
+
+                # --- PreToolUse hooks ---
+                hook_result = None
+                pre_attachments: list = []
+                if self._hook_runtime is not None and not self._hook_runtime.is_empty:
+                    from ms_agent.utils.workspace_context import resolve_workspace_root
+                    project_path = str(resolve_workspace_root(self.config))
+                    hook_result, pre_attachments = await self._hook_runtime.run_pre_tool_use(
+                        tool_name=tool_name,
+                        tool_args=args_dict,
+                        project_path=project_path,
+                    )
+                    if hook_result.updated_args is not None:
+                        tool_args = hook_result.updated_args
+                        args_dict = dict(hook_result.updated_args)
                         tool_info['arguments'] = tool_args
+
+                from ms_agent.hooks.permission_resolve import resolve_hook_permission_decision
+
+                perm_out = await resolve_hook_permission_decision(
+                    hook_result=hook_result,
+                    tool_name=tool_name,
+                    tool_args=args_dict,
+                    permission_enforcer=self._permission_enforcer,
+                    permission_config=self._permission_config,
+                    hook_runtime=self._hook_runtime,
+                )
+                if isinstance(perm_out, str):
+                    return perm_out
+                if perm_out.action == 'deny':
+                    return f'Tool call denied: {perm_out.reason}'
+                if perm_out.updated_args is not None:
+                    tool_args = perm_out.updated_args
+                    tool_info['arguments'] = tool_args
 
                 raw_args = dict(tool_args) if isinstance(tool_args, dict) else {}
                 wait_sec = effective_tool_wait_seconds(
@@ -341,6 +372,30 @@ class ToolManager:
                             tool_name, self.TOOL_SPLITER),
                         tool_args=call_args),
                     timeout=wait_sec)
+
+                # --- PostToolUse hooks ---
+                hook_attachments = list(pre_attachments)
+                if self._hook_runtime is not None and not self._hook_runtime.is_empty:
+                    response_text = (
+                        response if isinstance(response, str)
+                        else str(response.get('result', response))
+                        if isinstance(response, dict) else str(response))
+                    _, post_attachments = await self._hook_runtime.run_post_tool_use(
+                        tool_name=tool_name,
+                        tool_args=args_dict,
+                        tool_result=response_text,
+                        tool_call_id=tool_info.get('id'),
+                    )
+                    hook_attachments.extend(post_attachments)
+                    if hook_attachments:
+                        if isinstance(response, dict):
+                            response = dict(response)
+                            response['hook_attachments'] = hook_attachments
+                        else:
+                            response = {
+                                'result': response,
+                                'hook_attachments': hook_attachments,
+                            }
                 return response
             except asyncio.TimeoutError:
                 import traceback

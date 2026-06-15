@@ -555,7 +555,32 @@ class LLMAgent(Agent):
         await self.loop_callback('on_tool_call', messages)
 
     async def after_tool_call(self, messages: List[Message]):
-        if messages[-1].role == 'assistant' and not messages[-1].tool_calls:
+        assistant = messages[-1]
+        would_stop = assistant.role == 'assistant' and not assistant.tool_calls
+
+        hook_runtime = getattr(self, '_hook_runtime', None)
+        if would_stop and hook_runtime is not None and not hook_runtime.is_empty:
+            from ms_agent.hooks.context import (
+                append_stop_blocking_feedback,
+                apply_hook_result_to_messages,
+            )
+
+            last_text = assistant.content if isinstance(assistant.content, str) else ''
+            stop = await hook_runtime.run_stop(
+                reason='no_tool_calls',
+                last_assistant_message=last_text,
+                stop_hook_active=getattr(self.runtime, 'stop_hook_active', False),
+            )
+            if stop.action in ('block', 'deny'):
+                append_stop_blocking_feedback(messages, stop.reason)
+                self.runtime.should_stop = False
+                self.runtime.stop_hook_active = True
+                await self.loop_callback('after_tool_call', messages)
+                return
+            apply_hook_result_to_messages(
+                messages, stop, hook_event='Stop')
+
+        if would_stop:
             self.runtime.should_stop = True
         await self.loop_callback('after_tool_call', messages)
 
@@ -594,6 +619,7 @@ class LLMAgent(Agent):
                 name=tool_call_query['tool_name'],
                 resources=tool_call_result_format.resources,
                 tool_detail=tool_call_result_format.tool_detail,
+                hook_attachments=tool_call_result_format.hook_attachments,
             )
 
             if _new_message.tool_call_id is None:
@@ -644,9 +670,20 @@ class LLMAgent(Agent):
 
     async def prepare_tools(self):
         """Initialize and connect the tool manager."""
+        import uuid
+
+        from ms_agent.hooks.bridge import CallbackToHookBridge
+        from ms_agent.hooks.factory import build_hook_runtime
+
         self.task_manager = TaskManager()
 
         safety_guard, permission_enforcer, perm_config = self._build_permission_objects()
+        session_id = (
+            self.runtime.session_id
+            or getattr(self, 'tag', None)
+            or str(uuid.uuid4())
+        )
+        hook_runtime = build_hook_runtime(self.config, session_id=session_id)
 
         self.tool_manager = ToolManager(
             self.config,
@@ -656,8 +693,15 @@ class LLMAgent(Agent):
             safety_guard=safety_guard,
             permission_mode=perm_config.mode,
             read_policy=perm_config.safety.read_policy,
+            hook_runtime=hook_runtime,
+            permission_config=perm_config,
             trust_remote_code=self.trust_remote_code,
         )
+        if hook_runtime.has_session_handlers:
+            self.register_callback(CallbackToHookBridge(self.config, hook_runtime))
+        self._hook_runtime = hook_runtime
+        if not self.runtime.session_id:
+            self.runtime.session_id = hook_runtime.session_id
         await self.tool_manager.connect()
         for tool in self.tool_manager.extra_tools:
             if hasattr(tool, 'set_task_manager'):
@@ -986,6 +1030,35 @@ class LLMAgent(Agent):
         """
         messages = deepcopy(messages)
         messages = self._append_task_notifications(messages)
+        from ms_agent.hooks.context import (
+            condense_hook_attachments_for_llm,
+            extract_latest_user_prompt,
+            apply_hook_result_to_messages,
+        )
+        messages = condense_hook_attachments_for_llm(messages)
+
+        # UserPromptSubmit for multi-turn user input (InputCallback path)
+        hook_runtime = getattr(self, '_hook_runtime', None)
+        if (hook_runtime is not None and not hook_runtime.is_empty
+                and messages and messages[-1].role == 'user'
+                and self.runtime.round > 0):
+            prompt_text = extract_latest_user_prompt(messages)
+            submit = await hook_runtime.run_user_prompt_submit(prompt_text)
+            if submit.action in ('deny', 'block'):
+                if messages and messages[-1].role == 'user':
+                    messages.pop()
+                messages.append(Message(
+                    role='system',
+                    content=(
+                        f'UserPromptSubmit operation blocked by hook:\n'
+                        f'{submit.reason}\n\nOriginal prompt: {prompt_text}'),
+                ))
+                self.runtime.should_stop = True
+                yield messages
+                return
+            apply_hook_result_to_messages(
+                messages, submit, hook_event='UserPromptSubmit')
+
         if (not self.load_cache) or messages[-1].role != 'assistant':
             messages = await self.condense_memory(messages)
             await self.on_generate_response(messages)
@@ -1265,10 +1338,38 @@ class LLMAgent(Agent):
                 # New task: create standardized messages first
                 messages = await self.create_messages(messages)
 
+                hook_runtime = getattr(self, '_hook_runtime', None)
+                if hook_runtime is not None:
+                    hook_runtime.session_id = self.runtime.session_id
+
+                # SessionStart before UserPromptSubmit (§9.3)
+                await self.on_task_begin(messages)
+
+                # UserPromptSubmit — first user message
+                if hook_runtime is not None and not hook_runtime.is_empty:
+                    from ms_agent.hooks.context import (
+                        extract_latest_user_prompt,
+                        apply_hook_result_to_messages,
+                    )
+                    prompt_text = extract_latest_user_prompt(messages)
+                    submit = await hook_runtime.run_user_prompt_submit(prompt_text)
+                    if submit.action in ('deny', 'block'):
+                        messages.append(Message(
+                            role='system',
+                            content=(
+                                f'UserPromptSubmit operation blocked by hook:\n'
+                                f'{submit.reason}\n\nOriginal prompt: {prompt_text}'),
+                        ))
+                        await self.on_task_end(messages)
+                        yield messages
+                        await self.cleanup_tools()
+                        return
+                    apply_hook_result_to_messages(
+                        messages, submit, hook_event='UserPromptSubmit')
+
                 # Try skill processing first
                 skill_result = await self.do_skill(messages)
                 if skill_result is not None:
-                    await self.on_task_begin(skill_result)
                     yield skill_result
                     await self.on_task_end(skill_result)
                     await self.cleanup_tools()
@@ -1276,7 +1377,6 @@ class LLMAgent(Agent):
 
                 # Standard processing continues
                 await self.do_rag(messages)
-                await self.on_task_begin(messages)
 
             for message in messages:
                 if message.role != 'system':

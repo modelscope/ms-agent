@@ -102,6 +102,7 @@ class PermissionConfig:
     mode: Literal['auto', 'strict', 'interactive'] = 'auto'
     whitelist: tuple[str, ...] = ()
     blacklist: tuple[str, ...] = _DEFAULT_BLACKLIST
+    ask_rules: tuple[str, ...] = ()
     safety: SafetyConfig = SafetyConfig()
 
     @classmethod
@@ -113,6 +114,7 @@ class PermissionConfig:
         _MODE_ALIASES = {'restricted': 'interactive'}
         mode = _MODE_ALIASES.get(raw_mode, raw_mode)
         whitelist = tuple(d.get('whitelist', ()))
+        ask_rules = tuple(d.get('ask_rules', ()))
         user_blacklist = tuple(d.get('blacklist', ()))
         blacklist = _DEFAULT_BLACKLIST + tuple(
             p for p in user_blacklist if p not in _DEFAULT_BLACKLIST
@@ -130,4 +132,10 @@ class PermissionConfig:
 
         safety = SafetyConfig.from_dict(safety_raw, project_root=project_root)
 
-        return cls(mode=mode, whitelist=whitelist, blacklist=blacklist, safety=safety)
+        return cls(
+            mode=mode,
+            whitelist=whitelist,
+            blacklist=blacklist,
+            ask_rules=ask_rules,
+            safety=safety,
+        )

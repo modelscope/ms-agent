@@ -46,7 +46,19 @@ class PermissionEnforcer:
         self,
         tool_name: str,
         tool_args: dict[str, Any],
+        *,
+        force_decision: PermissionDecision | None = None,
     ) -> PermissionDecision:
+        if force_decision and force_decision.action == 'ask':
+            suggestions = generate_suggestions(tool_name, tool_args)
+            response = await self._handler.ask(
+                tool_name=tool_name,
+                tool_args=tool_args,
+                context=force_decision.reason or '',
+                suggestions=suggestions,
+            )
+            return self._process_response(response, tool_name, tool_args)
+
         # 1. Auto / strict mode → allow everything (safety handled by SafetyGuard + ask_resolver)
         if self._config.mode in ('auto', 'strict'):
             return PermissionDecision(action='allow', reason=f'{self._config.mode.capitalize()} mode')

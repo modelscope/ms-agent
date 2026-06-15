@@ -67,6 +67,9 @@ class Message:
     # role=tool: extra payload for UIs / SSE only; omitted from LLM API via to_dict_clean().
     tool_detail: Optional[str] = None
 
+    # Hook attachments for UI / LLM condensation; omitted from to_dict_clean().
+    hook_attachments: List[Any] = field(default_factory=list)
+
     def to_dict(self):
         return asdict(self)
 
@@ -94,6 +97,7 @@ class Message:
             'prompt_tokens',
             'api_calls',
             'tool_detail',
+            'hook_attachments',
             'searching_detail',
             'search_result',
             '_responses_output_items',
@@ -117,6 +121,7 @@ class ToolResult:
     resources: List[str] = field(default_factory=list)
     extra: dict = field(default_factory=dict)
     tool_detail: Optional[str] = None
+    hook_attachments: List[Any] = field(default_factory=list)
 
     @staticmethod
     def from_raw(raw):
@@ -131,9 +136,13 @@ class ToolResult:
                 text=str(model_text),
                 resources=raw.get('resources', []),
                 tool_detail=None if td is None else str(td),
+                hook_attachments=raw.get('hook_attachments', []),
                 extra={
                     k: v
                     for k, v in raw.items()
-                    if k not in ['text', 'resources', 'result', 'tool_detail']
+                    if k not in [
+                        'text', 'resources', 'result', 'tool_detail',
+                        'hook_attachments',
+                    ]
                 })
         raise TypeError('tool_call_result must be str or dict')

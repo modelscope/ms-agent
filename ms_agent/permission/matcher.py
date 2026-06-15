@@ -6,8 +6,9 @@ Supports ``*`` / ``?`` wildcards via fnmatch, ``|`` to separate alternatives.
 
 from __future__ import annotations
 
-import fnmatch
 from typing import Any
+
+from ms_agent.utils.pattern_matcher import match_pattern
 
 
 TOOL_SPLITER = '---'
@@ -42,11 +43,7 @@ class PermissionMatcher:
 
         Supports ``|`` separated alternatives: ``read_file|write_file``.
         """
-        for alt in pattern.split('|'):
-            alt = alt.strip()
-            if alt and fnmatch.fnmatch(tool_call, alt):
-                return True
-        return False
+        return match_pattern(pattern, tool_call)
 
     def match_with_content(
         self,
