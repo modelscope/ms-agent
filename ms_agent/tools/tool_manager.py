@@ -179,7 +179,8 @@ class ToolManager:
                     key = f"{server_name[:max(0, max_server_len)]}{self.TOOL_SPLITER}{tool['tool_name']}"
                 else:
                     key = f"{server_name}{self.TOOL_SPLITER}{tool['tool_name']}"
-                assert key not in self._tool_index, f'Tool name duplicated {tool["tool_name"]}'
+                if key in self._tool_index:
+                    continue
                 tool = copy(tool)
                 tool['tool_name'] = key
                 self._tool_index[key] = (tool_ins, server_name, tool)
