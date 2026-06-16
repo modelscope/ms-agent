@@ -264,8 +264,8 @@ class FileSystemTool(ToolBase):
                     tool_name='search_file_content',
                     server_name='file_system',
                     description=
-                    'Search for content in files using literal text or regex patterns. '
-                    'Automatically detects and supports both literal string matching and regex pattern matching. '
+                    'Search for content in files. By default, searches for the exact literal text. '
+                    'Set is_regex=true to use regex pattern matching instead. '
                     'Returns matching files with line numbers and surrounding context.',
                     parameters={
                         'type': 'object',
@@ -274,8 +274,7 @@ class FileSystemTool(ToolBase):
                                 'type':
                                 'string',
                                 'description':
-                                'The content/text or regex pattern to search for. '
-                                'Supports both literal strings and regex patterns automatically.',
+                                'The text to search for (literal by default, or a regex pattern if is_regex=true).',
                             },
                             'parent_path': {
                                 'type':
@@ -295,6 +294,22 @@ class FileSystemTool(ToolBase):
                                 'integer',
                                 'description':
                                 'Number of lines before and after the match to include (default: 2)',
+                            },
+                            'is_regex': {
+                                'type':
+                                'boolean',
+                                'description':
+                                'If true, treat content as a regex pattern. If false (default), '
+                                'search for the exact literal text. Characters like [, ], (, ), ., *, $ '
+                                'are matched literally when is_regex is false.',
+                            },
+                            'max_matches': {
+                                'type':
+                                'integer',
+                                'description':
+                                'Maximum number of matches to return (default: 50). '
+                                'If more matches exist, the total count is reported but only '
+                                'the first max_matches results are shown.',
                             },
                         },
                         'required': ['content'],
@@ -859,15 +874,18 @@ class FileSystemTool(ToolBase):
                                   content: str = None,
                                   parent_path: str = '.',
                                   file_pattern: str = '*',
-                                  context_lines: int = 2):
+                                  context_lines: int = 2,
+                                  is_regex: bool = False,
+                                  max_matches: int = 50):
         """Search for content in files using thread pool.
-        Supports both literal string matching and regex pattern matching automatically.
 
         Args:
-            content(str): The content or regex pattern to search for (auto-detected)
+            content(str): The text to search for (literal by default, regex if is_regex=True)
             parent_path(str): The relative parent path to search in
             file_pattern(str): Wildcard pattern for file names (default: '*' for all files)
             context_lines(int): Number of lines before and after the match to include (default: 2)
+            is_regex(bool): If True, treat content as a regex pattern; otherwise literal match (default: False)
+            max_matches(int): Maximum number of matches to return (default: 50)
 
         Returns:
             String containing all matches with file path, line number, and context
@@ -887,14 +905,15 @@ class FileSystemTool(ToolBase):
         if not content:
             return 'Error: content parameter is required for search'
 
-        # Try to compile as regex pattern, fallback to literal string matching
         use_regex = False
         pattern = None
-        try:
-            pattern = re.compile(content)
-            use_regex = True
-        except re.error:
-            # Not a valid regex, will use literal string matching
+        if is_regex:
+            try:
+                pattern = re.compile(content)
+                use_regex = True
+            except re.error:
+                return f'Error: "{content}" is not a valid regex pattern.'
+        else:
             use_regex = False
 
         # Collect all files matching the pattern
@@ -928,19 +947,15 @@ class FileSystemTool(ToolBase):
             with open(file_path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
                 for line_num, line in enumerate(lines, start=1):
-                    # Check for match: regex or literal string
-                    is_match = False
                     if use_regex:
                         is_match = pattern.search(line) is not None
                     else:
                         is_match = content in line
 
                     if is_match:
-                        # Calculate context range
                         start_line = max(0, line_num - context_lines - 1)
                         end_line = min(len(lines), line_num + context_lines)
 
-                        # Extract context lines
                         context = []
                         for i in range(start_line, end_line):
                             prefix = '> ' if i == line_num - 1 else '  '
@@ -970,10 +985,24 @@ class FileSystemTool(ToolBase):
         if not all_matches:
             return f'No matches found for <{content}> in files matching <{file_pattern}>'
 
+        all_matches.sort(key=lambda m: (m['file'], m['line']))
+
+        total_found = len(all_matches)
+        truncated = total_found > max_matches
+        if truncated:
+            all_matches = all_matches[:max_matches]
+
         # Format results
-        result_lines = [
-            f'Found {len(all_matches)} match(es) for "{content}":\n'
-        ]
+        if truncated:
+            result_lines = [
+                f'Found {total_found} match(es) for "{content}" '
+                f'(showing first {max_matches}; refine your search '
+                f'or increase max_matches for more):\n'
+            ]
+        else:
+            result_lines = [
+                f'Found {total_found} match(es) for "{content}":\n'
+            ]
         for match in all_matches:
             result_lines.append(
                 f"File: {match['file']}, Line: {match['line']}")

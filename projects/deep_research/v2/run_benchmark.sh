@@ -31,6 +31,10 @@ else
     exit 1
 fi
 
+# When stdout is redirected (e.g., nohup > file), Python is block-buffered by default.
+# Force unbuffered output so progress lines like "[xx] OK" show up in logs promptly.
+export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"
+
 # Use caffeinate on macOS when available; otherwise run normally.
 RUN_PREFIX=()
 if command -v caffeinate >/dev/null 2>&1; then
@@ -98,7 +102,7 @@ if [ -z "$DR_BENCH_ROOT" ]; then
     echo ""
 
     # Run the benchmark
-    PYTHONPATH=. "$PYTHON_BIN" ms_agent/cli/cli.py run \
+    PYTHONPATH=. "$PYTHON_BIN" -u ms_agent/cli/cli.py run \
         --config projects/deep_research/v2/researcher.yaml \
         --query "$QUERY" \
         --trust_remote_code true \
@@ -118,7 +122,7 @@ else
 
     # Benchmark subprocess tuning (override via env vars if needed)
     export DR_BENCH_POST_FINISH_GRACE_S="${DR_BENCH_POST_FINISH_GRACE_S:-180}"
-    export DR_BENCH_POST_REPORT_EXIT_GRACE_S="${DR_BENCH_POST_REPORT_EXIT_GRACE_S:-3600}"
+    export DR_BENCH_POST_REPORT_EXIT_GRACE_S="${DR_BENCH_POST_REPORT_EXIT_GRACE_S:-7200}"
     export DR_BENCH_REPORT_STABLE_WINDOW_S="${DR_BENCH_REPORT_STABLE_WINDOW_S:-10}"
     export DR_BENCH_SUBPROCESS_POLL_INTERVAL_S="${DR_BENCH_SUBPROCESS_POLL_INTERVAL_S:-0.5}"
     export DR_BENCH_SUBPROCESS_TERMINATE_TIMEOUT_S="${DR_BENCH_SUBPROCESS_TERMINATE_TIMEOUT_S:-30}"
@@ -164,7 +168,7 @@ else
     echo ""
 
     # Run the full benchmark
-    PYTHONPATH=. "${RUN_PREFIX[@]}" "$PYTHON_BIN" projects/deep_research/v2/eval/dr_bench_runner.py \
+    PYTHONPATH=. "${RUN_PREFIX[@]}" "$PYTHON_BIN" -u projects/deep_research/v2/eval/dr_bench_runner.py \
         --query_file "$QUERY_FILE" \
         --output_jsonl "$OUTPUT_JSONL" \
         --model_name "$MODEL_NAME" \
