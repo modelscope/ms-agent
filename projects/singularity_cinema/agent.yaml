@@ -1,23 +1,22 @@
 llm:
   service: openai
-  model: qwen3.6-plus
+  model: claude-sonnet-4-5-20250929
   openai_api_key:
   openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 
 mllm:
   mllm_service: openai
-  mllm_model: qwen3.6-plus
+  mllm_model: gemini-3-pro-preview
   mllm_openai_api_key:
   mllm_openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 
 generation_config:
-  stream: true
-  stream_options:
-    include_usage: true
   temperature: 0.3
   top_k: 50
+  max_tokens: 64000
   extra_body:
-    enable_thinking: false
+    dashscope_extend_params:
+      provider: d
 
 prompt:
   system: |
