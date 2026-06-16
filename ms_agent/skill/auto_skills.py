@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
 
 import json
 from ms_agent.llm import LLM
-from ms_agent.llm.utils import Message
+from ms_agent.llm.utils import Message, collect_response
 from ms_agent.retriever.hybrid_retriever import HybridRetriever
 from ms_agent.skill.container import (ExecutionInput, ExecutionOutput,
                                       ExecutorType, SkillContainer)
@@ -129,7 +129,7 @@ class SkillAnalyzer:
         from ms_agent.llm.utils import Message
         messages = [Message(role='user', content=prompt)]
         logger.debug(f'Input msg to LLM in SkillAnalyzer: {messages}')
-        response = self.llm.generate(messages=messages)
+        response = collect_response(self.llm.generate(messages=messages))
         res = response.content if hasattr(response,
                                            'content') else str(response)
         logger.debug(f'LLM response in SkillAnalyzer: {res}')
@@ -959,9 +959,8 @@ class DAGExecutor:
             max_attempts=self.max_retries)
 
         try:
-            response = self.llm.generate(
-                messages=[Message(role='user', content=prompt)])
-            # Parse JSON response - handle different response formats
+            response = collect_response(self.llm.generate(
+                messages=[Message(role='user', content=prompt)]))
             response_text = (response.content if hasattr(response, 'content')
                              else str(response)).strip()
             # Extract JSON from response
@@ -1271,7 +1270,7 @@ class AutoSkills:
         """Generate LLM response from prompt."""
         messages = [Message(role='user', content=prompt)]
         logger.debug(f'Input msg to LLM: {messages}')       # set env `LOG_LEVEL=DEBUG`
-        response = self.llm.generate(messages=messages)
+        response = collect_response(self.llm.generate(messages=messages))
         res = response.content if hasattr(response,
                                            'content') else str(response)
         logger.debug('LLM response: {}'.format(res))

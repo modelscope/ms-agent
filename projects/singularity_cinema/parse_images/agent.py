@@ -11,7 +11,7 @@ from PIL import Image
 from urllib.request import urlretrieve
 
 from ms_agent.agent import CodeAgent
-from ms_agent.llm import LLM, Message
+from ms_agent.llm import LLM, Message, collect_response
 from ms_agent.llm.openai_llm import OpenAI
 from ms_agent.utils import get_logger
 
@@ -150,5 +150,5 @@ class ParseImages(CodeAgent):
         messages = [
             Message(role='user', content=_content),
         ]
-        response = self.mllm.generate(messages)
+        response = collect_response(self.mllm.generate(messages))
         return response.content

@@ -232,6 +232,9 @@ class OpenAI(LLM):
         args.update(kwargs)
         stream = args.get('stream', False)
 
+        if not stream:
+            args.pop('stream_options', None)
+
         if self._use_responses_api:
             if stream:
                 return self._responses_stream_generate(messages, tools, **args)

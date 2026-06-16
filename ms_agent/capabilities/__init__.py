@@ -40,15 +40,27 @@ def create_registry(config: Any = None) -> CapabilityRegistry:
     """
     registry = CapabilityRegistry()
 
-    from ms_agent.capabilities.wrappers import (agent_delegate, deep_research,
-                                                filesystem, lsp_code_server,
-                                                web_search)
+    from ms_agent.capabilities.wrappers import (
+        agent_delegate,
+        code_genesis,
+        deep_research,
+        doc_research,
+        filesystem,
+        fin_research,
+        lsp_code_server,
+        singularity_cinema,
+        web_search,
+    )
 
     filesystem.register_all(registry, config)
     lsp_code_server.register_all(registry, config)
     deep_research.register_all(registry, config)
     web_search.register_all(registry, config)
     agent_delegate.register_all(registry, config)
+    code_genesis.register_all(registry, config)
+    fin_research.register_all(registry, config)
+    singularity_cinema.register_all(registry, config)
+    doc_research.register_all(registry, config)
 
     return registry
 
