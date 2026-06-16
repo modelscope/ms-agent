@@ -1,6 +1,5 @@
-from typing import Union
-
 from docling_core.types import DoclingDocument
+from typing import Union
 
 
 class PostProcess:

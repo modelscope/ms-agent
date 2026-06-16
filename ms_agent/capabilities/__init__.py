@@ -23,6 +23,7 @@ Quick start::
 """
 
 from __future__ import annotations
+
 from typing import Any
 
 from ms_agent.capabilities.descriptor import CapabilityDescriptor

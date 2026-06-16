@@ -1,8 +1,8 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+import pandas as pd
 import re
 from typing import Any, Callable, Dict, List, Optional
 
-import pandas as pd
 from ms_agent.tools.findata.akshare_source import AKShareDataSource
 from ms_agent.tools.findata.baostock_source import BaoStockDataSource
 from ms_agent.tools.findata.data_source_base import (DataSourceError,

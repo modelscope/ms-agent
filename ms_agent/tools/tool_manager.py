@@ -2,6 +2,8 @@
 import asyncio
 import importlib
 import inspect
+import json
+import math
 import os
 import sys
 import uuid
@@ -9,16 +11,20 @@ from copy import copy
 from types import TracebackType
 from typing import Any, Dict, List, Optional
 
-import json
 from ms_agent.llm.utils import Tool, ToolCall
 from ms_agent.tools.agent_tool import AgentTool
 from ms_agent.tools.base import ToolBase
 from ms_agent.tools.code import CodeExecutionTool, LocalCodeExecutionTool
 from ms_agent.tools.filesystem_tool import FileSystemTool
 from ms_agent.tools.image_generator import ImageGenerator
-from ms_agent.tools.mcp_client import MCPClient
+try:
+    from ms_agent.tools.mcp_client import MCPClient
+except ImportError:
+    MCPClient = None
+from ms_agent.tools.search.localsearch_tool import LocalSearchTool
+from ms_agent.tools.search.sirchmunk_search import \
+    effective_localsearch_settings
 from ms_agent.tools.search.websearch_tool import WebSearchTool
-from ms_agent.tools.split_task import SplitTask
 from ms_agent.tools.todolist_tool import TodoListTool
 from ms_agent.tools.video_generator import VideoGenerator
 from ms_agent.utils import get_logger
@@ -27,8 +33,48 @@ from ms_agent.utils.constants import TOOL_PLUGIN_NAME
 logger = get_logger()
 
 MAX_TOOL_NAME_LEN = int(os.getenv('MAX_TOOL_NAME_LEN', 64))
-TOOL_CALL_TIMEOUT = int(os.getenv('TOOL_CALL_TIMEOUT', 30))
+# Default wait around each tool invocation (seconds). Override via config.tool_call_timeout or TOOL_CALL_TIMEOUT.
+TOOL_CALL_TIMEOUT = int(os.getenv('TOOL_CALL_TIMEOUT', 120))
+# Hard ceiling for a single tool call, including model-provided ``timeout`` in tool arguments.
+TOOL_CALL_TIMEOUT_MAX = int(os.getenv('TOOL_CALL_TIMEOUT_MAX', 600))
 MAX_CONCURRENT_TOOLS = int(os.getenv('MAX_CONCURRENT_TOOLS', 20))
+
+
+def parse_timeout_from_tool_args(
+        tool_args: Optional[Dict[str, Any]]) -> Optional[float]:
+    """Read ``tools.arguments.timeout`` if present (even when omitted from JSON schema).
+
+    Providers may still drop unknown keys before arguments reach the host; when the key
+    is present, it is honored here for the asyncio wait around ``call_tool``.
+    """
+    if not isinstance(tool_args, dict) or 'timeout' not in tool_args:
+        return None
+    raw = tool_args['timeout']
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        v = float(raw)
+    except (TypeError, ValueError):
+        logger.warning('Ignoring invalid tools.arguments.timeout: %r', raw)
+        return None
+    if v != v:  # NaN
+        return None
+    return v
+
+
+def effective_tool_wait_seconds(
+        tool_args: Optional[Dict[str, Any]],
+        *,
+        default_sec: float,
+        max_sec: float,
+) -> float:
+    """Per-call wait: ``min(max(requested, 1), max_sec)`` if ``timeout`` set, else clamped default."""
+    cap = max(1.0, float(max_sec))
+    base = min(max(float(default_sec), 1.0), cap)
+    req = parse_timeout_from_tool_args(tool_args)
+    if req is None:
+        return base
+    return min(max(req, 1.0), cap)
 
 
 class ToolManager:
@@ -36,6 +82,13 @@ class ToolManager:
     """
 
     TOOL_SPLITER = '---'
+
+    @staticmethod
+    def _registered_tool_suffix(full_name: str, splitter: str) -> str:
+        """Return segment after first *splitter* (tool ids may themselves contain *splitter*)."""
+        if splitter not in full_name:
+            return full_name
+        return full_name.split(splitter, 1)[1]
 
     def __init__(self,
                  config,
@@ -47,8 +100,6 @@ class ToolManager:
 
         self.extra_tools: List[ToolBase] = []
         self.has_split_task_tool = False
-        if hasattr(config, 'tools') and hasattr(config.tools, 'split_task'):
-            self.extra_tools.append(SplitTask(config))
         if hasattr(config, 'tools') and hasattr(config.tools,
                                                 'image_generator'):
             self.extra_tools.append(ImageGenerator(config))
@@ -76,10 +127,12 @@ class ToolManager:
                 self.extra_tools.append(CodeExecutionTool(config))
         if hasattr(config, 'tools') and hasattr(config.tools,
                                                 'financial_data_fetcher'):
-            from ms_agent.tools.findata.findata_fetcher import FinancialDataFetcher
+            from ms_agent.tools.findata.findata_fetcher import \
+                FinancialDataFetcher
             self.extra_tools.append(FinancialDataFetcher(config))
-        if hasattr(config, 'tools') and getattr(config.tools, 'agent_tools',
-                                                None):
+        if hasattr(config,
+                   'tools') and (getattr(config.tools, 'agent_tools', None)
+                                 or hasattr(config.tools, 'split_task')):
             agent_tool = AgentTool(
                 config, trust_remote_code=self.trust_remote_code)
             if agent_tool.enabled:
@@ -88,8 +141,15 @@ class ToolManager:
             self.extra_tools.append(TodoListTool(config))
         if hasattr(config, 'tools') and hasattr(config.tools, 'web_search'):
             self.extra_tools.append(WebSearchTool(config))
-        self.tool_call_timeout = getattr(config, 'tool_call_timeout',
-                                         TOOL_CALL_TIMEOUT)
+        if effective_localsearch_settings(config) is not None:
+            self.extra_tools.append(LocalSearchTool(config))
+        if hasattr(config, 'tools') and hasattr(config.tools, 'task_control'):
+            from ms_agent.tools.task_control_tool import TaskControlTool
+            self.extra_tools.append(TaskControlTool(config))
+        self.tool_call_timeout = float(
+            getattr(config, 'tool_call_timeout', TOOL_CALL_TIMEOUT))
+        self.tool_call_timeout_max = float(
+            getattr(config, 'tool_call_timeout_max', TOOL_CALL_TIMEOUT_MAX))
         local_dir = self.config.local_dir if hasattr(self.config,
                                                      'local_dir') else None
         if hasattr(config, 'tools') and hasattr(config.tools,
@@ -139,11 +199,11 @@ class ToolManager:
         self.extra_tools.append(tool)
 
     async def connect(self):
-        if self.mcp_client and isinstance(self.mcp_client, MCPClient):
+        if self.mcp_client and MCPClient and isinstance(self.mcp_client, MCPClient):
             self.servers = self.mcp_client
             await self.servers.add_mcp_config(self.mcp_config)
             self.mcp_config = self.servers.mcp_config
-        else:
+        elif MCPClient is not None:
             self.servers = MCPClient(self.mcp_config, self.config)
             await self.servers.connect()
         for tool in self.extra_tools:
@@ -184,9 +244,10 @@ class ToolManager:
                 tool['tool_name'] = key
                 self._tool_index[key] = (tool_ins, server_name, tool)
 
-        mcps = await self.servers.get_tools()
-        for server_name, tool_list in mcps.items():
-            extend_tool(self.servers, server_name, tool_list)
+        if self.servers is not None:
+            mcps = await self.servers.get_tools()
+            for server_name, tool_list in mcps.items():
+                extend_tool(self.servers, server_name, tool_list)
         for extra_tool in self.extra_tools:
             tools = await extra_tool.get_tools()
             for server_name, tool_list in tools.items():
@@ -221,23 +282,44 @@ class ToolManager:
                         return f'The input {tool_args} is not a valid JSON, fix your arguments and try again'
                 assert tool_name in self._tool_index, f'Tool name {tool_name} not found'
                 tool_ins, server_name, _ = self._tool_index[tool_name]
+                raw_args = dict(tool_args) if isinstance(tool_args, dict) else {}
+                wait_sec = effective_tool_wait_seconds(
+                    raw_args,
+                    default_sec=self.tool_call_timeout,
+                    max_sec=self.tool_call_timeout_max,
+                )
                 call_args = tool_args
                 if isinstance(tool_ins, AgentTool):
                     call_args = dict(tool_args or {})
                     call_id = tool_info.get('id') or str(uuid.uuid4())
                     call_args['__call_id'] = call_id
+                elif isinstance(tool_ins,
+                                LocalCodeExecutionTool) and tool_name.endswith(
+                                    f'{self.TOOL_SPLITER}shell_executor'):
+                    call_args = dict(tool_args or {})
+                    call_args['__call_id'] = tool_info.get('id') or str(
+                        uuid.uuid4())
+                    # Align subprocess wait with the host wait (after cap) so inner
+                    # ``communicate`` does not expire before the outer ``wait_for``.
+                    call_args['timeout'] = int(math.ceil(wait_sec))
                 response = await asyncio.wait_for(
                     tool_ins.call_tool(
                         server_name,
-                        tool_name=tool_name.split(self.TOOL_SPLITER)[1],
+                        tool_name=self._registered_tool_suffix(
+                            tool_name, self.TOOL_SPLITER),
                         tool_args=call_args),
-                    timeout=self.tool_call_timeout)
+                    timeout=wait_sec)
                 return response
             except asyncio.TimeoutError:
                 import traceback
                 logger.warning(traceback.format_exc())
-                # TODO: How to get the information printed by the tool before hanging to return to the model?
-                return f'Execute tool call timeout: {brief_info}'
+                tn = tool_info.get('tool_name', '(unknown)')
+                return (
+                    f'Tool call timed out after {wait_sec:.0f}s (tool: {tn}). '
+                    f'Default limit is {self.tool_call_timeout:.0f}s; '
+                    f'set numeric field "timeout" in the tool arguments to wait longer '
+                    f'(seconds, maximum {self.tool_call_timeout_max:.0f}s). '
+                    f'Original call (truncated): {brief_info}')
             except Exception as e:
                 import traceback
                 logger.warning(traceback.format_exc())

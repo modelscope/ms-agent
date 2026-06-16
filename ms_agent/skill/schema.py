@@ -6,13 +6,12 @@ Defines the data structure and validation logic for Agent Skills.
 Each Skill is represented as a self-contained directory with metadata.
 """
 import re
+import yaml
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-import yaml
 from ms_agent.utils.logger import logger
-
 from .spec import Spec
 
 SUPPORTED_SCRIPT_EXT = ('.py', '.sh', '.js')

@@ -9,10 +9,9 @@ import re
 import signal
 import subprocess
 import sys
+import yaml
 from datetime import datetime
 from typing import Any, Callable, Dict, Optional
-
-import yaml
 
 
 class AgentRunner:
