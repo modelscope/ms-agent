@@ -159,6 +159,7 @@ class LLMAgent(Agent):
         self._auto_skills_initialized = False
         self._last_skill_result = None
         self._skill_mode_active = False
+        self._rollback_messages: Optional[List[Message]] = None
 
     def _get_skills_config(self) -> Optional[DictConfig]:
         """Get skills configuration from agent config."""
@@ -387,23 +388,48 @@ class LLMAgent(Agent):
 
         return messages
 
-    def rollback(self, commit_hash: str) -> bool:
-        """Restore output_dir to snapshot and truncate message history."""
+    def _clear_read_caches(self) -> None:
+        """Clear FileSystemTool read dedup caches after disk state changes."""
+        if self.tool_manager is None:
+            return
+        for tool in self.tool_manager.extra_tools:
+            if hasattr(tool, '_read_cache'):
+                tool._read_cache.clear()
+
+    def consume_rollback_messages(self) -> Optional[List[Message]]:
+        """Return and clear pending in-memory history after rollback."""
+        messages = self._rollback_messages
+        self._rollback_messages = None
+        return messages
+
+    def _apply_pending_rollback(
+            self, messages: List[Message]) -> List[Message]:
+        pending = self.consume_rollback_messages()
+        return pending if pending is not None else messages
+
+    def rollback(
+        self, commit_hash: str
+    ) -> tuple[bool, Optional[List[Message]]]:
+        """Restore output_dir to snapshot and truncate message history.
+
+        Returns:
+            (success, truncated_messages). On success, truncated_messages is
+            the history that should drive the active run_loop; the next step
+            will pick it up automatically via _apply_pending_rollback().
+        """
         from ms_agent.utils.snapshot import restore_snapshot
         ok, message_count = restore_snapshot(self.output_dir, commit_hash)
         if not ok:
-            return False
+            return False, None
         # Truncate saved history to the message count at snapshot time
         _, saved_messages = read_history(self.output_dir, self.tag)
         if saved_messages and message_count < len(saved_messages):
             save_history(self.output_dir, self.tag, self.config,
                          saved_messages[:message_count])
-        # Clear read cache on FileSystemTool so stale entries don't block edits
-        if self.tool_manager is not None:
-            for tool in self.tool_manager.extra_tools:
-                if hasattr(tool, '_read_cache'):
-                    tool._read_cache.clear()
-        return True
+        self._clear_read_caches()
+        _, truncated = read_history(self.output_dir, self.tag)
+        self._rollback_messages = truncated
+        return True, truncated
 
     def register_callback(self, callback: Callback):
         """
@@ -1267,6 +1293,7 @@ class LLMAgent(Agent):
                     self.log_output('[' + message.role + ']:')
                     self.log_output(message.content)
             while not self.runtime.should_stop:
+                messages = self._apply_pending_rollback(messages)
                 if self.task_manager is not None:
                     notifications = self.task_manager.drain_notifications()
                     if notifications:
@@ -1274,6 +1301,7 @@ class LLMAgent(Agent):
                             Message(
                                 role='user', content='\n'.join(notifications)))
                 async for messages in self.step(messages):
+                    messages = self._apply_pending_rollback(messages)
                     yield messages
                 self.runtime.round += 1
                 # save memory and history
