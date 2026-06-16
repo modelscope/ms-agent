@@ -151,6 +151,7 @@ class LLMAgent(Agent):
         self.mcp_config: Dict[str, Any] = self.parse_mcp_servers(
             kwargs.get('mcp_config', {}))
         self.mcp_client = kwargs.get('mcp_client', None)
+        self.mcp_runtime = kwargs.get('mcp_runtime', None)
         self.config_handler = self.register_config_handler()
 
         # AutoSkills integration (lazy initialization)
@@ -684,10 +685,11 @@ class LLMAgent(Agent):
             or str(uuid.uuid4())
         )
         hook_runtime = build_hook_runtime(self.config, session_id=session_id)
+        mcp_rt = self.mcp_runtime
 
         self.tool_manager = ToolManager(
             self.config,
-            self.mcp_config,
+            self.mcp_config if mcp_rt is None else {},
             self.mcp_client,
             permission_enforcer=permission_enforcer,
             safety_guard=safety_guard,
@@ -696,13 +698,24 @@ class LLMAgent(Agent):
             hook_runtime=hook_runtime,
             permission_config=perm_config,
             trust_remote_code=self.trust_remote_code,
+            mcp_callable_check=mcp_rt.is_callable if mcp_rt else None,
+            mcp_failure_handler=mcp_rt.record_failure if mcp_rt else None,
+            mcp_unavailable_detail=mcp_rt.unavailable_detail if mcp_rt else None,
+            mcp_success_handler=mcp_rt.record_success if mcp_rt else None,
         )
+        if mcp_rt is not None:
+            self.tool_manager._skip_mcp_reindex = True
         if hook_runtime.has_session_handlers:
             self.register_callback(CallbackToHookBridge(self.config, hook_runtime))
         self._hook_runtime = hook_runtime
         if not self.runtime.session_id:
             self.runtime.session_id = hook_runtime.session_id
+        if mcp_rt is not None and not mcp_rt.is_started:
+            await mcp_rt.start()
         await self.tool_manager.connect()
+        if mcp_rt is not None:
+            mcp_rt.bind_tool_manager(self.tool_manager)
+            await mcp_rt.sync_tools()
         for tool in self.tool_manager.extra_tools:
             if hasattr(tool, 'set_task_manager'):
                 tool.set_task_manager(self.task_manager)
@@ -711,6 +724,8 @@ class LLMAgent(Agent):
         """Cleanup resources used by the tool manager."""
         if self.task_manager is not None:
             self.task_manager.kill_all()
+        if self.mcp_runtime is not None:
+            await self.mcp_runtime.stop()
         if self.tool_manager is not None:
             await self.tool_manager.cleanup()
 

@@ -1,4 +1,5 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+import copy
 import os
 from contextlib import AsyncExitStack
 from datetime import timedelta
@@ -7,7 +8,7 @@ from mcp.client.sse import sse_client
 from mcp.client.stdio import stdio_client
 from omegaconf import DictConfig
 from types import TracebackType
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from ms_agent.config import Config
 from ms_agent.config.env import Env
@@ -47,6 +48,7 @@ class MCPClient(ToolBase):
     ):
         super().__init__(config)
         self.sessions: Dict[str, ClientSession] = {}
+        self._server_stacks: Dict[str, AsyncExitStack] = {}
         self.exit_stack = AsyncExitStack()
         self.mcp_config: Dict[str, Dict[str, Any]] = {'mcpServers': {}}
         if config is not None:
@@ -89,40 +91,52 @@ class MCPClient(ToolBase):
 
         return '\n\n'.join(texts)
 
+    def _filter_session_tools(
+        self,
+        server_name: str,
+        response: ListToolsResult,
+    ) -> List[Tool]:
+        exclude: list[str] = []
+        include: list[str] = []
+        if self.include_functions and server_name in self.include_functions:
+            include = self.include_functions[server_name]
+        elif self.exclude_functions and server_name in self.exclude_functions:
+            exclude = self.exclude_functions[server_name]
+        session_tools = [t for t in response.tools if t.name not in exclude]
+        if include:
+            session_tools = [t for t in session_tools if t.name in include]
+        return [
+            Tool(
+                tool_name=t.name,
+                server_name=server_name,
+                description=t.description,
+                parameters=t.inputSchema,
+            )
+            for t in session_tools
+        ]
+
+    async def get_tools_for_server(self, server_name: str) -> List[Tool]:
+        """List tools for a single connected server (failures are isolated)."""
+        session = self.sessions.get(server_name)
+        if session is None:
+            return []
+        try:
+            response = await session.list_tools()
+        except Exception as e:
+            new_eg = enhance_error(
+                e, f'MCP `{server_name}` list tool failed, details: ')
+            raise new_eg from e
+        return self._filter_session_tools(server_name, response)
+
     async def get_tools(self) -> Dict:
-        tools = {}
-        for key, session in self.sessions.items():
-            tools[key] = []
+        tools: Dict[str, List[Tool]] = {}
+        for key in self.sessions:
             try:
-                response = await session.list_tools()
+                tools[key] = await self.get_tools_for_server(key)
             except Exception as e:
-                new_eg = enhance_error(
-                    e, f'MCP `{key}` list tool failed, details: ')
-                raise new_eg from e
-            _session_tools = response.tools
-            exclude = []
-            include = []
-            if self.include_functions:
-                if key in self.include_functions:
-                    include = self.include_functions[key]
-            elif self.exclude_functions:
-                if key in self.exclude_functions:
-                    exclude = self.exclude_functions[key]
-            _session_tools = [
-                t for t in _session_tools if t.name not in exclude
-            ]
-            if include:
-                _session_tools = [
-                    t for t in _session_tools if t.name in include
-                ]
-            _session_tools = [
-                Tool(
-                    tool_name=t.name,
-                    server_name=key,
-                    description=t.description,
-                    parameters=t.inputSchema) for t in _session_tools
-            ]
-            tools[key].extend(_session_tools)
+                logger.warning(
+                    'Skipping MCP server %s in get_tools: %s', key, e)
+                tools[key] = []
         return tools
 
     @staticmethod
@@ -140,11 +154,67 @@ class MCPClient(ToolBase):
             logger.info(f'\nConnected to server "{server_name}" '
                         f'with tools: \n{sep.join(tools)}.')
 
+    @staticmethod
+    def resolve_server_env(server: Dict[str, Any]) -> Dict[str, str]:
+        envs = Env.load_env()
+        env_dict = copy.deepcopy(server.get('env') or {})
+        return {
+            key: value if value else envs.get(key, '')
+            for key, value in env_dict.items()
+        }
+
+    def list_connected_servers(self) -> list[str]:
+        return list(self.sessions.keys())
+
+    def is_connected(self, server_name: str) -> bool:
+        return server_name in self.sessions
+
+    async def disconnect_server(self, server_name: str) -> None:
+        """Disconnect a single MCP server."""
+        stack = self._server_stacks.pop(server_name, None)
+        self.sessions.pop(server_name, None)
+        self.exclude_functions.pop(server_name, None)
+        self.include_functions.pop(server_name, None)
+        if stack is not None:
+            await stack.aclose()
+
+    async def connect_single_server(
+        self,
+        server_name: str,
+        server_config: Dict[str, Any],
+        timeout: int = CONNECTION_TIMEOUT,
+    ) -> str:
+        """Connect one server from a normalized config entry."""
+        if self.is_connected(server_name):
+            return server_name
+        server = copy.deepcopy(server_config)
+        env_dict = self.resolve_server_env(server)
+        if 'exclude' in server:
+            self.exclude_functions[server_name] = server.pop('exclude')
+        if 'include' in server:
+            self.include_functions[server_name] = server.pop('include')
+        assert (not self.include_functions.get(server_name)) or (
+            not self.exclude_functions.get(server_name)
+        ), 'Set either `include` or `exclude` in tools config.'
+        timeout = server.pop('timeout', timeout)
+        for drop_key in ('enabled', 'source', 'meta'):
+            server.pop(drop_key, None)
+        return await self.connect_to_server(
+            server_name=server_name,
+            env=env_dict,
+            timeout=timeout,
+            **server,
+        )
+
     async def connect_to_server(self,
                                 server_name: str,
                                 timeout: int = CONNECTION_TIMEOUT,
                                 **kwargs):
+        if self.is_connected(server_name):
+            return server_name
         logger.info(f'connect to {server_name}')
+        stack = AsyncExitStack()
+        self._server_stacks[server_name] = stack
         # transport: stdio, sse, streamable_http, websocket
         transport = kwargs.get('transport') or kwargs.get('type')
         command = kwargs.get('command')
@@ -155,7 +225,7 @@ class MCPClient(ToolBase):
                 logger.info(
                     '`transport` or `type` is configured as "sse", using sse transport.'
                 )
-                sse_transport = await self.exit_stack.enter_async_context(
+                sse_transport = await stack.enter_async_context(
                     sse_client(
                         url, kwargs.get('headers'),
                         kwargs.get('timeout', DEFAULT_HTTP_TIMEOUT),
@@ -175,7 +245,7 @@ class MCPClient(ToolBase):
                         'To use Websocket connections, please install the required dependency with: '
                         "'pip install mcp[ws]' or 'pip install websockets'"
                     ) from None
-                websocket_transport = await self.exit_stack.enter_async_context(
+                websocket_transport = await stack.enter_async_context(
                     websocket_client(url))
                 read, write = websocket_transport
 
@@ -195,7 +265,7 @@ class MCPClient(ToolBase):
                 other_kwargs = {}
                 if httpx_client_factory is not None:
                     other_kwargs['httpx_client_factory'] = httpx_client_factory
-                streamable_transport = await self.exit_stack.enter_async_context(
+                streamable_transport = await stack.enter_async_context(
                     streamablehttp_client(
                         url,
                         headers=kwargs.get('headers'),
@@ -210,7 +280,7 @@ class MCPClient(ToolBase):
             session_kwargs = session_kwargs or {}
             timeout = max(
                 session_kwargs.pop('read_timeout_seconds', timeout), 1)
-            session = await self.exit_stack.enter_async_context(
+            session = await stack.enter_async_context(
                 ClientSession(
                     read,
                     write,
@@ -232,9 +302,9 @@ class MCPClient(ToolBase):
                     'encoding_error_handler', DEFAULT_ENCODING_ERROR_HANDLER),
             )
 
-            stdio, write = await self.exit_stack.enter_async_context(
+            stdio, write = await stack.enter_async_context(
                 stdio_client(server_params))
-            session = await self.exit_stack.enter_async_context(
+            session = await stack.enter_async_context(
                 ClientSession(stdio, write))
         else:
             raise ValueError(
@@ -295,6 +365,8 @@ class MCPClient(ToolBase):
 
     async def cleanup(self):
         """Clean up resources"""
+        for name in list(self._server_stacks):
+            await self.disconnect_server(name)
         await self.exit_stack.aclose()
 
     async def __aenter__(self) -> 'MCPClient':
@@ -302,7 +374,7 @@ class MCPClient(ToolBase):
             await self.connect()
             return self
         except Exception:
-            await self.exit_stack.aclose()
+            await self.cleanup()
             raise
 
     async def __aexit__(
@@ -311,4 +383,4 @@ class MCPClient(ToolBase):
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        await self.exit_stack.aclose()
+        await self.cleanup()

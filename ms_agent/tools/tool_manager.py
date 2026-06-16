@@ -9,7 +9,7 @@ import sys
 import uuid
 from copy import copy
 from types import TracebackType
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from ms_agent.llm.utils import Tool, ToolCall
 from ms_agent.tools.agent_tool import AgentTool
@@ -100,6 +100,11 @@ class ToolManager:
                  read_policy: str = 'loose',
                  hook_runtime=None,
                  permission_config=None,
+                 mcp_callable_check: Optional[Callable[[str], bool]] = None,
+                 mcp_failure_handler: Optional[Callable[
+                     [str, str, str, Optional[str]], Awaitable[None]]] = None,
+                 mcp_unavailable_detail: Optional[Callable[[str], dict]] = None,
+                 mcp_success_handler: Optional[Callable[[str], Awaitable[None]]] = None,
                  **kwargs):
         self.config = config
         self.trust_remote_code = kwargs.get('trust_remote_code', False)
@@ -109,6 +114,10 @@ class ToolManager:
         self._permission_mode = permission_mode
         self._read_policy = read_policy
         self._hook_runtime = hook_runtime
+        self.mcp_callable_check = mcp_callable_check
+        self.mcp_failure_handler = mcp_failure_handler
+        self.mcp_unavailable_detail = mcp_unavailable_detail
+        self.mcp_success_handler = mcp_success_handler
 
         self.extra_tools: List[ToolBase] = []
         self.has_split_task_tool = False
@@ -196,6 +205,8 @@ class ToolManager:
                     if issubclass(cls, ToolBase) and cls.__module__ == _plugin:
                         self.register_tool(cls(self.config))
         self._tool_index = {}
+        self._mcp_index_keys: set[str] = set()
+        self._skip_mcp_reindex = False
 
         # Used temporarily during async initialization; the actual client is managed in self.servers
         self.mcp_client = mcp_client
@@ -206,21 +217,28 @@ class ToolManager:
         # Initialize concurrency limiter (will be set in connect)
         self._concurrent_limiter = None
         self._init_lock = None
+        self._sync_lock = asyncio.Lock()
 
     def register_tool(self, tool: ToolBase):
         self.extra_tools.append(tool)
 
     async def connect(self):
-        if self.mcp_client and MCPClient and isinstance(self.mcp_client, MCPClient):
+        if self.mcp_client is not None:
             self.servers = self.mcp_client
-            await self.servers.add_mcp_config(self.mcp_config)
-            self.mcp_config = self.servers.mcp_config
+            has_add = hasattr(self.servers, 'add_mcp_config')
+            is_mcp = MCPClient is not None and isinstance(self.mcp_client, MCPClient)
+            if self.mcp_config and self.mcp_config.get('mcpServers') and (is_mcp or has_add):
+                await self.servers.add_mcp_config(self.mcp_config)
+                if hasattr(self.servers, 'mcp_config'):
+                    self.mcp_config = self.servers.mcp_config
         elif MCPClient is not None:
             self.servers = MCPClient(self.mcp_config, self.config)
             await self.servers.connect()
         for tool in self.extra_tools:
             await tool.connect()
-        await self.reindex_tool()
+
+        if not self._skip_mcp_reindex:
+            await self.reindex_tool()
 
         # Initialize concurrency limiter
         self._concurrent_limiter = asyncio.Semaphore(MAX_CONCURRENT_TOOLS)
@@ -238,6 +256,97 @@ class ToolManager:
                 await tool.cleanup()
             except Exception:  # noqa
                 pass
+
+    def _clear_mcp_index_entries(self) -> None:
+        for key in self._mcp_index_keys:
+            self._tool_index.pop(key, None)
+        self._mcp_index_keys.clear()
+
+    async def _report_mcp_failure(
+        self,
+        server_name: str,
+        phase: str,
+        message: str,
+        *,
+        tool_name: str | None = None,
+        exc: BaseException | None = None,
+    ) -> None:
+        if self.mcp_failure_handler is None:
+            return
+        from ms_agent.mcp.runtime import classify_failure_message, is_connection_error
+        if exc is not None:
+            if not is_connection_error(exc):
+                return
+        elif classify_failure_message(message) == 'none':
+            return
+        await self.mcp_failure_handler(
+            server_name,
+            phase,
+            message,
+            tool_name=tool_name,
+            exc=exc,
+        )
+
+    def _extend_mcp_tool_index(
+        self,
+        tool_ins: ToolBase,
+        server_name: str,
+        tool_list: List[Tool],
+    ) -> None:
+        for tool in tool_list:
+            max_server_len = MAX_TOOL_NAME_LEN - len(
+                tool['tool_name']) - len(self.TOOL_SPLITER)
+            if len(server_name) > max_server_len:
+                key = (
+                    f"{server_name[:max(0, max_server_len)]}"
+                    f"{self.TOOL_SPLITER}{tool['tool_name']}")
+            else:
+                key = f"{server_name}{self.TOOL_SPLITER}{tool['tool_name']}"
+            assert key not in self._tool_index, (
+                f'Tool name duplicated {tool["tool_name"]}')
+            indexed = copy(tool)
+            indexed['tool_name'] = key
+            self._tool_index[key] = (tool_ins, server_name, indexed)
+            self._mcp_index_keys.add(key)
+
+    async def sync_mcp_tools(
+        self,
+        *,
+        visible_servers: set[str],
+        indexable_servers: set[str],
+        callable_servers: set[str],
+        cached_tools_by_server: dict[str, list[dict]] | None = None,
+    ) -> list[tuple[str, BaseException]]:
+        """Rebuild MCP entries in ``_tool_index`` (called by MCPRuntime).
+
+        Returns transport failures from per-server ``list_tools`` calls.
+        """
+        del visible_servers, callable_servers, cached_tools_by_server
+        failures: list[tuple[str, BaseException]] = []
+        async with self._sync_lock:
+            self._clear_mcp_index_entries()
+            if self.servers is None:
+                return failures
+            for server_name in indexable_servers:
+                try:
+                    if hasattr(self.servers, 'get_tools_for_server'):
+                        tool_list = await self.servers.get_tools_for_server(
+                            server_name)
+                    else:
+                        live_mcps = await self.servers.get_tools()
+                        tool_list = live_mcps.get(server_name, [])
+                except Exception as exc:
+                    logger.warning(
+                        'Failed to list tools for MCP server %s: %s',
+                        server_name,
+                        exc,
+                    )
+                    failures.append((server_name, exc))
+                    continue
+                if tool_list:
+                    self._extend_mcp_tool_index(
+                        self.servers, server_name, tool_list)
+        return failures
 
     async def reindex_tool(self):
 
@@ -259,7 +368,7 @@ class ToolManager:
         if self.servers is not None:
             mcps = await self.servers.get_tools()
             for server_name, tool_list in mcps.items():
-                extend_tool(self.servers, server_name, tool_list)
+                self._extend_mcp_tool_index(self.servers, server_name, tool_list)
         for extra_tool in self.extra_tools:
             tools = await extra_tool.get_tools()
             for server_name, tool_list in tools.items():
@@ -284,6 +393,9 @@ class ToolManager:
             brief_info = json.dumps(tool_info, ensure_ascii=False)
             if len(brief_info) > 1024:
                 brief_info = brief_info[:1024] + '...'
+            wait_sec = self.tool_call_timeout
+            tool_ins = None
+            server_name = ''
             try:
                 tool_name = tool_info['tool_name']
                 tool_args = tool_info['arguments']
@@ -293,7 +405,21 @@ class ToolManager:
                     except Exception:  # noqa
                         return f'The input {tool_args} is not a valid JSON, fix your arguments and try again'
                 assert tool_name in self._tool_index, f'Tool name {tool_name} not found'
-                tool_ins, server_name, _ = self._tool_index[tool_name]
+                index_snapshot = self._tool_index[tool_name]
+                tool_ins, server_name, _ = index_snapshot
+
+                # --- MCP availability (before SafetyGuard / PreToolUse) ---
+                if (tool_ins is self.servers and self.mcp_callable_check is not None
+                        and not self.mcp_callable_check(server_name)):
+                    detail = (
+                        self.mcp_unavailable_detail(server_name)
+                        if self.mcp_unavailable_detail is not None else {
+                            'success': False,
+                            'error': 'mcp_unavailable',
+                            'server_name': server_name,
+                            'message': f'MCP server {server_name} is not callable',
+                        })
+                    return json.dumps(detail, ensure_ascii=False)
 
                 # --- Permission checks ---
                 args_dict = dict(tool_args) if isinstance(tool_args, dict) else {}
@@ -373,6 +499,10 @@ class ToolManager:
                         tool_args=call_args),
                     timeout=wait_sec)
 
+                if (self.mcp_success_handler is not None
+                        and tool_ins is self.servers):
+                    await self.mcp_success_handler(server_name)
+
                 # --- PostToolUse hooks ---
                 hook_attachments = list(pre_attachments)
                 if self._hook_runtime is not None and not self._hook_runtime.is_empty:
@@ -401,15 +531,34 @@ class ToolManager:
                 import traceback
                 logger.warning(traceback.format_exc())
                 tn = tool_info.get('tool_name', '(unknown)')
-                return (
+                timeout_msg = (
                     f'Tool call timed out after {wait_sec:.0f}s (tool: {tn}). '
                     f'Default limit is {self.tool_call_timeout:.0f}s; '
                     f'set numeric field "timeout" in the tool arguments to wait longer '
                     f'(seconds, maximum {self.tool_call_timeout_max:.0f}s). '
                     f'Original call (truncated): {brief_info}')
+                if tool_ins is not None and tool_ins is self.servers:
+                    await self._report_mcp_failure(
+                        server_name,
+                        'call_tool',
+                        timeout_msg,
+                        tool_name=self._registered_tool_suffix(
+                            tool_info.get('tool_name', ''), self.TOOL_SPLITER),
+                        exc=asyncio.TimeoutError(timeout_msg),
+                    )
+                return timeout_msg
             except Exception as e:
                 import traceback
                 logger.warning(traceback.format_exc())
+                if tool_ins is not None and tool_ins is self.servers:
+                    await self._report_mcp_failure(
+                        server_name,
+                        'call_tool',
+                        str(e),
+                        tool_name=self._registered_tool_suffix(
+                            tool_info.get('tool_name', ''), self.TOOL_SPLITER),
+                        exc=e,
+                    )
                 return f'Tool calling failed: {brief_info}, details: {str(e)}'
 
     async def parallel_call_tool(self, tool_list: List[ToolCall]):

@@ -1180,6 +1180,15 @@ ToolManager.single_call_tool(tool_info)
 
 与 `permission-design.md` §2 对齐：**SafetyGuard → PreToolUse →（resolve）→ PermissionEnforcer → call_tool → PostToolUse**。
 
+#### 10.2.1 F7 MCP Runtime 扩展（交叉引用）
+
+当 Playground 启用 `MCPRuntime` 时，[`mcp_runtime_management.md` §7.4](../../design/mcp_runtime_management.md#74-与-hooks-管线协作single_call_tool-完整顺序) 在**本节前**插入：
+
+1. `_tool_index` 快照
+2. **MCP callable 检查**（`degraded` / `error` 短路，不进入下文 SafetyGuard）
+
+此后步骤与本节 §10.2 编号对齐（本文步骤 1 → MCP 文档步骤 2，依此类推）。`degraded` 的 MCP 工具**不触发** PreToolUse，因其在 MCP callable 步骤已拒绝 RPC。
+
 ### 10.3 为什么 PreToolUse 在 PermissionEnforcer 之前、SafetyGuard 之后
 
 - **SafetyGuard 不可绕过**：已在步骤 1 拒绝的调用不会进入 Hook（与 Claude bypass-immune safety checks 同层）
