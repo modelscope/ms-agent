@@ -36,6 +36,10 @@ PYTHON_BIN="/Users/luyan/software/miniconda3/bin/python"
 # Force unbuffered output so progress lines like "[xx] OK" show up in logs promptly.
 export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"
 
+# When stdout is redirected (e.g., nohup > file), Python is block-buffered by default.
+# Force unbuffered output so progress lines like "[xx] OK" show up in logs promptly.
+export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"
+
 # Use caffeinate on macOS when available; otherwise run normally.
 RUN_PREFIX=()
 if command -v caffeinate >/dev/null 2>&1; then

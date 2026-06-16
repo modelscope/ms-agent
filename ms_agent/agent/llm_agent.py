@@ -14,6 +14,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
 
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback, callbacks_mapping
+from ms_agent.knowledge_search import SirchmunkSearch
 from ms_agent.llm.llm import LLM
 from ms_agent.llm.utils import Message, ToolResult
 from ms_agent.memory import Memory, get_memory_meta_safe, memory_mapping
@@ -141,6 +142,7 @@ class LLMAgent(Agent):
         self.task_manager: Optional[TaskManager] = None
         self.memory_tools: List[Memory] = []
         self.rag: Optional[RAG] = None
+        self.knowledge_search: Optional[SirchmunkSearch] = None
         self.llm: Optional[LLM] = None
         self.runtime: Optional[Runtime] = None
         self.max_chat_round: int = 0
@@ -733,7 +735,11 @@ class LLMAgent(Agent):
         return messages
 
     async def do_rag(self, messages: List[Message]):
-        """Process RAG to enrich the user query with context.
+        """Process RAG or knowledge search to enrich the user query with context.
+
+        This method handles both traditional RAG and sirchmunk-based knowledge search.
+        For knowledge search, it also populates searching_detail and search_result
+        fields in the message for frontend display and next-turn LLM context.
 
         Args:
             messages (List[Message]): The message list to process.
@@ -747,6 +753,19 @@ class LLMAgent(Agent):
         # Handle traditional RAG
         if self.rag is not None:
             user_message.content = await self.rag.query(query)
+        # Handle sirchmunk knowledge search
+        if self.knowledge_search is not None:
+            search_result = await self.knowledge_search.query(query)
+            search_details = self.knowledge_search.get_search_details()
+
+            user_message.searching_detail = search_details
+            user_message.search_result = search_result
+
+            if search_result:
+                context = search_result
+                user_message.content = (
+                    f'Relevant context retrieved from codebase search:\n\n{context}\n\n'
+                    f'User question: {query}')
 
     async def do_skill(self,
                        messages: List[Message]) -> Optional[List[Message]]:
@@ -832,6 +851,16 @@ class LLMAgent(Agent):
                     f'{rag.name} not in rag_mapping, '
                     f'which supports: {list(rag_mapping.keys())}')
                 self.rag: RAG = rag_mapping(rag.name)(self.config)
+
+    async def prepare_knowledge_search(self):
+        """Load and initialize the knowledge search component from the config."""
+        if self.knowledge_search is not None:
+            return
+        if hasattr(self.config, 'knowledge_search'):
+            ks_config = self.config.knowledge_search
+            if ks_config is not None:
+                self.knowledge_search: SirchmunkSearch = SirchmunkSearch(
+                    self.config)
 
     async def condense_memory(self, messages: List[Message]) -> List[Message]:
         """
@@ -1202,6 +1231,7 @@ class LLMAgent(Agent):
             await self.prepare_tools()
             await self.load_memory()
             await self.prepare_rag()
+            await self.prepare_knowledge_search()
             self.runtime.tag = self.tag
 
             self.task_manager = TaskManager()

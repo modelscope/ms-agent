@@ -8,6 +8,8 @@ from openai.types.chat.chat_completion_message_tool_call import (
     ChatCompletionMessageToolCall, Function)
 from typing import Any, Dict, Generator, Iterable, List, Optional
 
+import httpx
+import json
 from ms_agent.llm import LLM
 from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.utils import (MAX_CONTINUE_RUNS, assert_package_exist,

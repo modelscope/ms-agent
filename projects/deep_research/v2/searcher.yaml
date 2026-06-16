@@ -18,6 +18,8 @@ generation_config:
   prefix_cache_roles: [system, user, assistant, tool]
   extra_body:
     enable_thinking: false
+    # show_reasoning: true
+    # reasoning_output: stdout
 
 
 tag: deep-research

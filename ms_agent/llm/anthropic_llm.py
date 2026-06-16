@@ -4,10 +4,117 @@ import json
 from omegaconf import DictConfig, OmegaConf
 from typing import Any, Dict, Generator, Iterator, List, Optional, Union
 
+import httpx
+import json
 from ms_agent.llm import LLM
 from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.utils import assert_package_exist, retry
 from ms_agent.utils.constants import get_service_config
+
+
+class _SSEEventInjector(httpx.SyncByteStream):
+    """Injects SSE ``event:`` lines into DashScope's streaming response.
+
+    DashScope only emits ``data:`` lines in its SSE stream.  The Anthropic
+    SDK's ``MessageStream`` relies on ``event:`` lines to route events.
+    This wrapper extracts the ``type`` from the JSON payload and prepends
+    the matching ``event:`` line so the SDK can process events correctly.
+    """
+
+    def __init__(self, stream):
+        self._stream = stream
+        self._buffer = b''
+
+    def __iter__(self):
+        for chunk in self._stream:
+            self._buffer += chunk
+            while b'\n\n' in self._buffer:
+                block, self._buffer = self._buffer.split(b'\n\n', 1)
+                if block.strip():
+                    yield self._inject(block) + b'\n\n'
+        if self._buffer.strip():
+            yield self._inject(self._buffer) + b'\n\n'
+
+    @staticmethod
+    def _inject(block: bytes) -> bytes:
+        for line in block.split(b'\n'):
+            s = line.strip()
+            if s.startswith(b'data:'):
+                try:
+                    t = json.loads(s[5:].strip()).get('type', '')
+                    if t:
+                        return b'event: ' + t.encode() + b'\n' + block
+                except (json.JSONDecodeError, ValueError):
+                    pass
+        return block
+
+    def close(self):
+        if hasattr(self._stream, 'close'):
+            self._stream.close()
+
+
+class DashScopeAnthropicTransport(httpx.BaseTransport):
+    """Routes Anthropic SDK requests to DashScope's compatible-mode endpoint.
+
+    DashScope returns Anthropic-format SSE responses for vertex AI Claude models
+    (e.g. vertex_ai.claude-opus-4-6), but expects requests at
+    /compatible-mode/v1/chat/completions with a native protocol flag rather than
+    the standard Anthropic /v1/messages path.  This transport transparently
+    rewrites URL, auth headers, and body so the Anthropic SDK works unmodified.
+    """
+
+    def __init__(self,
+                 dashscope_url: str,
+                 api_key: str,
+                 supplier: Optional[str] = None):
+        self.dashscope_url = dashscope_url
+        self.api_key = api_key
+        self.supplier = supplier
+        self._transport = httpx.HTTPTransport()
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        is_streaming = bool(body.get('stream'))
+
+        ext = body.setdefault('dashscope_extend_params', {})
+        ext['using_native_protocol'] = True
+        if self.supplier and 'supplier' not in ext:
+            ext['supplier'] = self.supplier
+
+        new_headers = {
+            'content-type': 'application/json',
+            'authorization': f'Bearer {self.api_key}',
+        }
+        _skip = frozenset({
+            'x-api-key', 'content-type', 'authorization', 'content-length',
+            'host', 'transfer-encoding'
+        })
+        for key, value in request.headers.items():
+            k = key.lower()
+            if k not in _skip and not k.startswith('anthropic'):
+                new_headers[key] = value
+
+        new_content = json.dumps(body).encode('utf-8')
+        new_request = httpx.Request(
+            method=request.method,
+            url=self.dashscope_url,
+            headers=new_headers,
+            content=new_content,
+            extensions=request.extensions,
+        )
+        response = self._transport.handle_request(new_request)
+
+        if is_streaming:
+            return httpx.Response(
+                status_code=response.status_code,
+                headers=response.headers,
+                stream=_SSEEventInjector(response.stream),
+                extensions=response.extensions,
+            )
+        return response
+
+    def close(self):
+        self._transport.close()
 
 
 class _SSEEventInjector(httpx.SyncByteStream):
