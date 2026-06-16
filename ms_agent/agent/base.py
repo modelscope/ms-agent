@@ -2,7 +2,7 @@
 import os
 from abc import ABC, abstractmethod
 from omegaconf import DictConfig
-from typing import Any, AsyncGenerator, List, Tuple, Union
+from typing import Any, AsyncGenerator, List, Optional, Tuple, Union
 
 from ms_agent.llm import Message
 from ms_agent.utils import read_history, save_history
@@ -86,7 +86,9 @@ class Agent(ABC):
         from ms_agent.utils.snapshot import list_snapshots
         return list_snapshots(self.output_dir)
 
-    def rollback(self, commit_hash: str) -> bool:
+    def rollback(
+        self, commit_hash: str
+    ) -> tuple[bool, Optional[List['Message']]]:
         """Restore output_dir to a previous snapshot and truncate history."""
         raise NotImplementedError()
 
