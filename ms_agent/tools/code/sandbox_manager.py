@@ -1,8 +1,8 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+from omegaconf import DictConfig
 from typing import Union
 
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
 
 logger = get_logger()
 
@@ -58,7 +58,8 @@ class SandboxManagerFactory:
         Raises:
             ValueError: If sandbox mode is unknown
         """
-        from ms_enclave.sandbox.manager import HttpSandboxManager, LocalSandboxManager
+        from ms_enclave.sandbox.manager import (HttpSandboxManager,
+                                                LocalSandboxManager)
 
         # Extract sandbox configuration
         if isinstance(config, DictConfig) and hasattr(

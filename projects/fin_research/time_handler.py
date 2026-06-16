@@ -1,9 +1,9 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 from datetime import datetime
+from omegaconf import DictConfig
 from typing import Any
 
 from ms_agent.config.config import ConfigLifecycleHandler
-from omegaconf import DictConfig
 
 
 class TimeHandler(ConfigLifecycleHandler):

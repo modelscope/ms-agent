@@ -1,8 +1,7 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+import json
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Union
-
-import json
 from typing_extensions import Literal, Required, TypedDict
 
 
@@ -65,11 +64,8 @@ class Message:
 
     api_calls: int = 1
 
-    # Knowledge search (sirchmunk) related fields
-    # searching_detail: Search process logs and metadata for frontend display
-    searching_detail: Dict[str, Any] = field(default_factory=dict)
-    # search_result: Raw search results to be used as context for next LLM turn
-    search_result: List[Dict[str, Any]] = field(default_factory=list)
+    # role=tool: extra payload for UIs / SSE only; omitted from LLM API via to_dict_clean().
+    tool_detail: Optional[str] = None
 
     def to_dict(self):
         return asdict(self)
@@ -92,9 +88,15 @@ class Message:
                     }
                 }
         required = ['content', 'role']
+        # Never send UI-only fields to model providers.
         rm = [
-            'completion_tokens', 'prompt_tokens', 'api_calls',
-            '_responses_output_items'
+            'completion_tokens',
+            'prompt_tokens',
+            'api_calls',
+            'tool_detail',
+            'searching_detail',
+            'search_result',
+            '_responses_output_items',
         ]
         return {
             key: value
@@ -105,20 +107,33 @@ class Message:
 
 @dataclass
 class ToolResult:
+    """Tool execution outcome.
+
+    ``text`` is sent to the model as the tool message ``content``.
+    ``tool_detail`` is optional verbose output for frontends only (SSE, logs).
+    """
+
     text: str
     resources: List[str] = field(default_factory=list)
     extra: dict = field(default_factory=dict)
+    tool_detail: Optional[str] = None
 
     @staticmethod
     def from_raw(raw):
         if isinstance(raw, str):
             return ToolResult(text=raw)
         if isinstance(raw, dict):
+            model_text = raw.get('result')
+            if model_text is None:
+                model_text = raw.get('text', '')
+            td = raw.get('tool_detail')
             return ToolResult(
-                text=str(raw.get('text', '')),
+                text=str(model_text),
                 resources=raw.get('resources', []),
+                tool_detail=None if td is None else str(td),
                 extra={
                     k: v
-                    for k, v in raw.items() if k not in ['text', 'resources']
+                    for k, v in raw.items()
+                    if k not in ['text', 'resources', 'result', 'tool_detail']
                 })
         raise TypeError('tool_call_result must be str or dict')

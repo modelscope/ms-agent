@@ -2,9 +2,9 @@
 
 import os
 import sys
+from omegaconf import DictConfig
 
 from ms_agent.agent import CodeAgent
-from omegaconf import DictConfig
 
 
 class RenderAnimation(CodeAgent):

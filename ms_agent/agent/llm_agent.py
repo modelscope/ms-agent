@@ -2,15 +2,16 @@
 import asyncio
 import importlib
 import inspect
+import json
 import os.path
 import sys
 import threading
 import uuid
 from contextlib import contextmanager
 from copy import deepcopy
+from omegaconf import DictConfig, OmegaConf
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
 
-import json
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback, callbacks_mapping
 from ms_agent.knowledge_search import SirchmunkSearch
@@ -24,12 +25,14 @@ from ms_agent.tools import ToolManager
 from ms_agent.utils import async_retry, read_history, save_history
 from ms_agent.utils.constants import DEFAULT_TAG, DEFAULT_USER
 from ms_agent.utils.logger import get_logger
-from omegaconf import DictConfig, OmegaConf
-
+from ms_agent.utils.snapshot import take_snapshot
+from ms_agent.utils.task_manager import TaskManager
 from ..config.config import Config, ConfigLifecycleHandler
 from .base import Agent
 
 logger = get_logger()
+
+_MISSING_ENABLE_SNAPSHOTS = object()
 
 
 class LLMAgent(Agent):
@@ -84,6 +87,37 @@ class LLMAgent(Agent):
 
     DEFAULT_MAX_CHAT_ROUND = 20
 
+    @staticmethod
+    def _coerce_enable_snapshots_value(value: Any) -> bool:
+        if isinstance(value, str):
+            return value.strip().lower() in ('1', 'true', 'yes', 'on')
+        return bool(value)
+
+    @staticmethod
+    def resolve_enable_snapshots(config: Any) -> bool:
+        """Resolve whether to take automatic pre-task snapshots.
+
+        Tool-spawned sub-agents (``ms_agent_subagent`` in config) default to
+        ``False``; all other agents default to ``True``. An explicit
+        ``enable_snapshots`` in config always wins (including string forms
+        like ``\"false\"`` coerced to boolean).
+        """
+        if OmegaConf.is_config(config):
+            raw = OmegaConf.select(
+                config, 'enable_snapshots', default=_MISSING_ENABLE_SNAPSHOTS)
+            if raw is not _MISSING_ENABLE_SNAPSHOTS and raw is not None:
+                return LLMAgent._coerce_enable_snapshots_value(raw)
+            sub = bool(
+                OmegaConf.select(config, 'ms_agent_subagent', default=False))
+            return not sub
+        if isinstance(config, dict):
+            if 'enable_snapshots' in config and config[
+                    'enable_snapshots'] is not None:
+                return LLMAgent._coerce_enable_snapshots_value(
+                    config['enable_snapshots'])
+            return not bool(config.get('ms_agent_subagent'))
+        return True
+
     TOTAL_PROMPT_TOKENS = 0
     TOTAL_COMPLETION_TOKENS = 0
     TOTAL_CACHED_TOKENS = 0
@@ -105,6 +139,7 @@ class LLMAgent(Agent):
         super().__init__(config, tag, trust_remote_code)
         self.callbacks: List[Callback] = []
         self.tool_manager: Optional[ToolManager] = None
+        self.task_manager: Optional[TaskManager] = None
         self.memory_tools: List[Memory] = []
         self.rag: Optional[RAG] = None
         self.knowledge_search: Optional[SirchmunkSearch] = None
@@ -124,6 +159,7 @@ class LLMAgent(Agent):
         self._auto_skills_initialized = False
         self._last_skill_result = None
         self._skill_mode_active = False
+        self._rollback_messages: Optional[List[Message]] = None
 
     def _get_skills_config(self) -> Optional[DictConfig]:
         """Get skills configuration from agent config."""
@@ -162,7 +198,8 @@ class LLMAgent(Agent):
             # Check sandbox requirements
             use_sandbox = getattr(skills_config, 'use_sandbox', True)
             if use_sandbox:
-                from ms_agent.utils.docker_utils import is_docker_daemon_running
+                from ms_agent.utils.docker_utils import \
+                    is_docker_daemon_running
 
                 if not is_docker_daemon_running():
                     logger.warning(
@@ -351,6 +388,49 @@ class LLMAgent(Agent):
 
         return messages
 
+    def _clear_read_caches(self) -> None:
+        """Clear FileSystemTool read dedup caches after disk state changes."""
+        if self.tool_manager is None:
+            return
+        for tool in self.tool_manager.extra_tools:
+            if hasattr(tool, '_read_cache'):
+                tool._read_cache.clear()
+
+    def consume_rollback_messages(self) -> Optional[List[Message]]:
+        """Return and clear pending in-memory history after rollback."""
+        messages = self._rollback_messages
+        self._rollback_messages = None
+        return messages
+
+    def _apply_pending_rollback(
+            self, messages: List[Message]) -> List[Message]:
+        pending = self.consume_rollback_messages()
+        return pending if pending is not None else messages
+
+    def rollback(
+        self, commit_hash: str
+    ) -> tuple[bool, Optional[List[Message]]]:
+        """Restore output_dir to snapshot and truncate message history.
+
+        Returns:
+            (success, truncated_messages). On success, truncated_messages is
+            the history that should drive the active run_loop; the next step
+            will pick it up automatically via _apply_pending_rollback().
+        """
+        from ms_agent.utils.snapshot import restore_snapshot
+        ok, message_count = restore_snapshot(self.output_dir, commit_hash)
+        if not ok:
+            return False, None
+        # Truncate saved history to the message count at snapshot time
+        _, saved_messages = read_history(self.output_dir, self.tag)
+        if saved_messages and message_count < len(saved_messages):
+            save_history(self.output_dir, self.tag, self.config,
+                         saved_messages[:message_count])
+        self._clear_read_caches()
+        _, truncated = read_history(self.output_dir, self.tag)
+        self._rollback_messages = truncated
+        return True, truncated
+
     def register_callback(self, callback: Callback):
         """
         Register a new callback to be triggered during the agent's lifecycle.
@@ -477,6 +557,18 @@ class LLMAgent(Agent):
 
     async def on_task_begin(self, messages: List[Message]):
         self.log_output(f'Agent {self.tag} task beginning.')
+        if self.resolve_enable_snapshots(self.config):
+            _user_content = next(
+                ((getattr(m, 'content', '') or '')[:80]
+                 for m in messages if getattr(m, 'role', '') == 'user'),
+                '',
+            )
+            take_snapshot(
+                self.output_dir,
+                f'[pre] {_user_content}'
+                if _user_content else '[pre] new task',
+                message_count=len(messages),
+            )
         await self.loop_callback('on_task_begin', messages)
 
     async def on_task_end(self, messages: List[Message]):
@@ -528,6 +620,7 @@ class LLMAgent(Agent):
                 tool_call_id=tool_call_query['id'],
                 name=tool_call_query['tool_name'],
                 resources=tool_call_result_format.resources,
+                tool_detail=tool_call_result_format.tool_detail,
             )
 
             if _new_message.tool_call_id is None:
@@ -540,6 +633,7 @@ class LLMAgent(Agent):
 
     async def prepare_tools(self):
         """Initialize and connect the tool manager."""
+        self.task_manager = TaskManager()
         self.tool_manager = ToolManager(
             self.config,
             self.mcp_config,
@@ -547,10 +641,16 @@ class LLMAgent(Agent):
             trust_remote_code=self.trust_remote_code,
         )
         await self.tool_manager.connect()
+        for tool in self.tool_manager.extra_tools:
+            if hasattr(tool, 'set_task_manager'):
+                tool.set_task_manager(self.task_manager)
 
     async def cleanup_tools(self):
         """Cleanup resources used by the tool manager."""
-        await self.tool_manager.cleanup()
+        if self.task_manager is not None:
+            self.task_manager.kill_all()
+        if self.tool_manager is not None:
+            await self.tool_manager.cleanup()
 
     @property
     def stream(self):
@@ -681,17 +781,13 @@ class LLMAgent(Agent):
             user_message.content = await self.rag.query(query)
         # Handle sirchmunk knowledge search
         if self.knowledge_search is not None:
-            # Perform search and get results
             search_result = await self.knowledge_search.query(query)
             search_details = self.knowledge_search.get_search_details()
 
-            # Store search details in the message for frontend display
             user_message.searching_detail = search_details
             user_message.search_result = search_result
 
-            # Build enriched context from search results
             if search_result:
-                # Append search context to user query
                 context = search_result
                 user_message.content = (
                     f'Relevant context retrieved from codebase search:\n\n{context}\n\n'
@@ -785,8 +881,6 @@ class LLMAgent(Agent):
     async def prepare_knowledge_search(self):
         """Load and initialize the knowledge search component from the config."""
         if self.knowledge_search is not None:
-            # Already initialized (e.g. by caller before run_loop), skip to avoid
-            # overwriting a configured instance (e.g. one with streaming callbacks set).
             return
         if hasattr(self.config, 'knowledge_search'):
             ks_config = self.config.knowledge_search
@@ -861,6 +955,18 @@ class LLMAgent(Agent):
                 and response_message.tool_calls):
             messages[-1].content = 'Let me do a tool calling.'
 
+    def _append_task_notifications(self,
+                                   messages: List[Message]) -> List[Message]:
+        """Inject drained TaskManager completion notices as a user message."""
+        if self.task_manager is None:
+            return messages
+        notes = self.task_manager.drain_notifications()
+        if not notes:
+            return messages
+        body = '[Background task updates]\n' + '\n'.join(notes)
+        messages.append(Message(role='user', content=body))
+        return messages
+
     @async_retry(max_attempts=Agent.retry_count, delay=1.0)
     async def step(
         self, messages: List[Message]
@@ -888,6 +994,7 @@ class LLMAgent(Agent):
             List[Message]: Updated message history after this step.
         """
         messages = deepcopy(messages)
+        messages = self._append_task_notifications(messages)
         if (not self.load_cache) or messages[-1].role != 'assistant':
             messages = await self.condense_memory(messages)
             await self.on_generate_response(messages)
@@ -1153,6 +1260,11 @@ class LLMAgent(Agent):
             await self.prepare_knowledge_search()
             self.runtime.tag = self.tag
 
+            self.task_manager = TaskManager()
+            for tool in self.tool_manager.extra_tools:
+                if hasattr(tool, 'set_task_manager'):
+                    tool.set_task_manager(self.task_manager)
+
             if messages is None:
                 messages = self.query
 
@@ -1181,7 +1293,15 @@ class LLMAgent(Agent):
                     self.log_output('[' + message.role + ']:')
                     self.log_output(message.content)
             while not self.runtime.should_stop:
+                messages = self._apply_pending_rollback(messages)
+                if self.task_manager is not None:
+                    notifications = self.task_manager.drain_notifications()
+                    if notifications:
+                        messages.append(
+                            Message(
+                                role='user', content='\n'.join(notifications)))
                 async for messages in self.step(messages):
+                    messages = self._apply_pending_rollback(messages)
                     yield messages
                 self.runtime.round += 1
                 # save memory and history

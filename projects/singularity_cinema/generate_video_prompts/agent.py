@@ -1,13 +1,13 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+import json
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from omegaconf import DictConfig
 from typing import List, Union
 
-import json
 from ms_agent.agent import CodeAgent
 from ms_agent.llm import LLM, Message
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
 
 logger = get_logger()
 

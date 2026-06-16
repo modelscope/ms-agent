@@ -34,8 +34,15 @@ tools:
     include:
       - write_file
       - read_file
-      - list_files
-      - replace_file_lines
+      - edit_file
+      - grep
+      - glob
+  todo_list:
+    mcp: false
+    auto_render_md: true
+    include:
+      - todo_write
+      - todo_read
   evidence_store:
     mcp: false
     evidence_dir: evidence

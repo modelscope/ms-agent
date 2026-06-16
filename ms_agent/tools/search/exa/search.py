@@ -4,6 +4,7 @@ import threading
 from typing import TYPE_CHECKING, List, Optional, Set, Union
 
 from exa_py import Exa
+
 from ms_agent.tools.search.exa.schema import ExaSearchRequest, ExaSearchResult
 from ms_agent.tools.search.search_base import SearchEngine, SearchEngineType
 from ms_agent.utils.logger import get_logger

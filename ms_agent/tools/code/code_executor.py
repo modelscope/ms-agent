@@ -1,17 +1,17 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import asyncio
+import json
 import socket
+from omegaconf import DictConfig
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
-import json
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.tools.code.sandbox_manager import SandboxManagerFactory
 from ms_agent.utils import get_logger
 from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR
 from ms_agent.utils.utils import install_package
-from omegaconf import DictConfig
 
 logger = get_logger()
 
@@ -117,7 +117,8 @@ class CodeExecutionTool(ToolBase):
             self,
             config) -> Union['DockerNotebookConfig', 'DockerSandboxConfig']:
         """Build sandbox configuration from agent config"""
-        from ms_enclave.sandbox.model import DockerNotebookConfig, DockerSandboxConfig, SandboxType
+        from ms_enclave.sandbox.model import (DockerNotebookConfig,
+                                              DockerSandboxConfig, SandboxType)
 
         # Get sandbox-specific config or use defaults
         if isinstance(config, DictConfig) and hasattr(

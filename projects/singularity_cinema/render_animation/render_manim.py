@@ -1,21 +1,21 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import base64
+import json
 import os
 import re
 import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
+from moviepy import VideoFileClip
+from omegaconf import DictConfig
 from os import getcwd
+from PIL import Image
 from typing import List, Union
 
-import json
-from moviepy import VideoFileClip
 from ms_agent.agent import CodeAgent
 from ms_agent.llm import LLM, Message
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
-from PIL import Image
 
 logger = get_logger()
 

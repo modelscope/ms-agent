@@ -1,12 +1,11 @@
+import asyncio
 import re
 from copy import deepcopy
+from omegaconf import DictConfig
 from typing import List
 
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
-
 from ..llm import LLM, Message
-from ..tools import SplitTask
 from .base import Memory
 
 logger = get_logger()
@@ -58,7 +57,6 @@ Here are the original query and the keywords:
     def __init__(self, config):
         super().__init__(config)
         self.llm = None
-        self.split_task = None
         self.num_split = 5
         self.memory_called = False
         _config = deepcopy(config)
@@ -67,8 +65,42 @@ Here are the original query and the keywords:
         delattr(_config, 'tools')
         _config.generation_config.temperature = 1.0
         self.llm = LLM.from_config(_config)
-        self.split_task = SplitTask(_config, tag_prefix='diversity-')
+        self._sub_config = _config
         self.num_split = getattr(config, 'num_split', self.num_split)
+
+    async def _run_tasks_sequential(self, tasks: list) -> str:
+        """Run a list of {system, query} tasks sequentially using LLMAgent."""
+        from ms_agent.agent import LLMAgent
+        res = []
+        for i, task in enumerate(tasks):
+            system = task.get('system', '')
+            query = task.get('query', '')
+            cfg = deepcopy(self._sub_config)
+            if not hasattr(cfg, 'prompt'):
+                cfg.prompt = DictConfig({})
+            cfg.prompt.system = system
+            agent = LLMAgent(
+                config=cfg,
+                trust_remote_code=getattr(cfg, 'trust_remote_code', False),
+                tag=f'{getattr(cfg, "tag", "agent")}-diversity-{i}',
+                load_cache=False,
+            )
+            try:
+                messages = await agent.run(query)
+                if isinstance(messages, list) and messages:
+                    content = messages[-1].content or ''
+                else:
+                    content = str(messages)
+            except Exception as e:
+                content = f'SubTask{i} failed with error: {e}'
+            res.append(content)
+
+        formatted = ''
+        for i, content in enumerate(res):
+            if len(content) > 2048:
+                content = content[:2048]
+            formatted += f'SplitTask{i}:{content}\n'
+        return formatted
 
     async def run(self, messages: List[Message]):
         if self.memory_called:
@@ -93,13 +125,7 @@ Here are the original query and the keywords:
             }
             arguments.append(inputs)
 
-        arguments = {
-            'tasks': arguments,
-            'execution_mode': 'sequential',
-        }
-
-        results = await self.split_task.call_tool(
-            '', tool_name='', tool_args=arguments)
+        results = await self._run_tasks_sequential(arguments)
         pattern = r'<result>(.*?)</result>'
         all_keywords = []
         for keywords in re.findall(pattern, results, re.DOTALL):
@@ -118,13 +144,7 @@ Here are the original query and the keywords:
             }
             arguments.append(inputs)
 
-        arguments = {
-            'tasks': arguments,
-            'execution_mode': 'sequential',
-        }
-
-        results = await self.split_task.call_tool(
-            '', tool_name='', tool_args=arguments)
+        results = await self._run_tasks_sequential(arguments)
         pattern = r'<result>(.*?)</result>'
         all_keywords = []
         for keywords in re.findall(pattern, results, re.DOTALL):

@@ -1,11 +1,11 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import argparse
+import json
 import logging
 import os
 import sys
-
-import json
 from dotenv import find_dotenv, load_dotenv
+
 from ms_agent.capabilities import create_registry
 
 logger = logging.getLogger(__name__)

@@ -37,7 +37,7 @@ prompt:
     Your Steps:
     1. Read topic and user story to obtain the original requirements and user stories.
     2. If topic contains documentation (e.g., usage of external frameworks, project PRDs, etc.), you must read them to understand user requirements.
-      * When reading external documents, prioritize using `read_abbreviation_file` to reduce token usage.
+      * When reading external documents, prioritize using `read_file` with `abbreviate: true` to reduce token usage.
     3. Design the technology selection. If the user has specified technology choices, prioritize using the user's choices and supplement any missing parts.
       * [Historical Error]: Failure due to mixing different technical frameworks within the same language in different files. Your framework information should prevent this issue.
         - Example: Mixing CommonJS and ES6 in package.json and xx.js causing runtime failure; you should specify syntax rules in framework.txt.
