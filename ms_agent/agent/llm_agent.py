@@ -30,6 +30,7 @@ from ms_agent.personalization.types import PersonalizationConfig
 from ms_agent.skill.catalog import SkillCatalog
 from ms_agent.skill.prompt_injector import SkillPromptInjector
 from ms_agent.skill.search import SkillSearchEngine
+from ms_agent.skill.runtime import SkillRuntime
 from ms_agent.skill.skill_tools import SkillToolSet
 from omegaconf import DictConfig, OmegaConf
 
@@ -79,6 +80,10 @@ class LLMAgent(Agent):
     TOTAL_COMPLETION_TOKENS = 0
     TOTAL_CACHED_TOKENS = 0
     TOTAL_CACHE_CREATION_INPUT_TOKENS = 0
+    TOTAL_REASONING_TOKENS = 0
+    LAST_PROMPT_TOKENS = 0
+    LAST_COMPLETION_TOKENS = 0
+    LAST_REASONING_TOKENS = 0
     TOKEN_LOCK = asyncio.Lock()
 
     def __init__(
@@ -113,6 +118,16 @@ class LLMAgent(Agent):
         # Skill system (initialized in prepare_skills)
         self._skill_catalog = None
         self._skill_injector = None
+
+        # Skill runtime (initialized in prepare_skills)
+        self._skill_runtime: Optional[SkillRuntime] = None
+
+        # Slash-command router for interactive input (lazily built)
+        self._command_router = None
+
+        # Whether this run is an interactive session (resolved in run_loop).
+        # Gates both the initial >>> prompt and the mid-turn InputCallback.
+        self._interactive = False
 
         # Personalization (lazy-loaded in _build_personalization_section)
         self._profile_manager = ProfileManager()
@@ -168,6 +183,33 @@ class LLMAgent(Agent):
                     skill_toolset, server_name, tool)
 
         self._check_skill_tool_dependencies()
+
+        self._skill_runtime = SkillRuntime(
+            catalog=self._skill_catalog,
+            injector=self._skill_injector,
+        )
+        self._skill_runtime.set_system_content_builder(
+            self._build_system_content
+        )
+
+    def _build_system_content(self) -> str:
+        """Build the full system prompt content.
+
+        Assembly order: base prompt → personalization → skill injection.
+        Used by create_messages() and SkillRuntime.maybe_refresh_system_prompt().
+        """
+        content = self.system or LLMAgent.DEFAULT_SYSTEM
+
+        personalization = self._build_personalization_section()
+        if personalization:
+            content += '\n\n' + personalization
+
+        if self._skill_injector:
+            skill_section = self._skill_injector.build_skill_prompt_section()
+            if skill_section:
+                content += '\n\n' + skill_section
+
+        return content
 
     def _check_skill_tool_dependencies(self):
         """Warn if skills are enabled but essential tools are missing."""
@@ -317,9 +359,28 @@ class LLMAgent(Agent):
                         if issubclass(
                                 cls, Callback) and cls.__module__ == _callback:
                             self.callbacks.append(cls(self.config))  # noqa
+                elif _callback == 'input_callback':
+                    # Interactive input is gated by the resolved interactive
+                    # mode (see _resolve_interactive), not by mere presence in
+                    # `callbacks:`, and shares the agent's single router so the
+                    # initial-prompt and mid-turn paths never diverge.
+                    if self._interactive:
+                        self.callbacks.append(callbacks_mapping[_callback](
+                            self.config,
+                            command_router=self._get_command_router()))
                 else:
                     self.callbacks.append(callbacks_mapping[_callback](
                         self.config))
+
+        # Ensure interactive input is available whenever this is an interactive
+        # session, even if the config never listed `input_callback`.
+        input_cls = callbacks_mapping.get('input_callback')
+        if (self._interactive and input_cls is not None and not any(
+                isinstance(cb, input_cls) for cb in self.callbacks)):
+            self.callbacks.append(
+                input_cls(
+                    self.config,
+                    command_router=self._get_command_router()))
 
     async def on_task_begin(self, messages: List[Message]):
         self.log_output(f'Agent {self.tag} task beginning.')
@@ -452,6 +513,38 @@ class LLMAgent(Agent):
             query = input('>>>')
         return query
 
+    def _get_command_router(self):
+        """Lazily build the slash-command router (builtin commands)."""
+        if self._command_router is None:
+            from ms_agent.command import (CommandRouter,
+                                          register_builtin_commands)
+
+            router = CommandRouter()
+            register_builtin_commands(router)
+            self._command_router = router
+        return self._command_router
+
+    def _resolve_interactive(self, messages) -> bool:
+        """Decide whether this run is an interactive session.
+
+        An explicit ``config.interactive`` (or ``--interactive`` propagated
+        into config) wins. Otherwise interactivity is implicit: only when no
+        task was supplied (``messages is None``) AND stdin is a TTY. This keeps
+        piped/redirected input, SDK calls, and sub-agent invocations (which all
+        pass explicit messages) from ever blocking on ``input()``.
+        """
+        explicit = getattr(self.config, 'interactive', None)
+        if explicit is not None:
+            return bool(explicit)
+        if messages is not None:
+            return False
+        # A configured prompt.query is a preset single-shot task, not a session.
+        configured = getattr(
+            getattr(self.config, 'prompt', DictConfig({})), 'query', None)
+        if configured:
+            return False
+        return sys.stdin.isatty()
+
     async def create_messages(
             self, messages: Union[List[Message], str]) -> List[Message]:
         """
@@ -464,32 +557,17 @@ class LLMAgent(Agent):
             List[Message]: Standardized message history including system and user prompts.
         """
         if isinstance(messages, list):
-            system = self.system
-            if (system is not None and messages[0].role == 'system'
-                    and system != messages[0].content):
-                # Replace the existing system
-                messages[0].content = system
+            pass
         else:
             assert isinstance(
                 messages, str
             ), f'inputs can be either a list or a string, but current is {type(messages)}'
             messages = [
-                Message(
-                    role='system',
-                    content=self.system or LLMAgent.DEFAULT_SYSTEM),
+                Message(role='system', content=''),
                 Message(role='user', content=messages or self.query),
             ]
 
-        # Inject personalization section (before skills)
-        personalization_section = self._build_personalization_section()
-        if personalization_section:
-            messages[0].content += "\n\n" + personalization_section
-
-        # Inject skill prompt section into system message
-        if self._skill_injector:
-            skill_section = self._skill_injector.build_skill_prompt_section()
-            if skill_section:
-                messages[0].content += "\n\n" + skill_section
+        messages[0].content = self._build_system_content()
 
         return messages
 
@@ -746,25 +824,38 @@ class LLMAgent(Agent):
         if _response_message.tool_calls:
             messages = await self.parallel_tool_call(messages)
 
-        await self.after_tool_call(messages)
-
         # usage
+        # NOTE: token accounting must run BEFORE after_tool_call. The interactive
+        # InputCallback fires inside after_tool_call and may read these counters
+        # (e.g. /usage, /context); updating them first keeps those views current.
         prompt_tokens = _response_message.prompt_tokens
         completion_tokens = _response_message.completion_tokens
         cached_tokens = getattr(_response_message, 'cached_tokens', 0) or 0
         cache_creation_input_tokens = (
             getattr(_response_message, 'cache_creation_input_tokens', 0) or 0)
+        reasoning_tokens = getattr(
+            _response_message, 'reasoning_tokens', 0) or 0
 
         async with LLMAgent.TOKEN_LOCK:
             LLMAgent.TOTAL_PROMPT_TOKENS += prompt_tokens
             LLMAgent.TOTAL_COMPLETION_TOKENS += completion_tokens
             LLMAgent.TOTAL_CACHED_TOKENS += cached_tokens
             LLMAgent.TOTAL_CACHE_CREATION_INPUT_TOKENS += cache_creation_input_tokens
+            LLMAgent.TOTAL_REASONING_TOKENS += reasoning_tokens
+            LLMAgent.LAST_PROMPT_TOKENS = prompt_tokens
+            LLMAgent.LAST_COMPLETION_TOKENS = completion_tokens
+            LLMAgent.LAST_REASONING_TOKENS = reasoning_tokens
+
+        await self.after_tool_call(messages)
 
         # tokens in the current step
         self.log_output(
             f'[usage] prompt_tokens: {prompt_tokens}, completion_tokens: {completion_tokens}'
         )
+        if reasoning_tokens:
+            self.log_output(
+                f'[usage_reasoning] reasoning_tokens: {reasoning_tokens}'
+            )
         if cached_tokens or cache_creation_input_tokens:
             self.log_output(
                 f'[usage_cache] cache_hit: {cached_tokens}, cache_created: {cache_creation_input_tokens}'
@@ -916,6 +1007,9 @@ class LLMAgent(Agent):
         try:
             self.max_chat_round = getattr(self.config, 'max_chat_round',
                                           LLMAgent.DEFAULT_MAX_CHAT_ROUND)
+            # Resolve interactive mode once; it gates both the initial >>>
+            # prompt below and InputCallback registration just after.
+            self._interactive = self._resolve_interactive(messages)
             self.register_callback_from_config()
             self.prepare_llm()
             self.prepare_runtime()
@@ -927,7 +1021,32 @@ class LLMAgent(Agent):
             self.runtime.tag = self.tag
 
             if messages is None:
-                messages = self.query
+                configured = getattr(
+                    getattr(self.config, 'prompt', DictConfig({})), 'query',
+                    None)
+                if configured:
+                    messages = configured
+                elif self._interactive:
+                    from ms_agent.command.interactive import InteractiveSession
+                    session = InteractiveSession(self._get_command_router())
+                    turn = await session.run_turn(
+                        messages=None, runtime=self.runtime)
+                    if turn.action == 'quit':
+                        # Exited at the interactive prompt without a task.
+                        self.runtime.should_stop = True
+                        await self.cleanup_tools()
+                        return
+                    messages = turn.text
+                else:
+                    # Non-interactive with no task: accept piped stdin as the
+                    # query; otherwise fail clearly instead of blocking input().
+                    piped = ('' if sys.stdin.isatty()
+                             else sys.stdin.read().strip())
+                    if not piped:
+                        raise ValueError(
+                            'No query provided. Pass --query, pipe input via '
+                            'stdin, or run in an interactive terminal.')
+                    messages = piped
 
             # Load history and restore state
             self.config, self.runtime, messages = self.read_history(messages)
@@ -942,6 +1061,8 @@ class LLMAgent(Agent):
                     self.log_output('[' + message.role + ']:')
                     self.log_output(message.content)
             while not self.runtime.should_stop:
+                if self._skill_runtime:
+                    self._skill_runtime.maybe_refresh_system_prompt(messages)
                 async for messages in self.step(messages):
                     yield messages
                 self.runtime.round += 1

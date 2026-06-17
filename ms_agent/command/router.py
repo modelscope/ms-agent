@@ -43,12 +43,18 @@ class CommandRouter:
 
     # -- detection --
 
-    @staticmethod
-    def is_command(text: str) -> bool:
+    def is_command(self, text: str) -> bool:
         if not text or not text.startswith('/'):
             return False
         first_word = text.split()[0]
-        return '/' not in first_word[1:]
+        if '/' in first_word[1:]:
+            return False
+        cmd = first_word.lstrip('/').lower()
+        if cmd in self._exact or cmd in self._priority:
+            return True
+        if any(cmd.startswith(p) for p, _ in self._prefix):
+            return True
+        return bool(self._interceptors)
 
     def is_priority(self, text: str) -> bool:
         if not self.is_command(text):

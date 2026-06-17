@@ -22,26 +22,57 @@ async def _args_handler(ctx: CommandContext) -> CommandResult:
 
 
 class TestIsCommand:
-    def test_slash_command(self):
-        assert CommandRouter.is_command('/help')
+    @pytest.fixture
+    def router(self):
+        r = CommandRouter()
+        r.register(
+            CommandDef(name='help', description='help', aliases=('?',)),
+            _echo_handler,
+        )
+        r.register(
+            CommandDef(name='model', description='model'),
+            _echo_handler,
+        )
+        return r
 
-    def test_slash_with_args(self):
-        assert CommandRouter.is_command('/model gpt-4')
+    def test_registered_command(self, router):
+        assert router.is_command('/help')
 
-    def test_file_path_excluded(self):
-        assert not CommandRouter.is_command('/Users/foo/bar')
+    def test_registered_with_args(self, router):
+        assert router.is_command('/model gpt-4')
 
-    def test_empty_string(self):
-        assert not CommandRouter.is_command('')
+    def test_alias_recognized(self, router):
+        assert router.is_command('/?')
 
-    def test_no_slash(self):
-        assert not CommandRouter.is_command('hello world')
+    def test_file_path_excluded(self, router):
+        assert not router.is_command('/Users/foo/bar')
 
-    def test_double_slash_excluded(self):
-        assert not CommandRouter.is_command('//comment')
+    def test_empty_string(self, router):
+        assert not router.is_command('')
 
-    def test_windows_path_excluded(self):
-        assert not CommandRouter.is_command('/c/Users/foo')
+    def test_no_slash(self, router):
+        assert not router.is_command('hello world')
+
+    def test_double_slash_excluded(self, router):
+        assert not router.is_command('//comment')
+
+    def test_windows_path_excluded(self, router):
+        assert not router.is_command('/c/Users/foo')
+
+    def test_root_single_segment_path_excluded(self, router):
+        assert not router.is_command('/tmp')
+
+    def test_root_paths_excluded(self, router):
+        for path in ['/etc', '/var', '/opt', '/bin', '/usr']:
+            assert not router.is_command(path), f'{path} should not be a command'
+
+    def test_unregistered_command_excluded(self, router):
+        assert not router.is_command('/nonexistent')
+
+    def test_interceptor_makes_unknown_passthrough(self):
+        router = CommandRouter()
+        router.register_interceptor(_echo_handler)
+        assert router.is_command('/anything')
 
 
 class TestParseInput:
