@@ -58,6 +58,8 @@ class Message:
     cached_tokens: int = 0
     # tokens used to create new cache (explicit cache only, billed at higher rate like 1.25x)
     cache_creation_input_tokens: int = 0
+    # reasoning/thinking tokens (subset of completion_tokens for thinking models)
+    reasoning_tokens: int = 0
 
     api_calls: int = 1
 

@@ -250,6 +250,19 @@ class OpenAI(LLM):
                 getattr(details, 'cache_creation_input_tokens', 0) or 0)
         return cached, created
 
+    @staticmethod
+    def _extract_reasoning_tokens(usage_obj: Any) -> int:
+        if not usage_obj:
+            return 0
+        details = getattr(usage_obj, 'completion_tokens_details', None)
+        if details is None and isinstance(usage_obj, dict):
+            details = usage_obj.get('completion_tokens_details')
+        if details is None:
+            return 0
+        if isinstance(details, dict):
+            return int(details.get('reasoning_tokens', 0) or 0)
+        return int(getattr(details, 'reasoning_tokens', 0) or 0)
+
     def _merge_stream_message(self, pre_message_chunk: Optional[Message],
                               message_chunk: Message) -> Optional[Message]:
         """Merges a new chunk of message into the previous chunks during streaming.
@@ -333,12 +346,14 @@ class OpenAI(LLM):
             if chunk.choices and chunk.choices[0].finish_reason:
                 try:
                     next_chunk = next(completion)
+                    usage = getattr(next_chunk, 'usage', None)
                     message.prompt_tokens += next_chunk.usage.prompt_tokens
-                    cached, created = self._extract_cache_info(
-                        getattr(next_chunk, 'usage', None))
+                    cached, created = self._extract_cache_info(usage)
                     message.cached_tokens += cached
                     message.cache_creation_input_tokens += created
                     message.completion_tokens += next_chunk.usage.completion_tokens
+                    message.reasoning_tokens += self._extract_reasoning_tokens(
+                        usage)
                 except (StopIteration, AttributeError):
                     # The stream may end without a final usage chunk, which is acceptable.
                     pass
@@ -434,8 +449,9 @@ class OpenAI(LLM):
                     tool_name=tool_call.function.name) for idx, tool_call in
                 enumerate(completion.choices[0].message.tool_calls)
             ]
-        cached, created = OpenAI._extract_cache_info(
-            getattr(completion, 'usage', None))
+        usage = getattr(completion, 'usage', None)
+        cached, created = OpenAI._extract_cache_info(usage)
+        reasoning = OpenAI._extract_reasoning_tokens(usage)
         return Message(
             role='assistant',
             content=content,
@@ -445,7 +461,8 @@ class OpenAI(LLM):
             prompt_tokens=completion.usage.prompt_tokens,
             cached_tokens=cached,
             cache_creation_input_tokens=created,
-            completion_tokens=completion.usage.completion_tokens)
+            completion_tokens=completion.usage.completion_tokens,
+            reasoning_tokens=reasoning)
 
     @staticmethod
     def _merge_partial_message(messages: List[Message], new_message: Message):
@@ -462,6 +479,7 @@ class OpenAI(LLM):
         messages[
             -1].cache_creation_input_tokens += new_message.cache_creation_input_tokens
         messages[-1].completion_tokens += new_message.completion_tokens
+        messages[-1].reasoning_tokens += new_message.reasoning_tokens
         if new_message.tool_calls:
             if messages[-1].tool_calls:
                 messages[-1].tool_calls += new_message.tool_calls
