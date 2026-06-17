@@ -68,7 +68,17 @@ class LLM:
 
         Returns:
             The LLM instance.
+
+        Notes:
+            Set ``config.llm.use_provider_router: true`` to use the data-driven
+            provider layer (``ms_agent/llm/router.py``), which supports many
+            more providers via ``ProviderSpec``. When unset, the legacy
+            hard-coded mapping is used unchanged (zero behavior change).
         """
+        if config.llm.get('use_provider_router', False):
+            from .router import ProviderRouter
+            return ProviderRouter().create(config)
+
         from .model_mapping import all_services_mapping, OpenAI
         if config.llm.get('service') in all_services_mapping:
             return all_services_mapping[config.llm.service](config)

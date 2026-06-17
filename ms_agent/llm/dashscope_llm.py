@@ -35,5 +35,7 @@ class DashScope(OpenAI):
             messages.append(new_message)
             messages[-1].partial = True
 
-        messages = self.format_input_message(messages)
+        # NOTE: `_call_llm` formats messages internally; the previous
+        # `self.format_input_message(...)` name did not exist and raised at
+        # runtime. Pass the Message list straight through.
         return self._call_llm(messages=messages, tools=tools, **kwargs)

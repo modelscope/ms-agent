@@ -34,8 +34,12 @@ class DeepSeek(OpenAI):
             messages.append(new_message)
             messages[-1].prefix = True
 
-        messages = self.format_input_message(messages)
-        stop = kwargs.pop('stop', []).append('```')
+        # NOTE: `_call_llm` formats messages internally; do not pre-format here
+        # (the previous `self.format_input_message(...)` name did not exist and
+        # raised at runtime). `list.append` returns None, so build `stop`
+        # explicitly instead of assigning the result of `.append`.
+        stop = list(kwargs.pop('stop', []) or [])
+        stop.append('```')
         return self._call_llm(
             messages=messages, tools=tools, stop=stop, **kwargs)
 
