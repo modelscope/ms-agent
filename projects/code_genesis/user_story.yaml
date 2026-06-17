@@ -39,3 +39,5 @@ memory:
     num_split: 2
 
 tool_call_timeout: 30
+
+output_dir: ./output

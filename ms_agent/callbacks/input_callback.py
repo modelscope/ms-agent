@@ -1,12 +1,12 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 from typing import TYPE_CHECKING, List, Optional
+from omegaconf import DictConfig
 
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback
 from ms_agent.command.interactive import InteractiveSession
 from ms_agent.llm.utils import Message
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
 
 if TYPE_CHECKING:
     from ms_agent.command.router import CommandRouter

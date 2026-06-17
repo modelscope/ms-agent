@@ -4,14 +4,13 @@ import os.path
 from abc import abstractmethod
 from copy import deepcopy
 from typing import Any, Dict, Union
+from omegaconf import DictConfig, ListConfig, OmegaConf
+from omegaconf.basecontainer import BaseContainer
+from modelscope import snapshot_download
 
 from ms_agent.prompting import apply_prompt_files
 from ms_agent.utils import get_logger
 from ms_agent.config.resolver import ConfigResolver
-from omegaconf import DictConfig, ListConfig, OmegaConf
-from omegaconf.basecontainer import BaseContainer
-
-from modelscope import snapshot_download
 from ..utils.constants import TOOL_PLUGIN_NAME
 from .env import Env
 

@@ -1,0 +1,14 @@
+{
+  "mcp": {
+    "servers": {
+      "ms-agent": {
+        "command": "/absolute/path/to/python",
+        "args": ["-m", "ms_agent.capabilities.mcp_server"],
+        "env": {
+          "PYTHONPATH": "/path/to/ms-agent",
+          "MS_AGENT_OUTPUT_DIR": "/path/to/workspace"
+        }
+      }
+    }
+  }
+}

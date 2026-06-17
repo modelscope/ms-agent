@@ -1,9 +1,8 @@
 # flake8: noqa
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
-
 import json
+from dataclasses import dataclass, field
 from exa_py.api import SearchResponse
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
