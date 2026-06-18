@@ -766,7 +766,7 @@ class LocalCodeExecutionTool(ToolBase):
                     logger.error(f'Watcher task failed: {exc}', exc_info=True)
                     if self._task_manager:
                         await self._task_manager.fail(task_id, str(exc))
-                    
+
             t = asyncio.create_task(_watcher())
             self._watcher_tasks.add(t)
             t.add_done_callback(self._watcher_tasks.discard)

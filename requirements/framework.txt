@@ -6,7 +6,7 @@ json5
 markdown
 matplotlib
 mcp
-modelscope
+modelscope>=1.35.2
 moviepy
 numpy
 omegaconf

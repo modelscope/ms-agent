@@ -40,7 +40,7 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 - **Deep Research**: To enable advanced capabilities for autonomous exploration and complex task execution.
 - **Code Generation**: Supports code generation tasks with artifacts.
 - **Short Video Generation**：Support video generation of about 5 minutes.
-- **Agent Skills**: Implementation of [Anthropic-Agent-Skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills) Protocol.
+- **Agent Skills**: Knowledge-driven skill system — skills provide reusable procedural knowledge that guides the model via standard tool integration, with multi-source loading, progressive disclosure, and runtime self-evolution. See [Agent Skills](ms_agent/skill/README.md).
 - **WebUI**: Modern web interface for agent interaction with real-time WebSocket communication.
 - **Lightweight and Extensible**: Easy to extend and customize for various applications.
 
@@ -68,7 +68,7 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 * 🚀 Feb 04, 2026: Release MS-Agent v1.6.0rc0, which includes the following updates:
   - **Code Genesis** for complex code generation tasks, refer to [Code Genesis](https://github.com/modelscope/ms-agent/tree/main/projects/code_genesis)
   - **Singularity Cinema** for animated video generation workflow, refactored version, refer to [Singularity Cinema](https://github.com/modelscope/ms-agent/tree/main/projects/singularity_cinema)
-  - **New framework of Skills**: New design of the skills system to enhance robustness and extensibility. Refer to [MS-Agent Skills](https://github.com/modelscope/ms-agent/tree/main/ms_agent/skill).
+  - **Agent Skills v2**: Knowledge-driven skill system — skills as procedural knowledge with progressive disclosure, multi-source loading, and standard tool integration. Refer to [Agent Skills](https://github.com/modelscope/ms-agent/tree/main/ms_agent/skill).
   - **WebUI**: A new WebUI has been added, featuring agentic chatting capabilities, complex code generation and video generation workflow.
 
 
