@@ -438,6 +438,10 @@ class OpenAI(LLM):
                                     messages[-1], chunk)
                             else:
                                 yield chunk
+                    elif not first_run:
+                        self._merge_partial_message(messages, message)
+                        messages[-1].partial = False
+                        message = messages[-1]
                 elif not first_run:
                     self._merge_partial_message(messages, message)
                     messages[-1].partial = False
@@ -608,6 +612,10 @@ class OpenAI(LLM):
         # next API call would see an assistant message with dangling tool_calls
         # and no matching tool responses, which providers reject.
         if new_message.tool_calls:
+            if messages[-1].to_dict().get('partial', False):
+                self._merge_partial_message(messages, new_message)
+                messages[-1].partial = False
+                return messages.pop(-1)
             return new_message
         if completion.choices[0].finish_reason in [
                 'length', 'null'

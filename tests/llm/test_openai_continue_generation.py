@@ -196,6 +196,80 @@ class OpenAIContinueGenerationTests(unittest.TestCase):
         mock_continue.assert_called_once()
         self.assertEqual(yielded[-1].content, 'first part continued')
 
+    def test_continue_generate_merges_and_returns_when_tool_calls_on_subsequent_run(self):
+        """If a subsequent continuation run returns tool calls, it must merge and return the accumulated message."""
+        llm = self._make_llm()
+        messages = [
+            Message(role='system', content='You are a helpful assistant.'),
+            Message(role='user', content='Write a long report.'),
+        ]
+        initial_completion = _make_completion(
+            content='first part',
+            finish_reason='length',
+        )
+        continued_completion = _make_completion(
+            content=' continued with tool',
+            finish_reason='stop',
+            tool_calls=[{
+                'id': 'call_abc',
+                'tool_name': 'write_file',
+                'arguments': '{"path": "/tmp/report.md"}',
+            }],
+        )
+
+        def fake_continue(messages, new_message, tools, **kwargs):
+            # Mimic the real _call_llm_for_continue_gen side effects.
+            messages.append(new_message)
+            messages[-1].partial = True
+            return continued_completion
+
+        with patch.object(llm, '_call_llm_for_continue_gen', side_effect=fake_continue):
+            result = llm._continue_generate(messages, initial_completion)
+
+        self.assertEqual(result.content, 'first part continued with tool')
+        self.assertEqual(len(result.tool_calls), 1)
+        self.assertEqual(result.tool_calls[0]['id'], 'call_abc')
+        self.assertEqual(len(messages), 2)
+        self.assertFalse(result.partial)
+
+    def test_stream_continue_generate_merges_when_tool_calls_on_subsequent_run(self):
+        """If a subsequent streaming continuation run returns tool calls, it must merge and clear partial flag."""
+        llm = self._make_llm()
+        messages = [
+            Message(role='system', content='You are a helpful assistant.'),
+            Message(role='user', content='Write a long report.'),
+        ]
+        initial_chunks = [
+            _make_stream_chunk(content='first part'),
+            _make_stream_chunk(finish_reason='length'),
+        ]
+        continued_chunks = [
+            _make_stream_chunk(content=' continued'),
+            _make_stream_chunk(
+                content='',
+                tool_call={
+                    'id': 'call_abc',
+                    'tool_name': 'write_file',
+                    'arguments': '{"path": "/tmp/report.md"}',
+                },
+            ),
+            _make_stream_chunk(finish_reason='length'),
+        ]
+
+        def fake_continue(messages, message, tools, **kwargs):
+            # Mimic the real _call_llm_for_continue_gen side effects.
+            messages.append(message)
+            messages[-1].partial = True
+            return iter(continued_chunks)
+
+        with patch.object(llm, '_call_llm_for_continue_gen', side_effect=fake_continue):
+            yielded = list(llm._stream_continue_generate(messages, iter(initial_chunks)))
+
+        self.assertEqual(yielded[-1].content, 'first part continued')
+        self.assertEqual(len(yielded[-1].tool_calls), 1)
+        self.assertEqual(yielded[-1].tool_calls[0]['id'], 'call_abc')
+        self.assertFalse(messages[-1].partial)
+
 
 if __name__ == '__main__':
     unittest.main()
