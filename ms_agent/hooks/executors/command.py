@@ -29,6 +29,26 @@ class HookExecutionContext:
     tool_manager: Any | None = None
 
 
+def plugin_compat_payload(
+    event_data: dict[str, Any],
+    ctx: HookExecutionContext | None,
+) -> dict[str, Any]:
+    """Adapt MS-Agent hook payloads for Claude-format plugin scripts."""
+    if ctx is None or not ctx.plugin_root:
+        return event_data
+    payload = dict(event_data)
+    claude_tool = payload.get('tool_name_claude')
+    if claude_tool:
+        payload['tool_name'] = claude_tool
+    payload.setdefault(
+        'hook_event_name',
+        payload.get('event') or payload.get('hook_event_name', ''),
+    )
+    if payload.get('event') == 'UserPromptSubmit':
+        payload.setdefault('user_prompt', payload.get('prompt', ''))
+    return payload
+
+
 def build_hook_env(ctx: HookExecutionContext) -> dict[str, str]:
     env = dict(os.environ)
     env['MS_AGENT_PROJECT_DIR'] = ctx.project_path
@@ -38,6 +58,9 @@ def build_hook_env(ctx: HookExecutionContext) -> dict[str, str]:
         env['CLAUDE_PLUGIN_ROOT'] = ctx.plugin_root
     if ctx.plugin_data_dir:
         env['MS_AGENT_PLUGIN_DATA'] = ctx.plugin_data_dir
+        env['CLAUDE_PLUGIN_DATA'] = ctx.plugin_data_dir
+    if ctx.session_id:
+        env['MS_AGENT_SESSION_ID'] = ctx.session_id
     return env
 
 
@@ -58,7 +81,8 @@ class CommandHookExecutor:
         event_data: dict[str, Any],
         ctx: HookExecutionContext,
     ) -> HookResult:
-        stdin_data = json.dumps(event_data, ensure_ascii=False).encode('utf-8')
+        payload = plugin_compat_payload(event_data, ctx)
+        stdin_data = json.dumps(payload, ensure_ascii=False).encode('utf-8')
         proc = None
         try:
             proc = await asyncio.create_subprocess_exec(

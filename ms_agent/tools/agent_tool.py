@@ -215,6 +215,8 @@ class AgentTool(ToolBase):
         self._active_sync_tasks: Dict[str, Any] = {}
         # effective_call_id -> stream file path (set during _run_agent, consumed by call_tool)
         self._stream_paths: Dict[str, str] = {}
+        self._plugin_agent_registry = None
+        self._plugin_spec_keys: set[str] = set()
         self._load_specs()
 
     @property
@@ -475,6 +477,47 @@ class AgentTool(ToolBase):
 
     def set_task_manager(self, task_manager) -> None:
         self._task_manager = task_manager
+
+    def sync_plugin_agents(self, registry) -> None:
+        """Register plugin-defined subagents and the Claude-compatible Task tool."""
+        from ms_agent.plugins.agents import AgentDelegate
+
+        self._plugin_agent_registry = registry
+        for key in self._plugin_spec_keys:
+            self._specs.pop(key, None)
+        self._plugin_spec_keys.clear()
+
+        if registry is None or not registry.has_agents():
+            self._build_server_index()
+            return
+
+        for entry in {
+            item['namespaced_name']: registry.resolve(item['namespaced_name'])
+            for item in registry.list_all()
+        }.values():
+            if entry is None:
+                continue
+            spec = AgentDelegate.to_agent_tool_spec(
+                entry,
+                self.config,
+                trust_remote_code=self._trust_remote_code,
+            )
+            self._specs[spec.tool_name] = spec
+            self._plugin_spec_keys.add(spec.tool_name)
+            namespaced_tool = entry.namespaced_name.replace(':', '---')
+            if namespaced_tool != spec.tool_name:
+                from dataclasses import replace
+                namespaced_spec = replace(spec, tool_name=namespaced_tool)
+                self._specs[namespaced_spec.tool_name] = namespaced_spec
+                self._plugin_spec_keys.add(namespaced_spec.tool_name)
+
+        task_spec = AgentDelegate.build_task_tool_spec(
+            registry,
+            trust_remote_code=self._trust_remote_code,
+        )
+        self._specs[task_spec.tool_name] = task_spec
+        self._plugin_spec_keys.add(task_spec.tool_name)
+        self._build_server_index()
 
     # ── stream-file helpers ────────────────────────────────────────────────
 
@@ -747,6 +790,9 @@ class AgentTool(ToolBase):
 
     async def _call_dynamic(self, tool_args: dict,
                             spec: '_AgentToolSpec') -> str:
+        if spec.tool_name == 'Task' and self._plugin_agent_registry is not None:
+            return await self._call_plugin_task(tool_args, spec)
+
         tasks = tool_args.get('tasks', [])
         execution_mode = tool_args.get('execution_mode', 'sequential')
 
@@ -816,6 +862,48 @@ class AgentTool(ToolBase):
                 content = content[:spec.max_subtask_output_chars]
             formatted += f'SubTask{i}:{content}\n'
         return formatted
+
+    async def _call_plugin_task(self, tool_args: dict,
+                                spec: '_AgentToolSpec') -> str:
+        from ms_agent.plugins.agents import AgentDelegate
+
+        registry = self._plugin_agent_registry
+        if registry is None or not registry.has_agents():
+            return json.dumps({
+                'error': 'No plugin subagents are registered.',
+            }, ensure_ascii=False)
+
+        entry = AgentDelegate.resolve_task_entry(registry, tool_args)
+        if entry is None:
+            agent_name = AgentDelegate.resolve_task_agent_name(tool_args)
+            available = ', '.join(
+                item['namespaced_name'] for item in registry.list_all())
+            return json.dumps({
+                'error': (
+                    f'Unknown plugin subagent {agent_name!r}. '
+                    f'Available: {available}'
+                ),
+            }, ensure_ascii=False)
+
+        delegate_spec = AgentDelegate.to_agent_tool_spec(
+            entry,
+            self.config,
+            trust_remote_code=self._trust_remote_code,
+        )
+        prompt = (
+            tool_args.get('prompt')
+            or tool_args.get('request')
+            or tool_args.get('description')
+            or ''
+        )
+        if not isinstance(prompt, str):
+            prompt = json.dumps(prompt, ensure_ascii=False)
+
+        use_subprocess = (
+            delegate_spec.run_in_thread and delegate_spec.run_in_process)
+        agent = None if use_subprocess else self._build_agent(delegate_spec)
+        messages = await self._run_agent(agent, prompt, delegate_spec)
+        return self._format_output(messages, delegate_spec)
 
     @staticmethod
     def _terminate_process(proc: Optional[mp.Process], *, reason: str) -> None:

@@ -81,7 +81,11 @@ class HookExecutor:
 
         for handler in handlers:
             started = time.perf_counter()
-            result = await self.execute(handler, event_data, exec_ctx)
+            result = await self.execute(
+                handler,
+                event_data,
+                _context_for_handler(exec_ctx, handler),
+            )
             duration_ms = (time.perf_counter() - started) * 1000.0
             if on_handler_complete is not None:
                 await on_handler_complete(handler, result, duration_ms)
@@ -115,3 +119,23 @@ class HookExecutor:
             additional_context='\n'.join(merged_context_parts),
             updated_args=final_updated_args,
         )
+
+
+def _context_for_handler(
+    ctx: HookExecutionContext | None,
+    handler: HookHandlerConfig,
+) -> HookExecutionContext | None:
+    if ctx is None:
+        return None
+    if not handler.source_plugin_root and not handler.source_plugin_data_dir:
+        return ctx
+    return HookExecutionContext(
+        session_id=ctx.session_id,
+        project_path=ctx.project_path,
+        plugin_root=handler.source_plugin_root or ctx.plugin_root,
+        plugin_data_dir=handler.source_plugin_data_dir or ctx.plugin_data_dir,
+        llm=ctx.llm,
+        messages=ctx.messages,
+        abort_signal=ctx.abort_signal,
+        tool_manager=ctx.tool_manager,
+    )

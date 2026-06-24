@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, ClassVar
 
 from ms_agent.utils import get_logger
@@ -23,6 +23,9 @@ class HookHandlerConfig:
     prompt: str | None = None
     model: str | None = None
     max_turns: int = 20
+    source_plugin_id: str | None = None
+    source_plugin_root: str | None = None
+    source_plugin_data_dir: str | None = None
 
 
 @dataclass(frozen=True)
@@ -152,6 +155,31 @@ class HookRegistry:
             other_groups = other._index.get(event, ())
             merged[event] = self_groups + other_groups
         return HookRegistry(_index=merged)
+
+    def with_plugin_source(
+        self,
+        *,
+        plugin_id: str,
+        plugin_root: str,
+        plugin_data_dir: str,
+    ) -> HookRegistry:
+        index: dict[str, tuple[MatcherGroup, ...]] = {}
+        for event, groups in self._index.items():
+            updated_groups = []
+            for group in groups:
+                updated_handlers = tuple(
+                    replace(
+                        handler,
+                        source_plugin_id=plugin_id,
+                        source_plugin_root=plugin_root,
+                        source_plugin_data_dir=plugin_data_dir,
+                    )
+                    for handler in group.hooks
+                )
+                updated_groups.append(
+                    MatcherGroup(matcher=group.matcher, hooks=updated_handlers))
+            index[event] = tuple(updated_groups)
+        return HookRegistry(_index=index)
 
     def get_handlers(
         self,

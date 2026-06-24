@@ -197,7 +197,7 @@ class MCPClient(ToolBase):
             not self.exclude_functions.get(server_name)
         ), 'Set either `include` or `exclude` in tools config.'
         timeout = server.pop('timeout', timeout)
-        for drop_key in ('enabled', 'source', 'meta'):
+        for drop_key in ('enabled', 'source', 'plugin_id', 'meta'):
             server.pop(drop_key, None)
         return await self.connect_to_server(
             server_name=server_name,

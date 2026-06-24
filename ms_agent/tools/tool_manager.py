@@ -208,6 +208,21 @@ class ToolManager:
         self._mcp_index_keys: set[str] = set()
         self._skip_mcp_reindex = False
 
+    def ensure_plugin_agent_tools(self, registry) -> None:
+        """Attach plugin-defined subagents to AgentTool before connect()."""
+        if registry is None or not registry.has_agents():
+            return
+        agent_tool = None
+        for tool in self.extra_tools:
+            if isinstance(tool, AgentTool):
+                agent_tool = tool
+                break
+        if agent_tool is None:
+            agent_tool = AgentTool(
+                self.config, trust_remote_code=self.trust_remote_code)
+            self.extra_tools.append(agent_tool)
+        agent_tool.sync_plugin_agents(registry)
+
         # Used temporarily during async initialization; the actual client is managed in self.servers
         self.mcp_client = mcp_client
         self.mcp_config = mcp_config

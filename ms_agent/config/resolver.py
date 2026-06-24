@@ -37,6 +37,7 @@ from ms_agent.config.mcp_schema import (
     normalize_mcp_servers_layer,
 )
 from ms_agent.utils import get_logger
+from ms_agent.plugins.config_manager import PluginConfigManager
 
 logger = get_logger()
 
@@ -68,6 +69,8 @@ class ConfigResolver:
         )
         self.agent_config = agent_config
         self.mcp_manager = mcp_manager or MCPConfigManager(
+            self._global_dir, self.project_root)
+        self.plugin_manager = PluginConfigManager(
             self._global_dir, self.project_root)
 
     @property
@@ -125,6 +128,7 @@ class ConfigResolver:
 
         merged = self._merge_mcp(merged, effective_project_path)
         merged = self._merge_skills(merged, effective_project_path)
+        merged = self._merge_plugins(merged, effective_project_path)
 
         from ms_agent.config.config import Config
         merged = Config.fill_missing_fields(merged)
@@ -268,6 +272,34 @@ class ConfigResolver:
         merged = merge_mcp_configs(global_mcp, project_mcp)
         if merged:
             OmegaConf.update(config, '_merged_mcp', merged, merge=True)
+        return config
+
+    def _merge_plugins(
+        self, config: DictConfig, project_path: Optional[str]
+    ) -> DictConfig:
+        manager = (
+            PluginConfigManager(self._global_dir, project_path)
+            if project_path
+            else self.plugin_manager
+        )
+        records = manager.load_merged(project_path)
+        if not records:
+            return config
+
+        payload = {'plugins': [record.to_dict() | {'scope': record.scope}
+                              for record in records]}
+        OmegaConf.update(config, '_merged_plugins', payload, merge=True)
+
+        enabled_paths = [
+            record.path for record in records
+            if record.enabled and record.path
+        ]
+        existing = []
+        if hasattr(config, 'plugins') and config.plugins:
+            existing = [str(item) for item in config.plugins]
+        merged_paths = existing + [p for p in enabled_paths if p not in existing]
+        if merged_paths:
+            OmegaConf.update(config, 'plugins', merged_paths, merge=True)
         return config
 
     def _merge_skills(

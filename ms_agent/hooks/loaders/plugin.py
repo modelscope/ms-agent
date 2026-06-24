@@ -14,6 +14,8 @@ class PluginHooksLoader:
         plugin_root: str | Path,
         *,
         project_path: str,
+        plugin_data_dir: str | Path | None = None,
+        user_config: dict | None = None,
         enabled_executors: frozenset[str] = frozenset({'command'}),
     ) -> HookRegistry:
         root = Path(plugin_root)
@@ -23,6 +25,8 @@ class PluginHooksLoader:
         return ClaudeSettingsLoader.parse_hooks_file(
             hooks_path,
             plugin_root=str(root),
+            plugin_data_dir=str(plugin_data_dir) if plugin_data_dir else None,
+            user_config=user_config,
             project_path=project_path,
             enabled_executors=enabled_executors,
         )

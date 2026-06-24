@@ -48,6 +48,7 @@ def build_hook_runtime(
     config: DictConfig | Any,
     *,
     session_id: str | None = None,
+    plugin_hook_registries: list[Any] | None = None,
 ) -> HookRuntime:
     """Construct HookRuntime; returns empty runtime when hooks are not configured."""
     from ms_agent.utils.workspace_context import resolve_workspace_root
@@ -154,15 +155,32 @@ def build_hook_runtime(
             ))
 
     if 'plugin' in enabled_sources:
-        plugin_roots = _discover_plugin_roots(config, project_path)
-        for root in plugin_roots:
-            reg = PluginHooksLoader.load_plugin(
-                root,
-                project_path=project_path,
-                enabled_executors=enabled_executors,
-            )
-            if not reg.is_empty:
-                loaders.append((f'plugin:{root}', reg))
+        if plugin_hook_registries is not None:
+            for contrib in plugin_hook_registries:
+                if not contrib.registry.is_empty:
+                    loaders.append((f'plugin:{contrib.plugin_id}', contrib.registry))
+        else:
+            plugin_roots = _discover_plugin_roots(config, project_path)
+            seen_plugin_ids: set[str] = set()
+            for root in plugin_roots:
+                plugin_id = Path(root).name
+                if plugin_id in seen_plugin_ids:
+                    continue
+                seen_plugin_ids.add(plugin_id)
+                plugin_data_dir = Path.home() / '.ms_agent' / 'plugins' / 'data' / plugin_id
+                reg = PluginHooksLoader.load_plugin(
+                    root,
+                    project_path=project_path,
+                    plugin_data_dir=plugin_data_dir,
+                    enabled_executors=enabled_executors,
+                )
+                if not reg.is_empty:
+                    reg = reg.with_plugin_source(
+                        plugin_id=Path(root).name,
+                        plugin_root=str(root),
+                        plugin_data_dir=str(plugin_data_dir),
+                    )
+                    loaders.append((f'plugin:{root}', reg))
 
     if 'hermes' in enabled_sources:
         hermes_cfg = Path.home() / '.hermes' / 'config.yaml'
@@ -196,17 +214,35 @@ def build_hook_runtime(
 
 
 def _discover_plugin_roots(config: Any, project_path: str) -> list[str]:
+    from ms_agent.plugins.registry import PluginRegistry
+
+    registry = PluginRegistry()
+    managed_paths = registry.managed_plugin_paths(project_path)
+    managed_ids = registry.managed_plugin_ids(project_path)
     roots: list[str] = []
+    seen: set[str] = set()
     plugins_dir = Path(project_path) / '.ms-agent' / 'plugins'
     if plugins_dir.is_dir():
         for child in plugins_dir.iterdir():
-            if child.is_dir():
-                roots.append(str(child))
+            if not child.is_dir():
+                continue
+            resolved = str(child.resolve())
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            roots.append(str(child))
     if hasattr(config, 'plugins'):
         for p in (config.plugins or []):
             path = Path(str(p))
             if not path.is_absolute():
                 path = Path(project_path) / path
-            if path.is_dir():
-                roots.append(str(path))
+            if not path.is_dir():
+                continue
+            resolved = str(path.resolve())
+            if resolved in seen or resolved in managed_paths:
+                continue
+            if path.name in managed_ids:
+                continue
+            seen.add(resolved)
+            roots.append(str(path))
     return roots

@@ -243,6 +243,28 @@ class TestMCPInResolver:
         assert hasattr(config, '_merged_skills')
         assert 'bad-skill' in list(config._merged_skills.disabled)
 
+    def test_plugins_merged_into_config(self, tmp_path):
+        global_dir = tmp_path / '.ms_agent'
+        global_dir.mkdir()
+        plugin_path = str(global_dir / 'plugins' / 'demo')
+        plugins_data = {
+            'plugins': [{
+                'id': 'demo',
+                'enabled': True,
+                'format': 'claude',
+                'manifest_path': '.claude-plugin/plugin.json',
+                'path': plugin_path,
+            }],
+        }
+        (global_dir / 'plugins.json').write_text(json.dumps(plugins_data))
+
+        resolver = ConfigResolver(global_dir=str(global_dir))
+        config = resolver.resolve()
+
+        assert hasattr(config, '_merged_plugins')
+        assert config._merged_plugins.plugins[0].id == 'demo'
+        assert plugin_path in list(config.plugins)
+
 
 class TestPersonalizationInResolver:
 

@@ -113,6 +113,22 @@ class TestHookExecutor:
     def executor(self, tmp_path):
         return HookExecutor(working_dir=str(tmp_path))
 
+    def test_env_includes_plugin_data_aliases(self, tmp_path):
+        from ms_agent.hooks.executors.command import build_hook_env
+        plugin_root = tmp_path / 'plugin'
+        plugin_data = tmp_path / 'data'
+        ctx = HookExecutionContext(
+            session_id='s1',
+            project_path=str(tmp_path),
+            plugin_root=str(plugin_root),
+            plugin_data_dir=str(plugin_data),
+        )
+        env = build_hook_env(ctx)
+        assert env['MS_AGENT_PLUGIN_ROOT'] == str(plugin_root)
+        assert env['CLAUDE_PLUGIN_ROOT'] == str(plugin_root)
+        assert env['MS_AGENT_PLUGIN_DATA'] == str(plugin_data)
+        assert env['CLAUDE_PLUGIN_DATA'] == str(plugin_data)
+
     @pytest.mark.asyncio
     async def test_pass_script(self, executor, tmp_path):
         script = FIXTURES / 'pass.py'
@@ -221,4 +237,28 @@ class TestResolveHookPermission:
             config,
         )
         assert rule is not None
-        assert rule.action == 'ask'
+
+
+class TestPluginHookPayloadCompat:
+    def test_plugin_compat_payload_uses_claude_tool_name(self):
+        from ms_agent.hooks.executors.command import (
+            HookExecutionContext,
+            plugin_compat_payload,
+        )
+
+        ctx = HookExecutionContext(
+            session_id='s1',
+            project_path='/tmp/project',
+            plugin_root='/tmp/plugins/hookify',
+        )
+        payload = plugin_compat_payload(
+            {
+                'event': 'PreToolUse',
+                'tool_name': 'code_executor---shell_executor',
+                'tool_name_claude': 'Bash',
+                'tool_args': {'command': 'rm -rf /'},
+            },
+            ctx,
+        )
+        assert payload['tool_name'] == 'Bash'
+        assert payload['hook_event_name'] == 'PreToolUse'

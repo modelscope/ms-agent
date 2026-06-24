@@ -348,6 +348,12 @@ class LocalCodeExecutionTool(ToolBase):
             if value is None:
                 continue
             env[key] = str(value)
+        plugin_bins = getattr(self.tool_config, 'plugin_bin_paths',
+                              None) if self.tool_config else None
+        if plugin_bins:
+            paths = [str(path) for path in plugin_bins if path]
+            if paths:
+                env['PATH'] = os.pathsep.join(paths + [env.get('PATH', '')])
         return env
 
     async def connect(self) -> None:

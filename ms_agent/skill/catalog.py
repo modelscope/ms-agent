@@ -134,6 +134,9 @@ class SkillCatalog:
                         revision=getattr(src_cfg, "revision", None),
                         subdir=getattr(src_cfg, "subdir", None),
                         enabled=getattr(src_cfg, "enabled", True),
+                        origin=getattr(src_cfg, "origin", "config"),
+                        plugin_id=getattr(src_cfg, "plugin_id", None),
+                        capability=getattr(src_cfg, "capability", None),
                     ))
         # 3b. Simple path list (backward compat)
         elif hasattr(skills_config, "path") and skills_config.path:
@@ -172,12 +175,21 @@ class SkillCatalog:
             try:
                 skills = self._materialize_and_load(source)
                 for skill in skills.values():
-                    self._register_skill(skill)
+                    self._register_skill(skill, source)
             except Exception as e:
                 logger.warning(f"Failed to load skill source {source}: {e}")
 
     def _materialize_and_load(
             self, source: SkillSource) -> Dict[str, SkillSchema]:
+        if (
+            source.capability == 'commands'
+            and source.path
+            and str(source.path).endswith('.md')
+        ):
+            return self._loader.load_command_markdown(
+                source.path,
+                plugin_id=source.plugin_id,
+            )
         if source.type == SkillSourceType.LOCAL_DIR:
             return self._loader.load_skills(source.path)
         elif source.type == SkillSourceType.MODELSCOPE:
@@ -236,6 +248,8 @@ class SkillCatalog:
     @staticmethod
     def _infer_trust_level(skill: SkillSchema, source=None) -> str:
         """Determine trust level from the skill's source path."""
+        if source is not None and getattr(source, 'origin', None) == 'plugin':
+            return 'plugin'
         skill_path_str = str(skill.skill_path)
         builtin_str = str(BUILTIN_SKILLS_DIR)
         user_str = str(USER_SKILLS_DIR)
@@ -246,12 +260,16 @@ class SkillCatalog:
             return 'local'
         return 'community'
 
-    def _register_skill(self, skill: SkillSchema) -> None:
+    def _register_skill(self, skill: SkillSchema, source=None) -> None:
         """Register a skill; later registrations override earlier ones.
 
         Runs safety scanning (when enabled) and applies trust policy.
         """
-        skill._trust_level = self._infer_trust_level(skill)
+        skill._trust_level = self._infer_trust_level(skill, source)
+        if source is not None:
+            skill._origin = getattr(source, 'origin', 'config')
+            skill._plugin_id = getattr(source, 'plugin_id', None)
+            skill._capability = getattr(source, 'capability', None)
 
         if self._safety_scanner:
             try:
@@ -303,6 +321,45 @@ class SkillCatalog:
     # ------------------------------------------------------------------ #
     #  Hot reload
     # ------------------------------------------------------------------ #
+
+    def reload_sources(self, sources: List[SkillSource]) -> None:
+        """Reload only skills contributed by the given sources."""
+        if not sources:
+            return
+        target_paths = {
+            str(Path(source.path).expanduser().resolve())
+            for source in sources
+            if source.path
+        }
+        target_keys = {
+            (source.plugin_id, source.capability)
+            for source in sources
+            if source.plugin_id
+        }
+        remove_ids: List[str] = []
+        for sid, skill in self._skills.items():
+            plugin_id = getattr(skill, '_plugin_id', None)
+            capability = getattr(skill, '_capability', None)
+            if plugin_id and (plugin_id, capability) in target_keys:
+                remove_ids.append(sid)
+                continue
+            for file_info in skill.files:
+                file_path = str(Path(file_info.path).expanduser().resolve())
+                if file_path in target_paths:
+                    remove_ids.append(sid)
+                    break
+        for sid in remove_ids:
+            self._skills.pop(sid, None)
+        for source in sources:
+            if not source.enabled:
+                continue
+            try:
+                skills = self._materialize_and_load(source)
+                for skill in skills.values():
+                    self._register_skill(skill, source)
+            except Exception as e:
+                logger.warning(f'Failed to reload skill source {source}: {e}')
+        self._invalidate_cache()
 
     def reload(self) -> None:
         self._skills.clear()
