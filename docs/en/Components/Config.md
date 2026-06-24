@@ -102,9 +102,70 @@ tools:
     url: https://mcp.api-inference.modelscope.net/xxx/sse
     exclude:
       - map_geo
+  # Local codebase / document search (sirchmunk), exposed as the `localsearch` tool
+  localsearch:
+    paths:
+      - ./src
+      - ./docs
+    work_path: ./.sirchmunk
+    mode: FAST
+    # Optional: llm_api_key, llm_base_url, llm_model_name (else inherited from `llm`)
 ```
 
 For the complete list of supported tools and custom tools, please refer to [here](./Tools.md)
+
+## Skills Configuration
+
+> Optional, used when enabling Agent Skills
+
+```yaml
+skills:
+  # Path to skills directory or ModelScope repo ID
+  path: /path/to/skills
+  # Whether to auto-execute skills (default: True)
+  auto_execute: true
+  # Working directory for outputs
+  work_dir: /path/to/workspace
+  # Whether to use Docker sandbox for execution (default: True)
+  use_sandbox: false
+```
+
+For the complete skill module documentation (including architecture, directory structure, API reference, and security mechanisms), see [Agent Skills](./AgentSkills).
+
+## Memory Compression Configuration
+
+> Optional, for context management in long conversations
+
+```yaml
+memory:
+  # Context Compressor: token detection + tool output pruning + LLM summary
+  context_compressor:
+    context_limit: 128000      # Model context window size
+    prune_protect: 40000       # Token threshold to protect recent tool outputs
+    prune_minimum: 20000       # Minimum pruning amount
+    reserved_buffer: 20000     # Reserved buffer
+    enable_summary: true       # Enable LLM summary
+    summary_prompt: |          # Custom summary prompt (optional)
+      Summarize this conversation...
+
+  # Refine Condenser: structured compression preserving execution trace
+  refine_condenser:
+    threshold: 60000           # Character threshold to trigger compression
+    system: ...                # Custom compression prompt (optional)
+
+  # Code Condenser: generate code index files
+  code_condenser:
+    system: ...                # Custom index generation prompt (optional)
+    code_wrapper: ['```', '```']  # Code block markers
+```
+
+Supported compressor types:
+
+| Type | Use Case | Compression Method |
+|------|----------|-------------------|
+| `context_compressor` | General long conversations | Token detection + Tool pruning + LLM summary |
+| `refine_condenser` | Preserve execution trace | Structured message compression (1:6 ratio) |
+| `code_condenser` | Code generation tasks | Generate code index JSON |
 
 ## Others
 
@@ -166,3 +227,20 @@ In addition to yaml configuration, MS-Agent also supports several additional com
     ```
 
 > Any configuration in agent.yaml can be passed in with new values via command line, and also supports reading from environment variables with the same name (case insensitive), for example `--llm.modelscope_api_key xxx-xxx`.
+
+- knowledge_search_paths: Comma-separated local search paths. Merges into `tools.localsearch.paths` and registers the **`localsearch`** tool (sirchmunk) for on-demand use by the model—not automatic per-turn injection. LLM settings are inherited from the `llm` module unless you set `tools.localsearch.llm_*` fields.
+
+### Quick Start for Knowledge Search
+
+Use `--knowledge_search_paths` or define `tools.localsearch` in yaml so the model can call `localsearch` when needed:
+
+```bash
+# Using default agent.yaml configuration, automatically reuses LLM settings
+ms-agent run --query "How to implement user authentication?" --knowledge_search_paths "/path/to/docs"
+
+# Specify configuration file
+ms-agent run --config /path/to/agent.yaml --query "your question" --knowledge_search_paths "/path/to/docs"
+```
+
+LLM-related parameters (api_key, base_url, model) are automatically inherited from the `llm` module in the configuration file, no need to configure them repeatedly.
+For a dedicated sirchmunk LLM, set `tools.localsearch.llm_api_key`, `llm_base_url`, and `llm_model_name` in yaml. Legacy top-level `knowledge_search` with the same keys is still read for backward compatibility.

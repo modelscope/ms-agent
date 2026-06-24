@@ -5,20 +5,19 @@ import hashlib
 import html
 import importlib
 import importlib.util
+import json
 import os.path
 import re
+import requests
 import subprocess
 import sys
 import time
+import yaml
 from contextlib import contextmanager
 from io import BytesIO
+from omegaconf import DictConfig, OmegaConf
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
-
-import json
-import requests
-import yaml
-from omegaconf import DictConfig, OmegaConf
 
 from .constants import DEFAULT_MEMORY_DIR
 from .logger import get_logger
@@ -240,8 +239,8 @@ def read_history(output_dir: str, task: str):
         TypeError / AttributeError: If the deserialized JSON data lacks expected keys or structure for Message
                                     objects.
     """
-    from ms_agent.llm import Message
     from ms_agent.config import Config
+    from ms_agent.llm import Message
     cache_dir = os.path.join(output_dir, DEFAULT_MEMORY_DIR)
     os.makedirs(cache_dir, exist_ok=True)
     config_file = os.path.join(cache_dir, f'{task}.yaml')

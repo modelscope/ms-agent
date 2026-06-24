@@ -1,9 +1,8 @@
 import asyncio
+import json
 import os
 import uuid
 from io import BytesIO
-
-import json
 from PIL import Image
 
 

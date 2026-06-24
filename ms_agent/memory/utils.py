@@ -2,6 +2,7 @@
 from omegaconf import DictConfig, OmegaConf
 
 from .condenser.code_condenser import CodeCondenser
+from .condenser.context_compressor import ContextCompressor
 from .condenser.refine_condenser import RefineCondenser
 from .default_memory import DefaultMemory
 from .diversity import Diversity
@@ -11,6 +12,7 @@ memory_mapping = {
     'diversity': Diversity,
     'code_condenser': CodeCondenser,
     'refine_condenser': RefineCondenser,
+    'context_compressor': ContextCompressor,
 }
 
 

@@ -1,17 +1,17 @@
 import argparse
 import asyncio
+import json
 import os
 import signal
 import sys
 import traceback
+from deep_research_eventizer import HistoryEventizer  # noqa: E402
+from omegaconf import OmegaConf
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import json
-from deep_research_eventizer import HistoryEventizer  # noqa: E402
 from ms_agent.agent.loader import AgentLoader
 from ms_agent.tools.agent_tool import AgentTool
-from omegaconf import OmegaConf
 
 BACKEND_DIR = Path(__file__).resolve().parent
 if str(BACKEND_DIR) not in sys.path:

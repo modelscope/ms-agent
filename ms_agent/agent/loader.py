@@ -3,12 +3,11 @@ import importlib
 import inspect
 import os
 import sys
+from omegaconf import DictConfig, OmegaConf
 from typing import Dict, Optional
 
 from ms_agent.config.config import Config
 from ms_agent.utils.constants import DEFAULT_AGENT_FILE, DEFAULT_TAG
-from omegaconf import DictConfig, OmegaConf
-
 from .base import Agent
 
 
@@ -44,8 +43,8 @@ class AgentLoader:
                    None) is None and config_dir_or_id is not None:
             agent_config.local_dir = config_dir_or_id
 
-        from .llm_agent import LLMAgent
         from .code_agent import CodeAgent
+        from .llm_agent import LLMAgent
         agent_type = LLMAgent.AGENT_NAME
         if 'code_file' in kwargs:
             code_file = kwargs.pop('code_file')

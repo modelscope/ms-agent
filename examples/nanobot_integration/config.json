@@ -1,0 +1,27 @@
+{
+  "agents": {
+    "defaults": {
+      "model": "anthropic/claude-sonnet-4-20250514",
+      "workspace": "~/.nanobot/workspace",
+      "maxToolIterations": 40
+    }
+  },
+  "providers": {
+    "openrouter": {
+      "apiKey": ""
+    }
+  },
+  "tools": {
+    "mcpServers": {
+      "ms-agent": {
+        "command": "python3",
+        "args": ["-m", "ms_agent.capabilities.mcp_server"],
+        "env": {
+          "PYTHONPATH": "../../"
+        },
+        "toolTimeout": 300,
+        "enabledTools": ["*"]
+      }
+    }
+  }
+}

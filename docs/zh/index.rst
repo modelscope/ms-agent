@@ -20,14 +20,16 @@ MS-Agent 官方文档
    Components/llm-agent
    Components/workflow
    Components/supported-models
+   Components/multimodal-support
    Components/tools
+   Components/agent-skills
    Components/contributor-guide
 
 .. toctree::
    :maxdepth: 2
    :caption: 📁 项目
 
-   Projects/agent-skills
+   Projects/code-genesis
    Projects/deep-research
    Projects/fin-research
    Projects/video-generation

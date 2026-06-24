@@ -20,14 +20,16 @@ MS-Agent DOCUMENTATION
    Components/LLMAgent
    Components/Workflow
    Components/SupportedModels
+   Components/MultimodalSupport
    Components/Tools
+   Components/AgentSkills
    Components/ContributorGuide
 
 .. toctree::
    :maxdepth: 2
    :caption: 📁 Projects
 
-   Projects/AgentSkills
+   Projects/CodeGenesis
    Projects/DeepResearch
    Projects/FinResearch
    Projects/VideoGeneration

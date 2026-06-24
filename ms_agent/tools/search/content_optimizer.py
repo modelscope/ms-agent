@@ -1,19 +1,19 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import asyncio
+import json
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
+from omegaconf import DictConfig, OmegaConf
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
-import json
 from ms_agent.llm.openai_llm import OpenAI
 from ms_agent.llm.utils import Message
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.thread_util import DaemonThreadPoolExecutor
-from omegaconf import DictConfig, OmegaConf
 
 logger = get_logger()
 
@@ -375,7 +375,11 @@ class ContentSummarizer:
                 'openai_base_url': self.config.summarizer_base_url,
                 'openai_api_key': self.config.summarizer_api_key,
             },
-            'generation_config': {},
+            'generation_config': {
+                'extra_body': {
+                    'enable_thinking': False
+                }
+            },
         }
         return OmegaConf.create(config_dict)
 

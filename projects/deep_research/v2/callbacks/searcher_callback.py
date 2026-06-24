@@ -1,17 +1,54 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import json
 import os
 import re
 import uuid
+from omegaconf import DictConfig
 from typing import Any, List, Optional
 
-import json
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback
 from ms_agent.llm.utils import Message
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
 
 logger = get_logger()
+
+
+def _parse_search_result_json(text: str) -> Optional[Any]:
+    """Parse searcher final JSON from raw assistant text.
+
+    Accepts plain JSON, fenced ```json blocks, or a JSON object embedded in
+    surrounding prose (first balanced object via :func:`json.JSONDecoder.raw_decode`).
+    """
+    if text is None:
+        return None
+    if not isinstance(text, str):
+        return None
+    text = text.strip()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        pass
+    m = re.search(
+        r'```(?:json)?\s*\r?\n(.*?)```', text, flags=re.DOTALL | re.IGNORECASE)
+    if m:
+        block = m.group(1).strip()
+        if block:
+            try:
+                return json.loads(block)
+            except (json.JSONDecodeError, TypeError):
+                pass
+    dec = json.JSONDecoder()
+    for i, ch in enumerate(text):
+        if ch not in '{[':
+            continue
+        try:
+            return dec.raw_decode(text[i:])[0]
+        except json.JSONDecodeError:
+            continue
+    return None
 
 
 class SearcherCallback(Callback):
@@ -23,13 +60,45 @@ class SearcherCallback(Callback):
     - on_task_end: Save the final search result to file
     """
 
+    # Bilingual round-reminder templates keyed by language code.
+    _ROUND_REMINDER_TEMPLATES = {
+        'zh':
+        ('你已接近最大允许的对话轮数上限，请立刻开始收敛准备最终交付。\n'
+         '- 从现在开始：优先总结已有证据与进度、补齐关键缺口、减少发散探索。\n'
+         '- 在接下来的极少数轮次内，立刻准备并输出最终的 JSON 回复。\n'
+         '- 当前轮次信息：round=<round>，max_chat_round=<max_chat_round>，剩余≈<remaining_rounds> 轮。'
+         ),
+        'en':
+        ('You are approaching the maximum allowed conversation round limit. Begin converging immediately and prepare the final delivery.\n'
+         '- From now on: Prioritize summarizing existing evidence and progress, fill critical gaps, and reduce exploratory divergence.\n'
+         '- Within the very few remaining rounds, immediately prepare and output the final JSON response.\n'
+         '- Current round info: round=<round>, max_chat_round=<max_chat_round>, remaining ≈ <remaining_rounds> rounds.'
+         ),
+    }
+
     def __init__(self, config: DictConfig):
         super().__init__(config)
         self.output_dir = getattr(config, 'output_dir', './output')
         self.search_task_id: Optional[str] = None
         self.search_result_path = os.path.join(
             self.output_dir, f'search_result_{uuid.uuid4().hex[:4]}.json')
+        # Resolve language from config for bilingual prompt selection.
+        self.lang = self._resolve_lang(config)
         self._ensure_output_dir()
+
+    @staticmethod
+    def _resolve_lang(config: DictConfig) -> str:
+        """Resolve language code from config.prompt.lang, defaulting to 'en'."""
+        prompt_cfg = getattr(config, 'prompt', None)
+        if prompt_cfg is not None:
+            lang = getattr(prompt_cfg, 'lang', None)
+            if isinstance(lang, str) and lang.strip():
+                normed = lang.strip().lower()
+                if normed in {'en', 'en-us', 'en_us', 'us'}:
+                    return 'en'
+                elif normed in {'zh', 'zh-cn', 'zh_cn', 'cn'}:
+                    return 'zh'
+        return 'en'
 
     def _ensure_output_dir(self) -> None:
         try:
@@ -155,12 +224,8 @@ class SearcherCallback(Callback):
 
         remaining = max_chat_round - runtime.round
         if not custom_message or not isinstance(custom_message, str):
-            custom_message = (
-                '你已接近最大允许的对话轮数上限，请立刻开始收敛准备最终交付。\n'
-                '- 从现在开始：优先总结已有证据与进度、补齐关键缺口、减少发散探索。\n'
-                '- 在接下来的极少数轮次内，立刻准备并输出最终的 JSON 回复。\n'
-                '- 当前轮次信息：round=<round>，max_chat_round=<max_chat_round>，剩余≈<remaining_rounds> 轮。'
-            )
+            custom_message = self._ROUND_REMINDER_TEMPLATES.get(
+                self.lang, self._ROUND_REMINDER_TEMPLATES['en'])
 
         injected = custom_message
         injected = injected.replace('<round>', str(runtime.round))
@@ -193,33 +258,48 @@ class SearcherCallback(Callback):
 
                 try:
                     # Prefer JSON file if possible; fallback to markdown otherwise.
-                    if isinstance(content, str):
-                        parsed_json = json.loads(content)
-                    else:
+                    if isinstance(content, (dict, list)):
                         parsed_json = content
-                    try:
-                        with open(json_path, 'x', encoding='utf-8') as f:
-                            json.dump(
-                                parsed_json, f, ensure_ascii=False, indent=2)
-                        logger.info(
-                            f'Searcher: Search result saved to {json_path}')
-                    except FileExistsError:
-                        logger.info(
-                            f'Search result already exists at {json_path}')
-                except (json.JSONDecodeError, TypeError):
-                    logger.warning(
-                        'Failed to parse search result as JSON, saving as markdown'
-                    )
-                    text = content if isinstance(content,
-                                                 str) else str(content)
-                    try:
-                        with open(md_path, 'x', encoding='utf-8') as f:
-                            f.write(text)
-                        logger.info(
-                            f'Searcher: Search result saved to {md_path}')
-                    except FileExistsError:
-                        logger.info(
-                            f'Search result already exists at {md_path}')
+                    elif isinstance(content, str):
+                        try:
+                            parsed_json = json.loads(content)
+                        except (json.JSONDecodeError, TypeError):
+                            parsed_json = _parse_search_result_json(content)
+                            if parsed_json is not None:
+                                logger.info(
+                                    'Searcher: parsed JSON from fenced or embedded payload'
+                                )
+                    else:
+                        parsed_json = _parse_search_result_json(str(content))
+
+                    if parsed_json is not None:
+                        try:
+                            with open(json_path, 'x', encoding='utf-8') as f:
+                                json.dump(
+                                    parsed_json,
+                                    f,
+                                    ensure_ascii=False,
+                                    indent=2)
+                            logger.info(
+                                f'Searcher: Search result saved to {json_path}'
+                            )
+                        except FileExistsError:
+                            logger.info(
+                                f'Search result already exists at {json_path}')
+                    else:
+                        logger.warning(
+                            'Failed to parse search result as JSON, saving as markdown'
+                        )
+                        text = content if isinstance(content,
+                                                     str) else str(content)
+                        try:
+                            with open(md_path, 'x', encoding='utf-8') as f:
+                                f.write(text)
+                            logger.info(
+                                f'Searcher: Search result saved to {md_path}')
+                        except FileExistsError:
+                            logger.info(
+                                f'Search result already exists at {md_path}')
                 except Exception as e:
                     logger.warning(
                         f'Unexpected error when saving search result: {e}')

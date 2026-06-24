@@ -3,11 +3,12 @@ import argparse
 import asyncio
 import os
 from importlib import resources as importlib_resources
+from omegaconf import OmegaConf
 
 from ms_agent.config import Config
+from ms_agent.config.env import Env
 from ms_agent.utils import get_logger, strtobool
 from ms_agent.utils.constants import AGENT_CONFIG_FILE, MS_AGENT_ASCII
-
 from .base import CLICommand
 
 logger = get_logger()
@@ -46,12 +47,37 @@ class RunCMD(CLICommand):
     def __init__(self, args):
         self.args = args
 
+    def load_env_file(self):
+        """Load environment variables from .env file in current directory."""
+        env_file = os.path.join(os.getcwd(), '.env')
+        if os.path.exists(env_file):
+            with open(env_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#') and '=' in line:
+                        key, value = line.split('=', 1)
+                        key = key.strip()
+                        value = value.strip()
+                        # Only set if not already set in environment
+                        if key not in os.environ:
+                            os.environ[key] = value
+                            logger.debug(f'Loaded {key} from .env file')
+
     @staticmethod
     def define_args(parsers: argparse.ArgumentParser):
         """Define args for run command."""
         projects = list_builtin_projects()
 
         parser: argparse.ArgumentParser = parsers.add_parser(RunCMD.name)
+        parser.add_argument(
+            '--env',
+            required=False,
+            type=str,
+            default=None,
+            metavar='PATH',
+            help=
+            'Path to a .env file. If omitted, loads ./.env from the current '
+            'working directory when present; missing file is ignored.')
         parser.add_argument(
             '--query',
             required=False,
@@ -120,6 +146,12 @@ class RunCMD(CLICommand):
             help=
             'Animation mode for video_generate project: auto (default) or human.'
         )
+        parser.add_argument(
+            '--knowledge_search_paths',
+            required=False,
+            type=str,
+            default=None,
+            help='Comma-separated list of paths for knowledge search.')
         parser.set_defaults(func=subparser_func)
 
     def execute(self):
@@ -150,10 +182,18 @@ class RunCMD(CLICommand):
         return self._execute_with_config()
 
     def _execute_with_config(self):
+        Env.load_dotenv_into_environ(getattr(self.args, 'env', None))
         if not self.args.config:
             current_dir = os.getcwd()
             if os.path.exists(os.path.join(current_dir, AGENT_CONFIG_FILE)):
                 self.args.config = os.path.join(current_dir, AGENT_CONFIG_FILE)
+            else:
+                # Use built-in default agent.yaml from package
+                default_config_path = importlib_resources.files(
+                    'ms_agent').joinpath('agent', AGENT_CONFIG_FILE)
+                with importlib_resources.as_file(
+                        default_config_path) as config_file:
+                    self.args.config = str(config_file)
         elif not os.path.exists(self.args.config):
             from modelscope import snapshot_download
             self.args.config = snapshot_download(self.args.config)
@@ -189,6 +229,29 @@ class RunCMD(CLICommand):
             print(blue_color_prefix + line_end + blue_color_suffix, flush=True)
 
         config = Config.from_task(self.args.config)
+
+        # If knowledge_search_paths is provided, configure tools.localsearch
+        if getattr(self.args, 'knowledge_search_paths', None):
+            paths = [
+                p.strip() for p in self.args.knowledge_search_paths.split(',')
+                if p.strip()
+            ]
+            if paths:
+                if not hasattr(config, 'tools') or config.tools is None:
+                    config['tools'] = OmegaConf.create({})
+                tl = getattr(config.tools, 'localsearch', None)
+                if tl is None or not OmegaConf.is_config(tl):
+                    localsearch_config = {
+                        'paths': paths,
+                        'work_path': './.sirchmunk',
+                        'mode': 'FAST',
+                    }
+                    config.tools['localsearch'] = OmegaConf.create(
+                        localsearch_config)
+                else:
+                    existing = OmegaConf.to_container(tl, resolve=True)
+                    existing['paths'] = paths
+                    config.tools['localsearch'] = OmegaConf.create(existing)
 
         if Config.is_workflow(config):
             from ms_agent.workflow.loader import WorkflowLoader

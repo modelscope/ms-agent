@@ -1,11 +1,11 @@
 import asyncio
+import faiss
 import math
+import numpy as np
 import os
 import threading
 from typing import List, Tuple
 
-import faiss
-import numpy as np
 from ms_agent.utils.tokenizer_util import TokenizerUtil
 
 os.environ['OMP_NUM_THREADS'] = '1'

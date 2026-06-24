@@ -4,12 +4,13 @@ import os.path
 from abc import abstractmethod
 from copy import deepcopy
 from typing import Any, Dict, Union
-
-from ms_agent.utils import get_logger
 from omegaconf import DictConfig, ListConfig, OmegaConf
 from omegaconf.basecontainer import BaseContainer
-
 from modelscope import snapshot_download
+
+from ms_agent.prompting import apply_prompt_files
+from ms_agent.utils import get_logger
+from ms_agent.config.resolver import ConfigResolver
 from ..utils.constants import TOOL_PLUGIN_NAME
 from .env import Env
 
@@ -94,7 +95,23 @@ class Config:
         cls._update_config(config, _dict_config)
         config.local_dir = config_dir_or_id
         config.name = name
+        # Merge the project-level config patch (<local_dir>/.ms-agent/config.yaml)
+        # written by interactive overrides such as /model. The patch wins over
+        # the committed YAML so a user override beats the project default, while
+        # the source file itself is never mutated.
+        if isinstance(config, DictConfig):
+            patch = ConfigResolver()._load_project_patch(config_dir_or_id)
+            if patch is not None:
+                config = OmegaConf.merge(config, patch)
         config = cls.fill_missing_fields(config)
+        # Prompt files: resolve config.prompt.system from prompts/ directory
+        # if user didn't specify inline prompt.system.
+        try:
+            if isinstance(config, DictConfig):
+                config = apply_prompt_files(config)
+        except Exception:
+            # Never block config loading due to prompt resolving.
+            pass
         return config
 
     @staticmethod

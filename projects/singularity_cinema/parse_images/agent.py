@@ -1,19 +1,19 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import base64
 import hashlib
+import json
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from urllib.request import urlretrieve
-
-import json
-from ms_agent.agent import CodeAgent
-from ms_agent.llm import LLM, Message
-from ms_agent.llm.openai_llm import OpenAI
-from ms_agent.utils import get_logger
 from omegaconf import DictConfig
 from PIL import Image
+from urllib.request import urlretrieve
+
+from ms_agent.agent import CodeAgent
+from ms_agent.llm import LLM, Message, collect_response
+from ms_agent.llm.openai_llm import OpenAI
+from ms_agent.utils import get_logger
 
 logger = get_logger()
 
@@ -150,5 +150,5 @@ class ParseImages(CodeAgent):
         messages = [
             Message(role='user', content=_content),
         ]
-        response = self.mllm.generate(messages)
+        response = collect_response(self.mllm.generate(messages))
         return response.content
