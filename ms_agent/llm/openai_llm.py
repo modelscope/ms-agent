@@ -420,20 +420,24 @@ class OpenAI(LLM):
                 if chunk.choices[0].finish_reason in [
                         'length', 'null'
                 ] and (max_runs is None or max_runs != 0):
-                    logger.info(
-                        f'finish_reason: {chunk.choices[0].finish_reason}, continue generate.'
-                    )
-                    completion = self._call_llm_for_continue_gen(
-                        messages, message, tools, **kwargs)
-                    for chunk in self._stream_continue_generate(
-                            messages, completion, tools,
-                            max_runs - 1 if max_runs is not None else None,
-                            **kwargs):
-                        if first_run:
-                            yield self._merge_stream_message(
-                                messages[-1], chunk)
-                        else:
-                            yield chunk
+                    # Do not continue generating while dangling tool_calls are
+                    # present. Let the caller execute the tools and resume the
+                    # conversation with valid tool responses.
+                    if not message.tool_calls:
+                        logger.info(
+                            f'finish_reason: {chunk.choices[0].finish_reason}, continue generate.'
+                        )
+                        completion = self._call_llm_for_continue_gen(
+                            messages, message, tools, **kwargs)
+                        for chunk in self._stream_continue_generate(
+                                messages, completion, tools,
+                                max_runs - 1 if max_runs is not None else None,
+                                **kwargs):
+                            if first_run:
+                                yield self._merge_stream_message(
+                                    messages[-1], chunk)
+                            else:
+                                yield chunk
                 elif not first_run:
                     self._merge_partial_message(messages, message)
                     messages[-1].partial = False
@@ -599,6 +603,12 @@ class OpenAI(LLM):
             Message: A fully formed Message object containing the complete response.
         """
         new_message = self._format_output_message(completion)
+        # If the model emitted tool calls, do not continue generating inline.
+        # The caller's normal tool execution loop must run first; otherwise the
+        # next API call would see an assistant message with dangling tool_calls
+        # and no matching tool responses, which providers reject.
+        if new_message.tool_calls:
+            return new_message
         if completion.choices[0].finish_reason in [
                 'length', 'null'
         ] and (max_runs is None or max_runs != 0):
