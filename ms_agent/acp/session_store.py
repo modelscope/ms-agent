@@ -87,6 +87,8 @@ class ACPSessionStore:
             raise ConfigError(f'Config not found: {config_path}')
 
         config = Config.from_task(config_path)
+        OmegaConf.update(
+            config, 'generation_config.stream_output', False, merge=True)
         agent = AgentLoader.build(
             config_dir_or_id=config_path,
             config=config,

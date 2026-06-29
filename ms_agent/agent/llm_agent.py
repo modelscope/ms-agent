@@ -559,6 +559,13 @@ class LLMAgent(Agent):
         return getattr(generation_config, 'stream', False)
 
     @property
+    def stream_output(self) -> bool:
+        """Whether stream mode should print generated tokens locally."""
+        generation_config = getattr(self.config, 'generation_config',
+                                    DictConfig({}))
+        return bool(getattr(generation_config, 'stream_output', True))
+
+    @property
     def show_reasoning(self) -> bool:
         """Whether to print model reasoning/thinking content in stream mode.
 
@@ -869,7 +876,8 @@ class LLMAgent(Agent):
             tools = await self.tool_manager.get_tools()
 
             if self.stream:
-                self.log_output('[assistant]:')
+                if self.stream_output:
+                    self.log_output('[assistant]:')
                 _content = ''
                 _reasoning = ''
                 is_first = True
@@ -882,7 +890,7 @@ class LLMAgent(Agent):
                         is_first = False
 
                     # Optional: stream model "thinking/reasoning" if available.
-                    if self.show_reasoning:
+                    if self.stream_output and self.show_reasoning:
                         reasoning_text = (
                             getattr(_response_message, 'reasoning_content', '')
                             or '')
@@ -898,14 +906,17 @@ class LLMAgent(Agent):
                             _reasoning = reasoning_text
 
                     new_content = _response_message.content[len(_content):]
-                    sys.stdout.write(new_content)
-                    sys.stdout.flush()
+                    if self.stream_output:
+                        sys.stdout.write(new_content)
+                        sys.stdout.flush()
                     _content = _response_message.content
                     messages[-1] = _response_message
                     yield messages
-                if self.show_reasoning and _printed_reasoning_header:
+                if (self.stream_output and self.show_reasoning
+                        and _printed_reasoning_header):
                     self._write_reasoning('\n')
-                sys.stdout.write('\n')
+                if self.stream_output:
+                    sys.stdout.write('\n')
             else:
                 _response_message = self.llm.generate(messages, tools=tools)
                 if self.show_reasoning:

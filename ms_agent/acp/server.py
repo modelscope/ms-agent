@@ -1,8 +1,5 @@
-import io
 import logging
-import os
 import sys
-from contextlib import contextmanager
 from typing import Any
 
 import json
@@ -70,22 +67,6 @@ class MSAgentACPServer(Agent):
         if session_id not in self._translators:
             self._translators[session_id] = ACPTranslator()
         return self._translators[session_id]
-
-    @staticmethod
-    @contextmanager
-    def _suppress_stdout():
-        """Redirect stdout to devnull while running agent logic.
-
-        LLMAgent.step() writes streaming tokens to sys.stdout, which
-        would corrupt the ACP JSON-RPC wire when running over stdio.
-        """
-        real_stdout = sys.stdout
-        sys.stdout = open(os.devnull, 'w')
-        try:
-            yield
-        finally:
-            sys.stdout.close()
-            sys.stdout = real_stdout
 
     async def initialize(
         self,
@@ -170,32 +151,31 @@ class MSAgentACPServer(Agent):
         session._cancel_event.clear()
 
         try:
-            with self._suppress_stdout():
-                result = await session.agent.run(run_input, stream=True)
-                if hasattr(result, '__aiter__'):
-                    async for chunk in result:
-                        session.messages = chunk
-                        updates = translator.messages_to_updates(chunk)
-                        for update in updates:
-                            try:
-                                await self.connection.session_update(
-                                    session_id, update)
-                            except Exception as send_err:
-                                logger.warning(
-                                    'Failed to send session_update: %s',
-                                    send_err)
-                        if session.cancelled:
-                            break
-                elif isinstance(result, list):
-                    session.messages = result
-                    updates = translator.messages_to_updates(result)
+            result = await session.agent.run(run_input, stream=True)
+            if hasattr(result, '__aiter__'):
+                async for chunk in result:
+                    session.messages = chunk
+                    updates = translator.messages_to_updates(chunk)
                     for update in updates:
                         try:
                             await self.connection.session_update(
                                 session_id, update)
                         except Exception as send_err:
-                            logger.warning('Failed to send session_update: %s',
-                                           send_err)
+                            logger.warning(
+                                'Failed to send session_update: %s',
+                                send_err)
+                    if session.cancelled:
+                        break
+            elif isinstance(result, list):
+                session.messages = result
+                updates = translator.messages_to_updates(result)
+                for update in updates:
+                    try:
+                        await self.connection.session_update(
+                            session_id, update)
+                    except Exception as send_err:
+                        logger.warning('Failed to send session_update: %s',
+                                       send_err)
 
             plan_updates = self._extract_plan_updates(session, translator)
             for pu in plan_updates:

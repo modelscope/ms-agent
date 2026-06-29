@@ -1,7 +1,5 @@
 import logging
-import os
 import sys
-from contextlib import contextmanager
 from typing import Any
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
@@ -60,22 +58,6 @@ class MSAgentA2AExecutor(AgentExecutor):
             task_timeout=task_timeout,
         )
 
-    @staticmethod
-    @contextmanager
-    def _suppress_stdout():
-        """Redirect stdout to devnull while running agent logic.
-
-        ``LLMAgent.step()`` writes streaming tokens to ``sys.stdout``,
-        which would corrupt any stdio-based transport.
-        """
-        real_stdout = sys.stdout
-        sys.stdout = open(os.devnull, 'w')
-        try:
-            yield
-        finally:
-            sys.stdout.close()
-            sys.stdout = real_stdout
-
     async def execute(
         self,
         context: RequestContext,
@@ -100,17 +82,16 @@ class MSAgentA2AExecutor(AgentExecutor):
             entry.is_running = True
 
             try:
-                with self._suppress_stdout():
-                    result = await entry.agent.run(user_text, stream=True)
+                result = await entry.agent.run(user_text, stream=True)
 
-                    if hasattr(result, '__aiter__'):
-                        async for chunk in result:
-                            entry.messages = chunk
-                            if entry.cancelled:
-                                await updater.cancel()
-                                return
-                    elif isinstance(result, list):
-                        entry.messages = result
+                if hasattr(result, '__aiter__'):
+                    async for chunk in result:
+                        entry.messages = chunk
+                        if entry.cancelled:
+                            await updater.cancel()
+                            return
+                elif isinstance(result, list):
+                    entry.messages = result
 
                 response_text = ms_messages_to_text(entry.messages)
                 if not response_text:

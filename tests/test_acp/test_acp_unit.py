@@ -1,7 +1,10 @@
 """Unit tests for ACP components (no external processes needed)."""
 
 import asyncio
+import io
+import sys
 import pytest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from ms_agent.acp.errors import (
@@ -196,6 +199,81 @@ class TestSessionStore:
     def test_list_sessions_empty(self):
         store = ACPSessionStore()
         assert store.list_sessions() == []
+
+    @pytest.mark.asyncio
+    async def test_create_disables_stream_stdout_output(self):
+        from omegaconf import OmegaConf
+        config = OmegaConf.create({'llm': {'model': 'test'}})
+        agent = MagicMock(spec=[])
+
+        with patch(
+                'ms_agent.acp.session_store.os.path.exists',
+                return_value=True), patch(
+                    'ms_agent.acp.session_store.Config.from_task',
+                    return_value=config), patch(
+                        'ms_agent.acp.session_store.AgentLoader.build',
+                        return_value=agent):
+            store = ACPSessionStore()
+            try:
+                entry = await store.create(
+                    config_path='/tmp/agent.yaml',
+                    cwd='/tmp',
+                )
+                assert entry.config.generation_config.stream_output is False
+            finally:
+                await store.close_all()
+
+
+# ======================================================================
+# ACP Server tests
+# ======================================================================
+
+class TestACPServer:
+
+    @pytest.mark.asyncio
+    async def test_concurrent_prompts_keep_stdout_open(self, monkeypatch):
+        from ms_agent.acp.server import MSAgentACPServer
+
+        class FakeAgent:
+
+            async def run(self, messages, **kwargs):
+
+                async def chunks():
+                    await asyncio.sleep(0)
+                    yield [Message(role='assistant', content='hello')]
+                    await asyncio.sleep(0)
+                    yield [Message(role='assistant', content='hello done')]
+
+                return chunks()
+
+        def make_session():
+            return SimpleNamespace(
+                agent=FakeAgent(),
+                messages=[],
+                is_running=False,
+                cancelled=False,
+                _cancel_event=MagicMock(),
+            )
+
+        sessions = {
+            'ses_1': make_session(),
+            'ses_2': make_session(),
+        }
+        server = MSAgentACPServer(config_path='/tmp/agent.yaml')
+        server.session_store.get = MagicMock(side_effect=lambda sid: sessions[sid])
+        server.connection = SimpleNamespace(session_update=AsyncMock())
+
+        stdout = io.StringIO()
+        monkeypatch.setattr(sys, 'stdout', stdout)
+
+        prompt = [MagicMock(type='text', text='hi')]
+        await asyncio.gather(
+            server.prompt(prompt, 'ses_1'),
+            server.prompt(prompt, 'ses_2'),
+        )
+
+        assert sys.stdout is stdout
+        assert not stdout.closed
 
 
 # ======================================================================

@@ -4,9 +4,16 @@ Tests the full A2A protocol flow using mock agents and the A2A SDK types.
 Skipped if a2a-sdk is not installed.
 """
 
+from __future__ import annotations
+
 import asyncio
+import io
+import sys
 import pytest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+
+from ms_agent.llm.utils import Message
 
 _SKIP_REASON = None
 try:
@@ -99,6 +106,66 @@ class TestExecutor:
             config_path='/tmp/nonexistent.yaml',
         )
         await executor.cleanup()
+
+    @pytest.mark.asyncio
+    async def test_concurrent_execute_keeps_stdout_open(self, monkeypatch):
+        from ms_agent.a2a.executor import MSAgentA2AExecutor
+
+        class FakeAgent:
+
+            async def run(self, messages, **kwargs):
+
+                async def chunks():
+                    await asyncio.sleep(0)
+                    yield [Message(role='assistant', content='hello')]
+                    await asyncio.sleep(0)
+                    yield [Message(role='assistant', content='hello done')]
+
+                return chunks()
+
+        entries = {
+            'task_1':
+            SimpleNamespace(
+                agent=FakeAgent(),
+                messages=[],
+                cancelled=False,
+                is_running=False,
+            ),
+            'task_2':
+            SimpleNamespace(
+                agent=FakeAgent(),
+                messages=[],
+                cancelled=False,
+                is_running=False,
+            ),
+        }
+
+        async def get_or_create(task_id):
+            return entries[task_id]
+
+        def make_context(task_id):
+            context = MagicMock()
+            context.get_user_input.return_value = 'hi'
+            context.current_task = SimpleNamespace(
+                id=task_id,
+                context_id=f'ctx_{task_id}',
+            )
+            context.message = None
+            return context
+
+        executor = MSAgentA2AExecutor(config_path='/tmp/agent.yaml')
+        executor._store.get_or_create = AsyncMock(side_effect=get_or_create)
+
+        stdout = io.StringIO()
+        monkeypatch.setattr(sys, 'stdout', stdout)
+
+        await asyncio.gather(
+            executor.execute(make_context('task_1'), EventQueue()),
+            executor.execute(make_context('task_2'), EventQueue()),
+        )
+
+        assert sys.stdout is stdout
+        assert not stdout.closed
 
 
 # ======================================================================

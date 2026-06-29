@@ -10,7 +10,7 @@ from ms_agent.agent.loader import AgentLoader
 from ms_agent.config.config import Config
 from ms_agent.llm.utils import Message
 from ms_agent.utils.logger import get_logger
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from .errors import AgentLoadError, ConfigError, MaxTasksError
 
@@ -88,6 +88,8 @@ class A2AAgentStore:
 
         try:
             config = Config.from_task(self.config_path)
+            OmegaConf.update(
+                config, 'generation_config.stream_output', False, merge=True)
             agent = AgentLoader.build(
                 config_dir_or_id=self.config_path,
                 config=config,

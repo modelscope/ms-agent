@@ -208,6 +208,27 @@ class TestSessionStore:
         store = A2AAgentStore(config_path='/tmp/fake.yaml')
         await store.close_all()
 
+    @pytest.mark.asyncio
+    async def test_create_disables_stream_stdout_output(self):
+        from ms_agent.a2a.session_store import A2AAgentStore
+        from omegaconf import OmegaConf
+        config = OmegaConf.create({'llm': {'model': 'test'}})
+        agent = MagicMock(spec=[])
+
+        with patch(
+                'ms_agent.a2a.session_store.os.path.exists',
+                return_value=True), patch(
+                    'ms_agent.a2a.session_store.Config.from_task',
+                    return_value=config), patch(
+                        'ms_agent.a2a.session_store.AgentLoader.build',
+                        return_value=agent):
+            store = A2AAgentStore(config_path='/tmp/agent.yaml')
+            try:
+                entry = await store.get_or_create('task_1')
+                assert entry.config.generation_config.stream_output is False
+            finally:
+                await store.close_all()
+
 
 # ======================================================================
 # Client manager tests
@@ -247,6 +268,37 @@ class TestClientManager:
         from ms_agent.a2a.client import A2AClientManager
         mgr = A2AClientManager({})
         await mgr.close_all()
+
+    @pytest.mark.asyncio
+    async def test_get_http_client_reuses_by_headers(self):
+        from ms_agent.a2a.client import A2AClientManager
+        mgr = A2AClientManager({})
+        try:
+            default_client = mgr._get_http_client()
+            same_default_client = mgr._get_http_client()
+            auth_client = mgr._get_http_client(
+                {'Authorization': 'Bearer token'})
+            same_auth_client = mgr._get_http_client(
+                {'Authorization': 'Bearer token'})
+
+            assert default_client is same_default_client
+            assert auth_client is same_auth_client
+            assert auth_client is not default_client
+        finally:
+            await mgr.close_all()
+
+    @pytest.mark.asyncio
+    async def test_close_all_closes_all_http_clients(self):
+        from ms_agent.a2a.client import A2AClientManager
+        mgr = A2AClientManager({})
+        default_client = mgr._get_http_client()
+        auth_client = mgr._get_http_client({'Authorization': 'Bearer token'})
+
+        await mgr.close_all()
+
+        assert default_client.is_closed
+        assert auth_client.is_closed
+        assert mgr._http_clients == {}
 
     def test_build_auth_headers_bearer(self):
         from ms_agent.a2a.client import A2AClientManager

@@ -11,7 +11,6 @@ from typing import Any, Dict, List, Optional
 
 import json
 from ms_agent.llm.utils import Tool, ToolCall
-from ms_agent.tools.acp_agent_tool import ACPAgentTool
 from ms_agent.tools.agent_tool import AgentTool
 from ms_agent.tools.base import ToolBase
 from ms_agent.tools.code import CodeExecutionTool, LocalCodeExecutionTool
@@ -89,9 +88,13 @@ class ToolManager:
             self.extra_tools.append(TodoListTool(config))
         if hasattr(config, 'tools') and hasattr(config.tools, 'web_search'):
             self.extra_tools.append(WebSearchTool(config))
-        acp_tool = ACPAgentTool.from_config(config)
-        if acp_tool is not None:
-            self.extra_tools.append(acp_tool)
+        try:
+            from ms_agent.tools.acp_agent_tool import ACPAgentTool
+            acp_tool = ACPAgentTool.from_config(config)
+            if acp_tool is not None:
+                self.extra_tools.append(acp_tool)
+        except ImportError:
+            pass
         try:
             from ms_agent.tools.a2a_agent_tool import A2AAgentTool
             a2a_tool = A2AAgentTool.from_config(config)

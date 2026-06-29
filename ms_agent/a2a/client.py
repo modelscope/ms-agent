@@ -17,12 +17,19 @@ class A2AClientManager:
 
     def __init__(self, a2a_agents_config: dict | None = None):
         self._config: Dict[str, dict] = a2a_agents_config or {}
-        self._http_client: Optional[httpx.AsyncClient] = None
+        self._http_clients: Dict[tuple[tuple[str, str], ...],
+                                 httpx.AsyncClient] = {}
 
-    def _get_http_client(self) -> httpx.AsyncClient:
-        if self._http_client is None or self._http_client.is_closed:
-            self._http_client = httpx.AsyncClient(timeout=300.0)
-        return self._http_client
+    def _get_http_client(
+            self, headers: Optional[Dict[str, str]] = None
+    ) -> httpx.AsyncClient:
+        client_key = tuple(sorted((headers or {}).items()))
+        http_client = self._http_clients.get(client_key)
+        if http_client is None or http_client.is_closed:
+            http_client = httpx.AsyncClient(
+                timeout=300.0, headers=dict(client_key))
+            self._http_clients[client_key] = http_client
+        return http_client
 
     async def call_agent(
         self,
@@ -51,12 +58,8 @@ class A2AClientManager:
             )
             from a2a.client.helpers import create_text_message_object
 
-            http_client = self._get_http_client()
-
             auth_headers = self._build_auth_headers(cfg)
-            if auth_headers:
-                http_client = httpx.AsyncClient(
-                    timeout=300.0, headers=auth_headers)
+            http_client = self._get_http_client(auth_headers)
 
             resolver = A2ACardResolver(httpx_client=http_client, base_url=url)
             card = await resolver.get_agent_card()
@@ -124,6 +127,7 @@ class A2AClientManager:
         return list(self._config.keys())
 
     async def close_all(self) -> None:
-        if self._http_client and not self._http_client.is_closed:
-            await self._http_client.aclose()
-            self._http_client = None
+        for http_client in self._http_clients.values():
+            if not http_client.is_closed:
+                await http_client.aclose()
+        self._http_clients.clear()
