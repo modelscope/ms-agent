@@ -45,9 +45,9 @@ MS-Agent是一个轻量级框架，旨在为智能体提供自主探索能力。
 
 > 历史存档版本，请参考：https://github.com/modelscope/ms-agent/tree/0.8.0
 
-|  微信群
-|:-------------------------:
-|  <img src="asset/ms-agent.jpg" width="200" height="200">
+[Discord Group](https://discord.gg/qmTFPY9byM)             |  微信群
+:-------------------------:|:-------------------------:
+<img src="asset/discord_qr.jpg" width="200" height="200">  |  <img src="asset/ms-agent.jpg" width="200" height="200">
 
 ## 🎉 新闻
 

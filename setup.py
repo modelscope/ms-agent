@@ -1,9 +1,10 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 # !/usr/bin/env python
-import os
-import shutil
 from setuptools import find_packages, setup
 from setuptools.command.build_py import build_py as _build_py
+
+import os
+import shutil
 from typing import List
 
 

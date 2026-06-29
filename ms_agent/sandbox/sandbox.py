@@ -46,7 +46,7 @@ class EnclaveSandbox(Sandbox):
         super().__init__()
         self._init()
 
-        from ms_enclave.sandbox import SandboxConfig, DockerSandboxConfig
+        from ms_enclave.sandbox import DockerSandboxConfig, SandboxConfig
 
         # Mount host directories into the sandbox container if provided
         _volumes = kwargs.pop('volumes', None) or []

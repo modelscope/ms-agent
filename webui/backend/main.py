@@ -5,7 +5,6 @@ Provides REST API and WebSocket endpoints for the ms-agent framework.
 """
 import os
 import sys
-
 import uvicorn
 from api import router as api_router
 from fastapi import FastAPI

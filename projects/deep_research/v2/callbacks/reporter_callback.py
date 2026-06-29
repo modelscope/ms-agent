@@ -1,19 +1,19 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 # yapf: disable
+import json
 import os
 import re
 import shutil
-from typing import Any, Dict, List, Optional, Set
-
-import json
 from callbacks.quality_checker import (ReportQualityChecker,
                                        build_quality_checkers)
+from omegaconf import DictConfig
+from typing import Any, Dict, List, Optional, Set
+
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback
 from ms_agent.llm.utils import Message
 from ms_agent.utils import get_logger
 from ms_agent.utils.constants import DEFAULT_MEMORY_DIR
-from omegaconf import DictConfig
 
 logger = get_logger()
 
@@ -176,9 +176,9 @@ class ReporterCallback(Callback):
          '- 请严格遵守系统指令中的要求，不要遗漏、忽略任何合理的规则。\n'
          '- 审查要点包括事实准确性、逻辑一致性、用户核心问题的覆盖度、引用与论据的对齐关系、引用格式问题、内容完整性等等。'
          '修改须有明确依据（如事实冗余、逻辑混乱、证据不一致、格式出错等），不要为了"润色"而改动结构/质量良好的内容。\n'
-         '- 读取报告内容一次后形成判断，后续核查优先使用 search_file_content 或带 start_line / end_line 的 read_file，不要反复全量读取同一文件。'
+         '- 读取报告内容一次后形成判断，后续核查优先使用 read_file 的 offset/limit 或 abbreviate，不要反复全量读取同一文件。'
          '在读取文件前先检查对话历史中是否已包含该文件的内容，避免重复读取。\n'
-         '- 优先使用定点修改（search_file_content -> replace_file_contents / replace_file_lines），仅在必要时才读取全文。'
+         '- 优先使用定点修改（read_file 定位片段 -> edit_file 精确替换），仅在必要时才读取全文。'
          '仅在定点修改完全无法解决时使用 write_file，且**必须完整保留所有有价值的内容**，严禁使用占位符、省略标记、引用其他内容等方式替代正文。\n'
          '- 质量较高无需修改的部分直接跳过。如果[Reporter 工作总结]中无异常且审查确认全文质量良好，直接进入结论阶段即可。\n\n'
          '**需避免的常见错误：**\n'
@@ -210,11 +210,11 @@ class ReporterCallback(Callback):
          'Edits must have clear justification (e.g., factual redundancy, logical confusion, evidence inconsistency, '
          'formatting errors, etc.) — do not alter well-structured, high-quality content merely for "polishing."\n'
          '- Read the report content ONCE to form your assessment. For subsequent '
-         'checks, prefer `search_file_content` or `read_file` with `start_line`/`end_line`. '
+         'checks, prefer `read_file` with `offset`/`limit` or `abbreviate`. '
          'Do not re-read the entire file repeatedly. Check your conversation history before '
          'reading any file to avoid redundant reads.\n'
-         '- Prefer targeted fixes (`search_file_content` -> `replace_file_contents` / '
-         '`replace_file_lines`); only read the full text when necessary. '
+         '- Prefer targeted fixes (`read_file` to locate a span, then `edit_file` with exact '
+         '`old_string`/`new_string`); only read the full text when necessary. '
          'Use `write_file` only when targeted fixes are completely insufficient, '
          'and you **must preserve ALL valuable content in full** — never use placeholders, '
          'ellipsis markers, or references to other content as substitutes for actual text.\n'
@@ -231,8 +231,8 @@ class ReporterCallback(Callback):
     }
 
     _WORK_SUMMARY_LABEL = {
-        'zh': '**[Reporter 工作总结]**',
-        'en': '**[Reporter Work Summary]**',
+        'zh': '**[Reporter 返回的 JSON 结果]**',
+        'en': '**[Reporter\'s Returned JSON Result]**',
     }
 
     def __init__(self, config: DictConfig):

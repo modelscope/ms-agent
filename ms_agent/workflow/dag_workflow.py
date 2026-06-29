@@ -1,12 +1,12 @@
 # Copyright (c) Alibaba, Inc.
 import os
 from collections import defaultdict, deque
+from omegaconf import DictConfig
 from typing import Any, Dict, List, Set
 
 from ms_agent.agent.loader import AgentLoader
 from ms_agent.utils import get_logger
 from ms_agent.workflow.base import Workflow
-from omegaconf import DictConfig
 
 logger = get_logger()
 

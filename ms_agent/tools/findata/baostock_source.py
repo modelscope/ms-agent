@@ -1,10 +1,10 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+import pandas as pd
 import threading
 from contextlib import contextmanager
 from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
-import pandas as pd
 from ms_agent.tools.findata.data_source_base import (DataSourceError,
                                                      FinancialDataSource,
                                                      NoDataFoundError)

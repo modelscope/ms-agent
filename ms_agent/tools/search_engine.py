@@ -1,8 +1,8 @@
 import os
 import threading
+from dotenv import load_dotenv
 from typing import Any, Dict, Optional
 
-from dotenv import load_dotenv
 from ms_agent.config.env import Env
 from ms_agent.tools.search.arxiv import ArxivSearch
 from ms_agent.tools.search.exa import ExaSearch
