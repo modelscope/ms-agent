@@ -23,6 +23,9 @@ class AgentLoader:
               **kwargs) -> Agent:
         agent_config: Optional[DictConfig] = None
         if config_dir_or_id is not None:
+            from ms_agent.agent.templates.registry import \
+                resolve_template_source
+            config_dir_or_id = resolve_template_source(config_dir_or_id)
             if not os.path.exists(config_dir_or_id):
                 from modelscope import snapshot_download
                 config_dir_or_id = snapshot_download(config_dir_or_id)

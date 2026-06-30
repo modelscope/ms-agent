@@ -1,0 +1,65 @@
+# Built-in template: research (model_tier: reasoning)
+# Research sub-agent: search -> synthesize -> cited report.
+llm:
+  service: openai
+  model: qwen3.7-plus
+  openai_api_key: <OPENAI_API_KEY>
+  openai_base_url: <OPENAI_BASE_URL>
+
+generation_config:
+  stream: true
+
+prompt:
+  base: worker           # shared sub-agent base prompt (prompts/base/worker.md)
+  system: |              # specialization only
+    You are a research agent: search, synthesize, and produce a citation-backed
+    answer.
+      - Search first; do NOT fabricate URLs, facts, figures, or APIs. If you
+        cannot find something, say so explicitly.
+      - Every key claim must be supported by a cited source. Use numbered markers
+        [1], [2] inline, and a single "References" section at the end that maps
+        one-to-one with the markers.
+      - Write dense, well-structured findings; avoid filler.
+
+# No interactive input_callback: research is a run-once / sub-agent template.
+callbacks:
+  - state_inject        # fill <current_date>/<cwd>/<os> in the base prompt
+  - loop_guard          # break invalid tool-call loops
+  - round_reminder      # nudge convergence before the round budget runs out
+  - stop_gate           # don't stop on a low-quality / placeholder answer
+
+# Harness: converge near the round limit, and audit the final answer before
+# the agent is allowed to stop.
+round_reminder:
+  enabled: true
+  remind_before_max_round: 2     # remind at round == max_chat_round - 2
+
+stop_gate:
+  enabled: true
+  max_retries: 2
+  checks:
+    # Audit the last assistant message: no placeholders, no fabricated
+    # citations, no "see external file". Uses the agent's own llm by default.
+    - type: llm_quality
+      message: >-
+        Before finishing, an automated quality check flagged your answer:
+        {reason}. Please fix this -- replace any placeholder/abbreviated content
+        with the real text, ensure every claim has a valid cited source, and
+        keep a single References section -- then continue.
+
+tools:
+  web_search:
+    mcp: false
+    engine: exa
+    fetch_content: true
+    max_results: 8
+  file_system:
+    mcp: false
+    include: [read_file, write_file, edit_file, grep, glob]
+  todo_list:
+    mcp: false
+    auto_render_md: true
+    include: [todo_write, todo_read]
+
+max_chat_round: 30
+

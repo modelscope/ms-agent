@@ -4,6 +4,7 @@ dotenv
 edge_tts
 faiss-cpu
 json5
+loguru
 markdown
 matplotlib
 mcp

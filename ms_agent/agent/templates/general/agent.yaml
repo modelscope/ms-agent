@@ -1,0 +1,52 @@
+# Built-in template: general (model_tier: strong)
+# Default entry point: full analyze -> plan -> execute; can delegate to sub-agents.
+llm:
+  service: openai
+  model: qwen3.7-plus          # strong tier; bump to qwen3-max if desired
+  openai_api_key: <OPENAI_API_KEY>
+  openai_base_url: <OPENAI_BASE_URL>
+
+generation_config:
+  stream: true
+
+prompt:
+  base: general          # shared base prompt (prompts/base/general.md)
+  system: |              # specialization only
+    Delegate a subtask to a sub-agent when it is genuinely better handled in
+    isolation (do not delegate trivial work):
+      - `explore`  : read-only search / locate across many files or sources,
+      - `build`    : a focused coding / debugging subtask,
+      - `research` : an in-depth, citation-backed research subtask.
+    For non-trivial work, sketch a short plan with the todo tools before executing.
+
+callbacks:
+  - input_callback
+  - state_inject
+  - loop_guard          # break invalid tool-call loops
+  - subagent_limit      # cap parallel sub-agent delegations per turn
+
+subagent_limit:
+  max_parallel: 4
+
+tools:
+  file_system:
+    mcp: false
+    include: [read_file, write_file, edit_file, grep, glob]
+  code_executor:
+    mcp: false
+    implementation: python_env
+  web_search:
+    mcp: false
+    engine: exa
+    fetch_content: true
+    max_results: 5
+  todo_list:
+    mcp: false
+    auto_render_md: true
+    include: [todo_write, todo_read]
+
+# Sub-agent delegation. Expanded into tools.agent_tools.definitions at load time
+# by expand_subagents(); descriptions come from templates/registry.yaml.
+subagents: [explore, build, research]
+
+max_chat_round: 9999

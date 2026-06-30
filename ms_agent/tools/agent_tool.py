@@ -56,6 +56,12 @@ class _AgentToolSpec:
     max_subtask_output_chars: int = 8192
     run_in_background: bool = False
     sync_timeout_s: Optional[float] = None
+    subagent_depth: int = 0
+
+
+# Maximum sub-agent delegation depth. A sub-agent at depth >= this value will
+# not register any delegation tools, preventing unbounded recursion.
+_MAX_SUBAGENT_DEPTH = int(os.getenv('MS_MAX_SUBAGENT_DEPTH', '2'))
 
 
 _MESSAGE_FIELDS = set(Message.__dataclass_fields__.keys())
@@ -84,7 +90,10 @@ def _build_sub_agent(spec: _AgentToolSpec, default_trust_remote_code: bool):
     # on the merged agent config (e.g. in the sub-agent YAML).
     config_override = OmegaConf.merge(
         base_override,
-        OmegaConf.create({'ms_agent_subagent': True}),
+        OmegaConf.create({
+            'ms_agent_subagent': True,
+            '_subagent_depth': spec.subagent_depth,
+        }),
     )
 
     trust_remote_code = spec.trust_remote_code
@@ -215,6 +224,8 @@ class AgentTool(ToolBase):
         self._active_sync_tasks: Dict[str, Any] = {}
         # effective_call_id -> stream file path (set during _run_agent, consumed by call_tool)
         self._stream_paths: Dict[str, str] = {}
+        # Delegation depth of THIS agent (0 = top-level). Children get depth+1.
+        self._depth = int(getattr(config, '_subagent_depth', 0) or 0)
         self._load_specs()
 
     @property
@@ -251,6 +262,12 @@ class AgentTool(ToolBase):
     }
 
     def _load_specs(self):
+        # Depth cap: a sub-agent at/over the max depth cannot delegate further.
+        if self._depth >= _MAX_SUBAGENT_DEPTH:
+            logger.info(
+                'AgentTool: sub-agent at depth %d >= max %d; delegation disabled.',
+                self._depth, _MAX_SUBAGENT_DEPTH)
+            return
         tools_cfg = getattr(self.config, 'tools', DictConfig({}))
 
         # Backward compat: if config.tools.split_task exists, register a built-in dynamic spec
@@ -279,6 +296,7 @@ class AgentTool(ToolBase):
                 run_in_process=run_in_process,
                 dynamic=True,
                 max_subtask_output_chars=8192,
+                subagent_depth=self._depth + 1,
             )
             self._specs['split_to_sub_task'] = builtin_spec
 
@@ -402,11 +420,8 @@ class AgentTool(ToolBase):
         elif disallowed_tools is not None:
             disallowed_tools = None
 
-        if config_path and not os.path.isabs(config_path):
-            base_dir = getattr(self.config, 'local_dir', None)
-            if base_dir:
-                config_path = os.path.normpath(
-                    os.path.join(base_dir, config_path))
+        if config_path:
+            config_path = self._resolve_config_path(config_path)
 
         return _AgentToolSpec(
             tool_name=tool_name,
@@ -430,7 +445,32 @@ class AgentTool(ToolBase):
             max_subtask_output_chars=max_subtask_chars,
             run_in_background=bool(getattr(cfg, 'run_in_background', False)),
             sync_timeout_s=float(getattr(cfg, 'sync_timeout_s', 0)) or None,
+            subagent_depth=self._depth + 1,
         )
+
+    def _resolve_config_path(self, config_path: str) -> str:
+        """Resolve a sub-agent ``config_path``.
+
+        Supports built-in template references -- ``template://<name>`` or a bare
+        template name (e.g. ``explore``) -- in addition to absolute paths and
+        paths relative to the parent agent's ``local_dir`` (the original
+        behaviour).
+        """
+        from ms_agent.agent.templates.registry import resolve_template_dir
+        if config_path.startswith('template://'):
+            name = config_path[len('template://'):].strip()
+            return resolve_template_dir(name) or config_path
+        # Bare template name (only if it actually matches a known template).
+        if not os.path.isabs(config_path) and not os.path.exists(config_path):
+            hit = resolve_template_dir(config_path)
+            if hit:
+                return hit
+        # Original behaviour: resolve relative paths against the parent's dir.
+        if not os.path.isabs(config_path):
+            base_dir = getattr(self.config, 'local_dir', None)
+            if base_dir:
+                return os.path.normpath(os.path.join(base_dir, config_path))
+        return config_path
 
     def _build_server_index(self):
         server_map: Dict[str, List[Tool]] = {}
@@ -784,6 +824,7 @@ class AgentTool(ToolBase):
                 dynamic=False,
                 disallowed_tools=spec.disallowed_tools,
                 max_subtask_output_chars=spec.max_subtask_output_chars,
+                subagent_depth=spec.subagent_depth,
             )
             use_subprocess = sub_spec.run_in_thread and sub_spec.run_in_process
             agent = None if use_subprocess else self._build_agent(sub_spec)

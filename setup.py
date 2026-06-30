@@ -264,6 +264,7 @@ if __name__ == '__main__':
         package_data={
             'ms_agent': [
                 'projects/**/*',
+                'agent/templates/**/*',
                 'webui/backend/**/*',
                 'webui/frontend/dist/**/*',
             ],

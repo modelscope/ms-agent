@@ -69,6 +69,11 @@ class Config:
         Returns:
             The config object.
         """
+        # Built-in template names (e.g. "general", "plan", "explore") resolve to
+        # packaged config dirs. Local paths win; unknown names fall through to
+        # the ModelScope resolution below.
+        from ms_agent.agent.templates.registry import resolve_template_source
+        config_dir_or_id = resolve_template_source(config_dir_or_id)
         if not os.path.exists(config_dir_or_id):
             config_dir_or_id = snapshot_download(config_dir_or_id)
 
@@ -111,6 +116,25 @@ class Config:
                 config = apply_prompt_files(config)
         except Exception:
             # Never block config loading due to prompt resolving.
+            pass
+        # Layered prompt: prepend the selected base (prompt.base) to the
+        # template's specialization (prompt.system).
+        try:
+            if isinstance(config, DictConfig):
+                from ms_agent.agent.templates.compose_prompt import \
+                    compose_system_prompt
+                config = compose_system_prompt(config)
+        except Exception:
+            # Never block config loading due to prompt composition.
+            pass
+        # Expand the `subagents: [...]` shorthand into agent_tools definitions.
+        try:
+            if isinstance(config, DictConfig):
+                from ms_agent.agent.templates.subagent_expand import \
+                    expand_subagents
+                config = expand_subagents(config)
+        except Exception:
+            # Never block config loading due to sub-agent expansion.
             pass
         return config
 
