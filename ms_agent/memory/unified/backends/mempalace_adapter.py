@@ -38,6 +38,7 @@ Dependencies: ``pip install mempalace``
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -179,7 +180,8 @@ class MempalaceBackend(BaseMemoryBackend):
             query = self._extract_query(messages)
             if query:
                 try:
-                    results = self._search_drawers(query)
+                    results = await asyncio.to_thread(
+                        self._search_drawers, query)
                     if results:
                         messages = self._inject_context(messages, results)
                 except Exception as e:
@@ -267,7 +269,8 @@ class MempalaceBackend(BaseMemoryBackend):
     async def search(
         self, query: str, limit: int = 10,
     ) -> List[MemoryEntry]:
-        results = self._search_drawers(query, limit=limit)
+        results = await asyncio.to_thread(
+            self._search_drawers, query, limit=limit)
         return [
             MemoryEntry(
                 id=r.get("id", ""),
@@ -317,6 +320,9 @@ class MempalaceBackend(BaseMemoryBackend):
             )
             if isinstance(results, dict):
                 if self._is_transient_error(results):
+                    # _search_drawers is always invoked via asyncio.to_thread,
+                    # so this retry backoff runs on a worker thread and never
+                    # blocks the event loop.
                     time.sleep(1)
                     results = search_memories(
                         sanitized,
@@ -390,7 +396,8 @@ class MempalaceBackend(BaseMemoryBackend):
     async def _handle_search(self, args: Dict[str, Any]) -> str:
         query = args.get("query", "")
         max_r = args.get("max_results", self._max_results)
-        results = self._search_drawers(query, limit=max_r)
+        results = await asyncio.to_thread(
+            self._search_drawers, query, limit=max_r)
         if not results:
             return json.dumps({"results": []}, ensure_ascii=False)
         formatted = [

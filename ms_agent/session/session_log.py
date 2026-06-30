@@ -11,12 +11,25 @@ Because compaction_events are filtered out of ``get_all_messages()``, using
 seq avoids the fragile mapping between array positions and JSONL line
 numbers.
 
+**Mutable metadata lives in a sidecar file**, not in the main log.  Values
+that change during a session (``last_consolidated``, ``round``, ``status``,
+``title``) are stored in ``{session_key}.meta.json`` and updated with a small
+atomic write.  This keeps the main ``.jsonl`` strictly append-only: it is
+never rewritten, so a crash can never corrupt the message history.  The main
+log still carries an immutable header (``session_key`` / ``created_at``) on
+its first line so it remains self-describing.
+
 JSONL format::
 
-    {"_type": "metadata", "session_key": "abc", "created_at": "...", "last_consolidated": 0, ...}
+    {"_type": "metadata", "session_key": "abc", "created_at": "..."}
     {"role": "system", "content": "...", "seq": 0, "timestamp": "..."}
     {"role": "user",   "content": "...", "seq": 1, "timestamp": "...", "tokens": 42}
     {"_type": "compaction_event", "seq": 4, "strategy": "summary_compactor", ...}
+
+Sidecar (``{session_key}.meta.json``)::
+
+    {"session_key": "abc", "created_at": "...", "last_consolidated": 0,
+     "round": 0, "title": "", "status": "idle"}
 """
 from __future__ import annotations
 
@@ -40,6 +53,7 @@ class SessionLog:
         self._dir.mkdir(parents=True, exist_ok=True)
         self.session_key = session_key or f"session_{uuid.uuid4().hex[:8]}"
         self._path = self._dir / f"{self.session_key}.jsonl"
+        self._meta_path = self._dir / f"{self.session_key}.meta.json"
 
         self._metadata: Optional[Dict[str, Any]] = None
         self._messages: Optional[List[Dict[str, Any]]] = None
@@ -86,14 +100,20 @@ class SessionLog:
 
     @property
     def last_consolidated(self) -> int:
-        meta = self._load_metadata()
-        return meta.get("last_consolidated", 0)
+        return self._read_meta().get("last_consolidated", 0)
 
     @last_consolidated.setter
     def last_consolidated(self, value: int) -> None:
-        meta = self._load_metadata()
-        meta["last_consolidated"] = value
-        self._rewrite_metadata(meta)
+        self._update_meta("last_consolidated", value)
+
+    @property
+    def round(self) -> int:
+        """The last persisted agent-loop round (for resume)."""
+        return self._read_meta().get("round", 0)
+
+    @round.setter
+    def round(self, value: int) -> None:
+        self._update_meta("round", value)
 
     def get_all_messages(self) -> List[Dict[str, Any]]:
         """All messages (excluding metadata and compaction events)."""
@@ -154,7 +174,7 @@ class SessionLog:
 
     def get_metadata(self) -> Dict[str, Any]:
         """Session metadata (title, created_at, status, counts, etc.)."""
-        meta = self._load_metadata()
+        meta = self._read_meta()
         all_msgs = self.get_all_messages()
         return {
             "session_key": self.session_key,
@@ -162,15 +182,14 @@ class SessionLog:
             "title": meta.get("title", ""),
             "status": meta.get("status", "idle"),
             "last_consolidated": meta.get("last_consolidated", 0),
+            "round": meta.get("round", 0),
             "message_count": len(all_msgs),
             "total_tokens": sum(m.get("tokens", 0) for m in all_msgs),
         }
 
     def set_metadata_field(self, key: str, value: Any) -> None:
         """Update a single metadata field (e.g. title, status)."""
-        meta = self._load_metadata()
-        meta[key] = value
-        self._rewrite_metadata(meta)
+        self._update_meta(key, value)
 
     # ------------------------------------------------------------------
     # Cache management
@@ -190,24 +209,34 @@ class SessionLog:
         self._seq += 1
         return seq
 
+    def _default_meta(self, created_at: str) -> Dict[str, Any]:
+        return {
+            "session_key": self.session_key,
+            "created_at": created_at,
+            "last_consolidated": 0,
+            "round": 0,
+            "title": "",
+            "status": "idle",
+        }
+
     def _ensure_metadata(self) -> None:
-        """Write the metadata header if the file does not exist yet."""
+        """Create the immutable log header and the mutable sidecar if missing."""
         if not self._path.exists():
-            meta = {
+            created_at = datetime.now(timezone.utc).isoformat()
+            header = {
                 "_type": "metadata",
                 "session_key": self.session_key,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "last_consolidated": 0,
-                "title": "",
-                "status": "idle",
+                "created_at": created_at,
             }
             self._path.parent.mkdir(parents=True, exist_ok=True)
             with open(self._path, "w", encoding="utf-8") as f:
-                f.write(json.dumps(meta, ensure_ascii=False) + "\n")
-            self._metadata = meta
+                f.write(json.dumps(header, ensure_ascii=False) + "\n")
+            self._write_meta(self._default_meta(created_at))
         else:
             # Scan existing file to set seq counter
             self._load_all_to_set_seq()
+            # Make sure a sidecar exists (migrates legacy header-based metadata)
+            self._read_meta()
 
     def _load_all_to_set_seq(self) -> None:
         """Scan the file to find the highest seq number."""
@@ -225,47 +254,67 @@ class SessionLog:
                 continue
         self._seq = max_seq + 1
 
-    def _load_metadata(self) -> Dict[str, Any]:
+    def _read_meta(self) -> Dict[str, Any]:
+        """Load mutable metadata from the sidecar (cached).
+
+        Falls back to migrating a legacy in-log metadata header the first time
+        a pre-sidecar session is opened.
+        """
         if self._metadata is not None:
             return self._metadata
+
+        # 1. Preferred: the sidecar file.
+        if self._meta_path.exists():
+            try:
+                self._metadata = json.loads(
+                    self._meta_path.read_text(encoding="utf-8"))
+                return self._metadata
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        # 2. Migration: read a legacy header from the main log, persist sidecar.
+        legacy = self._read_legacy_header()
+        if legacy is not None:
+            meta = self._default_meta(legacy.get("created_at", ""))
+            for key in ("last_consolidated", "round", "title", "status"):
+                if key in legacy:
+                    meta[key] = legacy[key]
+            self._write_meta(meta)
+            return self._metadata  # set by _write_meta
+
+        # 3. Brand new / unreadable: defaults.
+        self._metadata = self._default_meta("")
+        return self._metadata
+
+    def _update_meta(self, key: str, value: Any) -> None:
+        meta = dict(self._read_meta())
+        meta[key] = value
+        self._write_meta(meta)
+
+    def _write_meta(self, meta: Dict[str, Any]) -> None:
+        """Atomically persist the sidecar (write temp + os.replace)."""
+        tmp = self._meta_path.parent / (self._meta_path.name + ".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(json.dumps(meta, ensure_ascii=False, indent=2))
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, self._meta_path)
+        self._metadata = meta
+
+    def _read_legacy_header(self) -> Optional[Dict[str, Any]]:
+        """Return the first-line metadata record of the main log, if any."""
         if not self._path.exists():
-            self._metadata = {"last_consolidated": 0}
-            return self._metadata
+            return None
         with open(self._path, "r", encoding="utf-8") as f:
             first_line = f.readline().strip()
         if first_line:
             try:
                 record = json.loads(first_line)
                 if record.get("_type") == "metadata":
-                    self._metadata = record
                     return record
             except json.JSONDecodeError:
                 pass
-        self._metadata = {"last_consolidated": 0}
-        return self._metadata
-
-    def _rewrite_metadata(self, meta: Dict[str, Any]) -> None:
-        """Rewrite the first line (metadata header) of the JSONL file."""
-        if not self._path.exists():
-            self._ensure_metadata()
-            return
-        lines = self._path.read_text(encoding="utf-8").splitlines()
-        meta_line = json.dumps(
-            {**meta, "_type": "metadata"}, ensure_ascii=False
-        )
-        if lines and lines[0].strip():
-            try:
-                first = json.loads(lines[0])
-                if first.get("_type") == "metadata":
-                    lines[0] = meta_line
-                else:
-                    lines.insert(0, meta_line)
-            except json.JSONDecodeError:
-                lines.insert(0, meta_line)
-        else:
-            lines.insert(0, meta_line)
-        self._path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        self._metadata = meta
+        return None
 
     def _append_line(self, record: Dict[str, Any]) -> None:
         """Append a single JSON line and flush."""

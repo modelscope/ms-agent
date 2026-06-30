@@ -185,6 +185,84 @@ class TestSessionLogPersistence:
         assert len(msgs) == 1
 
 
+class TestSessionLogSidecarMetadata:
+    """Mutable metadata lives in a sidecar; the main log stays append-only."""
+
+    def setup_method(self):
+        self.tmpdir = tempfile.mkdtemp()
+
+    def test_round_persists_across_restart(self):
+        log1 = SessionLog(self.tmpdir, session_key="round_test")
+        assert log1.round == 0
+        log1.round = 7
+        log2 = SessionLog(self.tmpdir, session_key="round_test")
+        assert log2.round == 7
+        assert log2.get_metadata()["round"] == 7
+
+    def test_metadata_update_does_not_rewrite_main_log(self):
+        log = SessionLog(self.tmpdir, session_key="append_only")
+        log.append({"role": "user", "content": "a"})
+        log.append({"role": "assistant", "content": "b"})
+        main = Path(self.tmpdir, "append_only.jsonl").read_text()
+
+        # Mutating metadata must NOT touch the append-only message log.
+        log.last_consolidated = 1
+        log.round = 3
+        log.set_metadata_field("title", "t")
+        assert Path(self.tmpdir, "append_only.jsonl").read_text() == main
+
+        # The sidecar carries the mutable state instead.
+        sidecar = json.loads(
+            Path(self.tmpdir, "append_only.meta.json").read_text())
+        assert sidecar["last_consolidated"] == 1
+        assert sidecar["round"] == 3
+        assert sidecar["title"] == "t"
+
+    def test_header_has_no_mutable_fields(self):
+        log = SessionLog(self.tmpdir, session_key="hdr")
+        log.last_consolidated = 5
+        header = json.loads(
+            Path(self.tmpdir, "hdr.jsonl").read_text().splitlines()[0])
+        assert header["_type"] == "metadata"
+        assert "last_consolidated" not in header
+
+    def test_migrates_legacy_inline_metadata(self):
+        # A pre-sidecar log with mutable fields in the header line.
+        path = Path(self.tmpdir, "legacy.jsonl")
+        path.write_text(
+            json.dumps({
+                "_type": "metadata", "session_key": "legacy",
+                "created_at": "2020", "last_consolidated": 2, "title": "old",
+            }) + "\n"
+            + json.dumps({"role": "user", "content": "a", "seq": 0}) + "\n"
+            + json.dumps({"role": "user", "content": "b", "seq": 1}) + "\n"
+            + json.dumps({"role": "user", "content": "c", "seq": 2}) + "\n")
+        log = SessionLog(self.tmpdir, session_key="legacy")
+        assert log.last_consolidated == 2          # recovered from header
+        assert log.get_metadata()["title"] == "old"
+        assert Path(self.tmpdir, "legacy.meta.json").exists()  # migrated
+        assert log.append({"role": "user", "content": "d"}) == 3  # seq cont.
+
+
+class TestResumeMessageRoundTrip:
+    """Restoring a session must preserve tool-use linkage (G1 regression)."""
+
+    def test_dicts_to_messages_preserves_tool_fields(self):
+        from ms_agent.session.context_assembler import _dicts_to_messages
+        restored = [
+            {"role": "assistant", "content": "",
+             "tool_calls": [{"id": "call_1", "type": "function"}]},
+            {"role": "tool", "content": "result",
+             "tool_call_id": "call_1", "name": "search"},
+        ]
+        msgs = _dicts_to_messages(restored)
+        assert msgs[0].tool_calls == [{"id": "call_1", "type": "function"}]
+        # tool_call_id / name must survive — otherwise providers can't pair
+        # the tool output with its originating call.
+        assert msgs[1].tool_call_id == "call_1"
+        assert msgs[1].name == "search"
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # 2. ViewStrategies
 # ═══════════════════════════════════════════════════════════════════════

@@ -767,12 +767,10 @@ class LLMAgent(Agent):
         if not hasattr(orchestrator, 'get_tool_schemas'):
             return
 
-        # Pass LLM and session_log to orchestrator for consolidation / extraction
+        # Pass the LLM to the orchestrator for consolidation / extraction.
         if self.llm is not None:
             orchestrator.set_llm(self.llm)
             orchestrator.init_update_queue()
-        if self.session_log is not None and hasattr(orchestrator, '_session_log'):
-            orchestrator._session_log = self.session_log
 
         # Register memory tool into the agent's tool system
         if self.tool_manager is not None:
@@ -813,31 +811,48 @@ class LLMAgent(Agent):
                     self.config)
 
     async def condense_memory(self, messages: List[Message]) -> List[Message]:
-        """Inject long-term memory context into messages.
-
-        .. deprecated::
-            Historically this also ran context compressors.  Compression is
-            now handled by :class:`ContextAssembler` before this method is
-            called.  This method only performs memory *injection* (adding
-            ``<long-term-memory>`` blocks, etc.).
-        """
-        for memory_tool in self.memory_tools:
-            messages = await memory_tool.run(messages)
-        return messages
-
-    async def inject_memory(self, messages: List[Message]) -> List[Message]:
         """Inject long-term memory context into the message list.
 
-        Unlike ``condense_memory`` this only runs ``unified_memory`` style
-        tools that *inject* context (MEMORY.md snapshot, facts, etc.) — it
-        never trims or compresses messages.
+        Runs every configured memory tool's ``run`` hook, which adds memory
+        context (``<long-term-memory>`` blocks, MEMORY.md snapshot, facts,
+        etc.).  It never trims or compresses messages — context compression is
+        handled by :class:`ContextAssembler` before this method is called.
         """
         for memory_tool in self.memory_tools:
             messages = await memory_tool.run(messages)
         return messages
 
     def _init_session_log(self) -> None:
-        """Create SessionLog and ContextAssembler if session logging is enabled."""
+        """Create SessionLog and ContextAssembler if session logging is enabled.
+
+        Both blocks are optional; sensible defaults apply when omitted.  Full
+        YAML schema::
+
+            # Append-only message log (source of truth for history).
+            session_log:
+              enabled: true            # default true; set false to disable
+              dir: output/sessions     # default: <output_dir>/sessions
+              session_key: my-session  # default: random session_<hex>
+              # Token budget passed to the ContextAssembler:
+              context_limit: 128000    # max tokens kept in the live window
+              reserved_buffer: 20000   # headroom left for the next response
+              prune_protect: 40000     # recent tokens never tool-pruned
+
+            # Non-destructive context compaction (rebuilt every loop round).
+            compaction:
+              enabled: true            # default true; false -> no strategies
+              context_limit: 128000    # overrides session_log.context_limit
+              reserved_buffer: 20000
+              strategies:              # default: both, in this order
+                - name: tool_output_pruner
+                  enabled: true
+                  prune_protect: 40000 # recent tokens exempt from pruning
+                - name: summary_compactor
+                  enabled: true        # needs an LLM; summarizes old turns
+
+        With ``compaction.enabled: false`` the assembler is created with an
+        empty strategy list (history is still logged, just never compressed).
+        """
         session_cfg = getattr(self.config, 'session_log', None)
         enabled = getattr(session_cfg, 'enabled', True) if session_cfg else True
         if not enabled:
@@ -1303,15 +1318,20 @@ class LLMAgent(Agent):
                 messages = self.query
 
             # Load history and restore state
+            restored_from_log = False
             if self.session_log is not None:
                 restored = self.session_log.get_all_messages()
                 if restored and self.load_cache:
-                    from ms_agent.llm.utils import Message as _Msg
-                    messages = [_Msg(
-                        role=m.get('role', 'user'),
-                        content=m.get('content', ''),
-                        tool_calls=m.get('tool_calls'),
-                    ) for m in restored]
+                    # Reuse the canonical dict->Message conversion so tool-use
+                    # fields (tool_call_id, name) survive the round-trip.
+                    from ms_agent.session.context_assembler import \
+                        _dicts_to_messages
+                    messages = _dicts_to_messages(restored)
+                    # Resume: recover the round counter from the session log so
+                    # we don't re-run new-task setup (skill routing,
+                    # on_task_begin) or duplicate the seeded history.
+                    self.runtime.round = self.session_log.round
+                    restored_from_log = True
                 else:
                     self.config, self.runtime, messages = self.read_history(
                         messages)
@@ -1319,7 +1339,7 @@ class LLMAgent(Agent):
                 self.config, self.runtime, messages = self.read_history(
                     messages)
 
-            if self.runtime.round == 0:
+            if self.runtime.round == 0 and not restored_from_log:
                 # New task: create standardized messages first
                 messages = await self.create_messages(messages)
 
@@ -1355,10 +1375,12 @@ class LLMAgent(Agent):
                     yield messages
                 self.runtime.round += 1
 
-                # Append new messages to SessionLog
+                # Append new messages to SessionLog and persist the round
+                # counter (in the sidecar) so a later resume picks up here.
                 if self.session_log is not None:
                     for msg in messages[pre_step_len:]:
                         self.session_log.append(self._msg_to_dict(msg))
+                    self.session_log.round = self.runtime.round
 
                 # save memory and history
                 await self.add_memory(

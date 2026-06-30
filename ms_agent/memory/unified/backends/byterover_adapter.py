@@ -24,6 +24,7 @@ Configuration::
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -206,7 +207,8 @@ class ByteRoverBackend(BaseMemoryBackend):
                 "Install: npm install -g byterover-cli")
             return
 
-        result = _run_brv(["status"], timeout=15, cwd=self._cwd)
+        result = await asyncio.to_thread(
+            _run_brv, ["status"], timeout=15, cwd=self._cwd)
         if result["success"]:
             self._available = True
             logger.info("[byterover_backend] brv initialized at %s", self._cwd)
@@ -231,7 +233,8 @@ class ByteRoverBackend(BaseMemoryBackend):
         if not query or len(query.strip()) < self._min_query_len:
             return messages
 
-        result = _run_brv(
+        result = await asyncio.to_thread(
+            _run_brv,
             ["query", "--", query.strip()[:5000]],
             timeout=self._query_timeout, cwd=self._cwd,
         )
@@ -323,11 +326,11 @@ class ByteRoverBackend(BaseMemoryBackend):
         self, tool_name: str, arguments: Dict[str, Any],
     ) -> str:
         if tool_name == "brv_query":
-            return self._tool_query(arguments)
+            return await asyncio.to_thread(self._tool_query, arguments)
         elif tool_name == "brv_curate":
-            return self._tool_curate(arguments)
+            return await asyncio.to_thread(self._tool_curate, arguments)
         elif tool_name == "brv_status":
-            return self._tool_status()
+            return await asyncio.to_thread(self._tool_status)
         return json.dumps({"error": f"unknown tool: {tool_name}"})
 
     # -- Search ------------------------------------------------------------
@@ -338,7 +341,8 @@ class ByteRoverBackend(BaseMemoryBackend):
         if not self._available or not query:
             return []
 
-        result = _run_brv(
+        result = await asyncio.to_thread(
+            _run_brv,
             ["query", "--", query.strip()[:5000]],
             timeout=self._query_timeout, cwd=self._cwd,
         )

@@ -85,6 +85,10 @@ class FileBasedBackend(BaseMemoryBackend):
         self._retriever = self._build_retriever()
         self._extractor = self._build_extractor()
         self._update_queue: Optional[MemoryUpdateQueue] = None
+        # Built lazily and reused across inject() calls — its constructor opens
+        # a SQLite connection and runs schema init, which must not happen on
+        # every agent-loop iteration.
+        self._fts: Optional[FTSRetriever] = None
 
         self._prompt_snapshot: Optional[str] = None
         self._snapshot_dirty = True
@@ -96,7 +100,9 @@ class FileBasedBackend(BaseMemoryBackend):
             self.set_llm(kwargs["llm"])
 
     async def close(self) -> None:
-        pass
+        if self._fts is not None:
+            self._fts.close()
+            self._fts = None
 
     # -- inject (core read path) --------------------------------------
 
@@ -334,8 +340,9 @@ class FileBasedBackend(BaseMemoryBackend):
             return messages
 
         try:
-            fts = FTSRetriever(self._config)
-            results = await fts.search(query, limit=5)
+            if self._fts is None:
+                self._fts = FTSRetriever(self._config)
+            results = await self._fts.search(query, limit=5)
         except Exception:
             return messages
 

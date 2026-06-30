@@ -31,6 +31,43 @@ Covered functionality:
    11. End-to-end pipeline — SessionLog → ContextAssembler → Orchestrator inject
    12. Cross-session persistence — memory survives across orchestrator instances
 
+Full YAML configuration reference (drop into an agent config file):
+
+    memory:
+      unified_memory:                 # key must be in `memory_mapping`
+        enabled: true
+        storage:
+          backend: file               # file | reme | mem0 | mempalace |
+                                      #   byterover | supermemory
+        base_dir: ./output/memory     # where MEMORY.md / facts.json live
+        namespace:                    # isolates memory per user/agent/tenant
+          user_id: alice
+          agent_id: coder
+          tenant_id: local
+        retrieval:
+          strategy: full_dump         # full_dump | fts | hybrid
+          auto_retrieve: true
+          auto_retrieve_max_chars: 100
+        extraction:
+          strategy: tool_based        # tool_based | llm_merge
+        # Per-backend options; only the active backend's block is read:
+        reme:        {working_dir: /tmp/reme, fts_enabled: true}
+        mempalace:   {palace_path: ~/.mempalace, wing: work}
+
+    session_log:                      # append-only message history
+      enabled: true
+      dir: output/sessions            # default: <output_dir>/sessions
+      session_key: my-session         # default: random session_<hex>
+      context_limit: 128000
+      reserved_buffer: 20000
+      prune_protect: 40000
+
+    compaction:                       # non-destructive context compaction
+      enabled: true
+      strategies:
+        - {name: tool_output_pruner, enabled: true, prune_protect: 40000}
+        - {name: summary_compactor,  enabled: true}
+
 Usage:
     cd /path/to/ms-agent
 
