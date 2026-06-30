@@ -17,22 +17,25 @@ CONTENT_SEP = ':'
 
 def _extract_content(tool_name: str, tool_args: dict[str, Any]) -> str | None:
     """Extract the primary content string from tool args for content-pattern matching."""
+    val = None
     if tool_name.endswith(f'{TOOL_SPLITER}shell_executor'):
-        return tool_args.get('command')
-    if tool_name.endswith(f'{TOOL_SPLITER}write_file'):
-        return tool_args.get('path')
-    if tool_name.endswith(f'{TOOL_SPLITER}read_file'):
-        return tool_args.get('path')
-    if tool_name.endswith(f'{TOOL_SPLITER}edit_file'):
-        return tool_args.get('path')
-    if tool_name.endswith(f'{TOOL_SPLITER}grep'):
-        return tool_args.get('pattern')
-    if tool_name.endswith(f'{TOOL_SPLITER}glob'):
-        return tool_args.get('pattern')
-    for key in ('path', 'command', 'query', 'url', 'pattern'):
-        if key in tool_args:
-            return tool_args[key]
-    return None
+        val = tool_args.get('command')
+    elif tool_name.endswith(f'{TOOL_SPLITER}write_file'):
+        val = tool_args.get('path')
+    elif tool_name.endswith(f'{TOOL_SPLITER}read_file'):
+        val = tool_args.get('path')
+    elif tool_name.endswith(f'{TOOL_SPLITER}edit_file'):
+        val = tool_args.get('path')
+    elif tool_name.endswith(f'{TOOL_SPLITER}grep'):
+        val = tool_args.get('pattern')
+    elif tool_name.endswith(f'{TOOL_SPLITER}glob'):
+        val = tool_args.get('pattern')
+    else:
+        for key in ('path', 'command', 'query', 'url', 'pattern'):
+            if key in tool_args:
+                val = tool_args[key]
+                break
+    return str(val) if val is not None else None
 
 
 class PermissionMatcher:

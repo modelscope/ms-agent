@@ -443,10 +443,14 @@ def _source_type(source: str) -> str:
     return 'local'
 
 
+_GIT_SHA_RE = re.compile(r'^[0-9a-f]{7,40}$', re.IGNORECASE)
+
+
 def _fetch_github(source: str) -> _FetchedSource:
     repo, ref, subdir = _parse_github_uri(source)
     tmp = tempfile.TemporaryDirectory(prefix='ms_agent_plugin_git_')
     clone_dir = Path(tmp.name) / 'repo'
+    is_sha = bool(ref and _GIT_SHA_RE.match(ref))
     clone_cmd = [
         'git',
         'clone',
@@ -454,10 +458,23 @@ def _fetch_github(source: str) -> _FetchedSource:
         '1',
         '--filter=blob:none',
     ]
-    if ref:
+    if ref and not is_sha:
         clone_cmd.extend(['--branch', ref])
     clone_cmd.extend([f'https://github.com/{repo}.git', str(clone_dir)])
     subprocess.run(clone_cmd, check=True, capture_output=True, text=True)
+    if is_sha:
+        subprocess.run(
+            ['git', '-C', str(clone_dir), 'fetch', 'origin', ref],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(
+            ['git', '-C', str(clone_dir), 'checkout', ref],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
     if subdir:
         subprocess.run(
             ['git', '-C', str(clone_dir), 'sparse-checkout', 'set', subdir],

@@ -433,7 +433,10 @@ def _expand_vars(
     plugin_root: Path,
     plugin_data_dir: Path,
     project_path: Path,
+    user_config: dict[str, Any] | None = None,
 ) -> Any:
+    if user_config is None:
+        user_config = _load_user_config(plugin_data_dir)
     if isinstance(value, str):
         expanded = (
             value
@@ -444,7 +447,6 @@ def _expand_vars(
             .replace('${MS_AGENT_PROJECT_DIR}', str(project_path))
             .replace('${CLAUDE_PROJECT_DIR}', str(project_path))
         )
-        user_config = _load_user_config(plugin_data_dir)
         for key, item in user_config.items():
             expanded = expanded.replace(f'${{user_config.{key}}}', str(item))
             expanded = expanded.replace(
@@ -452,12 +454,14 @@ def _expand_vars(
         return expanded
     if isinstance(value, list):
         return [
-            _expand_vars(item, plugin_root, plugin_data_dir, project_path)
+            _expand_vars(
+                item, plugin_root, plugin_data_dir, project_path, user_config)
             for item in value
         ]
     if isinstance(value, dict):
         return {
-            key: _expand_vars(item, plugin_root, plugin_data_dir, project_path)
+            key: _expand_vars(
+                item, plugin_root, plugin_data_dir, project_path, user_config)
             for key, item in value.items()
         }
     return value

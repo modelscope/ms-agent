@@ -99,7 +99,11 @@ class CommandHookExecutor:
             )
         except asyncio.TimeoutError:
             if proc is not None:
-                proc.kill()
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except ProcessLookupError:
+                    pass
             reason = f'Hook timed out after {handler.timeout}s'
             if handler.fail_closed or self._fail_closed:
                 return HookResult(action='deny', reason=reason, exit_code=-1)

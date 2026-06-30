@@ -629,7 +629,10 @@ class LLMAgent(Agent):
             raw_hooks = OmegaConf.to_container(self.config.hooks, resolve=True) or {}
         enabled_executors = frozenset(
             raw_hooks.get('enabled_executors', ['command']) or ['command'])
-        self._plugin_runtime = PluginRuntime()
+        self._plugin_runtime = PluginRuntime(
+            skill_runtime=self._skill_runtime,
+            mcp_runtime=self.mcp_runtime,
+        )
         self._plugin_runtime.start_sync(
             str(resolve_workspace_root(self.config)),
             session_id,

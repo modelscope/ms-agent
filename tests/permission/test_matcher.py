@@ -73,3 +73,12 @@ class TestMatchWithContent:
             'unknown---tool',
             {'some_arg': 'value'},
         )
+
+    def test_non_string_content_is_coerced(self, matcher):
+        # Non-string args must not crash fnmatch (TypeError).
+        result = matcher.match_with_content(
+            'file_system---read_file:/tmp/*',
+            'file_system---read_file',
+            {'path': ['/tmp/a', '/tmp/b']},
+        )
+        assert isinstance(result, bool)

@@ -82,7 +82,8 @@ def version_satisfies(installed: str, constraint: str | None) -> bool:
 
 
 def _parse_version(value: str) -> tuple[int, int, int] | None:
-    match = _VERSION_RE.match(str(value).strip())
+    val = str(value).strip().lstrip('vV')
+    match = _VERSION_RE.match(val)
     if not match:
         return None
     return int(match.group(1)), int(match.group(2)), int(match.group(3))
