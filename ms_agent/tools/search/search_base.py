@@ -1,11 +1,10 @@
 # flake8: noqa
 import enum
+import json
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, Generic, List, Optional, TypeVar
-
-import json
 
 if TYPE_CHECKING:
     from ms_agent.llm.utils import Tool
@@ -17,6 +16,7 @@ class SearchEngineType(enum.Enum):
     EXA = 'exa'
     SERPAPI = 'serpapi'
     ARXIV = 'arxiv'
+    TAVILY = 'tavily'
 
 
 # Mapping from engine type to tool name
@@ -24,6 +24,7 @@ ENGINE_TOOL_NAMES: Dict[str, str] = {
     'exa': 'exa_search',
     'serpapi': 'serpapi_search',
     'arxiv': 'arxiv_search',
+    'tavily': 'tavily_search',
 }
 
 

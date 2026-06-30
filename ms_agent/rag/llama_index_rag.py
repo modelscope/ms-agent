@@ -1,11 +1,10 @@
 import os
 import shutil
+from omegaconf import DictConfig
 from typing import Any, List, Optional
 
-from ms_agent.utils import assert_package_exist
-from omegaconf import DictConfig
-
 from modelscope import snapshot_download
+from ms_agent.utils import assert_package_exist
 from ..llm import LLM, Message
 from .base import RAG
 
@@ -41,6 +40,7 @@ class LlamaIndexRAG(RAG):
 
         from llama_index.core import Settings
         from llama_index.core.node_parser import SentenceSplitter
+
         # Set node parser
         Settings.node_parser = SentenceSplitter(
             chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap)
@@ -49,10 +49,10 @@ class LlamaIndexRAG(RAG):
         if self.retrieve_only:
             Settings.llm = None
         else:
+            from llama_index.core.base.llms.types import (CompletionResponse,
+                                                          LLMMetadata)
             from llama_index.core.llms import CustomLLM
-            from llama_index.core.base.llms.types import LLMMetadata
             from llama_index.core.llms.callbacks import llm_completion_callback
-            from llama_index.core.base.llms.types import CompletionResponse
             self._llm_instance = LLM.from_config(self.config)
 
             class MSCustomLLM(CustomLLM):
@@ -108,7 +108,7 @@ class LlamaIndexRAG(RAG):
             raise ValueError('chunk_size must be greater than 0')
 
     def _setup_embedding_model(self, config: DictConfig):
-        from llama_index.core import (Settings)
+        from llama_index.core import Settings
         from llama_index.embeddings.huggingface import HuggingFaceEmbedding
         try:
             use_hf = getattr(config, 'use_huggingface', False)
@@ -124,7 +124,7 @@ class LlamaIndexRAG(RAG):
     async def add_documents(self, documents: List[str]):
         if not documents:
             raise ValueError('Document list cannot be empty')
-        from llama_index.core import (Document, VectorStoreIndex)
+        from llama_index.core import Document, VectorStoreIndex
         docs = [Document(text=doc) for doc in documents]
         self.index = VectorStoreIndex.from_documents(docs)
         if not self.retrieve_only:
@@ -159,6 +159,7 @@ class LlamaIndexRAG(RAG):
             return
 
         from llama_index.core import Settings
+
         # Check if LLM is set
         if Settings.llm is None and not self.retrieve_only:
             return
@@ -239,10 +240,11 @@ class LlamaIndexRAG(RAG):
             return []
 
         from llama_index.core.retrievers import VectorIndexRetriever
+
         # Try to import BM25 related modules
         try:
-            from llama_index.retrievers.bm25 import BM25Retriever
             from llama_index.core.retrievers import QueryFusionRetriever
+            from llama_index.retrievers.bm25 import BM25Retriever
             bm25_available = True
         except ImportError:
             bm25_available = False
@@ -316,7 +318,7 @@ class LlamaIndexRAG(RAG):
             raise FileNotFoundError(
                 f'Index directory does not exist: {load_dir}')
 
-        from llama_index.core import (StorageContext, load_index_from_storage)
+        from llama_index.core import StorageContext, load_index_from_storage
         storage_context = StorageContext.from_defaults(persist_dir=load_dir)
         self.index = load_index_from_storage(storage_context)
 

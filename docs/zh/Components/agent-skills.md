@@ -1,181 +1,108 @@
 ---
 slug: agent-skills
 title: 智能体技能
-description: Ms-Agent 智能体技能模块：基于 Anthropic Agent Skills 协议的技能发现、分析与执行框架。
+description: MS-Agent 技能模块：知识驱动的技能系统，通过标准工具集成为 LLM 智能体提供可复用的操作知识。
 ---
 
 # 智能体技能 (Agent Skills)
 
-MS-Agent 技能模块是一个强大的、可扩展的技能执行框架，支持 LLM Agent 自动发现、分析并执行特定领域的技能，以完成复杂任务。该模块是 [Anthropic Agent Skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills) 协议的实现。
-
-通过技能模块，Agent 可以处理如下复杂任务：
-- "生成 Q4 销售数据的 PDF 报告"
-- "创建关于 AI 趋势的演示文稿并附带图表"
-- "将文档转换为 PPTX 格式并应用自定义主题"
-
-## 核心特性
-
-- **智能技能检索**：结合 FAISS 密集检索与 BM25 稀疏检索的混合搜索，并通过 LLM 进行相关性过滤
-- **DAG 执行引擎**：基于依赖关系构建执行 DAG，支持独立技能并行执行，自动在技能之间传递输入/输出
-- **渐进式技能分析**：两阶段分析（先规划、再加载资源），按需增量加载脚本/引用/资源，优化上下文窗口使用
-- **安全执行环境**：支持通过 [ms-enclave](https://github.com/modelscope/ms-enclave) Docker 沙箱隔离执行，或在受控的本地环境中执行
-- **自反思与重试**：基于 LLM 的错误分析，自动修复代码并可配置重试次数
-- **标准协议兼容**：完全兼容 [Anthropic Skills](https://github.com/anthropics/skills) 协议
+MS-Agent 技能模块采用知识驱动的设计理念来扩展 LLM 智能体能力。与构建独立执行管线不同，技能被视为**操作知识（procedural knowledge）**——描述"如何做某件事"，由模型自主使用已有工具（代码执行、文件读写、网络搜索等）来完成执行。
 
 ## 架构
 
-### 整体架构
-
 ```
-┌─────────────────────────────────────────────────────────┐
-│                       LLMAgent                          │
-│  ┌───────────────────────────────────────────────────┐  │
-│  │                   AutoSkills                      │  │
-│  │  ┌──────────┐  ┌──────────┐  ┌────────────────┐  │  │
-│  │  │  Loader  │  │ Retriever│  │ SkillAnalyzer  │  │  │
-│  │  │          │  │ (Hybrid) │  │ (Progressive)  │  │  │
-│  │  └────┬─────┘  └────┬─────┘  └───────┬────────┘  │  │
-│  │       │              │                │           │  │
-│  │       ▼              ▼                ▼           │  │
-│  │  ┌───────────────────────────────────────────────┐│  │
-│  │  │                DAGExecutor                    ││  │
-│  │  │  ┌────────┐  ┌────────┐  ┌────────┐          ││  │
-│  │  │  │Skill 1 │→ │Skill 2 │→ │Skill N │          ││  │
-│  │  │  └───┬────┘  └───┬────┘  └───┬────┘          ││  │
-│  │  │      └────────────┴──────────┘                ││  │
-│  │  │                   ↓                           ││  │
-│  │  │         SkillContainer (执行)                 ││  │
-│  │  └───────────────────────────────────────────────┘│  │
-│  └───────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────┘
+  ┌─────────────┐     ┌──────────────┐     ┌───────────────────┐
+  │  技能来源    │────▶│ SkillCatalog │────▶│PromptInjector     │
+  │ 本地/MS/Git  │     │ 加载、过滤、 │     │ always 技能:       │
+  │              │     │ 缓存         │     │   全文注入         │
+  └─────────────┘     └──────┬───────┘     │ 所有技能:          │
+                             │             │   名称+描述索引    │
+                             │             └───────────────────┘
+                             ▼
+                      ┌─────────────┐     ┌──────────────────┐
+                      │SkillToolSet │────▶│   ToolManager    │
+                      │ skills_list │     │ 统一注册         │
+                      │ skill_view  │     │ (MCP + 内置      │
+                      │ skill_manage│     │  + 技能工具)     │
+                      └─────────────┘     └────────┬─────────┘
+                                                   │
+                                                   ▼
+                                          ┌────────────────┐
+                                          │    LLM Agent   │
+                                          │   step() 循环  │
+                                          └────────────────┘
 ```
 
-### 执行流程
+### 技能工作流程
 
-```
-用户请求
-    │
-    ▼
-┌────────────────┐
-│  查询分析      │ ─── 是否为技能相关请求？
-└───────┬────────┘
-        │ 是
-        ▼
-┌────────────────┐
-│  技能检索      │ ─── 混合搜索 (FAISS + BM25)
-└───────┬────────┘
-        │
-        ▼
-┌────────────────┐
-│  技能过滤      │ ─── 基于 LLM 的相关性过滤
-└───────┬────────┘
-        │
-        ▼
-┌────────────────┐
-│  DAG 构建      │ ─── 构建依赖图
-└───────┬────────┘
-        │
-        ▼
-┌────────────────┐
-│  渐进式执行    │ ─── 规划 → 加载 → 执行
-└───────┬────────┘
-        │
-        ▼
-┌────────────────┐
-│  结果聚合      │ ─── 合并输出，格式化响应
-└────────────────┘
-```
+1. **System prompt** 中包含所有已启用技能的轻量索引（名称 + 描述，每个约 30 token）。标记 `always: true` 的技能全文注入。
+2. 当模型遇到相关任务时，调用 `skill_view(skill_id)` 加载完整指令。
+3. 模型按照指令使用已有工具（`code_executor`、`web_search`、`file_system` 等）执行操作。
+4. 所有结果通过标准 `role: tool` 消息流转——无特殊路由，无短路逻辑。
 
-技能模块实现了多层次渐进式上下文加载机制：
+### 三级渐进式披露
 
-1. **Level 1 (Metadata)**：仅加载技能元数据（名称、描述）以进行语义搜索
-2. **Level 2 (Retrieval)**：检索相关技能并加载 SKILL.md 全文
-3. **Level 3 (Resources)**：进一步加载技能所需的参考资料和资源文件
-4. **Level 4 (Analysis|Planning|Execution)**：分析技能上下文，自主制定计划，加载所需资源并运行相关脚本
+| 级别 | 模型看到的内容 | Token 开销 | 来源 |
+|------|-------------|-----------|------|
+| L1 | 名称 + 一行描述 | ~30 token/技能 | System prompt（自动） |
+| L2 | 完整 SKILL.md 正文 | 按需 | `skill_view` 工具调用 |
+| L3 | 引用的脚本、模板、文档 | 按需 | `skill_view` 指定 `file_path` |
+
+## 核心特性
+
+- **技能即知识**：技能指导模型；执行使用已有工具。无独立管线，无需子进程隔离。
+- **统一工具集成**：技能工具（`skills_list`、`skill_view`、`skill_manage`）通过标准 `ToolManager` 注册，与 MCP 和内置工具共享同一套调度。
+- **多源加载**：通过 `SkillCatalog` 从本地目录、ModelScope 仓库或 Git URL 加载技能。
+- **三层优先级**：内置技能 < 用户主目录技能 < 工作目录技能。高优先级同名技能覆盖低优先级。
+- **常驻技能**：将关键技能标记为 `always: true`，其全文注入 system prompt。
+- **热重载**：`SkillCatalog` 支持单个技能重载或全量刷新，变更通过工具调用即时可见。
+- **运行时自进化**：启用 `enable_manage: true` 后，模型可在对话中创建、编辑、删除技能。
+- **零开销关闭**：不配置 `skills:` → 不注册技能工具，不注入 prompt，无性能影响。
 
 ## 技能目录结构
 
-每个技能是一个自包含的目录：
-
 ```
-skill-name/
-├── SKILL.md           # 必须: 主文档和指令
-├── META.yaml          # 可选: 元数据（名称、描述、版本、标签）
-├── scripts/           # 可选: 可执行脚本
-│   ├── main.py
-│   ├── utils.py
-│   └── run.sh
-├── references/        # 可选: 参考文档
-│   ├── api_docs.md
-│   └── examples.json
-├── resources/         # 可选: 静态资源
-│   ├── template.html
-│   ├── fonts/
-│   └── images/
-└── requirements.txt   # 可选: Python 依赖
+my-skill/
+├── SKILL.md              # 必需：入口文件
+├── scripts/              # 可选：脚本文件
+│   └── search.py
+├── references/           # 可选：参考文档
+│   └── api-docs.md
+├── templates/            # 可选：模板文件
+│   └── report.html
+└── assets/               # 可选：静态资源
+    └── config.yaml
 ```
 
 ### SKILL.md 格式
 
-```markdown
-# 技能名称
-
-技能功能简述。
-
-## Capabilities
-
-- 功能 1
-- 功能 2
-
-## Usage
-
-使用说明...
-
-## Parameters
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| input     | str  | 输入数据     |
-| format    | str  | 输出格式     |
-
-## Examples
-
-使用示例...
-```
-
-### META.yaml 格式
-
 ```yaml
-name: "PDF Generator"
-description: "Generates professional PDF documents from markdown or data"
-version: "1.0.0"
-author: "Your Name"
-tags:
-  - document
-  - pdf
-  - report
+---
+name: paper-finder                  # 必需，hyphen-case，≤64 字符
+description: "搜索并分析学术论文"      # 必需，≤1024 字符
+version: "1.0.0"                    # 可选
+author: "team-name"                 # 可选
+tags: [research, papers]            # 可选，用于分类过滤
+always: false                       # 可选，true → 全文注入 prompt
+requires:                           # 可选，依赖声明
+  tools: [web_search, terminal]
+  env: [ARXIV_API_KEY]
+---
+
+# Paper Finder
+
+## 使用场景
+当用户要求查找或分析学术论文时使用此技能。
+
+## 操作步骤
+1. 使用 `web_search` 在 arXiv 上搜索论文
+2. 使用 `code_executor` 解析搜索结果
+3. 向用户总结分析结论
 ```
 
 ## 快速开始
 
-### 前提条件
-
-- Python 3.9+
-- Docker（用于沙箱执行，可选）
-- FAISS（用于技能检索）
-
-### 安装
-
-```bash
-pip install 'ms-agent>=1.4.0'
-
-# 或从源码安装
-git clone https://github.com/modelscope/ms-agent.git
-cd ms-agent
-pip install -e .
-```
-
-### 方式一：通过 LLMAgent 配置使用
+### 通过 LLMAgent 使用
 
 ```python
 import asyncio
@@ -184,331 +111,93 @@ from ms_agent.agent import LLMAgent
 
 config = DictConfig({
     'llm': {
-        'service': 'openai',
-        'model': 'gpt-4',
-        'openai_api_key': 'your-api-key',
-        'openai_base_url': 'https://api.openai.com/v1'
+        'model': 'qwen-max',
+        'api_base': 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    },
+    'tools': {
+        'code_executor': {'implementation': 'python_env'},
     },
     'skills': {
-        'path': '/path/to/skills',
-        'auto_execute': True,
-        'work_dir': '/path/to/workspace',
-        'use_sandbox': False,
-    }
+        'path': ['./skills'],
+        'auto_discover': True,
+    },
 })
 
 agent = LLMAgent(config, tag='skill-agent')
 
 async def main():
-    result = await agent.run('Generate a mock PDF report about AI trends')
-    print(result)
+    result = await agent.run('搜索关于多模态 RAG 的最新论文')
+    print(result[-1].content)
 
 asyncio.run(main())
 ```
 
-### 方式二：直接使用 AutoSkills
+### 编程式使用
 
 ```python
-import asyncio
-from ms_agent.skill import AutoSkills
-from ms_agent.llm import LLM
-from omegaconf import DictConfig
+from ms_agent.skill import SkillCatalog, SkillPromptInjector, SkillToolSet
 
-llm_config = DictConfig({
-    'llm': {
-        'service': 'openai',
-        'model': 'gpt-4',
-        'openai_api_key': 'your-api-key',
-        'openai_base_url': 'https://api.openai.com/v1'
-    }
-})
-llm = LLM.from_config(llm_config)
+catalog = SkillCatalog()
+catalog.load_from_config(skills_config)
 
-auto_skills = AutoSkills(
-    skills='/path/to/skills',
-    llm=llm,
-    work_dir='/path/to/workspace',
-    use_sandbox=False,
-)
+injector = SkillPromptInjector(catalog)
+prompt_section = injector.build_skill_prompt_section()
 
-async def main():
-    result = await auto_skills.run(
-        query='Generate a mock PDF report about AI trends'
-    )
-    print(f"Result: {result.execution_result}")
-
-asyncio.run(main())
+toolset = SkillToolSet(config, catalog, enable_manage=True)
 ```
-
-**参数说明：**
-
-- `skills`：技能来源，支持以下格式：
-  - 单个或多个本地技能目录路径
-  - 单个或多个 ModelScope 技能仓库 ID，例如 `ms-agent/claude_skills`（参考 [ModelScope Hub](https://modelscope.cn/models/ms-agent/claude_skills)）
-  - 格式 `owner/skill_name` 或 `owner/skill_name/subfolder`
-  - 单个或多个 `SkillSchema` 对象
-- `work_dir`：技能执行输出的工作目录
-- `use_sandbox`：是否使用 Docker 沙箱执行（默认 `True`），设为 `False` 则在本地执行并启用安全检查
-- `auto_execute`：是否自动执行技能（默认 `True`）
 
 ## 配置
 
-在 `agent.yaml` 中配置技能模块：
-
 ```yaml
+# agent.yaml
 skills:
-  # 必须: 技能目录路径或 ModelScope 仓库 ID
-  path: /path/to/skills
+  # 来源路径（本地目录、ModelScope 仓库或混合使用）
+  path:
+    - ./skills
+    - ms-agent/research_skills
 
-  # 可选: 是否启用检索器（默认根据技能数量自动判断）
-  enable_retrieve:
+  # 或使用结构化来源
+  sources:
+    - type: local
+      path: ./skills
+    - type: modelscope
+      repo_id: ms-agent/research_skills
+      revision: v1.0
 
-  # 可选: 检索器参数
-  retrieve_args:
-    top_k: 3
-    min_score: 0.8
+  auto_discover: true       # 自动扫描 CWD/skills/ 目录
+  enable_manage: false       # 启用 skill_manage 工具
 
-  # 可选: 最大候选技能数量（默认 10）
-  max_candidate_skills: 10
-
-  # 可选: 最大重试次数（默认 3）
-  max_retries: 3
-
-  # 可选: 工作目录
-  work_dir: /path/to/workspace
-
-  # 可选: 是否使用 Docker 沙箱执行（默认 True）
-  use_sandbox: false
-
-  # 可选: 是否自动执行技能（默认 True）
-  auto_execute: true
+  # 过滤控制（三值语义）
+  # whitelist: null          # null = 全部启用（默认）
+  # whitelist: []            # [] = 全部禁用
+  # whitelist: [paper-finder]  # 仅启用指定技能
+  disabled: []               # 禁用指定技能
 ```
-
-更多 YAML 配置的一般性说明，请参考 [配置与参数](./config)。
 
 ## 核心组件
 
 | 组件 | 描述 |
 |------|------|
-| `AutoSkills` | 技能执行主入口，协调检索、分析和执行 |
-| `SkillContainer` | 安全的技能执行环境（沙箱或本地） |
-| `SkillAnalyzer` | 渐进式技能分析器，支持增量资源加载 |
-| `DAGExecutor` | 基于依赖管理的 DAG 执行器 |
-| `SkillLoader` | 技能加载与管理 |
-| `Retriever` | 使用语义搜索查找相关技能 |
-| `SkillSchema` | 技能 Schema 定义 |
+| `SkillCatalog` | 多源技能管理器：优先级覆盖、缓存、白名单/禁用过滤、热重载 |
+| `SkillPromptInjector` | 构建 system prompt 技能段落（always 技能全文 + 摘要索引） |
+| `SkillToolSet` | `ToolBase` 子类，提供 `skills_list`、`skill_view`、`skill_manage` 注册为标准工具 |
+| `SkillLoader` | 底层磁盘解析器，解析 SKILL.md 目录（从 v1 保留） |
+| `SkillSchema` | 已解析技能的数据模型（从 v1 保留） |
 
-### AutoSkills
+## 与旧版本 (v1) 的对比
 
-```python
-class AutoSkills:
-    def __init__(
-        self,
-        skills: Union[str, List[str], List[SkillSchema]],
-        llm: LLM,
-        enable_retrieve: Optional[bool] = None,
-        retrieve_args: Dict[str, Any] = None,
-        max_candidate_skills: int = 10,
-        max_retries: int = 3,
-        work_dir: Optional[str] = None,
-        use_sandbox: bool = True,
-    ): ...
-
-    async def run(self, query: str, ...) -> SkillDAGResult:
-        """执行技能。"""
-
-    async def get_skill_dag(self, query: str) -> SkillDAGResult:
-        """获取技能 DAG（不执行）。"""
-```
-
-### SkillContainer
-
-```python
-class SkillContainer:
-    def __init__(
-        self,
-        workspace_dir: Optional[Path] = None,
-        use_sandbox: bool = True,
-        timeout: int = 300,
-        memory_limit: str = "2g",
-        enable_security_check: bool = True,
-    ): ...
-
-    async def execute_python_code(self, code: str, ...) -> ExecutionOutput:
-        """执行 Python 代码。"""
-
-    async def execute_shell(self, command: str, ...) -> ExecutionOutput:
-        """执行 Shell 命令。"""
-```
-
-### SkillAnalyzer
-
-```python
-class SkillAnalyzer:
-    def __init__(self, llm: LLM): ...
-
-    def analyze_skill_plan(self, skill: SkillSchema, query: str) -> SkillContext:
-        """阶段 1: 分析技能并创建执行计划。"""
-
-    def load_skill_resources(self, context: SkillContext) -> SkillContext:
-        """阶段 2: 根据计划加载资源。"""
-
-    def generate_execution_commands(self, context: SkillContext) -> List[Dict]:
-        """阶段 3: 生成执行命令。"""
-```
-
-### DAGExecutor
-
-```python
-class DAGExecutor:
-    def __init__(
-        self,
-        container: SkillContainer,
-        skills: Dict[str, SkillSchema],
-        llm: LLM = None,
-        enable_progressive_analysis: bool = True,
-        enable_self_reflection: bool = True,
-        max_retries: int = 3,
-    ): ...
-
-    async def execute(
-        self,
-        dag: Dict[str, List[str]],
-        execution_order: List[Union[str, List[str]]],
-        stop_on_failure: bool = True,
-        query: str = '',
-    ) -> DAGExecutionResult:
-        """执行技能 DAG。"""
-```
-
-## 使用示例
-
-### 示例一：PDF 报告生成
-
-```python
-import asyncio
-from ms_agent.skill import AutoSkills
-from ms_agent.llm import LLM
-
-async def generate_pdf_report():
-    llm = LLM.from_config(config)
-    auto_skills = AutoSkills(
-        skills='/path/to/skills',
-        llm=llm,
-        work_dir='/tmp/reports'
-    )
-
-    result = await auto_skills.run(
-        query='Generate a PDF report analyzing Q4 2024 sales data with charts'
-    )
-
-    if result.execution_result and result.execution_result.success:
-        for skill_id, skill_result in result.execution_result.results.items():
-            if skill_result.output.output_files:
-                print(f"Generated files: {skill_result.output.output_files}")
-
-asyncio.run(generate_pdf_report())
-```
-
-### 示例二：多技能流水线
-
-```python
-async def create_presentation():
-    auto_skills = AutoSkills(
-        skills='/path/to/skills',
-        llm=llm,
-        work_dir='/tmp/presentation'
-    )
-
-    # 此请求可能触发多个技能协同执行：
-    # 1. data-analysis 技能处理数据
-    # 2. chart-generator 技能创建可视化图表
-    # 3. pptx 技能生成演示文稿
-    result = await auto_skills.run(
-        query='Create a presentation about AI market trends with data visualizations'
-    )
-
-    print(f"Execution order: {result.execution_order}")
-
-    for skill_id in result.execution_order:
-        if isinstance(skill_id, str):
-            context = auto_skills.get_skill_context(skill_id)
-            if context and context.plan:
-                print(f"{skill_id}: {context.plan.plan_summary}")
-
-asyncio.run(create_presentation())
-```
-
-### 示例三：自定义输入执行
-
-```python
-from ms_agent.skill.container import ExecutionInput
-
-async def execute_with_custom_input():
-    auto_skills = AutoSkills(
-        skills='/path/to/skills',
-        llm=llm,
-        work_dir='/tmp/custom'
-    )
-
-    dag_result = await auto_skills.get_skill_dag(
-        query='Convert my document to PDF'
-    )
-
-    custom_input = ExecutionInput(
-        input_files={'document.md': '/path/to/my/document.md'},
-        env_vars={'OUTPUT_FORMAT': 'A4', 'MARGINS': '1in'}
-    )
-
-    exec_result = await auto_skills.execute_dag(
-        dag_result=dag_result,
-        execution_input=custom_input,
-        query='Convert my document to PDF'
-    )
-
-    print(f"Success: {exec_result.success}")
-
-asyncio.run(execute_with_custom_input())
-```
-
-## 安全机制
-
-### 沙箱执行（推荐）
-
-当 `use_sandbox=True` 时，技能在隔离的 Docker 容器中运行：
-- 网络隔离（可配置）
-- 文件系统隔离（仅挂载工作目录）
-- 资源限制（内存、CPU）
-- 无法访问宿主系统
-- 自动安装技能声明的依赖
-
-### 本地执行
-
-当 `use_sandbox=False` 时，通过以下方式保障安全：
-- 基于模式匹配的危险代码扫描
-- 受限的文件系统访问
-- 环境变量清洗
-
-> 请确保您信任待执行的技能脚本，以避免潜在的安全风险。本地执行需确保 Python 环境中已安装脚本所需的全部依赖。
-
-## 创建自定义技能
-
-1. 在技能目录下创建新的子目录
-2. 添加 `SKILL.md` 文件，包含文档和指令
-3. 添加 `META.yaml` 文件，包含元数据
-4. 按需添加 scripts、references 和 resources
-5. 使用 `AutoSkills.get_skill_dag()` 验证技能能否被正确检索
-
-### 最佳实践
-
-- 编写清晰完整的 `SKILL.md`，充分描述技能的功能、使用方式和参数
-- 在 `requirements.txt` 中显式声明所有依赖
-- 保持技能自包含，将所有必要资源打包在目录内
-- 在脚本中妥善处理错误
-- 使用 `SKILL_OUTPUT_DIR` 环境变量指定输出目录
+| 维度 | v1（AutoSkills 管线） | v2（知识 + 工具） |
+|------|---------------------|------------------|
+| 执行模型 | 独立管线：LLM 分析 → DAG → 子进程 | 标准 agent 循环——模型直接使用工具 |
+| 调度方式 | `do_skill()` 短路 agent 循环 | 无特殊分支；技能即标准工具 |
+| 上下文加载 | 4 级 LLM 驱动的渐进分析 | 3 级披露：prompt → `skill_view` → 文件 |
+| 工具共存 | 技能与 MCP 工具互斥 | 所有工具共存于同一循环 |
+| 流式输出 | 技能模式下不支持 | 天然支持 |
+| 外部依赖 | FAISS, Docker, sentence-transformers | 无（纯 Python） |
+| 已移除 | — | `AutoSkills`, `DAGExecutor`, `SkillAnalyzer`, `SkillContainer`, `Spec` |
+| 新增 | — | `SkillCatalog`, `SkillPromptInjector`, `SkillToolSet` |
 
 ## 参考
 
-- [Anthropic Agent Skills 官方文档](https://docs.claude.com/en/docs/agents-and-tools/agent-skills)
-- [Anthropic Skills GitHub 仓库](https://github.com/anthropics/skills)
-- [MS-Agent Skill 示例](https://modelscope.cn/models/ms-agent/skill_examples)
+- [设计文档](https://github.com/modelscope/ms-agent/tree/main/ms_agent/skill/README.md)
+- [MS-Agent 技能示例](https://modelscope.cn/models/ms-agent/skill_examples)

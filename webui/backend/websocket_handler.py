@@ -4,17 +4,16 @@ WebSocket handler for real-time communication
 Handles agent execution, log streaming, and progress updates.
 """
 import asyncio
-import os
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, Set
-
 import json
+import os
 from agent_runner import AgentRunner
+from datetime import datetime
 from deep_research_worker_manager import DeepResearchWorkerManager
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from pathlib import Path
 # Import shared instances
 from shared import config_manager, project_discovery, session_manager
+from typing import Any, Dict, Set
 
 router = APIRouter()
 
@@ -188,6 +187,7 @@ async def start_agent(session_id: str, data: Dict[str, Any],
     if session_type == 'chat':
         # Create a virtual project for chat mode using the default agent.yaml
         import ms_agent
+
         # Get ms_agent package installation path
         # Use __path__ which is always available for packages and gives real filesystem paths
         if hasattr(ms_agent, '__path__') and ms_agent.__path__:

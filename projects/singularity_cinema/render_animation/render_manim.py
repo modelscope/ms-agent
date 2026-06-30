@@ -1,21 +1,21 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import base64
+import json
 import os
 import re
 import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
+from moviepy import VideoFileClip
+from omegaconf import DictConfig
 from os import getcwd
+from PIL import Image
 from typing import List, Union
 
-import json
-from moviepy import VideoFileClip
 from ms_agent.agent import CodeAgent
-from ms_agent.llm import LLM, Message
+from ms_agent.llm import LLM, Message, collect_response
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
-from PIL import Image
 
 logger = get_logger()
 
@@ -357,7 +357,7 @@ The right component is squeezed to the edge. Fix suggestion: Reduce the width of
                 Message(role='system', content=test_system),
                 Message(role='user', content=_content),
             ]
-            response = llm.generate(messages)
+            response = collect_response(llm.generate(messages))
             response_text = response.content
 
             pattern = r'<result>(.*?)</result>'
@@ -523,7 +523,7 @@ Fixing detected issues, plus any other problems you find. Verify:
 Please precisely fix the detected issues while maintaining the richness and creativity of the animation.
 """ # noqa
         inputs = [Message(role='user', content=fix_request)]
-        _response_message = llm.generate(inputs)
+        _response_message = collect_response(llm.generate(inputs))
         response = _response_message.content
         if '```python' in response:
             manim_code = response.split('```python')[1].split('```')[0]

@@ -217,6 +217,18 @@ def _count_evidence(output_dir: str) -> dict[str, int]:
     }
 
 
+def _read_log_tail(log_path: str, lines: int = 5) -> str:
+    """Return the last *lines* of the log file, or '' if unavailable."""
+    if not log_path or not os.path.isfile(log_path):
+        return ''
+    try:
+        with open(log_path, 'r', errors='replace') as f:
+            all_lines = f.read().strip().splitlines()
+        return '\n'.join(all_lines[-lines:])
+    except OSError:
+        return ''
+
+
 def _research_progress_fn(task: AsyncTask) -> dict[str, Any]:
     """Progress callback for research tasks -- counts evidence files."""
     output_dir = task.metadata.get('output_dir', '')
@@ -232,6 +244,9 @@ def _research_progress_fn(task: AsyncTask) -> dict[str, Any]:
     if task.status == 'completed':
         info['report_path'] = task.metadata.get('report_path',
                                                 '') or report_path
+    log_tail = _read_log_tail(task.metadata.get('log_path', ''))
+    if log_tail:
+        info['log_tail'] = log_tail
     return info
 
 
@@ -243,32 +258,40 @@ async def _background_research(task: AsyncTask) -> dict[str, Any]:
 
     stdout is sent to DEVNULL because the inner LLMAgent writes streaming
     content via ``sys.stdout.write()`` which causes BrokenPipeError when
-    connected to a pipe.  All meaningful output goes to the ms_agent.log
-    file inside the working directory; the final report is read from disk.
+    connected to a pipe.  stderr is written to a log file in the output
+    directory for live monitoring; the final report is read from disk.
     """
     query = task.metadata['query']
     config_path = task.metadata['config_path']
     output_dir = task.metadata['output_dir']
 
-    cmd = _build_cmd(config_path, query, output_dir)
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.PIPE,
-        cwd=os.path.dirname(config_path),
-    )
-    task._process = proc
-    task.metadata['pid'] = proc.pid
+    log_path = os.path.join(output_dir, 'ms_agent.log')
+    task.metadata['log_path'] = log_path
 
-    stderr = await proc.stderr.read()
-    await proc.wait()
+    cmd = _build_cmd(config_path, query, output_dir)
+    log_file = open(log_path, 'w')
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=log_file,
+            cwd=os.path.dirname(config_path),
+        )
+        task._process = proc
+        task.metadata['pid'] = proc.pid
+
+        await proc.wait()
+    finally:
+        log_file.close()
 
     if proc.returncode == 0:
         report_path = _find_report(output_dir)
         task.metadata['report_path'] = report_path
         return {'report_path': report_path, 'output_dir': output_dir}
     else:
-        raise RuntimeError(stderr.decode('utf-8', errors='replace')[-2000:])
+        with open(log_path, 'r', errors='replace') as f:
+            stderr_tail = f.read()[-2000:]
+        raise RuntimeError(stderr_tail)
 
 
 async def _handle_submit(args: dict[str, Any],
@@ -393,16 +416,21 @@ async def _handle_deep_research_sync(args: dict[str, Any],
         output_dir = os.path.abspath(f'output/deep_research_{ts}')
     os.makedirs(output_dir, exist_ok=True)
 
+    log_path = os.path.join(output_dir, 'ms_agent.log')
     cmd = _build_cmd(config_path, query, output_dir)
+    log_file = open(log_path, 'w')
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=log_file,
             cwd=os.path.dirname(config_path),
         )
-        stderr = await proc.stderr.read()
         await proc.wait()
+    finally:
+        log_file.close()
+
+    try:
         report_path = _find_report(output_dir)
         if proc.returncode == 0:
             return {
@@ -411,10 +439,12 @@ async def _handle_deep_research_sync(args: dict[str, Any],
                 'report_path': report_path
             }
         else:
+            with open(log_path, 'r', errors='replace') as f:
+                stderr_tail = f.read()[-2000:]
             return {
                 'status': 'failed',
                 'output_dir': output_dir,
-                'error': stderr.decode('utf-8', errors='replace')[-2000:]
+                'error': stderr_tail
             }
     except Exception as e:
         return {'status': 'failed', 'error': str(e)}

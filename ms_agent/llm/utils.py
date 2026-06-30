@@ -1,8 +1,7 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+import json
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Union
-
-import json
 from typing_extensions import Literal, Required, TypedDict
 
 
@@ -24,6 +23,30 @@ class Tool(TypedDict, total=False):
     parameters: Dict[str, Any] = dict()
 
 
+def collect_response(response):
+    """Normalize an LLM ``generate()`` return value to a single complete
+    :class:`Message`.
+
+    ``LLM.generate()`` returns either a ``Message`` (non-streaming) or a
+    ``Generator[Message, None, None]`` (streaming).  In the streaming case
+    the generator yields progressively accumulated ``Message`` objects and
+    the last one contains the full response.  This helper transparently
+    consumes the generator so callers that only need the final result can
+    work identically regardless of the ``stream`` config.
+
+    Usage::
+
+        response = collect_response(llm.generate(messages))
+        text = response.content
+    """
+    if isinstance(response, Message):
+        return response
+    msg = None
+    for msg in response:
+        pass
+    return msg
+
+
 @dataclass
 class Message:
     role: Literal['system', 'user', 'assistant', 'tool']
@@ -39,6 +62,10 @@ class Message:
 
     # needed for output
     reasoning_content: str = ''
+
+    # Opaque output items from the Responses API that must be passed back
+    # in multi-turn tool-calling conversations (e.g. reasoning items).
+    _responses_output_items: List[Dict[str, Any]] = field(default_factory=list)
 
     # request id
     id: str = ''
@@ -58,14 +85,13 @@ class Message:
     cached_tokens: int = 0
     # tokens used to create new cache (explicit cache only, billed at higher rate like 1.25x)
     cache_creation_input_tokens: int = 0
+    # reasoning/thinking tokens (subset of completion_tokens for thinking models)
+    reasoning_tokens: int = 0
 
     api_calls: int = 1
 
-    # Knowledge search (sirchmunk) related fields
-    # searching_detail: Search process logs and metadata for frontend display
-    searching_detail: Dict[str, Any] = field(default_factory=dict)
-    # search_result: Raw search results to be used as context for next LLM turn
-    search_result: List[Dict[str, Any]] = field(default_factory=list)
+    # role=tool: extra payload for UIs / SSE only; omitted from LLM API via to_dict_clean().
+    tool_detail: Optional[str] = None
 
     def to_dict(self):
         return asdict(self)
@@ -88,7 +114,16 @@ class Message:
                     }
                 }
         required = ['content', 'role']
-        rm = ['completion_tokens', 'prompt_tokens', 'api_calls']
+        # Never send UI-only fields to model providers.
+        rm = [
+            'completion_tokens',
+            'prompt_tokens',
+            'api_calls',
+            'tool_detail',
+            'searching_detail',
+            'search_result',
+            '_responses_output_items',
+        ]
         return {
             key: value
             for key, value in raw_dict.items()
@@ -98,20 +133,33 @@ class Message:
 
 @dataclass
 class ToolResult:
+    """Tool execution outcome.
+
+    ``text`` is sent to the model as the tool message ``content``.
+    ``tool_detail`` is optional verbose output for frontends only (SSE, logs).
+    """
+
     text: str
     resources: List[str] = field(default_factory=list)
     extra: dict = field(default_factory=dict)
+    tool_detail: Optional[str] = None
 
     @staticmethod
     def from_raw(raw):
         if isinstance(raw, str):
             return ToolResult(text=raw)
         if isinstance(raw, dict):
+            model_text = raw.get('result')
+            if model_text is None:
+                model_text = raw.get('text', '')
+            td = raw.get('tool_detail')
             return ToolResult(
-                text=str(raw.get('text', '')),
+                text=str(model_text),
                 resources=raw.get('resources', []),
+                tool_detail=None if td is None else str(td),
                 extra={
                     k: v
-                    for k, v in raw.items() if k not in ['text', 'resources']
+                    for k, v in raw.items()
+                    if k not in ['text', 'resources', 'result', 'tool_detail']
                 })
         raise TypeError('tool_call_result must be str or dict')
