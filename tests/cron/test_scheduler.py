@@ -109,6 +109,50 @@ class TestAsyncScheduler:
         assert count == 0
 
     @pytest.mark.asyncio
+    async def test_running_job_skipped_by_manual_tick(self, repo):
+        # A running job keeps its (past) next_run_at until it finishes, so it
+        # still looks "due". manual_tick must NOT re-dispatch it, otherwise the
+        # same job runs twice concurrently. Regression for the manual_tick /
+        # _on_tick status-filter divergence.
+        past = (datetime.now(timezone.utc) - timedelta(seconds=10)).strftime(
+            '%Y-%m-%dT%H:%M:%S+00:00'
+        )
+        job = CronJobSpec(id='run1', name='Running Job', prompt='test')
+        state = CronJobState(status='running', next_run_at=past)
+        repo.save_job_and_state(job, state)
+
+        due_list = []
+
+        async def on_due(jobs):
+            due_list.extend(jobs)
+
+        scheduler = AsyncScheduler(repo, on_due=on_due, tick_interval=60)
+        count = await scheduler.manual_tick()
+        assert count == 0
+        assert due_list == []
+
+    @pytest.mark.asyncio
+    async def test_completed_job_skipped_by_manual_tick(self, repo):
+        # Force a past next_run_at so the status filter is what skips it, not
+        # the incidental next_run_at=None that completed jobs normally carry.
+        past = (datetime.now(timezone.utc) - timedelta(seconds=10)).strftime(
+            '%Y-%m-%dT%H:%M:%S+00:00'
+        )
+        job = CronJobSpec(id='done1', name='Completed Job', prompt='test')
+        state = CronJobState(status='completed', next_run_at=past)
+        repo.save_job_and_state(job, state)
+
+        due_list = []
+
+        async def on_due(jobs):
+            due_list.extend(jobs)
+
+        scheduler = AsyncScheduler(repo, on_due=on_due, tick_interval=60)
+        count = await scheduler.manual_tick()
+        assert count == 0
+        assert due_list == []
+
+    @pytest.mark.asyncio
     async def test_disabled_job_skipped(self, repo):
         past = (datetime.now(timezone.utc) - timedelta(seconds=10)).strftime(
             '%Y-%m-%dT%H:%M:%S+00:00'

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import os
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -20,6 +21,55 @@ def is_in_cron_context() -> bool:
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
+
+
+def resolve_project_path(raw: str) -> str:
+    """Resolve a project reference to an absolute filesystem path.
+
+    Handles: pip install (wheel), pip install -e . (editable), and
+    arbitrary CWD (cron daemon, webui, agent tool).
+
+    Resolution order:
+      1. Absolute path that exists → return as-is
+      2. Relative path that exists from CWD → resolve to absolute
+      3. Bundled package project under ms_agent/projects/
+         (works for wheel installs where build_py copies projects/)
+      4. Source repo projects/ next to the ms_agent package
+         (works for editable installs where ms_agent/projects/ doesn't exist)
+      5. Fall through → return original string
+         (Config.from_task will try ModelScope Hub download)
+
+    Steps 3-4 also handle a leading "projects/" prefix so both
+    "deep_research/v2" and "projects/deep_research/v2" resolve correctly.
+    """
+    if os.path.isabs(raw) and os.path.exists(raw):
+        return raw
+    if os.path.exists(raw):
+        return os.path.abspath(raw)
+
+    stripped = raw[len('projects/'):] if raw.startswith('projects/') else None
+    candidates = [raw] if stripped is None else [raw, stripped]
+
+    try:
+        from importlib import resources
+        pkg_dir = Path(str(resources.files('ms_agent')))
+
+        # Step 3: wheel install — ms_agent/projects/<candidate>
+        for name in candidates:
+            p = pkg_dir / 'projects' / name
+            if p.exists():
+                return str(p.resolve())
+
+        # Step 4: editable install — <repo_root>/projects/<candidate>
+        repo_root = pkg_dir.parent
+        for name in candidates:
+            p = repo_root / 'projects' / name
+            if p.exists():
+                return str(p.resolve())
+    except Exception:
+        pass
+
+    return raw
 
 
 class JobExecutor:
@@ -116,14 +166,14 @@ class JobExecutor:
         if job.workflow:
             from ms_agent.workflow.loader import WorkflowLoader
             return WorkflowLoader.build(
-                config_dir_or_id=job.workflow,
+                config_dir_or_id=resolve_project_path(job.workflow),
                 config=config,
                 trust_remote_code=job.trust_remote_code,
             )
         elif job.project:
             from ms_agent.agent.loader import AgentLoader
             return AgentLoader.build(
-                config_dir_or_id=job.project,
+                config_dir_or_id=resolve_project_path(job.project),
                 config=config,
                 trust_remote_code=job.trust_remote_code,
                 load_cache=load_cache,

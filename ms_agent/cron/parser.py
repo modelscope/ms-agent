@@ -166,19 +166,23 @@ def advance_next_run(schedule: CronSchedule, current_next: str) -> Optional[str]
         croniter_cls = _try_import_croniter()
         import pytz
         tz = pytz.timezone(schedule.timezone) if schedule.timezone else timezone.utc
-        local_base = base.astimezone(tz)
-        cron = croniter_cls(schedule.expr, local_base)
+        # Fast-forward: start croniter from max(base, now) so we never loop
+        # over historical fire times.
+        effective_base = max(base, now).astimezone(tz)
+        cron = croniter_cls(schedule.expr, effective_base)
         next_dt = cron.get_next(datetime)
-        while next_dt.astimezone(timezone.utc) <= now:
-            next_dt = cron.get_next(datetime)
         return next_dt.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+00:00')
 
     elif schedule.kind == 'interval':
         from datetime import timedelta
         step = timedelta(seconds=schedule.interval_seconds)
-        candidate = base + step
-        while candidate <= now:
-            candidate += step
+        if base >= now:
+            candidate = base + step
+        else:
+            # O(1) jump: calculate how many intervals fit in the gap
+            diff_seconds = (now - base).total_seconds()
+            steps_needed = int(diff_seconds // schedule.interval_seconds) + 1
+            candidate = base + steps_needed * step
         return candidate.strftime('%Y-%m-%dT%H:%M:%S+00:00')
 
     return None

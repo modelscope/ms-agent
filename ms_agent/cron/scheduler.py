@@ -100,12 +100,17 @@ class AsyncScheduler:
         except asyncio.CancelledError:
             pass
 
-    async def _on_tick(self) -> None:
-        jobs_and_states = self._repo.load_all_with_state()
+    def _collect_due_jobs(self) -> List[Tuple[CronJobSpec, CronJobState]]:
+        """Select enabled, dispatchable jobs whose next_run_at is due.
+
+        Jobs in 'paused', 'running' or 'completed' are skipped: a running job
+        must not be dispatched twice (no next_run_at advance happens until it
+        finishes), and paused/completed jobs should never fire. Shared by the
+        timer-driven tick and the manual CLI tick so the two cannot diverge.
+        """
         now = _now_ms()
         due_jobs: List[Tuple[CronJobSpec, CronJobState]] = []
-
-        for job, state in jobs_and_states:
+        for job, state in self._repo.load_all_with_state():
             if not job.enabled:
                 continue
             if state.status in ('paused', 'running', 'completed'):
@@ -113,7 +118,10 @@ class AsyncScheduler:
             next_ms = _iso_to_ms(state.next_run_at)
             if next_ms is not None and next_ms <= now:
                 due_jobs.append((job, state))
+        return due_jobs
 
+    async def _on_tick(self) -> None:
+        due_jobs = self._collect_due_jobs()
         if due_jobs:
             await self._on_due(due_jobs)
 
@@ -122,19 +130,7 @@ class AsyncScheduler:
 
     async def manual_tick(self) -> int:
         """Run a single tick manually (for CLI `cron tick`). Returns count of due jobs."""
-        jobs_and_states = self._repo.load_all_with_state()
-        now = _now_ms()
-        due_jobs: List[Tuple[CronJobSpec, CronJobState]] = []
-
-        for job, state in jobs_and_states:
-            if not job.enabled:
-                continue
-            if state.status == 'paused':
-                continue
-            next_ms = _iso_to_ms(state.next_run_at)
-            if next_ms is not None and next_ms <= now:
-                due_jobs.append((job, state))
-
+        due_jobs = self._collect_due_jobs()
         if due_jobs:
             await self._on_due(due_jobs)
 

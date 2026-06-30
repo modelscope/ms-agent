@@ -72,6 +72,17 @@ class CronTool(ToolBase):
                                 'type': 'string',
                                 'description': 'Human-readable task name.',
                             },
+                            'project': {
+                                'type': 'string',
+                                'description': (
+                                    'Agent project path for create (e.g. "projects/deep_research/v2/researcher.yaml"). '
+                                    'Determines which tools, prompts, and model the job uses.'
+                                ),
+                            },
+                            'timeout': {
+                                'type': 'integer',
+                                'description': 'Max execution time in seconds (for create).',
+                            },
                             'job_id': {
                                 'type': 'string',
                                 'description': 'Job ID (required for non-create actions).',
@@ -103,6 +114,8 @@ class CronTool(ToolBase):
                 schedule_str=schedule,
                 prompt=prompt,
                 name=args.get('name', ''),
+                project=args.get('project'),
+                timeout=args.get('timeout'),
             )
             return _json_dumps({
                 'status': 'created',

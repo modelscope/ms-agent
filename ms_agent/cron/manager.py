@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from ms_agent.cron.executor import resolve_project_path
 from ms_agent.cron.parser import advance_next_run, compute_next_run, parse_schedule
 from ms_agent.cron.repository import JsonJobRepository
 from ms_agent.cron.types import (
@@ -46,8 +47,8 @@ class JobManager:
             name=name or (prompt[:30] + '...' if prompt and len(prompt) > 30 else (prompt or '')),
             schedule=schedule,
             prompt=prompt,
-            project=project,
-            workflow=workflow,
+            project=resolve_project_path(project) if project else None,
+            workflow=resolve_project_path(workflow) if workflow else None,
             timeout=timeout,
             overrides=overrides,
             trust_remote_code=trust_remote_code,

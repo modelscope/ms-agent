@@ -1,4 +1,5 @@
 aiohttp
+croniter>=1.3.0
 dotenv
 edge_tts
 faiss-cpu
@@ -14,6 +15,7 @@ openai
 pandas
 pillow
 pyyaml
+pytz
 requests
 sentence-transformers
 typing_extensions

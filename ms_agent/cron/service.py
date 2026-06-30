@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 
-from ms_agent.cron.executor import JobExecutor
+from ms_agent.cron.executor import JobExecutor, resolve_project_path
 from ms_agent.cron.manager import JobManager
 from ms_agent.cron.parser import compute_next_run
 from ms_agent.cron.repository import JsonJobRepository
@@ -314,8 +314,9 @@ class CronService:
 
         if job.project:
             from ms_agent.config import Config
+            project_path = resolve_project_path(job.project)
             try:
-                config = Config.from_task(job.project)
+                config = Config.from_task(project_path)
             except Exception:
                 config = OmegaConf.create({})
         else:

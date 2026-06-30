@@ -125,6 +125,9 @@ class CronCMD(CLICommand):
             print(f'Starting cron daemon in foreground (workspace: {service.workspace})')
             asyncio.run(service.run_forever())
         else:
+            if not hasattr(os, 'fork'):
+                print('Daemon mode is not supported on this platform. Please use --foreground.', file=sys.stderr)
+                sys.exit(1)
             pid = os.fork()
             if pid > 0:
                 print(f'Cron daemon started (PID {pid}, workspace: {service.workspace})')
