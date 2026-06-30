@@ -141,6 +141,11 @@ class ToolManager:
             self.extra_tools.append(TodoListTool(config))
         if hasattr(config, 'tools') and hasattr(config.tools, 'web_search'):
             self.extra_tools.append(WebSearchTool(config))
+        if hasattr(config, 'tools') and hasattr(config.tools, 'cron'):
+            cron_cfg = getattr(config.tools, 'cron', None)
+            if not getattr(cron_cfg, 'mcp', False):
+                from ms_agent.tools.cron_tool import CronTool
+                self.extra_tools.append(CronTool(config))
         if effective_localsearch_settings(config) is not None:
             self.extra_tools.append(LocalSearchTool(config))
         if hasattr(config, 'tools') and hasattr(config.tools, 'task_control'):
@@ -253,7 +258,8 @@ class ToolManager:
                     key = f"{server_name[:max(0, max_server_len)]}{self.TOOL_SPLITER}{tool['tool_name']}"
                 else:
                     key = f"{server_name}{self.TOOL_SPLITER}{tool['tool_name']}"
-                assert key not in self._tool_index, f'Tool name duplicated {tool["tool_name"]}'
+                if key in self._tool_index:
+                    continue
                 tool = copy(tool)
                 tool['tool_name'] = key
                 self._tool_index[key] = (tool_ins, server_name, tool)

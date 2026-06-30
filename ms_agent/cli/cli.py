@@ -4,6 +4,7 @@ from ms_agent.cli.a2a_cmd import A2ACmd, A2ARegistryCmd
 from ms_agent.cli.acp_cmd import ACPCmd, ACPRegistryCmd
 from ms_agent.cli.acp_proxy_cmd import ACPProxyCmd
 from ms_agent.cli.app import AppCMD
+from ms_agent.cli.cron import CronCMD
 from ms_agent.cli.run import RunCMD
 from ms_agent.cli.ui import UICMD
 
@@ -28,6 +29,7 @@ def run_cmd():
     RunCMD.define_args(subparsers)
     AppCMD.define_args(subparsers)
     UICMD.define_args(subparsers)
+    CronCMD.define_args(subparsers)
 
     # unknown args will be handled in config.py
     args, _ = parser.parse_known_args()
