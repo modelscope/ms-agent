@@ -1,5 +1,6 @@
 import asyncio
 import os
+import secrets
 from typing import Any
 
 import json
@@ -101,7 +102,7 @@ def _check_api_key(authorization: str | None = Header(None)):
     if not authorization:
         raise HTTPException(401, 'Authorization header required')
     parts = authorization.split()
-    if len(parts) != 2 or parts[0].lower() != 'bearer' or parts[1] != _api_key:
+    if len(parts) != 2 or parts[0].lower() != 'bearer' or not secrets.compare_digest(parts[1], _api_key):
         raise HTTPException(403, 'Invalid API key')
 
 
