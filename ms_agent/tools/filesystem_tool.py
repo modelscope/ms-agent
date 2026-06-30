@@ -217,6 +217,7 @@ class FileSystemTool(ToolBase):
                      'Only effective when paths has exactly one element. Omit to read from the beginning.\n'
                      '- `limit`: number of lines to read. '
                      'Only effective when paths has exactly one element. Omit to read to the end.\n'
+                     '- Returns raw file content (no line-number prefixes) so snippets can be reused in `edit_file`.\n'
                      '- `abbreviate`: if true, use an LLM to return a condensed summary of each file '
                      'instead of the raw content. Cached after first call. '
                      'Use this for a quick structural overview; read the full file if more detail is needed.'
@@ -604,25 +605,34 @@ class FileSystemTool(ToolBase):
                     files.append(fp)
 
         for fp in files:
-            try:
-                text = fp.read_text(encoding='utf-8', errors='replace')
-            except OSError:
-                continue
             rel = str(fp.relative_to(
                 self._fs_policy.workspace_root)) if _is_relative(
                     fp, self._fs_policy.workspace_root) else str(fp)
-            if output_mode == 'files_with_matches':
-                if rx.search(text):
-                    lines_out.append(rel)
-            elif output_mode == 'count':
-                n = len(rx.findall(text))
-                if n:
-                    counts[rel] = n
-            else:
-                for i, line in enumerate(text.splitlines(), start=1):
-                    if rx.search(line):
-                        lines_out.append(f'{rel}:{i}:{line}')
-            if len(lines_out) >= head_limit + offset + 5000:
+            try:
+                if output_mode == 'files_with_matches':
+                    with fp.open(encoding='utf-8', errors='replace') as f:
+                        for line in f:
+                            if rx.search(line):
+                                lines_out.append(rel)
+                                break
+                elif output_mode == 'count':
+                    with fp.open(encoding='utf-8', errors='replace') as f:
+                        n = sum(len(rx.findall(line)) for line in f)
+                    if n:
+                        counts[rel] = n
+                else:
+                    with fp.open(encoding='utf-8', errors='replace') as f:
+                        for i, line in enumerate(f, start=1):
+                            if rx.search(line):
+                                _clean = line.rstrip("\n\r")
+                                lines_out.append(
+                                    f'{rel}:{i}:{_clean}')
+                            if len(lines_out) >= head_limit + offset + 5000:
+                                break
+            except OSError:
+                continue
+            if output_mode != 'count' and len(
+                    lines_out) >= head_limit + offset + 5000:
                 break
 
         if output_mode == 'count':
@@ -909,13 +919,10 @@ class FileSystemTool(ToolBase):
                             path] = f'Error: offset {offset} exceeds file length ({total_lines} lines)'
                         continue
                     selected = lines[actual_start - 1:actual_end]
-                    start_lineno = actual_start
                 else:
                     selected = lines
-                    start_lineno = 1
 
-                results[path] = ''.join(f'{start_lineno + i}\t{line}'
-                                        for i, line in enumerate(selected))
+                results[path] = ''.join(selected)
 
                 # Update dedup cache
                 self._read_cache[target_path_real] = {

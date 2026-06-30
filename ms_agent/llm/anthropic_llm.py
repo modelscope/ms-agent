@@ -283,7 +283,7 @@ class Anthropic(LLM):
         else:
             return self.client.messages.create(**params)
 
-    @retry(max_attempts=LLM.retry_count, delay=1.0)
+    @retry(max_attempts=LLM.retry_count, delay=3.0)
     def generate(self,
                  messages: List[Message],
                  tools: Optional[List[Tool]] = None,

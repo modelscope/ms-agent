@@ -1,4 +1,6 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+from __future__ import annotations
+
 from omegaconf import DictConfig, OmegaConf
 
 from .condenser.code_condenser import CodeCondenser

@@ -242,8 +242,10 @@ class TestLLMAgentSnapshotInterface(unittest.TestCase):
             self.assertEqual(_read(path), 'v2')
 
             # Rollback to h1
-            ok = agent.rollback(h1)
+            ok, rolled_back = agent.rollback(h1)
             self.assertTrue(ok)
+            self.assertIsNotNone(rolled_back)
+            self.assertEqual(len(rolled_back), 2)
 
             # File should be restored
             self.assertEqual(_read(path), 'v1')
@@ -273,14 +275,60 @@ class TestLLMAgentSnapshotInterface(unittest.TestCase):
             agent.rollback(h)
             self.assertEqual(fake_tool._read_cache, {})
 
+    def test_rollback_sets_pending_messages_for_run_loop(self):
+        from ms_agent.llm.utils import Message
+        from ms_agent.utils import save_history
+
+        with tempfile.TemporaryDirectory() as td:
+            agent = self._make_agent(td)
+            h = take_snapshot(td, 'snap', message_count=2)
+            messages = [
+                Message(role='system', content='sys'),
+                Message(role='user', content='task1'),
+                Message(role='assistant', content='done1'),
+                Message(role='user', content='task2'),
+            ]
+            save_history(td, 'smoke-test', agent.config, messages)
+
+            ok, truncated = agent.rollback(h)
+            self.assertTrue(ok)
+            self.assertEqual(len(truncated), 2)
+            self.assertEqual(agent.consume_rollback_messages(), truncated)
+            self.assertIsNone(agent.consume_rollback_messages())
+
+    def test_apply_pending_rollback_refreshes_active_messages(self):
+        from ms_agent.llm.utils import Message
+        from ms_agent.utils import save_history
+
+        with tempfile.TemporaryDirectory() as td:
+            agent = self._make_agent(td)
+            h = take_snapshot(td, 'snap', message_count=1)
+            save_history(
+                td, 'smoke-test', agent.config, [
+                    Message(role='system', content='sys'),
+                    Message(role='user', content='task1'),
+                    Message(role='assistant', content='stale'),
+                ])
+
+            agent.rollback(h)
+            stale = [
+                Message(role='system', content='sys'),
+                Message(role='user', content='task1'),
+                Message(role='assistant', content='stale'),
+            ]
+            refreshed = agent._apply_pending_rollback(stale)
+            self.assertEqual(len(refreshed), 1)
+            self.assertEqual(refreshed[0].role, 'system')
+
     def test_rollback_invalid_hash_returns_false(self):
         with tempfile.TemporaryDirectory() as td:
             _write(os.path.join(td, 'f.txt'), 'v1')
             take_snapshot(td, 'snap')
 
             agent = self._make_agent(td)
-            ok = agent.rollback('deadbeef')
+            ok, truncated = agent.rollback('deadbeef')
             self.assertFalse(ok)
+            self.assertIsNone(truncated)
 
     def test_on_task_begin_auto_snapshots(self):
         """on_task_begin should take a snapshot automatically — no explicit call needed."""

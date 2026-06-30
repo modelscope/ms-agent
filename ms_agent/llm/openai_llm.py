@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import httpx
 import inspect
@@ -209,7 +211,7 @@ class OpenAI(LLM):
             tools = None
         return tools
 
-    @retry(max_attempts=LLM.retry_count, delay=1.0)
+    @retry(max_attempts=LLM.retry_count, delay=3.0)
     def generate(self,
                  messages: List[Message],
                  tools: Optional[List[Tool]] = None,

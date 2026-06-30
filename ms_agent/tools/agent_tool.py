@@ -1140,8 +1140,7 @@ class AgentTool(ToolBase):
 
         if not self._enable_stats:
             result = await runner()
-            if not spec.run_in_process:
-                self._save_transcript(result, runtime_agent_tag)
+            self._save_transcript(result, runtime_agent_tag)
             if _writer is not None:
                 # Store with the same key used by call_tool() to pop it.
                 store_key = call_id if call_id is not None else _effective_call_id
@@ -1154,8 +1153,7 @@ class AgentTool(ToolBase):
         result = None
         try:
             result = await runner()
-            if not spec.run_in_process:
-                self._save_transcript(result, runtime_agent_tag)
+            self._save_transcript(result, runtime_agent_tag)
             if _writer is not None:
                 store_key = call_id if call_id is not None else _effective_call_id
                 self._stream_paths[store_key] = _writer.stream_path
