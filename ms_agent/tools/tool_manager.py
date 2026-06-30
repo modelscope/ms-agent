@@ -146,6 +146,20 @@ class ToolManager:
         if hasattr(config, 'tools') and hasattr(config.tools, 'task_control'):
             from ms_agent.tools.task_control_tool import TaskControlTool
             self.extra_tools.append(TaskControlTool(config))
+        try:
+            from ms_agent.tools.acp_agent_tool import ACPAgentTool
+            acp_tool = ACPAgentTool.from_config(config)
+            if acp_tool is not None:
+                self.extra_tools.append(acp_tool)
+        except ImportError:
+            pass
+        try:
+            from ms_agent.tools.a2a_agent_tool import A2AAgentTool
+            a2a_tool = A2AAgentTool.from_config(config)
+            if a2a_tool is not None:
+                self.extra_tools.append(a2a_tool)
+        except ImportError:
+            pass
         self.tool_call_timeout = float(
             getattr(config, 'tool_call_timeout', TOOL_CALL_TIMEOUT))
         self.tool_call_timeout_max = float(

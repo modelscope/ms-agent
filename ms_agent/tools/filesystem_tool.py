@@ -624,8 +624,8 @@ class FileSystemTool(ToolBase):
                     with fp.open(encoding='utf-8', errors='replace') as f:
                         for i, line in enumerate(f, start=1):
                             if rx.search(line):
-                                lines_out.append(
-                                    f'{rel}:{i}:{line.rstrip("\n\r")}')
+                                stripped_line = line.rstrip('\n\r')
+                                lines_out.append(f'{rel}:{i}:{stripped_line}')
                             if len(lines_out) >= head_limit + offset + 5000:
                                 break
             except OSError:

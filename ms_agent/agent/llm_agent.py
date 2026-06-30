@@ -565,6 +565,13 @@ class LLMAgent(Agent):
         return getattr(generation_config, 'stream', False)
 
     @property
+    def stream_output(self) -> bool:
+        """Whether stream mode should print generated tokens locally."""
+        generation_config = getattr(self.config, 'generation_config',
+                                    DictConfig({}))
+        return bool(getattr(generation_config, 'stream_output', True))
+
+    @property
     def show_reasoning(self) -> bool:
         """Whether to print model reasoning/thinking content in stream mode.
 
@@ -906,7 +913,8 @@ class LLMAgent(Agent):
             tools = await self.tool_manager.get_tools()
 
             if self.stream:
-                self.log_output('[assistant]:')
+                if self.stream_output:
+                    self.log_output('[assistant]:')
                 _content = ''
                 _reasoning = ''
                 is_first = True
@@ -919,7 +927,7 @@ class LLMAgent(Agent):
                         messages.append(_response_message)
                         is_first = False
 
-                    if self.show_reasoning:
+                    if self.stream_output and self.show_reasoning:
                         reasoning_text = (
                             getattr(_response_message, 'reasoning_content', '')
                             or '')
@@ -935,7 +943,7 @@ class LLMAgent(Agent):
                             _reasoning = reasoning_text
 
                     new_content = _response_message.content[len(_content):]
-                    if new_content:
+                    if self.stream_output and new_content:
                         if _printed_reasoning_header and not _printed_reasoning_footer:
                             self._write_thinking_footer()
                             _printed_reasoning_footer = True
@@ -944,19 +952,20 @@ class LLMAgent(Agent):
                     _content = _response_message.content
                     messages[-1] = _response_message
                     yield messages
-                if _printed_reasoning_header and not _printed_reasoning_footer:
-                    self._write_thinking_footer()
-
-                # Handle reasoning summaries that arrive after content
-                if self.show_reasoning and _response_message is not None:
-                    final_reasoning = getattr(_response_message,
-                                              'reasoning_content', '') or ''
-                    if final_reasoning and not _printed_reasoning_header:
-                        self._write_thinking_header()
-                        self._write_reasoning(final_reasoning, dim=True)
+                if self.stream_output:
+                    if _printed_reasoning_header and not _printed_reasoning_footer:
                         self._write_thinking_footer()
 
-                sys.stdout.write('\n')
+                    # Handle reasoning summaries that arrive after content
+                    if self.show_reasoning and _response_message is not None:
+                        final_reasoning = getattr(_response_message,
+                                                  'reasoning_content', '') or ''
+                        if final_reasoning and not _printed_reasoning_header:
+                            self._write_thinking_header()
+                            self._write_reasoning(final_reasoning, dim=True)
+                            self._write_thinking_footer()
+
+                    sys.stdout.write('\n')
             else:
                 _response_message = self.llm.generate(messages, tools=tools)
                 if self.show_reasoning:
