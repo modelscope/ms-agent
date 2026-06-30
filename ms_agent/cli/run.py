@@ -195,8 +195,16 @@ class RunCMD(CLICommand):
                         default_config_path) as config_file:
                     self.args.config = str(config_file)
         elif not os.path.exists(self.args.config):
-            from modelscope import snapshot_download
-            self.args.config = snapshot_download(self.args.config)
+            # Resolve built-in template names (e.g. "general", "plan") before
+            # falling back to ModelScope.
+            from ms_agent.agent.templates.registry import \
+                resolve_template_source
+            resolved = resolve_template_source(self.args.config)
+            if os.path.exists(resolved):
+                self.args.config = resolved
+            else:
+                from modelscope import snapshot_download
+                self.args.config = snapshot_download(resolved)
         self.args.trust_remote_code = strtobool(
             self.args.trust_remote_code)  # noqa
         self.args.load_cache = strtobool(self.args.load_cache)

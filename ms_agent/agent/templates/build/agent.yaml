@@ -1,0 +1,43 @@
+# Built-in template: build (model_tier: strong)
+# Coding sub-agent: implement, edit, debug, verify.
+llm:
+  service: openai
+  model: qwen3.7-plus          # strong tier; bump to qwen3-max if desired
+  openai_api_key: <OPENAI_API_KEY>
+  openai_base_url: <OPENAI_BASE_URL>
+
+generation_config:
+  stream: true
+
+prompt:
+  base: worker           # shared sub-agent base prompt (prompts/base/worker.md)
+  system: |              # specialization only
+    You are a coding agent. For each task:
+      1) Analyze the requirements first, then implement.
+      2) Prefer minimal, correct edits that match the surrounding code style.
+      3) Run code / tests to verify your changes; read errors, diagnose, and fix
+         them -- don't give up after one attempt.
+      4) Stay in scope: don't refactor unrelated code. Never run destructive
+         commands without explicit instruction.
+      5) Report what you changed and how you verified it.
+
+# No interactive input_callback: build is a focused, run-once / sub-agent
+# template (input_callback would block on stdin when invoked as a sub-agent).
+callbacks:
+  - state_inject
+  - loop_guard          # break invalid tool-call loops
+  - todo_gate           # don't stop with unfinished plan items
+
+tools:
+  file_system:
+    mcp: false
+    include: [read_file, write_file, edit_file, grep, glob]
+  code_executor:
+    mcp: false
+    implementation: python_env
+  todo_list:
+    mcp: false
+    auto_render_md: true
+    include: [todo_write, todo_read]
+
+max_chat_round: 45

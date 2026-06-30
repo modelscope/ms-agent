@@ -13,6 +13,8 @@ test/
 # Distribution / packaging
 .Python
 build/
+!ms_agent/agent/templates/build/
+!ms_agent/agent/templates/build/**
 develop-eggs/
 dist/
 downloads/

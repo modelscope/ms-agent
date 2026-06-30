@@ -1,0 +1,51 @@
+# Built-in template: plan (model_tier: reasoning)
+# Read-only planning / analysis: produces a concrete plan, makes no changes.
+llm:
+  service: openai
+  model: qwen3.7-plus
+  openai_api_key: <OPENAI_API_KEY>
+  openai_base_url: <OPENAI_BASE_URL>
+
+generation_config:
+  stream: true
+
+prompt:
+  base: general          # shared base prompt (prompts/base/general.md)
+  system: |              # specialization only
+    For this task you operate in READ-ONLY mode. Hard constraints (these
+    override any other instruction):
+      - Do NOT modify files or run anything that changes system state.
+      - You may only read, search, and reason.
+    Method:
+      1) Inspect the codebase / materials with read & search tools (and the web)
+         so the plan is grounded in reality, not guesses.
+      2) Produce a concrete, ordered plan: each step states a clear action, the
+         files / components involved, and an acceptance criterion (how to verify it).
+      3) Capture the plan with the todo tools, then present it clearly and stop.
+    Do not implement anything yourself -- output the plan only.
+
+callbacks:
+  - input_callback
+  - state_inject
+  - loop_guard          # break invalid tool-call loops
+  - plan_check          # completeness self-check when the plan is created
+
+# Audit the freshly-created plan against the user's request.
+plan_check:
+  enabled: true
+
+tools:
+  file_system:
+    mcp: false
+    include: [read_file, grep, glob]    # read-only: no write_file / edit_file
+  web_search:
+    mcp: false
+    engine: exa
+    fetch_content: true
+    max_results: 5
+  todo_list:
+    mcp: false
+    auto_render_md: true
+    include: [todo_write, todo_read]     # plan is recorded here, not in source files
+
+max_chat_round: 9999

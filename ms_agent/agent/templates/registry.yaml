@@ -1,0 +1,47 @@
+# Built-in template agent manifest.
+#
+# Single source of truth for: CLI `--list-templates`, WebUI template selector,
+# and sub-agent delegation description synthesis (`expand_subagents`).
+#
+# Fields per template:
+#   mode        : primary | subagent | all   (which roles a template is offered as)
+#   model_tier  : strong | reasoning | fast   (intended model tier; informational)
+#   when_to_use : description shown to a parent agent to decide when to delegate
+version: 1
+templates:
+  general:
+    description: General-purpose agent with full analyze -> plan -> execute capability; can delegate to sub-agents.
+    mode: all
+    model_tier: strong
+    when_to_use: >-
+      Default entry point. Handles general tasks that need multiple tools and
+      multi-step reasoning, and can delegate focused subtasks to explore / build
+      / research sub-agents.
+  plan:
+    description: Read-only planning & analysis agent; produces a concrete plan without making changes.
+    mode: primary
+    model_tier: reasoning
+    when_to_use: >-
+      Use to think a task through and produce a structured, step-by-step plan
+      before any changes are made; safe (read-only) for restricted mode.
+  explore:
+    description: Fast read-only exploration agent; locates files and answers questions about a codebase or materials.
+    mode: subagent
+    model_tier: fast
+    when_to_use: >-
+      Delegate when you need to search a large codebase or set of materials and
+      are not confident a single query will find the right match. Read-only.
+  build:
+    description: Coding agent; implements, edits and debugs code, verifying with tests.
+    mode: subagent
+    model_tier: strong
+    when_to_use: >-
+      Delegate a well-specified coding subtask: implement or modify source files
+      and verify them by running tests / checking diagnostics.
+  research:
+    description: Research agent; searches, synthesizes and produces a cited report.
+    mode: subagent
+    model_tier: reasoning
+    when_to_use: >-
+      Delegate an in-depth research subtask on a specific topic; returns dense,
+      citation-backed findings.

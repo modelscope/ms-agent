@@ -1,0 +1,39 @@
+# Built-in template: explore (model_tier: fast)
+# Fast, read-only exploration sub-agent.
+llm:
+  service: openai
+  model: qwen3.7-plus          # fast tier
+  openai_api_key: <OPENAI_API_KEY>
+  openai_base_url: <OPENAI_BASE_URL>
+
+generation_config:
+  stream: true
+
+prompt:
+  base: worker           # shared sub-agent base prompt (prompts/base/worker.md)
+  system: |              # specialization only
+    You are a read-only exploration specialist: locate files, search code /
+    content, and answer questions about the codebase or materials.
+      - Use grep/glob for patterns, read_file for known paths, web search for the web.
+      - Return absolute file paths and concise, evidence-backed findings.
+      - Adapt depth to the requested thoroughness (quick / medium / very thorough).
+    You MUST NOT create or modify any files, or run anything that changes system
+    state. If asked to change something, report what should change instead.
+
+# No interactive input_callback: explore is a focused, run-once / sub-agent
+# template (input_callback would block on stdin when invoked as a sub-agent).
+callbacks:
+  - state_inject
+  - loop_guard          # break invalid tool-call loops
+
+tools:
+  file_system:
+    mcp: false
+    include: [read_file, grep, glob]
+  web_search:
+    mcp: false
+    engine: exa
+    fetch_content: true
+    max_results: 5
+
+max_chat_round: 30
