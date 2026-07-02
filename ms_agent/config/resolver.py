@@ -1,3 +1,4 @@
+# Copyright (c) ModelScope Contributors. All rights reserved.
 """ConfigResolver — multi-layer config merging.
 
 Merges config from five layers (later wins):
@@ -11,21 +12,32 @@ MCP/Skills merge semantics:
   - Union by name, project-level overrides global on conflict
   - Each entry carries an `enabled` flag
 
+Also provides MCP-specific resolution via MCPConfigManager (Playground F7).
+
 This class does NOT replace Config.from_task(). CLI mode continues to use
 Config.from_task() directly. ConfigResolver is for server/UI scenarios
 where layered config is needed.
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, ListConfig, OmegaConf
 
+from ms_agent.config.mcp_manager import MCPConfigManager
+from ms_agent.config.mcp_schema import (
+    ResolvedMCPConfig,
+    collect_builtin_tool_names,
+    merge_mcp_layers,
+    normalize_mcp_servers_layer,
+)
 from ms_agent.utils import get_logger
+from ms_agent.plugins.config_manager import PluginConfigManager
 
 logger = get_logger()
 
@@ -42,10 +54,29 @@ PROJECT_SKILLS_FILE = 'skills.json'
 
 
 class ConfigResolver:
-    """Multi-layer config resolver for server/UI scenarios."""
+    """Multi-layer config resolver for server/UI and Playground scenarios."""
 
-    def __init__(self, global_dir: str = '~/.ms_agent') -> None:
-        self._global_dir = Path(os.path.expanduser(global_dir))
+    def __init__(
+        self,
+        global_dir: Union[str, Path] = '~/.ms_agent',
+        project_root: Union[str, Path, None] = None,
+        agent_config: DictConfig | ListConfig | None = None,
+        mcp_manager: MCPConfigManager | None = None,
+    ) -> None:
+        self._global_dir = Path(global_dir).expanduser()
+        self.project_root = (
+            Path(project_root).expanduser() if project_root else None
+        )
+        self.agent_config = agent_config
+        self.mcp_manager = mcp_manager or MCPConfigManager(
+            self._global_dir, self.project_root)
+        self.plugin_manager = PluginConfigManager(
+            self._global_dir, self.project_root)
+
+    @property
+    def global_root(self) -> Path:
+        """Alias for the global config directory (Playground MCP APIs)."""
+        return self._global_dir
 
     def resolve(
         self,
@@ -73,13 +104,20 @@ class ConfigResolver:
         if global_settings:
             layers.append(global_settings)
 
-        if agent_config is not None:
-            if isinstance(agent_config, str):
-                agent_config = OmegaConf.load(agent_config)
-            layers.append(agent_config)
+        effective_agent_config = (
+            agent_config if agent_config is not None else self.agent_config
+        )
+        if effective_agent_config is not None:
+            if isinstance(effective_agent_config, str):
+                effective_agent_config = OmegaConf.load(effective_agent_config)
+            layers.append(effective_agent_config)
 
-        if project_path:
-            project_patch = self._load_project_patch(project_path)
+        effective_project_path = project_path
+        if effective_project_path is None and self.project_root is not None:
+            effective_project_path = str(self.project_root)
+
+        if effective_project_path:
+            project_patch = self._load_project_patch(effective_project_path)
             if project_patch:
                 layers.append(project_patch)
 
@@ -88,13 +126,93 @@ class ConfigResolver:
 
         merged = self._merge_layers(layers)
 
-        merged = self._merge_mcp(merged, project_path)
-        merged = self._merge_skills(merged, project_path)
+        merged = self._merge_mcp(merged, effective_project_path)
+        merged = self._merge_skills(merged, effective_project_path)
+        merged = self._merge_plugins(merged, effective_project_path)
 
         from ms_agent.config.config import Config
         merged = Config.fill_missing_fields(merged)
 
         return merged
+
+    def resolve_mcp(
+        self,
+        session_id: str | None = None,
+        session_override: Dict[str, Dict[str, Any]] | None = None,
+    ) -> ResolvedMCPConfig:
+        """Merge framework → global → agent.yaml → project → session MCP layers."""
+        del session_id  # reserved for Phase 3 session.json
+
+        from ms_agent.config.config import Config
+
+        global_layer = normalize_mcp_servers_layer(
+            self.mcp_manager.list('global'),
+            source='global',
+        )
+        agent_yaml_layer: Dict[str, Dict[str, Any]] = {}
+        if self.agent_config is not None:
+            raw = Config.convert_mcp_servers_to_json(self.agent_config)
+            agent_yaml_layer = normalize_mcp_servers_layer(
+                raw.get('mcpServers'),
+                source='agent_yaml',
+            )
+
+        project_layer = normalize_mcp_servers_layer(
+            self.mcp_manager.list('project'),
+            source='project',
+        )
+
+        session_layer = normalize_mcp_servers_layer(
+            session_override,
+            source='session',
+        )
+
+        merged = merge_mcp_layers(
+            {},
+            global_layer,
+            agent_yaml_layer,
+            project_layer,
+            session_layer,
+        )
+        for name in collect_builtin_tool_names(self.agent_config):
+            merged.pop(name, None)
+        return ResolvedMCPConfig(mcp_servers=merged)
+
+    def resolve_mcp_all_layers(
+        self,
+        session_override: Dict[str, Dict[str, Any]] | None = None,
+    ) -> Dict[str, Dict[str, Any]]:
+        """Return merged servers including disabled entries (for UI listing)."""
+        from ms_agent.config.config import Config
+
+        global_layer = normalize_mcp_servers_layer(
+            self.mcp_manager.list('global'), source='global')
+        agent_yaml_layer: Dict[str, Dict[str, Any]] = {}
+        if self.agent_config is not None:
+            raw = Config.convert_mcp_servers_to_json(self.agent_config)
+            agent_yaml_layer = normalize_mcp_servers_layer(
+                raw.get('mcpServers'), source='agent_yaml')
+        project_layer = normalize_mcp_servers_layer(
+            self.mcp_manager.list('project'), source='project')
+        session_layer = normalize_mcp_servers_layer(
+            session_override, source='session')
+        merged = merge_mcp_layers(
+            global_layer,
+            agent_yaml_layer,
+            project_layer,
+            session_layer,
+        )
+        for name in collect_builtin_tool_names(self.agent_config):
+            merged.pop(name, None)
+        return merged
+
+    def with_agent_config(
+        self,
+        agent_config: DictConfig | ListConfig | None,
+    ) -> 'ConfigResolver':
+        clone = copy.copy(self)
+        clone.agent_config = agent_config
+        return clone
 
     # -- layer loading --
 
@@ -154,6 +272,34 @@ class ConfigResolver:
         merged = merge_mcp_configs(global_mcp, project_mcp)
         if merged:
             OmegaConf.update(config, '_merged_mcp', merged, merge=True)
+        return config
+
+    def _merge_plugins(
+        self, config: DictConfig, project_path: Optional[str]
+    ) -> DictConfig:
+        manager = (
+            PluginConfigManager(self._global_dir, project_path)
+            if project_path
+            else self.plugin_manager
+        )
+        records = manager.load_merged(project_path)
+        if not records:
+            return config
+
+        payload = {'plugins': [record.to_dict() | {'scope': record.scope}
+                              for record in records]}
+        OmegaConf.update(config, '_merged_plugins', payload, merge=True)
+
+        enabled_paths = [
+            record.path for record in records
+            if record.enabled and record.path
+        ]
+        existing = []
+        if hasattr(config, 'plugins') and config.plugins:
+            existing = [str(item) for item in config.plugins]
+        merged_paths = existing + [p for p in enabled_paths if p not in existing]
+        if merged_paths:
+            OmegaConf.update(config, 'plugins', merged_paths, merge=True)
         return config
 
     def _merge_skills(

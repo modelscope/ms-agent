@@ -6,7 +6,8 @@ from typing import Any, AsyncGenerator, List, Optional, Tuple, Union
 
 from ms_agent.llm import Message
 from ms_agent.utils import read_history, save_history
-from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR, DEFAULT_RETRY_COUNT
+from ms_agent.utils.constants import DEFAULT_RETRY_COUNT
+from ms_agent.utils.workspace_context import resolve_workspace_root
 
 
 class Agent(ABC):
@@ -42,8 +43,14 @@ class Agent(ABC):
         self.trust_remote_code = trust_remote_code
         self.config.tag = tag
         self.config.trust_remote_code = trust_remote_code
-        self.output_dir = getattr(self.config, 'output_dir',
-                                  DEFAULT_OUTPUT_DIR)
+        workspace_root = resolve_workspace_root(self.config)
+        self.output_dir = str(workspace_root)
+        try:
+            from omegaconf import open_dict
+            with open_dict(self.config):
+                self.config.output_dir = self.output_dir
+        except Exception:
+            pass
 
     @abstractmethod
     async def run(

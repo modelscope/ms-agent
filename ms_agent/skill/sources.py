@@ -22,6 +22,9 @@ class SkillSource:
     revision: Optional[str] = None
     subdir: Optional[str] = None
     enabled: bool = True
+    origin: str = "config"
+    plugin_id: Optional[str] = None
+    capability: Optional[str] = None
 
 
 _MODELSCOPE_URI_RE = re.compile(

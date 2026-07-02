@@ -15,9 +15,8 @@ from ms_agent.llm.utils import Message, Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils import get_logger
 from ms_agent.utils.artifact_manager import ArtifactManager
-from ms_agent.utils.constants import DEFAULT_INDEX_DIR, DEFAULT_OUTPUT_DIR
-from ms_agent.utils.workspace_policy import (WorkspacePolicyError,
-                                             WorkspacePolicyKernel)
+from ms_agent.utils.constants import DEFAULT_INDEX_DIR
+from ms_agent.utils.workspace_context import WorkspaceContext
 
 logger = get_logger()
 
@@ -109,7 +108,8 @@ class FileSystemTool(ToolBase):
             self.exclude_functions = [
                 _FS_TOOL_ALIASES.get(n, n) for n in self.exclude_functions
             ]
-        self.output_dir = getattr(config, 'output_dir', DEFAULT_OUTPUT_DIR)
+        self._ws = WorkspaceContext.from_config(config)
+        self.output_dir = str(self._ws.root)
         self.trust_remote_code = kwargs.get('trust_remote_code', False)
         self.allow_read_all_files = getattr(
             getattr(config.tools, 'file_system', {}), 'allow_read_all_files',
@@ -133,38 +133,18 @@ class FileSystemTool(ToolBase):
         self._glob_max_files = int(
             getattr(fs_cfg, 'glob_max_files', 100) or 100)
 
-        wp = getattr(getattr(config, 'tools', None), 'workspace_policy', None)
-        extra = list(getattr(wp, 'allow_roots', []) or []) if wp else []
-        deny = list(getattr(wp, 'deny_globs', []) or []) if wp else []
+        try:
+            self._ws.root.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
 
         shell_cfg = getattr(
             getattr(config.tools, 'code_executor', None), 'shell', None)
-        shell_mode = getattr(
-            shell_cfg, 'default_mode',
-            'workspace_write') if shell_cfg else 'workspace_write'
-        net = bool(getattr(shell_cfg, 'network_enabled',
-                           False)) if shell_cfg else False
-        max_cmd = int(getattr(shell_cfg, 'max_command_chars',
-                              8192)) if shell_cfg else 8192
-
-        _out_p = Path(self.output_dir).expanduser().resolve()
-        try:
-            _out_p.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            pass
-        self._fs_policy = WorkspacePolicyKernel(
-            _out_p,
-            extra_allow_roots=extra,
-            deny_globs=deny if deny else None,
-            shell_default_mode=str(shell_mode),
-            shell_network_enabled=net,
-            max_command_chars=max_cmd,
-        )
         max_kb = 256
         if shell_cfg and getattr(shell_cfg, 'max_output_kb', None):
             max_kb = int(shell_cfg.max_output_kb)
         self._fs_artifacts = ArtifactManager(
-            _out_p, max_combined_bytes=max_kb * 1024)
+            self._ws.root, max_combined_bytes=max_kb * 1024)
 
     async def connect(self):
         logger.warning_once(
@@ -419,10 +399,8 @@ class FileSystemTool(ToolBase):
             head_limit if head_limit is not None else self._default_grep_head)
         offset = offset or 0
         path = path or '.'
-        try:
-            root = self._fs_policy.resolve_under_roots(path)
-        except WorkspacePolicyError as e:
-            return json.dumps({'success': False, 'error': str(e)}, indent=2)
+        raw = Path(path).expanduser()
+        root = raw.resolve() if raw.is_absolute() else (self._ws.root / raw).resolve()
 
         if pattern is None or (isinstance(pattern, str)
                                and not pattern.strip()):
@@ -516,7 +494,7 @@ class FileSystemTool(ToolBase):
             *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            cwd=str(self._fs_policy.workspace_root),
+            cwd=str(self._ws.root),
         )
         out_b, err_b = await asyncio.wait_for(
             proc.communicate(), timeout=self._grep_timeout)
@@ -553,7 +531,7 @@ class FileSystemTool(ToolBase):
             *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            cwd=str(self._fs_policy.workspace_root),
+            cwd=str(self._ws.root),
         )
         out_b, err_b = await asyncio.wait_for(
             proc.communicate(), timeout=self._grep_timeout)
@@ -599,15 +577,15 @@ class FileSystemTool(ToolBase):
         if root.is_file():
             files = [root]
         else:
-            for fp in _walk_files_limited(root, self._fs_policy.deny_globs,
+            for fp in _walk_files_limited(root, self._ws.deny_globs,
                                           50_000):
                 if consider_file(fp):
                     files.append(fp)
 
         for fp in files:
             rel = str(fp.relative_to(
-                self._fs_policy.workspace_root)) if _is_relative(
-                    fp, self._fs_policy.workspace_root) else str(fp)
+                self._ws.root)) if _is_relative(
+                    fp, self._ws.root) else str(fp)
             try:
                 if output_mode == 'files_with_matches':
                     with fp.open(encoding='utf-8', errors='replace') as f:
@@ -640,10 +618,8 @@ class FileSystemTool(ToolBase):
 
     async def glob(self, pattern: str, path: str = '') -> str:
         call_id = f'glob-{pattern[:40]}'
-        try:
-            base = self._fs_policy.resolve_under_roots(path or '.')
-        except WorkspacePolicyError as e:
-            return json.dumps({'success': False, 'error': str(e)}, indent=2)
+        raw = Path(path or '.').expanduser()
+        base = raw.resolve() if raw.is_absolute() else (self._ws.root / raw).resolve()
 
         if not base.is_dir():
             return json.dumps(
@@ -656,20 +632,18 @@ class FileSystemTool(ToolBase):
 
         matches: List[str] = []
         truncated = False
-        deny = self._fs_policy.deny_globs
+        deny = self._ws.deny_globs
 
         try:
             for p in sorted(base.glob(pattern)):
                 if not p.is_file():
                     continue
                 rp = p.resolve()
-                if not self._fs_policy.path_is_allowed(rp):
-                    continue
                 if _is_denied_path(rp, base, deny):
                     continue
                 rel = str(p.relative_to(
-                    self._fs_policy.workspace_root)) if _is_relative(
-                        p, self._fs_policy.workspace_root) else str(p)
+                    self._ws.root)) if _is_relative(
+                        p, self._ws.root) else str(p)
                 matches.append(rel)
                 if len(matches) >= self._glob_max_files:
                     truncated = True

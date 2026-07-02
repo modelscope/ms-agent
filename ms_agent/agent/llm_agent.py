@@ -4,6 +4,7 @@ import importlib
 import inspect
 import json
 import os.path
+from pathlib import Path
 import sys
 import threading
 import uuid
@@ -152,6 +153,7 @@ class LLMAgent(Agent):
         self.mcp_config: Dict[str, Any] = self.parse_mcp_servers(
             kwargs.get('mcp_config', {}))
         self.mcp_client = kwargs.get('mcp_client', None)
+        self.mcp_runtime = kwargs.get('mcp_runtime', None)
         self.config_handler = self.register_config_handler()
 
         # Skill system (initialized in prepare_skills)
@@ -161,6 +163,7 @@ class LLMAgent(Agent):
 
         # Skill runtime (initialized in prepare_skills)
         self._skill_runtime: Optional[SkillRuntime] = None
+        self._plugin_runtime = None
 
         # Slash-command router for interactive input (lazily built)
         self._command_router = None
@@ -231,6 +234,9 @@ class LLMAgent(Agent):
         self._skill_runtime.set_system_content_builder(
             self._build_system_content
         )
+        if getattr(self, '_plugin_runtime', None) is not None:
+            self._plugin_runtime.skill_runtime = self._skill_runtime
+            self._plugin_runtime._sync_skill_runtime(self.config)
 
     def _build_system_content(self) -> str:
         """Build the full system prompt content.
@@ -492,7 +498,32 @@ class LLMAgent(Agent):
         await self.loop_callback('on_tool_call', messages)
 
     async def after_tool_call(self, messages: List[Message]):
-        if messages[-1].role == 'assistant' and not messages[-1].tool_calls:
+        assistant = messages[-1]
+        would_stop = assistant.role == 'assistant' and not assistant.tool_calls
+
+        hook_runtime = getattr(self, '_hook_runtime', None)
+        if would_stop and hook_runtime is not None and not hook_runtime.is_empty:
+            from ms_agent.hooks.context import (
+                append_stop_blocking_feedback,
+                apply_hook_result_to_messages,
+            )
+
+            last_text = assistant.content if isinstance(assistant.content, str) else ''
+            stop = await hook_runtime.run_stop(
+                reason='no_tool_calls',
+                last_assistant_message=last_text,
+                stop_hook_active=getattr(self.runtime, 'stop_hook_active', False),
+            )
+            if stop.action in ('block', 'deny'):
+                append_stop_blocking_feedback(messages, stop.reason)
+                self.runtime.should_stop = False
+                self.runtime.stop_hook_active = True
+                await self.loop_callback('after_tool_call', messages)
+                return
+            apply_hook_result_to_messages(
+                messages, stop, hook_event='Stop')
+
+        if would_stop:
             self.runtime.should_stop = True
         await self.loop_callback('after_tool_call', messages)
 
@@ -531,6 +562,7 @@ class LLMAgent(Agent):
                 name=tool_call_query['tool_name'],
                 resources=tool_call_result_format.resources,
                 tool_detail=tool_call_result_format.tool_detail,
+                hook_attachments=tool_call_result_format.hook_attachments,
             )
 
             if _new_message.tool_call_id is None:
@@ -541,16 +573,135 @@ class LLMAgent(Agent):
             self.log_output(_new_message.content)
         return messages
 
+    def _build_permission_objects(self):
+        """Create SafetyGuard and PermissionEnforcer from config if configured."""
+        from ms_agent.permission import (
+            AutoPermissionHandler,
+            PermissionConfig,
+            PermissionEnforcer,
+            PermissionMemory,
+            SafetyGuard,
+        )
+        from ms_agent.permission.config import SafetyConfig
+
+        raw = {}
+        if hasattr(self.config, 'permission'):
+            raw = dict(self.config.permission) if self.config.permission else {}
+
+        from ms_agent.utils.workspace_context import resolve_workspace_root
+
+        workspace_root = str(resolve_workspace_root(self.config))
+        perm_config = PermissionConfig.from_dict(raw, project_root=workspace_root)
+
+        allowed_dirs = [workspace_root]
+        for directory in perm_config.safety.allowed_directories:
+            if directory not in allowed_dirs:
+                allowed_dirs.append(directory)
+        read_only_dirs = list(perm_config.safety.read_only_directories)
+        safety_guard = SafetyGuard(
+            config=perm_config.safety,
+            allowed_dirs=allowed_dirs,
+            read_only_dirs=read_only_dirs,
+            workspace_root=workspace_root,
+        )
+
+        handler = AutoPermissionHandler()
+        memory = PermissionMemory(project_path=workspace_root)
+        enforcer = PermissionEnforcer(config=perm_config, handler=handler, memory=memory)
+
+        return safety_guard, enforcer, perm_config
+
     async def prepare_tools(self):
         """Initialize and connect the tool manager."""
+        import uuid
+
+        from ms_agent.hooks.bridge import CallbackToHookBridge
+        from ms_agent.hooks.factory import build_hook_runtime
+        from ms_agent.plugins.runtime import PluginRuntime
+        from ms_agent.utils.workspace_context import resolve_workspace_root
+
         self.task_manager = TaskManager()
+
+        safety_guard, permission_enforcer, perm_config = self._build_permission_objects()
+        session_id = (
+            self.runtime.session_id
+            or getattr(self, 'tag', None)
+            or str(uuid.uuid4())
+        )
+        raw_hooks = {}
+        if hasattr(self.config, 'hooks') and self.config.hooks:
+            raw_hooks = OmegaConf.to_container(self.config.hooks, resolve=True) or {}
+        enabled_executors = frozenset(
+            raw_hooks.get('enabled_executors', ['command']) or ['command'])
+        self._plugin_runtime = PluginRuntime(
+            skill_runtime=self._skill_runtime,
+            mcp_runtime=self.mcp_runtime,
+        )
+        self._plugin_runtime.start_sync(
+            str(resolve_workspace_root(self.config)),
+            session_id,
+            config=self.config,
+            enabled_executors=enabled_executors,
+        )
+        self._register_plugin_commands()
+        plugin_mcp_servers = self._plugin_runtime.load_result.mcp_servers
+        if plugin_mcp_servers:
+            from ms_agent.plugins.runtime import dedupe_mcp_server_names
+            plugin_mcp_servers = dedupe_mcp_server_names(
+                plugin_mcp_servers,
+                set(self.mcp_config.setdefault('mcpServers', {}).keys()),
+            )
+            self._plugin_runtime.load_result.mcp_servers = plugin_mcp_servers
+            self.mcp_config['mcpServers'].update(plugin_mcp_servers)
+        hook_runtime = build_hook_runtime(
+            self.config,
+            session_id=session_id,
+            plugin_hook_registries=self._plugin_runtime.load_result.hook_registries,
+        )
+        mcp_rt = self.mcp_runtime
+        if mcp_rt is not None and plugin_mcp_servers:
+            from ms_agent.config.mcp_schema import ResolvedMCPConfig
+            merged_servers = {
+                state.name: dict(state.config)
+                for state in mcp_rt.list_servers()
+            }
+            merged_servers.update(plugin_mcp_servers)
+            await mcp_rt.apply_config(
+                ResolvedMCPConfig(mcp_servers=merged_servers))
+
         self.tool_manager = ToolManager(
             self.config,
-            self.mcp_config,
+            self.mcp_config if mcp_rt is None else {},
             self.mcp_client,
+            permission_enforcer=permission_enforcer,
+            safety_guard=safety_guard,
+            permission_mode=perm_config.mode,
+            read_policy=perm_config.safety.read_policy,
+            hook_runtime=hook_runtime,
+            permission_config=perm_config,
             trust_remote_code=self.trust_remote_code,
+            mcp_callable_check=mcp_rt.is_callable if mcp_rt else None,
+            mcp_failure_handler=mcp_rt.record_failure if mcp_rt else None,
+            mcp_unavailable_detail=mcp_rt.unavailable_detail if mcp_rt else None,
+            mcp_success_handler=mcp_rt.record_success if mcp_rt else None,
         )
+        if mcp_rt is not None:
+            self.tool_manager._skip_mcp_reindex = True
+        if self._plugin_runtime.agent_registry.has_agents():
+            self.tool_manager.ensure_plugin_agent_tools(
+                self._plugin_runtime.agent_registry,
+            )
+        if hook_runtime.has_session_handlers:
+            self.register_callback(CallbackToHookBridge(self.config, hook_runtime))
+        self._hook_runtime = hook_runtime
+        if not self.runtime.session_id:
+            self.runtime.session_id = hook_runtime.session_id
+        if mcp_rt is not None and not mcp_rt.is_started:
+            await mcp_rt.start()
         await self.tool_manager.connect()
+        if mcp_rt is not None:
+            mcp_rt.bind_tool_manager(self.tool_manager)
+            await mcp_rt.sync_tools()
         for tool in self.tool_manager.extra_tools:
             if hasattr(tool, 'set_task_manager'):
                 tool.set_task_manager(self.task_manager)
@@ -559,6 +710,8 @@ class LLMAgent(Agent):
         """Cleanup resources used by the tool manager."""
         if self.task_manager is not None:
             self.task_manager.kill_all()
+        if self.mcp_runtime is not None:
+            await self.mcp_runtime.stop()
         if self.tool_manager is not None:
             await self.tool_manager.cleanup()
 
@@ -657,7 +810,17 @@ class LLMAgent(Agent):
             router = CommandRouter()
             register_builtin_commands(router)
             self._command_router = router
+            self._register_plugin_commands()
         return self._command_router
+
+    def _register_plugin_commands(self) -> None:
+        if self._command_router is None or self._plugin_runtime is None:
+            return
+        from ms_agent.plugins.commands import register_plugin_commands
+        register_plugin_commands(
+            self._command_router,
+            self._plugin_runtime.load_result.command_defs,
+        )
 
     def _resolve_interactive(self, messages) -> bool:
         """Decide whether this run is an interactive session.
@@ -720,11 +883,7 @@ class LLMAgent(Agent):
         return PersonalizationInjector.build(config)
 
     async def do_rag(self, messages: List[Message]):
-        """Process RAG or knowledge search to enrich the user query with context.
-
-        This method handles both traditional RAG and sirchmunk-based knowledge search.
-        For knowledge search, it also populates searching_detail and search_result
-        fields in the message for frontend display and next-turn LLM context.
+        """Process RAG to enrich the user query with context.
 
         Args:
             messages (List[Message]): The message list to process.
@@ -1082,6 +1241,35 @@ class LLMAgent(Agent):
         """
         messages = deepcopy(messages)
         messages = self._append_task_notifications(messages)
+        from ms_agent.hooks.context import (
+            condense_hook_attachments_for_llm,
+            extract_latest_user_prompt,
+            apply_hook_result_to_messages,
+        )
+        messages = condense_hook_attachments_for_llm(messages)
+
+        # UserPromptSubmit for multi-turn user input (InputCallback path)
+        hook_runtime = getattr(self, '_hook_runtime', None)
+        if (hook_runtime is not None and not hook_runtime.is_empty
+                and messages and messages[-1].role == 'user'
+                and self.runtime.round > 0):
+            prompt_text = extract_latest_user_prompt(messages)
+            submit = await hook_runtime.run_user_prompt_submit(prompt_text)
+            if submit.action in ('deny', 'block'):
+                if messages and messages[-1].role == 'user':
+                    messages.pop()
+                messages.append(Message(
+                    role='system',
+                    content=(
+                        f'UserPromptSubmit operation blocked by hook:\n'
+                        f'{submit.reason}\n\nOriginal prompt: {prompt_text}'),
+                ))
+                self.runtime.should_stop = True
+                yield messages
+                return
+            apply_hook_result_to_messages(
+                messages, submit, hook_event='UserPromptSubmit')
+
         if (not self.load_cache) or messages[-1].role != 'assistant':
             await self.on_generate_response(messages)
             tools = await self.tool_manager.get_tools()
@@ -1460,8 +1648,37 @@ class LLMAgent(Agent):
             if self.runtime.round == 0 and not restored_from_log:
                 # New task: create standardized messages first
                 messages = await self.create_messages(messages)
-                await self.do_rag(messages)
+
+                hook_runtime = getattr(self, '_hook_runtime', None)
+                if hook_runtime is not None:
+                    hook_runtime.session_id = self.runtime.session_id
+
+                # SessionStart before UserPromptSubmit (§9.3)
                 await self.on_task_begin(messages)
+
+                # UserPromptSubmit — first user message
+                if hook_runtime is not None and not hook_runtime.is_empty:
+                    from ms_agent.hooks.context import (
+                        extract_latest_user_prompt,
+                        apply_hook_result_to_messages,
+                    )
+                    prompt_text = extract_latest_user_prompt(messages)
+                    submit = await hook_runtime.run_user_prompt_submit(prompt_text)
+                    if submit.action in ('deny', 'block'):
+                        messages.append(Message(
+                            role='system',
+                            content=(
+                                f'UserPromptSubmit operation blocked by hook:\n'
+                                f'{submit.reason}\n\nOriginal prompt: {prompt_text}'),
+                        ))
+                        await self.on_task_end(messages)
+                        yield messages
+                        await self.cleanup_tools()
+                        return
+                    apply_hook_result_to_messages(
+                        messages, submit, hook_event='UserPromptSubmit')
+
+                await self.do_rag(messages)
 
                 # Seed SessionLog with initial messages
                 if self.session_log is not None:
