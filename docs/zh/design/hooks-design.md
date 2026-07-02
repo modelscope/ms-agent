@@ -906,14 +906,29 @@ async def execute_all(
 
 ### 8.4 子进程环境变量与 command 解析
 
-`HookExecutor.execute()` 启动子进程时注入（兼容 Claude 社区脚本）：
+`HookExecutor.execute()` 启动子进程时注入（兼容 Claude 社区脚本）。
+
+**环境变量策略（`build_hook_env`）**
+
+| 类别 | 行为 |
+|------|------|
+| 父进程 `os.environ` | **不整包继承**；仅 allowlist：`PATH`、`HOME`、`USER`、`LANG`、`TMPDIR`、`TERM` 等运行所需项 |
+| 敏感变量 | `OPENAI_API_KEY`、`AWS_SECRET_ACCESS_KEY`、`ANTHROPIC_API_KEY` 等 **不传递** 给 hook 子进程 |
+| Hook 元数据 | 始终注入下表变量（覆盖/补充 allowlist） |
 
 | 变量 | 含义 |
 |------|------|
 | `MS_AGENT_PROJECT_DIR` | 项目根目录 |
 | `MS_AGENT_PLUGIN_ROOT` | 当前 plugin 根（如有） |
-| `CLAUDE_PROJECT_DIR` | 上者别名 |
-| `CLAUDE_PLUGIN_ROOT` | 上者别名 |
+| `MS_AGENT_PLUGIN_DATA` | plugin 数据目录（如有） |
+| `MS_AGENT_SESSION_ID` | 当前 session |
+| `CLAUDE_PROJECT_DIR` | `MS_AGENT_PROJECT_DIR` 别名 |
+| `CLAUDE_PLUGIN_ROOT` | `MS_AGENT_PLUGIN_ROOT` 别名 |
+| `CLAUDE_PLUGIN_DATA` | `MS_AGENT_PLUGIN_DATA` 别名 |
+
+> HTTP hook 另有 per-handler `allowedEnvVars` ∩ 全局 `http_hook_allowed_env_vars`（§19）；command hook v1 采用固定 allowlist，后续可按 handler 扩展额外白名单。
+
+**超时与子进程回收**：`CommandHookExecutor` 在 `asyncio.TimeoutError` 时对子进程 `kill()` 后 `await wait()`，避免僵尸进程。
 
 **command 解析（v1）**：
 

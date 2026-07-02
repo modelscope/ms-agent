@@ -74,6 +74,46 @@ class TestAttackVectors:
         )
         assert r.action == 'ask'
 
+    def test_command_substitution_dollar_paren(self, guard):
+        """echo $(rm -rf /) → deny (inner command validated)"""
+        r = guard.check(
+            'code_executor---shell_executor',
+            {'command': 'echo $(rm -rf /)'},
+        )
+        assert r.action == 'deny'
+
+    def test_command_substitution_backtick(self, guard):
+        """echo `rm -rf /etc/important` → deny (inner command validated)"""
+        r = guard.check(
+            'code_executor---shell_executor',
+            {'command': 'echo `rm -rf /etc/important`'},
+        )
+        assert r.action == 'deny'
+
+    def test_newline_command_separator(self, guard):
+        """true\\nrm -rf / → deny (newline separates commands)"""
+        r = guard.check(
+            'code_executor---shell_executor',
+            {'command': 'true\nrm -rf /etc/important'},
+        )
+        assert r.action == 'deny'
+
+    def test_background_ampersand_separator(self, guard):
+        """true & rm -rf / → deny (single & separates commands)"""
+        r = guard.check(
+            'code_executor---shell_executor',
+            {'command': 'true & rm -rf /'},
+        )
+        assert r.action == 'deny'
+
+    def test_find_exec_rm(self, guard):
+        """find … -exec rm -rf /etc/important {} → deny"""
+        r = guard.check(
+            'code_executor---shell_executor',
+            {'command': 'find . -exec rm -rf /etc/important {} ;'},
+        )
+        assert r.action == 'deny'
+
     def test_mv_target_directory(self, guard, tmp_path):
         """mv --target-directory=/etc test.txt → ask (command validator)"""
         r = guard.check(

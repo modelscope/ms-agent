@@ -178,7 +178,8 @@ def test_agent_md_subdirectory(tmp_path):
     assert any(agent.name == 'reviewer' for agent in result.agent_defs)
 
 
-def test_build_hook_env_includes_session_id():
+def test_build_hook_env_includes_session_id(monkeypatch):
+    monkeypatch.setenv('ANTHROPIC_API_KEY', 'secret')
     env = build_hook_env(HookExecutionContext(
         session_id='session-123',
         project_path='/tmp/project',
@@ -186,6 +187,7 @@ def test_build_hook_env_includes_session_id():
         plugin_data_dir='/tmp/data',
     ))
     assert env['MS_AGENT_SESSION_ID'] == 'session-123'
+    assert 'ANTHROPIC_API_KEY' not in env
 
 
 def test_plugin_registry_managed_paths(tmp_path):

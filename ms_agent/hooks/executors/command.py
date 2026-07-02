@@ -16,6 +16,31 @@ from ms_agent.utils import get_logger
 
 logger = get_logger()
 
+# Safe parent env vars needed for hook subprocess execution. Secrets are excluded.
+_HOOK_ENV_ALLOWLIST = frozenset({
+    'PATH',
+    'HOME',
+    'USER',
+    'LOGNAME',
+    'USERNAME',
+    'LANG',
+    'LC_ALL',
+    'LC_CTYPE',
+    'LC_MESSAGES',
+    'TMPDIR',
+    'TEMP',
+    'TMP',
+    'TERM',
+    'SHELL',
+    'PWD',
+    'SYSTEMROOT',
+    'COMSPEC',
+    'PATHEXT',
+    'WINDIR',
+    'OS',
+    'PROCESSOR_ARCHITECTURE',
+})
+
 
 @dataclass
 class HookExecutionContext:
@@ -50,7 +75,11 @@ def plugin_compat_payload(
 
 
 def build_hook_env(ctx: HookExecutionContext) -> dict[str, str]:
-    env = dict(os.environ)
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key in _HOOK_ENV_ALLOWLIST
+    }
     env['MS_AGENT_PROJECT_DIR'] = ctx.project_path
     env['CLAUDE_PROJECT_DIR'] = ctx.project_path
     if ctx.plugin_root:

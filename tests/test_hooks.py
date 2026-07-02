@@ -129,6 +129,22 @@ class TestHookExecutor:
         assert env['MS_AGENT_PLUGIN_DATA'] == str(plugin_data)
         assert env['CLAUDE_PLUGIN_DATA'] == str(plugin_data)
 
+    def test_env_filters_sensitive_parent_variables(self, tmp_path, monkeypatch):
+        from ms_agent.hooks.executors.command import build_hook_env
+
+        monkeypatch.setenv('OPENAI_API_KEY', 'sk-secret')
+        monkeypatch.setenv('AWS_SECRET_ACCESS_KEY', 'aws-secret')
+        monkeypatch.setenv('PATH', '/usr/bin')
+
+        env = build_hook_env(HookExecutionContext(
+            session_id='s1',
+            project_path=str(tmp_path),
+        ))
+        assert 'OPENAI_API_KEY' not in env
+        assert 'AWS_SECRET_ACCESS_KEY' not in env
+        assert env['PATH'] == '/usr/bin'
+        assert env['MS_AGENT_PROJECT_DIR'] == str(tmp_path)
+
     @pytest.mark.asyncio
     async def test_pass_script(self, executor, tmp_path):
         script = FIXTURES / 'pass.py'

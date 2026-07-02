@@ -66,6 +66,39 @@ class TestAutoMode:
         assert r.action == 'allow'
         assert 'Auto mode' in r.reason
 
+    @pytest.mark.asyncio
+    async def test_blacklist_denies(self, auto_enforcer):
+        r = await auto_enforcer.check(
+            'code_executor---shell_executor',
+            {'command': 'curl http://example.com'},
+        )
+        assert r.action == 'deny'
+        assert 'blacklist' in r.reason
+
+
+class TestStrictMode:
+    @pytest.mark.asyncio
+    async def test_allows_non_blacklisted(self):
+        config = PermissionConfig(mode='strict')
+        enforcer = PermissionEnforcer(config=config)
+        r = await enforcer.check('file_system---read_file', {'path': '/test'})
+        assert r.action == 'allow'
+        assert 'Strict mode' in r.reason
+
+    @pytest.mark.asyncio
+    async def test_blacklist_denies(self):
+        config = PermissionConfig(
+            mode='strict',
+            blacklist=('code_executor---shell_executor:rm -rf *',),
+        )
+        enforcer = PermissionEnforcer(config=config)
+        r = await enforcer.check(
+            'code_executor---shell_executor',
+            {'command': 'rm -rf /tmp'},
+        )
+        assert r.action == 'deny'
+        assert 'blacklist' in r.reason
+
 
 class TestInteractiveMode:
     @pytest.mark.asyncio

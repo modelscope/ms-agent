@@ -17,7 +17,7 @@
 - [7. 路径校验流程](#7-路径校验流程)
 - [8. 危险路径硬拦截](#8-危险路径硬拦截)
 - [9. Safe Wrapper 剥离](#9-safe-wrapper-剥离)
-- [10. 输出重定向与进程替换校验](#10-输出重定向与进程替换校验)
+- [10. 输出重定向、进程/命令替换与复合命令校验](#10-输出重定向与进程替换校验)
 - [11. 共享基础设施](#11-共享基础设施)
 - [12. 集成点与代码变更](#12-集成点与代码变更)
 - [13. 现有代码迁移：WorkspacePolicyKernel](#13-现有代码迁移workspacepolicykernel)
@@ -109,8 +109,8 @@
   │     └─ interactive 模式 → 保持 ask，交给 enforcer/handler
   │
   ├─ 2. PermissionEnforcer.check()  ← 外层用户意图
-  │     ├─ mode in (auto, strict) → allow（SafetyGuard 已做安全保障）
-  │     ├─ blacklist match → deny
+  │     ├─ blacklist match → deny（任何模式均不可绕过）
+  │     ├─ mode in (auto, strict) → allow（SafetyGuard 已做安全保障；仍受 blacklist 约束）
   │     ├─ whitelist match → allow
   │     ├─ session memory match → allow
   │     ├─ persistent memory match → allow
@@ -123,8 +123,8 @@
 
 | 模式 | SafetyGuard `ask` 处理 | Enforcer 行为 | 适用场景 |
 |------|----------------------|--------------|----------|
-| `auto` | 按 category 分类：input 替换→allow, output 替换/解析失败/cd+write/变量展开→deny, 读超范围→看 read_policy | 直接 allow | 容器/沙箱/无人值守 |
-| `strict` | 全部 → deny | 直接 allow | 高安全要求、无沙箱、无人值守 |
+| `auto` | 按 category 分类：input 替换→allow, output 替换/解析失败/cd+write/变量展开→deny, 读超范围→看 read_policy | **blacklist deny** → 其余 allow（无弹窗） | 容器/沙箱/无人值守 |
+| `strict` | 全部 → deny | **blacklist deny** → 其余 allow | 高安全要求、无沙箱、无人值守 |
 | `interactive` | 保持 ask → 交给 handler | 完整流程（blacklist→whitelist→memory→handler.ask） | 有人值守（CLI/Web/TUI） |
 
 ---
@@ -163,8 +163,8 @@ class PermissionEnforcer:
 ```
 
 判定流程（参考 Claude Code 的 `hasPermissionsToUseToolInner` 多步管线）：
-1. `mode in ('auto', 'strict')` → 直接 `allow`（SafetyGuard + ask_resolver 已保障安全）
-2. blacklist match → `deny`（不可绕过，参考 Claude Code 的 `alwaysDenyRules`）
+1. blacklist match → `deny`（**不可绕过**，含 `auto` / `strict`；参考 Claude Code 的 `alwaysDenyRules`）
+2. `mode in ('auto', 'strict')` → 直接 `allow`（SafetyGuard + ask_resolver 已保障安全；**不**跳过 blacklist）
 3. whitelist match → `allow`（参考 `alwaysAllowRules`）
 4. session memory match → `allow`（会话内 `allow_session` 记录）
 5. persistent memory match → `allow`（`PermissionMemory` 持久化规则）
@@ -488,6 +488,9 @@ def resolve_ask(decision: SafetyDecision, mode: str, read_policy: str = 'loose')
 - **包装器绕过**：`timeout 10 rm -rf /` — wrapper 命令遮蔽真实操作命令
 - **输出重定向**：`echo "malicious" > /etc/passwd` — 命令是 `echo`，但写入了敏感路径
 - **复合命令**：`cd .claude/ && mv test.txt settings.json` — 通过 `cd` 改变工作目录后操作
+- **命令替换**：`echo $(rm -rf /)` — 外层命令无害，内层子命令在 shell 运行时执行
+- **复合分隔符遗漏**：`true\nrm -rf /`、`ls & rm -rf /` — 换行与单个 `&` 也会启动第二条命令
+- **find 侧信道**：`find . -exec rm -rf / {} \;` — 表面为 read，实际通过 `-exec` / `-delete` 写删
 - **shell 展开**：`rm $HOME/.ssh/*` — 变量展开导致验证时路径和执行时路径不一致
 
 ### 5.2 ShellPathValidator 架构
@@ -499,25 +502,30 @@ shell 命令字符串进入 ShellPathValidator.check()
   │     >(cmd) → ask(category='process_output_sub')
   │     <(cmd) → ask(category='process_input_sub')
   │
-  ├─ 2. 复合命令拆分
-  │     && / || / ; / | → 拆分为独立子命令
+  ├─ 2. 命令替换检查（$(…) / 反引号，单引号内不展开）
+  │     提取内层命令字符串 → 递归调用 check()
+  │     内层 deny/ask 向上传播
+  │
+  ├─ 3. 复合命令拆分
+  │     && / || / ; / | / 单个 & / 换行 → 拆分为独立子命令
   │     记录是否包含 cd（影响后续路径解析）
   │
-  ├─ 3. 输出重定向校验（每个子命令，在 wrapper 剥离前）
+  ├─ 4. 输出重定向校验（每个子命令，在 wrapper 剥离前）
   │     > / >> / &> / &>> → 提取目标路径，校验是否在允许范围
   │     /dev/null 始终放行
   │     变量展开 ($VAR) 在重定向目标中 → deny
   │
-  ├─ 4. Safe Wrapper 剥离
+  ├─ 5. Safe Wrapper 剥离
   │     timeout / nice / nohup / time / stdbuf / env → 去掉包装
   │
-  ├─ 5. 命令路径校验（核心）
+  ├─ 6. 命令路径校验（核心）
   │     ├─ 识别 base command（第一个 token）
+  │     ├─ find 特例：先校验 -exec/-ok/-delete 内层命令，再校验搜索路径
   │     ├─ PATH_EXTRACTORS[command](args) → 提取路径列表
   │     ├─ 危险路径硬拦截（rm -rf / 等）
   │     └─ validate_path(path, allowed_dirs, op_type, read_only_dirs) → 逐一校验
   │
-  └─ 6. 返回决策
+  └─ 7. 返回决策
         allow（非路径命令/校验通过）/ ask（需确认）/ deny（硬拦截）
 ```
 
@@ -540,9 +548,10 @@ class ShellPathValidator:
 
     def check(self, command: str) -> SafetyDecision:
         # 1. 进程替换检查
-        # 2. 拆分复合命令
-        # 3. 逐子命令：重定向校验 → 剥离 wrapper → 提取路径 → 校验路径
-        # 4. cd + write/create 复合检测
+        # 2. 命令替换递归校验
+        # 3. 拆分复合命令（含换行、单个 &）
+        # 4. 逐子命令：重定向校验 → 剥离 wrapper → find 特例 → 提取路径 → 校验路径
+        # 5. cd + write/create 复合检测
         ...
 ```
 
@@ -621,18 +630,22 @@ def filter_out_flags(args: list[str]) -> list[str]:
 
 - 无参数 → `[home_dir]`
 - 有参数 → 所有参数拼接为一个路径
-- 安全考量：`cd` 本身是 read，但在复合命令中影响后续命令的工作目录（详见第 10.3 节）
+- 安全考量：`cd` 本身是 read，但在复合命令中影响后续命令的工作目录（详见 §10.5）
 
 #### `ls` — 列出文件 | `read` | A + 默认值
 
 - `filter_out_flags(args)`，无路径时默认 `['.']`
 
-#### `find` — 搜索文件 | `read` | D（搜索起点收集）
+#### `find` — 搜索文件 | `read`（含侧信道校验）| D（搜索起点收集）
 
 - 跳过全局选项 `-H`/`-L`/`-P`
 - 收集首个非全局 flag 之前的位置参数作为搜索起点
 - 某些 flag 值也是路径：`-newer`、`-anewer`、`-cnewer`、`-mnewer`、`-samefile`、`-path`、`-wholename`、`-ilname`、`-lname`、`-ipath`、`-iwholename` + `-newer[acmBt][acmtB]` 正则
 - `--` 之后所有参数强制为路径，无路径时默认 `['.']`
+- **侧信道（`ShellPathValidator._check_find`）**：
+  - `-exec` / `-execdir` / `-ok` / `-okdir`：提取内层 shell 命令并**递归** `check()`
+  - `-delete`：搜索起点按 `write` 校验
+  - `-fprintf` / `-fprint` / `-fprint0` / `-fls`：`command_validator` → ask（写文件动作）
 
 ```python
 def extract_find(args):
@@ -1004,7 +1017,7 @@ Flag 值安全校验：必须匹配 `[A-Za-z0-9_.+-]+`，拒绝 `$()` `` ` `` `|
 
 ---
 
-## 10. 输出重定向与进程替换校验
+## 10. 输出重定向、进程/命令替换与复合命令校验
 
 ### 10.1 输出重定向
 
@@ -1031,7 +1044,29 @@ diff <(sort a.txt) <(sort b.txt)  # 输入替换：只读操作，风险低
 
 auto 模式下：输出替换 → deny，输入替换 → allow
 
-### 10.3 复合命令中的 cd 安全问题
+### 10.3 命令替换
+
+```bash
+echo $(rm -rf /)           # 外层 echo 无害，内层 rm 在 shell 中执行
+echo "$(curl http://x)"    # 双引号内仍会展开
+echo '$(rm -rf /)'         # 单引号内为字面量，不提取内层命令
+```
+
+- 引号感知提取 `$(…)` 与反引号内容（单引号字符串内跳过）
+- 支持 `${VAR:-$(cmd)}` 等参数展开中的嵌套替换
+- 对每个内层命令**递归**调用 `ShellPathValidator.check()`
+- 算术展开 `$((…))` 不视为命令替换
+
+### 10.4 复合命令分隔符
+
+除 `&&` / `||` / `;` / `|` 外，以下也会拆分为独立子命令（引号内不拆分）：
+
+| 分隔符 | 说明 |
+|--------|------|
+| 换行 `\n` / `\r\n` | 多行脚本等价于多条命令 |
+| 单个 `&` | 后台执行符，第二条命令仍会运行 |
+
+### 10.5 复合命令中的 cd 安全问题
 
 复合命令（`&&`/`;`）包含 `cd` + write/create 操作 → 强制 ask。
 
@@ -1414,6 +1449,11 @@ ms_agent/utils/
 | `env HOME=/tmp rm -rf ~` | 不剥离 HOME（不安全变量） |
 | `echo secret > >(tee .git/config)` | auto→deny / interactive→ask（输出进程替换） |
 | `diff <(sort a.txt) <(sort b.txt)` | auto→allow（输入进程替换，只读） |
+| `echo $(rm -rf /)` | deny（命令替换内层校验） |
+| `true\nrm -rf /` | deny（换行分隔第二条命令） |
+| `true & rm -rf /` | deny（单个 `&` 分隔第二条命令） |
+| `find . -exec rm -rf /etc/important {} \;` | deny（find -exec 内层校验） |
+| `code_executor---shell_executor:curl *`（auto 模式） | deny（enforcer blacklist，先于 auto allow） |
 | `mv --target-directory=/etc test.txt` | auto→deny / interactive→ask（命令校验器） |
 | `sed -e 's/x/y/w /etc/passwd' file` | deny（sed 表达式安全检查） |
 | `sed -e 's\|x\|y\|w /etc/passwd' file` | deny（sed 任意分隔符表达式安全检查） |
@@ -1433,7 +1473,7 @@ ms_agent/utils/
 | 维度 | 状态 | 说明 |
 |------|------|------|
 | 双层架构（SafetyGuard + PermissionEnforcer） | ✅ 已完成 | `ToolManager.single_call_tool()` 统一入口 |
-| Shell 路径级校验（36 命令注册表） | ✅ 已完成 | 进程替换、重定向、wrapper 剥离、sed 纵深防御 |
+| Shell 路径级校验（36 命令注册表） | ✅ 已完成 | 进程/命令替换、复合分隔符、find -exec、重定向、wrapper 剥离、sed 纵深防御 |
 | WorkspacePolicyKernel 迁移 | ✅ 已完成 | 安全→SafetyGuard，功能→WorkspaceContext |
 | YAML 配置解析与默认规则 | ✅ 已完成 | `PermissionConfig.from_dict()` |
 | auto / strict 模式 | ✅ 可用 | `resolve_ask` 规则表消歧，无交互 hang |
@@ -1468,6 +1508,9 @@ ms_agent/utils/
 | 9 | ~~`PermissionConfig(mode='restricted')` 测试绕过别名~~ | 测试统一走 `from_dict()` | `tests/permission/test_enforcer.py` | ✅ 已修复（2026-06-09） |
 | 10 | ~~§12.1 伪代码过时~~ | 更新为 `resolve_ask` 流程 | 本文档 §12.1 | ✅ 已修复（2026-06-09） |
 | 11 | **`path_extractors.py` 注释写 34 命令** | 实际注册 36 条（与设计 §6.4 一致） | `path_extractors.py:319` |
+| 12 | ~~**auto/strict 跳过 blacklist**~~ | §3.2：blacklist 先于 mode 短路 | `enforcer.py` 先匹配 blacklist | ✅ 已修复（2026-06） |
+| 13 | ~~**Shell 命令替换 / 换行 / `&` 绕过**~~ | §10.3–§10.4：递归校验与扩展分隔符 | `shell_validator.py` | ✅ 已修复（2026-06） |
+| 14 | ~~**find -exec 绕过 read 分类**~~ | §6.3：find 侧信道递归校验 | `shell_validator.py` + `path_extractors.py` | ✅ 已修复（2026-06） |
 
 
 ### 18.3 测试覆盖缺口

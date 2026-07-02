@@ -1,11 +1,21 @@
 import json
 import os
 import subprocess
+import tarfile
+from io import BytesIO
 
 import pytest
 
 from ms_agent.plugins.config_manager import PluginConfigManager
-from ms_agent.plugins.installer import PluginInstaller, normalize_install_source, resolve_marketplace_plugin_uri
+from ms_agent.plugins.installer import (
+    PluginInstaller,
+    UnsupportedPluginSource,
+    _parse_github_uri,
+    _verify_resolved_sha,
+    normalize_install_source,
+    resolve_marketplace_plugin_uri,
+    resolve_ms_agent_uri,
+)
 
 
 def _sample_plugin(root):
@@ -169,6 +179,50 @@ def test_install_github_uri_with_commit_sha(tmp_path, monkeypatch):
     assert calls[2] == ['git', '-C', clone_dir, 'checkout', sha]
 
 
+def test_parse_github_uri_with_sha_query():
+    repo, ref, subdir, expected_sha = _parse_github_uri(
+        'github://owner/repo@main#plugins/demo?sha=' + 'b' * 40,
+    )
+    assert repo == 'owner/repo'
+    assert ref == 'main'
+    assert subdir == 'plugins/demo'
+    assert expected_sha == 'b' * 40
+
+
+def test_verify_resolved_sha_rejects_mismatch():
+    with pytest.raises(UnsupportedPluginSource, match='sha mismatch'):
+        _verify_resolved_sha(
+            ref='a' * 40,
+            expected_sha=None,
+            resolved_sha='b' * 40,
+        )
+
+
+def test_install_github_uri_rejects_sha_mismatch(tmp_path, monkeypatch):
+    global_dir = tmp_path / '.ms_agent'
+    manager = PluginConfigManager(global_dir=global_dir)
+    installer = PluginInstaller(config_manager=manager, global_root=global_dir)
+    expected = 'a' * 40
+
+    def fake_run(cmd, check, capture_output=True, text=True):
+        if cmd[:3] == ['git', 'clone', '--depth']:
+            clone_root = cmd[-1]
+            plugin = tmp_path / clone_root / 'plugins' / 'local-demo'
+            _sample_plugin(plugin)
+        if cmd[-2:] == ['rev-parse', 'HEAD']:
+            return subprocess.CompletedProcess(cmd, 0, stdout='b' * 40 + '\n', stderr='')
+        return subprocess.CompletedProcess(cmd, 0, stdout='', stderr='')
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(subprocess, 'run', fake_run)
+
+    with pytest.raises(UnsupportedPluginSource, match='sha mismatch'):
+        installer.install(
+            f'github://owner/repo@{expected}#plugins/local-demo',
+            scope='global',
+        )
+
+
 def test_install_modelscope_uri_uses_snapshot_download(tmp_path, monkeypatch):
     source = tmp_path / 'downloaded'
     _sample_plugin(source)
@@ -188,6 +242,37 @@ def test_install_modelscope_uri_uses_snapshot_download(tmp_path, monkeypatch):
 
     assert manifest.plugin_id == 'local-demo'
     assert manager.get('local-demo', scope='global').source.type == 'modelscope'
+
+
+def test_install_tarball_rejects_path_traversal(tmp_path):
+    archive = tmp_path / 'evil.tar.gz'
+    with tarfile.open(archive, 'w:gz') as tar:
+        info = tarfile.TarInfo(name='../../evil.txt')
+        info.size = 4
+        tar.addfile(info, BytesIO(b'evil'))
+
+    global_dir = tmp_path / '.ms_agent'
+    manager = PluginConfigManager(global_dir=global_dir)
+    installer = PluginInstaller(config_manager=manager, global_root=global_dir)
+
+    with pytest.raises(UnsupportedPluginSource, match='Unsafe'):
+        installer.install(str(archive), scope='global')
+
+
+def test_install_tarball_rejects_symlink_member(tmp_path):
+    archive = tmp_path / 'evil.tar.gz'
+    with tarfile.open(archive, 'w:gz') as tar:
+        info = tarfile.TarInfo(name='escape')
+        info.type = tarfile.SYMTYPE
+        info.linkname = '/etc/passwd'
+        tar.addfile(info)
+
+    global_dir = tmp_path / '.ms_agent'
+    manager = PluginConfigManager(global_dir=global_dir)
+    installer = PluginInstaller(config_manager=manager, global_root=global_dir)
+
+    with pytest.raises(UnsupportedPluginSource, match='Unsafe'):
+        installer.install(str(archive), scope='global')
 
 
 def test_publish_staged_install_restores_broken_symlink_on_failure(

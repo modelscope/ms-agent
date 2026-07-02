@@ -6,11 +6,13 @@ from ms_agent.permission.path_extractors import (
     build_extractor_registry,
     extract_cd,
     extract_find,
+    extract_find_exec_commands,
     extract_git,
     extract_jq,
     extract_sed,
     extract_tr,
     filter_out_flags,
+    find_uses_delete,
     parse_pattern_command,
 )
 
@@ -60,6 +62,24 @@ class TestExtractFind:
 
     def test_global_options(self):
         assert extract_find(['-L', '/src', '-name', '*.py']) == ['/src']
+
+
+class TestFindExecExtraction:
+    def test_exec_rm(self):
+        cmds = extract_find_exec_commands([
+            '.', '-name', '*.log', '-exec', 'rm', '-rf', '/etc/important', '{}', ';',
+        ])
+        assert cmds == ['rm -rf /etc/important']
+
+    def test_execdir(self):
+        cmds = extract_find_exec_commands([
+            '/tmp', '-execdir', 'chmod', '777', '{}', '+',
+        ])
+        assert cmds == ['chmod 777']
+
+    def test_delete_flag(self):
+        assert find_uses_delete(['.', '-delete']) is True
+        assert find_uses_delete(['.', '-name', '*.tmp']) is False
 
 
 class TestParsePatternCommand:
@@ -158,3 +178,8 @@ class TestRegistry:
     def test_mv_no_flags_ok(self):
         reg = build_extractor_registry()
         assert reg['mv'].command_validator(['src', 'dst']) is None
+
+    def test_find_has_validator(self):
+        reg = build_extractor_registry()
+        assert reg['find'].command_validator is not None
+        assert reg['find'].command_validator(['.', '-fprintf', '/tmp/out', '%p\n']) is not None

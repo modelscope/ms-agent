@@ -49,6 +49,14 @@ class PermissionEnforcer:
         *,
         force_decision: PermissionDecision | None = None,
     ) -> PermissionDecision:
+        # 1. Blacklist → deny (not overridable in any mode)
+        for pattern in self._config.blacklist:
+            if self._matcher.match_with_content(pattern, tool_name, tool_args):
+                return PermissionDecision(
+                    action='deny',
+                    reason=f'Denied by blacklist rule: {pattern}',
+                )
+
         if force_decision and force_decision.action == 'ask':
             suggestions = generate_suggestions(tool_name, tool_args)
             response = await self._handler.ask(
@@ -59,17 +67,9 @@ class PermissionEnforcer:
             )
             return self._process_response(response, tool_name, tool_args)
 
-        # 1. Auto / strict mode → allow everything (safety handled by SafetyGuard + ask_resolver)
+        # 2. Auto / strict mode → allow (safety handled by SafetyGuard + ask_resolver)
         if self._config.mode in ('auto', 'strict'):
             return PermissionDecision(action='allow', reason=f'{self._config.mode.capitalize()} mode')
-
-        # 2. Blacklist → deny (not overridable)
-        for pattern in self._config.blacklist:
-            if self._matcher.match_with_content(pattern, tool_name, tool_args):
-                return PermissionDecision(
-                    action='deny',
-                    reason=f'Denied by blacklist rule: {pattern}',
-                )
 
         # 3. Whitelist → allow
         for pattern in self._config.whitelist:

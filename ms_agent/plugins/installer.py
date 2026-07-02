@@ -408,6 +408,45 @@ def _is_tarball(path: Path) -> bool:
     return name.endswith(('.tar.gz', '.tgz', '.tar'))
 
 
+def _safe_tar_member_path(extract_dir: Path, member_name: str) -> Path:
+    if member_name.startswith(('/', '\\')) or re.match(r'^[A-Za-z]:[\\/]', member_name):
+        raise UnsupportedPluginSource(
+            f'Unsafe tar member path: {member_name!r}')
+    target = (extract_dir / member_name).resolve()
+    extract_root = extract_dir.resolve()
+    try:
+        target.relative_to(extract_root)
+    except ValueError as exc:
+        raise UnsupportedPluginSource(
+            f'Unsafe tar member path: {member_name!r}') from exc
+    return target
+
+
+def _safe_extract_tar(archive: tarfile.TarFile, extract_dir: Path) -> None:
+    """Extract tar members without path traversal, symlinks, or device nodes."""
+    if hasattr(tarfile, 'data_filter'):
+        archive.extractall(extract_dir, filter='data')
+        return
+
+    for member in archive.getmembers():
+        if member.issym() or member.islnk() or member.isdev():
+            raise UnsupportedPluginSource(
+                f'Unsafe tar member type: {member.name!r}')
+        if member.isdir():
+            _safe_tar_member_path(extract_dir, member.name).mkdir(
+                parents=True, exist_ok=True)
+            continue
+        if not member.isfile():
+            continue
+        target = _safe_tar_member_path(extract_dir, member.name)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        src = archive.extractfile(member)
+        if src is None:
+            continue
+        with src, open(target, 'wb') as dst:
+            shutil.copyfileobj(src, dst)
+
+
 def _fetch_tarball(path: Path, source: str) -> _FetchedSource:
     if not path.is_file():
         raise UnsupportedPluginSource(f'Tarball not found: {path}')
@@ -415,8 +454,11 @@ def _fetch_tarball(path: Path, source: str) -> _FetchedSource:
     extract_dir = Path(tmp.name) / 'extracted'
     extract_dir.mkdir(parents=True, exist_ok=True)
     mode = 'r:gz' if path.name.lower().endswith(('.tar.gz', '.tgz')) else 'r'
-    with tarfile.open(path, mode) as archive:
-        archive.extractall(extract_dir)
+    try:
+        with tarfile.open(path, mode) as archive:
+            _safe_extract_tar(archive, extract_dir)
+    except tarfile.TarError as exc:
+        raise UnsupportedPluginSource(f'Unsafe plugin tarball: {exc}') from exc
     children = [child for child in extract_dir.iterdir() if child.name != '.DS_Store']
     root = (
         children[0]
@@ -446,8 +488,47 @@ def _source_type(source: str) -> str:
 _GIT_SHA_RE = re.compile(r'^[0-9a-f]{7,40}$', re.IGNORECASE)
 
 
+def _parse_sha_query(query: str) -> str | None:
+    sha = parse_qs(query, keep_blank_values=False).get('sha', [None])[0]
+    if sha is None:
+        return None
+    if not _GIT_SHA_RE.match(sha):
+        raise UnsupportedPluginSource(f'Invalid sha query parameter: {sha!r}')
+    return sha
+
+
+def _sha_matches(expected: str, resolved: str) -> bool:
+    expected = expected.lower()
+    resolved = resolved.lower()
+    if len(expected) >= 40:
+        return resolved == expected[:40]
+    return resolved.startswith(expected)
+
+
+def _verify_resolved_sha(
+    *,
+    ref: str | None,
+    expected_sha: str | None,
+    resolved_sha: str,
+) -> None:
+    if not resolved_sha:
+        raise UnsupportedPluginSource('GitHub checkout did not resolve to a commit SHA')
+
+    pins: list[str] = []
+    if ref and _GIT_SHA_RE.match(ref):
+        pins.append(ref)
+    if expected_sha:
+        pins.append(expected_sha)
+
+    for pin in pins:
+        if not _sha_matches(pin, resolved_sha):
+            raise UnsupportedPluginSource(
+                'GitHub checkout sha mismatch: '
+                f'expected {pin}, got {resolved_sha}')
+
+
 def _fetch_github(source: str) -> _FetchedSource:
-    repo, ref, subdir = _parse_github_uri(source)
+    repo, ref, subdir, expected_sha = _parse_github_uri(source)
     tmp = tempfile.TemporaryDirectory(prefix='ms_agent_plugin_git_')
     clone_dir = Path(tmp.name) / 'repo'
     is_sha = bool(ref and _GIT_SHA_RE.match(ref))
@@ -488,6 +569,7 @@ def _fetch_github(source: str) -> _FetchedSource:
         capture_output=True,
         text=True,
     ).stdout.strip()
+    _verify_resolved_sha(ref=ref, expected_sha=expected_sha, resolved_sha=sha)
     return _FetchedSource(
         path=clone_dir / subdir if subdir else clone_dir,
         source=source,
@@ -497,13 +579,30 @@ def _fetch_github(source: str) -> _FetchedSource:
     )
 
 
-def _parse_github_uri(source: str) -> tuple[str, str | None, str | None]:
+def _parse_github_uri(
+    source: str,
+) -> tuple[str, str | None, str | None, str | None]:
+    """Parse ``github://owner/repo@ref#subdir?sha=<commit>`` install URIs."""
     body = source[len('github://'):]
-    repo_part, _, subdir = body.partition('#')
+    expected_sha: str | None = None
+    if '?' in body and '#' not in body.split('?', 1)[0]:
+        body, _, query = body.partition('?')
+        expected_sha = _parse_sha_query(query)
+
+    repo_part, _, fragment = body.partition('#')
+    subdir: str | None = None
+    if fragment:
+        if '?' in fragment:
+            subdir_part, _, query = fragment.partition('?')
+            subdir = subdir_part or None
+            expected_sha = _parse_sha_query(query) or expected_sha
+        else:
+            subdir = fragment or None
+
     repo, _, ref = repo_part.partition('@')
     if repo.count('/') != 1:
         raise UnsupportedPluginSource(f'Invalid github plugin URI: {source}')
-    return repo, ref or None, subdir or None
+    return repo, ref or None, subdir, expected_sha
 
 
 def _fetch_modelscope(source: str) -> _FetchedSource:

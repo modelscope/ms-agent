@@ -68,6 +68,22 @@ class TestCompoundCommands:
         r = validator.check(f'ls {tmp_path} && cat {tmp_path}/f')
         assert r.action == 'allow'
 
+    def test_newline_separator(self, validator):
+        r = validator.check('true\nrm -rf /')
+        assert r.action == 'deny'
+
+    def test_background_ampersand(self, validator):
+        r = validator.check('true & rm -rf /')
+        assert r.action == 'deny'
+
+    def test_newline_inside_single_quotes(self, validator):
+        r = validator.check("echo 'line1\nrm -rf /'")
+        assert r.action == 'allow'
+
+    def test_ampersand_inside_double_quotes(self, validator):
+        r = validator.check('echo "foo & bar"')
+        assert r.action == 'allow'
+
 
 class TestRedirects:
     def test_redirect_within_allowed(self, validator, tmp_path):
@@ -91,6 +107,36 @@ class TestProcessSubstitution:
     def test_input_substitution(self, validator):
         r = validator.check('diff <(cat a) <(cat b)')
         assert r.action == 'ask'
+
+
+class TestCommandSubstitution:
+    def test_dollar_paren_rm(self, validator):
+        r = validator.check('echo $(rm -rf /)')
+        assert r.action == 'deny'
+
+    def test_backtick_rm(self, validator):
+        r = validator.check('echo `rm -rf /`')
+        assert r.action == 'deny'
+
+    def test_dollar_paren_in_double_quotes(self, validator):
+        r = validator.check('echo "$(rm -rf /)"')
+        assert r.action == 'deny'
+
+    def test_dollar_paren_safe_allowed(self, validator, tmp_path):
+        r = validator.check(f'echo $(ls {tmp_path})')
+        assert r.action == 'allow'
+
+    def test_single_quoted_literal_allowed(self, validator):
+        r = validator.check("echo '$(rm -rf /)'")
+        assert r.action == 'allow'
+
+    def test_nested_substitution(self, validator):
+        r = validator.check('echo $(echo $(rm -rf /))')
+        assert r.action == 'deny'
+
+    def test_parameter_expansion_with_substitution(self, validator):
+        r = validator.check('echo ${UNUSED:-$(rm -rf /)}')
+        assert r.action == 'deny'
 
 
 class TestPathOutsideAllowed:
@@ -120,6 +166,20 @@ class TestMvCpValidator:
 
     def test_mv_simple(self, validator, tmp_path):
         r = validator.check(f'mv {tmp_path}/a {tmp_path}/b')
+        assert r.action == 'allow'
+
+
+class TestFindValidator:
+    def test_exec_rm_deny(self, validator):
+        r = validator.check('find . -exec rm -rf /etc/important {} ;')
+        assert r.action == 'deny'
+
+    def test_delete_outside_allowed(self, validator):
+        r = validator.check('find /etc -name hosts -delete')
+        assert r.action in ('deny', 'ask')
+
+    def test_safe_find_allowed(self, validator, tmp_path):
+        r = validator.check(f'find {tmp_path} -name "*.txt"')
         assert r.action == 'allow'
 
 

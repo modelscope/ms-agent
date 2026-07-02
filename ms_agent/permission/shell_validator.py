@@ -2,9 +2,10 @@
 
 Pipeline:
   1. Process substitution check
-  2. Compound command splitting (&&, ||, ;, |)
-  3. Per sub-command: wrapper strip → redirect check → path extract → path validate
-  4. cd + write/create compound detection
+  2. Command substitution check ($(…) and backticks)
+  3. Compound command splitting (&&, ||, ;, |, &, newlines)
+  4. Per sub-command: wrapper strip → redirect check → path extract → path validate
+  5. cd + write/create compound detection
 """
 
 from __future__ import annotations
@@ -15,7 +16,12 @@ import shlex
 from dataclasses import dataclass
 from typing import Literal, Sequence
 
-from .path_extractors import ExtractorEntry, build_extractor_registry
+from .path_extractors import (
+    ExtractorEntry,
+    build_extractor_registry,
+    extract_find_exec_commands,
+    find_uses_delete,
+)
 from .path_validator import (
     PathValidationResult,
     is_dangerous_removal_path,
@@ -32,6 +38,7 @@ _REDIRECT_PATTERN = re.compile(
     r'(\S+)'
 )
 _FD_REDIRECT = re.compile(r'^\d*>&\d+$')
+_MAX_SUBSTITUTION_DEPTH = 16
 
 
 @dataclass(frozen=True)
@@ -63,9 +70,16 @@ class ShellPathValidator:
         self._workspace_root = self._config.workspace_root or os.getcwd()
         self._extractors = build_extractor_registry()
 
-    def check(self, command: str) -> SafetyDecision:
+    def check(self, command: str, *, _depth: int = 0) -> SafetyDecision:
         if not command or not command.strip():
             return SafetyDecision(action='deny', reason='Empty shell command')
+
+        if _depth > _MAX_SUBSTITUTION_DEPTH:
+            return SafetyDecision(
+                action='ask',
+                reason='Command substitution nesting too deep',
+                category='parse_failure',
+            )
 
         if len(command) > self._config.max_command_chars:
             return SafetyDecision(
@@ -87,7 +101,12 @@ class ShellPathValidator:
                 category='process_input_sub',
             )
 
-        # 2. Split compound commands
+        # 2. Command substitution — recursively validate inner commands
+        substitution_result = self._check_command_substitutions(command, _depth=_depth)
+        if substitution_result is not None:
+            return substitution_result
+
+        # 3. Split compound commands
         sub_commands = _split_compound(command)
 
         # Track cd presence for cd+write detection
@@ -120,7 +139,7 @@ class ShellPathValidator:
                 has_cd = True
 
             # 5. Command path extraction and validation
-            result = self._check_command(base_cmd, args)
+            result = self._check_command(base_cmd, args, _depth=_depth)
             if result.action != 'allow':
                 return result
 
@@ -139,13 +158,39 @@ class ShellPathValidator:
 
         return SafetyDecision(action='allow', reason='Shell command passed all checks')
 
-    def _check_command(self, base_cmd: str, args: list[str]) -> SafetyDecision:
+    def _check_command_substitutions(
+        self,
+        command: str,
+        *,
+        _depth: int,
+    ) -> SafetyDecision | None:
+        try:
+            bodies = _extract_command_substitutions(command)
+        except ValueError as exc:
+            return SafetyDecision(
+                action='ask',
+                reason=str(exc),
+                category='parse_failure',
+            )
+        for inner in bodies:
+            result = self.check(inner, _depth=_depth + 1)
+            if result.action != 'allow':
+                return result
+        return None
+
+    def _check_command(
+        self,
+        base_cmd: str,
+        args: list[str],
+        *,
+        _depth: int = 0,
+    ) -> SafetyDecision:
         entry = self._extractors.get(base_cmd)
         if entry is None:
             return SafetyDecision(action='allow', reason=f'Unregistered command: {base_cmd}')
 
         # Command-level validator (e.g. mv/cp with flags)
-        if entry.command_validator is not None:
+        if entry.command_validator is not None and base_cmd != 'find':
             err = entry.command_validator(args)
             if err:
                 return SafetyDecision(action='ask', reason=err, category='command_validator')
@@ -153,6 +198,9 @@ class ShellPathValidator:
         # sed special handling
         if base_cmd == 'sed':
             return self._check_sed(args, entry)
+
+        if base_cmd == 'find':
+            return self._check_find(args, entry, _depth=_depth)
 
         paths = entry.extractor(args)
         if not paths:
@@ -177,6 +225,30 @@ class ShellPathValidator:
             return SafetyDecision(action='allow', reason='sed: no file paths')
 
         return self._validate_paths(paths, op_type, 'sed')
+
+    def _check_find(
+        self,
+        args: list[str],
+        entry: ExtractorEntry,
+        *,
+        _depth: int,
+    ) -> SafetyDecision:
+        for exec_cmd in extract_find_exec_commands(args):
+            result = self.check(exec_cmd, _depth=_depth + 1)
+            if result.action != 'allow':
+                return result
+
+        if entry.command_validator is not None:
+            err = entry.command_validator(args)
+            if err:
+                return SafetyDecision(action='ask', reason=err, category='command_validator')
+
+        op_type = 'write' if find_uses_delete(args) else entry.op_type
+        paths = entry.extractor(args)
+        if not paths:
+            return SafetyDecision(action='allow', reason='find: no paths to validate')
+
+        return self._validate_paths(paths, op_type, 'find')
 
     @staticmethod
     def _collect_sed_expressions(args: list[str]) -> list[str]:
@@ -250,10 +322,173 @@ class ShellPathValidator:
         return SafetyDecision(action='allow', reason='Redirects OK')
 
 
-def _split_compound(command: str) -> list[str]:
-    """Split a compound command on ``&&``, ``||``, ``;``, ``|`` operators.
+def _extract_command_substitutions(command: str) -> list[str]:
+    """Extract command bodies from ``$(…)`` and backticks outside single quotes."""
+    bodies: list[str] = []
+    i = 0
+    chars = command
+    in_single = False
+    in_double = False
 
-    Uses a simple approach that does not split inside quotes.
+    while i < len(chars):
+        c = chars[i]
+
+        if c == '\\' and not in_single and i + 1 < len(chars):
+            i += 2
+            continue
+
+        if c == "'" and not in_double:
+            in_single = not in_single
+            i += 1
+            continue
+
+        if c == '"' and not in_single:
+            in_double = not in_double
+            i += 1
+            continue
+
+        if in_single:
+            i += 1
+            continue
+
+        if c == '$' and i + 1 < len(chars):
+            if chars[i + 1] == '{':
+                body, end = _read_brace_expansion(chars, i + 2)
+                if body is None:
+                    raise ValueError('Unclosed parameter expansion in command substitution')
+                bodies.extend(_extract_command_substitutions(body))
+                i = end
+                continue
+            if chars[i + 1] == '(':
+                if i + 2 < len(chars) and chars[i + 2] == '(':
+                    body, end = _read_delimited_body(chars, i + 3, '(', ')')
+                    if body is None:
+                        raise ValueError('Unclosed arithmetic expansion in command')
+                    i = end
+                    continue
+                body, end = _read_delimited_body(chars, i + 2, '(', ')')
+                if body is None:
+                    raise ValueError('Unclosed command substitution $(…)')
+                bodies.append(body)
+                bodies.extend(_extract_command_substitutions(body))
+                i = end
+                continue
+
+        if c == '`':
+            body, end = _read_backtick_body(chars, i + 1)
+            if body is None:
+                raise ValueError('Unclosed backtick command substitution')
+            bodies.append(body)
+            bodies.extend(_extract_command_substitutions(body))
+            i = end
+            continue
+
+        i += 1
+
+    return bodies
+
+
+def _read_delimited_body(
+    command: str,
+    start: int,
+    open_char: str,
+    close_char: str,
+) -> tuple[str | None, int]:
+    depth = 1
+    i = start
+    in_single = False
+    in_double = False
+
+    while i < len(command):
+        c = command[i]
+
+        if c == '\\' and not in_single and i + 1 < len(command):
+            i += 2
+            continue
+
+        if c == "'" and not in_double:
+            in_single = not in_single
+            i += 1
+            continue
+
+        if c == '"' and not in_single:
+            in_double = not in_double
+            i += 1
+            continue
+
+        if in_single or in_double:
+            i += 1
+            continue
+
+        if c == open_char:
+            depth += 1
+        elif c == close_char:
+            depth -= 1
+            if depth == 0:
+                return command[start:i], i + 1
+
+        i += 1
+
+    return None, start
+
+
+def _read_brace_expansion(command: str, start: int) -> tuple[str | None, int]:
+    depth = 1
+    i = start
+    in_single = False
+    in_double = False
+
+    while i < len(command):
+        c = command[i]
+
+        if c == '\\' and not in_single and i + 1 < len(command):
+            i += 2
+            continue
+
+        if c == "'" and not in_double:
+            in_single = not in_single
+            i += 1
+            continue
+
+        if c == '"' and not in_single:
+            in_double = not in_double
+            i += 1
+            continue
+
+        if in_single or in_double:
+            i += 1
+            continue
+
+        if c == '{':
+            depth += 1
+        elif c == '}':
+            depth -= 1
+            if depth == 0:
+                return command[start:i], i + 1
+
+        i += 1
+
+    return None, start
+
+
+def _read_backtick_body(command: str, start: int) -> tuple[str | None, int]:
+    i = start
+    while i < len(command):
+        c = command[i]
+        if c == '\\' and i + 1 < len(command):
+            i += 2
+            continue
+        if c == '`':
+            return command[start:i], i + 1
+        i += 1
+    return None, start
+
+
+def _split_compound(command: str) -> list[str]:
+    """Split a compound command on shell command separators.
+
+    Splits on ``&&``, ``||``, ``;``, ``|``, single ``&``, and newlines.
+    Does not split inside quotes.
     """
     parts: list[str] = []
     current: list[str] = []
@@ -289,6 +524,13 @@ def _split_compound(command: str) -> list[str]:
             continue
 
         # Check for compound operators
+        if c in '\n\r':
+            parts.append(''.join(current).strip())
+            current = []
+            i += 1
+            if c == '\r' and i < len(chars) and chars[i] == '\n':
+                i += 1
+            continue
         if c == ';':
             parts.append(''.join(current).strip())
             current = []
@@ -310,6 +552,10 @@ def _split_compound(command: str) -> list[str]:
                 current = []
                 i += 2
                 continue
+            parts.append(''.join(current).strip())
+            current = []
+            i += 1
+            continue
 
         current.append(c)
         i += 1

@@ -212,6 +212,47 @@ def extract_find(args: list[str]) -> list[str]:
     return paths if paths else ['.']
 
 
+_FIND_EXEC_FLAGS = frozenset({'-exec', '-execdir', '-ok', '-okdir'})
+_FIND_EXEC_TERMINATORS = frozenset({';', '+', '\\;'})
+_FIND_PLACEHOLDERS = frozenset({'{}', '{}+'})
+
+
+def find_uses_delete(args: list[str]) -> bool:
+    return any(arg in ('-delete', '--delete') for arg in args)
+
+
+def extract_find_exec_commands(args: list[str]) -> list[str]:
+    """Extract shell command strings from find ``-exec`` / ``-ok`` clauses."""
+    commands: list[str] = []
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg in _FIND_EXEC_FLAGS:
+            parts: list[str] = []
+            i += 1
+            while i < len(args) and args[i] not in _FIND_EXEC_TERMINATORS:
+                parts.append(args[i])
+                i += 1
+            cmd_parts = [part for part in parts if part not in _FIND_PLACEHOLDERS]
+            if cmd_parts:
+                commands.append(' '.join(cmd_parts))
+            if i < len(args) and args[i] in _FIND_EXEC_TERMINATORS:
+                i += 1
+            continue
+        i += 1
+    return commands
+
+
+def _validate_find(args: list[str]) -> str | None:
+    """Reject find invocations that write via output actions without path validation."""
+    for arg in args:
+        if arg in ('-fprintf', '-fprint', '-fprint0', '-fls'):
+            return (
+                f'find with {arg} writes to files and requires confirmation'
+            )
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Strategy E: subcommand dispatch (git)
 # ---------------------------------------------------------------------------
@@ -325,7 +366,12 @@ def build_extractor_registry() -> dict[str, ExtractorEntry]:
     registry['tr'] = ExtractorEntry(extract_tr, 'read', 'transform text from files in')
 
     # Strategy D
-    registry['find'] = ExtractorEntry(extract_find, 'read', 'search files in')
+    registry['find'] = ExtractorEntry(
+        extract_find,
+        'read',
+        'search files in',
+        command_validator=_validate_find,
+    )
 
     # Strategy B
     registry['grep'] = ExtractorEntry(_extract_grep, 'read', 'search for patterns in files from')
