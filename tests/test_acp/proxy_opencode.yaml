@@ -1,0 +1,10 @@
+proxy:
+  max_sessions: 4
+  session_timeout: 3600
+  default_backend: opencode
+
+backends:
+  opencode:
+    command: opencode
+    args: [acp]
+    description: "OpenCode coding agent"

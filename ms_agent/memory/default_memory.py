@@ -588,8 +588,29 @@ class DefaultMemory(Memory):
                 f'Failed to import mem0: {e}. Please install mem0ai package via `pip install mem0ai`.'
             )
             raise
-
+        import mem0.vector_stores.milvus
         capture_event_origin = mem0.memory.main.capture_event
+        update_origin = mem0.vector_stores.milvus.MilvusDB.update
+
+        @wraps(update_origin)
+        def update(self, vector_id=None, vector=None, payload=None):
+            """
+            Update a vector and its payload.
+
+            Args:
+                vector_id (str): ID of the vector to update.
+                vector (List[float], optional): Updated vector.
+                payload (Dict, optional): Updated payload.
+            """
+            if vector is None:
+                res = self.client.get(
+                    collection_name=self.collection_name, ids=[vector_id])
+                if res:
+                    vector = res[0]['vectors']
+
+            schema = {'id': vector_id, 'vectors': vector, 'metadata': payload}
+            self.client.upsert(
+                collection_name=self.collection_name, data=schema)
 
         @wraps(capture_event_origin)
         def patched_capture_event(event_name,
@@ -597,6 +618,7 @@ class DefaultMemory(Memory):
                                   additional_data=None):
             pass
 
+        mem0.vector_stores.milvus.MilvusDB.update = update
         mem0.memory.main.capture_event = partial(patched_capture_event, )
 
         # emb config

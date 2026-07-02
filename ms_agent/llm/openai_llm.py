@@ -231,6 +231,8 @@ class OpenAI(LLM):
         args = self.args.copy()
         args.update(kwargs)
         stream = args.get('stream', False)
+        if not stream:
+            args.pop('stream_options', None)
 
         if not stream:
             args.pop('stream_options', None)
