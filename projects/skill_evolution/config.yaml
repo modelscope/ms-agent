@@ -1,0 +1,20 @@
+agents:
+  rollout:
+    agent_config: agents/rollout.yaml
+  
+  reflector:
+    agent_config: agents/reflector.yaml
+
+  micro_skill_manager:
+    agent_config: agents/micro_skill_manager.yaml
+
+  macro_skill_manager:
+    agent_config: agents/macro_skill_manager.yaml
+
+train:
+  num_epochs: 1
+  batch_size: 40
+  max_workers: 10
+  reflection_trigger_size: 1
+  reflection_group_size: 4
+  max_rejected_update_buffer_size: 3
