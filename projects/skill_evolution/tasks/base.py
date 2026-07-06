@@ -41,7 +41,7 @@ class BaseDataset(ABC):
         self.current_index = 0
 
     @abstractmethod
-    def load_data(self) -> list[BaseDataItem]:
+    def load_data(self, data_path: str) -> list[BaseDataItem]:
         """Load data from the specified path and return a list of BaseDataItem instances."""
         pass
 
@@ -56,6 +56,9 @@ class BaseDataset(ABC):
         if self.current_index + batch_size >= len(self.data):
             batch = self.data[self.current_index :]
             self.current_index = 0  # reset for next epoch
+            # re-shuffle if training data
+            if self.is_train:
+                random.shuffle(self.data)
         else:
             batch = self.data[self.current_index : self.current_index + batch_size]
             self.current_index += batch_size

@@ -17,4 +17,4 @@ train:
   max_workers: 10
   reflection_trigger_size: 1
   reflection_group_size: 4
-  max_rejected_update_buffer_size: 3
+  rejected_update_buffer_size: 3

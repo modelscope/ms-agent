@@ -134,7 +134,8 @@ class SearchQAEvaluator(BaseEvaluator):
 
         Returns a BaseEvaluationResult instance containing the evaluation metrics.
         """
-        response = messages[-1].content if messages else ""
+        # when messages[-1] is tool_call, messages[-1].content may be None
+        response = messages[-1].content if messages and messages[-1].content else ""
         prediction = self._extract_answer(response)
 
         score = self._exact_match(prediction, data_item.answers)

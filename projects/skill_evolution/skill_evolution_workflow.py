@@ -3,6 +3,7 @@ import json
 import os
 import re
 import shutil
+from copy import deepcopy
 from collections import defaultdict, deque
 from typing import Deque, Dict, List
 
@@ -18,6 +19,7 @@ from tasks.base import (
 )
 from utils import (
     collect_and_log_evaluation_results,
+    dummy_evaluate,
     format_evaluation_result,
     gather_with_semaphore
 )
@@ -103,7 +105,7 @@ class SkillEvolutionWorkflow:
     ) -> List[Message]:
         """Build and run the rollout agent for a given data item."""
         # inject prompt config and skills config into rollout agent config
-        rollout_agent_config = self.rollout_agent_config.copy()
+        rollout_agent_config = deepcopy(self.rollout_agent_config)
         rollout_agent_config["prompt"] = {
             "system": data_item.system
         }
@@ -125,7 +127,7 @@ class SkillEvolutionWorkflow:
         reflector_output_dir: str
     ) -> List[Message]:
         """Build and run the reflector agent for a given query."""
-        reflector_agent_config = self.reflector_agent_config.copy()
+        reflector_agent_config = deepcopy(self.reflector_agent_config)
         reflector_agent_config["output_dir"] = reflector_output_dir
         # build and run
         agent = AgentLoader.build(
@@ -144,7 +146,7 @@ class SkillEvolutionWorkflow:
     ) -> List[Message]:
         """Build and run the skill manager agent for a given query."""
         # inject skills config into skill manager agent config
-        skill_manager_agent_config = agent_config.copy()
+        skill_manager_agent_config = deepcopy(agent_config)
         skill_manager_agent_config["skills"].update({
             "path": current_skills_path,
         })
@@ -342,7 +344,7 @@ class SkillEvolutionWorkflow:
             )
             for data_item in data_batch
         ]
-        return await gather_with_semaphore(self.semaphore, coroutines)
+        return await gather_with_semaphore(self.semaphore, coroutines, filter_none=False)
             
     async def _evaluate(
         self,
@@ -363,11 +365,14 @@ class SkillEvolutionWorkflow:
             list: A list of evaluation results for each data item in the batch.
         """
         os.makedirs(evaluation_output_dir, exist_ok=True)
-        coroutines = [
-            evaluator.evaluate(messages, data_item, evaluation_output_dir)
-            for messages, data_item in zip(rollout_results, data_batch)
-        ]
-        evaluation_results = await gather_with_semaphore(self.semaphore, coroutines)
+        coroutines = []
+        for messages, data_item in zip(rollout_results, data_batch):
+            # rollout failed, we will return a dummy evaluation result
+            if messages is None:
+                coroutines.append(dummy_evaluate())
+            else:
+                coroutines.append(evaluator.evaluate(messages, data_item, evaluation_output_dir))
+        evaluation_results = await gather_with_semaphore(self.semaphore, coroutines, filter_none=False)
         return evaluation_results
 
     async def _reflect(
@@ -440,7 +445,10 @@ class SkillEvolutionWorkflow:
             for tool_call in tool_calls:
                 if tool_call.get("tool_name", "") == self.SKILL_VIEW_TOOL_NAME:
                     try:
-                        skill_id = json.loads(tool_call["arguments"])["skill_id"]
+                        arguments = tool_call["arguments"]
+                        if isinstance(arguments, str):
+                            arguments = json.loads(arguments)
+                        skill_id = arguments["skill_id"]
                         viewed_skills.add(skill_id)
                     except Exception as e:
                         logger.warning(f"Failed to extract skill_id from tool_call arguments: "
@@ -484,6 +492,8 @@ class SkillEvolutionWorkflow:
                     # format the group trajectories into a single query for reflection
                     query = "Trajectories:\n\n" + "\n\n---\n\n".join(group_trajectories)
                     viewed_skills_queries[viewed_skills].append(query)
+                # clear the trajectories buffer as we have already used them for reflection
+                self.trajectories_buffer[viewed_skills][status].clear()
         return viewed_skills_queries
 
     def _format_micro_skill_manage_queries(

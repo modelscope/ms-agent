@@ -8,6 +8,10 @@ from tasks.base import BaseEvaluationResult
 logger = get_logger(__name__)
 
 
+async def dummy_evaluate() -> BaseEvaluationResult:
+    return BaseEvaluationResult(messages=[], score=0.0, status="failure")
+
+
 async def worker(semaphore: asyncio.Semaphore, coroutine):
     """A worker that runs a coroutine with a semaphore to limit concurrency."""
     async with semaphore:
@@ -18,11 +22,12 @@ async def worker(semaphore: asyncio.Semaphore, coroutine):
             return None
 
 
-async def gather_with_semaphore(semaphore: asyncio.Semaphore, coroutines: List):
+async def gather_with_semaphore(semaphore: asyncio.Semaphore, coroutines: List, filter_none: bool = True) -> List:
     """Gather results from coroutines with a semaphore to limit concurrency."""
     tasks = [worker(semaphore, coroutine) for coroutine in coroutines]
     results = await asyncio.gather(*tasks)
-    filtered_results = [result for result in results if result is not None]
+    if filter_none:
+        filtered_results = [result for result in results if result is not None]
     return filtered_results
 
 
