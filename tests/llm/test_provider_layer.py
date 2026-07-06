@@ -174,8 +174,14 @@ class TestCredentialResolver(unittest.TestCase):
     def test_base_url_default_from_spec(self):
         spec = get_registry().get('deepseek')
         config = OmegaConf.create({'llm': {'model': 'deepseek-chat'}})
-        self.assertEqual('https://api.deepseek.com/v1',
-                         CredentialResolver.resolve_base_url(spec, config))
+        # Isolate from a polluted environment: another (live) test may have
+        # loaded .env into os.environ, and DEEPSEEK_BASE_URL there would
+        # (correctly) override the spec default we assert here.
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('DEEPSEEK_BASE_URL', None)
+            self.assertEqual(
+                'https://api.deepseek.com/v1',
+                CredentialResolver.resolve_base_url(spec, config))
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_missing_key_returns_none(self):

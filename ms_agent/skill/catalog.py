@@ -31,7 +31,12 @@ def _download_skill_zip(skill_id: str, local_dir: str) -> str:
     url = MODELSCOPE_SKILL_API.format(skill_id=skill_id)
     os.makedirs(local_dir, exist_ok=True)
 
-    _owner, name = skill_id.split("/", 1)
+    # A single-segment skill_id (custom/local skill, no owner) must not raise
+    # on unpacking; fall back to using the whole id as the name.
+    if "/" in skill_id:
+        _owner, name = skill_id.split("/", 1)
+    else:
+        name = skill_id
     skill_dir = os.path.join(local_dir, name)
 
     resp = requests.get(url, stream=True, timeout=120)

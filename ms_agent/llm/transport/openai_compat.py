@@ -332,8 +332,13 @@ class OpenAICompatTransport(Transport):
         if not pre_message_chunk:
             return message_chunk
         message = deepcopy(pre_message_chunk)
-        message.reasoning_content += message_chunk.reasoning_content
-        message.content += message_chunk.content
+        # Coalesce to '' first: either side can be None (first chunk of a tool
+        # call / reasoning, or a prior message without reasoning content), and
+        # None += str raises TypeError.
+        message.reasoning_content = (message.reasoning_content or '') + (
+            message_chunk.reasoning_content or '')
+        message.content = (message.content or '') + (message_chunk.content
+                                                     or '')
         if message_chunk.tool_calls:
             if message.tool_calls:
                 if message.tool_calls[-1]['index'] == message_chunk.tool_calls[
@@ -532,7 +537,12 @@ class OpenAICompatTransport(Transport):
         messages[-1].api_calls += 1
 
         if self.continue_gen_mode == 'prefix' and self.continue_gen_stop:
-            existing = list(kwargs.pop('stop', []) or [])
+            existing = kwargs.pop('stop', [])
+            # A str stop must not be exploded into chars by list(); wrap it.
+            if isinstance(existing, str):
+                existing = [existing]
+            else:
+                existing = list(existing or [])
             kwargs['stop'] = existing + list(self.continue_gen_stop)
 
         return self._call_llm(messages, tools, **kwargs)

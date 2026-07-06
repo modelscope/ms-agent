@@ -115,7 +115,10 @@ class BM25Retriever(BaseRetriever):
                     continue
                 dl = self._doc_len[i]
                 numer = tf * (self.k1 + 1)
+                # Guard _avgdl == 0 (all docs empty/no valid tokens) to avoid
+                # ZeroDivisionError; length-normalization is then a no-op.
                 denom = tf + self.k1 * (
-                    1 - self.b + self.b * (dl / self._avgdl))
+                    1 - self.b
+                    + self.b * (dl / self._avgdl if self._avgdl > 0 else 1.0))
                 scores[i] += idf * (numer / denom)
         return scores

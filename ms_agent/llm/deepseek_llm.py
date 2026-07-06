@@ -38,7 +38,12 @@ class DeepSeek(OpenAI):
         # (the previous `self.format_input_message(...)` name did not exist and
         # raised at runtime). `list.append` returns None, so build `stop`
         # explicitly instead of assigning the result of `.append`.
-        stop = list(kwargs.pop('stop', []) or [])
+        stop = kwargs.pop('stop', [])
+        # A str stop must not be exploded into chars by list(); wrap it.
+        if isinstance(stop, str):
+            stop = [stop]
+        else:
+            stop = list(stop or [])
         stop.append('```')
         return self._call_llm(
             messages=messages, tools=tools, stop=stop, **kwargs)

@@ -115,6 +115,10 @@ class CommandRouter:
     @staticmethod
     def parse_input(text: str) -> tuple[str, str]:
         stripped = text.strip()
+        # Empty / whitespace-only input has no command; split() would yield an
+        # empty list and IndexError on parts[0].
+        if not stripped:
+            return '', ''
         parts = stripped.split(maxsplit=1)
         cmd = parts[0].lstrip('/').lower()
         args = parts[1] if len(parts) > 1 else ''

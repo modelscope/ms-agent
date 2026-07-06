@@ -292,7 +292,11 @@ class SkillToolSet(ToolBase):
         target = (skill.skill_path / file_path).resolve()
         skill_root = skill.skill_path.resolve()
 
-        if not str(target).startswith(str(skill_root)):
+        # relative_to() avoids the startswith() prefix-bypass (e.g. skill_root
+        # `/foo/bar` wrongly accepting `/foo/bar_baz`).
+        try:
+            target.relative_to(skill_root)
+        except ValueError:
             return json.dumps({"error": "Path traversal not allowed"})
 
         if not target.exists():
@@ -444,7 +448,10 @@ class SkillToolSet(ToolBase):
                 {"error": f"Skill '{skill_id}' not found"})
 
         custom_dir = self._get_custom_skills_dir().resolve()
-        if not str(skill.skill_path.resolve()).startswith(str(custom_dir)):
+        # relative_to() avoids the startswith() prefix-bypass before rmtree.
+        try:
+            skill.skill_path.resolve().relative_to(custom_dir)
+        except ValueError:
             return json.dumps(
                 {"error": "Can only delete custom skills"})
 

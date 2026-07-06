@@ -87,6 +87,11 @@ class Workspace:
 
     def _resolve_safe(self, rel_path: str) -> Path:
         target = (self._root / rel_path).resolve()
-        if not str(target).startswith(str(self._root)):
+        # Use relative_to() rather than str.startswith(): the latter would
+        # wrongly accept sibling dirs sharing a name prefix (e.g. root
+        # `/foo/bar` accepting `/foo/bar_baz`).
+        try:
+            target.relative_to(self._root)
+        except ValueError:
             raise PermissionError(f'Path traversal blocked: {rel_path}')
         return target
