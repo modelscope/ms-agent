@@ -54,5 +54,5 @@ tools:
       - glob
 
 
-max_chat_round: 10
+max_chat_round: 50
 enable_snapshots: false

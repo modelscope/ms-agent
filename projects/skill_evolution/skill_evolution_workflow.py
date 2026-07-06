@@ -5,7 +5,7 @@ import re
 import shutil
 from copy import deepcopy
 from collections import defaultdict, deque
-from typing import Deque, Dict, List
+from typing import Deque, Dict, List, Union
 
 from omegaconf import DictConfig
 
@@ -32,26 +32,35 @@ class SkillEvolutionWorkflow:
 
     Args:
         config_file (str): Path to the configuration file.
-        init_skills_path (str): Path to the initial skills directory.
+        init_local_skills_path (str): Path to the initial local skills directory.
         trust_remote_code (bool): Whether to allow loading of remote code. Defaults to False.
         workdir (str): Working directory for the workflow. Defaults to `./output`.
     """
-    SKILL_VIEW_TOOL_NAME = "skills---skill_view"
+    SKILL_VIEW_TOOL_NAME = "skills---skill_view" 
+    SKILL_MANAGE_TOOL_NAME = "skills---skill_manage"
 
     WORKFLOW_NAME = "SkillEvolutionWorkflow"
 
     def __init__(
         self,
         config_file: str,
-        init_skills_path: str,
+        init_local_skills_path: Union[str, List[str]],
         workdir: str = "./output",
     ):
         # prepare config
         self.config = Config.from_task(config_file)
         self.agents_config = self.config.get("agents", DictConfig({}))
         self.train_config = self.config.get("train", DictConfig({}))
-        self.init_skills_path = init_skills_path
         self.workdir = workdir
+
+        if isinstance(init_local_skills_path, str):
+            self.init_skills_paths = [init_local_skills_path]
+        else:
+            self.init_skills_paths = init_local_skills_path
+        # since `~/.ms_agent/skills` will be loaded automatically, we will add it to the init_skills_path if it exists
+        self.init_skills_paths.append(os.path.expanduser("~/.ms_agent/skills"))
+        # filter out non-existing paths
+        self.init_skills_paths = [path for path in self.init_skills_paths if os.path.exists(path)]
 
         # prepare detailed training config
         self.train_config.num_epochs = self.train_config.get("num_epochs", 1)
@@ -181,7 +190,9 @@ class SkillEvolutionWorkflow:
         sub_workdir = os.path.join(self.workdir, "init")
         os.makedirs(sub_workdir, exist_ok=True)
         current_skills_path = os.path.join(sub_workdir, "skills")
-        shutil.copytree(self.init_skills_path, current_skills_path, dirs_exist_ok=True)
+        # since self.init_skills_paths is a list of paths, we will copy all of them to current_skills_path
+        for init_skill_path in self.init_skills_paths:
+            shutil.copytree(init_skill_path, current_skills_path, dirs_exist_ok=True)
 
         current_score = await self._validate_or_test(
             current_skills_path=current_skills_path,
@@ -197,6 +208,7 @@ class SkillEvolutionWorkflow:
         # training loop
         num_steps = (len(train_set) + self.train_config.batch_size - 1) // self.train_config.batch_size
         for epoch in range(1, self.train_config.num_epochs + 1):
+            updated_skills = set()  # track updated skills in this epoch
             for step in range(1, num_steps + 1):
                 sub_workdir = os.path.join(self.workdir, f"epoch_{epoch:02d}", f"step_{step:04d}")
                 os.makedirs(sub_workdir, exist_ok=True)
@@ -205,7 +217,7 @@ class SkillEvolutionWorkflow:
 
                 # a train step consists of rollout, evaluation, reflection and skill management
                 data_batch = train_set.get_batch(self.train_config.batch_size)
-                await self._train_step(
+                skills_update_details = await self._train_step(
                     current_skills_path=current_skills_path,
                     data_batch=data_batch,
                     rollout_env=rollout_env,
@@ -232,11 +244,15 @@ class SkillEvolutionWorkflow:
                     last_score = current_score
                     last_skills_path = current_skills_path
                     logger.info(f"Updated last skills at {last_skills_path} with score {last_score:.4f}")
+                    for viewed_skills in skills_update_details:
+                        updated_skills.add(viewed_skills)
                 # reject: if current score is worse than last score, we will reject the current skills
                 # and update the recent rejected update buffer for the corresponding viewed skills
                 else:
-                    # TODO
-                    pass
+                    logger.info(f"Rejected current skills at {current_skills_path} with score {current_score:.4f}, "
+                                f"last score is {last_score:.4f}")
+                    for viewed_skills, update_details in skills_update_details.items():
+                        self.recent_rejected_update_buffer[viewed_skills].append(update_details)
 
             # after all steps in the epoch, we will call marco_skill_manager
             # to examine the entire skill set and decide whether to merge or remove skills
@@ -246,7 +262,13 @@ class SkillEvolutionWorkflow:
             shutil.copytree(last_skills_path, current_skills_path, dirs_exist_ok=True)
 
             # build and run macro skill manager agent
-            # TODO
+            query = f"Recent updated skills: {', '.join(updated_skills)}"
+            await self._build_and_run_skill_manager_agent(
+                agent_config=self.macro_skill_manager_agent_config,
+                current_skills_path=current_skills_path,
+                query=query,
+                skill_manager_output_dir=os.path.join(sub_workdir, "macro_skill_manager")
+            )
 
             current_score = await self._validate_or_test(
                 current_skills_path=current_skills_path,
@@ -269,7 +291,7 @@ class SkillEvolutionWorkflow:
         test_init_workdir = os.path.join(self.workdir, "test", "init")
         os.makedirs(test_init_workdir, exist_ok=True)
         test_init_skills_path = os.path.join(test_init_workdir, "skills")
-        shutil.copytree(self.init_skills_path, test_init_skills_path, dirs_exist_ok=True)
+        shutil.copytree(os.path.join(self.workdir, "init", "skills"), test_init_skills_path, dirs_exist_ok=True)
         logger.info(f"Testing with initial skills from {test_init_skills_path}")
 
         test_init_score = await self._validate_or_test(
@@ -311,10 +333,12 @@ class SkillEvolutionWorkflow:
         )
 
         # 4. log final results
-        logger.info(f"Test Results:\n"
-                    f"Initial Skills Score: {test_init_score:.4f} (from {test_init_skills_path})\n"
-                    f"Last Skills Score: {test_last_score:.4f} (from {test_last_skills_path})\n"
-                    f"Best Skills Score: {test_best_score:.4f} (from {test_best_skills_path})")
+        logger.info(
+            f"Test Results:\n"
+            f"Initial Skills Score: {test_init_score:.4f} (from {test_init_skills_path})\n"
+            f"Last Skills Score: {test_last_score:.4f} (from {test_last_skills_path}={last_skills_path})\n"
+            f"Best Skills Score: {test_best_score:.4f} (from {test_best_skills_path}={best_skills_path})\n"
+        )
 
     async def _rollout(
         self,
@@ -409,24 +433,35 @@ class SkillEvolutionWorkflow:
         current_skills_path: str,
         micro_skill_manage_queries: Dict[str, str],
         micro_skill_manager_output_dir: str
-    ):
+    ) -> Dict[str, List[Message]]:
         """Perform micro skill management at each step based on the reflection results.
 
         Args:
             micro_skill_manage_queries (dict): A dictionary mapping viewed skills to their corresponding management queries.
             micro_skill_manager_output_dir (str): Directory to save micro skill management results.
+
+        Returns:
+            dict: A dictionary mapping viewed skills to their corresponding micro skill management results.
         """
         os.makedirs(micro_skill_manager_output_dir, exist_ok=True)
-        coroutines = [
-            self._build_and_run_skill_manager_agent(
-                agent_config=self.micro_skill_manager_agent_config,
-                current_skills_path=current_skills_path,
-                query=query,
-                skill_manager_output_dir=os.path.join(micro_skill_manager_output_dir, viewed_skills)
+        viewed_skills_keys = sorted(list(micro_skill_manage_queries.keys()))
+        coroutines = []
+        for viewed_skills in viewed_skills_keys:
+            coroutines.append(
+                self._build_and_run_skill_manager_agent(
+                    agent_config=self.micro_skill_manager_agent_config,
+                    current_skills_path=current_skills_path,
+                    query=micro_skill_manage_queries[viewed_skills],
+                    skill_manager_output_dir=os.path.join(micro_skill_manager_output_dir, viewed_skills)
+                )
             )
-            for viewed_skills, query in micro_skill_manage_queries.items()
-        ]
-        await gather_with_semaphore(self.semaphore, coroutines)
+        results = await gather_with_semaphore(self.semaphore, coroutines, filter_none=False)
+        micro_skill_manage_results = dict()
+        for viewed_skills, messages in zip(viewed_skills_keys, results):
+            if messages is None:
+                continue
+            micro_skill_manage_results[viewed_skills] = messages
+        return micro_skill_manage_results
 
     def _extract_viewed_skills_from_messages(self, messages: List[Message]) -> str:
         """Extract the set of viewed skills from the rollout messages.
@@ -460,6 +495,46 @@ class SkillEvolutionWorkflow:
 
         # return a string representation of the viewed skill ids, sorted and joined by underscores
         return re.sub(r"[^\w\-]", "_", "_".join(sorted(viewed_skills)))
+
+    def _extract_skills_update_details_from_messages(self, messages: List[Message]) -> str:
+        """Extract the skills update details from the micro skill manager messages.
+
+        Args:
+            messages (list[Message]): Micro skill manager messages.
+
+        Returns:
+            str: The content of the skills update details.
+        """
+        # we need to find a successful tool call to extract the skills update details
+        skill_manage_tool_calls = dict()
+        for message in messages:
+            tool_calls = message.tool_calls
+            if not tool_calls:
+                continue
+            for tool_call in tool_calls:
+                if tool_call.get("tool_name", "") == self.SKILL_MANAGE_TOOL_NAME:
+                    tool_call_id = tool_call.get("id", "")
+                    skill_manage_tool_calls[tool_call_id] = tool_call
+
+            # for role=tool, we will check if the tool call is successful
+            if message.role == "tool":
+                tool_call_id = message.tool_call_id
+                if tool_call_id not in skill_manage_tool_calls:
+                    continue
+                content = json.loads(message.content)
+                if not content.get("success", False):
+                    skill_manage_tool_calls.pop(tool_call_id, None)
+                else:
+                    tool_call = skill_manage_tool_calls[tool_call_id]
+                    try:
+                        arguments = tool_call["arguments"]
+                        if isinstance(arguments, str):
+                            arguments = json.loads(arguments)
+                        return arguments
+                    except Exception as e:
+                        logger.warning(f"Failed to extract skills update details from tool_call arguments: "
+                                       f"{tool_call['arguments']}. Error: {e}")
+                        continue
 
     def _update_trajectories_buffer(
         self,
@@ -509,6 +584,8 @@ class SkillEvolutionWorkflow:
             if rejected_updates:
                 rejected_updates_str = "\n\n---\n\n".join(rejected_updates)
                 query += f"\n\nRecent Rejected Updates:\n{rejected_updates_str}"
+                # clear the recent rejected updates buffer as we have already used them
+                self.recent_rejected_update_buffer[viewed_skills].clear()
             micro_skill_manage_queries[viewed_skills] = query
         return micro_skill_manage_queries
 
@@ -565,11 +642,22 @@ class SkillEvolutionWorkflow:
 
         # build and run micro skill manager agent
         micro_skill_manage_queries = self._format_micro_skill_manage_queries(reflection_results)
-        await self._micro_skill_manage(
+        micro_skill_manage_results = await self._micro_skill_manage(
             current_skills_path=current_skills_path,
             micro_skill_manage_queries=micro_skill_manage_queries,
             micro_skill_manager_output_dir=os.path.join(sub_workdir, "micro_skill_manager_results")
         )
+
+        # extract skills update details from micro skill manager and return as dict
+        skills_update_details = dict()
+        for viewed_skills, messages in micro_skill_manage_results.items():
+            if not messages:
+                continue
+            # extract the last message content as the skills update details
+            skills_update_details[viewed_skills] = (
+                self._extract_skills_update_details_from_messages(messages)
+            )
+        return skills_update_details
 
     async def _validate_or_test(
         self,

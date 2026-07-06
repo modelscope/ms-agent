@@ -27,8 +27,8 @@ async def gather_with_semaphore(semaphore: asyncio.Semaphore, coroutines: List, 
     tasks = [worker(semaphore, coroutine) for coroutine in coroutines]
     results = await asyncio.gather(*tasks)
     if filter_none:
-        filtered_results = [result for result in results if result is not None]
-    return filtered_results
+        results = [result for result in results if result is not None]
+    return results
 
 
 def collect_and_log_evaluation_results(
