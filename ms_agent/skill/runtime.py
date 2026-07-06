@@ -92,6 +92,9 @@ class SkillRuntime:
                 'tags': skill.tags,
                 'has_scripts': bool(skill.scripts),
                 'version': skill.version,
+                'origin': getattr(skill, '_origin', 'config'),
+                'plugin_id': getattr(skill, '_plugin_id', None),
+                'capability': getattr(skill, '_capability', None),
             })
         return result
 

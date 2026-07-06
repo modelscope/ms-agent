@@ -4,9 +4,9 @@ import threading
 import weakref
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import wraps
+from tqdm.auto import tqdm
 
 from ms_agent.utils.logger import get_logger
-from tqdm.auto import tqdm
 
 logger = get_logger()
 
@@ -102,7 +102,8 @@ class DaemonThreadPoolExecutor(ThreadPoolExecutor):
             thread_name = '%s_%d' % (self._thread_name_prefix
                                      or self, num_threads)
             # Import internal helpers from stdlib to keep behavior consistent.
-            from concurrent.futures.thread import _worker, _threads_queues  # type: ignore
+            from concurrent.futures.thread import (  # type: ignore
+                _threads_queues, _worker)
 
             t = threading.Thread(
                 name=thread_name,

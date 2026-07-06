@@ -1,8 +1,8 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+from omegaconf import DictConfig, OmegaConf
 from typing import Dict, Optional
 
 from ms_agent.config.config import Config
-from omegaconf import DictConfig, OmegaConf
 
 
 class WorkflowLoader:

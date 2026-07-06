@@ -1,6 +1,6 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 from .llm import LLM
-from .utils import Message
+from .utils import Message, collect_response
 
 # Data-driven provider layer (opt-in via config.llm.use_provider_router).
 from .adapter import ResponseAdapter
@@ -13,6 +13,7 @@ from .types import (LLMResponse, ProviderCapabilities, ProviderCapability,
 __all__ = [
     'LLM',
     'Message',
+    'collect_response',
     'ProviderRouter',
     'LLMProvider',
     'ProviderRegistry',

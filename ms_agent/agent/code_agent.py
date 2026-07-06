@@ -1,9 +1,8 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+from omegaconf import DictConfig
 from typing import Any, List, Union
 
 from ms_agent.llm import Message
-from omegaconf import DictConfig
-
 from .base import Agent
 
 

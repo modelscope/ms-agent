@@ -1,10 +1,10 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import os
+from omegaconf import DictConfig
 
 from ms_agent.agent.loader import AgentLoader
 from ms_agent.utils import get_logger
 from ms_agent.workflow.base import Workflow
-from omegaconf import DictConfig
 
 logger = get_logger()
 

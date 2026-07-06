@@ -2,9 +2,6 @@
 # yapf: disable
 import ast
 import os
-from typing import Dict, Iterator, List, Optional, Tuple, Union
-from unittest.mock import patch as mock_patch
-
 from docling.backend.html_backend import HTMLDocumentBackend
 from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
@@ -18,6 +15,9 @@ from docling.models.layout_model import LayoutModel
 from docling.models.table_structure_model import TableStructureModel
 from docling_core.types import DoclingDocument
 from docling_core.types.doc import DocItem
+from typing import Dict, Iterator, List, Optional, Tuple, Union
+from unittest.mock import patch as mock_patch
+
 from ms_agent.tools.docling.doc_postprocess import PostProcess
 from ms_agent.tools.docling.patches import (download_models_ms,
                                             download_models_pic_classifier_ms,

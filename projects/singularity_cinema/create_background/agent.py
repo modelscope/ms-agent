@@ -1,14 +1,14 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+import matplotlib.font_manager as fm
 import os
 import textwrap
+from omegaconf import DictConfig
+from PIL import Image, ImageDraw, ImageFont
 
-import matplotlib.font_manager as fm
 from ms_agent.agent import CodeAgent
 from ms_agent.llm import LLM
 from ms_agent.llm.openai_llm import OpenAI
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
-from PIL import Image, ImageDraw, ImageFont
 
 logger = get_logger()
 

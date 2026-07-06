@@ -1,12 +1,12 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import json
 from abc import ABC, abstractmethod
+from omegaconf import DictConfig, OmegaConf
 from typing import List, Optional
 
-import json
 from ms_agent.llm.openai_llm import OpenAI as OpenAILLM
 from ms_agent.llm.utils import Message
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig, OmegaConf
 
 logger = get_logger()
 

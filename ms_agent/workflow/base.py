@@ -1,9 +1,9 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 from abc import ABC, abstractmethod
+from omegaconf import DictConfig
 from typing import Dict, Optional
 
 from ms_agent.config import Config
-from omegaconf import DictConfig
 
 
 class Workflow(ABC):

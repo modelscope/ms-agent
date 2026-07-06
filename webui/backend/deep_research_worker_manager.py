@@ -1,12 +1,11 @@
 import asyncio
+import json
 import os
 import signal
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Optional
-
-import json
 
 
 class DeepResearchWorkerManager:

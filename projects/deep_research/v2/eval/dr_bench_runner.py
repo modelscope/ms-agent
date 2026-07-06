@@ -17,7 +17,9 @@ Notes:
 """
 
 from __future__ import annotations
+
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -27,8 +29,6 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple
-
-import json
 
 try:
     # Auto-load environment variables from a nearby `.env` (if present).

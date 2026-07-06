@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-# The default output dir
+# The default output dir when explicitly referenced in legacy configs.
+# When ``output_dir`` is omitted, ``resolve_workspace_root()`` uses cwd instead.
 DEFAULT_OUTPUT_DIR = './output'
 
 DEFAULT_INDEX_DIR = '.index'

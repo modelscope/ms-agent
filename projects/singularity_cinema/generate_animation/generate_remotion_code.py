@@ -1,16 +1,16 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import glob
+import json
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Union
-
-import json
-from ms_agent.agent import CodeAgent
-from ms_agent.llm import LLM, Message
-from ms_agent.utils import get_logger
 from omegaconf import DictConfig
 from PIL import Image
+from typing import List, Union
+
+from ms_agent.agent import CodeAgent
+from ms_agent.llm import LLM, Message, collect_response
+from ms_agent.utils import get_logger
 
 logger = get_logger()
 
@@ -210,8 +210,9 @@ class GenerateRemotionCode(CodeAgent):
 """
 
         logger.info(f'正在生成 remotion 代码：{content}')
-        _response_message = llm.generate(
-            [Message(role='user', content=prompt)], temperature=0.3)
+        _response_message = collect_response(
+            llm.generate([Message(role='user', content=prompt)],
+                         temperature=0.3))
         response = _response_message.content
 
         # Robust code extraction using regex

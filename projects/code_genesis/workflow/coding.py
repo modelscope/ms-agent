@@ -1,14 +1,15 @@
 import asyncio
 import dataclasses
+import json
 import os
 import re
 import shutil
 from collections import OrderedDict
 from copy import deepcopy
+from omegaconf import DictConfig
 from pathlib import Path
 from typing import List, Optional, Set
 
-import json
 from ms_agent import LLMAgent
 from ms_agent.agent import CodeAgent
 from ms_agent.llm import Message
@@ -19,7 +20,6 @@ from ms_agent.utils.constants import (DEFAULT_INDEX_DIR, DEFAULT_LOCK_DIR,
                                       DEFAULT_TAG)
 from ms_agent.utils.parser_utils import ImportInfo, parse_imports
 from ms_agent.utils.utils import extract_code_blocks, file_lock
-from omegaconf import DictConfig
 
 logger = get_logger()
 
@@ -163,9 +163,7 @@ class Programmer(LLMAgent):
             for message in messages:
                 if message.tool_calls:
                     for tool_call in message.tool_calls:
-                        if 'read_file' in tool_call[
-                                'tool_name'] or 'read_abbreviation_file' in tool_call[
-                                    'tool_name']:
+                        if 'read_file' in tool_call['tool_name']:
                             arguments = tool_call['arguments']
                             if isinstance(arguments, str):
                                 try:

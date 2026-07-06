@@ -83,6 +83,68 @@ class TestProviderRegistry(unittest.TestCase):
         self.assertEqual('partial', reg.get('dashscope').continue_gen_mode)
         self.assertIsNone(reg.get('openai').continue_gen_mode)
 
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_anthropic_capability_is_honest(self):
+        # prefix_cache must NOT be declared until the anthropic transport
+        # actually implements it (declared == implemented).
+        caps = get_registry().get('anthropic').capabilities
+        self.assertFalse(caps.supports(ProviderCapability.PREFIX_CACHE))
+        self.assertTrue(caps.supports(ProviderCapability.TOOL_CALL))
+        self.assertTrue(caps.supports(ProviderCapability.REASONING))
+
+
+class TestFromConfigRouting(unittest.TestCase):
+    """LLM.from_config routing: opt-in flag, auto-route, and zero-regression."""
+
+    def _make(self, **llm):
+        from omegaconf import OmegaConf
+        return OmegaConf.create({'llm': llm})
+
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_new_provider_auto_routes_without_flag(self):
+        from ms_agent.llm import LLM
+        from ms_agent.llm.router import LLMProvider
+        obj = LLM.from_config(
+            self._make(service='deepseek', model='m', deepseek_api_key='x'))
+        self.assertIsInstance(obj, LLMProvider)
+
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_alias_auto_routes_without_flag(self):
+        from ms_agent.llm import LLM
+        from ms_agent.llm.router import LLMProvider
+        obj = LLM.from_config(
+            self._make(service='glm', model='m', zhipu_api_key='x'))
+        self.assertIsInstance(obj, LLMProvider)
+
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_legacy_service_stays_legacy(self):
+        from ms_agent.llm import LLM
+        from ms_agent.llm.router import LLMProvider
+        from ms_agent.llm.modelscope_llm import ModelScope
+        obj = LLM.from_config(
+            self._make(service='modelscope', model='m',
+                       modelscope_api_key='x', modelscope_base_url=None))
+        self.assertIsInstance(obj, ModelScope)
+        self.assertNotIsInstance(obj, LLMProvider)
+
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_explicit_false_opts_out(self):
+        from ms_agent.llm import LLM
+        from ms_agent.llm.router import LLMProvider
+        obj = LLM.from_config(
+            self._make(service='deepseek', model='m',
+                       use_provider_router=False, openai_api_key='x'))
+        self.assertNotIsInstance(obj, LLMProvider)
+
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_explicit_true_forces_router(self):
+        from ms_agent.llm import LLM
+        from ms_agent.llm.router import LLMProvider
+        obj = LLM.from_config(
+            self._make(service='modelscope', model='m',
+                       use_provider_router=True, modelscope_api_key='x'))
+        self.assertIsInstance(obj, LLMProvider)
+
 
 class TestCredentialResolver(unittest.TestCase):
 

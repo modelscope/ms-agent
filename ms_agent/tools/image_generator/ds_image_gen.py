@@ -1,7 +1,6 @@
 import os
 import uuid
 from io import BytesIO
-
 from PIL import Image
 
 

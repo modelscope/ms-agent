@@ -122,6 +122,8 @@ venv.bak/
 .idea
 .cursor
 .firecrawl
+.claude/
+.claude-trace/
 
 # custom
 *.pkl
@@ -165,3 +167,5 @@ ms_agent/app/temp_workspace/
 
 # webui
 webui/work_dir/
+
+.ms_agent_snapshots/

@@ -1,8 +1,7 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+import json
 import subprocess
 import sys
-
-import json
 
 
 def check_import() -> dict:

@@ -1,17 +1,54 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import json
 import os
 import re
 import uuid
+from omegaconf import DictConfig
 from typing import Any, List, Optional
 
-import json
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback
 from ms_agent.llm.utils import Message
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
 
 logger = get_logger()
+
+
+def _parse_search_result_json(text: str) -> Optional[Any]:
+    """Parse searcher final JSON from raw assistant text.
+
+    Accepts plain JSON, fenced ```json blocks, or a JSON object embedded in
+    surrounding prose (first balanced object via :func:`json.JSONDecoder.raw_decode`).
+    """
+    if text is None:
+        return None
+    if not isinstance(text, str):
+        return None
+    text = text.strip()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        pass
+    m = re.search(
+        r'```(?:json)?\s*\r?\n(.*?)```', text, flags=re.DOTALL | re.IGNORECASE)
+    if m:
+        block = m.group(1).strip()
+        if block:
+            try:
+                return json.loads(block)
+            except (json.JSONDecodeError, TypeError):
+                pass
+    dec = json.JSONDecoder()
+    for i, ch in enumerate(text):
+        if ch not in '{[':
+            continue
+        try:
+            return dec.raw_decode(text[i:])[0]
+        except json.JSONDecodeError:
+            continue
+    return None
 
 
 class SearcherCallback(Callback):
@@ -221,33 +258,48 @@ class SearcherCallback(Callback):
 
                 try:
                     # Prefer JSON file if possible; fallback to markdown otherwise.
-                    if isinstance(content, str):
-                        parsed_json = json.loads(content)
-                    else:
+                    if isinstance(content, (dict, list)):
                         parsed_json = content
-                    try:
-                        with open(json_path, 'x', encoding='utf-8') as f:
-                            json.dump(
-                                parsed_json, f, ensure_ascii=False, indent=2)
-                        logger.info(
-                            f'Searcher: Search result saved to {json_path}')
-                    except FileExistsError:
-                        logger.info(
-                            f'Search result already exists at {json_path}')
-                except (json.JSONDecodeError, TypeError):
-                    logger.warning(
-                        'Failed to parse search result as JSON, saving as markdown'
-                    )
-                    text = content if isinstance(content,
-                                                 str) else str(content)
-                    try:
-                        with open(md_path, 'x', encoding='utf-8') as f:
-                            f.write(text)
-                        logger.info(
-                            f'Searcher: Search result saved to {md_path}')
-                    except FileExistsError:
-                        logger.info(
-                            f'Search result already exists at {md_path}')
+                    elif isinstance(content, str):
+                        try:
+                            parsed_json = json.loads(content)
+                        except (json.JSONDecodeError, TypeError):
+                            parsed_json = _parse_search_result_json(content)
+                            if parsed_json is not None:
+                                logger.info(
+                                    'Searcher: parsed JSON from fenced or embedded payload'
+                                )
+                    else:
+                        parsed_json = _parse_search_result_json(str(content))
+
+                    if parsed_json is not None:
+                        try:
+                            with open(json_path, 'x', encoding='utf-8') as f:
+                                json.dump(
+                                    parsed_json,
+                                    f,
+                                    ensure_ascii=False,
+                                    indent=2)
+                            logger.info(
+                                f'Searcher: Search result saved to {json_path}'
+                            )
+                        except FileExistsError:
+                            logger.info(
+                                f'Search result already exists at {json_path}')
+                    else:
+                        logger.warning(
+                            'Failed to parse search result as JSON, saving as markdown'
+                        )
+                        text = content if isinstance(content,
+                                                     str) else str(content)
+                        try:
+                            with open(md_path, 'x', encoding='utf-8') as f:
+                                f.write(text)
+                            logger.info(
+                                f'Searcher: Search result saved to {md_path}')
+                        except FileExistsError:
+                            logger.info(
+                                f'Search result already exists at {md_path}')
                 except Exception as e:
                     logger.warning(
                         f'Unexpected error when saving search result: {e}')

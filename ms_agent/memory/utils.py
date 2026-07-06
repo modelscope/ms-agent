@@ -6,10 +6,15 @@ from .condenser.context_compressor import ContextCompressor
 from .condenser.refine_condenser import RefineCondenser
 from .default_memory import DefaultMemory
 from .diversity import Diversity
+from .unified import MemoryOrchestrator
 
 memory_mapping = {
+    'unified_memory': MemoryOrchestrator,
+    # Long-term memory (legacy)
     'default_memory': DefaultMemory,
+    # Context augmentation
     'diversity': Diversity,
+    # Context compression (deprecated -- use session/strategies instead)
     'code_condenser': CodeCondenser,
     'refine_condenser': RefineCondenser,
     'context_compressor': ContextCompressor,

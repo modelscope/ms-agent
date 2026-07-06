@@ -64,9 +64,26 @@ class CapabilityRegistry:
 
     async def invoke(self, name: str, args: dict[str, Any],
                      **kwargs: Any) -> dict[str, Any]:
-        """Invoke a registered capability by name."""
+        """Invoke a registered capability by name.
+
+        Before dispatching to the handler, validates that all declared
+        ``requires`` (env vars, binaries) are satisfied.  Returns a
+        clear error dict when prerequisites are missing so the caller
+        gets an actionable message instead of an opaque downstream failure.
+        """
         if name not in self._handlers:
             return {'error': f'Unknown capability: {name}'}
+
+        descriptor = self._descriptors[name]
+        unmet = descriptor.check_requires()
+        if unmet:
+            return {
+                'error': (f'Capability "{name}" has unmet requirements:\n'
+                          + '\n'.join(f'  - {e}' for e in unmet)),
+                'unmet_requirements':
+                unmet,
+            }
+
         handler = self._handlers[name]
         try:
             return await handler(args, **kwargs)

@@ -1,14 +1,14 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 # flake8: noqa
+import json
 import os
+from spec_constant import (PRINCIPLE_ROUTING_GUIDE, PRINCIPLE_SPEC_GUIDE,
+                           WRITING_ROUTING_GUIDE, WRITING_SPEC_GUIDE)
 from typing import Any, Dict, List, Tuple
 
-import json
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils import get_logger
-from spec_constant import (PRINCIPLE_ROUTING_GUIDE, PRINCIPLE_SPEC_GUIDE,
-                           WRITING_ROUTING_GUIDE, WRITING_SPEC_GUIDE)
 
 logger = get_logger()
 

@@ -46,7 +46,7 @@ _DELEGATE_INPUT_PROPERTIES: dict[str, Any] = {
 _BASIC_TOOL_DEFAULTS: dict[str, dict[str, Any]] = {
     'file_system': {
         'mcp': False,
-        'include': ['write_file', 'read_file', 'list_files'],
+        'include': ['write_file', 'read_file', 'glob'],
     },
     'todo_list': {
         'mcp': False,

@@ -1,12 +1,12 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import os
+from omegaconf import DictConfig
 from typing import Any, AsyncGenerator, List, Union
 
 from ms_agent.agent.llm_agent import LLMAgent
 from ms_agent.llm.utils import Message
 from ms_agent.utils import get_logger
 from ms_agent.utils.constants import DEFAULT_TAG
-from omegaconf import DictConfig
 
 logger = get_logger()
 

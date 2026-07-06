@@ -1,11 +1,10 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import os
 from abc import abstractmethod
+from omegaconf import DictConfig
 from typing import Any, Dict, List, Optional
 
 from ms_agent.config import Config
-from omegaconf import DictConfig
-
 from ..utils.constants import DEFAULT_RETRY_COUNT
 from .utils import Message, Tool
 
@@ -69,18 +68,34 @@ class LLM:
         Returns:
             The LLM instance.
 
-        Notes:
-            Set ``config.llm.use_provider_router: true`` to use the data-driven
-            provider layer (``ms_agent/llm/router.py``), which supports many
-            more providers via ``ProviderSpec``. When unset, the legacy
-            hard-coded mapping is used unchanged (zero behavior change).
+        Routing (see ``ms_agent/llm/router.py``):
+            - ``config.llm.use_provider_router: true``  -> always use the
+              data-driven provider layer.
+            - unset -> the legacy services (modelscope/openai/anthropic/
+              dashscope) keep the old hard-coded path (zero behavior change),
+              while any other provider the registry knows (deepseek, zhipu/glm,
+              kimi/moonshot, minimax, google, openrouter, ...) is auto-routed to
+              the provider layer so it works with its own credentials.
+            - ``config.llm.use_provider_router: false`` -> force the legacy path
+              for every service (explicit opt-out).
         """
-        if config.llm.get('use_provider_router', False):
+        router_flag = config.llm.get('use_provider_router', None)
+        if router_flag:
             from .router import ProviderRouter
             return ProviderRouter().create(config)
 
-        from .model_mapping import all_services_mapping, OpenAI
-        if config.llm.get('service') in all_services_mapping:
-            return all_services_mapping[config.llm.service](config)
+        from .model_mapping import OpenAI, all_services_mapping
+        service = config.llm.get('service')
+
+        # Auto-route providers the legacy mapping cannot serve but the registry
+        # knows. Unset (None) enables this; an explicit False opts out.
+        if router_flag is None and service and service not in all_services_mapping:
+            from .spec import get_registry
+            if get_registry().get(service) is not None:
+                from .router import ProviderRouter
+                return ProviderRouter().create(config)
+
+        if service in all_services_mapping:
+            return all_services_mapping[service](config)
         else:
             return OpenAI(config)

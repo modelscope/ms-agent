@@ -1,5 +1,3 @@
-from typing import Iterable, Iterator, List, Union
-
 from docling_core.transforms.chunker import BaseChunk, DocChunk
 from docling_core.transforms.chunker.hierarchical_chunker import (
     ChunkingDocSerializer, ChunkingSerializerProvider)
@@ -10,11 +8,12 @@ from docling_core.transforms.chunker.tokenizer.huggingface import \
 from docling_core.transforms.serializer.markdown import MarkdownParams
 from docling_core.types import DoclingDocument
 from docling_core.types.doc import DocItemLabel
-from ms_agent.utils.logger import get_logger
 from rich.console import Console
 from rich.panel import Panel
+from typing import Iterable, Iterator, List, Union
 
 from modelscope import AutoTokenizer
+from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
 

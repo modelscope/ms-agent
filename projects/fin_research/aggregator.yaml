@@ -84,8 +84,8 @@ prompt:
     - You may interpret the meaning of embedded images from their surrounding context \
     in the financial data analysis report.
     - You should note that most of the charts generated during the analysis process \
-    are stored in the default working directory. You may use the tools under the file_system \
-    server to browse these files and select meaningful images — based on their filenames — to embed into the report.
+    are stored in the default working directory. Use `file_system---glob` (e.g. pattern `**/*.{png,jpg,svg}`) \
+    or `file_system---read_file` to inspect filenames and embed meaningful images into the report.
       - Avoid inserting any images whose titles or filenames do not convey meaningful information.
       - Avoid inserting any images that are from websites or other external sources.
       - The image paths should be relative paths to the the default working directory.
@@ -127,13 +127,22 @@ prompt:
 
 
 tools:
+  code_executor:
+    mcp: false
+    implementation: python_env
+    exclude:
+      - notebook_executor
+      - python_executor
+      - reset_executor
+      - get_executor_info
   file_system:
     mcp: false
     include:
       - read_file
       - write_file
-      - list_files
-      - delete_file_or_dir
+      - edit_file
+      - grep
+      - glob
   spec_loader:
     mcp: false
   plugins:

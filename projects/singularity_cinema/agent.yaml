@@ -280,10 +280,6 @@ tools:
     allow_read_all_files: true
     exclude:
       - edit_file
-      - list_files
-      - search_file_content
-      - search_file_name
-      - replace_file_lines
 
 memory:
   diversity:

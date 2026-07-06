@@ -1,18 +1,18 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+import aiohttp
 import asyncio
+import json
 import os
 import shutil
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from omegaconf import DictConfig
 from typing import List, Union
 
-import aiohttp
-import json
 from ms_agent.agent import CodeAgent
 from ms_agent.llm import Message
 from ms_agent.tools.video_generator import VideoGenerator
 from ms_agent.utils import get_logger
-from omegaconf import DictConfig
 
 logger = get_logger()
 

@@ -1,9 +1,8 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import os
 from copy import copy
-from typing import Dict, Optional
-
 from dotenv import load_dotenv
+from typing import Dict, Optional
 
 
 class Env:

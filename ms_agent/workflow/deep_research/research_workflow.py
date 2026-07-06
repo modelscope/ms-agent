@@ -1,11 +1,11 @@
 # flake8: noqa
 # yapf: disable
 import copy
+import json
 import os
 import re
 from typing import Any, Dict, List, Optional, Union
 
-import json
 from ms_agent.llm.openai import OpenAIChat
 from ms_agent.utils import get_logger
 
@@ -222,7 +222,8 @@ class ResearchWorkflow:
 
     def search(self, search_request: 'SearchRequest') -> str:
         from ms_agent.tools.search.exa.schema import dump_batch_search_results
-        from ms_agent.tools.search.search_base import SearchRequest, SearchResult
+        from ms_agent.tools.search.search_base import (SearchRequest,
+                                                       SearchResult)
         if self._reuse:
             # Load existing search results if they exist
             if os.path.exists(self.workdir_structure['search']):
@@ -349,7 +350,8 @@ class ResearchWorkflow:
         from ms_agent.rag.extraction_manager import extract_key_information
         from ms_agent.rag.schema import KeyInformation
         from ms_agent.tools.search.search_base import SearchResult
-        from ms_agent.tools.search.search_request import get_search_request_generator
+        from ms_agent.tools.search.search_request import \
+            get_search_request_generator
         from ms_agent.utils.utils import remove_resource_info, text_hash
         special_resources: List = []
         if urls_or_files:

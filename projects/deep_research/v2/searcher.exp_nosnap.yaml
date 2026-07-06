@@ -1,0 +1,110 @@
+# Tavily-only web search (no Exa / no Jina Reader).
+# Use: cp projects/deep_research/v2/searcher.tavily.yaml projects/deep_research/v2/searcher.yaml
+# Or point researcher.yaml searcher_tool config_path to this file.
+# Requires TAVILY_API_KEY in .env.
+
+llm:
+  service: openai
+  model: qwen3.5-plus
+  openai_api_key: <OPENAI_API_KEY>
+  openai_base_url: <OPENAI_BASE_URL>
+
+
+generation_config:
+  stream: true
+  stream_options:
+    include_usage: true
+  force_prefix_cache: true
+  prefix_cache_roles: [system, user, assistant, tool]
+  extra_body:
+    enable_thinking: false
+
+
+tag: deep-research
+
+
+prompt:
+  root: prompts/
+  agent: searcher
+  lang: en
+  family: gpt5
+
+
+tools:
+  file_system:
+    mcp: false
+    include:
+      - write_file
+      - read_file
+      - edit_file
+      - grep
+      - glob
+  web_search:
+    mcp: false
+    engines:
+      - tavily
+    tavily_api_key: <TAVILY_API_KEY>
+    max_results: 10
+    fetcher: tavily_extract
+    fetch_content: true
+    fetch_timeout: 60
+    fetch_retries: 3
+    per_url_fetch_timeout: 400
+    _max_concurrent_fetch: 5
+    tavily:
+      search_depth: advanced
+      include_raw_content: markdown
+      include_answer: advanced
+      chunks_per_source: 3
+      max_results: 10
+    tavily_request_timeout: 120
+    tavily_extract_depth: advanced
+    tavily_extract_format: markdown
+    enable_chunking: false
+    # Off by default: Tavily raw_content is enough; summarizer may hit provider filters.
+    enable_summarization: false
+    summarizer_model: qwen3.5-flash
+    summarizer_base_url: <OPENAI_BASE_URL>
+    summarizer_api_key: <OPENAI_API_KEY>
+    max_content_chars: 200000
+    summarizer_max_workers: 15
+    summarization_timeout: 360
+    _max_concurrent_summarization: 15
+    # Optional: spill oversized tool JSON to output_dir/web_search_artifacts/…
+    # spill_large_results: true
+    # spill_max_inline_chars: 120000
+    # spill_preview_chars: 600
+    # spill_subdir: web_search_artifacts
+  evidence_store:
+    mcp: false
+    evidence_dir: evidence
+    chunks_dir: chunks
+    enable_chunk_storage: false
+    include:
+      - write_note
+      - list_notes
+      - get_note
+      - load_index
+      - search_notes
+      - delete_note
+  plugins:
+    - tools/evidence_tool.py
+
+
+handler: time_handler
+
+callbacks:
+  - callbacks/searcher_callback
+
+max_chat_round: 30
+
+round_reminder:
+  enabled: true
+  remind_at_round: 28
+
+tool_call_timeout: 2600
+
+output_dir: ./output
+
+# bench experiment: disable snapshot for searcher sub-agent
+enable_snapshots: false

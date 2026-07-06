@@ -97,8 +97,12 @@ class ProviderRegistry:
         openai_cache_caps = ProviderCapabilities.from_list(
             ['tool_call', 'streaming', 'vision', 'prefix_cache',
              'continue_gen'])
+        # NOTE: no 'prefix_cache' here. Anthropic supports prompt caching
+        # natively, but AnthropicMessagesTransport does not implement it yet.
+        # Keep the capability set honest (declared == implemented); add
+        # 'prefix_cache' back only once the transport applies cache_control.
         anthropic_caps = ProviderCapabilities.from_list(
-            ['tool_call', 'streaming', 'reasoning', 'vision', 'prefix_cache'])
+            ['tool_call', 'streaming', 'reasoning', 'vision'])
         reasoning_caps = ProviderCapabilities.from_list(
             ['tool_call', 'streaming', 'reasoning', 'continue_gen'])
 

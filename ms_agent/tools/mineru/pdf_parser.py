@@ -1,5 +1,4 @@
 import os
-
 from magic_pdf.config.enums import SupportedPdfParseMethod
 from magic_pdf.data.data_reader_writer import (FileBasedDataReader,
                                                FileBasedDataWriter)

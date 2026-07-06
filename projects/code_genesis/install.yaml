@@ -75,4 +75,6 @@ tools:
       - read_file
       - write_file
 
+output_dir: ./output
+
 help: |

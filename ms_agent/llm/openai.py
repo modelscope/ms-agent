@@ -1,11 +1,11 @@
 # flake8: noqa
-import uuid
-from typing import TYPE_CHECKING, Any, Dict, List, Literal
-
 import json
-from ms_agent.utils.logger import get_logger
+import uuid
 from openai import OpenAI, Stream
 from openai.types.chat.chat_completion_chunk import ChoiceDeltaToolCall
+from typing import TYPE_CHECKING, Any, Dict, List, Literal
+
+from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
 
