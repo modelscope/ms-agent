@@ -458,6 +458,7 @@ class ToolManager:
 
                 # --- Permission checks ---
                 args_dict = dict(tool_args) if isinstance(tool_args, dict) else {}
+                safety_force_decision = None
                 if self._safety_guard is not None:
                     from ms_agent.permission.ask_resolver import resolve_ask
                     safety_decision = self._safety_guard.check(tool_name, args_dict)
@@ -470,7 +471,12 @@ class ToolManager:
                         if resolved.action == 'ask':
                             if self._permission_enforcer is None:
                                 return f'Blocked by safety policy (requires confirmation): {resolved.reason}'
-                            # interactive mode: fall through to enforcer/handler
+                            # interactive mode: force the enforcer to confirm with
+                            # the user; whitelist/memory must not bypass a safety
+                            # ask (REVIEW P1-2).
+                            from ms_agent.permission.enforcer import PermissionDecision
+                            safety_force_decision = PermissionDecision(
+                                action='ask', reason=resolved.reason)
 
                 # --- PreToolUse hooks ---
                 hook_result = None
@@ -497,6 +503,7 @@ class ToolManager:
                     permission_enforcer=self._permission_enforcer,
                     permission_config=self._permission_config,
                     hook_runtime=self._hook_runtime,
+                    force_decision=safety_force_decision,
                 )
                 if isinstance(perm_out, str):
                     return perm_out

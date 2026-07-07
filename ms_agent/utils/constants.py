@@ -5,9 +5,11 @@ from typing import Dict, Optional
 # When ``output_dir`` is omitted, ``resolve_workspace_root()`` uses cwd instead.
 DEFAULT_OUTPUT_DIR = './output'
 
-DEFAULT_INDEX_DIR = '.index'
+# Framework-internal subdirs, collapsed under <work_dir>/.ms_agent/ (see
+# ms_agent.project.paths) so nothing scatters at the work-dir root.
+DEFAULT_INDEX_DIR = '.ms_agent/index'
 
-DEFAULT_LOCK_DIR = '.locks'
+DEFAULT_LOCK_DIR = '.ms_agent/locks'
 
 # The key of user defined tools in the agent.yaml
 TOOL_PLUGIN_NAME = 'plugins'
@@ -18,8 +20,10 @@ AGENT_CONFIG_FILE = 'agent.yaml'
 # Default agent code file
 DEFAULT_AGENT_FILE = 'agent.py'
 
-# Default memory folder
-DEFAULT_MEMORY_DIR = '.memory'
+# History cache folder, collapsed under the framework-internal .ms_agent/ dir
+# (was '.memory'). LEGACY_MEMORY_DIR is still read for back-compat.
+DEFAULT_MEMORY_DIR = '.ms_agent/memory'
+LEGACY_MEMORY_DIR = '.memory'
 
 # DEFAULT_WORKFLOW_YAML
 WORKFLOW_CONFIG_FILE = 'workflow.yaml'

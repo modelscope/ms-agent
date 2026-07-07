@@ -60,7 +60,7 @@ class LocalKernelSession:
 
         # Ensure dependencies exist before importing.
         install_package('ipykernel')
-        install_package('jupyter-client')
+        install_package('jupyter-client', 'jupyter_client')
 
         from jupyter_client import AsyncKernelManager
 

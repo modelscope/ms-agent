@@ -54,6 +54,7 @@ class PathSafetyConfig:
     allowed_directories: tuple[str, ...] = ()
     read_only_directories: tuple[str, ...] = ()
     workspace_root: str | None = None
+    dangerous_removal_paths: tuple[str, ...] = ()
 
 
 class ShellPathValidator:
@@ -287,7 +288,8 @@ class ShellPathValidator:
 
         for path in paths:
             # Dangerous removal check for rm/rmdir
-            if cmd_name in ('rm', 'rmdir') and is_dangerous_removal_path(path):
+            if cmd_name in ('rm', 'rmdir') and is_dangerous_removal_path(
+                    path, self._config.dangerous_removal_paths):
                 return SafetyDecision(
                     action='deny',
                     reason=f'Dangerous removal path: {path}',

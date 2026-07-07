@@ -51,6 +51,19 @@ class Agent(ABC):
                 self.config.output_dir = self.output_dir
         except Exception:
             pass
+        # Merge the work-dir project patch (e.g. a persisted /model override) so
+        # config overrides round-trip from <work_dir>/.ms_agent/config.yaml —
+        # anchored to the project (the work dir), not the config file's
+        # directory. This keeps running a shared/template config from picking up
+        # (or scattering) overrides in that config's folder.
+        try:
+            from omegaconf import OmegaConf
+            from ms_agent.config.resolver import ConfigResolver
+            patch = ConfigResolver()._load_project_patch(self.output_dir)
+            if patch is not None:
+                self.config = OmegaConf.merge(self.config, patch)
+        except Exception:
+            pass
 
     @abstractmethod
     async def run(

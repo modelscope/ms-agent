@@ -564,6 +564,8 @@ def _is_managed_plugin_path(
     ]
     if project_root is not None:
         allowed_roots.append(
+            (project_root / '.ms_agent' / 'plugins').expanduser().resolve())
+        allowed_roots.append(
             (project_root / '.ms-agent' / 'plugins').expanduser().resolve())
     for root in allowed_roots:
         try:

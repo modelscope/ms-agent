@@ -173,6 +173,7 @@ def _make_callback_agent(config):
     # main's _get_command_router() -> _register_plugin_commands() reads this;
     # None makes it a no-op (real agents set it in __init__).
     agent._plugin_runtime = None
+    agent._console_io = None
     return agent
 
 

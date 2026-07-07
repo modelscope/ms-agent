@@ -33,9 +33,14 @@ class InteractiveTurn:
 class InteractiveSession:
     """Drives a single ``>>>`` prompt turn, handling slash commands in a loop."""
 
-    def __init__(self, router: CommandRouter, source: str = 'cli') -> None:
+    def __init__(self, router: CommandRouter, source: str = 'cli',
+                 io: Any = None) -> None:
         self._router = router
         self._source = source
+        # Optional ConsoleIO (TUI). When None, use bare input()/print() so CLI
+        # behavior is unchanged. When set, read_prompt()/print() are delegated
+        # so a rich TUI owns prompt rendering and slash-completion.
+        self._io = io
 
     async def run_turn(
         self,
@@ -56,7 +61,10 @@ class InteractiveSession:
         """
         while True:
             try:
-                query = input('>>> ').strip()
+                if self._io is not None:
+                    query = self._io.read_prompt('>>> ').strip()
+                else:
+                    query = input('>>> ').strip()
             except (EOFError, KeyboardInterrupt):
                 return InteractiveTurn(action='quit')
             if not query:
@@ -82,10 +90,16 @@ class InteractiveSession:
                 return InteractiveTurn(action='submit', text=query)
             if result.type == CommandResultType.QUIT:
                 if result.content:
-                    print(result.content)
+                    self._emit(result.content)
                 return InteractiveTurn(action='quit')
             if result.type == CommandResultType.SUBMIT_PROMPT:
                 return InteractiveTurn(action='submit', text=result.content)
             # MESSAGE / MUTATE_STATE: show output and prompt again.
             if result.content:
-                print(result.content)
+                self._emit(result.content)
+
+    def _emit(self, text: str) -> None:
+        if self._io is not None:
+            self._io.print(text)
+        else:
+            print(text)

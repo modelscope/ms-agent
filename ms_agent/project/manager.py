@@ -11,8 +11,21 @@ class ProjectManager:
     """Project CRUD. Pure SDK interface, no IO assumptions."""
 
     PROJECTS_DIR = 'projects'
-    META_DIR = '.ms-agent'
+    META_DIR = '.ms_agent'
+    LEGACY_META_DIR = '.ms-agent'
     META_FILE = 'project.json'
+
+    def _meta_file(self, project_id: str) -> Path:
+        """Project meta path — new ``.ms_agent`` first, legacy ``.ms-agent`` if
+        only that exists (read-compat)."""
+        base = self._projects_root / project_id
+        new = base / self.META_DIR / self.META_FILE
+        if new.exists():
+            return new
+        legacy = base / self.LEGACY_META_DIR / self.META_FILE
+        if legacy.exists():
+            return legacy
+        return new
 
     def __init__(self, base_dir: str = '~/.ms_agent') -> None:
         self._base = Path(os.path.expanduser(base_dir))
@@ -59,7 +72,7 @@ class ProjectManager:
         for entry in sorted(self._projects_root.iterdir()):
             if not entry.is_dir():
                 continue
-            meta_file = entry / self.META_DIR / self.META_FILE
+            meta_file = self._meta_file(entry.name)
             if meta_file.exists():
                 store = JSONFileStore(meta_file)
                 try:
@@ -98,10 +111,10 @@ class ProjectManager:
     # -- internal --
 
     def _ensure_default_project(self) -> None:
-        default_path = self._projects_root / DEFAULT_PROJECT_ID
-        meta_file = default_path / self.META_DIR / self.META_FILE
+        meta_file = self._meta_file(DEFAULT_PROJECT_ID)
         if meta_file.exists():
             return
+        default_path = self._projects_root / DEFAULT_PROJECT_ID
         project = Project(
             id=DEFAULT_PROJECT_ID,
             name='Default',
@@ -113,15 +126,15 @@ class ProjectManager:
     def _init_project_dirs(self, project: Project) -> None:
         project_dir = self._projects_root / project.id
         (project_dir / self.META_DIR).mkdir(parents=True, exist_ok=True)
-        (project_dir / self.META_DIR / 'sessions').mkdir(exist_ok=True)
+        # Sessions live at <id>/sessions (flat), matching SessionManager
+        # (paths.py) — no meta-nested sessions dir.
+        (project_dir / 'sessions').mkdir(exist_ok=True)
         project_path = Path(project.path)
         project_path.mkdir(parents=True, exist_ok=True)
         (project_path / 'workspace').mkdir(exist_ok=True)
 
     def _meta_store(self, project_id: str) -> JSONFileStore:
-        return JSONFileStore(
-            self._projects_root / project_id / self.META_DIR / self.META_FILE
-        )
+        return JSONFileStore(self._meta_file(project_id))
 
     def _save_meta(self, project: Project) -> None:
         project_dir = self._projects_root / project.id

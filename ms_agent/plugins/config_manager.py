@@ -34,7 +34,8 @@ class PluginConfigManager:
     def project_plugins_path(self) -> Path:
         if self.project_root is None:
             raise ValueError('project_root is required for project scope')
-        return self.project_root / PROJECT_META_DIR / PLUGIN_FILE
+        from ms_agent.project.paths import project_internal_file
+        return project_internal_file(self.project_root, PLUGIN_FILE)
 
     @property
     def global_plugins_dir(self) -> Path:
@@ -44,7 +45,8 @@ class PluginConfigManager:
     def project_plugins_dir(self) -> Path:
         if self.project_root is None:
             raise ValueError('project_root is required for project scope')
-        return self.project_root / PROJECT_META_DIR / 'plugins'
+        from ms_agent.project.paths import project_internal_dir
+        return project_internal_dir(self.project_root) / 'plugins'
 
     @property
     def global_plugin_data_root(self) -> Path:

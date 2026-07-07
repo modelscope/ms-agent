@@ -1283,8 +1283,8 @@ class AgentTool(ToolBase):
         if not isinstance(messages, list) or not agent_tag:
             return
         try:
-            output_dir = getattr(self.config, 'output_dir', './output')
-            subagents_dir = os.path.join(output_dir, 'subagents')
+            output_dir = getattr(self.config, 'output_dir', None) or '.'
+            subagents_dir = os.path.join(output_dir, '.ms_agent', 'subagents')
             os.makedirs(subagents_dir, exist_ok=True)
             path = os.path.join(subagents_dir, f'{agent_tag}.jsonl')
             with open(path, 'w', encoding='utf-8') as f:

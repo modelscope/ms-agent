@@ -81,8 +81,7 @@ class TestProjectManager:
     def test_sessions_dir_created(self, pm):
         project = pm.create(name='WithSessions')
         from pathlib import Path
-        meta_dir = pm._projects_root / project.id / '.ms-agent'
-        assert (meta_dir / 'sessions').is_dir()
+        assert (pm._projects_root / project.id / 'sessions').is_dir()
 
     def test_project_is_frozen(self, pm):
         project = pm.create(name='Frozen')

@@ -26,23 +26,30 @@ def _persist_model_to_config(config, new_model: str, service=None):
     """Persist the model (and optional service) change to the project patch.
 
     Writes ``llm.model`` (and ``llm.service`` when a provider switch happened)
-    into ``<local_dir>/.ms-agent/config.yaml`` rather than mutating the
-    version-controlled source YAML. ``Config.from_task`` merges this patch back
-    (patch wins) on the next run, so the override survives without ever touching
-    the committed config. Returns the patch path on success, or None if no
-    source directory is known or the write fails.
+    into ``<work_dir>/.ms_agent/config.yaml`` rather than mutating the
+    version-controlled source YAML. Anchored to the **work dir** (``output_dir``)
+    — the project — not the config file's directory, so running a shared or
+    packaged template config (e.g. ``demos/``) never scatters a ``.ms_agent/``
+    next to it. The work-dir patch is merged back (patch wins) on the next run.
+    Returns the patch path on success, or None if no dir is known / write fails.
     """
     from omegaconf import OmegaConf
 
-    local_dir = getattr(config, 'local_dir', None)
-    if not local_dir:
+    # Prefer the work dir; fall back to the config's own dir only if unset.
+    base_dir = (getattr(config, 'output_dir', None)
+                or getattr(config, 'local_dir', None))
+    if not base_dir:
         return None
-    patch_dir = os.path.join(str(local_dir), '.ms-agent')
+    # Write to the new .ms_agent/ dir; migrate an existing legacy
+    # .ms-agent/config.yaml so a single patch file remains authoritative.
+    patch_dir = os.path.join(str(base_dir), '.ms_agent')
     patch_path = os.path.join(patch_dir, 'config.yaml')
+    legacy_path = os.path.join(str(base_dir), '.ms-agent', 'config.yaml')
     try:
         os.makedirs(patch_dir, exist_ok=True)
-        patch = (OmegaConf.load(patch_path)
-                 if os.path.isfile(patch_path) else OmegaConf.create({}))
+        source = patch_path if os.path.isfile(patch_path) else legacy_path
+        patch = (OmegaConf.load(source)
+                 if os.path.isfile(source) else OmegaConf.create({}))
         OmegaConf.update(patch, 'llm.model', new_model, merge=True)
         if service:
             OmegaConf.update(patch, 'llm.service', service, merge=True)

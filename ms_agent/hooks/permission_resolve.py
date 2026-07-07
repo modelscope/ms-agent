@@ -59,7 +59,11 @@ async def resolve_hook_permission_decision(
     permission_enforcer: PermissionEnforcer | None,
     permission_config: PermissionConfig | None,
     hook_runtime: HookRuntime | None = None,
+    force_decision: PermissionDecision | None = None,
 ) -> PermissionDecision | str:
+    # ``force_decision`` carries a SafetyGuard ``ask`` (interactive): it must
+    # reach the handler even when whitelist/memory would otherwise allow, so a
+    # broad whitelist can't silently bypass a safety confirmation (REVIEW P1-2).
     if hook_result and hook_result.action == 'deny':
         return f'Blocked by hook: {hook_result.reason}'
 
@@ -106,5 +110,6 @@ async def resolve_hook_permission_decision(
         )
 
     if permission_enforcer:
-        return await permission_enforcer.check(tool_name, args)
+        return await permission_enforcer.check(
+            tool_name, args, force_decision=force_decision)
     return PermissionDecision(action='allow', reason='No permission enforcer')

@@ -88,9 +88,12 @@ class DefaultMemory(Memory):
         self.run_id: Optional[str] = getattr(memory_config, 'run_id', None)
         self.compress: Optional[bool] = getattr(config, 'compress', True)
         self.is_retrieve: Optional[bool] = getattr(config, 'is_retrieve', True)
-        self.path: Optional[str] = getattr(
-            memory_config, 'path',
-            os.path.join(DEFAULT_OUTPUT_DIR, '.default_memory'))
+        _mem_path = getattr(memory_config, 'path', None)
+        if not _mem_path:
+            from ms_agent.project.paths import memory_dir
+            _work = getattr(config, 'output_dir', None) or DEFAULT_OUTPUT_DIR
+            _mem_path = str(memory_dir(_work) / 'default')
+        self.path: Optional[str] = _mem_path
         self.history_mode = getattr(memory_config, 'history_mode', 'add')
         self.ignore_roles: List[str] = getattr(memory_config, 'ignore_roles',
                                                ['tool', 'system'])

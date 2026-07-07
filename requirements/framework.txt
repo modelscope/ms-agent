@@ -14,8 +14,10 @@ omegaconf
 openai
 pandas
 pillow
+prompt_toolkit
 pyyaml
 pytz
 requests
+rich
 sentence-transformers
 typing_extensions

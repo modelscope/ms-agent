@@ -85,6 +85,50 @@ class Workspace:
         else:
             shutil.copy2(src, dest)
 
+    # -- binary / HTTP transfer (WebUI upload & packaged download) --
+
+    def read_bytes(self, rel_path: str) -> bytes:
+        target = self._resolve_safe(rel_path)
+        if not target.is_file():
+            raise FileNotFoundError(f'Not a file: {rel_path}')
+        return target.read_bytes()
+
+    def write_bytes(self, rel_path: str, data: bytes) -> None:
+        target = self._resolve_safe(rel_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+
+    def save_upload(self, filename: str, stream, subdir: str = '.') -> str:
+        """HTTP upload: write a binary stream (file-like or bytes) into the
+        workspace. ``filename`` is basename-only (dir components stripped);
+        returns the stored path relative to the workspace root."""
+        rel = str(Path(subdir) / Path(filename).name)
+        target = self._resolve_safe(rel)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if hasattr(stream, 'read'):
+            with open(target, 'wb') as f:
+                shutil.copyfileobj(stream, f)
+        else:
+            target.write_bytes(bytes(stream))
+        return str(target.relative_to(self._root))
+
+    def zip_download(self, rel_path: str = '.') -> bytes:
+        """Package a workspace file/dir into a zip and return the bytes."""
+        import io
+        import zipfile
+        target = self._resolve_safe(rel_path)
+        if not target.exists():
+            raise FileNotFoundError(f'Path not found: {rel_path}')
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+            if target.is_file():
+                zf.write(target, target.name)
+            else:
+                for p in sorted(target.rglob('*')):
+                    if p.is_file():
+                        zf.write(p, p.relative_to(target))
+        return buf.getvalue()
+
     def _resolve_safe(self, rel_path: str) -> Path:
         target = (self._root / rel_path).resolve()
         # Use relative_to() rather than str.startswith(): the latter would

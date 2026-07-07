@@ -6,6 +6,7 @@ the PermissionHandler for interactive user confirmation.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -41,6 +42,24 @@ class PermissionEnforcer:
         self._handler = handler or AutoPermissionHandler()
         self._memory = memory or PermissionMemory()
         self._matcher = PermissionMatcher()
+        # Parallel tool calls (asyncio.gather in ToolManager.parallel_call_tool)
+        # would otherwise invoke the interactive handler concurrently — N
+        # prompts fighting over one terminal deadlocks. Serialize asks with a
+        # lock created lazily per running loop (the per-turn TUI uses a fresh
+        # loop each turn, so a single init-time Lock would bind to the wrong one).
+        self._ask_lock: asyncio.Lock | None = None
+        self._ask_lock_loop = None
+
+    def _ask_lock_for_loop(self) -> 'asyncio.Lock':
+        loop = asyncio.get_running_loop()
+        if self._ask_lock is None or self._ask_lock_loop is not loop:
+            self._ask_lock = asyncio.Lock()
+            self._ask_lock_loop = loop
+        return self._ask_lock
+
+    async def _serialized_ask(self, **kwargs) -> PermissionResponse:
+        async with self._ask_lock_for_loop():
+            return await self._handler.ask(**kwargs)
 
     async def check(
         self,
@@ -59,7 +78,7 @@ class PermissionEnforcer:
 
         if force_decision and force_decision.action == 'ask':
             suggestions = generate_suggestions(tool_name, tool_args)
-            response = await self._handler.ask(
+            response = await self._serialized_ask(
                 tool_name=tool_name,
                 tool_args=tool_args,
                 context=force_decision.reason or '',
@@ -86,9 +105,9 @@ class PermissionEnforcer:
                 reason='Allowed by remembered permission',
             )
 
-        # 5. Ask user via handler
+        # 5. Ask user via handler (serialized against parallel tool calls)
         suggestions = generate_suggestions(tool_name, tool_args)
-        response = await self._handler.ask(
+        response = await self._serialized_ask(
             tool_name=tool_name,
             tool_args=tool_args,
             context='',

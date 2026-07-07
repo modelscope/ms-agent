@@ -241,10 +241,21 @@ def read_history(output_dir: str, task: str):
     """
     from ms_agent.config import Config
     from ms_agent.llm import Message
+    from .constants import LEGACY_MEMORY_DIR
     cache_dir = os.path.join(output_dir, DEFAULT_MEMORY_DIR)
-    os.makedirs(cache_dir, exist_ok=True)
     config_file = os.path.join(cache_dir, f'{task}.yaml')
     message_file = os.path.join(cache_dir, f'{task}.json')
+    # Back-compat: fall back to the legacy <output_dir>/.memory cache when the
+    # new .ms_agent/memory location has no history yet.
+    if not os.path.exists(message_file) and not os.path.exists(config_file):
+        legacy_dir = os.path.join(output_dir, LEGACY_MEMORY_DIR)
+        legacy_msg = os.path.join(legacy_dir, f'{task}.json')
+        if os.path.exists(legacy_msg) or os.path.exists(
+                os.path.join(legacy_dir, f'{task}.yaml')):
+            cache_dir = legacy_dir
+            config_file = os.path.join(cache_dir, f'{task}.yaml')
+            message_file = os.path.join(cache_dir, f'{task}.json')
+    os.makedirs(cache_dir, exist_ok=True)
     config = None
     messages = None
     if os.path.exists(config_file):
@@ -651,8 +662,11 @@ def install_package(package_name: str,
         package_name = f'{package_name}[{extend_module}]'
 
     if not is_package_installed(import_name):
+        # Suppress pip's stdout ("Requirement already satisfied ...") so it does
+        # not pollute interactive UIs; stderr is kept for real errors.
         subprocess.check_call(
-            [sys.executable, '-m', 'pip', 'install', package_name])
+            [sys.executable, '-m', 'pip', 'install', package_name],
+            stdout=subprocess.DEVNULL)
         logger.info(f'Package {package_name} installed successfully.')
     else:
         logger.info(f'Package {import_name} is already installed.')

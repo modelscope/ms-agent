@@ -39,6 +39,7 @@ class SafetyGuard:
             allowed_directories=tuple(self._allowed_dirs),
             read_only_directories=tuple(self._read_only_dirs),
             workspace_root=workspace_root,
+            dangerous_removal_paths=tuple(config.dangerous_removal_paths),
         )
         self._shell_validator = ShellPathValidator(
             allowed_dirs=self._allowed_dirs,

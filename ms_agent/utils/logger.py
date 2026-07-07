@@ -30,14 +30,35 @@ def warning_once(self, msg, *args, **kwargs):
     self.warning(msg)
 
 
+def _resolve_log_file(log_file: Optional[str]) -> Optional[str]:
+    """File logging is opt-in. Returns a path only when explicitly requested
+    (``log_file`` arg or ``MS_AGENT_LOG_FILE`` / ``LOG_FILE`` env); otherwise
+    ``None`` (console-only) so we never scatter ``ms_agent.log`` in the CWD.
+
+    A truthy-flag env value (``1``/``true``) routes to the global
+    ``~/.ms_agent/logs/ms_agent.log``; an explicit path is used as-is.
+    """
+    if log_file:
+        return log_file
+    env = os.environ.get('MS_AGENT_LOG_FILE') or os.environ.get('LOG_FILE')
+    if not env:
+        return None
+    if env.strip().lower() in ('1', 'true', 'yes', 'on'):
+        from ms_agent.project.paths import global_logs_dir
+        d = global_logs_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        return str(d / 'ms_agent.log')
+    return env
+
+
 def get_logger(log_file: Optional[str] = None,
                log_level: Optional[int] = None,
                file_mode: str = 'w'):
     """ Get logging logger
 
     Args:
-        log_file: Log filename, if specified, file handler will be added to
-            logger. If None, defaults to 'ms_agent.log' in current working directory.
+        log_file: Log filename. File logging is opt-in: when omitted (and no
+            ``MS_AGENT_LOG_FILE``/``LOG_FILE`` env), logging is console-only.
         log_level: Logging level.
         file_mode: Specifies the mode to open the file, if filename is
             specified (if filemode is unspecified, it defaults to 'w').
@@ -46,9 +67,7 @@ def get_logger(log_file: Optional[str] = None,
         log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
         log_level = getattr(logging, log_level, logging.INFO)
 
-    # Default log file path: current working directory
-    if log_file is None:
-        log_file = os.path.join(os.getcwd(), 'ms_agent.log')
+    log_file = _resolve_log_file(log_file)
     logger_name = __name__.split('.')[0]
     logger = logging.getLogger(logger_name)
     logger.propagate = False
@@ -74,9 +93,9 @@ def get_logger(log_file: Optional[str] = None,
     stream_handler = logging.StreamHandler()
     handlers = [stream_handler]
 
-    # Always add file handler since log_file is set to default if None
-    file_handler = logging.FileHandler(log_file, file_mode)
-    handlers.append(file_handler)
+    # File handler only when opt-in (see _resolve_log_file); console otherwise.
+    if log_file:
+        handlers.append(logging.FileHandler(log_file, file_mode))
 
     for handler in handlers:
         handler.setFormatter(logger_format)
@@ -121,9 +140,9 @@ def add_file_handler_if_needed(logger, log_file, file_mode, log_level):
         is_worker0 = True
 
     if is_worker0:
-        # Default log file path if not specified
+        # File logging is opt-in; no CWD default.
         if log_file is None:
-            log_file = os.path.join(os.getcwd(), 'ms_agent.log')
+            return
         file_handler = logging.FileHandler(log_file, file_mode)
         file_handler.setFormatter(logger_format)
         file_handler.setLevel(log_level)

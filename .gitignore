@@ -169,3 +169,4 @@ ms_agent/app/temp_workspace/
 webui/work_dir/
 
 .ms_agent_snapshots/
+.ms_agent/

@@ -151,11 +151,24 @@ def validate_path(
     )
 
 
-def is_dangerous_removal_path(path: str) -> bool:
-    """Check if a path is too dangerous for rm/rmdir, even within allowed dirs."""
+def is_dangerous_removal_path(
+        path: str, extra_patterns: 'tuple[str, ...]' = ()) -> bool:
+    """Check if a path is too dangerous for rm/rmdir, even within allowed dirs.
+
+    ``extra_patterns`` are configurable (``safety_rules.dangerous_removal_paths``):
+    each is expanded (``~``) and matched against the normalized path both
+    literally and as an fnmatch glob (REVIEW P1-8)."""
+    import fnmatch
     normalized = _CONSECUTIVE_SLASHES.sub('/', path)
     if normalized.endswith('/') and len(normalized) > 1:
         normalized = normalized.rstrip('/')
+
+    for pat in extra_patterns or ():
+        pat_expanded = _CONSECUTIVE_SLASHES.sub(
+            '/', os.path.expanduser(str(pat)))
+        if (normalized == pat_expanded.rstrip('/')
+                or fnmatch.fnmatch(normalized, pat_expanded)):
+            return True
 
     if normalized == '*':
         return True

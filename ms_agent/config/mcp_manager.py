@@ -43,7 +43,8 @@ class MCPConfigManager:
     def project_mcp_path(self) -> Path:
         if self.project_root is None:
             raise ValueError('project_root is required for project scope')
-        return self.project_root / '.ms-agent' / 'mcp.json'
+        from ms_agent.project.paths import project_internal_file
+        return project_internal_file(self.project_root, 'mcp.json')
 
     def _ensure_dir(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

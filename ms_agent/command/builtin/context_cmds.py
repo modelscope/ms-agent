@@ -104,28 +104,50 @@ async def cmd_tools(ctx: CommandContext) -> CommandResult:
 
 
 async def cmd_compact(ctx: CommandContext) -> CommandResult:
+    """Prune old tool outputs from the live context to free tokens.
+
+    Keeps the most recent tool results in full and elides older large ones in
+    place (the same idea as ContextAssembler's ToolOutputPruner, applied on
+    demand). Automatic per-round compaction still runs when session_log +
+    compaction are configured; this is the manual trigger.
+    """
     messages = ctx.extra.get('messages')
     if not messages:
         return CommandResult(
             type=CommandResultType.MESSAGE, content='No messages available.'
         )
 
-    try:
-        from ms_agent.session.context_assembler import ContextAssembler  # noqa: F401
-    except ImportError:
+    keep_recent = 3
+    prune_threshold = 200
+    tool_idxs = [
+        i for i, m in enumerate(messages)
+        if getattr(m, 'role', None) == 'tool'
+    ]
+    to_prune = tool_idxs[:-keep_recent] if len(tool_idxs) > keep_recent else []
+
+    pruned = 0
+    freed = 0
+    for i in to_prune:
+        m = messages[i]
+        content = m.content if isinstance(m.content, str) else str(
+            m.content or '')
+        if len(content) > prune_threshold and not content.startswith(
+                '[compacted'):
+            placeholder = f'[compacted tool output: {len(content)} chars elided]'
+            freed += len(content) - len(placeholder)
+            messages[i].content = placeholder
+            pruned += 1
+
+    if pruned == 0:
         return CommandResult(
             type=CommandResultType.MESSAGE,
-            content=(
-                'Context compaction not available yet.'
-            ),
+            content=(f'Nothing to compact ({len(messages)} messages; no large '
+                     f'old tool outputs beyond the last {keep_recent}).'),
         )
-
     return CommandResult(
         type=CommandResultType.MESSAGE,
-        content=(
-            f'Compaction requested. Current message count: {len(messages)}.\n'
-            f'(Full implementation available after PR#912 merge)'
-        ),
+        content=(f'Compacted {pruned} old tool output(s), ~{freed} chars freed. '
+                 f'The {keep_recent} most recent are kept in full.'),
     )
 
 

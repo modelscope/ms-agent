@@ -49,8 +49,8 @@ TOOLS = [
 PROVIDERS = {
     'modelscope': ('Qwen/Qwen3-235B-A22B-Instruct-2507', 'MODELSCOPE_API_KEY'),
     'dashscope': ('qwen3.7-plus', 'DASHSCOPE_API_KEY'),
-    'deepseek': ('deepseek-v4-flash', 'DEEPSEEK_API_KEY'),
-    'zhipu': ('glm-4.6', 'GLM_API_KEY'),
+    'deepseek': ('deepseek-chat', 'DEEPSEEK_API_KEY'),
+    'zhipu': ('glm-4.5', 'GLM_API_KEY'),
     'kimi': ('moonshot-v1-8k', 'KIMI_API_KEY'),
     'minimax': ('MiniMax-M2', 'MINIMAX_API_KEY'),
     'openrouter': ('qwen/qwen3.7-plus', 'OpenRouter_API_KEY'),
@@ -100,10 +100,23 @@ class TestProviderRouterLive(unittest.TestCase):
             pass
         self.assertTrue(chunk and chunk.content, f'{service}: empty stream')
 
-        # tool call
+        # tool call (non-stream)
         llm = LLM.from_config(_config(service, model))
         res = llm.generate(messages=_msgs('请创建一个名为 demo 的目录。'), tools=TOOLS)
         self.assertTrue(res.tool_calls, f'{service}: no tool call')
+
+        # tool call (stream) — the streamed tool_call merge must produce a
+        # complete name + arguments, not a partial fragment.
+        llm = LLM.from_config(_config(service, model, stream=True))
+        chunk = None
+        for chunk in llm.generate(
+                messages=_msgs('请创建一个名为 demo 的目录。'), tools=TOOLS):
+            pass
+        self.assertTrue(chunk and chunk.tool_calls,
+                        f'{service}: no streamed tool call')
+        tc = chunk.tool_calls[0]
+        self.assertTrue(tc.get('tool_name') and tc.get('arguments'),
+                        f'{service}: incomplete streamed tool call')
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_modelscope(self):
@@ -132,6 +145,19 @@ class TestProviderRouterLive(unittest.TestCase):
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_openrouter(self):
         self._run('openrouter')
+
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_reasoning_content(self):
+        """A reasoning model surfaces reasoning_content separate from content."""
+        if not os.getenv('DEEPSEEK_API_KEY'):
+            self.skipTest('needs DEEPSEEK_API_KEY')
+        model = os.getenv('DEEPSEEK_REASONER_TEST_MODEL', 'deepseek-reasoner')
+        llm = LLM.from_config(_config('deepseek', model))
+        res = llm.generate(messages=_msgs('2+2 等于几？简要思考。'), tools=None)
+        self.assertTrue(res.content, 'reasoner: empty content')
+        self.assertTrue(getattr(res, 'reasoning_content', ''),
+                        'reasoner: no reasoning_content')
+        self.assertNotIn('<think>', res.content)
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_continue_gen_accumulates(self):

@@ -10,7 +10,6 @@ from modelscope import snapshot_download
 
 from ms_agent.prompting import apply_prompt_files
 from ms_agent.utils import get_logger
-from ms_agent.config.resolver import ConfigResolver
 from ..utils.constants import TOOL_PLUGIN_NAME
 from .env import Env
 
@@ -95,14 +94,11 @@ class Config:
         cls._update_config(config, _dict_config)
         config.local_dir = config_dir_or_id
         config.name = name
-        # Merge the project-level config patch (<local_dir>/.ms-agent/config.yaml)
-        # written by interactive overrides such as /model. The patch wins over
-        # the committed YAML so a user override beats the project default, while
-        # the source file itself is never mutated.
-        if isinstance(config, DictConfig):
-            patch = ConfigResolver()._load_project_patch(config_dir_or_id)
-            if patch is not None:
-                config = OmegaConf.merge(config, patch)
+        # The project-level config patch (persisted /model overrides etc.) is
+        # merged by the agent from <work_dir>/.ms_agent/config.yaml, anchored to
+        # the work dir — NOT here from the config file's own directory, which
+        # would leak/scatter overrides when a shared or packaged template config
+        # is run from a different working directory. See BaseAgent.__init__.
         config = cls.fill_missing_fields(config)
         # Prompt files: resolve config.prompt.system from prompts/ directory
         # if user didn't specify inline prompt.system.
@@ -123,6 +119,22 @@ class Config:
         return config
 
     @staticmethod
+    def safe_get_config(config: Union[DictConfig, ListConfig],
+                        dotted_path: str,
+                        default: Any = None) -> Any:
+        """Safely read a dotted config path, returning ``default`` if missing.
+
+        Example::
+
+            Config.safe_get_config(cfg, 'tools.file_system.include', [])
+        """
+        try:
+            value = OmegaConf.select(config, dotted_path, default=default)
+        except Exception:
+            return default
+        return value if value is not None else default
+
+    @staticmethod
     def is_workflow(config: DictConfig) -> bool:
         assert config.name is not None, 'Cannot find a valid name in this config'
         return config.name in [
@@ -132,16 +144,28 @@ class Config:
 
     @staticmethod
     def parse_args() -> Dict[str, Any]:
-        arg_parser = argparse.ArgumentParser()
-        args, unknown = arg_parser.parse_known_args()
-        _dict_config = {}
-        if unknown:
-            for idx in range(1, len(unknown) - 1, 2):
-                key = unknown[idx]
-                value = unknown[idx + 1]
-                assert key.startswith(
-                    '--'), f'Parameter not correct: {unknown}'
-                _dict_config[key[2:]] = value
+        """Best-effort extraction of ad-hoc ``--key value`` overrides from argv.
+
+        This is called by :meth:`from_task` for every config load, including
+        embedded / non-CLI contexts (pytest, WebUI/Server, TUI). It therefore
+        must never raise on argv shapes it does not recognize: it scans for
+        well-formed ``--key value`` pairs and silently ignores everything else
+        (subcommands, pytest flags, positional test paths, ``-x`` short flags).
+        Unknown override keys are harmless downstream — ``_update_config`` only
+        replaces config paths that already exist.
+        """
+        arg_parser = argparse.ArgumentParser(add_help=False)
+        _, unknown = arg_parser.parse_known_args()
+        _dict_config: Dict[str, Any] = {}
+        idx = 0
+        while idx < len(unknown):
+            key = unknown[idx]
+            if (key.startswith('--') and idx + 1 < len(unknown)
+                    and not unknown[idx + 1].startswith('--')):
+                _dict_config[key[2:]] = unknown[idx + 1]
+                idx += 2
+            else:
+                idx += 1
         return _dict_config
 
     @staticmethod

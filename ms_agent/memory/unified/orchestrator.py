@@ -157,10 +157,21 @@ class MemoryOrchestrator(Memory):
         if isinstance(config, MemoryConfig):
             return config
         if hasattr(config, "memory") and hasattr(config.memory, "unified_memory"):
-            return MemoryConfig.from_dict_config(config.memory.unified_memory)
+            mc = MemoryConfig.from_dict_config(config.memory.unified_memory)
+            self._default_base_dir(mc, config)
+            return mc
         if hasattr(config, "unified_memory"):
             return MemoryConfig.from_dict_config(config.unified_memory)
         return MemoryConfig.from_dict_config(config)
+
+    @staticmethod
+    def _default_base_dir(mc: MemoryConfig, config: Any) -> None:
+        """When base_dir is unset ('.'), root memory under <work>/.ms_agent/memory
+        instead of the CWD (so MEMORY.md / facts / index don't scatter)."""
+        if str(getattr(mc, "base_dir", ".")).strip() in (".", "", "./"):
+            from ms_agent.project.paths import memory_dir
+            work = getattr(config, "output_dir", None) or "."
+            mc.base_dir = str(memory_dir(work))
 
 
 # ===================================================================

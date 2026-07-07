@@ -79,7 +79,8 @@ if not BUILTIN_SKILLS_DIR.exists():
     if _candidate.exists():
         BUILTIN_SKILLS_DIR = _candidate
 
-USER_SKILLS_DIR = Path.home() / ".ms_agent" / "skills"
+from ms_agent.project.paths import global_home as _global_home
+USER_SKILLS_DIR = _global_home() / "skills"
 
 
 class SkillCatalog:

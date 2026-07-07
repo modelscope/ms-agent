@@ -172,6 +172,16 @@ class LLMAgent(Agent):
         # Gates both the initial >>> prompt and the mid-turn InputCallback.
         self._interactive = False
 
+        # Optional injected PermissionHandler (TUI/WebUI/Server). When None,
+        # _select_permission_handler() picks by mode + interactivity.
+        self._permission_handler = kwargs.get('permission_handler', None)
+
+        # Optional console I/O sink (TUI). When None, streaming tokens go to
+        # sys.stdout and the interactive prompt uses input() — i.e. current CLI
+        # behavior. A ConsoleIO with write()/read_prompt() reroutes both so a
+        # rich TUI can own rendering without changing the agent lifecycle.
+        self._console_io = kwargs.get('console_io', None)
+
         # Personalization (lazy-loaded in _build_personalization_section)
         self._profile_manager = ProfileManager()
 
@@ -456,7 +466,8 @@ class LLMAgent(Agent):
                     if self._interactive:
                         self.callbacks.append(callbacks_mapping[_callback](
                             self.config,
-                            command_router=self._get_command_router()))
+                            command_router=self._get_command_router(),
+                            io=self._console_io))
                 else:
                     self.callbacks.append(callbacks_mapping[_callback](
                         self.config))
@@ -469,7 +480,8 @@ class LLMAgent(Agent):
             self.callbacks.append(
                 input_cls(
                     self.config,
-                    command_router=self._get_command_router()))
+                    command_router=self._get_command_router(),
+                    io=self._console_io))
 
     async def on_task_begin(self, messages: List[Message]):
         self.log_output(f'Agent {self.tag} task beginning.')
@@ -573,16 +585,36 @@ class LLMAgent(Agent):
             self.log_output(_new_message.content)
         return messages
 
+    def _select_permission_handler(self, mode: str):
+        """Pick the PermissionHandler by mode + runtime environment.
+
+        - An explicitly injected handler (``set_permission_handler`` / the
+          ``permission_handler`` kwarg) always wins — this is how the TUI /
+          WebUI / Server supply their own confirmation UI.
+        - ``interactive`` (alias ``restricted``) in an interactive terminal
+          session -> ``CLIPermissionHandler`` (the ``[y/s/a/e/n]`` prompt),
+          so non-whitelisted tools actually ask the user (REVIEW P0-1).
+        - Everything else (``auto`` / ``strict`` / non-interactive) ->
+          ``AutoPermissionHandler`` (SafetyGuard still enforces the floor).
+        """
+        if self._permission_handler is not None:
+            return self._permission_handler
+        from ms_agent.permission import (
+            AutoPermissionHandler,
+            CLIPermissionHandler,
+        )
+        if mode == 'interactive' and self._interactive:
+            return CLIPermissionHandler()
+        return AutoPermissionHandler()
+
     def _build_permission_objects(self):
         """Create SafetyGuard and PermissionEnforcer from config if configured."""
         from ms_agent.permission import (
-            AutoPermissionHandler,
             PermissionConfig,
             PermissionEnforcer,
             PermissionMemory,
             SafetyGuard,
         )
-        from ms_agent.permission.config import SafetyConfig
 
         raw = {}
         if hasattr(self.config, 'permission'):
@@ -605,11 +637,15 @@ class LLMAgent(Agent):
             workspace_root=workspace_root,
         )
 
-        handler = AutoPermissionHandler()
+        handler = self._select_permission_handler(perm_config.mode)
         memory = PermissionMemory(project_path=workspace_root)
         enforcer = PermissionEnforcer(config=perm_config, handler=handler, memory=memory)
 
         return safety_guard, enforcer, perm_config
+
+    def set_permission_handler(self, handler) -> None:
+        """Inject a custom PermissionHandler (TUI/WebUI/Server) before run."""
+        self._permission_handler = handler
 
     async def prepare_tools(self):
         """Initialize and connect the tool manager."""
@@ -1053,10 +1089,20 @@ class LLMAgent(Agent):
             session_cfg, 'dir', None
         ) if session_cfg else None
         if session_dir is None:
-            session_dir = os.path.join(
-                getattr(self.config, 'output_dir', 'output'),
-                'sessions',
-            )
+            # Sessions live globally, keyed by the work dir (Claude Code style),
+            # decoupled from output_dir. An explicit session_log.dir (set by the
+            # WebUI/Server per project) still wins. Legacy <output_dir>/sessions
+            # is migrated forward if present.
+            from ms_agent.project.paths import global_sessions_dir
+            output_dir = getattr(self.config, 'output_dir', 'output')
+            session_dir = str(global_sessions_dir(output_dir))
+            legacy_dir = os.path.join(output_dir, 'sessions')
+            if os.path.isdir(legacy_dir) and not os.path.isdir(session_dir):
+                try:
+                    import shutil
+                    shutil.copytree(legacy_dir, session_dir)
+                except Exception:
+                    pass
 
         session_key = getattr(session_cfg, 'session_key', None) if session_cfg else None
         self.session_log = SessionLog(session_dir, session_key=session_key)
@@ -1309,8 +1355,11 @@ class LLMAgent(Agent):
                         if _printed_reasoning_header and not _printed_reasoning_footer:
                             self._write_thinking_footer()
                             _printed_reasoning_footer = True
-                        sys.stdout.write(new_content)
-                        sys.stdout.flush()
+                        if self._console_io is not None:
+                            self._console_io.write(new_content)
+                        else:
+                            sys.stdout.write(new_content)
+                            sys.stdout.flush()
                     _content = _response_message.content
                     messages[-1] = _response_message
                     yield messages
@@ -1327,7 +1376,10 @@ class LLMAgent(Agent):
                             self._write_reasoning(final_reasoning, dim=True)
                             self._write_thinking_footer()
 
-                    sys.stdout.write('\n')
+                    if self._console_io is not None:
+                        self._console_io.end_stream()
+                    else:
+                        sys.stdout.write('\n')
             else:
                 _response_message = self.llm.generate(messages, tools=tools)
                 if self.show_reasoning:
@@ -1603,7 +1655,10 @@ class LLMAgent(Agent):
                     messages = configured
                 elif self._interactive:
                     from ms_agent.command.interactive import InteractiveSession
-                    session = InteractiveSession(self._get_command_router())
+                    session = InteractiveSession(
+                        self._get_command_router(),
+                        source='tui' if self._console_io is not None else 'cli',
+                        io=self._console_io)
                     turn = await session.run_turn(
                         messages=None, runtime=self.runtime)
                     if turn.action == 'quit':

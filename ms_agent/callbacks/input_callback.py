@@ -12,9 +12,6 @@ from ms_agent.utils import get_logger
 if TYPE_CHECKING:
     from ms_agent.command.router import CommandRouter
 
-if TYPE_CHECKING:
-    from ms_agent.command.router import CommandRouter
-
 logger = get_logger()
 
 
@@ -31,13 +28,17 @@ class InputCallback(Callback):
         self,
         config: DictConfig,
         command_router: Optional['CommandRouter'] = None,
+        io: object = None,
     ):
         super().__init__(config)
         if command_router is None:
             # Fallback for standalone / test instantiation. In normal CLI use
             # the agent injects its own router so there is a single instance.
             command_router = self._build_default_router()
-        self._session = InteractiveSession(command_router)
+        self._session = InteractiveSession(
+            command_router,
+            source='tui' if io is not None else 'cli',
+            io=io)
 
     @staticmethod
     def _build_default_router() -> 'CommandRouter':

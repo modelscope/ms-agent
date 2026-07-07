@@ -17,7 +17,6 @@ from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
 
-_SNAPSHOT_DIR_NAME = '.ms_agent_snapshots'
 _META_FILE = 'snapshot_meta.json'
 
 
@@ -41,7 +40,9 @@ def _git(args: list[str],
 
 
 def _snapshot_git_dir(output_dir: str) -> str:
-    return os.path.join(output_dir, _SNAPSHOT_DIR_NAME)
+    # Collapsed under <output_dir>/.ms_agent/ (was <output_dir>/.ms_agent_snapshots).
+    from ms_agent.project.paths import snapshots_dir
+    return str(snapshots_dir(output_dir))
 
 
 def _configure_snapshot_repo_for_automation(work_tree: str,
@@ -81,7 +82,11 @@ def _ensure_repo(output_dir: str) -> str:
         os.makedirs(info_dir, exist_ok=True)
         exclude_file = os.path.join(info_dir, 'exclude')
         with open(exclude_file, 'a', encoding='utf-8') as f:
-            f.write(f'\n{_SNAPSHOT_DIR_NAME}/\n')
+            # Exclude only the snapshot git repo itself (must not self-track).
+            # The rest of .ms_agent/ (history cache, etc.) is still captured,
+            # preserving the pre-move behavior where <output_dir>/.memory was
+            # part of the snapshot.
+            f.write('\n.ms_agent/snapshots/\n')
     # Always (re)apply: repos created before this fix may still inherit hooks.
     _configure_snapshot_repo_for_automation(output_dir, git_dir)
     return git_dir

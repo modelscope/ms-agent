@@ -144,7 +144,8 @@ def build_hook_runtime(
             ))
 
     if 'native' in enabled_sources:
-        ms_agent_hooks_json = Path(project_path) / '.ms-agent' / 'hooks.json'
+        from ms_agent.project.paths import project_internal_file
+        ms_agent_hooks_json = project_internal_file(project_path, 'hooks.json')
         if ms_agent_hooks_json.is_file():
             loaders.append((
                 'ms_agent_json',
@@ -221,7 +222,11 @@ def _discover_plugin_roots(config: Any, project_path: str) -> list[str]:
     managed_ids = registry.managed_plugin_ids(project_path)
     roots: list[str] = []
     seen: set[str] = set()
-    plugins_dir = Path(project_path) / '.ms-agent' / 'plugins'
+    from ms_agent.project.paths import (project_internal_dir,
+                                        legacy_local_internal_dir)
+    plugins_dir = project_internal_dir(project_path) / 'plugins'
+    if not plugins_dir.is_dir():
+        plugins_dir = legacy_local_internal_dir(project_path) / 'plugins'
     if plugins_dir.is_dir():
         for child in plugins_dir.iterdir():
             if not child.is_dir():

@@ -49,8 +49,27 @@ GLOBAL_SETTINGS_FILE = 'settings.json'
 GLOBAL_MCP_FILE = 'mcp.json'
 GLOBAL_SKILLS_FILE = 'skills.json'
 PROJECT_CONFIG_FILE = 'config.yaml'
+PROJECT_SETTINGS_LOCAL_FILE = 'settings.local.json'
 PROJECT_MCP_FILE = 'mcp.json'
 PROJECT_SKILLS_FILE = 'skills.json'
+
+# New project-local framework dir (underscore, matches ~/.ms_agent) and the
+# older hyphenated name kept for read-compat.
+PROJECT_INTERNAL_DIR = '.ms_agent'
+PROJECT_INTERNAL_DIR_LEGACY = '.ms-agent'
+
+
+def _project_internal_file(project_path: str, filename: str) -> Optional[Path]:
+    """Return <project>/.ms_agent/<file>, falling back to the legacy
+    <project>/.ms-agent/<file>. Returns the new-dir path (may not exist) when
+    neither exists, so callers can treat a missing file uniformly."""
+    new = Path(project_path) / PROJECT_INTERNAL_DIR / filename
+    if new.exists():
+        return new
+    legacy = Path(project_path) / PROJECT_INTERNAL_DIR_LEGACY / filename
+    if legacy.exists():
+        return legacy
+    return new
 
 
 class ConfigResolver:
@@ -234,14 +253,37 @@ class ConfigResolver:
             return None
 
     def _load_project_patch(self, project_path: str) -> Optional[DictConfig]:
-        patch_file = Path(project_path) / '.ms-agent' / PROJECT_CONFIG_FILE
-        if not patch_file.exists():
+        """Project-level config patch.
+
+        Merges (low -> high priority):
+          1. legacy/new ``config.yaml`` (agent schema, direct)
+          2. ``settings.local.json`` (settings schema, mapped like the global
+             settings.json — provider/model/personalization/... )
+        Both are optional; new ``.ms_agent/`` is preferred over legacy
+        ``.ms-agent/``.
+        """
+        layers: List[DictConfig] = []
+
+        yaml_file = _project_internal_file(project_path, PROJECT_CONFIG_FILE)
+        if yaml_file and yaml_file.exists():
+            try:
+                layers.append(OmegaConf.load(str(yaml_file)))
+            except Exception as e:
+                logger.warning(f'Failed to load project config.yaml: {e}')
+
+        local_file = _project_internal_file(
+            project_path, PROJECT_SETTINGS_LOCAL_FILE)
+        if local_file and local_file.exists():
+            try:
+                with open(local_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                layers.append(self._settings_to_agent_config(data))
+            except (json.JSONDecodeError, OSError) as e:
+                logger.warning(f'Failed to load settings.local.json: {e}')
+
+        if not layers:
             return None
-        try:
-            return OmegaConf.load(str(patch_file))
-        except Exception as e:
-            logger.warning(f'Failed to load project config patch: {e}')
-            return None
+        return self._merge_layers(layers)
 
     # -- merging --
 
@@ -263,7 +305,7 @@ class ConfigResolver:
         project_mcp = {}
         if project_path:
             project_mcp = self._load_json_safe(
-                Path(project_path) / '.ms-agent' / PROJECT_MCP_FILE
+                _project_internal_file(project_path, PROJECT_MCP_FILE)
             )
 
         if not global_mcp and not project_mcp:
@@ -311,7 +353,7 @@ class ConfigResolver:
         project_skills = {}
         if project_path:
             project_skills = self._load_json_safe(
-                Path(project_path) / '.ms-agent' / PROJECT_SKILLS_FILE
+                _project_internal_file(project_path, PROJECT_SKILLS_FILE)
             )
 
         if not global_skills and not project_skills:
@@ -357,6 +399,18 @@ class ConfigResolver:
                 ]
             if agent_llm:
                 agent_fields['llm'] = agent_llm
+        # default_model (from ModelSettingsManager) is a fallback when the llm
+        # block does not pin a model. Form: "provider/model" or bare "model".
+        default_model = settings.get('default_model')
+        if default_model:
+            agent_llm = agent_fields.setdefault('llm', {})
+            if not agent_llm.get('model'):
+                if '/' in default_model:
+                    prov, mdl = default_model.split('/', 1)
+                    agent_llm.setdefault('service', prov)
+                    agent_llm['model'] = mdl
+                else:
+                    agent_llm['model'] = default_model
         if 'output_dir' in settings:
             agent_fields['output_dir'] = settings['output_dir']
         if 'personalization' in settings:

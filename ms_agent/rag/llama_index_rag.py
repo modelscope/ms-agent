@@ -33,7 +33,12 @@ class LlamaIndexRAG(RAG):
         self.chunk_size = getattr(config.rag, 'chunk_size', 512)
         self.chunk_overlap = getattr(config.rag, 'chunk_overlap', 50)
         self.retrieve_only = getattr(config.rag, 'retrieve_only', False)
-        self.storage_dir = getattr(config.rag, 'storage_dir', './llama_index')
+        _rag_store = getattr(config.rag, 'storage_dir', None)
+        if not _rag_store:
+            from ms_agent.project.paths import search_index_dir
+            _rag_store = str(
+                search_index_dir(getattr(config, 'output_dir', None) or '.', 'rag'))
+        self.storage_dir = _rag_store
         self._validate_requirements()
 
         self._setup_embedding_model(config)

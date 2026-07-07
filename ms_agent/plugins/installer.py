@@ -228,7 +228,8 @@ class PluginInstaller:
             root = Path(project_path or self.project_root or '')
             if not str(root):
                 raise ValueError('project_path is required for project plugin install')
-            return root / '.ms-agent' / 'plugins' / plugin_id
+            from ms_agent.project.paths import project_internal_dir
+            return project_internal_dir(root) / 'plugins' / plugin_id
         return self.global_root / 'plugins' / plugin_id
 
     def _ensure_dependencies(

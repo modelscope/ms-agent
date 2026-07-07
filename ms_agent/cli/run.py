@@ -260,7 +260,6 @@ class RunCMD(CLICommand):
                 if tl is None or not OmegaConf.is_config(tl):
                     localsearch_config = {
                         'paths': paths,
-                        'work_path': './.sirchmunk',
                         'mode': 'FAST',
                     }
                     config.tools['localsearch'] = OmegaConf.create(

@@ -357,7 +357,7 @@ def _make_filter_entry(
 
 
 def build_extractor_registry() -> dict[str, ExtractorEntry]:
-    """Build the full 34-command extractor registry."""
+    """Build the full 36-command extractor registry."""
     registry: dict[str, ExtractorEntry] = {}
 
     # Special commands
