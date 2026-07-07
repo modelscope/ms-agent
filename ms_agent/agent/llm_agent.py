@@ -593,7 +593,7 @@ class LLMAgent(Agent):
           WebUI / Server supply their own confirmation UI.
         - ``interactive`` (alias ``restricted``) in an interactive terminal
           session -> ``CLIPermissionHandler`` (the ``[y/s/a/e/n]`` prompt),
-          so non-whitelisted tools actually ask the user (REVIEW P0-1).
+          so non-whitelisted tools actually ask the user.
         - Everything else (``auto`` / ``strict`` / non-interactive) ->
           ``AutoPermissionHandler`` (SafetyGuard still enforces the floor).
         """
@@ -603,7 +603,10 @@ class LLMAgent(Agent):
             AutoPermissionHandler,
             CLIPermissionHandler,
         )
-        if mode == 'interactive' and self._interactive:
+        # ``PermissionConfig.from_dict`` already normalizes ``restricted`` ->
+        # ``interactive``; accept both so a direct caller passing the raw alias
+        # still gets the interactive prompt (not a silent AutoPermissionHandler).
+        if mode in ('interactive', 'restricted') and self._interactive:
             return CLIPermissionHandler()
         return AutoPermissionHandler()
 

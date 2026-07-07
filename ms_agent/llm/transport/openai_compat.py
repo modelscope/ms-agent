@@ -407,7 +407,8 @@ class OpenAICompatTransport(Transport):
                     message.reasoning_tokens += self._extract_reasoning_tokens(
                         usage)
                 first_run = not messages[-1].to_dict().get(flag, False)
-                if chunk.choices[0].finish_reason in [
+                if self.continue_gen_mode and chunk.choices[
+                        0].finish_reason in [
                         'length', 'null'
                 ] and (max_runs is None or max_runs != 0):
                     logger.info(
@@ -555,7 +556,7 @@ class OpenAICompatTransport(Transport):
                            **kwargs) -> Message:
         flag = self._continue_flag
         new_message = self._format_output_message(completion)
-        if completion.choices[0].finish_reason in [
+        if self.continue_gen_mode and completion.choices[0].finish_reason in [
                 'length', 'null'
         ] and (max_runs is None or max_runs != 0):
             logger.info(

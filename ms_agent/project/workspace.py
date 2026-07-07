@@ -126,6 +126,13 @@ class Workspace:
             else:
                 for p in sorted(target.rglob('*')):
                     if p.is_file():
+                        # Skip entries that resolve outside the workspace: a
+                        # planted symlink (e.g. -> /etc/passwd) would otherwise
+                        # be followed by is_file() and packaged (info leak).
+                        try:
+                            p.resolve().relative_to(self._root)
+                        except ValueError:
+                            continue
                         zf.write(p, p.relative_to(target))
         return buf.getvalue()
 

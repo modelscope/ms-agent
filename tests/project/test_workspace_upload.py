@@ -37,3 +37,22 @@ def test_zip_download(tmp_path):
         names = set(zf.namelist())
     assert any(n.endswith('a.txt') for n in names)
     assert any(n.endswith('b.txt') for n in names)
+
+
+def test_zip_download_skips_external_symlink(tmp_path):
+    # A symlink planted in the workspace pointing outside must NOT be followed
+    # and packaged (arbitrary-file-read / info disclosure via zip_download).
+    secret = tmp_path / 'secret.txt'
+    secret.write_text('TOP-SECRET')
+    ws_dir = tmp_path / 'ws'
+    ws = Workspace(str(ws_dir))
+    ws.write_file('safe.txt', 'ok')
+    (ws_dir / 'leak.txt').symlink_to(secret)  # escapes the workspace
+
+    data = ws.zip_download('.')
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        names = zf.namelist()
+        blob = b''.join(zf.read(n) for n in names)
+    assert any(n.endswith('safe.txt') for n in names)
+    assert not any('leak' in n for n in names)   # symlink entry skipped
+    assert b'TOP-SECRET' not in blob              # external content not leaked

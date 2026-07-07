@@ -46,8 +46,12 @@ def _resolve_log_file(log_file: Optional[str]) -> Optional[str]:
     if env.strip().lower() in ('1', 'true', 'yes', 'on'):
         from ms_agent.project.paths import global_logs_dir
         d = global_logs_dir()
-        d.mkdir(parents=True, exist_ok=True)
-        return str(d / 'ms_agent.log')
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+            return str(d / 'ms_agent.log')
+        except OSError:
+            # Never let logging setup crash the app; fall back to console-only.
+            return None
     return env
 
 

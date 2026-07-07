@@ -160,7 +160,7 @@ class Config:
         idx = 0
         while idx < len(unknown):
             key = unknown[idx]
-            if (key.startswith('--') and idx + 1 < len(unknown)
+            if (key.startswith('--') and len(key) > 2 and idx + 1 < len(unknown)
                     and not unknown[idx + 1].startswith('--')):
                 _dict_config[key[2:]] = unknown[idx + 1]
                 idx += 2

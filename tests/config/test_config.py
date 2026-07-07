@@ -77,6 +77,14 @@ class TestConfig(unittest.TestCase):
                 config = Config.from_task(d)
             self.assertEqual('base-model', config.llm.model)
 
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_parse_args_ignores_bare_separator(self):
+        # A bare '--' separator must not be parsed as an empty-key override
+        # (without the len(key) > 2 guard this yields {'': 'v'}).
+        with patch.object(sys, 'argv', ['ms-agent', '--', '--', 'v']):
+            parsed = Config.parse_args()
+        self.assertNotIn('', parsed)
+
 
 if __name__ == '__main__':
     unittest.main()
