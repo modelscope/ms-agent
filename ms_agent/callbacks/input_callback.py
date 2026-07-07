@@ -12,6 +12,9 @@ from ms_agent.utils import get_logger
 if TYPE_CHECKING:
     from ms_agent.command.router import CommandRouter
 
+if TYPE_CHECKING:
+    from ms_agent.command.router import CommandRouter
+
 logger = get_logger()
 
 
