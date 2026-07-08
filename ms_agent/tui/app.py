@@ -1,60 +1,44 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
-"""TUI application: a route-B REPL over the LLMAgent lifecycle with sessions.
+"""TUI application — a route-A driver over the native LLMAgent lifecycle.
 
-Positioning: single user · multi-project · many sessions per project. Every
-launch starts a fresh, independent conversation; ``/resume`` restores a past
-one; ``/new`` starts another; ``/sessions`` lists them. Sessions are owned by
-the M1 ``SessionManager`` (global ``~/.ms_agent/projects/<id>/sessions``) — the
-same layer the WebUI will use — so the agent's own per-run session log is
-disabled here and the TUI persists the one canonical conversation itself.
+The agent owns one continuous ``run_loop`` per session: a single SessionStart,
+automatic context compaction, and no per-turn MCP teardown. The TUI is a thin
+driver — it injects three seams and then gets out of the way:
+
+* ``event_sink``   → :class:`RichEventSink` renders the structured event stream.
+* ``input_source`` → :class:`PromptToolkitInput` supplies awaitable prompts.
+* ``permission``   → :class:`TUIPermissionHandler` confirms restricted tools.
+
+Session switching (``/new`` / ``/resume`` / ``/sessions``) happens *between*
+lifecycles: the command signals a pending switch and stops the loop; the driver
+repoints the agent's session log at the chosen SessionManager session and runs
+again. Message persistence and compaction are the agent's job (route A), so the
+driver keeps none of the route-B bookkeeping.
+
+Positioning: single user · one project per work dir · many sessions per project.
 """
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Optional, Tuple
 
 from omegaconf import OmegaConf
 from rich.console import Console
-from rich.markdown import Markdown
 from rich.panel import Panel
-from rich.syntax import Syntax
 from rich.table import Table
 
 from ms_agent.config import Config
 from ms_agent.config.env import Env
-from ms_agent.llm.utils import Message
-from ms_agent.tui.io import RichConsoleIO
+from ms_agent.tui.input import PromptToolkitInput
+from ms_agent.tui.renderer import RichEventSink
+from ms_agent.tui.state import TuiState
+from ms_agent.tui.theme import DEFAULT_THEME
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
-
-_MSG_KEYS = ('role', 'content', 'tool_calls', 'tool_call_id', 'name')
-
-
-def _args_complete(args: Any) -> bool:
-    if isinstance(args, dict):
-        return bool(args)
-    if isinstance(args, str) and args.strip():
-        try:
-            json.loads(args)
-            return True
-        except Exception:
-            return False
-    return False
-
-
-def _looks_texty(s: str) -> bool:
-    t = s.lstrip()
-    return not (t.startswith('{') or t.startswith('['))
-
-
-def _dict_to_msg(d: dict) -> Message:
-    return Message(**{k: d[k] for k in _MSG_KEYS if k in d})
 
 
 class TuiApp:
@@ -66,9 +50,12 @@ class TuiApp:
         permission_mode: Optional[str] = None,
         trust_remote_code: bool = False,
         work_dir: Optional[str] = None,
+        emit_events: Optional[str] = None,
+        mcp_server_file: Optional[str] = None,
     ) -> None:
         Env.load_dotenv_into_environ(env_file)
         self.console = Console()
+        self.theme = DEFAULT_THEME
         self.trust_remote_code = trust_remote_code
         self.work_dir = str(Path(work_dir).expanduser().resolve()
                             if work_dir else Path.cwd().resolve())
@@ -77,41 +64,27 @@ class TuiApp:
         config = self._prepare_config(config, permission_mode, self.work_dir)
         self.config = config
 
-        from ms_agent.command import CommandRouter, register_builtin_commands
-        from ms_agent.command.types import (CommandDef, CommandResult,
-                                            CommandResultType)
-        self.router = CommandRouter()
-        register_builtin_commands(self.router)
-
-        # Session commands are intercepted in _dispatch (they need the
-        # SessionManager + REPL control); register defs so /help lists them and
-        # is_command() recognizes them.
-        async def _noop(ctx):
-            return CommandResult(type=CommandResultType.MESSAGE, content='')
-        self.router.register(
-            CommandDef(name='sessions', description='List sessions in this project',
-                       category='session'), _noop)
-        self.router.register(
-            CommandDef(name='resume',
-                       description='Resume a session: /resume <#|id>',
-                       category='session'), _noop)
-
-        self.io = RichConsoleIO(console=self.console, router=self.router)
-
-        from ms_agent.agent.llm_agent import LLMAgent
-        self.agent = LLMAgent(
-            config, trust_remote_code=trust_remote_code, console_io=self.io)
-
         mode = str(getattr(getattr(config, 'permission', None), 'mode', 'auto'))
-        if mode in ('restricted', 'interactive'):
-            from ms_agent.tui.permission import TUIPermissionHandler
-            self.agent.set_permission_handler(
-                TUIPermissionHandler(console=self.console, io=self.io))
         self.permission_mode = mode
+        self._model = str(
+            getattr(getattr(config, 'llm', None), 'model', '') or '')
 
-        # Session lifecycle (M1). The work dir *is* the project (CC-aligned):
-        # sessions live at ~/.ms_agent/projects/<work-dir-key>/sessions, so
-        # different work dirs are different projects, each with its own sessions.
+        # Shared state: renderer writes token usage, the input bar reads it.
+        self.state = TuiState(
+            model=self._model, perm=mode, work_dir=self.work_dir)
+        self.renderer = RichEventSink(self.console, self.state, self.theme)
+
+        # Optionally tee every event to a JSONL file (the exact WebUI wire
+        # payloads) for contract inspection, without changing what's rendered.
+        self._jsonl_sink = None
+        event_sink = self.renderer
+        if emit_events:
+            from ms_agent.ui.events import JsonlEventSink, TeeEventSink
+            self._jsonl_sink = JsonlEventSink(emit_events)
+            event_sink = TeeEventSink(self.renderer, self._jsonl_sink)
+
+        # Session layer (M1). Work dir == project (CC-aligned): sessions live at
+        # ~/.ms_agent/projects/<work-dir-key>/sessions.
         from ms_agent.project import SessionManager
         from ms_agent.project.paths import project_key
         from ms_agent.project.types import Project
@@ -119,11 +92,45 @@ class TuiApp:
                        name=Path(self.work_dir).name or 'project',
                        path=self.work_dir)
         self._sm = SessionManager(proj)
-        self._model = str(getattr(getattr(config, 'llm', None), 'model', '') or '')
         self.session = None
-        self._log = None
-        self._logged = 0  # non-system messages already persisted
-        self.messages: List[Message] = [Message(role='system', content='')]
+
+        # Bridge managed config files into the runtime (what a WebUI backend
+        # also does): MCP servers from ~/.ms_agent + <work_dir>/.ms_agent
+        # mcp.json → mcp_config; skill sources/disabled from skills.json →
+        # config.skills. Respects enable/disable; --mcp-server-file wins last.
+        from ms_agent.project.paths import global_home
+        from ms_agent.tui.managed_config import (merge_skills_into_config,
+                                                 resolve_mcp_config)
+        home = str(global_home())
+        config = merge_skills_into_config(config, home, self.work_dir)
+        self.config = config
+        self._mcp_config = resolve_mcp_config(
+            home, self.work_dir, mcp_server_file)
+
+        # Build the agent ONCE with the UI seams injected. load_cache is set
+        # per session by _apply_session (True only on resume).
+        from ms_agent.agent.llm_agent import LLMAgent
+        self.agent = LLMAgent(
+            config, trust_remote_code=trust_remote_code,
+            event_sink=event_sink, mcp_config=self._mcp_config)
+
+        # Consume the agent's single command router (no duplicate); register the
+        # TUI session commands and drive input through it (slash completion).
+        self.router = self.agent._get_command_router()
+        self._register_session_commands()
+        self.input = PromptToolkitInput(
+            self.state, self.router, self.theme, console=self.console)
+        self.agent._input_source = self.input
+
+        # Always inject the TUI handler — it is only *called* in interactive
+        # mode, but injecting it unconditionally lets /permission switch into
+        # interactive at runtime and get real confirmations.
+        from ms_agent.tui.permission import TUIPermissionHandler
+        self.agent.set_permission_handler(
+            TUIPermissionHandler(console=self.console, theme=self.theme))
+
+        # ('new', None) | ('resume', '<#|id>') | None, set by session commands.
+        self._pending_switch: Optional[Tuple[str, Optional[str]]] = None
 
     # -- config shaping --
 
@@ -132,19 +139,31 @@ class TuiApp:
         OmegaConf.update(config, 'generation_config.stream', True, merge=True)
         OmegaConf.update(
             config, 'generation_config.stream_output', True, merge=True)
+        # Show the model's thinking (rendered as a dim collapsed block). Whether
+        # any reasoning is produced still depends on the model / the config's
+        # generation_config.extra_body.enable_thinking.
         OmegaConf.update(
-            config, 'generation_config.show_reasoning', False, merge=True)
+            config, 'generation_config.show_reasoning', True, merge=True)
         OmegaConf.update(config, 'output_dir', work_dir, merge=True)
-        # The TUI owns session persistence via SessionManager; disable the
-        # agent's own per-run session log so turns don't fragment into files.
-        OmegaConf.update(config, 'session_log.enabled', False, merge=True)
+        # Route A: the agent owns the session log (enables auto-compaction);
+        # _apply_session points it at the SessionManager session dir.
+        OmegaConf.update(config, 'session_log.enabled', True, merge=True)
+        # Interactive lifecycle regardless of stdin detection.
+        OmegaConf.update(config, 'interactive', True, merge=True)
+        # max_chat_round bounds autonomous *steps*; under route A the counter
+        # accumulates across interactive turns (and restores on resume), so a
+        # small per-task value would cut a long chat short. Raise it high — the
+        # user (not a round cap) ends an interactive session.
+        OmegaConf.update(config, 'max_chat_round', 1000, merge=True)
         if permission_mode:
             OmegaConf.update(
                 config, 'permission.mode', permission_mode, merge=True)
-        # Merge the work-dir project patch (e.g. a persisted /model override)
-        # so it round-trips from <work_dir>/.ms_agent/config.yaml — consistent
-        # with where internals live. from_task only reads the config-file dir,
-        # which differs when --config points outside the work dir.
+        # The agent auto-adds InputCallback for interactive runs; drop any
+        # listed one so restarts across session switches never double-register.
+        cbs = [c for c in list(getattr(config, 'callbacks', []) or [])
+               if c != 'input_callback']
+        OmegaConf.update(config, 'callbacks', cbs, merge=False)
+        # Merge the work-dir project patch (e.g. a persisted /model override).
         try:
             from ms_agent.config.resolver import ConfigResolver
             patch = ConfigResolver()._load_project_patch(work_dir)
@@ -154,255 +173,295 @@ class TuiApp:
             logger.debug('work-dir config patch merge skipped', exc_info=True)
         return config
 
+    # -- session commands (registered into the agent's router) --
+
+    def _register_session_commands(self) -> None:
+        from ms_agent.command.types import (CommandDef, CommandResult,
+                                            CommandResultType)
+
+        async def _sessions(ctx):
+            self._render_sessions()
+            return CommandResult(type=CommandResultType.MESSAGE, content='')
+
+        async def _resume(ctx):
+            self._pending_switch = ('resume', (ctx.args or '').strip())
+            if ctx.runtime is not None:
+                ctx.runtime.should_stop = True
+            return CommandResult(type=CommandResultType.QUIT, content='')
+
+        async def _new(ctx):
+            self._pending_switch = ('new', None)
+            if ctx.runtime is not None:
+                ctx.runtime.should_stop = True
+            return CommandResult(type=CommandResultType.QUIT, content='')
+
+        async def _permission(ctx):
+            arg = (ctx.args or '').strip().lower()
+            if arg not in ('auto', 'strict', 'restricted', 'interactive'):
+                return CommandResult(
+                    type=CommandResultType.MESSAGE,
+                    content=(f'permission mode: {self.state.perm}\n'
+                             'usage: /permission <auto|restricted|strict>'))
+            try:
+                mode = self.agent.set_permission_mode(arg)
+            except ValueError as e:
+                return CommandResult(type=CommandResultType.MESSAGE,
+                                     content=str(e))
+            self.state.perm = mode
+            self.permission_mode = mode
+            return CommandResult(type=CommandResultType.MESSAGE,
+                                 content=f'permission mode → {mode}')
+
+        self.router.register(
+            CommandDef(name='permission',
+                       description='Show or switch permission mode',
+                       category='config', aliases=('mode', )), _permission)
+        self.router.register(
+            CommandDef(name='sessions',
+                       description='List sessions in this project',
+                       category='session'), _sessions)
+        self.router.register(
+            CommandDef(name='resume',
+                       description='Resume a session: /resume <#|id>',
+                       category='session'), _resume)
+        self.router.register(
+            CommandDef(name='new', description='Start a new session',
+                       category='session', aliases=('reset', )), _new)
+
     # -- session lifecycle --
 
-    def _new_session(self) -> None:
-        self.session = self._sm.create(model=self._model or None)
-        self._log = self._sm.get_session_log(self.session)
-        self._logged = 0
-        self.messages = [Message(role='system', content='')]
+    def _apply_session(self, session, resume: bool = False) -> None:
+        """Point the agent's native session log at this SessionManager session
+        so the two never diverge (closes the route-B dir split).
 
-    def _resume_session(self, session) -> bool:
+        Targets ``self.agent.config`` (not the app's copy): ``read_history``
+        reassigns the agent's config object each ``run_loop``, so the app's
+        reference goes stale after the first lifecycle. ``_init_session_log``
+        reads this value before ``read_history`` runs, so setting it here (just
+        before each run) is what takes effect.
+
+        ``load_cache`` is set per session: ``True`` only when resuming (restore
+        the SessionLog into context). For a fresh session it MUST be ``False``,
+        otherwise the legacy output_dir/tag history (``read_history``) would be
+        loaded when the new SessionLog is still empty — replaying the previous
+        session's messages. SessionLog is the single source of truth here.
+        """
+        sess_dir = str(self._sm.sessions_dir / session.id)
+        cfg = self.agent.config
+        OmegaConf.update(cfg, 'session_log.dir', sess_dir, merge=True)
+        OmegaConf.update(
+            cfg, 'session_log.session_key', session.session_key, merge=True)
+        self.config = cfg  # keep the app reference in sync for banners/views
         self.session = session
-        self._log = self._sm.get_session_log(session)
-        try:
-            dicts = self._log.get_all_messages()
-        except Exception:
-            dicts = []
-        convo = [_dict_to_msg(d) for d in dicts
-                 if d.get('role') and d.get('role') != 'system']
-        self.messages = [Message(role='system', content='')] + convo
-        self._logged = len(convo)
-        return True
+        self.state.session_name = session.name
+        self.agent.load_cache = resume
 
-    def _persist_turn(self) -> None:
-        convo = self.messages[1:]
-        for m in convo[self._logged:]:
+    def _resume_target(self, arg: str):
+        sessions = self._sm.list()
+        if arg.isdigit() and int(arg) < len(sessions):
+            return sessions[int(arg)]
+        return next((s for s in sessions if s.id == arg), None)
+
+    def _session_has_history(self, session) -> bool:
+        try:
+            return any(m.get('role') == 'user' and m.get('content')
+                       for m in self._sm.get_session_log(session)
+                       .get_all_messages())
+        except Exception:
+            return True  # on doubt, keep it
+
+    def _prune_empty_sessions(self) -> None:
+        """Delete sessions that never received a user turn (leftover empties
+        from prior launches), so ``/sessions`` stays meaningful."""
+        for s in self._sm.list():
+            self._prune_if_empty(s)
+
+    def _prune_if_empty(self, session) -> None:
+        if not self._session_has_history(session):
             try:
-                self._log.append({k: v for k, v in {
-                    'role': m.role,
-                    'content': m.content or '',
-                    'tool_calls': getattr(m, 'tool_calls', None),
-                    'tool_call_id': getattr(m, 'tool_call_id', None),
-                    'name': getattr(m, 'name', None),
-                }.items() if v not in (None, '')})
+                self._sm.delete(session.id)
             except Exception:
                 pass
-        self._logged = len(convo)
-        # Name the session after its first user turn.
-        name = self.session.name
-        if name.startswith('Session '):
-            first_user = next((m.content for m in convo
-                               if m.role == 'user' and m.content), '')
-            if first_user:
-                name = first_user.strip().splitlines()[0][:40]
+
+    def _name_session_from_log(self) -> None:
+        """Name a session after its first user line (once), read from its log."""
+        if self.session is None or not self.session.name.startswith('Session '):
+            return
         try:
-            self._sm.update(self.session.id, name=name,
-                            updated_at=datetime.now(timezone.utc).isoformat())
-            self.session = self._sm.get(self.session.id) or self.session
+            for m in self._sm.get_session_log(self.session).get_all_messages():
+                if m.get('role') == 'user' and m.get('content'):
+                    name = str(m['content']).strip().splitlines()[0][:40]
+                    self._sm.update(self.session.id, name=name)
+                    self.session = self._sm.get(self.session.id) or self.session
+                    self.state.session_name = self.session.name
+                    break
         except Exception:
             pass
 
-    # -- rendering --
+    # -- rendering (session views the app owns) --
 
     def _banner(self) -> None:
+        from rich.text import Text
+
+        from ms_agent.utils.constants import MS_AGENT_ASCII
+
+        # Left: the CLI's MS-AGENT wordmark (glyph rows only, frame stripped),
+        # a blue gradient. Right: the run info — laid out side by side.
+        glyphs = [ln[1:-1].strip() for ln in MS_AGENT_ASCII.split('\n')
+                  if '█' in ln or '╚═╝' in ln]
+        width = max(len(g) for g in glyphs)
+        glyphs = [g.ljust(width) for g in glyphs]  # equal width, clean right edge
+        blues = ['bright_blue', 'blue', 'dodger_blue2',
+                 'deep_sky_blue1', 'cornflower_blue', 'blue']
+        logo = Text()
+        for i, row in enumerate(glyphs):
+            logo.append(row + ('\n' if i < len(glyphs) - 1 else ''),
+                        style=f'bold {blues[i % len(blues)]}')
+
         llm = getattr(self.config, 'llm', None)
         tools = list(self.config.tools.keys()) if getattr(
             self.config, 'tools', None) else []
-        t = Table.grid(padding=(0, 2))
-        t.add_column(style='bold cyan', justify='right')
-        t.add_column()
-        t.add_row('model', f'{getattr(llm, "service", "?")} / '
-                  f'{getattr(llm, "model", "?")}')
-        t.add_row('tools', ', '.join(tools) or '[dim](none)[/]')
-        t.add_row('perm', self.permission_mode)
-        t.add_row('work dir', self.work_dir)
-        t.add_row('files', '[dim]internals → .ms_agent/ · '
-                  'sessions → ~/.ms_agent/projects/[/]')
+        home = os.path.expanduser('~')
+        wd = self.work_dir.replace(home, '~') if home else self.work_dir
+        if len(wd) > 38:
+            wd = '…' + wd[-37:]
+        info = Table.grid(padding=(0, 2))
+        info.add_column(style='blue', justify='right')
+        info.add_column()
+        info.add_row('model',
+                     f'{getattr(llm, "service", "?")}/{getattr(llm, "model", "?")}')
+        info.add_row('tools', ', '.join(tools) or '[dim]none[/]')
+        info.add_row('perm', f'[yellow]{self.permission_mode}[/]')
+        info.add_row('dir', f'[dim]{wd}[/]')
+        info_panel = Panel(info, title='[bold bright_blue]ms-agent tui[/]',
+                           border_style='blue', padding=(0, 2), expand=False)
+
+        banner = Table.grid(padding=(0, 4))
+        banner.add_column(no_wrap=True, vertical='middle')  # wordmark intact
+        banner.add_column(vertical='middle')
+        banner.add_row(logo, info_panel)
+        self.console.print()
+        self.console.print(banner)
         self.console.print(
-            Panel(t, title='[bold]ms-agent tui[/]', border_style='cyan',
-                  subtitle='[dim]/help /sessions /resume /new /quit[/]'))
+            '  [dim]/help  /sessions  /resume  /new  /quit[/]\n')
 
-    def _render_tool_call(self, tc: dict) -> None:
-        name = tc.get('tool_name', '?')
-        args = tc.get('arguments', '')
-        if isinstance(args, str):
-            try:
-                args = json.loads(args)
-            except Exception:
-                pass
-        arg_str = json.dumps(args, ensure_ascii=False, indent=2)
-        if len(arg_str) > 800:
-            arg_str = arg_str[:800] + '\n…'
-        self.io.print(Panel(
-            Syntax(arg_str, 'json', theme='ansi_dark', word_wrap=True),
-            title=f'🔧 {name}', border_style='yellow', expand=False))
-
-    def _render_tool_result(self, msg: Message) -> None:
-        content = msg.content if isinstance(msg.content, str) else str(
-            msg.content)
-        if len(content) > 1200:
-            content = content[:1200] + '\n… (truncated)'
-        renderable = (Markdown(content)
-                      if content.strip() and _looks_texty(content)
-                      else content)
-        self.io.print(Panel(renderable, title=f'← {msg.name or "result"}',
-                            border_style='green', expand=False))
-
-    # -- turn execution --
-
-    async def _agent_turn(self, text: str) -> None:
-        self.messages.append(Message(role='user', content=text))
-        start = len(self.messages)
-        rendered_calls: set = set()
-        rendered_results: set = set()
-        final = None
-        try:
-            gen = await self.agent.run(self.messages, stream=True)
-            async for msgs in gen:
-                final = msgs
-                for m in msgs[start:]:
-                    if m.role == 'assistant' and m.tool_calls:
-                        for tc in m.tool_calls:
-                            tid = tc.get('id') or json.dumps(
-                                tc, sort_keys=True, default=str)
-                            if tid not in rendered_calls and _args_complete(
-                                    tc.get('arguments')):
-                                rendered_calls.add(tid)
-                                self._render_tool_call(tc)
-                    elif m.role == 'tool':
-                        tid = getattr(m, 'tool_call_id', None) or id(m)
-                        if tid not in rendered_results:
-                            rendered_results.add(tid)
-                            self._render_tool_result(m)
-        except Exception as e:
-            self.io.end_stream()
-            self.console.print(Panel(
-                f'[bold]{type(e).__name__}[/]: {e}',
-                title='[red]turn failed[/]', border_style='red',
-                subtitle='[dim]LOG_LEVEL=INFO for details[/]', expand=False))
-            logger.warning('TUI turn failed', exc_info=True)
-            return
-        self.io.end_stream()
-        if final is not None:
-            self.messages = final
-        self._persist_turn()
-
-    # -- session commands (TUI-owned; need SessionManager + REPL control) --
-
-    def _cmd_sessions(self) -> None:
+    def _render_sessions(self) -> None:
         sessions = self._sm.list()
         if not sessions:
-            self.io.print('[dim]no sessions yet[/]')
+            self.console.print('[dim]no sessions yet[/]')
             return
-        t = Table(show_header=True, header_style='bold', box=None, padding=(0, 2))
+        t = Table(show_header=True, header_style='bold', box=None,
+                  padding=(0, 2))
         for c in ('#', 'name', 'id', 'updated', 'model'):
             t.add_column(c)
         for i, s in enumerate(sessions):
-            marker = '➤' if self.session and s.id == self.session.id else str(i)
+            marker = (f'[{self.theme.session_marker}]➤[/]'
+                      if self.session and s.id == self.session.id else str(i))
             t.add_row(marker, s.name, s.id, (s.updated_at or '')[:19],
                       s.model or '')
-        self.io.print(Panel(t, title='sessions', border_style='blue',
-                            subtitle='[dim]/resume <#|id>[/]', expand=False))
+        self.console.print(
+            Panel(t, title='sessions', border_style='blue',
+                  subtitle='[dim]/resume <#|id>[/]', expand=False))
 
-    def _cmd_resume(self, arg: str) -> None:
-        arg = arg.strip()
-        sessions = self._sm.list()
-        target = None
-        if arg.isdigit() and int(arg) < len(sessions):
-            target = sessions[int(arg)]
-        else:
-            target = next((s for s in sessions if s.id == arg), None)
-        if target is None:
-            self.io.print('[red]not found[/] — use /sessions to list, '
-                          '/resume <#|id>')
-            return
-        self._resume_session(target)
-        n = len(self.messages) - 1
-        self.console.rule(f'[green]resumed[/] {target.name} '
-                          f'[dim]({target.id}, {n} msgs)[/]')
-        # replay a short tail so the user has context
-        for m in self.messages[1:][-4:]:
-            who = {'user': '[cyan]you[/]', 'assistant': '[green]assistant[/]',
-                   'tool': '[yellow]tool[/]'}.get(m.role, m.role)
-            snippet = (m.content or '')[:200].replace('\n', ' ')
+    def _render_history_tail(self, session, n: int = 6) -> None:
+        try:
+            msgs = self._sm.get_session_log(session).get_all_messages()
+        except Exception:
+            msgs = []
+        convo = [m for m in msgs if m.get('role') != 'system']
+        for m in convo[-n:]:
+            who = {'user': '[cyan]❯[/]', 'assistant': '[green]●[/]',
+                   'tool': '[yellow]▸[/]'}.get(m.get('role'), str(m.get('role')))
+            snippet = str(m.get('content') or '')[:200].replace('\n', ' ')
             if snippet:
-                self.io.print(f'{who} {snippet}')
-
-    # -- dispatch --
-
-    async def _dispatch(self, text: str) -> bool:
-        """Returns True to quit the app."""
-        cmd, args = self.router.parse_input(text)
-        if cmd == 'sessions':
-            self._cmd_sessions()
-            return False
-        if cmd == 'resume':
-            self._cmd_resume(args)
-            return False
-        if cmd in ('new', 'reset'):
-            self._new_session()
-            self.console.rule('[green]new session[/] '
-                              f'[dim]({self.session.id})[/]')
-            return False
-        from ms_agent.command.types import CommandContext, CommandResultType
-        ctx = CommandContext(
-            raw_input=text, command_name=cmd, args=args, source='tui',
-            runtime=getattr(self.agent, 'runtime', None),
-            extra={'router': self.router, 'messages': self.messages,
-                   'config': self.config})
-        result = await self.router.dispatch(ctx)
-        if result is None:
-            await self._agent_turn(text)
-            return False
-        if result.type == CommandResultType.QUIT:
-            if result.content:
-                self.console.print(f'[dim]{result.content}[/]')
-            return True
-        if result.type == CommandResultType.SUBMIT_PROMPT:
-            await self._agent_turn(result.content)
-            return False
-        if result.content:
-            self.console.print(
-                Panel(result.content, border_style='blue', expand=False))
-        return False
+                self.console.print(f'{who} {snippet}')
 
     @staticmethod
     def _quiet_logs() -> None:
-        level = os.environ.get('LOG_LEVEL', 'ERROR').upper()
         os.environ.setdefault('LOG_LEVEL', 'ERROR')
-        if level in ('INFO', 'DEBUG', 'WARNING'):
+        if os.environ.get('LOG_LEVEL', 'ERROR').upper() in (
+                'INFO', 'DEBUG', 'WARNING'):
             return
         lg = logging.getLogger('ms_agent')
         lg.setLevel(logging.ERROR)
         for h in lg.handlers:
             h.setLevel(logging.ERROR)
 
-    # -- main loop --
+    # -- main loop (route A: one lifecycle per session) --
+
+    async def _serve(self) -> None:
+        self._banner()
+        self._prune_empty_sessions()  # clear leftover empties from prior launches
+        self.session = self._sm.create(model=self._model or None)
+        resume = False  # a fresh session reads a prompt; a resumed one restores
+        self.renderer.rule(f'session {self.session.id}', 'green')
+        while True:
+            self._pending_switch = None
+            self._apply_session(self.session, resume=resume)
+            try:
+                gen = await self.agent.run(None, stream=True)
+                async for _ in gen:
+                    pass
+            except EOFError:
+                break  # Ctrl-D at the prompt exits
+            except KeyboardInterrupt:
+                # Ctrl-C interrupts the running turn but keeps the REPL alive.
+                # Cap the turn with an assistant marker so the resume below
+                # doesn't re-run the interrupted user prompt.
+                self.renderer.finalize()
+                self.console.print('[dim](interrupted — /quit to exit)[/]')
+                try:
+                    self._sm.get_session_log(self.session).append(
+                        {'role': 'assistant', 'content': '(interrupted)'})
+                except Exception:
+                    pass
+                resume = True
+                continue
+            except Exception as e:  # noqa: BLE001 — surface, don't crash the REPL
+                self.renderer.finalize()
+                logger.warning('TUI lifecycle error', exc_info=True)
+                self.console.print(
+                    Panel(f'[bold]{type(e).__name__}[/]: {e}',
+                          title='[red]error[/]', border_style='red',
+                          subtitle='[dim]LOG_LEVEL=INFO for details[/]',
+                          expand=False))
+                break
+            self._name_session_from_log()
+            # Resolve a resume target against the live list before pruning.
+            switch = self._pending_switch
+            resume_target = (self._resume_target(switch[1] or '')
+                             if switch and switch[0] == 'resume' else None)
+            if not (resume_target and resume_target.id == self.session.id):
+                self._prune_if_empty(self.session)
+            if switch is None:
+                break  # user quit
+            kind = switch[0]
+            if kind == 'new':
+                self.session = self._sm.create(model=self._model or None)
+                resume = False
+                self.renderer.rule(f'new session {self.session.id}', 'green')
+            elif kind == 'resume':
+                if resume_target is None:
+                    self.console.print(
+                        '[yellow]session not found[/] — /sessions to list')
+                    resume = True  # re-enter (restore) the current session
+                else:
+                    self.session = resume_target
+                    resume = True
+                    self.renderer.rule(
+                        f'resumed {resume_target.name}', 'green')
+                    self._render_history_tail(resume_target)
+        self.console.print('[dim]bye[/]')
 
     def run(self) -> None:
         self._quiet_logs()
-        self._banner()
-        self._new_session()   # fresh, independent conversation each launch
-        while True:
-            try:
-                text = self.io.read_prompt().strip()
-            except (EOFError, KeyboardInterrupt):
-                self.console.print('\n[dim]bye[/]')
-                break
-            if not text:
-                continue
-            try:
-                if self.router.is_command(text):
-                    should_quit = asyncio.run(self._dispatch(text))
-                else:
-                    asyncio.run(self._agent_turn(text))
-                    should_quit = False
-                if should_quit:
-                    break
-            except KeyboardInterrupt:
-                self.console.print('\n[dim](interrupted)[/]')
-                continue
+        try:
+            asyncio.run(self._serve())
+        except KeyboardInterrupt:
+            self.console.print('\n[dim]bye[/]')
+        finally:
+            if self._jsonl_sink is not None:
+                self._jsonl_sink.close()
 
 
 def main(
@@ -411,6 +470,9 @@ def main(
     permission_mode: Optional[str] = None,
     trust_remote_code: bool = False,
     work_dir: Optional[str] = None,
+    emit_events: Optional[str] = None,
+    mcp_server_file: Optional[str] = None,
 ) -> None:
     TuiApp(config_path, env_file=env_file, permission_mode=permission_mode,
-           trust_remote_code=trust_remote_code, work_dir=work_dir).run()
+           trust_remote_code=trust_remote_code, work_dir=work_dir,
+           emit_events=emit_events, mcp_server_file=mcp_server_file).run()

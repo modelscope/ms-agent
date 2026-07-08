@@ -54,6 +54,23 @@ class TuiCMD(CLICommand):
             '--trust_remote_code',
             action='store_true',
             help='Allow loading external code referenced by the config.')
+        parser.add_argument(
+            '--mcp-server-file',
+            '--mcp_server_file',
+            dest='mcp_server_file',
+            type=str,
+            default=None,
+            help='Path to an MCP servers JSON file ({"mcpServers": {...}}) — '
+            'stdio / sse / streamable_http servers to connect for this session.')
+        parser.add_argument(
+            '--emit-events',
+            '--emit_events',
+            dest='emit_events',
+            type=str,
+            default=None,
+            help='Also append every structured AgentEvent as JSON lines to '
+            'this file — the exact wire payloads a WebUI backend would '
+            'forward. Use it to inspect/validate the event contract.')
         parser.set_defaults(func=subparser_func)
 
     def execute(self):
@@ -74,4 +91,6 @@ class TuiCMD(CLICommand):
             permission_mode=self.args.permission_mode,
             trust_remote_code=self.args.trust_remote_code,
             work_dir=self.args.work_dir,
+            emit_events=self.args.emit_events,
+            mcp_server_file=self.args.mcp_server_file,
         )

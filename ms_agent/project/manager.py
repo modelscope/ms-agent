@@ -40,7 +40,15 @@ class ProjectManager:
         instruction: str = '',
         memory_enabled: bool = False,
         memory_backend: str | None = None,
+        init_workspace: bool = True,
     ) -> Project:
+        """Create a new project (Codex "start from scratch").
+
+        Identity is a random id; ``path`` defaults to the managed location
+        ``<base>/projects/<id>/``. Set ``init_workspace=False`` to skip the
+        ``<path>/workspace/`` subdir (the runtime writes products directly under
+        ``output_dir``, so that subdir is optional).
+        """
         project_id = _new_id()
         if path is None:
             path = str(self._projects_root / project_id)
@@ -54,7 +62,46 @@ class ProjectManager:
             memory_enabled=memory_enabled,
             memory_backend=memory_backend,
         )
-        self._init_project_dirs(project)
+        self._init_project_dirs(project, init_workspace=init_workspace)
+        self._save_meta(project)
+        return project
+
+    def open_folder(
+        self,
+        path: str,
+        name: str | None = None,
+        instruction: str = '',
+        memory_enabled: bool = False,
+        memory_backend: str | None = None,
+    ) -> Project:
+        """Open an existing directory as a project (Codex "use an existing folder").
+
+        Unlike :meth:`create`, the project's identity **is the folder**:
+        ``id = project_key(path)``. Consequences:
+
+        - **Dedup by path** — reopening the same folder returns the same project
+          (no duplicate), so history is continuous across reopens.
+        - **No ``workspace/`` pollution** — the agent works in the folder
+          directly; only the metadata under ``<base>/projects/<key>/`` is written
+          here. The folder's own ``.ms_agent/`` internals are created lazily by
+          the runtime, not by this call.
+        """
+        from ms_agent.project.paths import project_key
+
+        work_dir = str(Path(os.path.expanduser(path)).resolve())
+        project_id = project_key(work_dir)
+        existing = self.get(project_id)
+        if existing is not None:
+            return existing
+        project = Project(
+            id=project_id,
+            name=name or Path(work_dir).name or project_id,
+            path=work_dir,
+            instruction=instruction,
+            memory_enabled=memory_enabled,
+            memory_backend=memory_backend,
+        )
+        self._init_project_dirs(project, init_workspace=False)
         self._save_meta(project)
         return project
 
@@ -123,7 +170,9 @@ class ProjectManager:
         self._init_project_dirs(project)
         self._save_meta(project)
 
-    def _init_project_dirs(self, project: Project) -> None:
+    def _init_project_dirs(
+        self, project: Project, init_workspace: bool = True
+    ) -> None:
         project_dir = self._projects_root / project.id
         (project_dir / self.META_DIR).mkdir(parents=True, exist_ok=True)
         # Sessions live at <id>/sessions (flat), matching SessionManager
@@ -131,7 +180,10 @@ class ProjectManager:
         (project_dir / 'sessions').mkdir(exist_ok=True)
         project_path = Path(project.path)
         project_path.mkdir(parents=True, exist_ok=True)
-        (project_path / 'workspace').mkdir(exist_ok=True)
+        # The workspace/ subdir is optional (the runtime writes under output_dir
+        # directly). Skip it for open_folder so an existing folder stays clean.
+        if init_workspace:
+            (project_path / 'workspace').mkdir(exist_ok=True)
 
     def _meta_store(self, project_id: str) -> JSONFileStore:
         return JSONFileStore(self._meta_file(project_id))

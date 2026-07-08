@@ -15,6 +15,24 @@ from .env import Env
 
 logger = get_logger()
 
+# Ambient shell/system environment variables that must NOT act as config
+# overrides. ``_update_config`` matches config leaf keys against env names
+# case-insensitively, so without this a config key like ``path`` (e.g. a skill
+# source ``sources[].path``) gets silently clobbered by the shell's ``$PATH``
+# (``home``←``HOME``, ``user``←``USER``, ... likewise). Legitimate overrides
+# (``OPENAI_API_KEY`` → ``llm.openai_api_key``, ``<placeholder>`` substitution,
+# explicit ``--key value`` argv) are unaffected — only these ambient names are
+# dropped from the env-derived override source.
+_SHELL_ENV_BLOCKLIST = frozenset({
+    'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'PWD', 'OLDPWD', 'TERM',
+    'LANG', 'LANGUAGE', 'LC_ALL', 'LC_CTYPE', 'TMPDIR', 'TMP', 'TEMP',
+    'EDITOR', 'VISUAL', 'PAGER', 'DISPLAY', 'HOSTNAME', 'HOST', 'MAIL',
+    'SHLVL', 'COLUMNS', 'LINES', 'IFS', 'PS1', 'PS2', 'MANPATH',
+    'LD_LIBRARY_PATH', 'DYLD_LIBRARY_PATH', 'PYTHONPATH', 'CONDA_PREFIX',
+    'CONDA_DEFAULT_ENV', 'VIRTUAL_ENV', 'SSH_AUTH_SOCK', 'COLORTERM',
+    'TERM_PROGRAM', 'TERM_SESSION_ID', 'XPC_SERVICE_NAME',
+})
+
 
 class ConfigLifecycleHandler:
 
@@ -89,6 +107,12 @@ class Config:
             f'Cannot find any valid config file in {config_dir_or_id}, '
             f'supported configs are: {Config.supported_config_names}')
         envs = Env.load_env(env)
+        # Drop ambient shell vars so they can't clobber same-named config keys
+        # (e.g. skills sources[].path <- $PATH). See _SHELL_ENV_BLOCKLIST.
+        envs = {
+            k: v
+            for k, v in envs.items() if k.upper() not in _SHELL_ENV_BLOCKLIST
+        }
         cls._update_config(config, envs)
         _dict_config = cls.parse_args()
         cls._update_config(config, _dict_config)

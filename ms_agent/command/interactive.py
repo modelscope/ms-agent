@@ -34,13 +34,17 @@ class InteractiveSession:
     """Drives a single ``>>>`` prompt turn, handling slash commands in a loop."""
 
     def __init__(self, router: CommandRouter, source: str = 'cli',
-                 io: Any = None) -> None:
+                 input_source: Any = None, event_sink: Any = None) -> None:
         self._router = router
         self._source = source
-        # Optional ConsoleIO (TUI). When None, use bare input()/print() so CLI
-        # behavior is unchanged. When set, read_prompt()/print() are delegated
-        # so a rich TUI owns prompt rendering and slash-completion.
-        self._io = io
+        # Async InputSource (ms_agent.ui). Its awaitable read_prompt lets the
+        # native loop drive a TUI / WebUI without blocking the event loop. When
+        # None, bare input() is used so CLI behavior is unchanged.
+        self._input_source = input_source
+        # AgentEventSink for command output (MESSAGE results): routed as a
+        # Notice so a TUI renders it on the same channel as everything else.
+        # When None, plain print() is used (CLI).
+        self._event_sink = event_sink
 
     async def run_turn(
         self,
@@ -61,8 +65,9 @@ class InteractiveSession:
         """
         while True:
             try:
-                if self._io is not None:
-                    query = self._io.read_prompt('>>> ').strip()
+                if self._input_source is not None:
+                    query = (await
+                             self._input_source.read_prompt('>>> ')).strip()
                 else:
                     query = input('>>> ').strip()
             except (EOFError, KeyboardInterrupt):
@@ -70,6 +75,12 @@ class InteractiveSession:
             if not query:
                 continue
             if not self._router.is_command(query):
+                # Echo the user turn on the event channel (fills the ACP
+                # user_message_chunk gap). A TUI ignores it — the terminal
+                # already shows the typed line — but a WebUI renders it.
+                if self._event_sink is not None:
+                    from ms_agent.ui.events import UserMessage
+                    self._event_sink.emit(UserMessage(text=query))
                 return InteractiveTurn(action='submit', text=query)
 
             cmd_name, args = self._router.parse_input(query)
@@ -99,7 +110,8 @@ class InteractiveSession:
                 self._emit(result.content)
 
     def _emit(self, text: str) -> None:
-        if self._io is not None:
-            self._io.print(text)
+        if self._event_sink is not None:
+            from ms_agent.ui.events import Notice
+            self._event_sink.emit(Notice(level='info', text=text))
         else:
             print(text)
