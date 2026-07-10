@@ -1468,8 +1468,27 @@ class LLMAgent(Agent):
                 _response_message = None
                 _printed_reasoning_header = False
                 _printed_reasoning_footer = False
-                for _response_message in self.llm.generate(
-                        messages, tools=tools):
+                _gen = self.llm.generate(messages, tools=tools)
+                _loop = asyncio.get_running_loop()
+                _NO_MORE = object()
+
+                def _next_chunk(_g=_gen):
+                    # Step the BLOCKING sync LLM stream off the event loop, so
+                    # each chunk flushes incrementally (SSE / UI) and the server
+                    # stays responsive during generation. Awaited sequentially,
+                    # so the generator is only ever touched by one thread at a
+                    # time. (Without this the whole event loop is frozen for the
+                    # entire generation and everything arrives at once.)
+                    try:
+                        return next(_g)
+                    except StopIteration:
+                        return _NO_MORE
+
+                while True:
+                    _chunk = await _loop.run_in_executor(None, _next_chunk)
+                    if _chunk is _NO_MORE:
+                        break
+                    _response_message = _chunk
                     if is_first:
                         messages.append(_response_message)
                         is_first = False
@@ -1588,7 +1607,12 @@ class LLMAgent(Agent):
             LLMAgent.LAST_COMPLETION_TOKENS = completion_tokens
             LLMAgent.LAST_REASONING_TOKENS = reasoning_tokens
 
-        await self.after_tool_call(messages)
+        # after_tool_call() is invoked by run_loop AFTER this step yields (not
+        # here): its interactive InputCallback blocks awaiting the next prompt,
+        # and step() is under @async_retry, so a quit/EOF here would re-run the
+        # step and re-generate/re-persist. Keeping it out of the retry scope lets
+        # run_loop persist this turn's assistant reply *before* the blocking read
+        # (fixes: last answer lost / resume re-answering the last user turn).
 
         # tokens in the current step
         self.log_output(
@@ -1956,12 +1980,26 @@ class LLMAgent(Agent):
                 async for messages in self.step(messages):
                     messages = self._apply_pending_rollback(messages)
                     yield messages
+
+                # Persist THIS round's step output (assistant + any tool
+                # messages) NOW — before after_tool_call below, whose interactive
+                # InputCallback blocks awaiting the next prompt. Without this a
+                # turn's assistant reply would only be persisted when the next
+                # turn starts (so a session's last answer is lost and resume
+                # re-answers the last user turn). after_tool_call runs here (not
+                # inside step) to stay outside step()'s @async_retry scope.
+                step_end_len = len(messages)
+                if self.session_log is not None:
+                    for msg in messages[pre_step_len:step_end_len]:
+                        self.session_log.append(self._msg_to_dict(msg))
+
+                await self.after_tool_call(messages)
                 self.runtime.round += 1
 
-                # Append new messages to SessionLog and persist the round
-                # counter (in the sidecar) so a later resume picks up here.
+                # Persist whatever after_tool_call appended (the next user
+                # message) and the round counter, so a later resume picks up here.
                 if self.session_log is not None:
-                    for msg in messages[pre_step_len:]:
+                    for msg in messages[step_end_len:]:
                         self.session_log.append(self._msg_to_dict(msg))
                     self.session_log.round = self.runtime.round
 

@@ -85,9 +85,17 @@ class OpenAI(LLM):
             config.llm, 'openai_api_key', None) or os.environ.get(
                 'OPENAI_API_KEY')
 
+        # Bound the network call so a dead/misconfigured endpoint fails fast
+        # instead of hanging the caller indefinitely (openai's default is a
+        # 600s read timeout with no connect bound). Overridable via
+        # config.llm.timeout / config.llm.connect_timeout.
+        _read_timeout = getattr(config.llm, 'timeout', None) or 300.0
+        _connect_timeout = getattr(config.llm, 'connect_timeout', None) or 20.0
         self.client = openai.OpenAI(
             api_key=api_key,
             base_url=base_url,
+            timeout=httpx.Timeout(
+                float(_read_timeout), connect=float(_connect_timeout)),
         )
         self.base_url = base_url or ''
         self.args: Dict = OmegaConf.to_container(
