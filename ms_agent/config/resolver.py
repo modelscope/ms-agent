@@ -424,6 +424,12 @@ class ConfigResolver:
                 p_fields['memory_backend'] = p['memory_backend']
             if p_fields:
                 agent_fields['personalization'] = p_fields
+        # Builtin/repo tool config (e.g. the WebUI settings.json `tools` block)
+        # takes part in the multi-level resolve like other sections. Presence of
+        # `tools.<id>` enables a tool; `tools.<id>.enabled: false` disables it
+        # (honored in ToolManager), which lets a higher layer turn a tool off.
+        if 'tools' in settings:
+            agent_fields['tools'] = settings['tools']
         return OmegaConf.create(agent_fields)
 
     @staticmethod

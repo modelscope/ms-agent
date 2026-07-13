@@ -40,6 +40,17 @@ TOOL_CALL_TIMEOUT_MAX = int(os.getenv('TOOL_CALL_TIMEOUT_MAX', 600))
 MAX_CONCURRENT_TOOLS = int(os.getenv('MAX_CONCURRENT_TOOLS', 20))
 
 
+def _tool_on(config, name: str) -> bool:
+    """Whether a builtin tool should load: its ``tools.<name>`` key is present AND
+    not explicitly disabled via ``tools.<name>.enabled: false``. Default
+    ``enabled=True`` leaves configs without the flag unchanged, while letting a
+    higher config layer turn a tool off (multi-level resolve)."""
+    if not (hasattr(config, 'tools') and hasattr(config.tools, name)):
+        return False
+    tool_cfg = getattr(config.tools, name, None)
+    return getattr(tool_cfg, 'enabled', True) is not False
+
+
 def parse_timeout_from_tool_args(
         tool_args: Optional[Dict[str, Any]]) -> Optional[float]:
     """Read ``tools.arguments.timeout`` if present (even when omitted from JSON schema).
@@ -127,7 +138,7 @@ class ToolManager:
         if hasattr(config, 'tools') and hasattr(config.tools,
                                                 'video_generator'):
             self.extra_tools.append(VideoGenerator(config))
-        if hasattr(config, 'tools') and hasattr(config.tools, 'file_system'):
+        if _tool_on(config, 'file_system'):
             self.extra_tools.append(
                 FileSystemTool(
                     config, trust_remote_code=self.trust_remote_code))
@@ -158,9 +169,9 @@ class ToolManager:
                 config, trust_remote_code=self.trust_remote_code)
             if agent_tool.enabled:
                 self.extra_tools.append(agent_tool)
-        if hasattr(config, 'tools') and hasattr(config.tools, 'todo_list'):
+        if _tool_on(config, 'todo_list'):
             self.extra_tools.append(TodoListTool(config))
-        if hasattr(config, 'tools') and hasattr(config.tools, 'web_search'):
+        if _tool_on(config, 'web_search'):
             self.extra_tools.append(WebSearchTool(config))
         if hasattr(config, 'tools') and hasattr(config.tools, 'cron'):
             cron_cfg = getattr(config.tools, 'cron', None)
@@ -169,7 +180,7 @@ class ToolManager:
                 self.extra_tools.append(CronTool(config))
         if effective_localsearch_settings(config) is not None:
             self.extra_tools.append(LocalSearchTool(config))
-        if hasattr(config, 'tools') and hasattr(config.tools, 'task_control'):
+        if _tool_on(config, 'task_control'):
             from ms_agent.tools.task_control_tool import TaskControlTool
             self.extra_tools.append(TaskControlTool(config))
         try:
