@@ -94,6 +94,25 @@ class SessionLog:
         }
         self._append_line(record)
 
+    def record_error(self, event: Dict[str, Any]) -> None:
+        """Record an error event — a non-message, display-only marker.
+
+        Like ``record_compaction``, this appends a ``_type``-tagged record that
+        ``get_all_messages`` filters out, so the error is preserved for history
+        replay but never re-enters the LLM context on resume.  Use it for
+        turn-level / API errors that must NOT go back to the model (tool-call
+        errors stay as ordinary ``role="tool"`` messages instead).  ``event``
+        typically carries ``message``, ``error_type``, ``recoverable``, ``round``.
+        """
+        seq = self._next_seq()
+        record = {
+            "_type": "error",
+            "seq": seq,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            **event,
+        }
+        self._append_line(record)
+
     # ------------------------------------------------------------------
     # Read path
     # ------------------------------------------------------------------
@@ -131,7 +150,7 @@ class SessionLog:
                 record = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if record.get("_type") in ("metadata", "compaction_event"):
+            if record.get("_type") in ("metadata", "compaction_event", "error"):
                 continue
             msgs.append(record)
         self._messages = msgs
@@ -171,6 +190,27 @@ class SessionLog:
             if record.get("_type") == "compaction_event":
                 events.append(record)
         return events
+
+    def get_errors(self) -> List[Dict[str, Any]]:
+        """All error records in chronological order (each keeps its ``seq``).
+
+        These are excluded from ``get_all_messages`` (and thus the LLM context);
+        a UI can merge them back by ``seq`` to replay *when* errors occurred.
+        """
+        errors: List[Dict[str, Any]] = []
+        if not self._path.exists():
+            return errors
+        for line in self._path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if record.get("_type") == "error":
+                errors.append(record)
+        return errors
 
     def get_metadata(self) -> Dict[str, Any]:
         """Session metadata (title, created_at, status, counts, etc.)."""

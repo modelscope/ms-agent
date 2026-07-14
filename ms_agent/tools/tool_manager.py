@@ -599,7 +599,7 @@ class ToolManager:
                             tool_info.get('tool_name', ''), self.TOOL_SPLITER),
                         exc=asyncio.TimeoutError(timeout_msg),
                     )
-                return timeout_msg
+                return {'result': timeout_msg, 'is_error': True}
             except Exception as e:
                 import traceback
                 logger.warning(traceback.format_exc())
@@ -612,7 +612,10 @@ class ToolManager:
                             tool_info.get('tool_name', ''), self.TOOL_SPLITER),
                         exc=e,
                     )
-                return f'Tool calling failed: {brief_info}, details: {str(e)}'
+                return {
+                    'result': f'Tool calling failed: {brief_info}, details: {str(e)}',
+                    'is_error': True,
+                }
 
     async def parallel_call_tool(self, tool_list: List[ToolCall]):
         tasks = [self.single_call_tool(tool) for tool in tool_list]

@@ -602,6 +602,7 @@ class LLMAgent(Agent):
                 resources=tool_call_result_format.resources,
                 tool_detail=tool_call_result_format.tool_detail,
                 hook_attachments=tool_call_result_format.hook_attachments,
+                is_error=tool_call_result_format.is_error,
             )
 
             if _new_message.tool_call_id is None:
@@ -1574,12 +1575,15 @@ class LLMAgent(Agent):
                     if getattr(m, 'role', None) == 'tool':
                         _content = (m.content if isinstance(m.content, str)
                                     else str(m.content))
+                        _is_err = bool(getattr(m, 'is_error', False))
                         self._event_sink.emit(
                             ToolCallCompleted(
                                 call_id=str(
                                     getattr(m, 'tool_call_id', '') or ''),
                                 name=str(getattr(m, 'name', '') or ''),
-                                result=_content or ''))
+                                result=_content or '',
+                                error=(_content or 'tool call failed')
+                                if _is_err else None))
                         # todo/split_task tool results drive the plan panel.
                         _plan = self._extract_plan_from_tool_result(m)
                         if _plan is not None:
@@ -1796,6 +1800,8 @@ class LLMAgent(Agent):
             d['tool_call_id'] = msg.tool_call_id
         if hasattr(msg, 'name') and msg.name:
             d['name'] = msg.name
+        if getattr(msg, 'is_error', False):
+            d['is_error'] = True
         prompt_tokens = int(getattr(msg, 'prompt_tokens', 0) or 0)
         completion_tokens = int(getattr(msg, 'completion_tokens', 0) or 0)
         if prompt_tokens:
@@ -2037,8 +2043,24 @@ class LLMAgent(Agent):
 
             logger.warning(traceback.format_exc())
             if self._event_sink is not None:
-                self._event_sink.emit(
-                    ErrorRaised(message=f'{type(e).__name__}: {e}'))
+                # A run_loop turn-abort is non-recoverable (the turn produced no
+                # usable assistant output); mark it so live == persisted/replay.
+                self._event_sink.emit(ErrorRaised(
+                    message=f'{type(e).__name__}: {e}', recoverable=False))
+            # Persist the turn/API error as a display-only record. It is filtered
+            # out of get_all_messages(), so it never re-enters the LLM context on
+            # resume (unrecoverable), but history can replay that it happened.
+            if self.session_log is not None:
+                try:
+                    self.session_log.record_error({
+                        'message': f'{type(e).__name__}: {e}',
+                        'error_type': type(e).__name__,
+                        'recoverable': False,
+                        'round': self.runtime.round,
+                    })
+                    self.session_log.set_metadata_field('status', 'error')
+                except Exception:
+                    pass
             if hasattr(self.config, 'help'):
                 logger.error(
                     f'[{self.tag}] Runtime error, please follow the instructions:\n\n {self.config.help}'
