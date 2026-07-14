@@ -167,6 +167,14 @@ class ToolManager:
             if not getattr(cron_cfg, 'mcp', False):
                 from ms_agent.tools.cron_tool import CronTool
                 self.extra_tools.append(CronTool(config))
+        # Self-pacing primitive for the in-session /loop. Auto-available in
+        # interactive sessions (where /loop is usable) and enableable
+        # explicitly via config.tools.schedule_wakeup for other surfaces.
+        _sched_cfg = (hasattr(config, 'tools')
+                      and hasattr(config.tools, 'schedule_wakeup'))
+        if kwargs.get('interactive', False) or _sched_cfg:
+            from ms_agent.tools.schedule_wakeup_tool import ScheduleWakeupTool
+            self.extra_tools.append(ScheduleWakeupTool(config))
         if effective_localsearch_settings(config) is not None:
             self.extra_tools.append(LocalSearchTool(config))
         if hasattr(config, 'tools') and hasattr(config.tools, 'task_control'):
