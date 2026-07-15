@@ -381,9 +381,10 @@ class TestAllCommandsRegistered:
         assert 'tools' in all_names
         assert 'compact' in all_names
         assert 'context' in all_names
+        assert 'loop' in all_names
 
     def test_total_builtin_count(self):
         router = make_router()
         cmds = router.list_commands('cli')
         total = sum(len(v) for v in cmds.values())
-        assert total == 12
+        assert total == 13

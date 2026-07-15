@@ -49,6 +49,11 @@ async def cmd_status(ctx: CommandContext) -> CommandResult:
             f'Tag: {ctx.runtime.tag}\n'
             f'Should stop: {ctx.runtime.should_stop}'
         )
+        if getattr(ctx.runtime, 'loop_active', False):
+            content += (
+                f'\nLoop: active ({ctx.runtime.loop_mode}) '
+                f'iter {ctx.runtime.loop_iteration}/{ctx.runtime.loop_max}'
+            )
     else:
         content = 'No active agent.'
     return CommandResult(type=CommandResultType.MESSAGE, content=content)

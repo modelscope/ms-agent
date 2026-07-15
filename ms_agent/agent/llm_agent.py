@@ -173,6 +173,11 @@ class LLMAgent(Agent):
         # Slash-command router for interactive input (lazily built)
         self._command_router = None
 
+        # In-session /loop controller (loop engineering). Created in
+        # register_callback_from_config and injected into the schedule_wakeup
+        # tool in prepare_tools. None until an interactive session sets it up.
+        self._loop_controller = None
+
         # Whether this run is an interactive session (resolved in run_loop).
         # Gates both the initial >>> prompt and the mid-turn InputCallback.
         self._interactive = False
@@ -498,6 +503,25 @@ class LLMAgent(Agent):
                     self.callbacks.append(callbacks_mapping[_callback](
                         self.config))
 
+        # Register the /loop controller *before* InputCallback so that, when a
+        # loop is active, its user-message re-injection makes InputCallback a
+        # no-op for that turn (it returns early on a trailing `user` message).
+        # Inserting at the front guarantees ordering regardless of where the
+        # input callback ends up in the list; it is a no-op unless loop_active.
+        if self._interactive:
+            from ms_agent.callbacks.loop_controller import LoopController
+            existing = next(
+                (cb for cb in self.callbacks
+                 if isinstance(cb, LoopController)), None)
+            if existing is None:
+                self._loop_controller = LoopController(
+                    self.config,
+                    command_router=self._get_command_router(),
+                    event_sink=self._event_sink)
+                self.callbacks.insert(0, self._loop_controller)
+            else:
+                self._loop_controller = existing
+
         # Ensure interactive input is available whenever this is an interactive
         # session, even if the config never listed `input_callback`.
         input_cls = callbacks_mapping.get('input_callback')
@@ -775,6 +799,7 @@ class LLMAgent(Agent):
             mcp_failure_handler=mcp_rt.record_failure if mcp_rt else None,
             mcp_unavailable_detail=mcp_rt.unavailable_detail if mcp_rt else None,
             mcp_success_handler=mcp_rt.record_success if mcp_rt else None,
+            interactive=self._interactive,
         )
         if mcp_rt is not None:
             self.tool_manager._skip_mcp_reindex = True
@@ -796,6 +821,9 @@ class LLMAgent(Agent):
         for tool in self.tool_manager.extra_tools:
             if hasattr(tool, 'set_task_manager'):
                 tool.set_task_manager(self.task_manager)
+            if (self._loop_controller is not None
+                    and hasattr(tool, 'set_loop_controller')):
+                tool.set_loop_controller(self._loop_controller)
 
     async def cleanup_tools(self):
         """Cleanup resources used by the tool manager."""
@@ -1875,6 +1903,22 @@ class LLMAgent(Agent):
             else:
                 self.config, self.runtime, messages = self.read_history(
                     messages)
+
+            # Resume: a persisted /loop (restored via read_history's
+            # runtime.from_dict) either keeps running -- the while-loop below
+            # continues its pending iteration -- or is dropped if it outlived
+            # its deadline. loop_active is False on fresh/session-log restores,
+            # so this is a no-op there.
+            if getattr(self.runtime, 'loop_active', False):
+                import time as _time
+                deadline = getattr(self.runtime, 'loop_deadline', None)
+                if deadline is not None and _time.time() >= deadline:
+                    self.runtime.reset_loop()
+                    self.log_output('[loop] restored loop expired; not resuming.')
+                else:
+                    self.log_output(
+                        f'[loop] resuming {self.runtime.loop_mode} loop '
+                        f'(iteration {self.runtime.loop_iteration}).')
 
             if self.runtime.round == 0 and not restored_from_log:
                 # New task: create standardized messages first
