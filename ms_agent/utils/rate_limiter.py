@@ -1,5 +1,6 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import asyncio
+import threading
 import time
 from collections import deque
 from typing import Callable
@@ -47,6 +48,10 @@ class RateLimiter:
         # Concurrency control
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._lock = asyncio.Lock()
+        # Separate synchronous lock for the non-async bookkeeping methods
+        # (get_stats/reset/record_success/record_error); an asyncio.Lock only
+        # supports `async with`, so using it under a plain `with` raises.
+        self._state_lock = threading.Lock()
 
         logger.info(
             f'RateLimiter initialized: {max_requests_per_second} req/s, '
@@ -137,7 +142,7 @@ class RateLimiter:
         Returns:
             Dictionary containing current state
         """
-        with self._lock:
+        with self._state_lock:
             now = time.time()
             cutoff_time = now - 1.0
             recent_requests = sum(1 for t in self._request_times
@@ -161,7 +166,7 @@ class RateLimiter:
 
     def reset(self):
         """Reset rate limiter state"""
-        with self._lock:
+        with self._state_lock:
             self._request_times.clear()
             self._last_request_time = 0.0
             logger.info('RateLimiter reset')
@@ -219,7 +224,7 @@ class AdaptiveRateLimiter(RateLimiter):
 
     def record_success(self):
         """Record successful request"""
-        with self._lock:
+        with self._state_lock:
             self._total_requests += 1
             self._consecutive_successes += 1
             self._consecutive_errors = 0
@@ -243,7 +248,7 @@ class AdaptiveRateLimiter(RateLimiter):
         Args:
             is_rate_limit_error: Whether this is a rate limit error
         """
-        with self._lock:
+        with self._state_lock:
             self._total_requests += 1
             self._total_errors += 1
             self._consecutive_errors += 1
@@ -279,7 +284,7 @@ class AdaptiveRateLimiter(RateLimiter):
     def get_stats(self) -> dict:
         """Get extended statistics"""
         stats = super().get_stats()
-        with self._lock:
+        with self._state_lock:
             stats.update({
                 'total_requests':
                 self._total_requests,
