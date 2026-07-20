@@ -113,6 +113,24 @@ class SessionLog:
         }
         self._append_line(record)
 
+    def record_permission(self, event: Dict[str, Any]) -> None:
+        """Record a permission decision — a non-message, display-only marker.
+
+        Like ``record_error``, this appends a ``_type``-tagged record that
+        ``get_all_messages`` filters out, so a restricted-mode authorization
+        (asked and resolved to approve/deny) is preserved for history replay
+        but never re-enters the LLM context on resume.  ``event`` typically
+        carries ``tool_name``, ``arguments``, ``state`` (approved|rejected).
+        """
+        seq = self._next_seq()
+        record = {
+            "_type": "permission",
+            "seq": seq,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            **event,
+        }
+        self._append_line(record)
+
     # ------------------------------------------------------------------
     # Read path
     # ------------------------------------------------------------------
@@ -150,7 +168,8 @@ class SessionLog:
                 record = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if record.get("_type") in ("metadata", "compaction_event", "error"):
+            if record.get("_type") in (
+                    "metadata", "compaction_event", "error", "permission"):
                 continue
             msgs.append(record)
         self._messages = msgs
@@ -211,6 +230,26 @@ class SessionLog:
             if record.get("_type") == "error":
                 errors.append(record)
         return errors
+
+    def get_permissions(self) -> List[Dict[str, Any]]:
+        """All permission-decision records in chronological order (each keeps
+        its ``seq``).  Excluded from ``get_all_messages`` (and the LLM context);
+        a UI merges them back by ``seq`` to replay authorization cards.
+        """
+        perms: List[Dict[str, Any]] = []
+        if not self._path.exists():
+            return perms
+        for line in self._path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if record.get("_type") == "permission":
+                perms.append(record)
+        return perms
 
     def get_metadata(self) -> Dict[str, Any]:
         """Session metadata (title, created_at, status, counts, etc.)."""

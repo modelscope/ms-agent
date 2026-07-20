@@ -7,6 +7,7 @@ import os.path
 from pathlib import Path
 import sys
 import threading
+import time
 import uuid
 from contextlib import contextmanager
 from copy import deepcopy, copy
@@ -886,6 +887,9 @@ class LLMAgent(Agent):
     # before the seam existed, so CLI output stays byte-identical.
 
     def _emit_reasoning_start(self) -> None:
+        # Wall-clock the reasoning stream so its elapsed time can be persisted
+        # (display/replay only — see handle_new_response + _msg_to_dict).
+        self._reasoning_started_at = time.monotonic()
         if self._event_sink is not None:
             self._event_sink.emit(ReasoningStarted())
         else:
@@ -898,6 +902,10 @@ class LLMAgent(Agent):
             self._write_reasoning(text, dim=True)
 
     def _emit_reasoning_end(self) -> None:
+        started = getattr(self, '_reasoning_started_at', None)
+        if started is not None:
+            self._last_reasoning_duration = round(time.monotonic() - started)
+            self._reasoning_started_at = None
         if self._event_sink is not None:
             self._event_sink.emit(ReasoningEnded())
         else:
@@ -1398,6 +1406,15 @@ class LLMAgent(Agent):
                 and response_message.tool_calls):
             messages[-1].content = 'Let me do a tool calling.'
 
+        # Stamp the reasoning elapsed time onto the assistant message so it can
+        # be persisted for replay (display only — never re-enters the LLM, see
+        # _msg_to_dict; the attribute is not a dataclass field so to_dict_clean
+        # skips it). Cleared after use so it doesn't leak to the next message.
+        dur = getattr(self, '_last_reasoning_duration', None)
+        if dur is not None and getattr(response_message, 'reasoning_content', ''):
+            response_message._reasoning_duration = dur
+        self._last_reasoning_duration = None
+
     def _append_task_notifications(self,
                                    messages: List[Message]) -> List[Message]:
         """Inject drained TaskManager completion notices as a user message."""
@@ -1580,7 +1597,16 @@ class LLMAgent(Agent):
                                 tc.get('tool_name') or tc.get('name') or ''),
                             arguments=tc.get('arguments')))
             _tool_start = len(messages)
+            _tool_t0 = time.monotonic()
             messages = await self.parallel_tool_call(messages)
+            # Batch wall-clock: exact for the common single-tool round; for
+            # parallel multi-tool rounds it attributes the batch span to each
+            # (they ran concurrently within it). Stamp for persistence/replay
+            # regardless of sink, and report it live via ToolCallCompleted.
+            _tool_ms = int((time.monotonic() - _tool_t0) * 1000)
+            for m in messages[_tool_start:]:
+                if getattr(m, 'role', None) == 'tool':
+                    m._duration_ms = _tool_ms
             if self._event_sink is not None:
                 for m in messages[_tool_start:]:
                     if getattr(m, 'role', None) == 'tool':
@@ -1594,7 +1620,8 @@ class LLMAgent(Agent):
                                 name=str(getattr(m, 'name', '') or ''),
                                 result=_content or '',
                                 error=(_content or 'tool call failed')
-                                if _is_err else None))
+                                if _is_err else None,
+                                duration_s=round(_tool_ms / 1000, 3)))
                         # todo/split_task tool results drive the plan panel.
                         _plan = self._extract_plan_from_tool_result(m)
                         if _plan is not None:
@@ -1815,6 +1842,12 @@ class LLMAgent(Agent):
             # Replay/display only: restore and ContextAssembler rebuild Messages
             # without it, so persisted reasoning never re-enters an LLM call.
             d['reasoning_content'] = msg.reasoning_content
+        # Display-only timings (stamped as plain attributes, not dataclass
+        # fields, so to_dict_clean/asdict never send them to the model).
+        if getattr(msg, '_reasoning_duration', None) is not None:
+            d['reasoning_duration'] = msg._reasoning_duration
+        if getattr(msg, '_duration_ms', None) is not None:
+            d['duration_ms'] = msg._duration_ms
         if getattr(msg, 'is_error', False):
             d['is_error'] = True
         prompt_tokens = int(getattr(msg, 'prompt_tokens', 0) or 0)
