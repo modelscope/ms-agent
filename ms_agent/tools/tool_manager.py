@@ -474,14 +474,17 @@ class ToolManager:
                     from ms_agent.permission.ask_resolver import resolve_ask
                     safety_decision = self._safety_guard.check(tool_name, args_dict)
                     if safety_decision.action == 'deny':
-                        return f'Blocked by safety policy: {safety_decision.reason}'
+                        return {'result': f'Blocked by safety policy: {safety_decision.reason}',
+                                'is_error': True}
                     if safety_decision.action == 'ask':
                         resolved = resolve_ask(safety_decision, self._permission_mode, self._read_policy)
                         if resolved.action == 'deny':
-                            return f'Blocked by safety policy: {resolved.reason}'
+                            return {'result': f'Blocked by safety policy: {resolved.reason}',
+                                    'is_error': True}
                         if resolved.action == 'ask':
                             if self._permission_enforcer is None:
-                                return f'Blocked by safety policy (requires confirmation): {resolved.reason}'
+                                return {'result': f'Blocked by safety policy (requires confirmation): {resolved.reason}',
+                                        'is_error': True}
                             # interactive mode: force the enforcer to confirm with
                             # the user; whitelist/memory must not bypass a safety
                             # ask (REVIEW P1-2).
@@ -519,7 +522,8 @@ class ToolManager:
                 if isinstance(perm_out, str):
                     return perm_out
                 if perm_out.action == 'deny':
-                    return f'Tool call denied: {perm_out.reason}'
+                    return {'result': f'Tool call denied: {perm_out.reason}',
+                            'is_error': True}
                 if perm_out.updated_args is not None:
                     tool_args = perm_out.updated_args
                     tool_info['arguments'] = tool_args

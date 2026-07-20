@@ -1131,6 +1131,17 @@ class LLMAgent(Agent):
             orchestrator.set_llm(self.llm)
             orchestrator.init_update_queue()
 
+        # Tool-less backends (e.g. mem0: ingestion via on_messages, retrieval
+        # via inject) get neither the MemoryTool registration nor the usage
+        # prompt — injecting "use the memory tools" guidance without tools
+        # would mislead the model.
+        try:
+            has_tools = bool(orchestrator.get_tool_schemas())
+        except Exception:
+            has_tools = False
+        if not has_tools:
+            return
+
         # Register memory tool into the agent's tool system
         if self.tool_manager is not None:
             mem_tool = MemoryTool(self.config, orchestrator)
@@ -1800,6 +1811,10 @@ class LLMAgent(Agent):
             d['tool_call_id'] = msg.tool_call_id
         if hasattr(msg, 'name') and msg.name:
             d['name'] = msg.name
+        if getattr(msg, 'reasoning_content', ''):
+            # Replay/display only: restore and ContextAssembler rebuild Messages
+            # without it, so persisted reasoning never re-enters an LLM call.
+            d['reasoning_content'] = msg.reasoning_content
         if getattr(msg, 'is_error', False):
             d['is_error'] = True
         prompt_tokens = int(getattr(msg, 'prompt_tokens', 0) or 0)

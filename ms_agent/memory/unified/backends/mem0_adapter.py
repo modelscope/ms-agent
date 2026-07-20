@@ -19,8 +19,10 @@ Configuration::
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+from functools import partial
 from typing import Any, Dict, List, Optional
 
 from ..config import MemoryConfig
@@ -28,6 +30,28 @@ from ..protocols import BaseMemoryBackend, MemoryEntry
 from ..registry import backend_registry
 
 logger = logging.getLogger(__name__)
+
+
+async def _offload(fn, *args, **kwargs):
+    """Run a blocking mem0 call (LLM extraction / embedding / vector IO) in a
+    worker thread so the agent event loop stays responsive."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, partial(fn, *args, **kwargs))
+
+
+def _result_list(results: Any) -> List[Dict[str, Any]]:
+    """mem0 v1 returns a list; v2 wraps it as {'results': [...]}. Normalize."""
+    if isinstance(results, dict):
+        results = results.get("results", [])
+    return list(results or [])
+
+
+def _mem0_search(m0: Any, query: str, user_id: str) -> Any:
+    """mem0 2.x moved entity params into ``filters=``; 1.x uses kwargs."""
+    try:
+        return m0.search(query, filters={"user_id": user_id})
+    except TypeError:
+        return m0.search(query, user_id=user_id)
 
 
 class Mem0Backend(BaseMemoryBackend):
@@ -75,7 +99,8 @@ class Mem0Backend(BaseMemoryBackend):
             return messages
 
         try:
-            results = self._mem0.search(query, user_id=self._user_id)
+            results = _result_list(await _offload(
+                _mem0_search, self._mem0, query, self._user_id))
             if not results:
                 return messages
         except Exception as e:
@@ -103,7 +128,16 @@ class Mem0Backend(BaseMemoryBackend):
         if not self._mem0:
             return
         try:
-            self._mem0.add(messages, user_id=self._user_id)
+            # mem0 rejects non-chat fields and roles like `tool`; feed it the
+            # user/assistant text turns only.
+            convo = [
+                {"role": m["role"], "content": m["content"]}
+                for m in messages
+                if m.get("role") in ("user", "assistant") and m.get("content")
+            ]
+            if not convo:
+                return
+            await _offload(self._mem0.add, convo, user_id=self._user_id)
         except Exception as e:
             logger.warning(f"[mem0_backend] add failed: {e}")
 
@@ -115,15 +149,16 @@ class Mem0Backend(BaseMemoryBackend):
         if not self._mem0:
             return []
         try:
-            results = self._mem0.search(query, user_id=self._user_id)
+            results = _result_list(await _offload(
+                _mem0_search, self._mem0, query, self._user_id))
             return [
                 MemoryEntry(
                     id=r.get("id", ""),
                     content=r.get("memory", r.get("text", "")),
                     source="mem0",
-                    metadata=r.get("metadata", {}),
+                    metadata=r.get("metadata", {}) or {},
                 )
-                for r in (results or [])[:limit]
+                for r in results[:limit]
             ]
         except Exception:
             return []
@@ -146,10 +181,8 @@ class Mem0Backend(BaseMemoryBackend):
 
     @staticmethod
     def _format_results(results: Any) -> str:
-        if not results:
-            return ""
         lines = []
-        for r in results[:10]:
+        for r in _result_list(results)[:10]:
             text = r.get("memory", r.get("text", ""))
             if text:
                 lines.append(f"- {text}")
