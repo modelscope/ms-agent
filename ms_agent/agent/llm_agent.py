@@ -1513,39 +1513,54 @@ class LLMAgent(Agent):
                     except StopIteration:
                         return _NO_MORE
 
-                while True:
-                    _chunk = await _loop.run_in_executor(None, _next_chunk)
-                    if _chunk is _NO_MORE:
-                        break
-                    _response_message = _chunk
-                    if is_first:
-                        messages.append(_response_message)
-                        is_first = False
+                try:
+                    while True:
+                        _chunk = await _loop.run_in_executor(None, _next_chunk)
+                        if _chunk is _NO_MORE:
+                            break
+                        _response_message = _chunk
+                        if is_first:
+                            messages.append(_response_message)
+                            is_first = False
 
-                    if self.stream_output and self.show_reasoning:
-                        reasoning_text = (
-                            getattr(_response_message, 'reasoning_content', '')
-                            or '')
-                        # Some providers may reset / shorten content across chunks.
-                        if len(reasoning_text) < len(_reasoning):
-                            _reasoning = ''
-                        new_reasoning = reasoning_text[len(_reasoning):]
-                        if new_reasoning:
-                            if not _printed_reasoning_header:
-                                self._emit_reasoning_start()
-                                _printed_reasoning_header = True
-                            self._emit_reasoning_delta(new_reasoning)
-                            _reasoning = reasoning_text
+                        if self.stream_output and self.show_reasoning:
+                            reasoning_text = (
+                                getattr(_response_message, 'reasoning_content', '')
+                                or '')
+                            # Some providers may reset / shorten content across chunks.
+                            if len(reasoning_text) < len(_reasoning):
+                                _reasoning = ''
+                            new_reasoning = reasoning_text[len(_reasoning):]
+                            if new_reasoning:
+                                if not _printed_reasoning_header:
+                                    self._emit_reasoning_start()
+                                    _printed_reasoning_header = True
+                                self._emit_reasoning_delta(new_reasoning)
+                                _reasoning = reasoning_text
 
-                    new_content = _response_message.content[len(_content):]
-                    if self.stream_output and new_content:
-                        if _printed_reasoning_header and not _printed_reasoning_footer:
-                            self._emit_reasoning_end()
-                            _printed_reasoning_footer = True
-                        self._emit_content(new_content)
-                    _content = _response_message.content
-                    messages[-1] = _response_message
-                    yield messages
+                        new_content = _response_message.content[len(_content):]
+                        if self.stream_output and new_content:
+                            if _printed_reasoning_header and not _printed_reasoning_footer:
+                                self._emit_reasoning_end()
+                                _printed_reasoning_footer = True
+                            self._emit_content(new_content)
+                        _content = _response_message.content
+                        messages[-1] = _response_message
+                        yield messages
+                finally:
+                    # Turn abandoned mid-stream (client disconnect / stop): ask
+                    # the provider to close the live upstream response so the
+                    # server stops generating, instead of leaving it to run to
+                    # completion into a dropped connection. Only the data-driven
+                    # provider layer implements interrupt(); the legacy LLM does
+                    # not, so this is a no-op there (unchanged). Harmless on a
+                    # normal finish (the stream is already exhausted).
+                    _interrupt = getattr(self.llm, 'interrupt', None)
+                    if callable(_interrupt):
+                        try:
+                            _interrupt()
+                        except Exception:  # noqa: BLE001 - teardown never raises
+                            pass
                 if self.stream_output:
                     if _printed_reasoning_header and not _printed_reasoning_footer:
                         self._emit_reasoning_end()
@@ -1839,9 +1854,13 @@ class LLMAgent(Agent):
         if hasattr(msg, 'name') and msg.name:
             d['name'] = msg.name
         if getattr(msg, 'reasoning_content', ''):
-            # Replay/display only: restore and ContextAssembler rebuild Messages
-            # without it, so persisted reasoning never re-enters an LLM call.
             d['reasoning_content'] = msg.reasoning_content
+            # Anthropic thinking blocks must be replayed verbatim (with their
+            # signature) in a tool follow-up, so both round-trip. OpenAI-compat
+            # transports drop reasoning via their input_msg allowlist, so this
+            # never re-enters an OpenAI-style call.
+            if getattr(msg, 'reasoning_signature', ''):
+                d['reasoning_signature'] = msg.reasoning_signature
         # Display-only timings (stamped as plain attributes, not dataclass
         # fields, so to_dict_clean/asdict never send them to the model).
         if getattr(msg, '_reasoning_duration', None) is not None:

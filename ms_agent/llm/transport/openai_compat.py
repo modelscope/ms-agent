@@ -59,6 +59,9 @@ class OpenAICompatTransport(Transport):
         self.args: Dict = dict(generation_config or {})
         self.max_continue_runs = max_continue_runs or MAX_CONTINUE_RUNS
         self._strip_reasoning_tags = strip_reasoning_tags
+        # The streaming response currently being iterated, exposed so interrupt()
+        # can close it from another thread when the consumer abandons the stream.
+        self._active_stream: Any = None
 
         # Continue-generation: 'prefix' uses DeepSeek chat-prefix completion,
         # everything else (incl. DashScope) uses the 'partial' flag.
@@ -231,6 +234,29 @@ class OpenAICompatTransport(Transport):
         return self._postprocess(result) if self._strip_reasoning_tags \
             else result
 
+    @staticmethod
+    def _close_stream(stream: Any) -> None:
+        """Close a streaming response, swallowing any teardown error (the stream
+        may already be closed/exhausted, or closed concurrently by interrupt)."""
+        if stream is None:
+            return
+        try:
+            close = getattr(stream, 'close', None)
+            if callable(close):
+                close()
+        except Exception:  # noqa: BLE001 - teardown must never raise
+            pass
+
+    def interrupt(self) -> None:
+        """Close the in-flight streaming response so the server stops generating.
+
+        Called when the consumer abandons the stream mid-generation. Safe to call
+        from a different thread than the one iterating the stream: closing the
+        underlying HTTP response unblocks that read (it raises inside ``next()``,
+        which the caller discards). A no-op when nothing is streaming.
+        """
+        self._close_stream(self._active_stream)
+
     # ------------------------------------------------------------------ #
     # inline <think> handling (e.g. MiniMax M-series)
     # ------------------------------------------------------------------ #
@@ -380,56 +406,66 @@ class OpenAICompatTransport(Transport):
             **kwargs) -> Generator[Message, None, None]:
         flag = self._continue_flag
         message = None
-        for chunk in completion:
-            message_chunk = self._stream_format_output_message(chunk)
-            message = self._merge_stream_message(message, message_chunk)
-            if chunk.choices and chunk.choices[0].finish_reason:
-                # Usage may arrive in this finish chunk (e.g. DeepSeek) or in a
-                # separate trailing usage-only chunk (OpenAI/DashScope/
-                # ModelScope, whose finish chunk may carry a zeroed usage).
-                # Consider both and take the one with real token counts.
-                usage = getattr(chunk, 'usage', None)
-                try:
-                    next_chunk = next(completion)
-                    trailing = getattr(next_chunk, 'usage', None)
-                except (StopIteration, AttributeError):
-                    trailing = None
-                if self._usage_total(trailing) > self._usage_total(usage):
-                    usage = trailing
-                if usage is not None:
-                    message.prompt_tokens += getattr(usage, 'prompt_tokens',
-                                                     0) or 0
-                    message.completion_tokens += getattr(
-                        usage, 'completion_tokens', 0) or 0
-                    cached, created = self._extract_cache_info(usage)
-                    message.cached_tokens += cached
-                    message.cache_creation_input_tokens += created
-                    message.reasoning_tokens += self._extract_reasoning_tokens(
-                        usage)
-                first_run = not messages[-1].to_dict().get(flag, False)
-                if self.continue_gen_mode and chunk.choices[
-                        0].finish_reason in [
-                        'length', 'null'
-                ] and (max_runs is None or max_runs != 0):
-                    logger.info(
-                        f'finish_reason: {chunk.choices[0].finish_reason}, '
-                        f'continue generate.')
-                    completion = self._call_llm_for_continue_gen(
-                        messages, message, tools, **kwargs)
-                    for chunk in self._stream_continue_generate(
-                            messages, completion, tools,
-                            max_runs - 1 if max_runs is not None else None,
-                            **kwargs):
-                        if first_run:
-                            yield self._merge_stream_message(
-                                messages[-1], chunk)
-                        else:
-                            yield chunk
-                elif not first_run:
-                    self._merge_partial_message(messages, message)
-                    setattr(messages[-1], flag, False)
-                    message = messages[-1]
-            yield message
+        # Track the stream so interrupt() can close it from another thread; a
+        # continuation rebinds it below. The finally releases it on every exit
+        # path (normal end, error, or GeneratorExit when the consumer stops).
+        self._active_stream = completion
+        try:
+            for chunk in completion:
+                message_chunk = self._stream_format_output_message(chunk)
+                message = self._merge_stream_message(message, message_chunk)
+                if chunk.choices and chunk.choices[0].finish_reason:
+                    # Usage may arrive in this finish chunk (e.g. DeepSeek) or in
+                    # a separate trailing usage-only chunk (OpenAI/DashScope/
+                    # ModelScope, whose finish chunk may carry a zeroed usage).
+                    # Consider both and take the one with real token counts.
+                    usage = getattr(chunk, 'usage', None)
+                    try:
+                        next_chunk = next(completion)
+                        trailing = getattr(next_chunk, 'usage', None)
+                    except (StopIteration, AttributeError):
+                        trailing = None
+                    if self._usage_total(trailing) > self._usage_total(usage):
+                        usage = trailing
+                    if usage is not None:
+                        message.prompt_tokens += getattr(
+                            usage, 'prompt_tokens', 0) or 0
+                        message.completion_tokens += getattr(
+                            usage, 'completion_tokens', 0) or 0
+                        cached, created = self._extract_cache_info(usage)
+                        message.cached_tokens += cached
+                        message.cache_creation_input_tokens += created
+                        message.reasoning_tokens += \
+                            self._extract_reasoning_tokens(usage)
+                    first_run = not messages[-1].to_dict().get(flag, False)
+                    if self.continue_gen_mode and chunk.choices[
+                            0].finish_reason in [
+                            'length', 'null'
+                    ] and (max_runs is None or max_runs != 0):
+                        logger.info(
+                            f'finish_reason: {chunk.choices[0].finish_reason}, '
+                            f'continue generate.')
+                        completion = self._call_llm_for_continue_gen(
+                            messages, message, tools, **kwargs)
+                        self._active_stream = completion
+                        for chunk in self._stream_continue_generate(
+                                messages, completion, tools,
+                                max_runs - 1 if max_runs is not None else None,
+                                **kwargs):
+                            if first_run:
+                                yield self._merge_stream_message(
+                                    messages[-1], chunk)
+                            else:
+                                yield chunk
+                    elif not first_run:
+                        self._merge_partial_message(messages, message)
+                        setattr(messages[-1], flag, False)
+                        message = messages[-1]
+                yield message
+        finally:
+            self._close_stream(completion)
+            if self._active_stream is completion:
+                self._active_stream = None
 
     @staticmethod
     def _stream_format_output_message(completion_chunk) -> Message:

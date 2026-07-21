@@ -63,6 +63,12 @@ class Message:
     # needed for output
     reasoning_content: str = ''
 
+    # Anthropic extended-thinking blocks carry an opaque signature that must be
+    # sent back verbatim in a multi-turn tool conversation (the provider rejects
+    # a thinking block whose signature is missing/altered). Captured from the
+    # streaming response and replayed by AnthropicMessagesTransport.
+    reasoning_signature: str = ''
+
     # Opaque output items from the Responses API that must be passed back
     # in multi-turn tool-calling conversations (e.g. reasoning items).
     _responses_output_items: List[Dict[str, Any]] = field(default_factory=list)

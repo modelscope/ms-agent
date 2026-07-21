@@ -14,6 +14,7 @@ available via ``generate_response`` for new consumers.
 """
 from __future__ import annotations
 
+import dataclasses
 from typing import Generator, List, Optional, Union
 
 from omegaconf import DictConfig, OmegaConf
@@ -90,6 +91,12 @@ class LLMProvider:
         message = self.transport.generate(messages, tools, **kwargs)
         return ResponseAdapter.to_response(message)
 
+    def interrupt(self) -> None:
+        """Abort an in-flight streaming generation so the server stops producing
+        tokens (see ``Transport.interrupt``). Called by the agent loop when a
+        turn is abandoned mid-stream."""
+        self.transport.interrupt()
+
 
 class ProviderRouter:
 
@@ -117,6 +124,20 @@ class ProviderRouter:
                 api_key_env=['OPENAI_API_KEY'],
                 base_url_env=['OPENAI_BASE_URL'],
             )
+
+        # A provider may target another vendor's OpenAI- or Anthropic-compatible
+        # endpoint (e.g. DeepSeek's /anthropic gateway). An explicit
+        # ``config.llm.protocol`` overrides the spec's default transport so the
+        # wire format matches the endpoint the user pointed at.
+        protocol = config.llm.get('protocol') if hasattr(
+            config.llm, 'get') else getattr(config.llm, 'protocol', None)
+        if protocol:
+            forced = {
+                'anthropic': TRANSPORT_ANTHROPIC_MESSAGES,
+                'openai': TRANSPORT_OPENAI_COMPAT,
+            }.get(str(protocol).lower())
+            if forced and forced != spec.transport:
+                spec = dataclasses.replace(spec, transport=forced)
 
         api_key = CredentialResolver.resolve_api_key(spec, config)
         base_url = CredentialResolver.resolve_base_url(spec, config)

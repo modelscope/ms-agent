@@ -34,3 +34,15 @@ class Transport(ABC):
         cumulative ``Message`` chunks when ``stream=True``.
         """
         ...
+
+    def interrupt(self) -> None:
+        """Best-effort abort of an in-flight streaming response.
+
+        Called when the consumer abandons a stream mid-generation (e.g. the user
+        hit stop) so the transport can close the underlying connection and the
+        server stops producing tokens instead of running to completion into a
+        dropped socket. The default is a no-op; streaming transports override
+        it. Must be safe to call from a different thread than the one iterating
+        the stream, and safe when nothing is in flight.
+        """
+        return None

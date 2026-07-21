@@ -189,6 +189,12 @@ def _dicts_to_messages(dicts: List[Dict[str, Any]]) -> List[Message]:
                 tool_calls=d.get("tool_calls"),
                 tool_call_id=d.get("tool_call_id"),
                 name=d.get("name"),
+                # Carry reasoning + its signature back into the assembled
+                # context. OpenAI-compat transports filter these out (not in
+                # their input_msg allowlist), so only the Anthropic transport
+                # replays them — required for its thinking-mode tool follow-ups.
+                reasoning_content=d.get("reasoning_content", "") or "",
+                reasoning_signature=d.get("reasoning_signature", "") or "",
             ))
         else:
             result.append(Message(role="user", content=str(d)))

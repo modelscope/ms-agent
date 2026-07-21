@@ -12,6 +12,7 @@ to an empty string).
 from __future__ import annotations
 
 import inspect
+import json
 from typing import (Any, Dict, Generator, Iterator, List, Optional, Union)
 
 from ms_agent.llm.transport.base import Transport
@@ -37,6 +38,9 @@ class AnthropicMessagesTransport(Transport):
         self.model = model
         self.client = anthropic.Anthropic(api_key=api_key, base_url=base_url)
         self.args: Dict = dict(generation_config or {})
+        # The streaming response currently being iterated, exposed so interrupt()
+        # can close it from another thread when the consumer abandons the stream.
+        self._active_stream: Any = None
 
     def format_tools(self,
                      tools: Optional[List[Tool]]) -> Optional[List[Dict]]:
@@ -52,31 +56,96 @@ class AnthropicMessagesTransport(Transport):
             }
         } for tool in tools]
 
+    @staticmethod
+    def _as_text(value: Any) -> str:
+        """Anthropic text / tool_result content must be a string. A tool result
+        (or, defensively, message content) can arrive mid-turn as a dict/list
+        before it is stringified for the SessionLog; passing that through yields
+        a `content: null` the Messages API rejects. Coerce: str as-is, None -> '',
+        anything else -> compact JSON."""
+        if isinstance(value, str):
+            return value
+        if value is None:
+            return ''
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except (TypeError, ValueError):
+            return str(value)
+
+    @staticmethod
+    def _as_tool_input(value: Any) -> Any:
+        """Anthropic tool_use.input must be an object. Parse a JSON-string
+        argument (OpenAI-style) back to a dict; leave dicts as-is."""
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except (ValueError, TypeError):
+                return {}
+        return value if value is not None else {}
+
     def _format_input_message(
             self, messages: List[Message]) -> List[Dict[str, Any]]:
         formatted_messages = []
+        # tool_use ids from the most recent assistant turn, awaiting their
+        # results. Anthropic requires every tool_result to carry the matching
+        # tool_use_id; mid-turn the tool Message can reach us before its id is
+        # backfilled (it is present once persisted), so fall back to matching by
+        # order — a null tool_use_id is rejected by the Messages API.
+        pending_tool_ids: List[str] = []
         for msg in messages:
             content = []
+            # Replay the assistant's thinking block (first, before text/tool_use)
+            # with its signature. In thinking mode the provider rejects a tool
+            # follow-up whose preceding assistant turn dropped its thinking block.
+            if msg.role == 'assistant' and msg.reasoning_content:
+                thinking_block: Dict[str, Any] = {
+                    'type': 'thinking',
+                    'thinking': msg.reasoning_content,
+                }
+                signature = getattr(msg, 'reasoning_signature', '') or ''
+                if signature:
+                    thinking_block['signature'] = signature
+                content.append(thinking_block)
             if msg.content:
-                content.append({'type': 'text', 'text': msg.content})
+                content.append(
+                    {'type': 'text', 'text': self._as_text(msg.content)})
             if msg.tool_calls:
+                pending_tool_ids = []
                 for tool_call in msg.tool_calls:
+                    tid = tool_call['id']
+                    pending_tool_ids.append(tid)
                     content.append({
                         'type': 'tool_use',
-                        'id': tool_call['id'],
+                        'id': tid,
                         'name': tool_call['tool_name'],
-                        'input': tool_call.get('arguments', {})
+                        'input': self._as_tool_input(tool_call.get('arguments'))
                     })
             if msg.role == 'tool':
-                formatted_messages.append({
-                    'role':
-                    'user',
-                    'content': [{
-                        'type': 'tool_result',
-                        'tool_use_id': msg.tool_call_id,
-                        'content': msg.content
-                    }]
-                })
+                tool_use_id = msg.tool_call_id or (
+                    pending_tool_ids.pop(0) if pending_tool_ids else '')
+                result_block = {
+                    'type': 'tool_result',
+                    'tool_use_id': tool_use_id,
+                    'content': self._as_text(msg.content),
+                }
+                # Anthropic requires ALL tool_results for one assistant turn's
+                # tool_use blocks in the SINGLE user message immediately after it.
+                # Parallel tool calls arrive as consecutive tool Messages, so
+                # merge them into that message rather than emitting one each
+                # (which the API rejects: "tool_use ... without tool_result
+                # immediately after").
+                prev = formatted_messages[-1] if formatted_messages else None
+                if (isinstance(prev, dict) and prev.get('role') == 'user'
+                        and isinstance(prev.get('content'), list)
+                        and prev['content']
+                        and isinstance(prev['content'][0], dict)
+                        and prev['content'][0].get('type') == 'tool_result'):
+                    prev['content'].append(result_block)
+                else:
+                    formatted_messages.append({
+                        'role': 'user',
+                        'content': [result_block],
+                    })
                 continue
             formatted_messages.append({'role': msg.role, 'content': content})
         return formatted_messages
@@ -153,50 +222,90 @@ class AnthropicMessagesTransport(Transport):
         )
         tool_call_id_map = {}
         with stream_manager as stream:
-            full_content = ''
-            full_thinking = ''
-            for event in stream:
-                event_type = getattr(event, 'type')
-                if event_type == 'message_start':
-                    msg = event.message
-                    current_message.id = msg.id
-                    tool_call_id_map = {}
-                    yield current_message
-                elif event_type == 'content_block_delta':
-                    if event.delta.type == 'thinking_delta':
-                        full_thinking += event.delta.thinking
-                        current_message.reasoning_content = full_thinking
-                    elif event.delta.type == 'text_delta':
-                        full_content += event.delta.text
+            # Expose the live stream so interrupt() can close it from another
+            # thread; the `with` still closes it on every normal/exception exit.
+            self._active_stream = stream
+            try:
+                full_content = ''
+                full_thinking = ''
+                for event in stream:
+                    event_type = getattr(event, 'type')
+                    if event_type == 'message_start':
+                        msg = event.message
+                        current_message.id = msg.id
+                        tool_call_id_map = {}
+                        yield current_message
+                    elif event_type == 'content_block_delta':
+                        if event.delta.type == 'thinking_delta':
+                            full_thinking += event.delta.thinking
+                            current_message.reasoning_content = full_thinking
+                        elif event.delta.type == 'text_delta':
+                            full_content += event.delta.text
+                            current_message.content = full_content
+                        yield current_message
+                    elif event_type == 'message_stop':
+                        final_msg = getattr(event, 'message')
+                        full_content = ''
+                        for idx, block in enumerate(event.message.content):
+                            if block is None:
+                                continue
+                            if block.type == 'text':
+                                full_content += block.text
+                            elif block.type == 'thinking':
+                                # Capture the final thinking text + its opaque
+                                # signature so a multi-turn tool conversation can
+                                # replay the block verbatim (the provider rejects
+                                # a thinking turn that isn't passed back).
+                                current_message.reasoning_content = getattr(
+                                    block, 'thinking',
+                                    '') or current_message.reasoning_content
+                                current_message.reasoning_signature = getattr(
+                                    block, 'signature', '') or ''
+                            elif block.type == 'tool_use':
+                                tool_call_id = tool_call_id_map.get(
+                                    idx, block.id)
+                                current_message.tool_calls.append(
+                                    ToolCall(
+                                        id=tool_call_id,
+                                        index=len(current_message.tool_calls),
+                                        type='function',
+                                        tool_name=block.name,
+                                        arguments=block.input,
+                                    ))
                         current_message.content = full_content
-                    yield current_message
-                elif event_type == 'message_stop':
-                    final_msg = getattr(event, 'message')
-                    full_content = ''
-                    for idx, block in enumerate(event.message.content):
-                        if block is None:
-                            continue
-                        if block.type == 'text':
-                            full_content += block.text
-                        elif block.type == 'tool_use':
-                            tool_call_id = tool_call_id_map.get(idx, block.id)
-                            current_message.tool_calls.append(
-                                ToolCall(
-                                    id=tool_call_id,
-                                    index=len(current_message.tool_calls),
-                                    type='function',
-                                    tool_name=block.name,
-                                    arguments=block.input,
-                                ))
-                    current_message.content = full_content
-                    current_message.partial = False
-                    current_message.completion_tokens = getattr(
-                        final_msg.usage, 'output_tokens',
-                        current_message.completion_tokens)
-                    current_message.prompt_tokens = getattr(
-                        final_msg.usage, 'input_tokens',
-                        current_message.prompt_tokens)
-                    yield current_message
+                        current_message.partial = False
+                        current_message.completion_tokens = getattr(
+                            final_msg.usage, 'output_tokens',
+                            current_message.completion_tokens)
+                        current_message.prompt_tokens = getattr(
+                            final_msg.usage, 'input_tokens',
+                            current_message.prompt_tokens)
+                        yield current_message
+            finally:
+                if self._active_stream is stream:
+                    self._active_stream = None
+
+    @staticmethod
+    def _close_stream(stream: Any) -> None:
+        """Close a streaming response, swallowing any teardown error (it may be
+        already closed/exhausted, or closed concurrently by interrupt)."""
+        if stream is None:
+            return
+        try:
+            close = getattr(stream, 'close', None)
+            if callable(close):
+                close()
+        except Exception:  # noqa: BLE001 - teardown must never raise
+            pass
+
+    def interrupt(self) -> None:
+        """Close the in-flight streaming response so the server stops generating.
+
+        Called when the consumer abandons the stream mid-generation. Safe to call
+        from a different thread than the one iterating the stream: closing the
+        underlying HTTP response unblocks that read. A no-op when nothing streams.
+        """
+        self._close_stream(self._active_stream)
 
     @staticmethod
     def _format_output_message(completion) -> Message:
