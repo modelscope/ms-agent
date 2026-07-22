@@ -347,8 +347,13 @@ class ToolManager:
                     f"{self.TOOL_SPLITER}{tool['tool_name']}")
             else:
                 key = f"{server_name}{self.TOOL_SPLITER}{tool['tool_name']}"
-            assert key not in self._tool_index, (
-                f'Tool name duplicated {tool["tool_name"]}')
+            # Idempotent: reindex_tool() re-runs this for every server (e.g.
+            # after the unified-memory tool is registered in load_memory), so an
+            # MCP tool already indexed during prepare_tools must be skipped, not
+            # asserted on — otherwise any agent with both MCP servers and memory
+            # enabled crashes the turn with "Tool name duplicated".
+            if key in self._tool_index:
+                continue
             indexed = copy(tool)
             indexed['tool_name'] = key
             self._tool_index[key] = (tool_ins, server_name, indexed)
