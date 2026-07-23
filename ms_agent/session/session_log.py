@@ -131,6 +131,24 @@ class SessionLog:
         }
         self._append_line(record)
 
+    def record_skill_invocation(self, event: Dict[str, Any]) -> None:
+        """Record a slash-skill invocation — a display-only marker.
+
+        A consumer that expands ``/skill`` into the full skill prompt persists
+        the ENRICHED text as the user row (that is what the model must see on
+        resume). This marker preserves what the user actually typed so history
+        replay can show the original message instead of the expanded wrapper.
+        ``event`` typically carries ``original_text`` and ``skill_ids``.
+        """
+        seq = self._next_seq()
+        record = {
+            "_type": "skill_invocation",
+            "seq": seq,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            **event,
+        }
+        self._append_line(record)
+
     # ------------------------------------------------------------------
     # Read path
     # ------------------------------------------------------------------
@@ -169,7 +187,8 @@ class SessionLog:
             except json.JSONDecodeError:
                 continue
             if record.get("_type") in (
-                    "metadata", "compaction_event", "error", "permission"):
+                    "metadata", "compaction_event", "error", "permission",
+                    "skill_invocation"):
                 continue
             msgs.append(record)
         self._messages = msgs
@@ -250,6 +269,27 @@ class SessionLog:
             if record.get("_type") == "permission":
                 perms.append(record)
         return perms
+
+    def get_skill_invocations(self) -> List[Dict[str, Any]]:
+        """All slash-skill invocation markers in chronological order (each
+        keeps its ``seq``).  Excluded from ``get_all_messages`` (and the LLM
+        context); a UI matches each to the user row that follows it by ``seq``
+        to display the original typed text instead of the expanded prompt.
+        """
+        out: List[Dict[str, Any]] = []
+        if not self._path.exists():
+            return out
+        for line in self._path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if record.get("_type") == "skill_invocation":
+                out.append(record)
+        return out
 
     def get_metadata(self) -> Dict[str, Any]:
         """Session metadata (title, created_at, status, counts, etc.)."""

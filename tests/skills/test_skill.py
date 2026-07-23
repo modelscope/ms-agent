@@ -20,7 +20,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from omegaconf import DictConfig, OmegaConf
 
@@ -847,6 +847,7 @@ class TestLLMAgentSkillIntegration(unittest.TestCase):
     def test_prepare_skills_loads_catalog(self):
         agent = self._make_agent(CLAUDE_SKILLS_DIR)
         agent.tool_manager = MagicMock()
+        agent.tool_manager.index_extra_tool = AsyncMock()
         asyncio.get_event_loop().run_until_complete(
             agent.prepare_skills())
         self.assertIsNotNone(agent._skill_catalog)
@@ -871,6 +872,7 @@ class TestLLMAgentSkillIntegration(unittest.TestCase):
     def test_create_messages_injects_skill_section(self):
         agent = self._make_agent(CLAUDE_SKILLS_DIR)
         agent.tool_manager = MagicMock()
+        agent.tool_manager.index_extra_tool = AsyncMock()
         asyncio.get_event_loop().run_until_complete(
             agent.prepare_skills())
 
@@ -912,6 +914,7 @@ class TestLLMAgentSkillIntegration(unittest.TestCase):
             })
             agent = LLMAgent(config=config, tag="always-test")
             agent.tool_manager = MagicMock()
+            agent.tool_manager.index_extra_tool = AsyncMock()
             asyncio.get_event_loop().run_until_complete(
                 agent.prepare_skills())
             msgs = asyncio.get_event_loop().run_until_complete(

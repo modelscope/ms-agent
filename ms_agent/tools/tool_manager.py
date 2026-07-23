@@ -282,8 +282,10 @@ class ToolManager:
         for tool in self.extra_tools:
             await tool.connect()
 
-        if not self._skip_mcp_reindex:
-            await self.reindex_tool()
+        # reindex_tool() self-gates its MCP portion on _skip_mcp_reindex, so it
+        # is always safe to call here: extra tools get indexed in every path,
+        # while MCP indexing is left to the runtime when it owns it.
+        await self.reindex_tool()
 
         # Initialize concurrency limiter
         self._concurrent_limiter = asyncio.Semaphore(MAX_CONCURRENT_TOOLS)
@@ -332,6 +334,18 @@ class ToolManager:
             exc=exc,
         )
 
+    def _build_index_key(self, server_name: str, tool_name: str) -> str:
+        """Compose the registry key ``<server>---<tool>``.
+
+        The *server* segment is truncated (the tool segment is preserved) so the
+        whole key fits within ``MAX_TOOL_NAME_LEN``.
+        """
+        max_server_len = MAX_TOOL_NAME_LEN - len(tool_name) - len(
+            self.TOOL_SPLITER)
+        if len(server_name) > max_server_len:
+            server_name = server_name[:max(0, max_server_len)]
+        return f'{server_name}{self.TOOL_SPLITER}{tool_name}'
+
     def _extend_mcp_tool_index(
         self,
         tool_ins: ToolBase,
@@ -339,20 +353,20 @@ class ToolManager:
         tool_list: List[Tool],
     ) -> None:
         for tool in tool_list:
-            max_server_len = MAX_TOOL_NAME_LEN - len(
-                tool['tool_name']) - len(self.TOOL_SPLITER)
-            if len(server_name) > max_server_len:
-                key = (
-                    f"{server_name[:max(0, max_server_len)]}"
-                    f"{self.TOOL_SPLITER}{tool['tool_name']}")
-            else:
-                key = f"{server_name}{self.TOOL_SPLITER}{tool['tool_name']}"
-            # Idempotent: reindex_tool() re-runs this for every server (e.g.
-            # after the unified-memory tool is registered in load_memory), so an
-            # MCP tool already indexed during prepare_tools must be skipped, not
-            # asserted on — otherwise any agent with both MCP servers and memory
-            # enabled crashes the turn with "Tool name duplicated".
-            if key in self._tool_index:
+            key = self._build_index_key(server_name, tool['tool_name'])
+            existing = self._tool_index.get(key)
+            if existing is not None:
+                # Re-adding the *same* server is expected and idempotent (both
+                # sync_mcp_tools and reindex_tool feed this method). A genuine
+                # collision — a *different* server truncated to the same key —
+                # is the real problem the old assert used to surface, so keep it
+                # visible with a warning rather than silently dropping a tool.
+                if existing[1] != server_name:
+                    logger.warning(
+                        'MCP tool key collision on %r: keeping server %r, '
+                        'ignoring %r (server names truncated to fit '
+                        'MAX_TOOL_NAME_LEN=%d)', key, existing[1], server_name,
+                        MAX_TOOL_NAME_LEN)
                 continue
             indexed = copy(tool)
             indexed['tool_name'] = key
@@ -398,32 +412,42 @@ class ToolManager:
                         self.servers, server_name, tool_list)
         return failures
 
-    async def reindex_tool(self):
+    async def index_extra_tool(self, tool_ins: ToolBase) -> None:
+        """Index a single already-registered extra tool into the live registry.
 
-        def extend_tool(tool_ins: ToolBase, server_name: str,
-                        tool_list: List[Tool]):
+        Unlike :meth:`reindex_tool` this never re-lists MCP servers, so it is
+        safe to call after startup — e.g. when ``load_memory`` registers the
+        unified-memory tool or ``prepare_skills`` registers the skill toolset —
+        without duplicating or resurfacing MCP entries owned by the runtime.
+        """
+        tools = await tool_ins.get_tools()
+        for server_name, tool_list in tools.items():
             for tool in tool_list:
-                # Subtract the length of the tool name splitter
-                max_server_len = MAX_TOOL_NAME_LEN - len(
-                    tool['tool_name']) - len(self.TOOL_SPLITER)
-                if len(server_name) > max_server_len:
-                    key = f"{server_name[:max(0, max_server_len)]}{self.TOOL_SPLITER}{tool['tool_name']}"
-                else:
-                    key = f"{server_name}{self.TOOL_SPLITER}{tool['tool_name']}"
-                if key in self._tool_index:
+                key = self._build_index_key(server_name, tool['tool_name'])
+                existing = self._tool_index.get(key)
+                if existing is not None:
+                    if existing[0] is not tool_ins or existing[1] != server_name:
+                        logger.warning(
+                            'Tool name collision on %r: keeping owner from %r, '
+                            'ignoring new from %r', key, existing[1],
+                            server_name)
                     continue
-                tool = copy(tool)
-                tool['tool_name'] = key
-                self._tool_index[key] = (tool_ins, server_name, tool)
+                indexed = copy(tool)
+                indexed['tool_name'] = key
+                self._tool_index[key] = (tool_ins, server_name, indexed)
 
-        if self.servers is not None:
+    async def reindex_tool(self):
+        # MCP indexing is owned by the MCP runtime (via sync_mcp_tools) whenever
+        # _skip_mcp_reindex is set; re-listing servers here would duplicate that
+        # work and could resurface tools for servers the runtime deliberately
+        # excluded (disabled/degraded). Extra tools are always (re)indexed.
+        if self.servers is not None and not self._skip_mcp_reindex:
             mcps = await self.servers.get_tools()
             for server_name, tool_list in mcps.items():
-                self._extend_mcp_tool_index(self.servers, server_name, tool_list)
+                self._extend_mcp_tool_index(self.servers, server_name,
+                                            tool_list)
         for extra_tool in self.extra_tools:
-            tools = await extra_tool.get_tools()
-            for server_name, tool_list in tools.items():
-                extend_tool(extra_tool, server_name, tool_list)
+            await self.index_extra_tool(extra_tool)
 
     async def get_tools(self):
         # Return tools in deterministic order to improve prompt/prefix cache hit rate

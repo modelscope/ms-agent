@@ -10,7 +10,7 @@ import threading
 import time
 import uuid
 from contextlib import contextmanager
-from copy import deepcopy, copy
+from copy import deepcopy
 from omegaconf import DictConfig, OmegaConf
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
 
@@ -50,6 +50,88 @@ from .base import Agent
 logger = get_logger()
 
 _MISSING_ENABLE_SNAPSHOTS = object()
+
+# Neutral, model-facing placeholder for an interrupted round that produced no
+# visible content. UIs should render rows flagged ``interrupted`` from their
+# metadata (not this literal), so the placeholder never needs localization.
+INTERRUPTED_PLACEHOLDER = '[interrupted]'
+_INTERRUPTED_TOOL_RESULT = '[Interrupted: tool execution was cancelled]'
+
+
+def build_partial_round_records(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Turn an interrupted round's in-memory rows into protocol-valid log records.
+
+    ``rows`` are the ``_msg_to_dict`` serializations of ``messages[pre_step_len:]``
+    at cancellation time. Rules (each keeps replay valid on BOTH transports):
+
+    - assistant ``tool_calls`` are kept only when their ``arguments`` parse as
+      JSON (an interrupted openai-compat stream can leave truncated argument
+      deltas) and they carry an id; every kept call that has no real result row
+      in the segment gets a synthesized ``role:"tool"`` error result — Anthropic
+      rejects a replayed ``tool_use`` without a ``tool_result`` in the next user
+      message, and OpenAI equally requires a tool row per call id.
+    - partial ``reasoning_content`` without a ``reasoning_signature`` moves to
+      ``interrupted_reasoning`` (display-only): Anthropic thinking replay
+      rejects a thinking block whose signature is missing, and the signature is
+      only assigned at message_stop — which an interrupt never reached.
+    - an empty segment (cancelled before the first chunk) or an assistant row
+      with no content and no kept calls gets the neutral placeholder content so
+      the turn reads as closed (an empty assistant block would be rejected on
+      Anthropic replay, and a dangling user row would be re-answered on resume).
+    - every row is flagged ``interrupted: true`` — an extra key that survives in
+      the log for UI replay but is filtered out of the LLM context rebuild.
+    """
+    present_results = {
+        row.get('tool_call_id')
+        for row in rows if row.get('role') == 'tool' and row.get('tool_call_id')
+    }
+    records: List[Dict[str, Any]] = []
+    for row in rows:
+        rec = dict(row)
+        rec['interrupted'] = True
+        if rec.get('role') != 'assistant':
+            records.append(rec)
+            continue
+        kept_calls = []
+        for tc in rec.get('tool_calls') or []:
+            if not isinstance(tc, dict) or not tc.get('id'):
+                continue
+            args = tc.get('arguments')
+            if isinstance(args, dict):
+                kept_calls.append(tc)
+                continue
+            try:
+                json.loads(args or '')
+            except (TypeError, ValueError):
+                continue
+            kept_calls.append(tc)
+        if kept_calls:
+            rec['tool_calls'] = kept_calls
+        else:
+            rec.pop('tool_calls', None)
+        if rec.get('reasoning_content') and not rec.get('reasoning_signature'):
+            rec['interrupted_reasoning'] = rec.pop('reasoning_content')
+        if not rec.get('content') and not kept_calls:
+            rec['content'] = INTERRUPTED_PLACEHOLDER
+        records.append(rec)
+        for tc in kept_calls:
+            if tc.get('id') in present_results:
+                continue
+            records.append({
+                'role': 'tool',
+                'content': _INTERRUPTED_TOOL_RESULT,
+                'tool_call_id': tc.get('id'),
+                'name': tc.get('tool_name', ''),
+                'is_error': True,
+                'interrupted': True,
+            })
+    if not records:
+        records.append({
+            'role': 'assistant',
+            'content': INTERRUPTED_PLACEHOLDER,
+            'interrupted': True,
+        })
+    return records
 
 
 class LLMAgent(Agent):
@@ -236,18 +318,10 @@ class LLMAgent(Agent):
         await skill_toolset.connect()
         self.tool_manager.register_tool(skill_toolset)
 
-        # Index the newly added tool into the live tool registry.
-        # We cannot call reindex_tool() because it would duplicate
-        # already-indexed tools; instead we index just this one.
-        tools = await skill_toolset.get_tools()
-        spliter = self.tool_manager.TOOL_SPLITER
-        for server_name, tool_list in tools.items():
-            for tool in tool_list:
-                key = f"{server_name}{spliter}{tool['tool_name']}"
-                tool = copy(tool)
-                tool['tool_name'] = key
-                self.tool_manager._tool_index[key] = (
-                    skill_toolset, server_name, tool)
+        # Index just this newly added tool into the live registry; a full
+        # reindex_tool() would re-touch already-indexed (and runtime-owned MCP)
+        # tools.
+        await self.tool_manager.index_extra_tool(skill_toolset)
 
         self._check_skill_tool_dependencies()
 
@@ -1154,7 +1228,10 @@ class LLMAgent(Agent):
         if self.tool_manager is not None:
             mem_tool = MemoryTool(self.config, orchestrator)
             self.tool_manager.register_tool(mem_tool)
-            await self.tool_manager.reindex_tool()
+            # Index only the new tool. A full reindex_tool() would re-list every
+            # MCP server, duplicating the runtime-owned MCP index and possibly
+            # resurfacing tools for disabled/degraded servers.
+            await self.tool_manager.index_extra_tool(mem_tool)
             logger.info('[unified_memory] Memory tool registered')
 
         # Inject usage guidance into system prompt
@@ -1879,6 +1956,28 @@ class LLMAgent(Agent):
             d['tokens'] = prompt_tokens + completion_tokens
         return d
 
+    def _persist_partial_round(self, messages: List[Message],
+                               pre_step_len: int) -> None:
+        """Seal an interrupted round into the SessionLog (best-effort).
+
+        Called from run_loop's cancellation handler, where the normal
+        round-boundary persistence can no longer run. Serializes the round's
+        in-memory rows and appends the protocol-repaired records built by
+        :func:`build_partial_round_records`. Synchronous file I/O only (safe
+        inside a cancelled task); never raises — sealing must not break the
+        cancellation unwind.
+        """
+        if self.session_log is None:
+            return
+        try:
+            rows = [
+                self._msg_to_dict(msg) for msg in messages[pre_step_len:]
+            ]
+            for record in build_partial_round_records(rows):
+                self.session_log.append(record)
+        except Exception:
+            logger.warning('persist partial round failed', exc_info=True)
+
     async def run_loop(self, messages: Union[List[Message], str],
                        **kwargs) -> AsyncGenerator[Any, Any]:
         """Run the agent loop (LLM generation + tool calling).
@@ -2050,9 +2149,19 @@ class LLMAgent(Agent):
                 # Captured right before step() so only genuine step outputs are
                 # appended to the SessionLog (ephemeral injections are excluded).
                 pre_step_len = len(messages)
-                async for messages in self.step(messages):
-                    messages = self._apply_pending_rollback(messages)
-                    yield messages
+                try:
+                    async for messages in self.step(messages):
+                        messages = self._apply_pending_rollback(messages)
+                        yield messages
+                except (asyncio.CancelledError, GeneratorExit):
+                    # The turn was interrupted mid-round (task cancelled, or the
+                    # consumer closed the generator). Round persistence below
+                    # never runs, so faithfully seal what this round produced —
+                    # partial assistant text/reasoning, validated tool_calls
+                    # plus synthesized interrupted tool results — before the
+                    # cancellation unwinds. Sync file I/O only; must re-raise.
+                    self._persist_partial_round(messages, pre_step_len)
+                    raise
 
                 # Persist THIS round's step output (assistant + any tool
                 # messages) NOW — before after_tool_call below, whose interactive

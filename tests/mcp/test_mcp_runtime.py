@@ -83,6 +83,32 @@ class FakeMCPClient:
         self.sessions.clear()
 
 
+class _FakeExtraTool:
+    """Minimal non-MCP extra tool used to exercise index_extra_tool()."""
+
+    def __init__(self, name: str = 'mem', tool: str = 'do'):
+        self._name = name
+        self._tool = tool
+
+    async def connect(self):
+        pass
+
+    async def cleanup(self):
+        pass
+
+    async def get_tools(self) -> Dict[str, List[Tool]]:
+        return {
+            self._name: [
+                Tool(
+                    tool_name=self._tool,
+                    server_name=self._name,
+                    description='d',
+                    parameters={},
+                )
+            ]
+        }
+
+
 def _resolved(*servers: tuple[str, dict]) -> ResolvedMCPConfig:
     return ResolvedMCPConfig(
         mcp_servers={name: dict(cfg, enabled=cfg.get('enabled', True))
@@ -140,6 +166,67 @@ async def test_sync_mcp_tools_clears_and_is_idempotent():
     await runtime.sync_tools()
     keys = [t['tool_name'] for t in await tm.get_tools()]
     assert keys.count('fetch---demo_tool') == 1
+
+
+@pytest.mark.asyncio
+async def test_extra_tools_indexed_at_connect_with_runtime():
+    """Extra (non-MCP) tools must be indexed at connect() even when the MCP
+    runtime owns MCP indexing (_skip_mcp_reindex=True); connect() must not
+    index MCP itself."""
+    client = FakeMCPClient()
+    runtime = MCPRuntime(
+        mcp_client=client,  # type: ignore[arg-type]
+        config=_resolved(('fetch', {'command': 'echo'})),
+        owns_client=False,
+    )
+    tm = _make_tool_manager(client, runtime)
+    tm.extra_tools.append(_FakeExtraTool(name='mem', tool='do'))
+    await tm.connect()
+
+    keys = [t['tool_name'] for t in await tm.get_tools()]
+    assert 'mem---do' in keys
+    assert not any(k.startswith('fetch---') for k in keys)
+
+    runtime.bind_tool_manager(tm)
+    await runtime.start()
+    await runtime.sync_tools()
+    keys = [t['tool_name'] for t in await tm.get_tools()]
+    assert 'mem---do' in keys
+    assert 'fetch---demo_tool' in keys
+
+
+@pytest.mark.asyncio
+async def test_reindex_does_not_resurface_degraded_mcp():
+    """Registering an extra tool later (as load_memory does) triggers a reindex;
+    it must not resurface tools for servers the runtime hid (degraded), nor
+    duplicate healthy MCP tools."""
+    client = FakeMCPClient()
+    runtime = MCPRuntime(
+        mcp_client=client,  # type: ignore[arg-type]
+        config=_resolved(('fetch', {'command': 'echo'})),
+        owns_client=False,
+    )
+    tm = _make_tool_manager(client, runtime)
+    await tm.connect()
+    runtime.bind_tool_manager(tm)
+    await runtime.start()
+    await runtime.sync_tools()
+    assert any('fetch---' in t['tool_name'] for t in await tm.get_tools())
+
+    # Degrade the server; the runtime hides its tools while keeping the session.
+    await runtime.record_failure(
+        'fetch', 'call_tool', 'Connection closed',
+        exc=ConnectionError('Connection closed'))
+    assert runtime.get_server('fetch').status == 'degraded'
+    assert client.is_connected('fetch')
+    assert not any('fetch---' in t['tool_name'] for t in await tm.get_tools())
+
+    tm.extra_tools.append(_FakeExtraTool(name='mem', tool='do'))
+    await tm.reindex_tool()
+
+    keys = [t['tool_name'] for t in await tm.get_tools()]
+    assert 'mem---do' in keys
+    assert not any(k.startswith('fetch---') for k in keys)
 
 
 @pytest.mark.asyncio
