@@ -387,10 +387,9 @@ class SkillToolSet(ToolBase):
         return json.dumps({"error": f"Unknown action: {action}"})
 
     def _create_skill(self, skill_id: str, content: str) -> str:
-        custom_dir = self._get_custom_skills_dir()
-        skill_dir = custom_dir / skill_id
+        skill_dir = self._get_managed_skills_dir() / skill_id
 
-        if skill_dir.exists():
+        if skill_dir.exists() or self._catalog.get_skill(skill_id):
             return json.dumps(
                 {"error": f"Skill '{skill_id}' already exists"})
 
@@ -447,13 +446,15 @@ class SkillToolSet(ToolBase):
             return json.dumps(
                 {"error": f"Skill '{skill_id}' not found"})
 
-        custom_dir = self._get_custom_skills_dir().resolve()
+        managed_dir = self._get_managed_skills_dir().resolve()
         # relative_to() avoids the startswith() prefix-bypass before rmtree.
         try:
-            skill.skill_path.resolve().relative_to(custom_dir)
+            skill.skill_path.resolve().relative_to(managed_dir)
         except ValueError:
-            return json.dumps(
-                {"error": "Can only delete custom skills"})
+            return json.dumps({
+                "error":
+                    "Can only delete skills inside the managed skills tree"
+            })
 
         shutil.rmtree(skill.skill_path)
         self._catalog.remove_skill(skill_id)
@@ -463,7 +464,9 @@ class SkillToolSet(ToolBase):
             "message": f"Skill '{skill_id}' deleted successfully",
         })
 
-    def _get_custom_skills_dir(self) -> Path:
-        base = USER_SKILLS_DIR / "custom"
-        base.mkdir(parents=True, exist_ok=True)
-        return base
+    def _get_managed_skills_dir(self) -> Path:
+        """The live skills tree (``<home>/skills``). Agent-created skills
+        land at its top level; the tree boundary doubles as the delete
+        guard — external/config-declared source dirs stay read-only."""
+        USER_SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+        return USER_SKILLS_DIR

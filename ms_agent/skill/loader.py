@@ -120,9 +120,19 @@ class SkillLoader:
             logger.error(f'Error loading skill ({skill_dir}): {str(e)}')
             return None
 
+    #: How deep _scan_and_load_skills descends below the scan root. Bounds
+    #: symlink cycles; deep enough for organizational nesting (category dirs).
+    _MAX_SCAN_DEPTH = 5
+
     def _scan_and_load_skills(self, base_path: Path) -> Dict[str, SkillSchema]:
         """
-        Scan directory and load all skills found.
+        Recursively scan a tree and load every skill root found.
+
+        A skill root is a directory containing ``SKILL.md``; it is treated as
+        a leaf — its subdirectories (``scripts/``, ``references/``, …) belong
+        to the skill and are not descended into. Directories without a
+        ``SKILL.md`` are organizational and are recursed. Hidden directories
+        (``.hub``, ``.git``, …) are skipped.
 
         Args:
             base_path: Base directory to scan
@@ -130,22 +140,28 @@ class SkillLoader:
         Returns:
             Dictionary mapping skill_id@version to SkillSchema objects
         """
-        skills = {}
+        skills: Dict[str, SkillSchema] = {}
 
         if not base_path.is_dir():
             logger.warning(f'Not a valid directory: {base_path}')
             return skills
 
-        for item in base_path.iterdir():
-            if item.is_dir() and self._is_skill_directory(item):
-                skill = self._load_single_skill(item)
-                if skill:
-                    skill_key = self._get_skill_key(skill=skill)
-                    skills[skill_key] = skill
-                    # logger.info(
-                    #     f'Successfully loaded skill: {skill_key} (from {item})'
-                    # )
+        def _walk(directory: Path, depth: int) -> None:
+            try:
+                entries = sorted(directory.iterdir())
+            except OSError:
+                return
+            for item in entries:
+                if not item.is_dir() or item.name.startswith('.'):
+                    continue
+                if self._is_skill_directory(item):
+                    skill = self._load_single_skill(item)
+                    if skill:
+                        skills[self._get_skill_key(skill=skill)] = skill
+                elif depth < self._MAX_SCAN_DEPTH:
+                    _walk(item, depth + 1)
 
+        _walk(base_path, 1)
         return skills
 
     @staticmethod

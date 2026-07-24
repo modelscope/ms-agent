@@ -120,13 +120,14 @@ class SkillCatalog:
                 SkillSource(type=SkillSourceType.LOCAL_DIR,
                             path=str(BUILTIN_SKILLS_DIR)))
 
-        # 2. User home skills
-        for subdir in ("installed", "custom"):
-            d = USER_SKILLS_DIR / subdir
-            if d.exists():
-                sources.append(
-                    SkillSource(type=SkillSourceType.LOCAL_DIR,
-                                path=str(d)))
+        # 2. User home skills — one live tree, scanned whole (the loader
+        # walks it and stops at SKILL.md roots). Subdirectories are
+        # organization, not origin: legacy installed/ & custom/ keep working
+        # as plain subpaths.
+        if USER_SKILLS_DIR.exists():
+            sources.append(
+                SkillSource(type=SkillSourceType.LOCAL_DIR,
+                            path=str(USER_SKILLS_DIR)))
 
         # 3a. Structured sources (higher priority)
         if hasattr(skills_config, "sources") and skills_config.sources:
@@ -174,8 +175,22 @@ class SkillCatalog:
             self._disabled_skills = set(skills_config.disabled)
 
     def load_from_sources(self, sources: List[SkillSource]) -> None:
-        self._sources = sources
+        # Dedup by identity — the same dir may arrive both as the implicit
+        # live tree and as an explicit config source; loading it twice only
+        # burns IO and log noise.
+        seen: set = set()
+        unique: List[SkillSource] = []
         for source in sources:
+            path = (str(Path(source.path).expanduser().resolve())
+                    if source.path else None)
+            key = (source.type, path, source.repo_id, source.url,
+                   source.subdir, source.plugin_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(source)
+        self._sources = unique
+        for source in unique:
             if not source.enabled:
                 continue
             try:
@@ -370,6 +385,23 @@ class SkillCatalog:
     def reload(self) -> None:
         self._skills.clear()
         self.load_from_sources(self._sources)
+
+    def resync(self, skills_config) -> None:
+        """Rebuild the catalog in place from a (possibly updated) config.
+
+        In place, so long-lived holders (command bridge, skill toolset,
+        search engine) keep observing the same object; the search index
+        follows lazily via the cache version. Picks up new/removed sources
+        and disabled changes — unlike reload(), which only re-reads the
+        already-known source list.
+        """
+        self._skills.clear()
+        self._sources = []
+        self._disabled_skills = set()
+        self._whitelist = None
+        self._config = skills_config
+        self.load_from_config(skills_config)
+        self._invalidate_cache()
 
     def reload_skill(self, skill_id: str) -> Optional[SkillSchema]:
         skill = self._skills.get(skill_id)

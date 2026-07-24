@@ -112,24 +112,33 @@ class SkillRuntime:
     def maybe_refresh_system_prompt(
         self, messages: list
     ) -> bool:
-        """Rebuild messages[0] if skill state changed since last apply.
+        """Keep messages[0] in step with the current skill state.
 
-        Uses _system_content_builder (injected by LLMAgent) to fully
-        rebuild the system prompt content, covering skills, personalization,
-        and base prompt in one pass.
+        Rebuilds the system prompt via _system_content_builder (injected by
+        LLMAgent — covers base prompt, personalization and skill injection)
+        and replaces messages[0].content when it differs. Content comparison
+        every round — NOT a version gate — because the round context may be
+        rebuilt from the SessionLog (context_assembler.assemble, resume from
+        cache), which resurrects the system prompt as persisted at write
+        time; an apply-once version latch would let that stale copy through
+        on every later round. An in-step prompt compares equal — zero churn.
 
         Returns True if the system prompt was actually updated.
         """
-        if not self.needs_refresh():
-            return False
         if not messages or not self._system_content_builder:
+            self._last_applied_version = self._version
+            return False
+        head = messages[0]
+        if getattr(head, 'role', None) != 'system':
+            # Never clobber a non-system head (restored log without a
+            # system row).
             self._last_applied_version = self._version
             return False
 
         new_content = self._system_content_builder()
-        changed = messages[0].content != new_content
+        changed = head.content != new_content
         if changed:
-            messages[0].content = new_content
+            head.content = new_content
 
         self._last_applied_version = self._version
         return changed
@@ -145,3 +154,27 @@ class SkillRuntime:
     def reload_all(self) -> None:
         self._catalog.reload()
         self._version += 1
+
+    def sync_with_config(self, skills_config) -> bool:
+        """Resync the catalog from an updated skills config; bump the
+        version only when the effective skill surface (inventory, metadata,
+        disabled set) actually changed, so maybe_refresh_system_prompt()
+        rebuilds messages[0] on real change and stays a no-op otherwise.
+
+        Returns True when the surface changed.
+        """
+        before = self._surface()
+        self._catalog.resync(skills_config)
+        after = self._surface()
+        if before != after:
+            self._version += 1
+            return True
+        return False
+
+    def _surface(self):
+        catalog = self._catalog
+        inventory = {
+            sid: (skill.name, skill.description, skill.version)
+            for sid, skill in catalog._skills.items()
+        }
+        return (inventory, frozenset(catalog._disabled_skills))
