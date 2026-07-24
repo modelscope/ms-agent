@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any, Dict, Optional
 
 from omegaconf import OmegaConf
@@ -28,6 +29,29 @@ _MCP_META = frozenset({
     'enabled', 'meta', 'source', '_scope', 'mcp', 'implementation',
     'trust_remote_code', '_removed',
 })
+
+#: ``${NAME}`` placeholders in managed MCP entries (headers, args, url, env
+#: values). Deliberately braces-only — a bare ``$VAR`` in an arg stays what
+#: the user typed.
+_ENV_PLACEHOLDER_RE = re.compile(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}')
+
+
+def expand_env_placeholders(value: Any) -> Any:
+    """Recursively expand ``${VAR}`` from the process environment.
+
+    Runtime-only: the managed files and the management UI keep the
+    placeholders (secrets never land on disk or on screen). An unresolved
+    name stays verbatim, so a missing variable surfaces in the connection
+    error instead of silently becoming an empty string.
+    """
+    if isinstance(value, str):
+        return _ENV_PLACEHOLDER_RE.sub(
+            lambda m: os.environ.get(m.group(1), m.group(0)), value)
+    if isinstance(value, dict):
+        return {k: expand_env_placeholders(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [expand_env_placeholders(v) for v in value]
+    return value
 
 
 def resolve_mcp_config(
@@ -63,7 +87,12 @@ def resolve_mcp_config(
                 servers.update(src)
         except Exception:
             pass
-    return {'mcpServers': servers} if servers else None
+    if not servers:
+        return None
+    # ${VAR} placeholders resolve here — at the runtime boundary — so the
+    # connection gets real credentials while every management surface keeps
+    # the placeholder form.
+    return {'mcpServers': expand_env_placeholders(servers)}
 
 
 def merge_skills_into_config(config, global_home: str, work_dir: Optional[str]):
