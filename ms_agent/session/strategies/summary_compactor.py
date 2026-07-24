@@ -22,6 +22,9 @@ Focus on:
 - Accomplished: What's done, in progress, and remaining
 - Relevant files: Files read, edited, or created
 
+Preserve verbatim, never rewrite or drop: the LATEST <system-reminder>
+skill-update notice, if any (it is the authoritative current skill list).
+
 Keep it concise but comprehensive enough for another agent to continue."""
 
 SUMMARY_INPUT_CHAR_LIMIT = 2000

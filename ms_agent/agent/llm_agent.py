@@ -295,8 +295,10 @@ class LLMAgent(Agent):
         self._skill_catalog.load_from_config(skills_config)
 
         prompt_injection = getattr(skills_config, 'prompt_injection', 'all')
+        update_notice = bool(getattr(skills_config, 'update_notice', False))
         self._skill_injector = SkillPromptInjector(
-            self._skill_catalog, prompt_injection=prompt_injection)
+            self._skill_catalog, prompt_injection=prompt_injection,
+            update_notice=update_notice)
 
         search_cfg = getattr(skills_config, 'search', None)
         search_backend = getattr(search_cfg, 'backend', 'bm25') if search_cfg else 'bm25'
@@ -329,6 +331,10 @@ class LLMAgent(Agent):
             catalog=self._skill_catalog,
             injector=self._skill_injector,
         )
+        # Notice mode: the host announces skill changes inside the
+        # conversation, so the system prompt stays byte-stable per session
+        # (tail-only updates; prefix cache never breaks).
+        self._skill_runtime.head_refresh_enabled = not update_notice
         self._skill_runtime.set_system_content_builder(
             self._build_system_content
         )

@@ -27,7 +27,23 @@ Exercise caution with skills marked as "warning" or "dangerous".
     DISCOVERY_HINT = (
         "\nUse `skills_list(query=...)` to discover available skills.\n")
 
-    def __init__(self, catalog, *, prompt_injection: str = 'all'):
+    #: Appended when the host emits skill-update notices into the
+    #: conversation (``skills.update_notice``): the prompt's own list is a
+    #: session-start snapshot, and the latest in-conversation notice wins.
+    UPDATE_NOTICE_HINT = """
+**About skill list updates:**
+The skill list here reflects the state when this session started. Skills
+can be added, removed, enabled, disabled or edited mid-conversation; when
+that happens, a <system-reminder> skill-update notice containing the FULL
+current list appears in the conversation.
+- If any skill-update notice exists, the LATEST one is authoritative and
+  supersedes this list and all earlier notices.
+- Earlier notices may be outdated; that is normal bookkeeping — do not
+  mention notices or list changes to the user unless asked.
+"""
+
+    def __init__(self, catalog, *, prompt_injection: str = 'all',
+                 update_notice: bool = False):
         """
         Args:
             catalog: The SkillCatalog instance.
@@ -35,9 +51,14 @@ Exercise caution with skills marked as "warning" or "dangerous".
                 ``"always_only"`` (only always-active skills in prompt,
                 rest via skills_list), or ``"none"`` (pure tool-driven
                 discovery).
+            update_notice: When True, the section explains that
+                in-conversation skill-update notices supersede the
+                prompt's own list (the host is responsible for emitting
+                them).
         """
         self._catalog = catalog
         self._prompt_injection = prompt_injection
+        self._update_notice = update_notice
 
     def build_skill_prompt_section(self) -> str:
         """Build the skill section for system prompt injection.
@@ -59,12 +80,16 @@ Exercise caution with skills marked as "warning" or "dangerous".
             summary = self._catalog.get_skills_summary()
             if summary:
                 parts.append(self.SKILL_SECTION_HEADER)
+                if self._update_notice:
+                    parts.append(self.UPDATE_NOTICE_HINT)
                 parts.append(summary)
                 parts.append("")
         elif self._prompt_injection in ('always_only', 'none'):
             has_skills = bool(self._catalog.get_enabled_skills())
             if has_skills:
                 parts.append(self.SKILL_SECTION_HEADER)
+                if self._update_notice:
+                    parts.append(self.UPDATE_NOTICE_HINT)
                 parts.append(self.DISCOVERY_HINT)
 
         return "\n".join(parts)

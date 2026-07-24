@@ -34,6 +34,11 @@ class SkillRuntime:
         self._version: int = 0
         self._last_applied_version: int = 0
         self._system_content_builder: Optional[Callable[[], str]] = None
+        # False when the host delivers skill updates as in-conversation
+        # notices (``skills.update_notice``): the system prompt then stays
+        # byte-stable for the whole session — prefix-cache friendly — and
+        # maybe_refresh_system_prompt() becomes a no-op.
+        self.head_refresh_enabled: bool = True
 
     @property
     def catalog(self) -> 'SkillCatalog':
@@ -125,6 +130,9 @@ class SkillRuntime:
 
         Returns True if the system prompt was actually updated.
         """
+        if not self.head_refresh_enabled:
+            self._last_applied_version = self._version
+            return False
         if not messages or not self._system_content_builder:
             self._last_applied_version = self._version
             return False
