@@ -1,0 +1,3 @@
+# Vector/hybrid skill-search backends (opt-in; pulls torch via sentence-transformers). Default skill backend is bm25 and needs none of these.
+faiss-cpu
+sentence-transformers
