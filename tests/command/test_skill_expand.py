@@ -38,10 +38,15 @@ def test_expand_skill_structured_invocation(catalog):
     assert '---' not in result.content               # frontmatter stripped
 
 
-def test_expand_skill_intro_and_unknown(catalog):
-    intro = expand_skill(catalog, 'writer', '')
-    assert intro.type == CommandResultType.MESSAGE
-    assert 'Writer' in intro.content
+def test_expand_skill_bare_invocation_submits(catalog):
+    # A bare invocation submits the skill body so the model reads it and acts
+    # (no more usage-intro MESSAGE); the tail line flags the missing input.
+    bare = expand_skill(catalog, 'writer', '')
+    assert bare.type == CommandResultType.SUBMIT_PROMPT
+    assert 'Use the [Writer] skill' in bare.content
+    assert 'Guide: ' in bare.content            # $ARGUMENTS replaced with ''
+    assert 'without additional arguments' in bare.content
+    assert "User's request:" not in bare.content
     assert expand_skill(catalog, 'nope', 'x') is None
     # case-insensitive frontmatter-name match still resolves
     assert expand_skill(catalog, 'WRITER', 'x') is not None
@@ -61,11 +66,13 @@ def test_expand_slash_text_boundaries(catalog):
     assert expand_slash_text(catalog, '路径 a/writer 不是命令') is None
     assert expand_slash_text(catalog, 'http://writer.example') is None
     assert expand_slash_text(catalog, '看看 /unknown 是什么') is None
-    # Leading position still works; token-only input yields the intro.
+    # Leading position still works; a token-only input submits too (the model
+    # reads the skill and acts on its instructions).
     assert expand_slash_text(catalog, '/writer 开始').type \
         == CommandResultType.SUBMIT_PROMPT
-    assert expand_slash_text(catalog, '/writer').type \
-        == CommandResultType.MESSAGE
+    bare = expand_slash_text(catalog, '/writer')
+    assert bare.type == CommandResultType.SUBMIT_PROMPT
+    assert 'without additional arguments' in bare.content
 
 
 def test_expand_slash_text_first_known_token_wins():

@@ -48,13 +48,15 @@ class TestSkillCommandBridge:
         return r
 
     @pytest.mark.asyncio
-    async def test_no_args_returns_info(self, router, skill):
+    async def test_no_args_submits_skill_body(self, router, skill):
+        # A bare /skill submits the skill body for the model to read and act
+        # on (no usage-intro MESSAGE); the tail line flags the missing input.
         ctx = _make_ctx(f'/{skill.skill_id}')
         result = await router.dispatch(ctx)
         assert result is not None
-        assert result.type == CommandResultType.MESSAGE
+        assert result.type == CommandResultType.SUBMIT_PROMPT
         assert skill.name in result.content
-        assert skill.description in result.content
+        assert 'without additional arguments' in result.content
 
     @pytest.mark.asyncio
     async def test_with_args_returns_submit_prompt(self, router, skill):

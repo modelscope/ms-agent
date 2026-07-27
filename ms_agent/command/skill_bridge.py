@@ -51,32 +51,30 @@ def expand_skill(catalog: 'SkillCatalog', name_or_id: str,
                  args: str) -> CommandResult | None:
     """Expand one known-skill invocation into a CommandResult.
 
-    Returns None when the skill doesn't exist; a usage MESSAGE when ``args``
-    is empty; else a SUBMIT_PROMPT whose content is the skill body (frontmatter
-    stripped, ``$ARGUMENTS`` substituted) wrapped with the standard preamble.
+    Returns None when the skill doesn't exist; else a SUBMIT_PROMPT whose
+    content is the skill body (frontmatter stripped, ``$ARGUMENTS``
+    substituted) wrapped with the standard preamble. A bare invocation (empty
+    ``args``) submits too — the model reads the skill and carries out its
+    instructions — with the tail line noting no extra input was given.
     Surface-agnostic: no router/context state is involved.
     """
     skill = find_skill(catalog, name_or_id)
     if skill is None:
         return None
 
-    if not args:
-        return CommandResult(
-            type=CommandResultType.MESSAGE,
-            content=(
-                f'Skill: {skill.name}\n'
-                f'Description: {skill.description}\n'
-                f'Usage: /{skill.skill_id} <your instruction>'
-            ),
-        )
-
     body = _strip_frontmatter(skill.content)
     body = body.replace('$ARGUMENTS', args)
 
+    tail = (
+        f"User's request: {args}" if args else
+        'The user invoked this skill without additional arguments; follow '
+        'its instructions and proceed (ask for the missing input only if the '
+        'skill requires one).'
+    )
     enriched = (
         f'Use the [{skill.name}] skill located at `{skill.skill_path}`.\n\n'
         f'{body}\n\n'
-        f"User's request: {args}"
+        f'{tail}'
     )
     return CommandResult(
         type=CommandResultType.SUBMIT_PROMPT,
