@@ -43,3 +43,43 @@ async def test_parallel_asks_are_serialized(tmp_path):
     assert handler.calls == 5
     # The decisive assertion: asks never overlapped (was 5 before the fix).
     assert handler.max_in_flight == 1
+
+
+class _CallIdCapture:
+    """Handler that records the call_id it was asked with (and tolerates
+    handlers that don't accept it — see enforcer._serialized_ask)."""
+    def __init__(self):
+        self.seen = []
+
+    async def ask(self, tool_name, tool_args, context, suggestions=None,
+                  call_id=''):
+        self.seen.append(call_id)
+        return PermissionResponse(action=PermissionAction.ALLOW_ONCE)
+
+
+@pytest.mark.asyncio
+async def test_call_id_threaded_to_handler(tmp_path):
+    """enforcer.check(call_id=...) reaches handler.ask so a UI can correlate the
+    decision to the exact tool_call (parallel identical calls)."""
+    cfg = PermissionConfig.from_dict({'mode': 'restricted'})
+    handler = _CallIdCapture()
+    enf = PermissionEnforcer(
+        config=cfg, handler=handler,
+        memory=PermissionMemory(project_path=str(tmp_path)))
+
+    await enf.check('some_tool', {'a': 1}, call_id='call-abc')
+    assert handler.seen == ['call-abc']
+
+
+@pytest.mark.asyncio
+async def test_legacy_handler_without_call_id_still_works(tmp_path):
+    """A handler whose ask() predates call_id (fixed signature) is not broken —
+    the enforcer strips the unknown kwarg."""
+    cfg = PermissionConfig.from_dict({'mode': 'restricted'})
+    handler = _ConcurrencyProbe()  # ask() has no call_id param
+    enf = PermissionEnforcer(
+        config=cfg, handler=handler,
+        memory=PermissionMemory(project_path=str(tmp_path)))
+
+    r = await enf.check('some_tool', {'a': 1}, call_id='call-xyz')
+    assert r.action == 'allow' and handler.calls == 1

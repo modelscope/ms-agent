@@ -7,6 +7,7 @@ the PermissionHandler for interactive user confirmation.
 from __future__ import annotations
 
 import asyncio
+import inspect
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -58,8 +59,24 @@ class PermissionEnforcer:
         return self._ask_lock
 
     async def _serialized_ask(self, **kwargs) -> PermissionResponse:
+        # ``call_id`` is a newer, optional kwarg (see check()). A handler that
+        # predates it — or a lightweight test double — need not accept it; drop
+        # it for such handlers so their fixed signature keeps working.
+        if 'call_id' in kwargs and not self._handler_accepts('call_id'):
+            kwargs.pop('call_id')
         async with self._ask_lock_for_loop():
             return await self._handler.ask(**kwargs)
+
+    def _handler_accepts(self, param: str) -> bool:
+        try:
+            sig = inspect.signature(self._handler.ask)
+        except (TypeError, ValueError):
+            return True  # can't introspect — assume it takes it, don't strip
+        params = sig.parameters.values()
+        return (
+            any(p.name == param for p in params)
+            or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params)
+        )
 
     async def check(
         self,
@@ -67,7 +84,13 @@ class PermissionEnforcer:
         tool_args: dict[str, Any],
         *,
         force_decision: PermissionDecision | None = None,
+        call_id: str = '',
     ) -> PermissionDecision:
+        # ``call_id`` (the tool_call this ask is gating) is threaded to the
+        # handler so a UI can record/correlate the decision against the exact
+        # call — important when a round fires several identical tool calls in
+        # parallel. Empty when the LLM adapter didn't assign an id yet;
+        # handlers must tolerate that.
         # 1. Blacklist → deny (not overridable in any mode)
         for pattern in self._config.blacklist:
             if self._matcher.match_with_content(pattern, tool_name, tool_args):
@@ -83,6 +106,7 @@ class PermissionEnforcer:
                 tool_args=tool_args,
                 context=force_decision.reason or '',
                 suggestions=suggestions,
+                call_id=call_id,
             )
             return self._process_response(response, tool_name, tool_args)
 
@@ -112,6 +136,7 @@ class PermissionEnforcer:
             tool_args=tool_args,
             context='',
             suggestions=suggestions,
+            call_id=call_id,
         )
 
         return self._process_response(response, tool_name, tool_args)

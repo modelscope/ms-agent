@@ -547,6 +547,9 @@ class ToolManager:
                     permission_config=self._permission_config,
                     hook_runtime=self._hook_runtime,
                     force_decision=safety_force_decision,
+                    # Thread the tool_call id so the handler can correlate its
+                    # decision to the exact call (parallel calls in one round).
+                    call_id=str(tool_info.get('id') or ''),
                 )
                 if isinstance(perm_out, str):
                     return perm_out
