@@ -113,6 +113,26 @@ class SessionLog:
         }
         self._append_line(record)
 
+    def record_loop_end(self, event: Dict[str, Any]) -> None:
+        """Record a tool-call-loop boundary — a non-message, display-only marker.
+
+        Written when a turn's tool-call loop finishes (the final assistant
+        message with no further tool calls). Like the other ``_type``-tagged
+        markers it is filtered out of ``get_all_messages`` (never re-enters the
+        LLM context), but lets history replay reproduce the live "loop done"
+        summary — most importantly the wall-clock ``duration_ms``, which is not
+        otherwise derivable from the log. ``event`` typically carries
+        ``duration_ms`` and ``changed_files``.
+        """
+        seq = self._next_seq()
+        record = {
+            "_type": "loop_end",
+            "seq": seq,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            **event,
+        }
+        self._append_line(record)
+
     def record_permission(self, event: Dict[str, Any]) -> None:
         """Record a permission decision — a non-message, display-only marker.
 
@@ -188,7 +208,7 @@ class SessionLog:
                 continue
             if record.get("_type") in (
                     "metadata", "compaction_event", "error", "permission",
-                    "skill_invocation"):
+                    "skill_invocation", "loop_end"):
                 continue
             msgs.append(record)
         self._messages = msgs
@@ -269,6 +289,27 @@ class SessionLog:
             if record.get("_type") == "permission":
                 perms.append(record)
         return perms
+
+    def get_loop_ends(self) -> List[Dict[str, Any]]:
+        """All tool-call-loop boundary markers in chronological order (each
+        keeps its ``seq``).  Excluded from ``get_all_messages`` (and the LLM
+        context); a UI merges them back by ``seq`` to reproduce the per-loop
+        "done" summary (duration + changed files) on history replay.
+        """
+        out: List[Dict[str, Any]] = []
+        if not self._path.exists():
+            return out
+        for line in self._path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if record.get("_type") == "loop_end":
+                out.append(record)
+        return out
 
     def get_skill_invocations(self) -> List[Dict[str, Any]]:
         """All slash-skill invocation markers in chronological order (each
