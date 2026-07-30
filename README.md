@@ -54,6 +54,8 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 
 ## 🎉 News
 
+* 🚀 Jul 13, 2026: Support **Agent Hub** — manage agent workspace files across your local machine and remote ModelScope repositories via the `ms-agent agent` command: upload/download, background sync (`watch`), cross-framework conversion, status, backups and restore across `qoder`, `qwenpaw`, `openclaw`, `hermes`, `nanobot`, `openhuman` and `ms-agent`.
+
 * 🏆 Apr 09, 2026: Agentic Insight v2 is now **#2 Open-Source** (#5 Overall) on [DeepResearch Bench](https://github.com/Ayanami0730/deep_research_bench) — scoring **55.31** with the submitted version (Qwen3.5-Plus + GPT 5.2). [Leaderboard](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard) | [Agentic Insight v2](projects/deep_research/v2/README.md).
 
 * 🚀 Mar 23, 2026: Release MS-Agent v1.6.0, which includes the following updates:

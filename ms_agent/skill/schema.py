@@ -350,5 +350,3 @@ class SkillSchemaParser:
             errors.append(f'Directory does not exist: {schema.skill_path}')
 
         return errors
-
-

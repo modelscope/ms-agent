@@ -19,10 +19,10 @@ logger = get_logger()
 
 class ErrorCategory(str, Enum):
     TRANSIENT = 'transient'  # 429 / 5xx / timeout / overloaded -> retry
-    QUOTA = 'quota'          # insufficient balance/quota -> fail fast
-    AUTH = 'auth'            # 401 / 403 -> fail fast
-    CLIENT = 'client'        # 400 / 422 -> fail fast
-    UNKNOWN = 'unknown'      # anything else -> retry (bounded)
+    QUOTA = 'quota'  # insufficient balance/quota -> fail fast
+    AUTH = 'auth'  # 401 / 403 -> fail fast
+    CLIENT = 'client'  # 400 / 422 -> fail fast
+    UNKNOWN = 'unknown'  # anything else -> retry (bounded)
 
 
 def classify_error(error: Exception) -> ErrorCategory:
@@ -49,7 +49,8 @@ def classify_error(error: Exception) -> ErrorCategory:
     return ErrorCategory.UNKNOWN
 
 
-_NON_RETRYABLE = (ErrorCategory.AUTH, ErrorCategory.QUOTA, ErrorCategory.CLIENT)
+_NON_RETRYABLE = (ErrorCategory.AUTH, ErrorCategory.QUOTA,
+                  ErrorCategory.CLIENT)
 
 
 def smart_retry(max_attempts: int = 3,
@@ -80,10 +81,9 @@ def smart_retry(max_attempts: int = 3,
                                 delay = max(delay, float(retry_after))
                             except (TypeError, ValueError):
                                 pass
-                        logger.info(
-                            f'Retrying in {delay:.1f}s '
-                            f'(attempt {attempt + 1}/{max_attempts}, '
-                            f'category={category.value}): {e}')
+                        logger.info(f'Retrying in {delay:.1f}s '
+                                    f'(attempt {attempt + 1}/{max_attempts}, '
+                                    f'category={category.value}): {e}')
                         time.sleep(delay)
                     else:
                         logger.error(

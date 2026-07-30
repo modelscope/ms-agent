@@ -6,8 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-
-_DEFAULT_DENY_GLOBS: tuple[str, ...] = ('**/.git/**',)
+_DEFAULT_DENY_GLOBS: tuple[str, ...] = ('**/.git/**', )
 _MISSING = object()
 
 

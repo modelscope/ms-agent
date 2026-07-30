@@ -7,15 +7,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from ms_agent.cron.executor import resolve_project_path
-from ms_agent.cron.parser import advance_next_run, compute_next_run, parse_schedule
+from ms_agent.cron.parser import (advance_next_run, compute_next_run,
+                                  parse_schedule)
 from ms_agent.cron.repository import JsonJobRepository
-from ms_agent.cron.types import (
-    CronJobSpec,
-    CronJobState,
-    CronSchedule,
-    ExecutionResult,
-    RunRecord,
-)
+from ms_agent.cron.types import (CronJobSpec, CronJobState, CronSchedule,
+                                 ExecutionResult, RunRecord)
 
 
 class JobManager:
@@ -44,7 +40,9 @@ class JobManager:
         """Create a new job from a schedule string and prompt."""
         schedule = parse_schedule(schedule_str)
         job = CronJobSpec(
-            name=name or (prompt[:30] + '...' if prompt and len(prompt) > 30 else (prompt or '')),
+            name=name
+            or (prompt[:30] + '...' if prompt and len(prompt) > 30 else
+                (prompt or '')),
             schedule=schedule,
             prompt=prompt,
             project=resolve_project_path(project) if project else None,
@@ -69,13 +67,17 @@ class JobManager:
         self._repo.save_job_and_state(job, state)
         return job
 
-    def list_jobs(self, include_disabled: bool = False) -> List[Tuple[CronJobSpec, CronJobState]]:
+    def list_jobs(
+        self,
+        include_disabled: bool = False
+    ) -> List[Tuple[CronJobSpec, CronJobState]]:
         result = self._repo.load_all_with_state()
         if not include_disabled:
             result = [(j, s) for j, s in result if j.enabled]
         return result
 
-    def get_job(self, job_id: str) -> Optional[Tuple[CronJobSpec, CronJobState]]:
+    def get_job(self,
+                job_id: str) -> Optional[Tuple[CronJobSpec, CronJobState]]:
         return self._repo.get_job_with_state(job_id)
 
     def delete_job(self, job_id: str) -> bool:
@@ -112,7 +114,8 @@ class JobManager:
             return False
         job, state = pair
         state.status = 'scheduled'
-        state.next_run_at = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+00:00')
+        state.next_run_at = datetime.now(
+            timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+00:00')
         self._repo.save_state(job_id, state)
         return True
 

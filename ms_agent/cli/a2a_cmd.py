@@ -1,10 +1,9 @@
 import argparse
+import json
 import os
 
-import json
 from ms_agent.config.env import Env
 from ms_agent.utils import strtobool
-
 from .base import CLICommand
 
 
@@ -96,11 +95,9 @@ class A2ACmd(CLICommand):
 
         trust_remote_code = strtobool(self.args.trust_remote_code)
 
-        from ms_agent.a2a.executor import (
-            MSAgentA2AExecutor,
-            configure_a2a_logging,
-        )
         from ms_agent.a2a.agent_card import build_agent_card
+        from ms_agent.a2a.executor import (MSAgentA2AExecutor,
+                                           configure_a2a_logging)
 
         configure_a2a_logging(self.args.log_file)
 

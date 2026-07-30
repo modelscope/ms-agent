@@ -19,7 +19,9 @@ class CronSchedule:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'CronSchedule':
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+        return cls(
+            **{k: v
+               for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
 @dataclass
@@ -35,7 +37,9 @@ class RepeatSpec:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'RepeatSpec':
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+        return cls(
+            **{k: v
+               for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
 @dataclass
@@ -49,7 +53,9 @@ class NotifySpec:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'NotifySpec':
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+        return cls(
+            **{k: v
+               for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
 @dataclass
@@ -57,7 +63,8 @@ class CronJobSpec:
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
     name: str = ''
     enabled: bool = True
-    schedule: CronSchedule = field(default_factory=lambda: CronSchedule(kind='once'))
+    schedule: CronSchedule = field(
+        default_factory=lambda: CronSchedule(kind='once'))
     source: Literal['dynamic', 'declarative'] = 'dynamic'
 
     prompt: Optional[str] = None
@@ -76,7 +83,8 @@ class CronJobSpec:
     notify: Optional[NotifySpec] = None
     silent_on_success: bool = True
 
-    created_at: str = field(default_factory=lambda: time.strftime('%Y-%m-%dT%H:%M:%S'))
+    created_at: str = field(
+        default_factory=lambda: time.strftime('%Y-%m-%dT%H:%M:%S'))
 
     def to_dict(self) -> Dict[str, Any]:
         d = {}
@@ -119,12 +127,15 @@ class RunRecord:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'RunRecord':
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+        return cls(
+            **{k: v
+               for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
 @dataclass
 class CronJobState:
-    status: Literal['scheduled', 'running', 'paused', 'completed', 'error'] = 'scheduled'
+    status: Literal['scheduled', 'running', 'paused', 'completed',
+                    'error'] = 'scheduled'
     next_run_at: Optional[str] = None
     last_run_at: Optional[str] = None
     last_status: Optional[Literal['ok', 'error']] = None

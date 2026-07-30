@@ -88,8 +88,8 @@ class SirchmunkSearch:
         if not _work_path:
             from ms_agent.project.paths import search_index_dir
             _work_path = str(
-                search_index_dir(getattr(config, 'output_dir', None) or '.',
-                                 'sirchmunk'))
+                search_index_dir(
+                    getattr(config, 'output_dir', None) or '.', 'sirchmunk'))
         self.work_path: Path = Path(_work_path).expanduser().resolve()
 
         self.reuse_knowledge = rag_config.get('reuse_knowledge', True)

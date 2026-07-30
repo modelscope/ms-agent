@@ -1,9 +1,9 @@
 import asyncio
+from acp import spawn_agent_process, text_block
+from acp.interfaces import Client
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 
-from acp import spawn_agent_process, text_block
-from acp.interfaces import Client
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
@@ -30,8 +30,8 @@ class _CollectorClient(Client):
 
     async def request_permission(self, options: list, session_id: str,
                                  tool_call: Any, **kwargs: Any):
-        from acp.schema import (RequestPermissionResponse, AllowedOutcome,
-                                DeniedOutcome)
+        from acp.schema import (AllowedOutcome, DeniedOutcome,
+                                RequestPermissionResponse)
         if self.permission_policy == 'auto_approve':
             allow = next(
                 (o for o in options

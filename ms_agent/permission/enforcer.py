@@ -12,12 +12,8 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .config import PermissionConfig
-from .handler import (
-    AutoPermissionHandler,
-    PermissionAction,
-    PermissionHandler,
-    PermissionResponse,
-)
+from .handler import (AutoPermissionHandler, PermissionAction,
+                      PermissionHandler, PermissionResponse)
 from .matcher import PermissionMatcher
 from .memory import PermissionMemory
 from .suggestions import generate_suggestions
@@ -112,7 +108,9 @@ class PermissionEnforcer:
 
         # 2. Auto / strict mode → allow (safety handled by SafetyGuard + ask_resolver)
         if self._config.mode in ('auto', 'strict'):
-            return PermissionDecision(action='allow', reason=f'{self._config.mode.capitalize()} mode')
+            return PermissionDecision(
+                action='allow',
+                reason=f'{self._config.mode.capitalize()} mode')
 
         # 3. Whitelist → allow
         for pattern in self._config.whitelist:
@@ -148,7 +146,8 @@ class PermissionEnforcer:
         tool_args: dict[str, Any],
     ) -> PermissionDecision:
         if response.action == PermissionAction.ALLOW_ONCE:
-            return PermissionDecision(action='allow', reason='User allowed once')
+            return PermissionDecision(
+                action='allow', reason='User allowed once')
 
         if response.action == PermissionAction.ALLOW_SESSION:
             pattern = response.pattern or tool_name

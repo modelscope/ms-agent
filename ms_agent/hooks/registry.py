@@ -102,13 +102,19 @@ class HookRegistry:
     _index: dict[str, tuple[MatcherGroup, ...]]
 
     VALID_EVENTS: ClassVar[frozenset[str]] = frozenset({
-        'SessionStart', 'PreToolUse', 'PostToolUse',
-        'UserPromptSubmit', 'Stop', 'PermissionRequest',
+        'SessionStart',
+        'PreToolUse',
+        'PostToolUse',
+        'UserPromptSubmit',
+        'Stop',
+        'PermissionRequest',
         'SubagentStop',
     })
 
     TOOL_EVENTS: ClassVar[frozenset[str]] = frozenset({
-        'PreToolUse', 'PostToolUse', 'PermissionRequest',
+        'PreToolUse',
+        'PostToolUse',
+        'PermissionRequest',
     })
 
     @classmethod
@@ -124,17 +130,18 @@ class HookRegistry:
 
         index: dict[str, tuple[MatcherGroup, ...]] = {}
         for event_type, groups_raw in d.items():
-            if event_type in (
-                    'enabled_sources', 'enabled_executors', 'default_model',
-                    'fail_closed', 'allowed_http_hook_urls',
-                    'http_hook_allowed_env_vars'):
+            if event_type in ('enabled_sources', 'enabled_executors',
+                              'default_model', 'fail_closed',
+                              'allowed_http_hook_urls',
+                              'http_hook_allowed_env_vars'):
                 continue
             if event_type not in cls.VALID_EVENTS:
                 logger.warning('Unknown hook event type: %s', event_type)
                 continue
             groups = []
             for g in (groups_raw or []):
-                matcher = g.get('matcher') if event_type in cls.TOOL_EVENTS else None
+                matcher = g.get(
+                    'matcher') if event_type in cls.TOOL_EVENTS else None
                 hooks_raw = g.get('hooks', [])
                 handlers = _filter_handlers_by_executor(
                     hooks_raw,
@@ -142,7 +149,8 @@ class HookRegistry:
                     source=source,
                 )
                 if handlers:
-                    groups.append(MatcherGroup(matcher=matcher, hooks=handlers))
+                    groups.append(
+                        MatcherGroup(matcher=matcher, hooks=handlers))
             if groups:
                 index[event_type] = tuple(groups)
         return cls(_index=index)
@@ -173,11 +181,10 @@ class HookRegistry:
                         source_plugin_id=plugin_id,
                         source_plugin_root=plugin_root,
                         source_plugin_data_dir=plugin_data_dir,
-                    )
-                    for handler in group.hooks
-                )
+                    ) for handler in group.hooks)
                 updated_groups.append(
-                    MatcherGroup(matcher=group.matcher, hooks=updated_handlers))
+                    MatcherGroup(
+                        matcher=group.matcher, hooks=updated_handlers))
             index[event] = tuple(updated_groups)
         return HookRegistry(_index=index)
 
@@ -193,7 +200,8 @@ class HookRegistry:
                 result.extend(group.hooks)
             elif group.matcher is None:
                 result.extend(group.hooks)
-            elif tool_name is not None and match_pattern(group.matcher, tool_name):
+            elif tool_name is not None and match_pattern(
+                    group.matcher, tool_name):
                 result.extend(group.hooks)
         return result
 

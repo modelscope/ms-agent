@@ -39,15 +39,15 @@ def _estimate_tokens(text: str) -> int:
 def _estimate_message_tokens(msg: Dict[str, Any]) -> int:
     """Heuristic token count from message body (no API usage fields)."""
     total = 0
-    content = msg.get("content", "")
+    content = msg.get('content', '')
     if content:
         if not isinstance(content, str):
             content = json.dumps(content, ensure_ascii=False)
         total += _estimate_tokens(content)
-    tc = msg.get("tool_calls")
+    tc = msg.get('tool_calls')
     if tc:
         total += _estimate_tokens(json.dumps(tc))
-    rc = msg.get("reasoning_content", "")
+    rc = msg.get('reasoning_content', '')
     if rc:
         total += _estimate_tokens(rc)
     return total
@@ -62,10 +62,10 @@ def _estimate_total_tokens(messages: List[Dict[str, Any]]) -> int:
     """
     for i in range(len(messages) - 1, -1, -1):
         msg = messages[i]
-        if msg.get("role") != "assistant":
+        if msg.get('role') != 'assistant':
             continue
-        pt = int(msg.get("prompt_tokens", 0) or 0)
-        ct = int(msg.get("completion_tokens", 0) or 0)
+        pt = int(msg.get('prompt_tokens', 0) or 0)
+        ct = int(msg.get('completion_tokens', 0) or 0)
         if pt or ct:
             base = pt + ct
             tail = sum(_estimate_message_tokens(m) for m in messages[i + 1:])
@@ -86,7 +86,7 @@ class SummaryCompactor:
     the constructor or set ``self.llm`` before use.
     """
 
-    name = "summary_compactor"
+    name = 'summary_compactor'
 
     def __init__(self, llm: Any = None) -> None:
         self.llm = llm
@@ -97,8 +97,8 @@ class SummaryCompactor:
         all_msgs: List[Dict[str, Any]],
         config: Dict[str, Any],
     ) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
-        context_limit = config.get("context_limit", 128000)
-        reserved = config.get("reserved_buffer", 20000)
+        context_limit = config.get('context_limit', 128000)
+        reserved = config.get('reserved_buffer', 20000)
         usable = context_limit - reserved
 
         tokens_before = _estimate_total_tokens(visible)
@@ -106,7 +106,7 @@ class SummaryCompactor:
             return visible, None
 
         if not self.llm:
-            logger.warning("[summary_compactor] No LLM available, skipping")
+            logger.warning('[summary_compactor] No LLM available, skipping')
             return visible, None
 
         summary = self._generate_summary(visible, config)
@@ -116,57 +116,56 @@ class SummaryCompactor:
         # Keep system message and most recent messages; replace middle
         result: List[Dict[str, Any]] = []
         for msg in visible:
-            if msg.get("role") == "system":
+            if msg.get('role') == 'system':
                 result.append(msg)
                 break
 
         result.append({
-            "role": "user",
-            "content": f"[Conversation Summary]\n{summary}\n\n"
-                       "Please continue based on this summary.",
+            'role':
+            'user',
+            'content':
+            f'[Conversation Summary]\n{summary}\n\n'
+            'Please continue based on this summary.',
         })
 
-        if visible and visible[-1].get("role") == "user":
+        if visible and visible[-1].get('role') == 'user':
             last_user = visible[-1]
-            if last_user.get("content") and last_user["content"] != result[-1]["content"]:
+            if last_user.get('content') and last_user['content'] != result[-1][
+                    'content']:
                 result.append(last_user)
 
         tokens_after = _estimate_total_tokens(result)
 
         logger.info(
-            f"[summary_compactor] Compressed {len(visible)} messages to "
-            f"{len(result)} ({tokens_before} -> {tokens_after} tokens)"
-        )
+            f'[summary_compactor] Compressed {len(visible)} messages to '
+            f'{len(result)} ({tokens_before} -> {tokens_after} tokens)')
 
         return result, {
-            "summary": summary[:200],
-            "tokens_before": tokens_before,
-            "tokens_after": tokens_after,
+            'summary': summary[:200],
+            'tokens_before': tokens_before,
+            'tokens_after': tokens_after,
         }
 
-    def _generate_summary(
-        self, messages: List[Dict[str, Any]], config: Dict[str, Any]
-    ) -> Optional[str]:
-        prompt = config.get("summary_prompt", SUMMARY_PROMPT)
-        char_limit = config.get(
-            "summary_input_char_limit", SUMMARY_INPUT_CHAR_LIMIT
-        )
+    def _generate_summary(self, messages: List[Dict[str, Any]],
+                          config: Dict[str, Any]) -> Optional[str]:
+        prompt = config.get('summary_prompt', SUMMARY_PROMPT)
+        char_limit = config.get('summary_input_char_limit',
+                                SUMMARY_INPUT_CHAR_LIMIT)
         conv_parts: List[str] = []
         for msg in messages:
-            role = msg.get("role", "?").upper()
-            content = msg.get("content", "")
+            role = msg.get('role', '?').upper()
+            content = msg.get('content', '')
             if isinstance(content, str) and content:
-                conv_parts.append(f"{role}: {content[:char_limit]}")
+                conv_parts.append(f'{role}: {content[:char_limit]}')
 
-        conversation = "\n".join(conv_parts)
-        query = f"{prompt}\n\n---\n{conversation}"
+        conversation = '\n'.join(conv_parts)
+        query = f'{prompt}\n\n---\n{conversation}'
 
         try:
             from ms_agent.llm.utils import Message
-            response = self.llm.generate(
-                [Message(role="user", content=query)], stream=False
-            )
+            response = self.llm.generate([Message(role='user', content=query)],
+                                         stream=False)
             return response.content
         except Exception as e:
-            logger.error(f"[summary_compactor] Summary generation failed: {e}")
+            logger.error(f'[summary_compactor] Summary generation failed: {e}')
             return None

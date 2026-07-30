@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ms_agent.utils.logger import get_logger
-
 from ..config import MemoryConfig
 from ..protocols import MemoryEntry
 from ..security import scan_content
@@ -50,7 +49,7 @@ class FileMemoryStorage:
             if self.security_scan:
                 safe, reason = scan_content(entry.content)
                 if not safe:
-                    logger.warning(f"[file_storage] Skipped entry: {reason}")
+                    logger.warning(f'[file_storage] Skipped entry: {reason}')
                     continue
             self._add_entry(entry.content)
             ids.append(entry.id)
@@ -63,24 +62,28 @@ class FileMemoryStorage:
         """
         content = self._read()
         if content:
-            return [MemoryEntry(id="memory_md", content=content,
-                                category="knowledge")]
+            return [
+                MemoryEntry(
+                    id='memory_md', content=content, category='knowledge')
+            ]
         return []
 
     async def delete(self, ids: List[str]) -> bool:
         return True
 
     async def list_all(
-        self, filters: Optional[Dict[str, Any]] = None
-    ) -> List[MemoryEntry]:
+            self,
+            filters: Optional[Dict[str, Any]] = None) -> List[MemoryEntry]:
         content = self._read()
         if content:
-            return [MemoryEntry(id="memory_md", content=content,
-                                category="knowledge")]
+            return [
+                MemoryEntry(
+                    id='memory_md', content=content, category='knowledge')
+            ]
         return []
 
     async def clear(self) -> bool:
-        self._write("")
+        self._write('')
         return True
 
     # ------------------------------------------------------------------
@@ -89,16 +92,13 @@ class FileMemoryStorage:
 
     def _add_entry(self, content: str) -> bool:
         current = self._read()
-        deduped = list(dict.fromkeys(
-            [l for l in current.splitlines() if l.strip()] +
-            [content.strip()]
-        ))
-        new_content = "\n".join(deduped) + "\n"
+        lines = [line for line in current.splitlines() if line.strip()]
+        deduped = list(dict.fromkeys(lines + [content.strip()]))
+        new_content = '\n'.join(deduped) + '\n'
         if len(new_content) > self.char_limit:
             logger.warning(
-                f"[file_storage] MEMORY.md would exceed char limit "
-                f"({len(new_content)} > {self.char_limit}), skipping add"
-            )
+                f'[file_storage] MEMORY.md would exceed char limit '
+                f'({len(new_content)} > {self.char_limit}), skipping add')
             return False
         self._write(new_content)
         return True
@@ -107,15 +107,15 @@ class FileMemoryStorage:
         if self.security_scan:
             safe, reason = scan_content(new_content)
             if not safe:
-                logger.warning(f"[file_storage] Replace blocked: {reason}")
+                logger.warning(f'[file_storage] Replace blocked: {reason}')
                 return False
         current = self._read()
         if old_content.strip() not in current:
-            logger.warning("[file_storage] Old content not found for replace")
+            logger.warning('[file_storage] Old content not found for replace')
             return False
         updated = current.replace(old_content.strip(), new_content.strip(), 1)
         if len(updated) > self.char_limit:
-            logger.warning("[file_storage] Replace would exceed char limit")
+            logger.warning('[file_storage] Replace would exceed char limit')
             return False
         self._write(updated)
         return True
@@ -124,11 +124,11 @@ class FileMemoryStorage:
         current = self._read()
         target = content.strip()
         lines = current.splitlines()
-        new_lines = [l for l in lines if l.strip() != target]
+        new_lines = [line for line in lines if line.strip() != target]
         if len(new_lines) == len(lines):
             # try substring match
-            new_lines = [l for l in lines if target not in l]
-        self._write("\n".join(new_lines) + "\n" if new_lines else "")
+            new_lines = [line for line in lines if target not in line]
+        self._write('\n'.join(new_lines) + '\n' if new_lines else '')
         return True
 
     def full_replace(self, content: str) -> bool:
@@ -137,11 +137,11 @@ class FileMemoryStorage:
             safe, reason = scan_content(content)
             if not safe:
                 logger.warning(
-                    f"[file_storage] Full replace blocked: {reason}")
+                    f'[file_storage] Full replace blocked: {reason}')
                 return False
         if len(content) > self.char_limit:
             content = content[:self.char_limit]
-            logger.warning("[file_storage] Truncated to char limit")
+            logger.warning('[file_storage] Truncated to char limit')
         self._write(content)
         return True
 
@@ -154,14 +154,14 @@ class FileMemoryStorage:
 
     def append_archive(self, content: str) -> None:
         """Append to ``.memory/archive.md`` when LLM consolidation fails."""
-        archive_dir = self.base_dir / ".memory"
+        archive_dir = self.base_dir / '.memory'
         archive_dir.mkdir(parents=True, exist_ok=True)
-        archive_path = archive_dir / "archive.md"
-        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-        block = f"\n---\n### Archive {ts}\n\n{content}\n"
-        with open(archive_path, "a", encoding="utf-8") as f:
+        archive_path = archive_dir / 'archive.md'
+        ts = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+        block = f'\n---\n### Archive {ts}\n\n{content}\n'
+        with open(archive_path, 'a', encoding='utf-8') as f:
             f.write(block)
-        logger.info(f"[file_storage] Appended to raw archive: {archive_path}")
+        logger.info(f'[file_storage] Appended to raw archive: {archive_path}')
 
     # ------------------------------------------------------------------
     # Internal I/O (atomic writes)
@@ -171,17 +171,16 @@ class FileMemoryStorage:
         if self._content_cache is not None:
             return self._content_cache
         if self.memory_path.exists():
-            content = self.memory_path.read_text(encoding="utf-8")
+            content = self.memory_path.read_text(encoding='utf-8')
             self._content_cache = content
             return content
-        return ""
+        return ''
 
     def _write(self, content: str) -> None:
         self.memory_path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(
-            dir=self.memory_path.parent, suffix=".tmp")
+        fd, tmp = tempfile.mkstemp(dir=self.memory_path.parent, suffix='.tmp')
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
                 f.write(content)
             os.replace(tmp, self.memory_path)
         except Exception:

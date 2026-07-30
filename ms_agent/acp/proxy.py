@@ -1,9 +1,6 @@
 import logging
 import os
 import sys
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
-
 import yaml
 from acp import (PROTOCOL_VERSION, Agent, InitializeResponse,
                  NewSessionResponse, PromptResponse, run_agent,
@@ -13,8 +10,10 @@ from acp.schema import (AgentCapabilities, ClientCapabilities, Implementation,
                         PromptCapabilities, SessionCapabilities,
                         SessionConfigOptionSelect, SessionConfigSelect,
                         SessionConfigSelectOption, SessionListCapabilities)
-from ms_agent.utils.logger import get_logger
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
+from ms_agent.utils.logger import get_logger
 from .errors import ConfigError, wrap_agent_error
 from .proxy_session import ProxySessionStore
 

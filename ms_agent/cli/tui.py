@@ -61,7 +61,8 @@ class TuiCMD(CLICommand):
             type=str,
             default=None,
             help='Path to an MCP servers JSON file ({"mcpServers": {...}}) — '
-            'stdio / sse / streamable_http servers to connect for this session.')
+            'stdio / sse / streamable_http servers to connect for this session.'
+        )
         parser.add_argument(
             '--emit-events',
             '--emit_events',

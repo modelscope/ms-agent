@@ -461,13 +461,16 @@ class LocalCodeExecutionTool(ToolBase):
                                 'description': 'Shell command to execute'
                             },
                             'timeout': {
-                                'type': 'integer',
-                                'minimum': 1,
-                                'maximum': int(
-                                    os.getenv('TOOL_CALL_TIMEOUT_MAX', '600')),
+                                'type':
+                                'integer',
+                                'minimum':
+                                1,
+                                'maximum':
+                                int(os.getenv('TOOL_CALL_TIMEOUT_MAX', '600')),
                                 'description':
                                 'Execution timeout in seconds (host-wide ceiling, default 600s; TOOL_CALL_TIMEOUT_MAX).',
-                                'default': self._shell_timeout
+                                'default':
+                                self._shell_timeout
                             },
                             'run_in_background': {
                                 'type': 'boolean',
@@ -757,12 +760,15 @@ class LocalCodeExecutionTool(ToolBase):
                     )
                     await self._task_manager.complete(task_id, text)
                 except asyncio.TimeoutError:
-                    logger.warning(f'Shell command timed out after {exec_timeout} seconds (task {task_id})')
+                    logger.warning(
+                        f'Shell command timed out after {exec_timeout} seconds (task {task_id})'
+                    )
                     try:
                         process.kill()
                         await process.communicate()
                     except Exception as exc:  # noqa: B902
-                        logger.error(f'Process cleanup failed: {exc}', exc_info=True)
+                        logger.error(
+                            f'Process cleanup failed: {exc}', exc_info=True)
                     if self._task_manager:
                         await self._task_manager.fail(
                             task_id,
@@ -810,7 +816,9 @@ class LocalCodeExecutionTool(ToolBase):
             stdout, stderr = await asyncio.wait_for(
                 process.communicate(), timeout=exec_timeout)
         except asyncio.TimeoutError:
-            logger.warning(f'Shell command timed out after {exec_timeout} seconds (call {call_id})')
+            logger.warning(
+                f'Shell command timed out after {exec_timeout} seconds (call {call_id})'
+            )
             process.kill()
             try:
                 await process.communicate()

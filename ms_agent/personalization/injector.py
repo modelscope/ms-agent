@@ -27,21 +27,15 @@ class PersonalizationInjector:
         sections: list[str] = []
 
         if config.global_instruction.strip():
-            sections.append(
-                f'{PersonalizationInjector.HEADER_GLOBAL}\n\n'
-                f'{config.global_instruction.strip()}'
-            )
+            sections.append(f'{PersonalizationInjector.HEADER_GLOBAL}\n\n'
+                            f'{config.global_instruction.strip()}')
 
         if config.project_instruction.strip():
-            sections.append(
-                f'{PersonalizationInjector.HEADER_PROJECT}\n\n'
-                f'{config.project_instruction.strip()}'
-            )
+            sections.append(f'{PersonalizationInjector.HEADER_PROJECT}\n\n'
+                            f'{config.project_instruction.strip()}')
 
         if config.user_profile.strip():
-            sections.append(
-                f'{PersonalizationInjector.HEADER_PROFILE}\n\n'
-                f'{config.user_profile.strip()}'
-            )
+            sections.append(f'{PersonalizationInjector.HEADER_PROFILE}\n\n'
+                            f'{config.user_profile.strip()}')
 
         return '\n\n'.join(sections)

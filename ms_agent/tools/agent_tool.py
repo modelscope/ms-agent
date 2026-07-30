@@ -492,8 +492,9 @@ class AgentTool(ToolBase):
             return
 
         for entry in {
-            item['namespaced_name']: registry.resolve(item['namespaced_name'])
-            for item in registry.list_all()
+                item['namespaced_name']:
+                registry.resolve(item['namespaced_name'])
+                for item in registry.list_all()
         }.values():
             if entry is None:
                 continue
@@ -869,21 +870,23 @@ class AgentTool(ToolBase):
 
         registry = self._plugin_agent_registry
         if registry is None or not registry.has_agents():
-            return json.dumps({
-                'error': 'No plugin subagents are registered.',
-            }, ensure_ascii=False)
+            return json.dumps(
+                {
+                    'error': 'No plugin subagents are registered.',
+                },
+                ensure_ascii=False)
 
         entry = AgentDelegate.resolve_task_entry(registry, tool_args)
         if entry is None:
             agent_name = AgentDelegate.resolve_task_agent_name(tool_args)
-            available = ', '.join(
-                item['namespaced_name'] for item in registry.list_all())
-            return json.dumps({
-                'error': (
-                    f'Unknown plugin subagent {agent_name!r}. '
-                    f'Available: {available}'
-                ),
-            }, ensure_ascii=False)
+            available = ', '.join(item['namespaced_name']
+                                  for item in registry.list_all())
+            return json.dumps(
+                {
+                    'error': (f'Unknown plugin subagent {agent_name!r}. '
+                              f'Available: {available}'),
+                },
+                ensure_ascii=False)
 
         delegate_spec = AgentDelegate.to_agent_tool_spec(
             entry,
@@ -891,11 +894,8 @@ class AgentTool(ToolBase):
             trust_remote_code=self._trust_remote_code,
         )
         prompt = (
-            tool_args.get('prompt')
-            or tool_args.get('request')
-            or tool_args.get('description')
-            or ''
-        )
+            tool_args.get('prompt') or tool_args.get('request')
+            or tool_args.get('description') or '')
         if not isinstance(prompt, str):
             prompt = json.dumps(prompt, ensure_ascii=False)
 

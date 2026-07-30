@@ -24,16 +24,16 @@ Usage::
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple, runtime_checkable
+from typing import (Any, Callable, Dict, List, Optional, Protocol, Tuple,
+                    runtime_checkable)
 
 from ms_agent.llm.utils import Message
-
 from .session_log import SessionLog
-
 
 # ------------------------------------------------------------------
 # ViewStrategy Protocol
 # ------------------------------------------------------------------
+
 
 @runtime_checkable
 class ViewStrategy(Protocol):
@@ -66,6 +66,7 @@ class ViewStrategy(Protocol):
 # ------------------------------------------------------------------
 # ContextAssembler
 # ------------------------------------------------------------------
+
 
 class ContextAssembler:
     """Builds the LLM-visible message list from a SessionLog.
@@ -109,8 +110,7 @@ class ContextAssembler:
 
         for strategy in self.strategies:
             window_last_seq = (
-                visible[-1].get("seq", 0) if visible else lc_seq
-            )
+                visible[-1].get('seq', 0) if visible else lc_seq)
 
             visible, meta = strategy.apply(visible, all_msgs, self.config)
 
@@ -121,35 +121,37 @@ class ContextAssembler:
                 if self._memory_flush_callback is not None:
                     try:
                         discarded = [
-                            m for m in all_msgs
-                            if boundary_before <= m.get("seq", 0) <= boundary_after
+                            m for m in all_msgs if boundary_before <= m.get(
+                                'seq', 0) <= boundary_after
                         ]
                         self._memory_flush_callback(discarded)
                     except Exception:
                         pass
 
                 event: Dict[str, Any] = {
-                    "strategy": strategy.name,
-                    "boundary_before": boundary_before,
-                    "boundary_after": boundary_after,
-                    "tokens_before": meta.get("tokens_before", 0),
-                    "tokens_after": meta.get("tokens_after", 0),
+                    'strategy': strategy.name,
+                    'boundary_before': boundary_before,
+                    'boundary_after': boundary_after,
+                    'tokens_before': meta.get('tokens_before', 0),
+                    'tokens_after': meta.get('tokens_after', 0),
                 }
-                if meta.get("summary"):
-                    event["summary_preview"] = meta["summary"][:200]
-                if meta.get("pruned_count") is not None:
-                    event["pruned_count"] = meta["pruned_count"]
+                if meta.get('summary'):
+                    event['summary_preview'] = meta['summary'][:200]
+                if meta.get('pruned_count') is not None:
+                    event['pruned_count'] = meta['pruned_count']
                 self.session_log.record_compaction(event)
 
                 first_new_seq = None
                 for msg in visible:
                     clean = {
-                        k: v for k, v in msg.items()
-                        if k not in ("seq", "timestamp")
+                        k: v
+                        for k, v in msg.items()
+                        if k not in ('seq', 'timestamp')
                     }
-                    s = self.session_log.append(
-                        {**clean, "_source": "compaction"}
-                    )
+                    s = self.session_log.append({
+                        **clean, '_source':
+                        'compaction'
+                    })
                     if first_new_seq is None:
                         first_new_seq = s
 
@@ -167,12 +169,12 @@ class ContextAssembler:
 # Helpers
 # ------------------------------------------------------------------
 
-def _slice_visible(
-    all_msgs: List[Dict[str, Any]], lc_seq: int
-) -> List[Dict[str, Any]]:
+
+def _slice_visible(all_msgs: List[Dict[str, Any]],
+                   lc_seq: int) -> List[Dict[str, Any]]:
     """Return a deep-copied visible window (seq >= *lc_seq*)."""
     for i, m in enumerate(all_msgs):
-        if m.get("seq", 0) >= lc_seq:
+        if m.get('seq', 0) >= lc_seq:
             return [deepcopy(m) for m in all_msgs[i:]]
     return []
 
@@ -197,5 +199,5 @@ def _dicts_to_messages(dicts: List[Dict[str, Any]]) -> List[Message]:
                 reasoning_signature=d.get("reasoning_signature", "") or "",
             ))
         else:
-            result.append(Message(role="user", content=str(d)))
+            result.append(Message(role='user', content=str(d)))
     return result

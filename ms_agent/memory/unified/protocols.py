@@ -30,20 +30,13 @@ import uuid
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Protocol,
-    runtime_checkable,
-)
-
+from typing import (Any, Callable, Dict, List, Optional, Protocol,
+                    runtime_checkable)
 
 # ===================================================================
 # Layer 1 -- Data structures
 # ===================================================================
+
 
 @dataclass
 class MemoryNamespace:
@@ -52,23 +45,23 @@ class MemoryNamespace:
     Phase 1 only uses *user_id*; the remaining fields are reserved for
     future service-oriented deployments.
     """
-    user_id: str = "default"
-    agent_id: str = "default"
-    tenant_id: str = "local"
+    user_id: str = 'default'
+    agent_id: str = 'default'
+    tenant_id: str = 'local'
 
     @property
     def storage_key(self) -> str:
-        return f"{self.tenant_id}/{self.user_id}/{self.agent_id}"
+        return f'{self.tenant_id}/{self.user_id}/{self.agent_id}'
 
 
 @dataclass
 class MemoryEntry:
     """A single memory record -- the universal currency across all layers."""
-    id: str = field(default_factory=lambda: f"mem_{uuid.uuid4().hex[:12]}")
-    content: str = ""
-    category: str = "knowledge"
+    id: str = field(default_factory=lambda: f'mem_{uuid.uuid4().hex[:12]}')
+    content: str = ''
+    category: str = 'knowledge'
     confidence: float = 0.8
-    source: str = "session"
+    source: str = 'session'
     created_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = field(
@@ -79,9 +72,10 @@ class MemoryEntry:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "MemoryEntry":
-        return cls(**{k: v for k, v in data.items()
-                      if k in cls.__dataclass_fields__})
+    def from_dict(cls, data: Dict[str, Any]) -> 'MemoryEntry':
+        return cls(
+            **{k: v
+               for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
 @dataclass
@@ -92,12 +86,13 @@ class MemoryEvent:
     entry_ids: List[str] = field(default_factory=list)
     timestamp: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    source: str = "agent"
+    source: str = 'agent'
 
 
 # ===================================================================
 # Layer 2 -- MemoryBackend Protocol (the ONE contract)
 # ===================================================================
+
 
 @runtime_checkable
 class MemoryBackend(Protocol):
@@ -118,7 +113,6 @@ class MemoryBackend(Protocol):
     """
 
     # -- Lifecycle ----------------------------------------------------
-
     async def start(self, **kwargs: Any) -> None:
         """Initialize resources (files, DBs, indexes).
 
@@ -134,7 +128,8 @@ class MemoryBackend(Protocol):
     # -- Agent loop (called every step) --------------------------------
 
     async def inject(
-        self, messages: List[Dict[str, Any]],
+        self,
+        messages: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
         """Inject memory context into *messages* before the LLM call.
 
@@ -145,7 +140,9 @@ class MemoryBackend(Protocol):
         ...
 
     async def on_messages(
-        self, messages: List[Dict[str, Any]], **kwargs: Any,
+        self,
+        messages: List[Dict[str, Any]],
+        **kwargs: Any,
     ) -> None:
         """Post-step hook -- persist observations from the latest messages."""
         ...
@@ -153,13 +150,15 @@ class MemoryBackend(Protocol):
     # -- Compression hooks --------------------------------------------
 
     async def on_pre_compress(
-        self, messages: List[Dict[str, Any]],
+        self,
+        messages: List[Dict[str, Any]],
     ) -> None:
         """Extract and persist important info before messages are discarded."""
         ...
 
     async def consolidate(
-        self, messages: List[Dict[str, Any]],
+        self,
+        messages: List[Dict[str, Any]],
         target_remove_count: int = 0,
     ) -> List[Dict[str, Any]]:
         """Token-pressure-driven consolidation.
@@ -177,7 +176,9 @@ class MemoryBackend(Protocol):
         ...
 
     async def handle_tool_call(
-        self, tool_name: str, arguments: Dict[str, Any],
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
     ) -> str:
         """Dispatch a tool call.  Returns a JSON-serializable string."""
         ...
@@ -185,7 +186,9 @@ class MemoryBackend(Protocol):
     # -- Search -------------------------------------------------------
 
     async def search(
-        self, query: str, limit: int = 10,
+        self,
+        query: str,
+        limit: int = 10,
     ) -> List[MemoryEntry]:
         """Search memory.  Used by the orchestrator and external callers."""
         ...
@@ -201,6 +204,7 @@ class MemoryBackend(Protocol):
 # Layer 3 -- BaseMemoryBackend ABC (convenience base class)
 # ===================================================================
 
+
 class BaseMemoryBackend(ABC):
     """Convenience base class for MemoryBackend implementations.
 
@@ -215,30 +219,37 @@ class BaseMemoryBackend(ABC):
     # -- Required -----------------------------------------------------
 
     @abstractmethod
-    async def start(self, **kwargs: Any) -> None: ...
+    async def start(self, **kwargs: Any) -> None:
+        ...
 
     @abstractmethod
-    async def close(self) -> None: ...
+    async def close(self) -> None:
+        ...
 
     @abstractmethod
     async def inject(
-        self, messages: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]: ...
+        self,
+        messages: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        ...
 
     # -- Optional (no-op defaults) ------------------------------------
-
     async def on_messages(
-        self, messages: List[Dict[str, Any]], **kwargs: Any,
+        self,
+        messages: List[Dict[str, Any]],
+        **kwargs: Any,
     ) -> None:
         pass
 
     async def on_pre_compress(
-        self, messages: List[Dict[str, Any]],
+        self,
+        messages: List[Dict[str, Any]],
     ) -> None:
         pass
 
     async def consolidate(
-        self, messages: List[Dict[str, Any]],
+        self,
+        messages: List[Dict[str, Any]],
         target_remove_count: int = 0,
     ) -> List[Dict[str, Any]]:
         return messages
@@ -247,12 +258,16 @@ class BaseMemoryBackend(ABC):
         return []
 
     async def handle_tool_call(
-        self, tool_name: str, arguments: Dict[str, Any],
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
     ) -> str:
         return f'{{"error": "unknown tool: {tool_name}"}}'
 
     async def search(
-        self, query: str, limit: int = 10,
+        self,
+        query: str,
+        limit: int = 10,
     ) -> List[MemoryEntry]:
         return []
 
@@ -264,13 +279,20 @@ class BaseMemoryBackend(ABC):
 # Layer 4 -- Event bus Protocol
 # ===================================================================
 
+
 @runtime_checkable
 class MemoryEventBus(Protocol):
     """Decoupled event pub/sub.  Phase 1: in-memory queue."""
 
-    async def publish(self, event: MemoryEvent) -> None: ...
+    async def publish(self, event: MemoryEvent) -> None:
+        ...
+
     async def subscribe(
-        self, event_type: str,
+        self,
+        event_type: str,
         callback: Callable[[MemoryEvent], Any],
-    ) -> str: ...
-    async def unsubscribe(self, subscription_id: str) -> None: ...
+    ) -> str:
+        ...
+
+    async def unsubscribe(self, subscription_id: str) -> None:
+        ...

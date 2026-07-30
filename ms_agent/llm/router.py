@@ -20,7 +20,6 @@ from typing import Generator, List, Optional, Union
 from omegaconf import DictConfig, OmegaConf
 
 from ms_agent.utils import get_logger
-
 from .adapter import ResponseAdapter
 from .credentials import CredentialResolver
 from .retry import smart_retry
@@ -104,10 +103,8 @@ class ProviderRouter:
         self._registry = get_registry()
 
     def create(self, config: DictConfig) -> LLMProvider:
-        service = config.llm.get('service') if hasattr(config.llm,
-                                                       'get') else getattr(
-                                                           config.llm,
-                                                           'service', None)
+        service = config.llm.get('service') if hasattr(
+            config.llm, 'get') else getattr(config.llm, 'service', None)
         model = config.llm.model
 
         spec = self._registry.get(service)

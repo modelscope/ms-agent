@@ -400,7 +400,8 @@ class FileSystemTool(ToolBase):
         offset = offset or 0
         path = path or '.'
         raw = Path(path).expanduser()
-        root = raw.resolve() if raw.is_absolute() else (self._ws.root / raw).resolve()
+        root = raw.resolve() if raw.is_absolute() else (self._ws.root
+                                                        / raw).resolve()
 
         if pattern is None or (isinstance(pattern, str)
                                and not pattern.strip()):
@@ -577,15 +578,13 @@ class FileSystemTool(ToolBase):
         if root.is_file():
             files = [root]
         else:
-            for fp in _walk_files_limited(root, self._ws.deny_globs,
-                                          50_000):
+            for fp in _walk_files_limited(root, self._ws.deny_globs, 50_000):
                 if consider_file(fp):
                     files.append(fp)
 
         for fp in files:
-            rel = str(fp.relative_to(
-                self._ws.root)) if _is_relative(
-                    fp, self._ws.root) else str(fp)
+            rel = str(fp.relative_to(self._ws.root)) if _is_relative(
+                fp, self._ws.root) else str(fp)
             try:
                 if output_mode == 'files_with_matches':
                     with fp.open(encoding='utf-8', errors='replace') as f:
@@ -619,7 +618,8 @@ class FileSystemTool(ToolBase):
     async def glob(self, pattern: str, path: str = '') -> str:
         call_id = f'glob-{pattern[:40]}'
         raw = Path(path or '.').expanduser()
-        base = raw.resolve() if raw.is_absolute() else (self._ws.root / raw).resolve()
+        base = raw.resolve() if raw.is_absolute() else (self._ws.root
+                                                        / raw).resolve()
 
         if not base.is_dir():
             return json.dumps(
@@ -641,9 +641,8 @@ class FileSystemTool(ToolBase):
                 rp = p.resolve()
                 if _is_denied_path(rp, base, deny):
                     continue
-                rel = str(p.relative_to(
-                    self._ws.root)) if _is_relative(
-                        p, self._ws.root) else str(p)
+                rel = str(p.relative_to(self._ws.root)) if _is_relative(
+                    p, self._ws.root) else str(p)
                 matches.append(rel)
                 if len(matches) >= self._glob_max_files:
                     truncated = True

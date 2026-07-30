@@ -1,10 +1,9 @@
 import argparse
+import json
 import os
 
-import json
 from ms_agent.config.env import Env
 from ms_agent.utils import strtobool
-
 from .base import CLICommand
 
 

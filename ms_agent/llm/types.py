@@ -70,13 +70,14 @@ class LLMResponse:
 
     @property
     def text(self) -> str:
-        return ''.join(b.text for b in self.content_blocks
-                       if isinstance(b, TextBlock))
+        return ''.join(
+            b.text for b in self.content_blocks if isinstance(b, TextBlock))
 
     @property
     def thinking(self) -> str:
-        return ''.join(b.thinking for b in self.content_blocks
-                       if isinstance(b, ThinkingBlock))
+        return ''.join(
+            b.thinking for b in self.content_blocks
+            if isinstance(b, ThinkingBlock))
 
     @property
     def tool_calls(self) -> List[ToolUseBlock]:

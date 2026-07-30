@@ -1,15 +1,14 @@
+import json
 import logging
 import sys
-from typing import Any
-
-import json
 from acp import (PROTOCOL_VERSION, Agent, InitializeResponse,
                  NewSessionResponse, PromptResponse, run_agent, text_block)
 from acp.schema import (AgentCapabilities, ClientCapabilities, Implementation,
                         PermissionOption, PromptCapabilities,
                         SessionCapabilities, SessionListCapabilities)
-from ms_agent.utils.logger import get_logger
+from typing import Any
 
+from ms_agent.utils.logger import get_logger
 from .config import (apply_config_option, build_config_options,
                      build_session_modes)
 from .errors import wrap_agent_error
@@ -161,9 +160,8 @@ class MSAgentACPServer(Agent):
                             await self.connection.session_update(
                                 session_id, update)
                         except Exception as send_err:
-                            logger.warning(
-                                'Failed to send session_update: %s',
-                                send_err)
+                            logger.warning('Failed to send session_update: %s',
+                                           send_err)
                     if session.cancelled:
                         break
             elif isinstance(result, list):
@@ -331,7 +329,8 @@ class MSAgentACPServer(Agent):
         session_id: str,
         **kwargs: Any,
     ):
-        from acp.schema import SetSessionModeResponse, CurrentModeUpdate
+        from acp.schema import CurrentModeUpdate, SetSessionModeResponse
+
         # _session = self.session_store.get(session_id)
         await self.connection.session_update(
             session_id,

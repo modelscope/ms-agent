@@ -11,9 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Optional
-
 from rich.console import Console
+from typing import Any, Optional
 
 from ms_agent.tui.select import select_async
 from ms_agent.tui.theme import DEFAULT_THEME, Theme
@@ -23,7 +22,10 @@ _ALLOW_ONCE, _ALLOW_SESSION, _ALLOW_ALWAYS, _EDIT, _DENY = range(5)
 
 
 class TUIPermissionHandler:
-    def __init__(self, console: Optional[Console] = None, io: Any = None,
+
+    def __init__(self,
+                 console: Optional[Console] = None,
+                 io: Any = None,
                  theme: Theme = DEFAULT_THEME) -> None:
         self._console = console or Console()
         self._theme = theme
@@ -59,11 +61,11 @@ class TUIPermissionHandler:
             return PermissionResponse(action=PermissionAction.DENY)
 
         if idx == _ALLOW_SESSION:
-            return PermissionResponse(action=PermissionAction.ALLOW_SESSION,
-                                      pattern=suggestion)
+            return PermissionResponse(
+                action=PermissionAction.ALLOW_SESSION, pattern=suggestion)
         if idx == _ALLOW_ALWAYS:
-            return PermissionResponse(action=PermissionAction.ALLOW_ALWAYS,
-                                      pattern=suggestion)
+            return PermissionResponse(
+                action=PermissionAction.ALLOW_ALWAYS, pattern=suggestion)
         if idx == _EDIT:
             raw = (await self._read_line('new args (JSON): ')).strip()
             try:
@@ -71,8 +73,8 @@ class TUIPermissionHandler:
             except (json.JSONDecodeError, ValueError):
                 self._console.print('[red]invalid JSON — denying[/]')
                 return PermissionResponse(action=PermissionAction.DENY)
-            return PermissionResponse(action=PermissionAction.MODIFY,
-                                      updated_args=new_args)
+            return PermissionResponse(
+                action=PermissionAction.MODIFY, updated_args=new_args)
         return PermissionResponse(action=PermissionAction.ALLOW_ONCE)
 
     def _format_args(self, tool_args) -> str:

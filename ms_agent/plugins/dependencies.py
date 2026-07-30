@@ -40,7 +40,8 @@ def parse_dependencies(raw: dict[str, Any] | None) -> list[PluginDependency]:
             deps.append(PluginDependency(name=item))
             continue
         if not isinstance(item, dict):
-            raise PluginDependencyError('dependency entries must be objects or strings')
+            raise PluginDependencyError(
+                'dependency entries must be objects or strings')
         name = item.get('name') or item.get('id')
         if not name:
             raise PluginDependencyError('dependency entry requires name')

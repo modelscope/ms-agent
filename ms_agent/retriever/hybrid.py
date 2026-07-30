@@ -14,14 +14,17 @@ class HybridRetriever(BaseRetriever):
     will forward to every sub-retriever).
     """
 
-    def __init__(self, retrievers: List[BaseRetriever], *,
+    def __init__(self,
+                 retrievers: List[BaseRetriever],
+                 *,
                  fusion: Optional[FusionStrategy] = None):
         if not retrievers:
-            raise ValueError("At least one sub-retriever is required")
+            raise ValueError('At least one sub-retriever is required')
         self._retrievers = retrievers
         self._fusion: FusionStrategy = fusion or RRFFusion()
 
-    def index(self, documents: List[str],
+    def index(self,
+              documents: List[str],
               doc_ids: Optional[List[str]] = None) -> None:
         for r in self._retrievers:
             r.index(documents, doc_ids)

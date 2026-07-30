@@ -26,13 +26,17 @@ class CronCMD(CLICommand):
             CronCMD.name,
             help='Manage cron (scheduled) tasks.',
         )
-        sub = parser.add_subparsers(dest='cron_action', help='Cron sub-commands')
+        sub = parser.add_subparsers(
+            dest='cron_action', help='Cron sub-commands')
 
         # start
         p_start = sub.add_parser('start', help='Start the cron daemon.')
-        p_start.add_argument('--foreground', action='store_true', help='Run in foreground.')
-        p_start.add_argument('--workspace', type=str, default=None, help='Cron workspace path.')
-        p_start.add_argument('--env', type=str, default=None, help='Path to .env file.')
+        p_start.add_argument(
+            '--foreground', action='store_true', help='Run in foreground.')
+        p_start.add_argument(
+            '--workspace', type=str, default=None, help='Cron workspace path.')
+        p_start.add_argument(
+            '--env', type=str, default=None, help='Path to .env file.')
 
         # stop
         sub.add_parser('stop', help='Stop the cron daemon.')
@@ -46,16 +50,24 @@ class CronCMD(CLICommand):
 
         # list
         p_list = sub.add_parser('list', help='List cron jobs.')
-        p_list.add_argument('--all', action='store_true', help='Include disabled jobs.')
-        p_list.add_argument('--json', dest='json_output', action='store_true', help='JSON output.')
+        p_list.add_argument(
+            '--all', action='store_true', help='Include disabled jobs.')
+        p_list.add_argument(
+            '--json',
+            dest='json_output',
+            action='store_true',
+            help='JSON output.')
 
         # create
         p_create = sub.add_parser('create', help='Create a new cron job.')
-        p_create.add_argument('schedule', type=str, help='Schedule expression.')
+        p_create.add_argument(
+            'schedule', type=str, help='Schedule expression.')
         p_create.add_argument('prompt', type=str, help='Task prompt.')
         p_create.add_argument('--name', type=str, default='', help='Job name.')
-        p_create.add_argument('--project', type=str, default=None, help='Agent project path.')
-        p_create.add_argument('--timeout', type=int, default=None, help='Timeout in seconds.')
+        p_create.add_argument(
+            '--project', type=str, default=None, help='Agent project path.')
+        p_create.add_argument(
+            '--timeout', type=int, default=None, help='Timeout in seconds.')
 
         # pause
         p_pause = sub.add_parser('pause', help='Pause a job.')
@@ -81,10 +93,12 @@ class CronCMD(CLICommand):
         # output
         p_out = sub.add_parser('output', help='Show job output.')
         p_out.add_argument('job_id', type=str)
-        p_out.add_argument('--last', action='store_true', help='Show latest output.')
+        p_out.add_argument(
+            '--last', action='store_true', help='Show latest output.')
 
         # import (Phase 2: declarative jobs.d/*.yaml)
-        sub.add_parser('import', help='Import jobs from jobs.d/*.yaml declarations.')
+        sub.add_parser(
+            'import', help='Import jobs from jobs.d/*.yaml declarations.')
 
         parser.set_defaults(func=subparser_func)
 
@@ -92,7 +106,9 @@ class CronCMD(CLICommand):
         action = getattr(self.args, 'cron_action', None)
         if not action:
             print('Usage: ms-agent cron <command>')
-            print('Commands: start, stop, status, tick, list, create, pause, resume, run, remove, history, output')
+            print(
+                'Commands: start, stop, status, tick, list, create, pause, resume, run, remove, history, output'
+            )
             return
 
         # 'import' is a Python keyword; map to _cmd_import_jobs
@@ -117,20 +133,28 @@ class CronCMD(CLICommand):
     def _cmd_start(self):
         service = self._get_service()
         if service.daemon_is_running():
-            print(f'Cron daemon already running (PID {service.status().get("pid")}).')
+            print(
+                f'Cron daemon already running (PID {service.status().get("pid")}).'
+            )
             return
 
         foreground = getattr(self.args, 'foreground', False)
         if foreground:
-            print(f'Starting cron daemon in foreground (workspace: {service.workspace})')
+            print(
+                f'Starting cron daemon in foreground (workspace: {service.workspace})'
+            )
             asyncio.run(service.run_forever())
         else:
             if not hasattr(os, 'fork'):
-                print('Daemon mode is not supported on this platform. Please use --foreground.', file=sys.stderr)
+                print(
+                    'Daemon mode is not supported on this platform. Please use --foreground.',
+                    file=sys.stderr)
                 sys.exit(1)
             pid = os.fork()
             if pid > 0:
-                print(f'Cron daemon started (PID {pid}, workspace: {service.workspace})')
+                print(
+                    f'Cron daemon started (PID {pid}, workspace: {service.workspace})'
+                )
                 return
             os.setsid()
             asyncio.run(service.run_forever())
@@ -187,12 +211,16 @@ class CronCMD(CLICommand):
             print('No cron jobs found.')
             return
 
-        print(f'{"ID":<12} {"Name":<25} {"Status":<12} {"Next Run":<25} {"Runs":>5}')
+        print(
+            f'{"ID":<12} {"Name":<25} {"Status":<12} {"Next Run":<25} {"Runs":>5}'
+        )
         print('-' * 82)
         for job, state in jobs:
             name = job.name[:24] if job.name else '-'
             next_run = state.next_run_at or '-'
-            print(f'{job.id:<12} {name:<25} {state.status:<12} {next_run:<25} {state.run_count:>5}')
+            print(
+                f'{job.id:<12} {name:<25} {state.status:<12} {next_run:<25} {state.run_count:>5}'
+            )
 
     def _cmd_create(self):
         service = self._get_service()

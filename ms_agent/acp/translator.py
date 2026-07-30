@@ -1,12 +1,12 @@
-import uuid
-from typing import Any, Dict, List, Optional
-
 import json
+import uuid
 from acp import (plan_entry, start_edit_tool_call, start_read_tool_call,
                  start_tool_call, text_block, tool_content, tool_diff_content,
                  update_agent_message_text, update_agent_thought_text,
                  update_plan, update_tool_call)
 from acp.schema import AgentPlanUpdate, ToolCallLocation
+from typing import Any, Dict, List, Optional
+
 from ms_agent.llm.utils import Message
 from ms_agent.utils.logger import get_logger
 

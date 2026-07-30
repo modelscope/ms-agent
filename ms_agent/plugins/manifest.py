@@ -6,13 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ms_agent.plugins.types import (
-    LOADABLE_CAPABILITIES,
-    ComponentScan,
-    InstallSource,
-    PluginFormat,
-    PluginRecord,
-)
+from ms_agent.plugins.types import (LOADABLE_CAPABILITIES, ComponentScan,
+                                    InstallSource, PluginFormat, PluginRecord)
 
 _PLUGIN_NAME_RE = re.compile(r'^[a-z0-9][a-z0-9._-]{0,63}$')
 _SEMVER_RE = re.compile(r'^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$')
@@ -82,9 +77,8 @@ class PluginManifest:
         plugin_record: PluginRecord | None = None
         if record is not None:
             plugin_record = (
-                record if isinstance(record, PluginRecord)
-                else PluginRecord.from_dict(record)
-            )
+                record if isinstance(record, PluginRecord) else
+                PluginRecord.from_dict(record))
 
         if plugin_record and plugin_record.manifest_path:
             manifest_path = _locked_manifest_path(
@@ -113,16 +107,14 @@ class PluginManifest:
         components = scan_components(root_path, raw)
         capabilities = frozenset(
             key for key, scan in components.items()
-            if key in LOADABLE_CAPABILITIES and scan.status == 'ready'
-        )
+            if key in LOADABLE_CAPABILITIES and scan.status == 'ready')
         if not capabilities:
-            raise EmptyPluginError(f'Plugin has no loadable components: {root_path}')
+            raise EmptyPluginError(
+                f'Plugin has no loadable components: {root_path}')
 
         enabled = (
-            plugin_record.enabled
-            if plugin_record
-            else bool(raw.get('defaultEnabled', True))
-        )
+            plugin_record.enabled if plugin_record else bool(
+                raw.get('defaultEnabled', True)))
         return cls(
             plugin_id=plugin_id,
             name=name,
@@ -166,11 +158,12 @@ class PluginManifest:
                 paths.append(hooks_json)
             return _dedupe_paths(paths)
         if kind == 'mcp':
-            paths = _paths_from_manifest_field(self.root, raw.get('mcpServers'))
+            paths = _paths_from_manifest_field(self.root,
+                                               raw.get('mcpServers'))
             for default_path in (
-                self.root / '.mcp.json',
-                self.root / 'tools' / 'mcp.json',
-                self.root / 'openclaw.json',
+                    self.root / '.mcp.json',
+                    self.root / 'tools' / 'mcp.json',
+                    self.root / 'openclaw.json',
             ):
                 if default_path.is_file():
                     paths.append(default_path)
@@ -210,9 +203,8 @@ def detect_manifest(
     if native is not None:
         return native
 
-    raise AmbiguousPluginManifest(
-        'Multiple plugin manifests found: '
-        + ', '.join(c.rel_path for c in candidates))
+    raise AmbiguousPluginManifest('Multiple plugin manifests found: '
+                                  + ', '.join(c.rel_path for c in candidates))
 
 
 def scan_components(
@@ -233,7 +225,8 @@ def scan_components(
     command_count = _count_markdown_files(root_path / 'commands')
     if manifest.get('commands') and command_count == 0:
         command_count = _count_paths(root_path, manifest['commands'], '*.md')
-    components['commands'] = _scan('ready', command_count, root_path / 'commands')
+    components['commands'] = _scan('ready', command_count,
+                                   root_path / 'commands')
 
     agent_count = _count_markdown_files(root_path / 'agents')
     agent_count += _count_agent_md_subdirs(root_path / 'agents')
@@ -254,9 +247,9 @@ def scan_components(
             hook_count += 1
         else:
             hook_count += sum(
-                1 for path in _paths_from_manifest_field(root_path, hooks_field)
-                if path.exists()
-            )
+                1
+                for path in _paths_from_manifest_field(root_path, hooks_field)
+                if path.exists())
     components['hooks'] = _scan('ready', hook_count, root_path / 'hooks')
 
     mcp_count = 0
@@ -273,13 +266,12 @@ def scan_components(
         else:
             mcp_count += sum(
                 1 for path in _paths_from_manifest_field(root_path, mcp_field)
-                if path.exists()
-            )
+                if path.exists())
     components['mcp'] = _scan('ready', mcp_count, root_path / '.mcp.json')
 
     settings_count = 1 if _non_empty_json(root_path / 'settings.json') else 0
-    components['settings'] = _scan(
-        'ready', settings_count, root_path / 'settings.json')
+    components['settings'] = _scan('ready', settings_count,
+                                   root_path / 'settings.json')
 
     bin_count = _count_executable_files(root_path / 'bin')
     components['bin'] = _scan('ready', bin_count, root_path / 'bin')
@@ -300,7 +292,8 @@ def scan_components(
         None,
     )
     components['hooks_openclaw_internal'] = _scan(
-        'unsupported' if list(root_path.glob('hooks/*/HOOK.md')) else 'skipped',
+        'unsupported'
+        if list(root_path.glob('hooks/*/HOOK.md')) else 'skipped',
         len(list(root_path.glob('hooks/*/HOOK.md'))),
         root_path / 'hooks',
         hint='OpenClaw in-process hooks are detect-only.',
@@ -335,7 +328,8 @@ def _detect_manifestless_bundle(root: Path) -> ManifestCandidate | None:
                 'version': raw_package.get('version', 'latest'),
                 'description': raw_package.get('description', ''),
             }
-            return ManifestCandidate(Path('package.json'), PluginFormat.OPENCLAW, raw)
+            return ManifestCandidate(
+                Path('package.json'), PluginFormat.OPENCLAW, raw)
 
     for rel in ('hooks/hermes.yaml', 'hooks/config.yaml'):
         if (root / rel).is_file():
@@ -349,8 +343,7 @@ def _detect_manifestless_bundle(root: Path) -> ManifestCandidate | None:
 
 
 def _pick_ms_agent_native(
-    candidates: list[ManifestCandidate],
-) -> ManifestCandidate | None:
+    candidates: list[ManifestCandidate], ) -> ManifestCandidate | None:
     for candidate in candidates:
         if candidate.format == PluginFormat.MS_AGENT:
             return candidate
@@ -382,9 +375,11 @@ def _read_manifest(path: Path) -> dict[str, Any]:
         with open(path, encoding='utf-8') as f:
             data = json.load(f)
     except (OSError, json.JSONDecodeError) as exc:
-        raise InvalidPluginManifest(f'Invalid plugin manifest: {path}') from exc
+        raise InvalidPluginManifest(
+            f'Invalid plugin manifest: {path}') from exc
     if not isinstance(data, dict):
-        raise InvalidPluginManifest(f'Plugin manifest must be an object: {path}')
+        raise InvalidPluginManifest(
+            f'Plugin manifest must be an object: {path}')
     return data
 
 
@@ -474,10 +469,8 @@ def _count_markdown_files(path: Path) -> int:
 def _count_agent_md_subdirs(path: Path) -> int:
     if not path.is_dir():
         return 0
-    return sum(
-        1 for child in path.iterdir()
-        if child.is_dir() and (child / 'AGENT.md').is_file()
-    )
+    return sum(1 for child in path.iterdir()
+               if child.is_dir() and (child / 'AGENT.md').is_file())
 
 
 def _count_executable_files(path: Path) -> int:

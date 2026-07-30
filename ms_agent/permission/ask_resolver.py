@@ -48,7 +48,8 @@ def resolve_ask(
     category = decision.category
 
     if category == 'read_outside_dirs':
-        action: Literal['allow', 'deny'] = 'allow' if read_policy == 'loose' else 'deny'
+        action: Literal['allow',
+                        'deny'] = 'allow' if read_policy == 'loose' else 'deny'
         return SafetyDecision(
             action=action,
             reason=decision.reason,

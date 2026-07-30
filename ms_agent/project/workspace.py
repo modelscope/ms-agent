@@ -35,12 +35,11 @@ class Workspace:
             if item.name.startswith('.'):
                 continue
             if item.is_dir():
-                children = sum(
-                    1 for c in item.iterdir() if not c.name.startswith('.')
-                )
+                children = sum(1 for c in item.iterdir()
+                               if not c.name.startswith('.'))
                 entries.append(
-                    FileEntry(name=item.name, type='dir', children_count=children)
-                )
+                    FileEntry(
+                        name=item.name, type='dir', children_count=children))
             else:
                 stat = item.stat()
                 entries.append(
@@ -49,10 +48,8 @@ class Workspace:
                         type='file',
                         size=stat.st_size,
                         modified=datetime.fromtimestamp(
-                            stat.st_mtime, tz=timezone.utc
-                        ).isoformat(),
-                    )
-                )
+                            stat.st_mtime, tz=timezone.utc).isoformat(),
+                    ))
         return entries
 
     def read_file(self, rel_path: str) -> str:

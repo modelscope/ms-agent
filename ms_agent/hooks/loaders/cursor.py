@@ -6,7 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ms_agent.hooks.registry import HookRegistry, _parse_hook_handler, MatcherGroup
+from ms_agent.hooks.registry import (HookRegistry, MatcherGroup,
+                                     _parse_hook_handler)
 from ms_agent.hooks.tool_name_mapper import ToolNameMapper
 from ms_agent.utils import get_logger
 
@@ -25,6 +26,7 @@ _CURSOR_EVENT_MAP = {
 
 
 class CursorHooksLoader:
+
     @staticmethod
     def load_file(
         path: Path | str,
@@ -54,7 +56,8 @@ class CursorHooksLoader:
         for event_name, entries in hooks.items():
             canonical = _CURSOR_EVENT_MAP.get(event_name)
             if not canonical or canonical not in HookRegistry.VALID_EVENTS:
-                logger.warning('Skipping unknown Cursor hook event: %s', event_name)
+                logger.warning('Skipping unknown Cursor hook event: %s',
+                               event_name)
                 continue
 
             groups = []
@@ -65,7 +68,8 @@ class CursorHooksLoader:
                 elif event_name == 'afterFileEdit':
                     matcher = matcher or f'*{ToolNameMapper.TOOL_SPLITER}write_file'
                 elif matcher and canonical in HookRegistry.TOOL_EVENTS:
-                    matcher = mapper.external_matcher_to_native(matcher, 'cursor')
+                    matcher = mapper.external_matcher_to_native(
+                        matcher, 'cursor')
 
                 t = entry.get('type', 'command') or 'command'
                 if t not in enabled_executors:
@@ -84,10 +88,12 @@ class CursorHooksLoader:
                 }
                 parsed = _parse_hook_handler(h)
                 if parsed:
-                    groups.append(MatcherGroup(
-                        matcher=matcher if canonical in HookRegistry.TOOL_EVENTS else None,
-                        hooks=(parsed,),
-                    ))
+                    groups.append(
+                        MatcherGroup(
+                            matcher=matcher
+                            if canonical in HookRegistry.TOOL_EVENTS else None,
+                            hooks=(parsed, ),
+                        ))
             if groups:
                 existing = index.get(canonical, ())
                 index[canonical] = existing + tuple(groups)

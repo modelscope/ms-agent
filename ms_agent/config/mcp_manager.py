@@ -25,8 +25,7 @@ class MCPConfigManager:
     ):
         self.global_root = Path(global_root).expanduser()
         self.project_root = (
-            Path(project_root).expanduser() if project_root else None
-        )
+            Path(project_root).expanduser() if project_root else None)
         self._lock = Lock()
 
     # ── paths ──────────────────────────────────────────────────────────
@@ -62,7 +61,9 @@ class MCPConfigManager:
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
-    def _load_scope_raw(self, scope: Literal['global', 'project']) -> Dict[str, Dict[str, Any]]:
+    def _load_scope_raw(
+            self, scope: Literal['global',
+                                 'project']) -> Dict[str, Dict[str, Any]]:
         if scope == 'global':
             servers: Dict[str, Dict[str, Any]] = {}
             settings = self._read_json(self.global_settings_path)
@@ -127,7 +128,9 @@ class MCPConfigManager:
             from ms_agent.config.mcp_schema import merge_mcp_layers
             return merge_mcp_layers(global_servers, project_servers)
 
-    def get(self, name: str, scope: MCPScope = 'merged') -> Optional[Dict[str, Any]]:
+    def get(self,
+            name: str,
+            scope: MCPScope = 'merged') -> Optional[Dict[str, Any]]:
         servers = self.list(scope)
         entry = servers.get(name)
         return copy.deepcopy(entry) if entry else None
@@ -160,13 +163,16 @@ class MCPConfigManager:
         with self._lock:
             raw = self._load_scope_raw(scope)
             if name not in raw:
-                raise KeyError(f'MCP server not found in {scope} scope: {name}')
+                raise KeyError(
+                    f'MCP server not found in {scope} scope: {name}')
             merged = copy.deepcopy(raw[name])
             merged.update(copy.deepcopy(patch))
             raw[name] = merged
             self._save_scope_raw(scope, raw)
 
-    def remove(self, name: str, scope: Literal['global', 'project'] = 'project') -> None:
+    def remove(self,
+               name: str,
+               scope: Literal['global', 'project'] = 'project') -> None:
         """Remove or mask a server.
 
         Project scope masks a global server (``enabled: false``) without
@@ -194,7 +200,8 @@ class MCPConfigManager:
                 if scope == 'project':
                     raw[name] = {'enabled': enabled}
                 else:
-                    raise KeyError(f'MCP server not found in {scope} scope: {name}')
+                    raise KeyError(
+                        f'MCP server not found in {scope} scope: {name}')
             else:
                 raw[name]['enabled'] = enabled
                 raw[name].pop('_removed', None)
@@ -202,7 +209,9 @@ class MCPConfigManager:
 
     # ── import / export ──────────────────────────────────────────────────
 
-    def import_cursor_format(self, path: Path | str, merge: bool = True) -> int:
+    def import_cursor_format(self,
+                             path: Path | str,
+                             merge: bool = True) -> int:
         path = Path(path).expanduser()
         data = self._read_json(path)
         incoming = data.get('mcpServers', data)
@@ -233,9 +242,12 @@ class MCPConfigManager:
         self._write_json(Path(path).expanduser(), {'mcpServers': servers})
 
     @staticmethod
-    def _redact_servers(servers: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    def _redact_servers(
+            servers: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
         redacted: Dict[str, Dict[str, Any]] = {}
-        secret_keys = {'api_key', 'token', 'secret', 'password', 'authorization'}
+        secret_keys = {
+            'api_key', 'token', 'secret', 'password', 'authorization'
+        }
         for name, entry in servers.items():
             item = copy.deepcopy(entry)
             env = item.get('env')

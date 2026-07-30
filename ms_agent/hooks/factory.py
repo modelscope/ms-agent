@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import uuid
+from omegaconf import DictConfig, OmegaConf
 from pathlib import Path
 from typing import Any
-
-from omegaconf import DictConfig, OmegaConf
 
 from ms_agent.hooks.executor import HookExecutor
 from ms_agent.hooks.loaders.claude import ClaudeSettingsLoader
@@ -24,7 +23,8 @@ logger = get_logger()
 _EMPTY_REGISTRY = HookRegistry(_index={})
 
 
-def _empty_runtime(project_path: str = '', session_id: str = '') -> HookRuntime:
+def _empty_runtime(project_path: str = '',
+                   session_id: str = '') -> HookRuntime:
     return HookRuntime(
         registry=_EMPTY_REGISTRY,
         executor=HookExecutor(working_dir=project_path or None),
@@ -34,7 +34,9 @@ def _empty_runtime(project_path: str = '', session_id: str = '') -> HookRuntime:
     )
 
 
-def _parse_hooks_meta(raw: dict[str, Any]) -> tuple[frozenset[str], frozenset[str], bool, str]:
+def _parse_hooks_meta(
+        raw: dict[str,
+                  Any]) -> tuple[frozenset[str], frozenset[str], bool, str]:
     enabled_sources = frozenset(
         raw.get('enabled_sources', ['native']) or ['native'])
     enabled_executors = frozenset(
@@ -126,10 +128,13 @@ def build_hook_runtime(
     # agent.yaml hooks section (without meta keys) — native source, §5.3 priority 6
     if 'native' in enabled_sources:
         event_hooks = {
-            k: v for k, v in raw_hooks.items()
-            if k not in (
-                'enabled_sources', 'enabled_executors', 'default_model',
-                'fail_closed', 'allowed_http_hook_urls',
+            k: v
+            for k, v in raw_hooks.items() if k not in (
+                'enabled_sources',
+                'enabled_executors',
+                'default_model',
+                'fail_closed',
+                'allowed_http_hook_urls',
                 'http_hook_allowed_env_vars',
             )
         }
@@ -159,7 +164,8 @@ def build_hook_runtime(
         if plugin_hook_registries is not None:
             for contrib in plugin_hook_registries:
                 if not contrib.registry.is_empty:
-                    loaders.append((f'plugin:{contrib.plugin_id}', contrib.registry))
+                    loaders.append(
+                        (f'plugin:{contrib.plugin_id}', contrib.registry))
         else:
             plugin_roots = _discover_plugin_roots(config, project_path)
             seen_plugin_ids: set[str] = set()
@@ -168,7 +174,8 @@ def build_hook_runtime(
                 if plugin_id in seen_plugin_ids:
                     continue
                 seen_plugin_ids.add(plugin_id)
-                plugin_data_dir = Path.home() / '.ms_agent' / 'plugins' / 'data' / plugin_id
+                plugin_data_dir = Path.home(
+                ) / '.ms_agent' / 'plugins' / 'data' / plugin_id
                 reg = PluginHooksLoader.load_plugin(
                     root,
                     project_path=project_path,
@@ -222,8 +229,8 @@ def _discover_plugin_roots(config: Any, project_path: str) -> list[str]:
     managed_ids = registry.managed_plugin_ids(project_path)
     roots: list[str] = []
     seen: set[str] = set()
-    from ms_agent.project.paths import (project_internal_dir,
-                                        legacy_local_internal_dir)
+    from ms_agent.project.paths import (legacy_local_internal_dir,
+                                        project_internal_dir)
     plugins_dir = project_internal_dir(project_path) / 'plugins'
     if not plugins_dir.is_dir():
         plugins_dir = legacy_local_internal_dir(project_path) / 'plugins'

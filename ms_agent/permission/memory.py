@@ -39,12 +39,14 @@ class PermissionMemory:
 
         self._project_file: Path | None = None
         if project_path is not None:
-            self._project_file = Path(project_path) / '.ms_agent' / 'permission_memory.json'
+            self._project_file = Path(
+                project_path) / '.ms_agent' / 'permission_memory.json'
 
         if global_path is not None:
             self._global_file = Path(global_path)
         else:
-            self._global_file = Path.home() / '.ms_agent' / 'permission_memory.json'
+            self._global_file = Path.home(
+            ) / '.ms_agent' / 'permission_memory.json'
 
         self._project_entries: list[MemoryEntry] = []
         self._global_entries: list[MemoryEntry] = []
@@ -83,10 +85,12 @@ class PermissionMemory:
             if self._matcher.match_with_content(pattern, tool_name, tool_args):
                 return True
         for entry in self._project_entries:
-            if self._matcher.match_with_content(entry.pattern, tool_name, tool_args):
+            if self._matcher.match_with_content(entry.pattern, tool_name,
+                                                tool_args):
                 return True
         for entry in self._global_entries:
-            if self._matcher.match_with_content(entry.pattern, tool_name, tool_args):
+            if self._matcher.match_with_content(entry.pattern, tool_name,
+                                                tool_args):
                 return True
         return False
 
@@ -94,14 +98,20 @@ class PermissionMemory:
         """Remove all entries matching the given pattern. Returns count removed."""
         count = 0
         before = len(self._project_entries)
-        self._project_entries = [e for e in self._project_entries if e.pattern != pattern]
+        self._project_entries = [
+            e for e in self._project_entries if e.pattern != pattern
+        ]
         count += before - len(self._project_entries)
 
         before = len(self._global_entries)
-        self._global_entries = [e for e in self._global_entries if e.pattern != pattern]
+        self._global_entries = [
+            e for e in self._global_entries if e.pattern != pattern
+        ]
         count += before - len(self._global_entries)
 
-        self._session_patterns = [p for p in self._session_patterns if p != pattern]
+        self._session_patterns = [
+            p for p in self._session_patterns if p != pattern
+        ]
 
         if count > 0:
             self._save('project')
@@ -131,8 +141,7 @@ class PermissionMemory:
                     scope=e.get('scope', scope),
                     source=e.get('source', 'user'),
                     created_at=e.get('created_at', ''),
-                )
-                for e in data
+                ) for e in data
             ]
         except (json.JSONDecodeError, KeyError, TypeError):
             return []
@@ -149,4 +158,5 @@ class PermissionMemory:
             return
         path.parent.mkdir(parents=True, exist_ok=True)
         data = [asdict(e) for e in entries]
-        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding='utf-8')
+        path.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False), encoding='utf-8')

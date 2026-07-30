@@ -34,6 +34,7 @@ class PermissionResponse:
 
 
 class PermissionHandler(Protocol):
+
     async def ask(
         self,
         tool_name: str,
@@ -91,7 +92,8 @@ class CLIPermissionHandler:
         print(f'{"="*60}', file=sys.stderr)
 
         loop = asyncio.get_running_loop()
-        choice = await loop.run_in_executor(None, lambda: input('Choice [y/s/a/e/n]: ').strip().lower())
+        choice = await loop.run_in_executor(
+            None, lambda: input('Choice [y/s/a/e/n]: ').strip().lower())
 
         if choice == 's':
             return PermissionResponse(
@@ -130,7 +132,9 @@ class CLIPermissionHandler:
 
 class EventEmitter(Protocol):
     """Protocol for pushing events to the frontend."""
-    def emit(self, event: dict[str, Any]) -> None: ...
+
+    def emit(self, event: dict[str, Any]) -> None:
+        ...
 
 
 class WebPermissionHandler:

@@ -19,7 +19,8 @@ class ResponseAdapter:
         event: str | None = None,
     ) -> HookResult:
         if not stdout_text:
-            return HookResult(action='pass', exit_code=exit_code, stderr=stderr_text)
+            return HookResult(
+                action='pass', exit_code=exit_code, stderr=stderr_text)
 
         try:
             data = json.loads(stdout_text)
@@ -44,20 +45,14 @@ class ResponseAdapter:
         stderr_text: str,
     ) -> HookResult:
         updated_args = (
-            data.get('updatedArgs')
-            or data.get('updated_input')
-            or data.get('updatedInput')
-        )
+            data.get('updatedArgs') or data.get('updated_input')
+            or data.get('updatedInput'))
         if updated_args is not None and not isinstance(updated_args, dict):
             updated_args = None
 
         additional_context = (
-            data.get('additionalContext')
-            or data.get('additional_context')
-            or data.get('agent_message')
-            or data.get('context')
-            or ''
-        )
+            data.get('additionalContext') or data.get('additional_context')
+            or data.get('agent_message') or data.get('context') or '')
 
         # Claude hookSpecificOutput
         hso = data.get('hookSpecificOutput')
@@ -129,7 +124,8 @@ class ResponseAdapter:
                 exit_code=exit_code,
             )
 
-        return HookResult(action='pass', exit_code=exit_code, stderr=stderr_text)
+        return HookResult(
+            action='pass', exit_code=exit_code, stderr=stderr_text)
 
     @staticmethod
     def _map_decision(decision: str) -> str:

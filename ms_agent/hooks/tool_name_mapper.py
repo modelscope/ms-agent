@@ -32,7 +32,8 @@ class ToolNameMapper:
 
     TOOL_SPLITER = '---'
 
-    def __init__(self, enabled_sources: frozenset[str] = frozenset({'native'})):
+    def __init__(self,
+                 enabled_sources: frozenset[str] = frozenset({'native'})):
         self._enabled_sources = enabled_sources
 
     def to_external(self, tool_name: str, platform: str) -> str | None:

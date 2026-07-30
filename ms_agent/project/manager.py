@@ -4,7 +4,8 @@ from dataclasses import asdict, replace
 from pathlib import Path
 
 from ms_agent.project.store import JSONFileStore
-from ms_agent.project.types import DEFAULT_PROJECT_ID, Project, _new_id, _now_iso
+from ms_agent.project.types import (DEFAULT_PROJECT_ID, Project, _new_id,
+                                    _now_iso)
 
 
 class ProjectManager:
@@ -170,9 +171,9 @@ class ProjectManager:
         self._init_project_dirs(project)
         self._save_meta(project)
 
-    def _init_project_dirs(
-        self, project: Project, init_workspace: bool = True
-    ) -> None:
+    def _init_project_dirs(self,
+                           project: Project,
+                           init_workspace: bool = True) -> None:
         project_dir = self._projects_root / project.id
         (project_dir / self.META_DIR).mkdir(parents=True, exist_ok=True)
         # Sessions live at <id>/sessions (flat), matching SessionManager

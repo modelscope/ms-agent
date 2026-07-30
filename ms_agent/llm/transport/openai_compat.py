@@ -68,7 +68,8 @@ class OpenAICompatTransport(Transport):
         # 'prefix' is only valid on DeepSeek's beta endpoint; downgrade to the
         # generic 'partial' continuation when not on a beta base_url so a
         # continuation doesn't 400 on the standard /v1 endpoint.
-        if continue_gen_mode == 'prefix' and 'beta' not in self.base_url.lower():
+        if continue_gen_mode == 'prefix' and 'beta' not in self.base_url.lower(
+        ):
             logger.info(
                 'continue_gen_mode="prefix" requires a beta endpoint; '
                 'falling back to "partial" continuation for %s', self.base_url)
@@ -138,9 +139,9 @@ class OpenAICompatTransport(Transport):
     # ------------------------------------------------------------------ #
     # formatting
     # ------------------------------------------------------------------ #
-    def format_tools(
-            self,
-            tools: Optional[List[Tool]] = None) -> Optional[List[Dict]]:
+    def format_tools(self,
+                     tools: Optional[List[Tool]] = None
+                     ) -> Optional[List[Dict]]:
         if tools:
             return [{
                 'type': 'function',
@@ -152,8 +153,8 @@ class OpenAICompatTransport(Transport):
             } for tool in tools]
         return None
 
-    def _format_input_message(
-            self, messages: List[Message]) -> List[Dict[str, Any]]:
+    def _format_input_message(self,
+                              messages: List[Message]) -> List[Dict[str, Any]]:
         add_cache_control = self._prefix_cache_provider is not None
 
         cache_indice = None
@@ -290,8 +291,8 @@ class OpenAICompatTransport(Transport):
         return message
 
     def _postprocess_stream(
-            self, gen: Generator[Message, None, None]
-    ) -> Generator[Message, None, None]:
+            self, gen: Generator[Message, None,
+                                 None]) -> Generator[Message, None, None]:
         # Operate on a copy so the streaming accumulator stays intact.
         for message in gen:
             yield self._postprocess(deepcopy(message))
@@ -363,15 +364,15 @@ class OpenAICompatTransport(Transport):
         # None += str raises TypeError.
         message.reasoning_content = (message.reasoning_content or '') + (
             message_chunk.reasoning_content or '')
-        message.content = (message.content or '') + (message_chunk.content
-                                                     or '')
+        message.content = (message.content or '') + (
+            message_chunk.content or '')
         if message_chunk.tool_calls:
             if message.tool_calls:
                 if message.tool_calls[-1]['index'] == message_chunk.tool_calls[
                         0]['index']:
                     if message_chunk.tool_calls[0]['id']:
-                        message.tool_calls[-1]['id'] = message_chunk.tool_calls[
-                            0]['id']
+                        message.tool_calls[-1][
+                            'id'] = message_chunk.tool_calls[0]['id']
                     if message_chunk.tool_calls[0]['arguments']:
                         if message.tool_calls[-1]['arguments']:
                             message.tool_calls[-1][
@@ -397,13 +398,12 @@ class OpenAICompatTransport(Transport):
                 message.tool_calls = message_chunk.tool_calls
         return message
 
-    def _stream_continue_generate(
-            self,
-            messages: List[Message],
-            completion: Iterable,
-            tools: Optional[List[Tool]] = None,
-            max_runs: Optional[int] = None,
-            **kwargs) -> Generator[Message, None, None]:
+    def _stream_continue_generate(self,
+                                  messages: List[Message],
+                                  completion: Iterable,
+                                  tools: Optional[List[Tool]] = None,
+                                  max_runs: Optional[int] = None,
+                                  **kwargs) -> Generator[Message, None, None]:
         flag = self._continue_flag
         message = None
         # Track the stream so interrupt() can close it from another thread; a

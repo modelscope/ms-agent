@@ -12,7 +12,6 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 from ms_agent.utils.logger import get_logger
-
 from .config import MemoryConfig
 from .extraction.llm_merge import LLMMergeExtractor
 from .protocols import MemoryEntry
@@ -76,8 +75,7 @@ class MemoryUpdateQueue:
             loop = asyncio.get_running_loop()
             self._timers[thread_id] = loop.call_later(
                 self.debounce_seconds,
-                lambda tid=thread_id: asyncio.ensure_future(
-                    self._flush(tid)),
+                lambda tid=thread_id: asyncio.ensure_future(self._flush(tid)),
             )
 
     async def add_nowait(
@@ -110,10 +108,10 @@ class MemoryUpdateQueue:
         if not pending:
             return
 
-        logger.info(f"[update_queue] Flushing facts for {thread_id}")
+        logger.info(f'[update_queue] Flushing facts for {thread_id}')
         existing = await self._facts.list_all()
-        existing_json = json.dumps(
-            [e.to_dict() for e in existing], ensure_ascii=False)
+        existing_json = json.dumps([e.to_dict() for e in existing],
+                                   ensure_ascii=False)
 
         entries = await self._extractor.extract(
             pending.messages, existing_facts=existing_json)
@@ -122,14 +120,13 @@ class MemoryUpdateQueue:
 
         facts_to_remove: List[str] = []
         for e in entries:
-            ids = e.metadata.get("factsToRemove", [])
+            ids = e.metadata.get('factsToRemove', [])
             if isinstance(ids, list):
                 facts_to_remove.extend(ids)
 
         await self._facts.apply_merge(entries, facts_to_remove)
-        logger.info(
-            f"[update_queue] Applied {len(entries)} new facts, "
-            f"removed {len(facts_to_remove)}")
+        logger.info(f'[update_queue] Applied {len(entries)} new facts, '
+                    f'removed {len(facts_to_remove)}')
 
     def _cancel_timer(self, thread_id: str) -> None:
         timer = self._timers.pop(thread_id, None)

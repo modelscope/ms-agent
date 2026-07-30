@@ -553,8 +553,8 @@ def is_connected(self, server_name: str) -> bool:
 
 若 MCP 调用已发起 RPC 后失败，返回的错误文本仍会作为 `tool_result` 触发 **PostToolUse**（与 hooks-design §8.5 一致）；业务层 `isError` 不改 `status`。
 
-**hard** 示例：`BrokenPipeError`、`session closed`、`connection refused`。  
-**transient** 示例：`TimeoutError`、HTTP 502/503。  
+**hard** 示例：`BrokenPipeError`、`session closed`、`connection refused`。
+**transient** 示例：`TimeoutError`、HTTP 502/503。
 业务错误（工具返回 `isError`、参数非法）只记入 `failure_history`（可选），**不**改 `status`。
 
 #### 与 ToolManager 协作（单向依赖）

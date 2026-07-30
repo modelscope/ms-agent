@@ -6,7 +6,7 @@ surface automatically adapts to whichever backend is configured.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
@@ -14,7 +14,7 @@ from ms_agent.tools.base import ToolBase
 if TYPE_CHECKING:
     from .orchestrator import MemoryOrchestrator
 
-SERVER_NAME = "unified_memory"
+SERVER_NAME = 'unified_memory'
 
 MEMORY_USAGE_PROMPT = """
 ## Long-term Memory
@@ -45,7 +45,8 @@ class MemoryTool(ToolBase):
     via ``orchestrator.get_tool_schemas()`` / ``orchestrator.handle_tool_call()``.
     """
 
-    def __init__(self, config: Any, orchestrator: "MemoryOrchestrator") -> None:
+    def __init__(self, config: Any,
+                 orchestrator: 'MemoryOrchestrator') -> None:
         super().__init__(config)
         self._orch = orchestrator
 
@@ -56,15 +57,20 @@ class MemoryTool(ToolBase):
         schemas = self._orch.get_tool_schemas()
         tools: List[Tool] = []
         for s in schemas:
-            tools.append(Tool(
-                tool_name=s.get("tool_name", ""),
-                server_name=SERVER_NAME,
-                description=s.get("description", ""),
-                parameters=s.get("parameters", {}),
-            ))
+            tools.append(
+                Tool(
+                    tool_name=s.get('tool_name', ''),
+                    server_name=SERVER_NAME,
+                    description=s.get('description', ''),
+                    parameters=s.get('parameters', {}),
+                ))
         return {SERVER_NAME: tools} if tools else {}
 
     async def call_tool(
-        self, server_name: str, *, tool_name: str, tool_args: dict,
+        self,
+        server_name: str,
+        *,
+        tool_name: str,
+        tool_args: dict,
     ) -> str:
         return await self._orch.handle_tool_call(tool_name, tool_args)

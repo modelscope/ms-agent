@@ -1,14 +1,14 @@
 import asyncio
+import json
 import os
 import secrets
-from typing import Any
-
-import json
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel
+from typing import Any
+
 from ms_agent.acp.server import MSAgentACPServer
 from ms_agent.utils.logger import get_logger
-from pydantic import BaseModel
 
 logger = get_logger()
 
@@ -102,7 +102,8 @@ def _check_api_key(authorization: str | None = Header(None)):
     if not authorization:
         raise HTTPException(401, 'Authorization header required')
     parts = authorization.split()
-    if len(parts) != 2 or parts[0].lower() != 'bearer' or not secrets.compare_digest(parts[1], _api_key):
+    if len(parts) != 2 or parts[0].lower(
+    ) != 'bearer' or not secrets.compare_digest(parts[1], _api_key):
         raise HTTPException(403, 'Invalid API key')
 
 
@@ -183,7 +184,7 @@ async def rpc_endpoint(
             )
 
     except Exception as e:
-        from ms_agent.acp.errors import wrap_agent_error, ACPError
+        from ms_agent.acp.errors import ACPError, wrap_agent_error
         rpc_err = wrap_agent_error(e)
         return JSONResponse(
             {

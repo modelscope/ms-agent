@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import yaml
 from pathlib import Path
 from typing import Any
 
-import yaml
-
-from ms_agent.hooks.registry import HookRegistry, _parse_hook_handler, MatcherGroup
+from ms_agent.hooks.registry import (HookRegistry, MatcherGroup,
+                                     _parse_hook_handler)
 from ms_agent.hooks.tool_name_mapper import ToolNameMapper
 from ms_agent.utils import get_logger
 
@@ -25,6 +25,7 @@ _HERMES_EVENT_MAP = {
 
 
 class HermesShellLoader:
+
     @staticmethod
     def load_file(
         path: Path | str,
@@ -66,7 +67,8 @@ class HermesShellLoader:
         for event_name, entries in hooks.items():
             canonical = _HERMES_EVENT_MAP.get(event_name)
             if not canonical or canonical not in HookRegistry.VALID_EVENTS:
-                logger.warning('Skipping unknown Hermes hook event: %s', event_name)
+                logger.warning('Skipping unknown Hermes hook event: %s',
+                               event_name)
                 continue
 
             groups = []
@@ -78,19 +80,23 @@ class HermesShellLoader:
 
                 matcher = entry.get('matcher') or entry.get('tool')
                 if matcher and canonical in HookRegistry.TOOL_EVENTS:
-                    matcher = mapper.external_matcher_to_native(matcher, 'hermes')
-                    matcher = _expand_vars(
-                        matcher, project_path, plugin_root, plugin_data_dir,
-                        user_config)
+                    matcher = mapper.external_matcher_to_native(
+                        matcher, 'hermes')
+                    matcher = _expand_vars(matcher, project_path, plugin_root,
+                                           plugin_data_dir, user_config)
 
                 cmd = entry.get('command') or entry.get('script')
                 h = {
-                    'type': 'command',
-                    'command': _expand_vars(
+                    'type':
+                    'command',
+                    'command':
+                    _expand_vars(
                         str(cmd), project_path, plugin_root, plugin_data_dir,
                         user_config) if cmd else cmd,
-                    'timeout': entry.get('timeout', 30),
-                    'fail_closed': entry.get('fail_closed', False),
+                    'timeout':
+                    entry.get('timeout', 30),
+                    'fail_closed':
+                    entry.get('fail_closed', False),
                 }
                 if h['type'] not in enabled_executors:
                     logger.warning(
@@ -101,10 +107,12 @@ class HermesShellLoader:
                     continue
                 parsed = _parse_hook_handler(h)
                 if parsed:
-                    groups.append(MatcherGroup(
-                        matcher=matcher if canonical in HookRegistry.TOOL_EVENTS else None,
-                        hooks=(parsed,),
-                    ))
+                    groups.append(
+                        MatcherGroup(
+                            matcher=matcher
+                            if canonical in HookRegistry.TOOL_EVENTS else None,
+                            hooks=(parsed, ),
+                        ))
             if groups:
                 index[canonical] = tuple(groups)
 
@@ -128,5 +136,6 @@ def _expand_vars(
         value = value.replace('${CLAUDE_PLUGIN_DATA}', plugin_data_dir)
     for key, item in (user_config or {}).items():
         value = value.replace(f'${{user_config.{key}}}', str(item))
-        value = value.replace(f'${{CLAUDE_PLUGIN_OPTION_{key.upper()}}}', str(item))
+        value = value.replace(f'${{CLAUDE_PLUGIN_OPTION_{key.upper()}}}',
+                              str(item))
     return value

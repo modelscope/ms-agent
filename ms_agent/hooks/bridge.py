@@ -12,6 +12,7 @@ from ms_agent.llm.utils import Message
 
 
 class CallbackToHookBridge(Callback):
+
     def __init__(self, config: DictConfig, hook_runtime: HookRuntime) -> None:
         super().__init__(config)
         self._hooks = hook_runtime

@@ -7,15 +7,10 @@ from dataclasses import asdict, dataclass
 from typing import Any, Awaitable, Callable
 
 from ms_agent.hooks.context import HookAttachment
-from ms_agent.hooks.events import (
-    HookResult,
-    PermissionRequestEvent,
-    PostToolUseEvent,
-    PreToolUseEvent,
-    SessionStartEvent,
-    StopEvent,
-    UserPromptSubmitEvent,
-)
+from ms_agent.hooks.events import (HookResult, PermissionRequestEvent,
+                                   PostToolUseEvent, PreToolUseEvent,
+                                   SessionStartEvent, StopEvent,
+                                   UserPromptSubmitEvent)
 from ms_agent.hooks.executor import HookExecutor
 from ms_agent.hooks.executors.command import HookExecutionContext
 from ms_agent.hooks.registry import HookHandlerConfig, HookRegistry
@@ -43,7 +38,10 @@ class HookRuntime:
     default_model: str = 'qwen-plus'
 
     BLOCKABLE_EVENTS = frozenset({
-        'PreToolUse', 'UserPromptSubmit', 'Stop', 'PermissionRequest',
+        'PreToolUse',
+        'UserPromptSubmit',
+        'Stop',
+        'PermissionRequest',
     })
 
     @property
@@ -67,8 +65,8 @@ class HookRuntime:
         payload.setdefault('extra', {})
         if 'tool_args' in payload:
             payload.setdefault('tool_input', payload['tool_args'])
-        return self.tool_name_mapper.enrich_payload(
-            payload, payload.get('tool_name'))
+        return self.tool_name_mapper.enrich_payload(payload,
+                                                    payload.get('tool_name'))
 
     async def _notify_hook_event(
         self,
@@ -152,7 +150,8 @@ class HookRuntime:
             ),
         ]
 
-    async def run_session_start(self, runtime: Any, messages: list) -> HookResult:
+    async def run_session_start(self, runtime: Any,
+                                messages: list) -> HookResult:
         return await self._run_event(
             'SessionStart',
             SessionStartEvent(

@@ -32,6 +32,7 @@ class ExtractorEntry:
 # Strategy A: filter_out_flags
 # ---------------------------------------------------------------------------
 
+
 def filter_out_flags(args: list[str]) -> list[str]:
     """Keep non-flag arguments, respecting ``--`` separator."""
     result: list[str] = []
@@ -49,6 +50,7 @@ def filter_out_flags(args: list[str]) -> list[str]:
 # ---------------------------------------------------------------------------
 # Strategy B: parse_pattern_command (grep / rg)
 # ---------------------------------------------------------------------------
+
 
 def parse_pattern_command(
     args: list[str],
@@ -96,6 +98,7 @@ def parse_pattern_command(
 # Strategy C: special arg skip (sed / jq)
 # ---------------------------------------------------------------------------
 
+
 def extract_sed(args: list[str]) -> list[str]:
     """Extract file paths from sed, skipping expression arguments."""
     paths: list[str] = []
@@ -130,8 +133,16 @@ def extract_sed(args: list[str]) -> list[str]:
 
 
 _JQ_FLAGS_WITH_ARGS = frozenset({
-    '-f', '--from-file', '--arg', '--argjson', '--slurpfile',
-    '--rawfile', '-L', '--indent', '--jsonargs', '--args',
+    '-f',
+    '--from-file',
+    '--arg',
+    '--argjson',
+    '--slurpfile',
+    '--rawfile',
+    '-L',
+    '--indent',
+    '--jsonargs',
+    '--args',
 })
 
 
@@ -172,8 +183,17 @@ def extract_jq(args: list[str]) -> list[str]:
 # ---------------------------------------------------------------------------
 
 _FIND_PATH_FLAGS = frozenset({
-    '-newer', '-anewer', '-cnewer', '-mnewer', '-samefile',
-    '-path', '-wholename', '-ilname', '-lname', '-ipath', '-iwholename',
+    '-newer',
+    '-anewer',
+    '-cnewer',
+    '-mnewer',
+    '-samefile',
+    '-path',
+    '-wholename',
+    '-ilname',
+    '-lname',
+    '-ipath',
+    '-iwholename',
 })
 _FIND_NEWER_PATTERN = re.compile(r'^-newer[acmBt][acmtB]$')
 
@@ -233,7 +253,9 @@ def extract_find_exec_commands(args: list[str]) -> list[str]:
             while i < len(args) and args[i] not in _FIND_EXEC_TERMINATORS:
                 parts.append(args[i])
                 i += 1
-            cmd_parts = [part for part in parts if part not in _FIND_PLACEHOLDERS]
+            cmd_parts = [
+                part for part in parts if part not in _FIND_PLACEHOLDERS
+            ]
             if cmd_parts:
                 commands.append(' '.join(cmd_parts))
             if i < len(args) and args[i] in _FIND_EXEC_TERMINATORS:
@@ -248,14 +270,14 @@ def _validate_find(args: list[str]) -> str | None:
     for arg in args:
         if arg in ('-fprintf', '-fprint', '-fprint0', '-fls'):
             return (
-                f'find with {arg} writes to files and requires confirmation'
-            )
+                f'find with {arg} writes to files and requires confirmation')
     return None
 
 
 # ---------------------------------------------------------------------------
 # Strategy E: subcommand dispatch (git)
 # ---------------------------------------------------------------------------
+
 
 def extract_git(args: list[str]) -> list[str]:
     """Extract paths only for ``git diff --no-index``."""
@@ -267,6 +289,7 @@ def extract_git(args: list[str]) -> list[str]:
 # ---------------------------------------------------------------------------
 # Special commands: cd, ls, tr
 # ---------------------------------------------------------------------------
+
 
 def extract_cd(args: list[str]) -> list[str]:
     if not args:
@@ -282,8 +305,7 @@ def extract_ls(args: list[str]) -> list[str]:
 def extract_tr(args: list[str]) -> list[str]:
     has_delete = any(
         a == '-d' or a == '--delete' or (a.startswith('-') and 'd' in a[1:])
-        for a in args
-    )
+        for a in args)
     non_flags = filter_out_flags(args)
     skip_count = 1 if has_delete else 2
     return non_flags[skip_count:]
@@ -294,21 +316,55 @@ def extract_tr(args: list[str]) -> list[str]:
 # ---------------------------------------------------------------------------
 
 _GREP_FLAGS_WITH_ARGS = frozenset({
-    '-e', '--regexp', '-f', '--file',
-    '--exclude', '--include', '--exclude-dir', '--include-dir',
-    '-m', '--max-count',
-    '-A', '--after-context', '-B', '--before-context', '-C', '--context',
-    '--label', '--color',
+    '-e',
+    '--regexp',
+    '-f',
+    '--file',
+    '--exclude',
+    '--include',
+    '--exclude-dir',
+    '--include-dir',
+    '-m',
+    '--max-count',
+    '-A',
+    '--after-context',
+    '-B',
+    '--before-context',
+    '-C',
+    '--context',
+    '--label',
+    '--color',
 })
 
 _RG_FLAGS_WITH_ARGS = frozenset({
-    '-e', '--regexp', '-f', '--file',
-    '-t', '--type', '-T', '--type-not',
-    '-g', '--glob', '-m', '--max-count', '--max-depth',
-    '-r', '--replace',
-    '-A', '--after-context', '-B', '--before-context', '-C', '--context',
-    '--color', '--colors', '--encoding', '-E',
-    '--iglob', '--type-add', '--type-clear',
+    '-e',
+    '--regexp',
+    '-f',
+    '--file',
+    '-t',
+    '--type',
+    '-T',
+    '--type-not',
+    '-g',
+    '--glob',
+    '-m',
+    '--max-count',
+    '--max-depth',
+    '-r',
+    '--replace',
+    '-A',
+    '--after-context',
+    '-B',
+    '--before-context',
+    '-C',
+    '--context',
+    '--color',
+    '--colors',
+    '--encoding',
+    '-E',
+    '--iglob',
+    '--type-add',
+    '--type-clear',
 })
 
 
@@ -328,6 +384,7 @@ def _extract_rg(args: list[str]) -> list[str]:
 # Command validators (mv / cp)
 # ---------------------------------------------------------------------------
 
+
 def _validate_mv_cp(args: list[str]) -> str | None:
     """Reject mv/cp calls with flags (--target-directory bypass risk)."""
     for arg in args:
@@ -341,6 +398,7 @@ def _validate_mv_cp(args: list[str]) -> str | None:
 # ---------------------------------------------------------------------------
 # Registry builder
 # ---------------------------------------------------------------------------
+
 
 def _make_filter_entry(
     op_type: Literal['read', 'write', 'create'],
@@ -361,9 +419,11 @@ def build_extractor_registry() -> dict[str, ExtractorEntry]:
     registry: dict[str, ExtractorEntry] = {}
 
     # Special commands
-    registry['cd'] = ExtractorEntry(extract_cd, 'read', 'change directories to')
+    registry['cd'] = ExtractorEntry(extract_cd, 'read',
+                                    'change directories to')
     registry['ls'] = ExtractorEntry(extract_ls, 'read', 'list files in')
-    registry['tr'] = ExtractorEntry(extract_tr, 'read', 'transform text from files in')
+    registry['tr'] = ExtractorEntry(extract_tr, 'read',
+                                    'transform text from files in')
 
     # Strategy D
     registry['find'] = ExtractorEntry(
@@ -374,25 +434,34 @@ def build_extractor_registry() -> dict[str, ExtractorEntry]:
     )
 
     # Strategy B
-    registry['grep'] = ExtractorEntry(_extract_grep, 'read', 'search for patterns in files from')
-    registry['rg'] = ExtractorEntry(_extract_rg, 'read', 'search for patterns in files from')
+    registry['grep'] = ExtractorEntry(_extract_grep, 'read',
+                                      'search for patterns in files from')
+    registry['rg'] = ExtractorEntry(_extract_rg, 'read',
+                                    'search for patterns in files from')
 
     # Strategy C
     registry['sed'] = ExtractorEntry(extract_sed, 'write', 'edit files in')
-    registry['jq'] = ExtractorEntry(extract_jq, 'read', 'process JSON from files in')
+    registry['jq'] = ExtractorEntry(extract_jq, 'read',
+                                    'process JSON from files in')
 
     # Strategy E
-    registry['git'] = ExtractorEntry(extract_git, 'read', 'access files with git from')
+    registry['git'] = ExtractorEntry(extract_git, 'read',
+                                     'access files with git from')
 
     # Strategy A: create
     for cmd in ('mkdir', 'touch'):
-        registry[cmd] = _make_filter_entry('create', f'create {"directories" if cmd == "mkdir" else "or modify files"} in')
+        registry[cmd] = _make_filter_entry(
+            'create',
+            f'create {"directories" if cmd == "mkdir" else "or modify files"} in'
+        )
 
     # Strategy A: write (with special validators for mv/cp)
     registry['rm'] = _make_filter_entry('write', 'remove files from')
     registry['rmdir'] = _make_filter_entry('write', 'remove directories from')
-    registry['mv'] = _make_filter_entry('write', 'move files to/from', validator=_validate_mv_cp)
-    registry['cp'] = _make_filter_entry('write', 'copy files to/from', validator=_validate_mv_cp)
+    registry['mv'] = _make_filter_entry(
+        'write', 'move files to/from', validator=_validate_mv_cp)
+    registry['cp'] = _make_filter_entry(
+        'write', 'copy files to/from', validator=_validate_mv_cp)
 
     # Strategy A: read (21 commands)
     _read_commands = {

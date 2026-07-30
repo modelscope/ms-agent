@@ -75,12 +75,12 @@ class Mem0Backend(BaseMemoryBackend):
     async def start(self, **kwargs: Any) -> None:
         try:
             from mem0 import Memory
-            mem0_cfg = self._config.backend_options.get("mem0", {})
+            mem0_cfg = self._config.backend_options.get('mem0', {})
             self._mem0 = Memory.from_config(mem0_cfg) if mem0_cfg else Memory()
-            self._user_id = kwargs.get("user_id", self._config.user_id)
-            logger.info("[mem0_backend] mem0 initialized")
+            self._user_id = kwargs.get('user_id', self._config.user_id)
+            logger.info('[mem0_backend] mem0 initialized')
         except Exception as e:
-            logger.warning(f"[mem0_backend] mem0 init failed: {e}")
+            logger.warning(f'[mem0_backend] mem0 init failed: {e}')
             self._mem0 = None
 
     async def close(self) -> None:
@@ -89,7 +89,8 @@ class Mem0Backend(BaseMemoryBackend):
     # ── inject ───────────────────────────────────────────────────────
 
     async def inject(
-        self, messages: List[Dict[str, Any]],
+        self,
+        messages: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
         if not self._mem0:
             return messages
@@ -104,7 +105,7 @@ class Mem0Backend(BaseMemoryBackend):
             if not results:
                 return messages
         except Exception as e:
-            logger.debug(f"[mem0_backend] search failed: {e}")
+            logger.debug(f'[mem0_backend] search failed: {e}')
             return messages
 
         formatted = self._format_results(results)
@@ -112,10 +113,10 @@ class Mem0Backend(BaseMemoryBackend):
             return messages
 
         messages = list(messages)
-        if messages and messages[0].get("role") == "system":
+        if messages and messages[0].get('role') == 'system':
             sys_msg = {**messages[0]}
-            block = f"\n\n<long-term-memory>\n{formatted}\n</long-term-memory>"
-            sys_msg["content"] = (sys_msg.get("content") or "") + block
+            block = f'\n\n<long-term-memory>\n{formatted}\n</long-term-memory>'
+            sys_msg['content'] = (sys_msg.get('content') or '') + block
             messages[0] = sys_msg
 
         return messages
@@ -123,7 +124,9 @@ class Mem0Backend(BaseMemoryBackend):
     # ── on_messages ──────────────────────────────────────────────────
 
     async def on_messages(
-        self, messages: List[Dict[str, Any]], **kwargs: Any,
+        self,
+        messages: List[Dict[str, Any]],
+        **kwargs: Any,
     ) -> None:
         if not self._mem0:
             return
@@ -139,12 +142,14 @@ class Mem0Backend(BaseMemoryBackend):
                 return
             await _offload(self._mem0.add, convo, user_id=self._user_id)
         except Exception as e:
-            logger.warning(f"[mem0_backend] add failed: {e}")
+            logger.warning(f'[mem0_backend] add failed: {e}')
 
     # ── Search ───────────────────────────────────────────────────────
 
     async def search(
-        self, query: str, limit: int = 10,
+        self,
+        query: str,
+        limit: int = 10,
     ) -> List[MemoryEntry]:
         if not self._mem0:
             return []
@@ -174,10 +179,10 @@ class Mem0Backend(BaseMemoryBackend):
     @staticmethod
     def _extract_query(messages: List[Dict[str, Any]]) -> str:
         for m in reversed(messages):
-            if m.get("role") == "user":
-                content = m.get("content", "")
-                return str(content)[:200] if content else ""
-        return ""
+            if m.get('role') == 'user':
+                content = m.get('content', '')
+                return str(content)[:200] if content else ''
+        return ''
 
     @staticmethod
     def _format_results(results: Any) -> str:
@@ -185,10 +190,10 @@ class Mem0Backend(BaseMemoryBackend):
         for r in _result_list(results)[:10]:
             text = r.get("memory", r.get("text", ""))
             if text:
-                lines.append(f"- {text}")
-        return "\n".join(lines)
+                lines.append(f'- {text}')
+        return '\n'.join(lines)
 
 
 # ── Self-register ────────────────────────────────────────────────────
 
-backend_registry.register("mem0", Mem0Backend)
+backend_registry.register('mem0', Mem0Backend)

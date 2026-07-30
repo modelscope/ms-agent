@@ -9,7 +9,6 @@ import json
 from typing import Any, Dict, List, Optional
 
 from ms_agent.utils.logger import get_logger
-
 from ..config import MemoryConfig
 from ..protocols import MemoryEntry
 
@@ -50,8 +49,9 @@ class LLMMergeExtractor:
         self.llm = llm
 
     async def extract(
-        self, messages: List[Dict[str, Any]],
-        existing_facts: str = "[]",
+        self,
+        messages: List[Dict[str, Any]],
+        existing_facts: str = '[]',
         **kwargs,
     ) -> List[MemoryEntry]:
         """Return new facts extracted from *messages*.
@@ -60,23 +60,23 @@ class LLMMergeExtractor:
         ``factsToRemove`` from ``entry.metadata`` and applying deletions.
         """
         if self.llm is None:
-            logger.warning("[llm_merge] No LLM configured — skipping")
+            logger.warning('[llm_merge] No LLM configured — skipping')
             return []
 
         system_content = MERGE_SYSTEM_PROMPT.format(
-            existing_facts=existing_facts or "[]",
-        )
+            existing_facts=existing_facts or '[]', )
 
         from ms_agent.llm.utils import Message
-        llm_messages = [Message(role="system", content=system_content)]
+        llm_messages = [Message(role='system', content=system_content)]
         for m in messages:
             if isinstance(m, Message):
                 llm_messages.append(m)
             elif isinstance(m, dict):
-                llm_messages.append(Message(
-                    role=m.get("role", "user"),
-                    content=m.get("content", ""),
-                ))
+                llm_messages.append(
+                    Message(
+                        role=m.get('role', 'user'),
+                        content=m.get('content', ''),
+                    ))
 
         try:
             response = self.llm.generate(llm_messages)
@@ -84,37 +84,39 @@ class LLMMergeExtractor:
                 for msg in response:
                     response = msg
         except Exception as e:
-            logger.warning(f"[llm_merge] LLM call failed: {e}")
+            logger.warning(f'[llm_merge] LLM call failed: {e}')
             return []
 
-        content = getattr(response, "content", "") or ""
+        content = getattr(response, 'content', '') or ''
         return self._parse_merge_response(content)
 
     @staticmethod
     def _parse_merge_response(text: str) -> List[MemoryEntry]:
         text = text.strip()
         # Strip markdown code fences if present
-        if text.startswith("```"):
-            lines = text.split("\n")
-            lines = [l for l in lines if not l.strip().startswith("```")]
-            text = "\n".join(lines)
+        if text.startswith('```'):
+            lines = text.split('\n')
+            lines = [
+                line for line in lines if not line.strip().startswith('```')
+            ]
+            text = '\n'.join(lines)
 
         try:
             data = json.loads(text)
         except json.JSONDecodeError:
-            logger.warning(f"[llm_merge] Failed to parse JSON: {text[:200]}")
+            logger.warning(f'[llm_merge] Failed to parse JSON: {text[:200]}')
             return []
 
         entries: List[MemoryEntry] = []
-        facts_to_remove = data.get("factsToRemove", [])
+        facts_to_remove = data.get('factsToRemove', [])
 
-        for fact in data.get("newFacts", []):
+        for fact in data.get('newFacts', []):
             entry = MemoryEntry(
-                content=fact.get("content", ""),
-                category=fact.get("category", "knowledge"),
-                confidence=float(fact.get("confidence", 0.8)),
-                source="llm_merge",
-                metadata={"factsToRemove": facts_to_remove},
+                content=fact.get('content', ''),
+                category=fact.get('category', 'knowledge'),
+                confidence=float(fact.get('confidence', 0.8)),
+                source='llm_merge',
+                metadata={'factsToRemove': facts_to_remove},
             )
             if entry.content.strip():
                 entries.append(entry)

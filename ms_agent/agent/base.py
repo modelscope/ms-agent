@@ -58,6 +58,7 @@ class Agent(ABC):
         # (or scattering) overrides in that config's folder.
         try:
             from omegaconf import OmegaConf
+
             from ms_agent.config.resolver import ConfigResolver
             patch = ConfigResolver()._load_project_patch(self.output_dir)
             if patch is not None:
@@ -99,9 +100,8 @@ class Agent(ABC):
         from ms_agent.utils.snapshot import list_snapshots
         return list_snapshots(self.output_dir)
 
-    def rollback(
-        self, commit_hash: str
-    ) -> tuple[bool, Optional[List['Message']]]:
+    def rollback(self,
+                 commit_hash: str) -> tuple[bool, Optional[List['Message']]]:
         """Restore output_dir to a previous snapshot and truncate history."""
         raise NotImplementedError()
 

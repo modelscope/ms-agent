@@ -86,8 +86,8 @@ class ModelSettingsManager:
             entry['api_key'] = api_key
         if base_url is not None:
             entry['base_url'] = base_url
-        entry['models'] = list(models if models is not None
-                               else entry.get('models', []))
+        entry['models'] = list(
+            models if models is not None else entry.get('models', []))
         providers[provider_id] = entry
         self._save_raw(data)
         return entry
@@ -100,9 +100,11 @@ class ModelSettingsManager:
     def add_model(self, provider_id: str, model: str) -> None:
         data = self._load_raw()
         providers = data.setdefault('providers', {})
-        entry = providers.setdefault(provider_id, {'name': provider_id,
-                                                   'protocol': 'openai',
-                                                   'models': []})
+        entry = providers.setdefault(provider_id, {
+            'name': provider_id,
+            'protocol': 'openai',
+            'models': []
+        })
         models = entry.setdefault('models', [])
         if model not in models:
             models.append(model)
@@ -121,7 +123,9 @@ class ModelSettingsManager:
         """Returns ``provider/model`` (or bare ``model``), or None."""
         return self._load_raw().get('default_model')
 
-    def set_default_model(self, model: str, provider: Optional[str] = None) -> None:
+    def set_default_model(self,
+                          model: str,
+                          provider: Optional[str] = None) -> None:
         data = self._load_raw()
         data['default_model'] = f'{provider}/{model}' if provider else model
         self._save_raw(data)

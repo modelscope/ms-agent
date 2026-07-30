@@ -103,21 +103,30 @@ def validate_path(
     path, tilde_err = _expand_tilde(path, home_dir)
     if tilde_err:
         return PathValidationResult(
-            allowed=False, resolved_path=path, action='deny', reason=tilde_err,
+            allowed=False,
+            resolved_path=path,
+            action='deny',
+            reason=tilde_err,
         )
 
     expansion_err = _has_shell_expansion(path)
     if expansion_err:
         return PathValidationResult(
-            allowed=False, resolved_path=path, action='ask', reason=expansion_err,
+            allowed=False,
+            resolved_path=path,
+            action='ask',
+            reason=expansion_err,
             category='shell_expansion',
         )
 
     if _has_glob(path):
         if op_type in ('write', 'create'):
             return PathValidationResult(
-                allowed=False, resolved_path=path, action='deny',
-                reason=f'Glob patterns not allowed in {op_type} operations: {path}',
+                allowed=False,
+                resolved_path=path,
+                action='deny',
+                reason=
+                f'Glob patterns not allowed in {op_type} operations: {path}',
             )
         path = get_glob_base_directory(path)
 
@@ -132,27 +141,36 @@ def validate_path(
         if op_type == 'read':
             if _is_under_allowed(resolved, read_only_dirs):
                 return PathValidationResult(
-                    allowed=True, resolved_path=resolved_str, action='allow',
+                    allowed=True,
+                    resolved_path=resolved_str,
+                    action='allow',
                     reason='Path allowed via read-only directory',
                 )
             return PathValidationResult(
-                allowed=False, resolved_path=resolved_str, action='ask',
+                allowed=False,
+                resolved_path=resolved_str,
+                action='ask',
                 reason=f'Read path outside allowed directories: {resolved_str}',
                 category='read_outside_dirs',
             )
         return PathValidationResult(
-            allowed=False, resolved_path=resolved_str, action='deny',
-            reason=f'{op_type.capitalize()} path outside allowed directories: {resolved_str}',
+            allowed=False,
+            resolved_path=resolved_str,
+            action='deny',
+            reason=
+            f'{op_type.capitalize()} path outside allowed directories: {resolved_str}',
         )
 
     return PathValidationResult(
-        allowed=True, resolved_path=resolved_str, action='allow',
+        allowed=True,
+        resolved_path=resolved_str,
+        action='allow',
         reason='Path validation passed',
     )
 
 
 def is_dangerous_removal_path(
-        path: str, extra_patterns: 'tuple[str, ...]' = ()) -> bool:
+    path: str, extra_patterns: 'tuple[str, ...]' = ()) -> bool:
     """Check if a path is too dangerous for rm/rmdir, even within allowed dirs.
 
     ``extra_patterns`` are configurable (``safety_rules.dangerous_removal_paths``):
@@ -164,8 +182,8 @@ def is_dangerous_removal_path(
         normalized = normalized.rstrip('/')
 
     for pat in extra_patterns or ():
-        pat_expanded = _CONSECUTIVE_SLASHES.sub(
-            '/', os.path.expanduser(str(pat)))
+        pat_expanded = _CONSECUTIVE_SLASHES.sub('/',
+                                                os.path.expanduser(str(pat)))
         if (normalized == pat_expanded.rstrip('/')
                 or fnmatch.fnmatch(normalized, pat_expanded)):
             return True

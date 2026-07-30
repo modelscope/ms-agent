@@ -58,7 +58,8 @@ class ComponentScan:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            k: v for k, v in asdict(self).items()
+            k: v
+            for k, v in asdict(self).items()
             if v not in (None, 0) or k in {'status', 'count'}
         }
 
@@ -84,10 +85,7 @@ class InstallSource:
         return cls()
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            k: v for k, v in asdict(self).items()
-            if v is not None
-        }
+        return {k: v for k, v in asdict(self).items() if v is not None}
 
 
 @dataclass
@@ -103,7 +101,10 @@ class PluginRecord:
     scope: str | None = None
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any], *, scope: str | None = None) -> 'PluginRecord':
+    def from_dict(cls,
+                  raw: dict[str, Any],
+                  *,
+                  scope: str | None = None) -> 'PluginRecord':
         return cls(
             id=str(raw.get('id') or raw.get('plugin_id') or raw.get('name')),
             enabled=bool(raw.get('enabled', True)),
@@ -117,7 +118,8 @@ class PluginRecord:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        fmt = self.format.value if isinstance(self.format, PluginFormat) else self.format
+        fmt = self.format.value if isinstance(self.format,
+                                              PluginFormat) else self.format
         source = InstallSource.from_raw(self.source).to_dict()
         data = {
             'id': self.id,
@@ -161,8 +163,7 @@ class UnsupportedCapability:
 
 
 def component_status_dict(
-    components: dict[str, ComponentScan],
-) -> dict[str, dict[str, Any]]:
+    components: dict[str, ComponentScan], ) -> dict[str, dict[str, Any]]:
     return {
         key: components.get(key, ComponentScan(status='skipped')).to_dict()
         for key in CAPABILITY_STATUS_KEYS

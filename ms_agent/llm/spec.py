@@ -94,9 +94,9 @@ class ProviderRegistry:
     def _register_builtins(self) -> None:
         openai_caps = ProviderCapabilities.from_list(
             ['tool_call', 'streaming', 'vision', 'continue_gen'])
-        openai_cache_caps = ProviderCapabilities.from_list(
-            ['tool_call', 'streaming', 'vision', 'prefix_cache',
-             'continue_gen'])
+        openai_cache_caps = ProviderCapabilities.from_list([
+            'tool_call', 'streaming', 'vision', 'prefix_cache', 'continue_gen'
+        ])
         # NOTE: no 'prefix_cache' here. Anthropic supports prompt caching
         # natively, but AnthropicMessagesTransport does not implement it yet.
         # Keep the capability set honest (declared == implemented); add
@@ -152,7 +152,9 @@ class ProviderRegistry:
                 name='zhipu',
                 display_name='Zhipu AI (GLM)',
                 transport=TRANSPORT_OPENAI_COMPAT,
-                api_key_env=['GLM_API_KEY', 'ZHIPU_API_KEY', 'ZHIPUAI_API_KEY'],
+                api_key_env=[
+                    'GLM_API_KEY', 'ZHIPU_API_KEY', 'ZHIPUAI_API_KEY'
+                ],
                 default_base_url='https://open.bigmodel.cn/api/paas/v4',
                 base_url_env=['GLM_BASE_URL', 'ZHIPU_BASE_URL'],
                 keywords=['glm-', 'glm4', 'cogview', 'charglm'],

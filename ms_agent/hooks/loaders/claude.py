@@ -7,7 +7,8 @@ import os
 from pathlib import Path
 from typing import Any
 
-from ms_agent.hooks.registry import HookRegistry, _parse_hook_handler, MatcherGroup
+from ms_agent.hooks.registry import (HookRegistry, MatcherGroup,
+                                     _parse_hook_handler)
 from ms_agent.hooks.tool_name_mapper import ToolNameMapper
 from ms_agent.utils import get_logger
 
@@ -25,6 +26,7 @@ _CLAUDE_EVENT_MAP = {
 
 
 class ClaudeSettingsLoader:
+
     @staticmethod
     def load_file(
         path: Path | str,
@@ -88,24 +90,25 @@ class ClaudeSettingsLoader:
         for event_name, groups_raw in hooks.items():
             canonical = _CLAUDE_EVENT_MAP.get(event_name)
             if not canonical or canonical not in HookRegistry.VALID_EVENTS:
-                logger.warning('Skipping unknown Claude hook event: %s', event_name)
+                logger.warning('Skipping unknown Claude hook event: %s',
+                               event_name)
                 continue
 
             groups = []
             for g in (groups_raw or []):
                 matcher = g.get('matcher')
                 if matcher and canonical in HookRegistry.TOOL_EVENTS:
-                    matcher = mapper.external_matcher_to_native(matcher, 'claude')
-                    matcher = _expand_path_vars(
-                        matcher, project_path, plugin_root, plugin_data_dir,
-                        user_config)
+                    matcher = mapper.external_matcher_to_native(
+                        matcher, 'claude')
+                    matcher = _expand_path_vars(matcher, project_path,
+                                                plugin_root, plugin_data_dir,
+                                                user_config)
 
                 hooks_raw = g.get('hooks', [])
                 handlers = []
                 for h in hooks_raw:
-                    h = _expand_command_vars(
-                        h, project_path, plugin_root, plugin_data_dir,
-                        user_config)
+                    h = _expand_command_vars(h, project_path, plugin_root,
+                                             plugin_data_dir, user_config)
                     t = h.get('type', 'command') or 'command'
                     if t not in enabled_executors:
                         logger.warning(
@@ -118,10 +121,12 @@ class ClaudeSettingsLoader:
                     if parsed:
                         handlers.append(parsed)
                 if handlers:
-                    groups.append(MatcherGroup(
-                        matcher=matcher if canonical in HookRegistry.TOOL_EVENTS else None,
-                        hooks=tuple(handlers),
-                    ))
+                    groups.append(
+                        MatcherGroup(
+                            matcher=matcher
+                            if canonical in HookRegistry.TOOL_EVENTS else None,
+                            hooks=tuple(handlers),
+                        ))
             if groups:
                 index[canonical] = tuple(groups)
 
@@ -145,7 +150,8 @@ def _expand_path_vars(
         value = value.replace('${MS_AGENT_PLUGIN_DATA}', plugin_data_dir)
     for key, item in (user_config or {}).items():
         value = value.replace(f'${{user_config.{key}}}', str(item))
-        value = value.replace(f'${{CLAUDE_PLUGIN_OPTION_{key.upper()}}}', str(item))
+        value = value.replace(f'${{CLAUDE_PLUGIN_OPTION_{key.upper()}}}',
+                              str(item))
     return value
 
 
@@ -159,6 +165,6 @@ def _expand_command_vars(
     out = dict(h)
     cmd = out.get('command')
     if isinstance(cmd, str):
-        out['command'] = _expand_path_vars(
-            cmd, project_path, plugin_root, plugin_data_dir, user_config)
+        out['command'] = _expand_path_vars(cmd, project_path, plugin_root,
+                                           plugin_data_dir, user_config)
     return out

@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, field
-from typing import Any, Dict, Literal, Optional
-
 from omegaconf import DictConfig, ListConfig, OmegaConf
+from typing import Any, Dict, Literal, Optional
 
 MCPSource = Literal['global', 'project', 'agent_yaml', 'plugin', 'session']
 
@@ -142,7 +141,8 @@ def merge_mcp_server_entry(
     return merged
 
 
-def merge_mcp_layers(*layers: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+def merge_mcp_layers(
+        *layers: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     """Union merge by server name; later layers override earlier ones."""
     merged: Dict[str, Dict[str, Any]] = {}
     for layer in layers:
@@ -155,8 +155,7 @@ def merge_mcp_layers(*layers: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, 
 
 
 def collect_builtin_tool_names(
-    agent_config: DictConfig | ListConfig | None,
-) -> set[str]:
+    agent_config: DictConfig | ListConfig | None, ) -> set[str]:
     """Names declared as built-in tools (``mcp: false``) in agent.yaml.
 
     These entries must not appear in merged ``mcpServers`` even when a lower

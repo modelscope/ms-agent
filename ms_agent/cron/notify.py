@@ -60,10 +60,10 @@ class WebhookHook(NotifyHook):
                 headers = {'Content-Type': 'application/json'}
                 headers.update(self._headers)
                 async with session.post(
-                    self._url,
-                    data=json.dumps(payload, ensure_ascii=False),
-                    headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=10),
+                        self._url,
+                        data=json.dumps(payload, ensure_ascii=False),
+                        headers=headers,
+                        timeout=aiohttp.ClientTimeout(total=10),
                 ) as resp:
                     if resp.status >= 400:
                         logger.warning(
@@ -72,8 +72,7 @@ class WebhookHook(NotifyHook):
         except ImportError:
             logger.warning(
                 'aiohttp not installed; webhook notifications unavailable. '
-                'Install with: pip install aiohttp'
-            )
+                'Install with: pip install aiohttp')
         except Exception as e:
             logger.warning(f'Webhook notification failed: {e}')
 

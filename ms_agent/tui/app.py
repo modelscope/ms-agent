@@ -22,13 +22,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from pathlib import Path
-from typing import Optional, Tuple
-
 from omegaconf import OmegaConf
+from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from typing import Optional, Tuple
 
 from ms_agent.config import Config
 from ms_agent.config.env import Env
@@ -57,14 +56,16 @@ class TuiApp:
         self.console = Console()
         self.theme = DEFAULT_THEME
         self.trust_remote_code = trust_remote_code
-        self.work_dir = str(Path(work_dir).expanduser().resolve()
-                            if work_dir else Path.cwd().resolve())
+        self.work_dir = str(
+            Path(work_dir).expanduser().resolve() if work_dir else Path.cwd().
+            resolve())
 
         config = Config.from_task(config_path)
         config = self._prepare_config(config, permission_mode, self.work_dir)
         self.config = config
 
-        mode = str(getattr(getattr(config, 'permission', None), 'mode', 'auto'))
+        mode = str(
+            getattr(getattr(config, 'permission', None), 'mode', 'auto'))
         self.permission_mode = mode
         self._model = str(
             getattr(getattr(config, 'llm', None), 'model', '') or '')
@@ -88,9 +89,10 @@ class TuiApp:
         from ms_agent.project import SessionManager
         from ms_agent.project.paths import project_key
         from ms_agent.project.types import Project
-        proj = Project(id=project_key(self.work_dir),
-                       name=Path(self.work_dir).name or 'project',
-                       path=self.work_dir)
+        proj = Project(
+            id=project_key(self.work_dir),
+            name=Path(self.work_dir).name or 'project',
+            path=self.work_dir)
         self._sm = SessionManager(proj)
         self.session = None
 
@@ -104,15 +106,17 @@ class TuiApp:
         home = str(global_home())
         config = merge_skills_into_config(config, home, self.work_dir)
         self.config = config
-        self._mcp_config = resolve_mcp_config(
-            home, self.work_dir, mcp_server_file)
+        self._mcp_config = resolve_mcp_config(home, self.work_dir,
+                                              mcp_server_file)
 
         # Build the agent ONCE with the UI seams injected. load_cache is set
         # per session by _apply_session (True only on resume).
         from ms_agent.agent.llm_agent import LLMAgent
         self.agent = LLMAgent(
-            config, trust_remote_code=trust_remote_code,
-            event_sink=event_sink, mcp_config=self._mcp_config)
+            config,
+            trust_remote_code=trust_remote_code,
+            event_sink=event_sink,
+            mcp_config=self._mcp_config)
 
         # Consume the agent's single command router (no duplicate); register the
         # TUI session commands and drive input through it (slash completion).
@@ -160,8 +164,10 @@ class TuiApp:
                 config, 'permission.mode', permission_mode, merge=True)
         # The agent auto-adds InputCallback for interactive runs; drop any
         # listed one so restarts across session switches never double-register.
-        cbs = [c for c in list(getattr(config, 'callbacks', []) or [])
-               if c != 'input_callback']
+        cbs = [
+            c for c in list(getattr(config, 'callbacks', []) or [])
+            if c != 'input_callback'
+        ]
         OmegaConf.update(config, 'callbacks', cbs, merge=False)
         # Merge the work-dir project patch (e.g. a persisted /model override).
         try:
@@ -205,28 +211,36 @@ class TuiApp:
             try:
                 mode = self.agent.set_permission_mode(arg)
             except ValueError as e:
-                return CommandResult(type=CommandResultType.MESSAGE,
-                                     content=str(e))
+                return CommandResult(
+                    type=CommandResultType.MESSAGE, content=str(e))
             self.state.perm = mode
             self.permission_mode = mode
-            return CommandResult(type=CommandResultType.MESSAGE,
-                                 content=f'permission mode → {mode}')
+            return CommandResult(
+                type=CommandResultType.MESSAGE,
+                content=f'permission mode → {mode}')
 
         self.router.register(
-            CommandDef(name='permission',
-                       description='Show or switch permission mode',
-                       category='config', aliases=('mode', )), _permission)
+            CommandDef(
+                name='permission',
+                description='Show or switch permission mode',
+                category='config',
+                aliases=('mode', )), _permission)
         self.router.register(
-            CommandDef(name='sessions',
-                       description='List sessions in this project',
-                       category='session'), _sessions)
+            CommandDef(
+                name='sessions',
+                description='List sessions in this project',
+                category='session'), _sessions)
         self.router.register(
-            CommandDef(name='resume',
-                       description='Resume a session: /resume <#|id>',
-                       category='session'), _resume)
+            CommandDef(
+                name='resume',
+                description='Resume a session: /resume <#|id>',
+                category='session'), _resume)
         self.router.register(
-            CommandDef(name='new', description='Start a new session',
-                       category='session', aliases=('reset', )), _new)
+            CommandDef(
+                name='new',
+                description='Start a new session',
+                category='session',
+                aliases=('reset', )), _new)
 
     # -- session lifecycle --
 
@@ -264,9 +278,9 @@ class TuiApp:
 
     def _session_has_history(self, session) -> bool:
         try:
-            return any(m.get('role') == 'user' and m.get('content')
-                       for m in self._sm.get_session_log(session)
-                       .get_all_messages())
+            return any(
+                m.get('role') == 'user' and m.get('content')
+                for m in self._sm.get_session_log(session).get_all_messages())
         except Exception:
             return True  # on doubt, keep it
 
@@ -285,14 +299,16 @@ class TuiApp:
 
     def _name_session_from_log(self) -> None:
         """Name a session after its first user line (once), read from its log."""
-        if self.session is None or not self.session.name.startswith('Session '):
+        if self.session is None or not self.session.name.startswith(
+                'Session '):
             return
         try:
             for m in self._sm.get_session_log(self.session).get_all_messages():
                 if m.get('role') == 'user' and m.get('content'):
                     name = str(m['content']).strip().splitlines()[0][:40]
                     self._sm.update(self.session.id, name=name)
-                    self.session = self._sm.get(self.session.id) or self.session
+                    self.session = self._sm.get(
+                        self.session.id) or self.session
                     self.state.session_name = self.session.name
                     break
         except Exception:
@@ -307,16 +323,22 @@ class TuiApp:
 
         # Left: the CLI's MS-AGENT wordmark (glyph rows only, frame stripped),
         # a blue gradient. Right: the run info — laid out side by side.
-        glyphs = [ln[1:-1].strip() for ln in MS_AGENT_ASCII.split('\n')
-                  if '█' in ln or '╚═╝' in ln]
+        glyphs = [
+            ln[1:-1].strip() for ln in MS_AGENT_ASCII.split('\n')
+            if '█' in ln or '╚═╝' in ln
+        ]
         width = max(len(g) for g in glyphs)
-        glyphs = [g.ljust(width) for g in glyphs]  # equal width, clean right edge
-        blues = ['bright_blue', 'blue', 'dodger_blue2',
-                 'deep_sky_blue1', 'cornflower_blue', 'blue']
+        glyphs = [g.ljust(width)
+                  for g in glyphs]  # equal width, clean right edge
+        blues = [
+            'bright_blue', 'blue', 'dodger_blue2', 'deep_sky_blue1',
+            'cornflower_blue', 'blue'
+        ]
         logo = Text()
         for i, row in enumerate(glyphs):
-            logo.append(row + ('\n' if i < len(glyphs) - 1 else ''),
-                        style=f'bold {blues[i % len(blues)]}')
+            logo.append(
+                row + ('\n' if i < len(glyphs) - 1 else ''),
+                style=f'bold {blues[i % len(blues)]}')
 
         llm = getattr(self.config, 'llm', None)
         tools = list(self.config.tools.keys()) if getattr(
@@ -328,13 +350,18 @@ class TuiApp:
         info = Table.grid(padding=(0, 2))
         info.add_column(style='blue', justify='right')
         info.add_column()
-        info.add_row('model',
-                     f'{getattr(llm, "service", "?")}/{getattr(llm, "model", "?")}')
+        info.add_row(
+            'model',
+            f'{getattr(llm, "service", "?")}/{getattr(llm, "model", "?")}')
         info.add_row('tools', ', '.join(tools) or '[dim]none[/]')
         info.add_row('perm', f'[yellow]{self.permission_mode}[/]')
         info.add_row('dir', f'[dim]{wd}[/]')
-        info_panel = Panel(info, title='[bold bright_blue]ms-agent tui[/]',
-                           border_style='blue', padding=(0, 2), expand=False)
+        info_panel = Panel(
+            info,
+            title='[bold bright_blue]ms-agent tui[/]',
+            border_style='blue',
+            padding=(0, 2),
+            expand=False)
 
         banner = Table.grid(padding=(0, 4))
         banner.add_column(no_wrap=True, vertical='middle')  # wordmark intact
@@ -350,18 +377,22 @@ class TuiApp:
         if not sessions:
             self.console.print('[dim]no sessions yet[/]')
             return
-        t = Table(show_header=True, header_style='bold', box=None,
-                  padding=(0, 2))
+        t = Table(
+            show_header=True, header_style='bold', box=None, padding=(0, 2))
         for c in ('#', 'name', 'id', 'updated', 'model'):
             t.add_column(c)
         for i, s in enumerate(sessions):
             marker = (f'[{self.theme.session_marker}]➤[/]'
                       if self.session and s.id == self.session.id else str(i))
-            t.add_row(marker, s.name, s.id, (s.updated_at or '')[:19],
-                      s.model or '')
+            t.add_row(marker, s.name, s.id, (s.updated_at or '')[:19], s.model
+                      or '')
         self.console.print(
-            Panel(t, title='sessions', border_style='blue',
-                  subtitle='[dim]/resume <#|id>[/]', expand=False))
+            Panel(
+                t,
+                title='sessions',
+                border_style='blue',
+                subtitle='[dim]/resume <#|id>[/]',
+                expand=False))
 
     def _render_history_tail(self, session, n: int = 6) -> None:
         try:
@@ -370,8 +401,11 @@ class TuiApp:
             msgs = []
         convo = [m for m in msgs if m.get('role') != 'system']
         for m in convo[-n:]:
-            who = {'user': '[cyan]❯[/]', 'assistant': '[green]●[/]',
-                   'tool': '[yellow]▸[/]'}.get(m.get('role'), str(m.get('role')))
+            who = {
+                'user': '[cyan]❯[/]',
+                'assistant': '[green]●[/]',
+                'tool': '[yellow]▸[/]'
+            }.get(m.get('role'), str(m.get('role')))
             snippet = str(m.get('content') or '')[:200].replace('\n', ' ')
             if snippet:
                 self.console.print(f'{who} {snippet}')
@@ -379,8 +413,8 @@ class TuiApp:
     @staticmethod
     def _quiet_logs() -> None:
         os.environ.setdefault('LOG_LEVEL', 'ERROR')
-        if os.environ.get('LOG_LEVEL', 'ERROR').upper() in (
-                'INFO', 'DEBUG', 'WARNING'):
+        if os.environ.get('LOG_LEVEL',
+                          'ERROR').upper() in ('INFO', 'DEBUG', 'WARNING'):
             return
         lg = logging.getLogger('ms_agent')
         lg.setLevel(logging.ERROR)
@@ -391,7 +425,8 @@ class TuiApp:
 
     async def _serve(self) -> None:
         self._banner()
-        self._prune_empty_sessions()  # clear leftover empties from prior launches
+        self._prune_empty_sessions(
+        )  # clear leftover empties from prior launches
         self.session = self._sm.create(model=self._model or None)
         resume = False  # a fresh session reads a prompt; a resumed one restores
         self.renderer.rule(f'session {self.session.id}', 'green')
@@ -411,8 +446,12 @@ class TuiApp:
                 self.renderer.finalize()
                 self.console.print('[dim](interrupted — /quit to exit)[/]')
                 try:
-                    self._sm.get_session_log(self.session).append(
-                        {'role': 'assistant', 'content': '(interrupted)'})
+                    self._sm.get_session_log(self.session).append({
+                        'role':
+                        'assistant',
+                        'content':
+                        '(interrupted)'
+                    })
                 except Exception:
                     pass
                 resume = True
@@ -421,16 +460,19 @@ class TuiApp:
                 self.renderer.finalize()
                 logger.warning('TUI lifecycle error', exc_info=True)
                 self.console.print(
-                    Panel(f'[bold]{type(e).__name__}[/]: {e}',
-                          title='[red]error[/]', border_style='red',
-                          subtitle='[dim]LOG_LEVEL=INFO for details[/]',
-                          expand=False))
+                    Panel(
+                        f'[bold]{type(e).__name__}[/]: {e}',
+                        title='[red]error[/]',
+                        border_style='red',
+                        subtitle='[dim]LOG_LEVEL=INFO for details[/]',
+                        expand=False))
                 break
             self._name_session_from_log()
             # Resolve a resume target against the live list before pruning.
             switch = self._pending_switch
-            resume_target = (self._resume_target(switch[1] or '')
-                             if switch and switch[0] == 'resume' else None)
+            resume_target = (
+                self._resume_target(switch[1] or '')
+                if switch and switch[0] == 'resume' else None)
             if not (resume_target and resume_target.id == self.session.id):
                 self._prune_if_empty(self.session)
             if switch is None:
@@ -448,8 +490,8 @@ class TuiApp:
                 else:
                     self.session = resume_target
                     resume = True
-                    self.renderer.rule(
-                        f'resumed {resume_target.name}', 'green')
+                    self.renderer.rule(f'resumed {resume_target.name}',
+                                       'green')
                     self._render_history_tail(resume_target)
         self.console.print('[dim]bye[/]')
 
@@ -473,6 +515,11 @@ def main(
     emit_events: Optional[str] = None,
     mcp_server_file: Optional[str] = None,
 ) -> None:
-    TuiApp(config_path, env_file=env_file, permission_mode=permission_mode,
-           trust_remote_code=trust_remote_code, work_dir=work_dir,
-           emit_events=emit_events, mcp_server_file=mcp_server_file).run()
+    TuiApp(
+        config_path,
+        env_file=env_file,
+        permission_mode=permission_mode,
+        trust_remote_code=trust_remote_code,
+        work_dir=work_dir,
+        emit_events=emit_events,
+        mcp_server_file=mcp_server_file).run()

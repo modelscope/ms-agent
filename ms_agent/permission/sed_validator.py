@@ -99,7 +99,8 @@ def check_sed_expression_safety(expression: str) -> SedSafetyResult:
     try:
         expression.encode('ascii')
     except UnicodeEncodeError:
-        return SedSafetyResult(safe=False, reason='Non-ASCII characters in sed expression')
+        return SedSafetyResult(
+            safe=False, reason='Non-ASCII characters in sed expression')
 
     # Newlines (multi-line command injection)
     if '\n' in expression or '\r' in expression:
@@ -107,22 +108,29 @@ def check_sed_expression_safety(expression: str) -> SedSafetyResult:
 
     # Curly braces (block commands — cannot be statically analysed)
     if '{' in expression or '}' in expression:
-        return SedSafetyResult(safe=False, reason='Block commands ({}) in sed expression')
+        return SedSafetyResult(
+            safe=False, reason='Block commands ({}) in sed expression')
 
     # w/W command — writes to file
-    if re.search(r'(?<![\\])w\s', expression) or re.search(r'(?<![\\])W\s', expression):
-        return SedSafetyResult(safe=False, reason='Write command (w/W) in sed expression')
+    if re.search(r'(?<![\\])w\s', expression) or re.search(
+            r'(?<![\\])W\s', expression):
+        return SedSafetyResult(
+            safe=False, reason='Write command (w/W) in sed expression')
 
     # e/E command — executes shell command
-    if re.search(r'(?<![\\])[eE]$', expression) or re.search(r'(?<![\\])[eE]\s', expression):
-        return SedSafetyResult(safe=False, reason='Execute command (e/E) in sed expression')
+    if re.search(r'(?<![\\])[eE]$', expression) or re.search(
+            r'(?<![\\])[eE]\s', expression):
+        return SedSafetyResult(
+            safe=False, reason='Execute command (e/E) in sed expression')
 
     # s///w or s///e flags in substitution (arbitrary delimiter aware)
     if _has_dangerous_sub_flags(expression):
-        return SedSafetyResult(safe=False, reason='Substitution with w/e flag in sed expression')
+        return SedSafetyResult(
+            safe=False, reason='Substitution with w/e flag in sed expression')
 
     # ! negation (increases analysis complexity)
     if '!' in expression:
-        return SedSafetyResult(safe=False, reason='Negation (!) in sed expression')
+        return SedSafetyResult(
+            safe=False, reason='Negation (!) in sed expression')
 
     return SedSafetyResult(safe=True, reason='Expression passed safety checks')

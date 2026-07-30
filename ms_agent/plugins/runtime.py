@@ -3,20 +3,16 @@ from __future__ import annotations
 import asyncio
 from copy import deepcopy
 from dataclasses import dataclass, field
+from omegaconf import OmegaConf
 from pathlib import Path
 from typing import Any
 
-from omegaconf import OmegaConf
-
-from ms_agent.plugins.config_manager import PluginConfigManager
 from ms_agent.plugins.agents import PluginAgentRegistry
+from ms_agent.plugins.config_manager import PluginConfigManager
 from ms_agent.plugins.installer import PluginInstaller
-from ms_agent.plugins.loader import (
-    PluginLoadContext,
-    PluginLoadResult,
-    PluginLoader,
-)
-from ms_agent.plugins.manifest import PluginManifest, PluginError
+from ms_agent.plugins.loader import (PluginLoadContext, PluginLoader,
+                                     PluginLoadResult)
+from ms_agent.plugins.manifest import PluginError, PluginManifest
 from ms_agent.plugins.registry import PluginRegistry
 from ms_agent.plugins.types import PluginRecord, component_status_dict
 from ms_agent.utils import get_logger
@@ -35,11 +31,13 @@ class PluginRuntime:
     mcp_runtime: Any | None = None
     manifests: list[PluginManifest] = field(default_factory=list)
     load_result: PluginLoadResult = field(default_factory=PluginLoadResult)
-    agent_registry: PluginAgentRegistry = field(default_factory=PluginAgentRegistry)
+    agent_registry: PluginAgentRegistry = field(
+        default_factory=PluginAgentRegistry)
     _applied_skill_paths: set[str] = field(default_factory=set, init=False)
     _applied_mcp_names: set[str] = field(default_factory=set, init=False)
     _applied_bin_paths: set[str] = field(default_factory=set, init=False)
-    _applied_settings_originals: dict[str, Any] = field(default_factory=dict, init=False)
+    _applied_settings_originals: dict[str, Any] = field(
+        default_factory=dict, init=False)
     _project_path: str | None = field(default=None, init=False)
     _session_id: str = field(default='', init=False)
     _config: Any | None = field(default=None, init=False)
@@ -58,12 +56,12 @@ class PluginRuntime:
         self._reload_lock = asyncio.Lock()
 
     async def start(
-        self,
-        project_path: str,
-        session_id: str,
-        *,
-        config: Any | None = None,
-        enabled_executors: frozenset[str] = frozenset({'command'}),
+            self,
+            project_path: str,
+            session_id: str,
+            *,
+            config: Any | None = None,
+            enabled_executors: frozenset[str] = frozenset({'command'}),
     ) -> None:
         async with self._reload_lock:
             self._start_unlocked(
@@ -74,12 +72,12 @@ class PluginRuntime:
             )
 
     def start_sync(
-        self,
-        project_path: str,
-        session_id: str,
-        *,
-        config: Any | None = None,
-        enabled_executors: frozenset[str] = frozenset({'command'}),
+            self,
+            project_path: str,
+            session_id: str,
+            *,
+            config: Any | None = None,
+            enabled_executors: frozenset[str] = frozenset({'command'}),
     ) -> None:
         self._start_unlocked(
             project_path,
@@ -108,7 +106,8 @@ class PluginRuntime:
             if not record.enabled:
                 continue
             try:
-                manifests.append(PluginManifest.parse(record.path, record=record))
+                manifests.append(
+                    PluginManifest.parse(record.path, record=record))
             except PluginError as exc:
                 logger.warning('Failed to parse plugin %s: %s', record.id, exc)
 
@@ -128,14 +127,16 @@ class PluginRuntime:
     def apply_to_config(self, config: Any) -> None:
         self._remove_applied_skill_sources(config)
         self._remove_applied_mcp_servers(config)
-        self._remove_plugin_owned_mcp_servers(config, self._configured_plugin_ids)
+        self._remove_plugin_owned_mcp_servers(config,
+                                              self._configured_plugin_ids)
         self._remove_applied_bin_paths(config)
         self._revert_applied_settings(config)
 
         if self.load_result.skill_sources:
             if not hasattr(config, 'skills') or config.skills is None:
                 config.skills = OmegaConf.create({'sources': []})
-            if not hasattr(config.skills, 'sources') or config.skills.sources is None:
+            if not hasattr(config.skills,
+                           'sources') or config.skills.sources is None:
                 config.skills.sources = []
             existing = {
                 _skill_source_path(source)
@@ -174,22 +175,27 @@ class PluginRuntime:
 
             servers = dict(current.get('servers', {}))
             servers.update(plugin_servers)
-            OmegaConf.update(config, '_merged_mcp', {'servers': servers}, merge=True)
+            OmegaConf.update(
+                config, '_merged_mcp', {'servers': servers}, merge=True)
             self._applied_mcp_names = set(plugin_servers)
 
         for key, value in self.load_result.settings_patch.items():
-            self._applied_settings_originals[key] = _snapshot_config_key(config, key)
+            self._applied_settings_originals[key] = _snapshot_config_key(
+                config, key)
             OmegaConf.update(config, key, value, merge=True)
 
         if self.load_result.bin_paths:
             if not hasattr(config, 'tools') or config.tools is None:
                 config.tools = OmegaConf.create({})
-            if not hasattr(config.tools, 'code_executor') or config.tools.code_executor is None:
+            if not hasattr(
+                    config.tools,
+                    'code_executor') or config.tools.code_executor is None:
                 config.tools.code_executor = OmegaConf.create({})
             existing_bins = []
             if hasattr(config.tools.code_executor, 'plugin_bin_paths'):
                 existing_bins = [
-                    str(path) for path in config.tools.code_executor.plugin_bin_paths
+                    str(path)
+                    for path in config.tools.code_executor.plugin_bin_paths
                 ]
             for path in self.load_result.bin_paths:
                 if str(path) not in existing_bins:
@@ -200,7 +206,8 @@ class PluginRuntime:
     def _remove_applied_skill_sources(self, config: Any) -> None:
         if not self._applied_skill_paths:
             return
-        if not hasattr(config, 'skills') or not getattr(config.skills, 'sources', None):
+        if not hasattr(config, 'skills') or not getattr(
+                config.skills, 'sources', None):
             self._applied_skill_paths.clear()
             return
         config.skills.sources = [
@@ -229,7 +236,8 @@ class PluginRuntime:
                 if _is_plugin_server(server_data, plugin_ids):
                     names.add(str(name))
         if hasattr(config, '_merged_mcp') and config._merged_mcp:
-            current = OmegaConf.to_container(config._merged_mcp, resolve=True) or {}
+            current = OmegaConf.to_container(
+                config._merged_mcp, resolve=True) or {}
             for name, server in (current.get('servers') or {}).items():
                 if _is_plugin_server(server, plugin_ids):
                     names.add(str(name))
@@ -244,17 +252,21 @@ class PluginRuntime:
                 if name in config.tools:
                     del config.tools[name]
         if hasattr(config, '_merged_mcp') and config._merged_mcp:
-            current = OmegaConf.to_container(config._merged_mcp, resolve=True) or {}
+            current = OmegaConf.to_container(
+                config._merged_mcp, resolve=True) or {}
             servers = dict(current.get('servers', {}))
             for name in names:
                 servers.pop(name, None)
-            OmegaConf.update(config, '_merged_mcp', {'servers': servers}, merge=False)
+            OmegaConf.update(
+                config, '_merged_mcp', {'servers': servers}, merge=False)
 
     def _remove_applied_bin_paths(self, config: Any) -> None:
         if not self._applied_bin_paths:
             return
-        code_executor = getattr(getattr(config, 'tools', None), 'code_executor', None)
-        if code_executor is not None and hasattr(code_executor, 'plugin_bin_paths'):
+        code_executor = getattr(
+            getattr(config, 'tools', None), 'code_executor', None)
+        if code_executor is not None and hasattr(code_executor,
+                                                 'plugin_bin_paths'):
             code_executor.plugin_bin_paths = [
                 path for path in code_executor.plugin_bin_paths
                 if str(path) not in self._applied_bin_paths
@@ -285,7 +297,8 @@ class PluginRuntime:
     def list_all(self) -> list[dict[str, Any]]:
         loaded = {manifest.plugin_id: manifest for manifest in self.manifests}
         items: list[dict[str, Any]] = []
-        for record in self.config_manager.list('merged'):  # type: ignore[union-attr]
+        for record in self.config_manager.list(
+                'merged'):  # type: ignore[union-attr]
             manifest = loaded.get(record.id)
             if manifest is None:
                 items.append({
@@ -300,19 +313,32 @@ class PluginRuntime:
                 continue
             status = 'ready' if record.enabled else 'disabled'
             items.append({
-                'plugin_id': manifest.plugin_id,
-                'name': manifest.name,
-                'version': manifest.version,
-                'description': manifest.description,
-                'enabled': record.enabled,
-                'scope': record.scope,
-                'path': str(manifest.root),
-                'format': manifest.format.value,
-                'capabilities': sorted(manifest.capabilities),
-                'status': status,
-                'capabilities_status': component_status_dict(manifest.components),
-                'source': record.to_dict().get('source', {}),
-                'installed_at': record.installed_at,
+                'plugin_id':
+                manifest.plugin_id,
+                'name':
+                manifest.name,
+                'version':
+                manifest.version,
+                'description':
+                manifest.description,
+                'enabled':
+                record.enabled,
+                'scope':
+                record.scope,
+                'path':
+                str(manifest.root),
+                'format':
+                manifest.format.value,
+                'capabilities':
+                sorted(manifest.capabilities),
+                'status':
+                status,
+                'capabilities_status':
+                component_status_dict(manifest.components),
+                'source':
+                record.to_dict().get('source', {}),
+                'installed_at':
+                record.installed_at,
                 'commands': [
                     cmd.__dict__ for cmd in self.load_result.command_defs
                     if cmd.plugin_id == manifest.plugin_id
@@ -329,8 +355,10 @@ class PluginRuntime:
                     str(path) for path in self.load_result.bin_paths
                     if str(path).startswith(str(manifest.root))
                 ],
-                'settings_patch': self.load_result.settings_patch,
-                'user_config_schema': (manifest.raw or {}).get('userConfig') or {},
+                'settings_patch':
+                self.load_result.settings_patch,
+                'user_config_schema': (manifest.raw or {}).get('userConfig')
+                or {},
                 'unsupported': [
                     item.__dict__ for item in self.load_result.unsupported
                     if item.capability in manifest.components
@@ -389,13 +417,15 @@ class PluginRuntime:
             global_root=self.global_root,
             project_root=project_path,
         )
-        return installer.install(source, scope=scope, project_path=project_path, **opts)
+        return installer.install(
+            source, scope=scope, project_path=project_path, **opts)
 
     def get_user_config(self, plugin_id: str) -> dict[str, Any]:
         manifest = self._manifest_for_plugin(plugin_id)
         schema = (manifest.raw or {}).get('userConfig') or {}
         data_dir = self.global_root / 'plugins' / 'data' / plugin_id
-        from ms_agent.plugins.user_config import default_values, load_user_config
+        from ms_agent.plugins.user_config import (default_values,
+                                                  load_user_config)
         values = load_user_config(data_dir)
         if not values and schema:
             values = default_values(schema)
@@ -434,7 +464,8 @@ class PluginRuntime:
         )
         if manifest is not None:
             return manifest
-        record = self.config_manager.get(plugin_id, 'merged')  # type: ignore[union-attr]
+        record = self.config_manager.get(plugin_id,
+                                         'merged')  # type: ignore[union-attr]
         if record is None:
             raise KeyError(f'Plugin not found: {plugin_id}')
         return PluginManifest.parse(record.path, record=record)
@@ -457,11 +488,13 @@ class PluginRuntime:
         if purge and record is not None:
             path = Path(record.path)
             if not _is_managed_plugin_path(
-                path,
-                self.global_root,
-                self.config_manager.project_root if self.config_manager else None,
+                    path,
+                    self.global_root,
+                    self.config_manager.project_root
+                    if self.config_manager else None,
             ):
-                raise ValueError(f'Refusing to purge unmanaged plugin path: {path}')
+                raise ValueError(
+                    f'Refusing to purge unmanaged plugin path: {path}')
             if path.is_symlink() or path.is_file():
                 path.unlink(missing_ok=True)
             elif path.is_dir():
@@ -475,14 +508,14 @@ class PluginRuntime:
     ) -> list[PluginRecord]:
         raw_records = []
         if config is not None and hasattr(config, '_merged_plugins'):
-            merged = OmegaConf.to_container(config._merged_plugins, resolve=True)
+            merged = OmegaConf.to_container(
+                config._merged_plugins, resolve=True)
             if isinstance(merged, dict):
                 raw_records = merged.get('plugins', [])
         if raw_records:
             records = [
                 PluginRecord.from_dict(item, scope=item.get('scope'))
-                for item in raw_records
-                if isinstance(item, dict)
+                for item in raw_records if isinstance(item, dict)
             ]
             return records + _legacy_plugin_records(
                 config,
@@ -491,7 +524,8 @@ class PluginRuntime:
                 global_root=self.global_root,
             )
 
-        records = self.config_manager.load_merged(project_path)  # type: ignore[union-attr]
+        records = self.config_manager.load_merged(
+            project_path)  # type: ignore[union-attr]
         if records:
             return records + _legacy_plugin_records(
                 config,
@@ -529,12 +563,13 @@ def _legacy_plugin_records(
     if config is None or not hasattr(config, 'plugins') or not config.plugins:
         return []
     registry = PluginRegistry(
-        PluginConfigManager(global_root or Path('~/.ms_agent').expanduser()),
-    )
+        PluginConfigManager(global_root or Path('~/.ms_agent').expanduser()), )
     managed_paths = registry.managed_plugin_paths(project_path)
     managed_ids = registry.managed_plugin_ids(project_path)
-    existing_paths = {str(Path(record.path).expanduser().resolve())
-                      for record in existing if record.path}
+    existing_paths = {
+        str(Path(record.path).expanduser().resolve())
+        for record in existing if record.path
+    }
     existing_paths |= managed_paths
     records: list[PluginRecord] = []
     for raw_path in config.plugins:
@@ -548,7 +583,10 @@ def _legacy_plugin_records(
                 id=path.name,
                 path=str(path),
                 enabled=True,
-                source={'type': 'local', 'uri': str(raw_path)},
+                source={
+                    'type': 'local',
+                    'uri': str(raw_path)
+                },
             ))
     return records
 
@@ -630,8 +668,5 @@ def _to_plain_container(value: Any) -> Any:
 
 
 def _is_plugin_server(server: Any, plugin_ids: set[str]) -> bool:
-    return (
-        isinstance(server, dict)
-        and server.get('source') == 'plugin'
-        and server.get('plugin_id') in plugin_ids
-    )
+    return (isinstance(server, dict) and server.get('source') == 'plugin'
+            and server.get('plugin_id') in plugin_ids)

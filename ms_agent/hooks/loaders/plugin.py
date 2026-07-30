@@ -9,6 +9,7 @@ from ms_agent.hooks.registry import HookRegistry
 
 
 class PluginHooksLoader:
+
     @staticmethod
     def load_plugin(
         plugin_root: str | Path,

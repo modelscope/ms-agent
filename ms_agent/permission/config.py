@@ -53,10 +53,13 @@ class SafetyConfig:
     read_only_directories: tuple[str, ...] = ()
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any], project_root: str | None = None) -> SafetyConfig:
+    def from_dict(cls,
+                  d: dict[str, Any],
+                  project_root: str | None = None) -> SafetyConfig:
         patterns = tuple(d.get('patterns', _DEFAULT_SAFETY_PATTERNS))
         sensitive = tuple(d.get('sensitive_paths', _DEFAULT_SENSITIVE_PATHS))
-        dangerous = tuple(d.get('dangerous_removal_paths', _DEFAULT_DANGEROUS_REMOVAL))
+        dangerous = tuple(
+            d.get('dangerous_removal_paths', _DEFAULT_DANGEROUS_REMOVAL))
 
         path_validation = d.get('path_validation', {})
         read_policy = path_validation.get('read_policy', 'loose')
@@ -106,7 +109,9 @@ class PermissionConfig:
     safety: SafetyConfig = SafetyConfig()
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any], project_root: str | None = None) -> PermissionConfig:
+    def from_dict(cls,
+                  d: dict[str, Any],
+                  project_root: str | None = None) -> PermissionConfig:
         if not d:
             return cls()
 
@@ -123,8 +128,7 @@ class PermissionConfig:
         allow_network = bool(d.get('allow_network', False))
         base_blacklist = () if allow_network else _DEFAULT_BLACKLIST
         blacklist = base_blacklist + tuple(
-            p for p in user_blacklist if p not in base_blacklist
-        )
+            p for p in user_blacklist if p not in base_blacklist)
 
         safety_raw = d.get('safety_rules', {})
         # Merge directory configs from top level into safety config

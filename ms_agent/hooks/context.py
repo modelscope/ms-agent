@@ -11,11 +11,8 @@ from ms_agent.llm.utils import Message
 
 @dataclass(frozen=True)
 class HookAttachment:
-    type: Literal[
-        'hook_additional_context',
-        'hook_blocking_feedback',
-        'hook_stopped_continuation',
-    ]
+    type: Literal['hook_additional_context', 'hook_blocking_feedback',
+                  'hook_stopped_continuation', ]
     hook_event: str
     tool_call_id: str | None
     content: Union[str, list[str]]
@@ -47,7 +44,8 @@ def append_stop_blocking_feedback(
         tool_call_id=None,
         content=reason or '',
     )
-    if not hasattr(assistant, 'hook_attachments') or assistant.hook_attachments is None:
+    if not hasattr(assistant,
+                   'hook_attachments') or assistant.hook_attachments is None:
         assistant.hook_attachments = []
     assistant.hook_attachments.append(attachment)
 
@@ -81,12 +79,14 @@ def _attachment_to_meta_message(att: HookAttachment) -> Message:
     if att.type == 'hook_blocking_feedback':
         return Message(role='user', content=f'Stop hook feedback:\n{content}')
     if att.type == 'hook_stopped_continuation':
-        return Message(role='user', content=f'[hook:{att.hook_event}]\n{content}')
+        return Message(
+            role='user', content=f'[hook:{att.hook_event}]\n{content}')
     prefix = f'[hook:{att.hook_event}]'
     return Message(role='user', content=f'{prefix}\n{content}')
 
 
-def condense_hook_attachments_for_llm(messages: list[Message]) -> list[Message]:
+def condense_hook_attachments_for_llm(
+        messages: list[Message]) -> list[Message]:
     """Convert hook_attachments into meta user messages for the LLM."""
     out: list[Message] = []
     for msg in messages:

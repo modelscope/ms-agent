@@ -19,15 +19,21 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import Any, Dict, Optional
 
 from omegaconf import OmegaConf
+from typing import Any, Dict, Optional
 
 # UI/meta fields on a managed MCP entry that must not reach the runtime server
 # config (the runtime just connects whatever is in mcpServers).
 _MCP_META = frozenset({
-    'enabled', 'meta', 'source', '_scope', 'mcp', 'implementation',
-    'trust_remote_code', '_removed',
+    'enabled',
+    'meta',
+    'source',
+    '_scope',
+    'mcp',
+    'implementation',
+    'trust_remote_code',
+    '_removed',
 })
 
 #: ``${NAME}`` placeholders in managed MCP entries (headers, args, url, env
@@ -73,7 +79,8 @@ def resolve_mcp_config(
             if entry.get('enabled', True) is False:
                 continue  # UI-disabled → do not connect
             servers[name] = {
-                k: v for k, v in entry.items() if k not in _MCP_META
+                k: v
+                for k, v in entry.items() if k not in _MCP_META
             }
     except Exception:
         pass
@@ -82,7 +89,8 @@ def resolve_mcp_config(
         try:
             with open(explicit_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            src = data.get('mcpServers', data) if isinstance(data, dict) else {}
+            src = data.get('mcpServers', data) if isinstance(data,
+                                                             dict) else {}
             if isinstance(src, dict):
                 servers.update(src)
         except Exception:

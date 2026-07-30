@@ -10,7 +10,6 @@ from typing import Any
 
 from ms_agent.utils.pattern_matcher import match_pattern
 
-
 TOOL_SPLITER = '---'
 CONTENT_SEP = ':'
 

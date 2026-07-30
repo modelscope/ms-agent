@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ms_agent.utils.logger import get_logger
-
 from ..config import MemoryConfig
 from ..protocols import MemoryEntry
 
@@ -24,10 +23,10 @@ logger = get_logger()
 def _is_cjk(char: str) -> bool:
     """Return True if *char* is a CJK ideograph."""
     try:
-        name = unicodedata.name(char, "")
+        name = unicodedata.name(char, '')
     except ValueError:
         return False
-    return "CJK" in name
+    return 'CJK' in name
 
 
 def tokenize_query(text: str, max_tokens: int = 50) -> str:
@@ -39,19 +38,19 @@ def tokenize_query(text: str, max_tokens: int = 50) -> str:
     for ch in text:
         if _is_cjk(ch):
             if buf:
-                tokens.append("".join(buf))
+                tokens.append(''.join(buf))
                 buf.clear()
             tokens.append(ch)
         elif ch.isalnum() or ch == '_':
             buf.append(ch)
         else:
             if buf:
-                tokens.append("".join(buf))
+                tokens.append(''.join(buf))
                 buf.clear()
     if buf:
-        tokens.append("".join(buf))
+        tokens.append(''.join(buf))
     tokens = tokens[:max_tokens]
-    return " OR ".join(f'"{t}"' for t in tokens if t.strip())
+    return ' OR '.join(f'"{t}"' for t in tokens if t.strip())
 
 
 class FTSRetriever:
@@ -60,9 +59,9 @@ class FTSRetriever:
     def __init__(self, config: MemoryConfig):
         self.config = config
         self.base_dir = Path(config.base_dir)
-        db_dir = self.base_dir / ".memory"
+        db_dir = self.base_dir / '.memory'
         db_dir.mkdir(parents=True, exist_ok=True)
-        self.db_path = db_dir / "index.db"
+        self.db_path = db_dir / 'index.db'
         self._conn: Optional[sqlite3.Connection] = None
         self._ensure_schema()
 
@@ -71,37 +70,43 @@ class FTSRetriever:
     # ------------------------------------------------------------------
 
     async def search(
-        self, query: str, limit: int = 10,
+        self,
+        query: str,
+        limit: int = 10,
         filters: Optional[Dict[str, Any]] = None,
     ) -> List[MemoryEntry]:
         if not query or not query.strip():
             return []
-        fts_query = tokenize_query(query,
-                                   max_tokens=self.config.max_search_results)
+        fts_query = tokenize_query(
+            query, max_tokens=self.config.max_search_results)
         if not fts_query:
             return []
         conn = self._get_conn()
         try:
             rows = conn.execute(
-                "SELECT content, session_key, role, rank "
-                "FROM sessions_fts WHERE sessions_fts MATCH ? "
-                "ORDER BY rank LIMIT ?",
+                'SELECT content, session_key, role, rank '
+                'FROM sessions_fts WHERE sessions_fts MATCH ? '
+                'ORDER BY rank LIMIT ?',
                 (fts_query, limit),
             ).fetchall()
         except sqlite3.OperationalError as e:
-            logger.debug(f"[fts] Query failed: {e}")
+            logger.debug(f'[fts] Query failed: {e}')
             return []
 
         results: List[MemoryEntry] = []
         for content, session_key, role, rank in rows:
-            results.append(MemoryEntry(
-                id=f"fts_{session_key}_{abs(hash(content)) % 10**8}",
-                content=content,
-                category="context",
-                confidence=min(1.0, max(0.0, 1.0 + rank)),
-                source=session_key,
-                metadata={"role": role, "fts_rank": rank},
-            ))
+            results.append(
+                MemoryEntry(
+                    id=f'fts_{session_key}_{abs(hash(content)) % 10**8}',
+                    content=content,
+                    category='context',
+                    confidence=min(1.0, max(0.0, 1.0 + rank)),
+                    source=session_key,
+                    metadata={
+                        'role': role,
+                        'fts_rank': rank
+                    },
+                ))
         return results
 
     # ------------------------------------------------------------------
@@ -111,34 +116,32 @@ class FTSRetriever:
     def index_session(self, session_key: str, messages: List[Dict]) -> int:
         """(Re-)index all messages from a session JSONL file."""
         conn = self._get_conn()
-        conn.execute(
-            "DELETE FROM session_messages WHERE session_key = ?",
-            (session_key,))
+        conn.execute('DELETE FROM session_messages WHERE session_key = ?',
+                     (session_key, ))
         count = 0
         for msg in messages:
-            if msg.get("_type") == "metadata":
+            if msg.get('_type') == 'metadata':
                 continue
-            role = msg.get("role", "")
-            content = msg.get("content", "")
+            role = msg.get('role', '')
+            content = msg.get('content', '')
             if not content or not isinstance(content, str):
                 continue
             conn.execute(
-                "INSERT INTO session_messages (content, session_key, role) "
-                "VALUES (?, ?, ?)",
-                (content, session_key, role))
+                'INSERT INTO session_messages (content, session_key, role) '
+                'VALUES (?, ?, ?)', (content, session_key, role))
             count += 1
         conn.commit()
         return count
 
     def index_sessions_dir(self) -> int:
         """Walk ``sessions/`` and index all JSONL files."""
-        sessions_dir = self.base_dir / "sessions"
+        sessions_dir = self.base_dir / 'sessions'
         if not sessions_dir.exists():
             return 0
         total = 0
-        for p in sessions_dir.glob("*.jsonl"):
+        for p in sessions_dir.glob('*.jsonl'):
             messages = []
-            for line in p.read_text(encoding="utf-8").splitlines():
+            for line in p.read_text(encoding='utf-8').splitlines():
                 line = line.strip()
                 if line:
                     try:
@@ -146,7 +149,7 @@ class FTSRetriever:
                     except json.JSONDecodeError:
                         pass
             total += self.index_session(p.stem, messages)
-        logger.info(f"[fts] Indexed {total} messages from sessions/")
+        logger.info(f'[fts] Indexed {total} messages from sessions/')
         return total
 
     # ------------------------------------------------------------------

@@ -33,8 +33,11 @@ class InteractiveTurn:
 class InteractiveSession:
     """Drives a single ``>>>`` prompt turn, handling slash commands in a loop."""
 
-    def __init__(self, router: CommandRouter, source: str = 'cli',
-                 input_source: Any = None, event_sink: Any = None) -> None:
+    def __init__(self,
+                 router: CommandRouter,
+                 source: str = 'cli',
+                 input_source: Any = None,
+                 event_sink: Any = None) -> None:
         self._router = router
         self._source = source
         # Async InputSource (ms_agent.ui). Its awaitable read_prompt lets the

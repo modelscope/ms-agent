@@ -48,9 +48,7 @@ class SkillRuntime:
     def version(self) -> int:
         return self._version
 
-    def set_system_content_builder(
-        self, builder: Callable[[], str]
-    ) -> None:
+    def set_system_content_builder(self, builder: Callable[[], str]) -> None:
         self._system_content_builder = builder
 
     # -- toggle --

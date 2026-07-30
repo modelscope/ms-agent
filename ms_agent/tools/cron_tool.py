@@ -45,47 +45,60 @@ class CronTool(ToolBase):
                 Tool(
                     tool_name='cron',
                     server_name=self.SERVER_NAME,
-                    description=(
-                        'Manage cron (scheduled) tasks. '
-                        'Actions: create, list, pause, resume, run, remove, history.'
-                    ),
+                    description=
+                    ('Manage cron (scheduled) tasks. '
+                     'Actions: create, list, pause, resume, run, remove, history.'
+                     ),
                     parameters={
                         'type': 'object',
                         'properties': {
                             'action': {
-                                'type': 'string',
-                                'enum': ['create', 'list', 'pause', 'resume', 'run', 'remove', 'history'],
-                                'description': 'The action to perform.',
+                                'type':
+                                'string',
+                                'enum': [
+                                    'create', 'list', 'pause', 'resume', 'run',
+                                    'remove', 'history'
+                                ],
+                                'description':
+                                'The action to perform.',
                             },
                             'schedule': {
-                                'type': 'string',
-                                'description': (
-                                    'Schedule expression (required for create). '
-                                    'Examples: "0 9 * * *", "every 30m", "2025-06-01T09:00:00"'
-                                ),
+                                'type':
+                                'string',
+                                'description':
+                                ('Schedule expression (required for create). '
+                                 'Examples: "0 9 * * *", "every 30m", "2025-06-01T09:00:00"'
+                                 ),
                             },
                             'prompt': {
-                                'type': 'string',
-                                'description': 'Task prompt (required for create).',
+                                'type':
+                                'string',
+                                'description':
+                                'Task prompt (required for create).',
                             },
                             'name': {
                                 'type': 'string',
                                 'description': 'Human-readable task name.',
                             },
                             'project': {
-                                'type': 'string',
-                                'description': (
-                                    'Agent project path for create (e.g. "projects/deep_research/v2/researcher.yaml"). '
-                                    'Determines which tools, prompts, and model the job uses.'
-                                ),
+                                'type':
+                                'string',
+                                'description':
+                                ('Agent project path for create (e.g. "projects/deep_research/v2/researcher.yaml"). '
+                                 'Determines which tools, prompts, and model the job uses.'
+                                 ),
                             },
                             'timeout': {
-                                'type': 'integer',
-                                'description': 'Max execution time in seconds (for create).',
+                                'type':
+                                'integer',
+                                'description':
+                                'Max execution time in seconds (for create).',
                             },
                             'job_id': {
-                                'type': 'string',
-                                'description': 'Job ID (required for non-create actions).',
+                                'type':
+                                'string',
+                                'description':
+                                'Job ID (required for non-create actions).',
                             },
                         },
                         'required': ['action'],
@@ -94,9 +107,13 @@ class CronTool(ToolBase):
             ]
         }
 
-    async def call_tool(self, server_name: str, *, tool_name: str, tool_args: dict) -> str:
+    async def call_tool(self, server_name: str, *, tool_name: str,
+                        tool_args: dict) -> str:
         if is_in_cron_context():
-            return _json_dumps({'error': 'Cannot manage cron jobs from within a cron job execution.'})
+            return _json_dumps({
+                'error':
+                'Cannot manage cron jobs from within a cron job execution.'
+            })
 
         action = tool_args.get('action', '')
         handler = getattr(self, f'_action_{action}', None)
@@ -108,7 +125,10 @@ class CronTool(ToolBase):
         schedule = args.get('schedule')
         prompt = args.get('prompt')
         if not schedule or not prompt:
-            return _json_dumps({'error': 'Both "schedule" and "prompt" are required for create.'})
+            return _json_dumps({
+                'error':
+                'Both "schedule" and "prompt" are required for create.'
+            })
         try:
             job = self._manager.create_job(
                 schedule_str=schedule,
@@ -147,14 +167,20 @@ class CronTool(ToolBase):
         if not job_id:
             return _json_dumps({'error': '"job_id" is required.'})
         ok = self._manager.pause_job(job_id)
-        return _json_dumps({'status': 'paused' if ok else 'failed', 'job_id': job_id})
+        return _json_dumps({
+            'status': 'paused' if ok else 'failed',
+            'job_id': job_id
+        })
 
     async def _action_resume(self, args: dict) -> str:
         job_id = args.get('job_id')
         if not job_id:
             return _json_dumps({'error': '"job_id" is required.'})
         ok = self._manager.resume_job(job_id)
-        return _json_dumps({'status': 'resumed' if ok else 'failed', 'job_id': job_id})
+        return _json_dumps({
+            'status': 'resumed' if ok else 'failed',
+            'job_id': job_id
+        })
 
     async def _action_run(self, args: dict) -> str:
         job_id = args.get('job_id')
@@ -164,12 +190,18 @@ class CronTool(ToolBase):
         if result is None:
             return _json_dumps({'error': f'Job {job_id} not found.'})
         return _json_dumps({
-            'status': 'completed' if result.success else 'failed',
-            'job_id': job_id,
-            'success': result.success,
-            'duration_ms': result.duration_ms,
-            'output_preview': result.output[:500] if result.output else '',
-            'error': result.error,
+            'status':
+            'completed' if result.success else 'failed',
+            'job_id':
+            job_id,
+            'success':
+            result.success,
+            'duration_ms':
+            result.duration_ms,
+            'output_preview':
+            result.output[:500] if result.output else '',
+            'error':
+            result.error,
         })
 
     async def _action_remove(self, args: dict) -> str:
@@ -177,7 +209,10 @@ class CronTool(ToolBase):
         if not job_id:
             return _json_dumps({'error': '"job_id" is required.'})
         ok = self._manager.delete_job(job_id)
-        return _json_dumps({'status': 'removed' if ok else 'not_found', 'job_id': job_id})
+        return _json_dumps({
+            'status': 'removed' if ok else 'not_found',
+            'job_id': job_id
+        })
 
     async def _action_history(self, args: dict) -> str:
         job_id = args.get('job_id')

@@ -13,7 +13,6 @@ from typing import Any, Dict, List, Optional
 from ms_agent.llm.utils import Message
 from ms_agent.memory.base import Memory
 from ms_agent.utils.logger import get_logger
-
 from .config import MemoryConfig
 from .protocols import MemoryBackend, MemoryEntry
 from .registry import backend_registry
@@ -50,9 +49,8 @@ class MemoryOrchestrator(Memory):
             backend_name = self.mem_config.storage_backend
             cls = backend_registry.resolve(backend_name)
             self._backend = cls(self.mem_config)
-            logger.info(
-                f"[orchestrator] Created backend '{backend_name}' "
-                f"-> {cls.__name__}")
+            logger.info(f"[orchestrator] Created backend '{backend_name}' "
+                        f'-> {cls.__name__}')
         return self._backend
 
     async def _ensure_started(self, **kwargs: Any) -> MemoryBackend:
@@ -113,7 +111,9 @@ class MemoryOrchestrator(Memory):
         return self._get_backend().get_tool_schemas()
 
     async def handle_tool_call(
-        self, tool_name: str, arguments: Dict[str, Any],
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
     ) -> str:
         backend = await self._ensure_started()
         return await backend.handle_tool_call(tool_name, arguments)
@@ -132,12 +132,12 @@ class MemoryOrchestrator(Memory):
 
     def set_llm(self, llm: Any) -> None:
         backend = self._get_backend()
-        if hasattr(backend, "set_llm"):
+        if hasattr(backend, 'set_llm'):
             backend.set_llm(llm)
 
     def init_update_queue(self) -> None:
         backend = self._get_backend()
-        if hasattr(backend, "init_update_queue"):
+        if hasattr(backend, 'init_update_queue'):
             backend.init_update_queue()
 
     # ------------------------------------------------------------------
@@ -156,11 +156,12 @@ class MemoryOrchestrator(Memory):
     def _parse_config(self, config: Any) -> MemoryConfig:
         if isinstance(config, MemoryConfig):
             return config
-        if hasattr(config, "memory") and hasattr(config.memory, "unified_memory"):
+        if hasattr(config, 'memory') and hasattr(config.memory,
+                                                 'unified_memory'):
             mc = MemoryConfig.from_dict_config(config.memory.unified_memory)
             self._default_base_dir(mc, config)
             return mc
-        if hasattr(config, "unified_memory"):
+        if hasattr(config, 'unified_memory'):
             return MemoryConfig.from_dict_config(config.unified_memory)
         return MemoryConfig.from_dict_config(config)
 
@@ -168,9 +169,9 @@ class MemoryOrchestrator(Memory):
     def _default_base_dir(mc: MemoryConfig, config: Any) -> None:
         """When base_dir is unset ('.'), root memory under <work>/.ms_agent/memory
         instead of the CWD (so MEMORY.md / facts / index don't scatter)."""
-        if str(getattr(mc, "base_dir", ".")).strip() in (".", "", "./"):
+        if str(getattr(mc, 'base_dir', '.')).strip() in ('.', '', './'):
             from ms_agent.project.paths import memory_dir
-            work = getattr(config, "output_dir", None) or "."
+            work = getattr(config, 'output_dir', None) or '.'
             mc.base_dir = str(memory_dir(work))
 
 
@@ -178,18 +179,19 @@ class MemoryOrchestrator(Memory):
 # Message conversion helpers
 # ===================================================================
 
+
 def _messages_to_dicts(messages: List[Message]) -> List[Dict[str, Any]]:
     result: List[Dict[str, Any]] = []
     for m in messages:
         if isinstance(m, dict):
             result.append(m)
         elif isinstance(m, Message):
-            d: Dict[str, Any] = {"role": m.role, "content": m.content or ""}
+            d: Dict[str, Any] = {'role': m.role, 'content': m.content or ''}
             if m.tool_calls:
-                d["tool_calls"] = m.tool_calls
+                d['tool_calls'] = m.tool_calls
             result.append(d)
         else:
-            result.append({"role": "user", "content": str(m)})
+            result.append({'role': 'user', 'content': str(m)})
     return result
 
 
@@ -199,11 +201,12 @@ def _dicts_to_messages(dicts: List[Dict[str, Any]]) -> List[Message]:
         if isinstance(d, Message):
             result.append(d)
         elif isinstance(d, dict):
-            result.append(Message(
-                role=d.get("role", "user"),
-                content=d.get("content", ""),
-                tool_calls=d.get("tool_calls"),
-            ))
+            result.append(
+                Message(
+                    role=d.get('role', 'user'),
+                    content=d.get('content', ''),
+                    tool_calls=d.get('tool_calls'),
+                ))
         else:
-            result.append(Message(role="user", content=str(d)))
+            result.append(Message(role='user', content=str(d)))
     return result

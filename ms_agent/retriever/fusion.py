@@ -15,7 +15,7 @@ class WeightedFusion(FusionStrategy):
 
     def __init__(self, weights: List[float]):
         if not weights:
-            raise ValueError("weights must not be empty")
+            raise ValueError('weights must not be empty')
         total = sum(weights)
         self._weights = [w / total for w in weights]
 
@@ -27,16 +27,20 @@ class WeightedFusion(FusionStrategy):
         hi = max(r.score for r in results)
         span = hi - lo
         if span == 0:
-            return [SearchResult(r.doc_id, r.text, 1.0, r.metadata)
-                    for r in results]
-        return [SearchResult(r.doc_id, r.text, (r.score - lo) / span,
-                             r.metadata) for r in results]
+            return [
+                SearchResult(r.doc_id, r.text, 1.0, r.metadata)
+                for r in results
+            ]
+        return [
+            SearchResult(r.doc_id, r.text, (r.score - lo) / span, r.metadata)
+            for r in results
+        ]
 
-    def fuse(self, result_lists: List[List[SearchResult]]) -> List[SearchResult]:
+    def fuse(self,
+             result_lists: List[List[SearchResult]]) -> List[SearchResult]:
         if len(result_lists) != len(self._weights):
-            raise ValueError(
-                f"Expected {len(self._weights)} result lists, "
-                f"got {len(result_lists)}")
+            raise ValueError(f'Expected {len(self._weights)} result lists, '
+                             f'got {len(result_lists)}')
 
         doc_scores: Dict[str, float] = defaultdict(float)
         doc_texts: Dict[str, str] = {}
@@ -51,10 +55,11 @@ class WeightedFusion(FusionStrategy):
                     doc_meta.setdefault(r.doc_id, r.metadata)
 
         merged = [
-            SearchResult(doc_id=did, text=doc_texts[did],
-                         score=doc_scores[did],
-                         metadata=doc_meta.get(did))
-            for did in doc_scores
+            SearchResult(
+                doc_id=did,
+                text=doc_texts[did],
+                score=doc_scores[did],
+                metadata=doc_meta.get(did)) for did in doc_scores
         ]
         merged.sort(key=lambda r: r.score, reverse=True)
         return merged
@@ -71,7 +76,8 @@ class RRFFusion(FusionStrategy):
     def __init__(self, k: int = 60):
         self.k = k
 
-    def fuse(self, result_lists: List[List[SearchResult]]) -> List[SearchResult]:
+    def fuse(self,
+             result_lists: List[List[SearchResult]]) -> List[SearchResult]:
         doc_scores: Dict[str, float] = defaultdict(float)
         doc_texts: Dict[str, str] = {}
         doc_meta: Dict[str, dict] = {}
@@ -84,10 +90,11 @@ class RRFFusion(FusionStrategy):
                     doc_meta.setdefault(r.doc_id, r.metadata)
 
         merged = [
-            SearchResult(doc_id=did, text=doc_texts[did],
-                         score=doc_scores[did],
-                         metadata=doc_meta.get(did))
-            for did in doc_scores
+            SearchResult(
+                doc_id=did,
+                text=doc_texts[did],
+                score=doc_scores[did],
+                metadata=doc_meta.get(did)) for did in doc_scores
         ]
         merged.sort(key=lambda r: r.score, reverse=True)
         return merged

@@ -9,7 +9,8 @@ from .matcher import CONTENT_SEP, TOOL_SPLITER
 from .wrapper_strip import strip_safe_wrappers
 
 
-def generate_suggestions(tool_name: str, tool_args: dict[str, Any]) -> list[str]:
+def generate_suggestions(tool_name: str, tool_args: dict[str,
+                                                         Any]) -> list[str]:
     """Generate suggested wildcard patterns based on tool name and arguments.
 
     Returns a list of patterns from most specific to most general.

@@ -5,7 +5,6 @@ from time import monotonic
 from typing import Any, Dict, List, Optional
 
 from ms_agent.utils.logger import get_logger
-
 from .errors import MaxSessionsError, SessionNotFoundError
 
 logger = get_logger()

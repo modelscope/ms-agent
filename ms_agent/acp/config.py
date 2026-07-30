@@ -1,11 +1,12 @@
 """ACP configuration helpers: build configOptions from ms-agent config."""
 
 from __future__ import annotations
-from typing import Any
 
 from acp.schema import (SessionConfigOptionSelect, SessionConfigSelect,
                         SessionConfigSelectOption, SessionMode,
                         SessionModeState)
+from typing import Any
+
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()

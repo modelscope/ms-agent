@@ -2,6 +2,7 @@ import asyncio
 import os
 import uuid
 from dataclasses import dataclass, field
+from omegaconf import DictConfig, OmegaConf
 from time import monotonic
 from typing import Any, Dict, List, Optional
 
@@ -11,8 +12,6 @@ from ms_agent.config.config import Config
 from ms_agent.config.env import Env
 from ms_agent.llm.utils import Message
 from ms_agent.utils.logger import get_logger
-from omegaconf import DictConfig, OmegaConf
-
 from .errors import ConfigError, MaxSessionsError, SessionNotFoundError
 
 logger = get_logger()

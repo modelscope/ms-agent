@@ -2360,9 +2360,9 @@ CLI 没有「Telegram 用户发消息」等上下文，故 Gateway hooks **故�
 
 二者经 **同一 `invoke_hook()` 分发器**：
 
-1. **执行顺序**：先 Plugin hooks（按插件发现顺序），后 Shell hooks  
-2. **`pre_tool_call` 阻断**：第一个有效 `{"action":"block"}` / `{"decision":"block"}` 胜出  
-3. **能力重叠**：同一事件可既有 Plugin 又有 Shell；Plugin 适合复杂逻辑，Shell 适合运维一键脚本  
+1. **执行顺序**：先 Plugin hooks（按插件发现顺序），后 Shell hooks
+2. **`pre_tool_call` 阻断**：第一个有效 `{"action":"block"}` / `{"decision":"block"}` 胜出
+3. **能力重叠**：同一事件可既有 Plugin 又有 Shell；Plugin 适合复杂逻辑，Shell 适合运维一键脚本
 
 Hermes 文档中的 **BOOT.md 启动清单** 是 Gateway hooks 的典型模式：在 `gateway:startup` 后台起一个 one-shot agent 执行 `~/.hermes/BOOT.md` 里的自然语言指令（与 Plugin/Shell 的 `pre_tool_call` 无关）。
 

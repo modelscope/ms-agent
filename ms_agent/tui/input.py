@@ -45,7 +45,8 @@ def slash_matches(router, text: str):
 class PromptToolkitInput:
     """Async input source with a status bar and slash completion."""
 
-    def __init__(self, state: TuiState,
+    def __init__(self,
+                 state: TuiState,
                  router: Optional['CommandRouter'] = None,
                  theme: Theme = DEFAULT_THEME,
                  console: object = None) -> None:
@@ -70,25 +71,38 @@ class PromptToolkitInput:
             router = self._router
 
             class _SlashCompleter(Completer):
+
                 def get_completions(self, document, complete_event):
                     text = document.text_before_cursor
                     for name, desc in slash_matches(router, text):
-                        yield Completion('/' + name, start_position=-len(text),
-                                         display=f'/{name}', display_meta=desc)
+                        yield Completion(
+                            '/' + name,
+                            start_position=-len(text),
+                            display=f'/{name}',
+                            display_meta=desc)
 
             from prompt_toolkit.formatted_text import HTML
 
             style = Style.from_dict({
-                'completion-menu': 'bg:#1c1c1c',
-                'completion-menu.completion': 'bg:#1c1c1c #d0d0d0',
-                'completion-menu.completion.current': 'bg:#00afd7 #000000 bold',
-                'completion-menu.meta.completion': 'bg:#1c1c1c #6c6c6c',
-                'completion-menu.meta.completion.current': 'bg:#0087af #e4e4e4',
-                'scrollbar.background': 'bg:#303030',
-                'scrollbar.button': 'bg:#00afd7',
+                'completion-menu':
+                'bg:#1c1c1c',
+                'completion-menu.completion':
+                'bg:#1c1c1c #d0d0d0',
+                'completion-menu.completion.current':
+                'bg:#00afd7 #000000 bold',
+                'completion-menu.meta.completion':
+                'bg:#1c1c1c #6c6c6c',
+                'completion-menu.meta.completion.current':
+                'bg:#0087af #e4e4e4',
+                'scrollbar.background':
+                'bg:#303030',
+                'scrollbar.button':
+                'bg:#00afd7',
                 # a calm dim status line, not the default reversed bar
-                'bottom-toolbar': 'noreverse bg:default #808080',
-                'bottom-toolbar.text': 'noreverse bg:default #808080',
+                'bottom-toolbar':
+                'noreverse bg:default #808080',
+                'bottom-toolbar.text':
+                'noreverse bg:default #808080',
             })
             return PromptSession(
                 history=InMemoryHistory(),
@@ -116,7 +130,8 @@ class PromptToolkitInput:
 
     def _message(self):
         from prompt_toolkit.formatted_text import HTML
-        return HTML(f'<b><ansicyan>{self._theme.prompt_symbol}</ansicyan></b> ')
+        return HTML(
+            f'<b><ansicyan>{self._theme.prompt_symbol}</ansicyan></b> ')
 
     async def read_prompt(self, prompt: str = '❯ ') -> str:
         # The TUI owns its prompt presentation; the caller's ``prompt`` arg is

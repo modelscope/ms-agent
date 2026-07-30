@@ -21,8 +21,8 @@ import os
 import re
 from pathlib import Path
 
-INTERNAL_DIR_NAME = '.ms_agent'            # project-local framework dir
-LEGACY_INTERNAL_DIR_NAME = '.ms-agent'     # older hyphenated name (read-compat)
+INTERNAL_DIR_NAME = '.ms_agent'  # project-local framework dir
+LEGACY_INTERNAL_DIR_NAME = '.ms-agent'  # older hyphenated name (read-compat)
 
 
 def global_home() -> Path:
@@ -88,6 +88,7 @@ def memory_dir(work_dir: str | Path) -> Path:
 # these, so a work dir only ever contains the user's artifacts plus a single
 # ``.ms_agent/`` namespace (no scattered ms_agent.log / .memory / .index / …).
 
+
 def internal_subdir(work_dir: str | Path, *parts: str) -> Path:
     """``<work_dir>/.ms_agent/<parts...>``."""
     return local_internal_dir(work_dir).joinpath(*parts)
@@ -128,7 +129,8 @@ def search_index_dir(work_dir: str | Path, name: str = 'search') -> Path:
     return internal_subdir(work_dir, 'search_index', name)
 
 
-def stats_file(work_dir: str | Path, name: str = 'workflow_stats.json') -> Path:
+def stats_file(work_dir: str | Path,
+               name: str = 'workflow_stats.json') -> Path:
     """Token/usage stats (was ``<work_dir>/workflow_stats.json``)."""
     return internal_subdir(work_dir, name)
 
@@ -139,6 +141,7 @@ def global_logs_dir() -> Path:
 
 
 # ── project-local config dir (writes prefer new, reads fall back to legacy) ──
+
 
 def project_internal_dir(project_path: str | Path) -> Path:
     """New project-local framework dir for **writes** (``<proj>/.ms_agent``)."""

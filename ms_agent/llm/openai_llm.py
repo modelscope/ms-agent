@@ -8,8 +8,6 @@ from openai.types.chat.chat_completion_message_tool_call import (
     ChatCompletionMessageToolCall, Function)
 from typing import Any, Dict, Generator, Iterable, List, Optional
 
-import httpx
-import json
 from ms_agent.llm import LLM
 from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.utils import (MAX_CONTINUE_RUNS, assert_package_exist,
@@ -81,9 +79,8 @@ class OpenAI(LLM):
         base_url = base_url or getattr(
             config.llm, 'openai_base_url', None) or os.environ.get(
                 'OPENAI_BASE_URL') or get_service_config('openai').base_url
-        api_key = api_key or getattr(
-            config.llm, 'openai_api_key', None) or os.environ.get(
-                'OPENAI_API_KEY')
+        api_key = api_key or getattr(config.llm, 'openai_api_key',
+                                     None) or os.environ.get('OPENAI_API_KEY')
 
         # Bound the network call so a dead/misconfigured endpoint fails fast
         # instead of hanging the caller indefinitely (openai's default is a

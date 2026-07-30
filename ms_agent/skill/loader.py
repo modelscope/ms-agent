@@ -227,8 +227,7 @@ class SkillLoader:
         name = str(frontmatter.get('name') or path.stem)
         description = str(
             frontmatter.get('description') or f'Plugin command {name}')
-        skill_id = (
-            f'{plugin_id}:{name}' if plugin_id else f'command:{name}')
+        skill_id = (f'{plugin_id}:{name}' if plugin_id else f'command:{name}')
         body_text = re.sub(
             r'^---\s*\n.*?\n---\s*\n',
             '',

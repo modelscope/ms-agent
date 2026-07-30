@@ -16,13 +16,25 @@ TOOL_SPLITER = '---'
 
 # action word (part after '---') → display verb
 _VERBS = {
-    'write_file': 'Write', 'edit_file': 'Edit', 'read_file': 'Read',
-    'append_file': 'Append', 'delete_file': 'Delete', 'move_file': 'Move',
-    'shell_executor': 'Run', 'execute': 'Run', 'run_command': 'Run',
-    'exa_search': 'Search', 'web_search': 'Search', 'search': 'Search',
-    'skill_view': 'View skill', 'skill_manage': 'Skill',
-    'skills_list': 'List skills', 'glob': 'Find', 'grep': 'Search',
-    'list_dir': 'List', 'read_dir': 'List',
+    'write_file': 'Write',
+    'edit_file': 'Edit',
+    'read_file': 'Read',
+    'append_file': 'Append',
+    'delete_file': 'Delete',
+    'move_file': 'Move',
+    'shell_executor': 'Run',
+    'execute': 'Run',
+    'run_command': 'Run',
+    'exa_search': 'Search',
+    'web_search': 'Search',
+    'search': 'Search',
+    'skill_view': 'View skill',
+    'skill_manage': 'Skill',
+    'skills_list': 'List skills',
+    'glob': 'Find',
+    'grep': 'Search',
+    'list_dir': 'List',
+    'read_dir': 'List',
 }
 # arg keys probed, in priority order, for the salient value to show
 _ARG_KEYS = ('path', 'file_path', 'filename', 'query', 'q', 'command', 'cmd',

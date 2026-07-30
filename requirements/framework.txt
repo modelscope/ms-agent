@@ -7,14 +7,15 @@ markdown
 matplotlib
 mcp
 modelscope>=1.35.2
+modelscope-hub
 numpy
 omegaconf
 openai
 pandas
 pillow
 prompt_toolkit
-pyyaml
 pytz
+pyyaml
 requests
 rich
 typing_extensions

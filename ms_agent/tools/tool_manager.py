@@ -17,6 +17,7 @@ from ms_agent.tools.base import ToolBase
 from ms_agent.tools.code import CodeExecutionTool, LocalCodeExecutionTool
 from ms_agent.tools.filesystem_tool import FileSystemTool
 from ms_agent.tools.image_generator import ImageGenerator
+
 try:
     from ms_agent.tools.mcp_client import MCPClient
 except ImportError:
@@ -74,10 +75,10 @@ def parse_timeout_from_tool_args(
 
 
 def effective_tool_wait_seconds(
-        tool_args: Optional[Dict[str, Any]],
-        *,
-        default_sec: float,
-        max_sec: float,
+    tool_args: Optional[Dict[str, Any]],
+    *,
+    default_sec: float,
+    max_sec: float,
 ) -> float:
     """Per-call wait: ``min(max(requested, 1), max_sec)`` if ``timeout`` set, else clamped default."""
     cap = max(1.0, float(max_sec))
@@ -101,22 +102,24 @@ class ToolManager:
             return full_name
         return full_name.split(splitter, 1)[1]
 
-    def __init__(self,
-                 config,
-                 mcp_config: Optional[Dict[str, Any]] = None,
-                 mcp_client: Optional[MCPClient] = None,
-                 permission_enforcer=None,
-                 safety_guard=None,
-                 permission_mode: str = 'auto',
-                 read_policy: str = 'loose',
-                 hook_runtime=None,
-                 permission_config=None,
-                 mcp_callable_check: Optional[Callable[[str], bool]] = None,
-                 mcp_failure_handler: Optional[Callable[
-                     [str, str, str, Optional[str]], Awaitable[None]]] = None,
-                 mcp_unavailable_detail: Optional[Callable[[str], dict]] = None,
-                 mcp_success_handler: Optional[Callable[[str], Awaitable[None]]] = None,
-                 **kwargs):
+    def __init__(
+            self,
+            config,
+            mcp_config: Optional[Dict[str, Any]] = None,
+            mcp_client: Optional[MCPClient] = None,
+            permission_enforcer=None,
+            safety_guard=None,
+            permission_mode: str = 'auto',
+            read_policy: str = 'loose',
+            hook_runtime=None,
+            permission_config=None,
+            mcp_callable_check: Optional[Callable[[str], bool]] = None,
+            mcp_failure_handler: Optional[Callable[
+                [str, str, str, Optional[str]], Awaitable[None]]] = None,
+            mcp_unavailable_detail: Optional[Callable[[str], dict]] = None,
+            mcp_success_handler: Optional[Callable[[str],
+                                                   Awaitable[None]]] = None,
+            **kwargs):
         self.config = config
         self.trust_remote_code = kwargs.get('trust_remote_code', False)
         self._permission_enforcer = permission_enforcer
@@ -271,8 +274,10 @@ class ToolManager:
         if self.mcp_client is not None:
             self.servers = self.mcp_client
             has_add = hasattr(self.servers, 'add_mcp_config')
-            is_mcp = MCPClient is not None and isinstance(self.mcp_client, MCPClient)
-            if self.mcp_config and self.mcp_config.get('mcpServers') and (is_mcp or has_add):
+            is_mcp = MCPClient is not None and isinstance(
+                self.mcp_client, MCPClient)
+            if self.mcp_config and self.mcp_config.get('mcpServers') and (
+                    is_mcp or has_add):
                 await self.servers.add_mcp_config(self.mcp_config)
                 if hasattr(self.servers, 'mcp_config'):
                     self.mcp_config = self.servers.mcp_config
@@ -320,7 +325,8 @@ class ToolManager:
     ) -> None:
         if self.mcp_failure_handler is None:
             return
-        from ms_agent.mcp.runtime import classify_failure_message, is_connection_error
+        from ms_agent.mcp.runtime import (classify_failure_message,
+                                          is_connection_error)
         if exc is not None:
             if not is_connection_error(exc):
                 return
@@ -408,8 +414,8 @@ class ToolManager:
                     failures.append((server_name, exc))
                     continue
                 if tool_list:
-                    self._extend_mcp_tool_index(
-                        self.servers, server_name, tool_list)
+                    self._extend_mcp_tool_index(self.servers, server_name,
+                                                tool_list)
         return failures
 
     async def index_extra_tool(self, tool_ins: ToolBase) -> None:
@@ -484,7 +490,8 @@ class ToolManager:
                 tool_ins, server_name, _ = index_snapshot
 
                 # --- MCP availability (before SafetyGuard / PreToolUse) ---
-                if (tool_ins is self.servers and self.mcp_callable_check is not None
+                if (tool_ins is self.servers
+                        and self.mcp_callable_check is not None
                         and not self.mcp_callable_check(server_name)):
                     detail = (
                         self.mcp_unavailable_detail(server_name)
@@ -492,21 +499,26 @@ class ToolManager:
                             'success': False,
                             'error': 'mcp_unavailable',
                             'server_name': server_name,
-                            'message': f'MCP server {server_name} is not callable',
+                            'message':
+                            f'MCP server {server_name} is not callable',
                         })
                     return json.dumps(detail, ensure_ascii=False)
 
                 # --- Permission checks ---
-                args_dict = dict(tool_args) if isinstance(tool_args, dict) else {}
+                args_dict = dict(tool_args) if isinstance(tool_args,
+                                                          dict) else {}
                 safety_force_decision = None
                 if self._safety_guard is not None:
                     from ms_agent.permission.ask_resolver import resolve_ask
-                    safety_decision = self._safety_guard.check(tool_name, args_dict)
+                    safety_decision = self._safety_guard.check(
+                        tool_name, args_dict)
                     if safety_decision.action == 'deny':
                         return {'result': f'Blocked by safety policy: {safety_decision.reason}',
                                 'is_error': True}
                     if safety_decision.action == 'ask':
-                        resolved = resolve_ask(safety_decision, self._permission_mode, self._read_policy)
+                        resolved = resolve_ask(safety_decision,
+                                               self._permission_mode,
+                                               self._read_policy)
                         if resolved.action == 'deny':
                             return {'result': f'Blocked by safety policy: {resolved.reason}',
                                     'is_error': True}
@@ -517,7 +529,8 @@ class ToolManager:
                             # interactive mode: force the enforcer to confirm with
                             # the user; whitelist/memory must not bypass a safety
                             # ask (REVIEW P1-2).
-                            from ms_agent.permission.enforcer import PermissionDecision
+                            from ms_agent.permission.enforcer import \
+                                PermissionDecision
                             safety_force_decision = PermissionDecision(
                                 action='ask', reason=resolved.reason)
 
@@ -525,7 +538,8 @@ class ToolManager:
                 hook_result = None
                 pre_attachments: list = []
                 if self._hook_runtime is not None and not self._hook_runtime.is_empty:
-                    from ms_agent.utils.workspace_context import resolve_workspace_root
+                    from ms_agent.utils.workspace_context import \
+                        resolve_workspace_root
                     project_path = str(resolve_workspace_root(self.config))
                     hook_result, pre_attachments = await self._hook_runtime.run_pre_tool_use(
                         tool_name=tool_name,
@@ -537,7 +551,8 @@ class ToolManager:
                         args_dict = dict(hook_result.updated_args)
                         tool_info['arguments'] = tool_args
 
-                from ms_agent.hooks.permission_resolve import resolve_hook_permission_decision
+                from ms_agent.hooks.permission_resolve import \
+                    resolve_hook_permission_decision
 
                 perm_out = await resolve_hook_permission_decision(
                     hook_result=hook_result,
@@ -560,7 +575,8 @@ class ToolManager:
                     tool_args = perm_out.updated_args
                     tool_info['arguments'] = tool_args
 
-                raw_args = dict(tool_args) if isinstance(tool_args, dict) else {}
+                raw_args = dict(tool_args) if isinstance(tool_args,
+                                                         dict) else {}
                 wait_sec = effective_tool_wait_seconds(
                     raw_args,
                     default_sec=self.tool_call_timeout,
@@ -596,9 +612,9 @@ class ToolManager:
                 hook_attachments = list(pre_attachments)
                 if self._hook_runtime is not None and not self._hook_runtime.is_empty:
                     response_text = (
-                        response if isinstance(response, str)
-                        else str(response.get('result', response))
-                        if isinstance(response, dict) else str(response))
+                        response if isinstance(response, str) else
+                        str(response.get('result', response)) if isinstance(
+                            response, dict) else str(response))
                     _, post_attachments = await self._hook_runtime.run_post_tool_use(
                         tool_name=tool_name,
                         tool_args=args_dict,

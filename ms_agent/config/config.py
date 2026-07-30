@@ -3,11 +3,11 @@ import argparse
 import os.path
 from abc import abstractmethod
 from copy import deepcopy
-from typing import Any, Dict, Union
 from omegaconf import DictConfig, ListConfig, OmegaConf
 from omegaconf.basecontainer import BaseContainer
-from modelscope import snapshot_download
+from typing import Any, Dict, Union
 
+from modelscope import snapshot_download
 from ms_agent.prompting import apply_prompt_files
 from ms_agent.utils import get_logger
 from ..utils.constants import TOOL_PLUGIN_NAME
@@ -24,13 +24,46 @@ logger = get_logger()
 # explicit ``--key value`` argv) are unaffected — only these ambient names are
 # dropped from the env-derived override source.
 _SHELL_ENV_BLOCKLIST = frozenset({
-    'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'PWD', 'OLDPWD', 'TERM',
-    'LANG', 'LANGUAGE', 'LC_ALL', 'LC_CTYPE', 'TMPDIR', 'TMP', 'TEMP',
-    'EDITOR', 'VISUAL', 'PAGER', 'DISPLAY', 'HOSTNAME', 'HOST', 'MAIL',
-    'SHLVL', 'COLUMNS', 'LINES', 'IFS', 'PS1', 'PS2', 'MANPATH',
-    'LD_LIBRARY_PATH', 'DYLD_LIBRARY_PATH', 'PYTHONPATH', 'CONDA_PREFIX',
-    'CONDA_DEFAULT_ENV', 'VIRTUAL_ENV', 'SSH_AUTH_SOCK', 'COLORTERM',
-    'TERM_PROGRAM', 'TERM_SESSION_ID', 'XPC_SERVICE_NAME',
+    'PATH',
+    'HOME',
+    'USER',
+    'LOGNAME',
+    'SHELL',
+    'PWD',
+    'OLDPWD',
+    'TERM',
+    'LANG',
+    'LANGUAGE',
+    'LC_ALL',
+    'LC_CTYPE',
+    'TMPDIR',
+    'TMP',
+    'TEMP',
+    'EDITOR',
+    'VISUAL',
+    'PAGER',
+    'DISPLAY',
+    'HOSTNAME',
+    'HOST',
+    'MAIL',
+    'SHLVL',
+    'COLUMNS',
+    'LINES',
+    'IFS',
+    'PS1',
+    'PS2',
+    'MANPATH',
+    'LD_LIBRARY_PATH',
+    'DYLD_LIBRARY_PATH',
+    'PYTHONPATH',
+    'CONDA_PREFIX',
+    'CONDA_DEFAULT_ENV',
+    'VIRTUAL_ENV',
+    'SSH_AUTH_SOCK',
+    'COLORTERM',
+    'TERM_PROGRAM',
+    'TERM_SESSION_ID',
+    'XPC_SERVICE_NAME',
 })
 
 
@@ -184,7 +217,8 @@ class Config:
         idx = 0
         while idx < len(unknown):
             key = unknown[idx]
-            if (key.startswith('--') and len(key) > 2 and idx + 1 < len(unknown)
+            if (key.startswith('--') and len(key) > 2
+                    and idx + 1 < len(unknown)
                     and not unknown[idx + 1].startswith('--')):
                 _dict_config[key[2:]] = unknown[idx + 1]
                 idx += 2

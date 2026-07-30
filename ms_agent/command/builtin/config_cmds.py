@@ -1,12 +1,8 @@
 import os
 
 from ms_agent.command.router import CommandRouter
-from ms_agent.command.types import (
-    CommandContext,
-    CommandDef,
-    CommandResult,
-    CommandResultType,
-)
+from ms_agent.command.types import (CommandContext, CommandDef, CommandResult,
+                                    CommandResultType)
 
 CMD_MODEL = CommandDef(
     name='model',
@@ -18,7 +14,7 @@ CMD_CONFIG = CommandDef(
     name='config',
     description='Show current runtime configuration',
     category='config',
-    aliases=('settings',),
+    aliases=('settings', ),
 )
 
 
@@ -36,8 +32,9 @@ def _persist_model_to_config(config, new_model: str, service=None):
     from omegaconf import OmegaConf
 
     # Prefer the work dir; fall back to the config's own dir only if unset.
-    base_dir = (getattr(config, 'output_dir', None)
-                or getattr(config, 'local_dir', None))
+    base_dir = (
+        getattr(config, 'output_dir', None)
+        or getattr(config, 'local_dir', None))
     if not base_dir:
         return None
     # Write to the new .ms_agent/ dir; migrate an existing legacy
@@ -48,8 +45,9 @@ def _persist_model_to_config(config, new_model: str, service=None):
     try:
         os.makedirs(patch_dir, exist_ok=True)
         source = patch_path if os.path.isfile(patch_path) else legacy_path
-        patch = (OmegaConf.load(source)
-                 if os.path.isfile(source) else OmegaConf.create({}))
+        patch = (
+            OmegaConf.load(source)
+            if os.path.isfile(source) else OmegaConf.create({}))
         OmegaConf.update(patch, 'llm.model', new_model, merge=True)
         if service:
             OmegaConf.update(patch, 'llm.service', service, merge=True)
@@ -62,16 +60,16 @@ def _persist_model_to_config(config, new_model: str, service=None):
 async def cmd_model(ctx: CommandContext) -> CommandResult:
     if not ctx.runtime or not ctx.runtime.llm:
         return CommandResult(
-            type=CommandResultType.MESSAGE, content='No active agent.'
-        )
+            type=CommandResultType.MESSAGE, content='No active agent.')
 
     if not ctx.args:
         model = ctx.runtime.llm.model
         service = getattr(ctx.runtime.llm.config.llm, 'service', 'unknown')
         return CommandResult(
             type=CommandResultType.MESSAGE,
-            content=(f'Model: {model}\nService: {service}\n'
-                     'Switch with: /model <model>  or  /model <provider>/<model>'),
+            content=(
+                f'Model: {model}\nService: {service}\n'
+                'Switch with: /model <model>  or  /model <provider>/<model>'),
         )
 
     # Accept both "/model <model>" and "/model <provider>/<model>".
@@ -131,8 +129,7 @@ async def cmd_model(ctx: CommandContext) -> CommandResult:
 async def cmd_config(ctx: CommandContext) -> CommandResult:
     if not ctx.runtime or not ctx.runtime.llm:
         return CommandResult(
-            type=CommandResultType.MESSAGE, content='No active agent.'
-        )
+            type=CommandResultType.MESSAGE, content='No active agent.')
 
     config = ctx.runtime.llm.config
     from omegaconf import OmegaConf

@@ -1,16 +1,12 @@
 from ms_agent.command.router import CommandRouter
-from ms_agent.command.types import (
-    CommandContext,
-    CommandDef,
-    CommandResult,
-    CommandResultType,
-)
+from ms_agent.command.types import (CommandContext, CommandDef, CommandResult,
+                                    CommandResultType)
 
 CMD_HELP = CommandDef(
     name='help',
     description='Show available commands',
     category='info',
-    aliases=('?',),
+    aliases=('?', ),
 )
 
 CMD_VERSION = CommandDef(
@@ -24,8 +20,7 @@ async def cmd_help(ctx: CommandContext) -> CommandResult:
     router = ctx.extra.get('router')
     if not router:
         return CommandResult(
-            type=CommandResultType.MESSAGE, content='No commands available.'
-        )
+            type=CommandResultType.MESSAGE, content='No commands available.')
 
     lines = ['Available commands:\n']
     for category, cmds in router.list_commands(ctx.source).items():
@@ -35,8 +30,7 @@ async def cmd_help(ctx: CommandContext) -> CommandResult:
             lines.append(f'    /{cmd.name}{aliases} — {cmd.description}')
 
     return CommandResult(
-        type=CommandResultType.MESSAGE, content='\n'.join(lines)
-    )
+        type=CommandResultType.MESSAGE, content='\n'.join(lines))
 
 
 async def cmd_version(ctx: CommandContext) -> CommandResult:
@@ -47,8 +41,7 @@ async def cmd_version(ctx: CommandContext) -> CommandResult:
     except (ImportError, AttributeError):
         ver = 'unknown'
     return CommandResult(
-        type=CommandResultType.MESSAGE, content=f'MS-Agent v{ver}'
-    )
+        type=CommandResultType.MESSAGE, content=f'MS-Agent v{ver}')
 
 
 def register_info_commands(router: CommandRouter) -> None:

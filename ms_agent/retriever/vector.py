@@ -22,8 +22,8 @@ class VectorRetriever(BaseRetriever):
 
     def __init__(self, embed_model: Optional[str] = None):
         self._embed_model_id = embed_model or self.DEFAULT_MODEL
-        self._model = None       # SentenceTransformer (lazy)
-        self._index = None       # faiss.IndexFlatIP  (lazy)
+        self._model = None  # SentenceTransformer (lazy)
+        self._index = None  # faiss.IndexFlatIP  (lazy)
         self._documents: List[str] = []
         self._doc_ids: List[str] = []
 
@@ -39,8 +39,11 @@ class VectorRetriever(BaseRetriever):
             local_path = snapshot_download(
                 model_id=self._embed_model_id,
                 ignore_patterns=[
-                    'openvino/*', 'onnx/*', 'pytorch_model.bin',
-                    'rust_model.ot', 'tf_model.h5',
+                    'openvino/*',
+                    'onnx/*',
+                    'pytorch_model.bin',
+                    'rust_model.ot',
+                    'tf_model.h5',
                 ])
         except Exception:
             local_path = self._embed_model_id
@@ -58,14 +61,15 @@ class VectorRetriever(BaseRetriever):
     #  BaseRetriever interface
     # ------------------------------------------------------------------ #
 
-    def index(self, documents: List[str],
+    def index(self,
+              documents: List[str],
               doc_ids: Optional[List[str]] = None) -> None:
         import faiss
         self.reset()
         self._documents = list(documents)
         self._doc_ids = (
-            list(doc_ids) if doc_ids else
-            [str(i) for i in range(len(documents))])
+            list(doc_ids)
+            if doc_ids else [str(i) for i in range(len(documents))])
 
         embeddings = self._encode(self._documents)
         faiss.normalize_L2(embeddings)
@@ -87,11 +91,12 @@ class VectorRetriever(BaseRetriever):
         for dist, idx in zip(dists[0], indices[0]):
             if idx == -1:
                 continue
-            results.append(SearchResult(
-                doc_id=self._doc_ids[idx],
-                text=self._documents[idx],
-                score=float(dist),
-            ))
+            results.append(
+                SearchResult(
+                    doc_id=self._doc_ids[idx],
+                    text=self._documents[idx],
+                    score=float(dist),
+                ))
         return results
 
     def reset(self) -> None:

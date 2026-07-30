@@ -1,8 +1,8 @@
-from ms_agent.command.router import CommandRouter
-from ms_agent.command.builtin.session_cmds import register_session_commands
-from ms_agent.command.builtin.info_cmds import register_info_commands
 from ms_agent.command.builtin.config_cmds import register_config_commands
 from ms_agent.command.builtin.context_cmds import register_context_commands
+from ms_agent.command.builtin.info_cmds import register_info_commands
+from ms_agent.command.builtin.session_cmds import register_session_commands
+from ms_agent.command.router import CommandRouter
 
 
 def register_builtin_commands(router: CommandRouter) -> None:

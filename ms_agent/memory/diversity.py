@@ -1,11 +1,9 @@
 import re
 from copy import deepcopy
+from omegaconf import DictConfig
 from typing import List
 
-from omegaconf import DictConfig
-
 from ms_agent.utils import get_logger
-
 from ..llm import LLM, Message, collect_response
 from .base import Memory
 

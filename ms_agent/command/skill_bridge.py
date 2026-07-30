@@ -23,7 +23,8 @@ import re
 from typing import TYPE_CHECKING
 
 from ms_agent.command.router import CommandRouter
-from ms_agent.command.types import CommandContext, CommandResult, CommandResultType
+from ms_agent.command.types import (CommandContext, CommandResult,
+                                    CommandResultType)
 
 if TYPE_CHECKING:
     from ms_agent.skill.catalog import SkillCatalog

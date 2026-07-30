@@ -13,23 +13,45 @@ import re
 # Environment variables safe to strip (do not affect paths or inject code).
 SAFE_ENV_VARS: frozenset[str] = frozenset({
     # Go
-    'GOEXPERIMENT', 'GOOS', 'GOARCH', 'CGO_ENABLED', 'GO111MODULE',
+    'GOEXPERIMENT',
+    'GOOS',
+    'GOARCH',
+    'CGO_ENABLED',
+    'GO111MODULE',
     # Rust
-    'RUST_BACKTRACE', 'RUST_LOG',
+    'RUST_BACKTRACE',
+    'RUST_LOG',
     # Node
     'NODE_ENV',
     # Python
-    'PYTHONUNBUFFERED', 'PYTHONDONTWRITEBYTECODE',
+    'PYTHONUNBUFFERED',
+    'PYTHONDONTWRITEBYTECODE',
     # Pytest
-    'PYTEST_DISABLE_PLUGIN_AUTOLOAD', 'PYTEST_DEBUG',
+    'PYTEST_DISABLE_PLUGIN_AUTOLOAD',
+    'PYTEST_DEBUG',
     # Locale / encoding
-    'LANG', 'LANGUAGE', 'LC_ALL', 'LC_CTYPE', 'LC_TIME', 'CHARSET',
+    'LANG',
+    'LANGUAGE',
+    'LC_ALL',
+    'LC_CTYPE',
+    'LC_TIME',
+    'CHARSET',
     # Terminal / display
-    'TERM', 'COLORTERM', 'NO_COLOR', 'FORCE_COLOR', 'TZ',
+    'TERM',
+    'COLORTERM',
+    'NO_COLOR',
+    'FORCE_COLOR',
+    'TZ',
     # Color config
-    'LS_COLORS', 'LSCOLORS', 'GREP_COLOR', 'GREP_COLORS', 'GCC_COLORS',
+    'LS_COLORS',
+    'LSCOLORS',
+    'GREP_COLOR',
+    'GREP_COLORS',
+    'GCC_COLORS',
     # Display format
-    'TIME_STYLE', 'BLOCK_SIZE', 'BLOCKSIZE',
+    'TIME_STYLE',
+    'BLOCK_SIZE',
+    'BLOCKSIZE',
 })
 
 _SAFE_FLAG_VALUE = re.compile(r'^[A-Za-z0-9_.+\-]+$')
@@ -55,7 +77,8 @@ def _strip_timeout(tokens: list[str]) -> list[str] | None:
     if not tokens or tokens[0] != 'timeout':
         return None
 
-    no_value_flags = frozenset({'--foreground', '--preserve-status', '-v', '--verbose'})
+    no_value_flags = frozenset(
+        {'--foreground', '--preserve-status', '-v', '--verbose'})
     value_flags_long = frozenset({'--kill-after', '--signal'})
     value_flags_short = frozenset({'-k', '-s'})
 
@@ -147,8 +170,10 @@ def _strip_env(tokens: list[str]) -> list[str] | None:
     if not tokens or tokens[0] != 'env':
         return None
 
-    unsafe_flags = frozenset({'-S', '--split-string', '-C', '--chdir', '-P', '--path'})
-    safe_no_value = frozenset({'-i', '--ignore-environment', '-0', '--null', '-v', '--verbose'})
+    unsafe_flags = frozenset(
+        {'-S', '--split-string', '-C', '--chdir', '-P', '--path'})
+    safe_no_value = frozenset(
+        {'-i', '--ignore-environment', '-0', '--null', '-v', '--verbose'})
 
     i = 1
     while i < len(tokens):

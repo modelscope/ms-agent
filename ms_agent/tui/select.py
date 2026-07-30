@@ -17,7 +17,9 @@ import sys
 from typing import List, Optional, Sequence
 
 
-async def select_async(options: Sequence[str], *, default: int = 0,
+async def select_async(options: Sequence[str],
+                       *,
+                       default: int = 0,
                        header: Optional[str] = None) -> Optional[int]:
     """Show an inline menu; return the chosen index, or None if cancelled.
 
@@ -36,7 +38,8 @@ async def select_async(options: Sequence[str], *, default: int = 0,
     return await _menu_async(options, default, header)
 
 
-async def _menu_async(options: Sequence[str], default: int,
+async def _menu_async(options: Sequence[str],
+                      default: int,
                       header: Optional[str] = None) -> Optional[int]:
     """The prompt_toolkit menu itself (no TTY guard, so tests can drive it via
     a pipe input + AppSession)."""
@@ -70,6 +73,7 @@ async def _menu_async(options: Sequence[str], default: int,
         event.app.exit(result=None)
 
     for _i in range(min(len(options), 9)):
+
         @kb.add(str(_i + 1))
         def _pick(event, i=_i) -> None:
             event.app.exit(result=i)
@@ -79,8 +83,8 @@ async def _menu_async(options: Sequence[str], default: int,
     def _render():
         frags = []
         for j, hl in enumerate(header_lines):
-            frags.append(('class:head' if j == 0 else 'class:headdim',
-                          hl + '\n'))
+            frags.append(
+                ('class:head' if j == 0 else 'class:headdim', hl + '\n'))
         for i, label in enumerate(options):
             if i == sel[0]:
                 frags.append(('class:sel', f'❯ {i + 1}. {label}\n'))
@@ -98,8 +102,10 @@ async def _menu_async(options: Sequence[str], default: int,
         'hint': 'italic ansibrightblack',
     })
     app = Application(
-        layout=Layout(HSplit([Window(
-            control, height=len(options) + 1 + len(header_lines))])),
+        layout=Layout(
+            HSplit(
+                [Window(control,
+                        height=len(options) + 1 + len(header_lines))])),
         key_bindings=kb,
         style=style,
         full_screen=False,

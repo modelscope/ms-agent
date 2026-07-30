@@ -12,11 +12,9 @@ from urllib.parse import parse_qs, unquote, urlparse
 from urllib.request import urlopen
 
 from ms_agent.plugins.config_manager import PluginConfigManager
-from ms_agent.plugins.dependencies import (
-    PluginDependencyError,
-    parse_dependencies,
-    version_satisfies,
-)
+from ms_agent.plugins.dependencies import (PluginDependencyError,
+                                           parse_dependencies,
+                                           version_satisfies)
 from ms_agent.plugins.manifest import PluginManifest
 from ms_agent.plugins.registry import PluginRegistry
 from ms_agent.plugins.types import InstallSource, PluginRecord
@@ -54,8 +52,7 @@ class PluginInstaller:
             global_root, project_root)
         self.global_root = Path(global_root).expanduser()
         self.project_root = (
-            Path(project_root).expanduser() if project_root else None
-        )
+            Path(project_root).expanduser() if project_root else None)
 
     def install(
         self,
@@ -123,7 +120,8 @@ class PluginInstaller:
                 format_hint=staged_manifest.format,
             )
             self._publish_staged_install(install_path, target)
-            manifest = PluginManifest.parse(target, format_hint=staged_manifest.format)
+            manifest = PluginManifest.parse(
+                target, format_hint=staged_manifest.format)
             return self._write_record(
                 manifest,
                 source=requested_source,
@@ -136,14 +134,16 @@ class PluginInstaller:
             )
 
     @staticmethod
-    def _stage_install_tree(source_path: Path, target: Path, *, link: bool) -> Path:
+    def _stage_install_tree(source_path: Path, target: Path, *,
+                            link: bool) -> Path:
         target.parent.mkdir(parents=True, exist_ok=True)
         staging_root = target.parent / '.staging'
         staging_root.mkdir(parents=True, exist_ok=True)
-        staged = Path(tempfile.mkdtemp(
-            prefix=f'{target.name}_',
-            dir=staging_root,
-        ))
+        staged = Path(
+            tempfile.mkdtemp(
+                prefix=f'{target.name}_',
+                dir=staging_root,
+            ))
         shutil.rmtree(staged)
         if link:
             staged.symlink_to(source_path, target_is_directory=True)
@@ -159,10 +159,11 @@ class PluginInstaller:
     def _publish_staged_install(staged: Path, target: Path) -> None:
         backup: Path | None = None
         if target.exists() or target.is_symlink():
-            backup = Path(tempfile.mkdtemp(
-                prefix=f'{target.name}_backup_',
-                dir=target.parent / '.staging',
-            ))
+            backup = Path(
+                tempfile.mkdtemp(
+                    prefix=f'{target.name}_backup_',
+                    dir=target.parent / '.staging',
+                ))
             shutil.rmtree(backup)
             target.rename(backup)
         try:
@@ -227,7 +228,8 @@ class PluginInstaller:
         if scope == 'project':
             root = Path(project_path or self.project_root or '')
             if not str(root):
-                raise ValueError('project_path is required for project plugin install')
+                raise ValueError(
+                    'project_path is required for project plugin install')
             from ms_agent.project.paths import project_internal_dir
             return project_internal_dir(root) / 'plugins' / plugin_id
         return self.global_root / 'plugins' / plugin_id
@@ -251,10 +253,12 @@ class PluginInstaller:
                     f'Circular plugin dependency: {dep.plugin_id}')
             existing = registry.get_record(dep.plugin_id, 'merged')
             if existing is not None:
-                dep_manifest = registry.get_manifest(dep.plugin_id, use_cache=False)
+                dep_manifest = registry.get_manifest(
+                    dep.plugin_id, use_cache=False)
                 if dep_manifest is None:
                     raise PluginDependencyError(
-                        f'Installed dependency {dep.plugin_id!r} is unreadable')
+                        f'Installed dependency {dep.plugin_id!r} is unreadable'
+                    )
                 if not version_satisfies(dep_manifest.version, dep.version):
                     raise PluginDependencyError(
                         f'Dependency {dep.plugin_id!r} version '
@@ -263,7 +267,8 @@ class PluginInstaller:
                 continue
             if not dep.source:
                 raise PluginDependencyError(
-                    f'Dependency {dep.name!r} is not installed and has no source')
+                    f'Dependency {dep.name!r} is not installed and has no source'
+                )
             installing.add(dep.plugin_id)
             try:
                 self.install(
@@ -304,6 +309,7 @@ class PluginInstaller:
 
 
 class _FetchedSource:
+
     def __init__(
         self,
         *,
@@ -333,10 +339,12 @@ def resolve_ms_agent_uri(source: str) -> str:
     if parsed.scheme != 'ms-agent':
         raise UnsupportedPluginSource(f'Not an ms-agent URI: {source}')
     if parsed.netloc != 'plugin':
-        raise UnsupportedPluginSource(f'Unsupported ms-agent host: {parsed.netloc}')
+        raise UnsupportedPluginSource(
+            f'Unsupported ms-agent host: {parsed.netloc}')
     path = (parsed.path or '/').lstrip('/')
     if path != 'install':
-        raise UnsupportedPluginSource(f'Unsupported ms-agent path: {parsed.path}')
+        raise UnsupportedPluginSource(
+            f'Unsupported ms-agent path: {parsed.path}')
     inner = parse_qs(parsed.query).get('source', [None])[0]
     if not inner:
         raise UnsupportedPluginSource(
@@ -378,10 +386,8 @@ def _lookup_marketplace_plugin_path(
     *,
     ref: str = 'main',
 ) -> str:
-    url = (
-        f'https://raw.githubusercontent.com/{repo}/{ref}'
-        f'/.claude-plugin/marketplace.json'
-    )
+    url = (f'https://raw.githubusercontent.com/{repo}/{ref}'
+           f'/.claude-plugin/marketplace.json')
     try:
         with urlopen(url, timeout=30) as resp:
             data = json.load(resp)
@@ -410,7 +416,8 @@ def _is_tarball(path: Path) -> bool:
 
 
 def _safe_tar_member_path(extract_dir: Path, member_name: str) -> Path:
-    if member_name.startswith(('/', '\\')) or re.match(r'^[A-Za-z]:[\\/]', member_name):
+    if member_name.startswith(
+        ('/', '\\')) or re.match(r'^[A-Za-z]:[\\/]', member_name):
         raise UnsupportedPluginSource(
             f'Unsafe tar member path: {member_name!r}')
     target = (extract_dir / member_name).resolve()
@@ -460,12 +467,12 @@ def _fetch_tarball(path: Path, source: str) -> _FetchedSource:
             _safe_extract_tar(archive, extract_dir)
     except tarfile.TarError as exc:
         raise UnsupportedPluginSource(f'Unsafe plugin tarball: {exc}') from exc
-    children = [child for child in extract_dir.iterdir() if child.name != '.DS_Store']
+    children = [
+        child for child in extract_dir.iterdir() if child.name != '.DS_Store'
+    ]
     root = (
         children[0]
-        if len(children) == 1 and children[0].is_dir()
-        else extract_dir
-    )
+        if len(children) == 1 and children[0].is_dir() else extract_dir)
     return _FetchedSource(
         path=root,
         source=source,
@@ -513,7 +520,8 @@ def _verify_resolved_sha(
     resolved_sha: str,
 ) -> None:
     if not resolved_sha:
-        raise UnsupportedPluginSource('GitHub checkout did not resolve to a commit SHA')
+        raise UnsupportedPluginSource(
+            'GitHub checkout did not resolve to a commit SHA')
 
     pins: list[str] = []
     if ref and _GIT_SHA_RE.match(ref):
@@ -559,7 +567,8 @@ def _fetch_github(source: str) -> _FetchedSource:
         )
     if subdir:
         subprocess.run(
-            ['git', '-C', str(clone_dir), 'sparse-checkout', 'set', subdir],
+            ['git', '-C',
+             str(clone_dir), 'sparse-checkout', 'set', subdir],
             check=True,
             capture_output=True,
             text=True,
@@ -581,8 +590,7 @@ def _fetch_github(source: str) -> _FetchedSource:
 
 
 def _parse_github_uri(
-    source: str,
-) -> tuple[str, str | None, str | None, str | None]:
+    source: str, ) -> tuple[str, str | None, str | None, str | None]:
     """Parse ``github://owner/repo@ref#subdir?sha=<commit>`` install URIs."""
     body = source[len('github://'):]
     expected_sha: str | None = None
@@ -611,7 +619,8 @@ def _fetch_modelscope(source: str) -> _FetchedSource:
         raise UnsupportedPluginSource(
             'modelscope is required for modelscope:// plugin install')
     repo, ref, subdir = _parse_modelscope_uri(source)
-    local_path = Path(snapshot_download(repo, revision=ref)).expanduser().resolve()
+    local_path = Path(snapshot_download(repo,
+                                        revision=ref)).expanduser().resolve()
     return _FetchedSource(
         path=local_path / subdir if subdir else local_path,
         source=source,
@@ -624,5 +633,6 @@ def _parse_modelscope_uri(source: str) -> tuple[str, str | None, str | None]:
     repo_part, _, subdir = body.partition('#')
     repo, _, ref = repo_part.partition('@')
     if not repo or '/' not in repo:
-        raise UnsupportedPluginSource(f'Invalid modelscope plugin URI: {source}')
+        raise UnsupportedPluginSource(
+            f'Invalid modelscope plugin URI: {source}')
     return repo, ref or None, subdir or None

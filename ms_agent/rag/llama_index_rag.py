@@ -37,7 +37,8 @@ class LlamaIndexRAG(RAG):
         if not _rag_store:
             from ms_agent.project.paths import search_index_dir
             _rag_store = str(
-                search_index_dir(getattr(config, 'output_dir', None) or '.', 'rag'))
+                search_index_dir(
+                    getattr(config, 'output_dir', None) or '.', 'rag'))
         self.storage_dir = _rag_store
         self._validate_requirements()
 

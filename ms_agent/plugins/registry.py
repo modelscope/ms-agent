@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 from ms_agent.plugins.config_manager import PluginConfigManager, PluginScope
-from ms_agent.plugins.manifest import PluginManifest, PluginError, normalize_plugin_id
+from ms_agent.plugins.manifest import (PluginError, PluginManifest,
+                                       normalize_plugin_id)
 from ms_agent.plugins.types import PluginRecord
 
 PluginScopeArg = Literal['global', 'project', 'merged']
@@ -29,7 +30,8 @@ class PluginRegistry:
         )
         self._manifest_cache: dict[str, PluginManifest] = {}
 
-    def list_records(self, scope: PluginScopeArg = 'merged') -> list[PluginRecord]:
+    def list_records(self,
+                     scope: PluginScopeArg = 'merged') -> list[PluginRecord]:
         return self.config_manager.list(scope)  # type: ignore[arg-type]
 
     def get_record(
@@ -37,9 +39,12 @@ class PluginRegistry:
         plugin_id: str,
         scope: PluginScopeArg = 'merged',
     ) -> PluginRecord | None:
-        return self.config_manager.get(plugin_id, scope)  # type: ignore[arg-type]
+        return self.config_manager.get(plugin_id,
+                                       scope)  # type: ignore[arg-type]
 
-    def is_installed(self, plugin_id: str, scope: PluginScopeArg = 'merged') -> bool:
+    def is_installed(self,
+                     plugin_id: str,
+                     scope: PluginScopeArg = 'merged') -> bool:
         return self.get_record(plugin_id, scope) is not None
 
     def get_manifest(
@@ -67,7 +72,8 @@ class PluginRegistry:
             return
         self._manifest_cache.pop(plugin_id, None)
 
-    def managed_plugin_paths(self, project_path: str | None = None) -> set[str]:
+    def managed_plugin_paths(self,
+                             project_path: str | None = None) -> set[str]:
         """Resolved install paths for deduplicating legacy ``config.plugins``."""
         records = self.config_manager.load_merged(project_path)
         paths: set[str] = set()
@@ -77,4 +83,7 @@ class PluginRegistry:
         return paths
 
     def managed_plugin_ids(self, project_path: str | None = None) -> set[str]:
-        return {record.id for record in self.config_manager.load_merged(project_path)}
+        return {
+            record.id
+            for record in self.config_manager.load_merged(project_path)
+        }

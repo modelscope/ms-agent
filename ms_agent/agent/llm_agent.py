@@ -4,7 +4,6 @@ import importlib
 import inspect
 import json
 import os.path
-from pathlib import Path
 import sys
 import threading
 import time
@@ -12,6 +11,7 @@ import uuid
 from contextlib import contextmanager
 from copy import deepcopy
 from omegaconf import DictConfig, OmegaConf
+from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
 
 from ms_agent.agent.runtime import Runtime
@@ -21,29 +21,29 @@ from ms_agent.llm.llm import LLM
 from ms_agent.llm.utils import Message, ToolResult
 from ms_agent.memory import Memory, get_memory_meta_safe, memory_mapping
 from ms_agent.memory.memory_manager import SharedMemoryManager
-from ms_agent.rag.base import RAG
-from ms_agent.session import ContextAssembler, SessionLog
-from ms_agent.session.strategies import SummaryCompactor, ToolOutputPruner
-from ms_agent.rag.utils import rag_mapping
-from ms_agent.tools import ToolManager
-from ms_agent.utils import async_retry, read_history, save_history
-from ms_agent.utils.constants import DEFAULT_TAG, DEFAULT_USER
-from ms_agent.utils.logger import get_logger
 from ms_agent.personalization.injector import PersonalizationInjector
 from ms_agent.personalization.profile import ProfileManager
 from ms_agent.personalization.types import PersonalizationConfig
+from ms_agent.rag.base import RAG
+from ms_agent.rag.utils import rag_mapping
+from ms_agent.session import ContextAssembler, SessionLog
+from ms_agent.session.strategies import SummaryCompactor, ToolOutputPruner
 from ms_agent.skill.catalog import SkillCatalog
 from ms_agent.skill.prompt_injector import SkillPromptInjector
-from ms_agent.skill.search import SkillSearchEngine
 from ms_agent.skill.runtime import SkillRuntime
+from ms_agent.skill.search import SkillSearchEngine
 from ms_agent.skill.skill_tools import SkillToolSet
-from ms_agent.utils.snapshot import take_snapshot
-from ms_agent.utils.task_manager import TaskManager
+from ms_agent.tools import ToolManager
 from ms_agent.ui.events import (ContentDelta, ContentEnd, ContextCompacted,
                                 ErrorRaised, PlanEntry, PlanUpdated,
-                                ReasoningDelta, ReasoningEnded, ReasoningStarted,
-                                ToolCallCompleted, ToolCallStarted,
-                                TurnCompleted, UsageInfo)
+                                ReasoningDelta, ReasoningEnded,
+                                ReasoningStarted, ToolCallCompleted,
+                                ToolCallStarted, TurnCompleted, UsageInfo)
+from ms_agent.utils import async_retry, read_history, save_history
+from ms_agent.utils.constants import DEFAULT_TAG, DEFAULT_USER
+from ms_agent.utils.logger import get_logger
+from ms_agent.utils.snapshot import take_snapshot
+from ms_agent.utils.task_manager import TaskManager
 from ..config.config import Config, ConfigLifecycleHandler
 from .base import Agent
 
@@ -301,7 +301,8 @@ class LLMAgent(Agent):
             update_notice=update_notice)
 
         search_cfg = getattr(skills_config, 'search', None)
-        search_backend = getattr(search_cfg, 'backend', 'bm25') if search_cfg else 'bm25'
+        search_backend = getattr(search_cfg, 'backend',
+                                 'bm25') if search_cfg else 'bm25'
         search_kwargs = {}
         if search_cfg:
             if hasattr(search_cfg, 'embed_model'):
@@ -313,7 +314,8 @@ class LLMAgent(Agent):
 
         enable_manage = getattr(skills_config, 'enable_manage', False)
         skill_toolset = SkillToolSet(
-            self.config, self._skill_catalog,
+            self.config,
+            self._skill_catalog,
             enable_manage=enable_manage,
             tool_manager=self.tool_manager,
             search_engine=search_engine)
@@ -336,8 +338,7 @@ class LLMAgent(Agent):
         # (tail-only updates; prefix cache never breaks).
         self._skill_runtime.head_refresh_enabled = not update_notice
         self._skill_runtime.set_system_content_builder(
-            self._build_system_content
-        )
+            self._build_system_content)
         if getattr(self, '_plugin_runtime', None) is not None:
             self._plugin_runtime.skill_runtime = self._skill_runtime
             self._plugin_runtime._sync_skill_runtime(self.config)
@@ -383,23 +384,20 @@ class LLMAgent(Agent):
         warnings = []
 
         if not has_tools or not hasattr(self.config.tools, 'file_system'):
-            warnings.append(
-                "file_system (read_file, write_file) - needed for "
-                "reading skill scripts and writing outputs")
+            warnings.append('file_system (read_file, write_file) - needed for '
+                            'reading skill scripts and writing outputs')
 
         if not has_tools or not hasattr(self.config.tools, 'code_executor'):
             warnings.append(
-                "code_executor (python, shell execution) - needed for "
-                "running skill scripts")
+                'code_executor (python, shell execution) - needed for '
+                'running skill scripts')
 
         if warnings:
             logger.warning(
-                "Skills are configured but the following recommended tools "
-                "are not enabled. Skills that depend on these tools may not "
-                "work correctly:\n"
-                + "\n".join(f"  - {w}" for w in warnings)
-                + "\nAdd them to your agent config under 'tools:' to enable."
-            )
+                'Skills are configured but the following recommended tools '
+                'are not enabled. Skills that depend on these tools may not '
+                'work correctly:\n' + '\n'.join(f'  - {w}' for w in warnings)
+                + "\nAdd them to your agent config under 'tools:' to enable.")
 
     def _clear_read_caches(self) -> None:
         """Clear FileSystemTool read dedup caches after disk state changes."""
@@ -415,14 +413,13 @@ class LLMAgent(Agent):
         self._rollback_messages = None
         return messages
 
-    def _apply_pending_rollback(
-            self, messages: List[Message]) -> List[Message]:
+    def _apply_pending_rollback(self,
+                                messages: List[Message]) -> List[Message]:
         pending = self.consume_rollback_messages()
         return pending if pending is not None else messages
 
-    def rollback(
-        self, commit_hash: str
-    ) -> tuple[bool, Optional[List[Message]]]:
+    def rollback(self,
+                 commit_hash: str) -> tuple[bool, Optional[List[Message]]]:
         """Restore output_dir to snapshot and truncate message history.
 
         Returns:
@@ -582,8 +579,8 @@ class LLMAgent(Agent):
         # Ensure interactive input is available whenever this is an interactive
         # session, even if the config never listed `input_callback`.
         input_cls = callbacks_mapping.get('input_callback')
-        if (self._interactive and input_cls is not None and not any(
-                isinstance(cb, input_cls) for cb in self.callbacks)):
+        if (self._interactive and input_cls is not None and
+                not any(isinstance(cb, input_cls) for cb in self.callbacks)):
             self.callbacks.append(
                 input_cls(
                     self.config,
@@ -623,16 +620,16 @@ class LLMAgent(Agent):
 
         hook_runtime = getattr(self, '_hook_runtime', None)
         if would_stop and hook_runtime is not None and not hook_runtime.is_empty:
-            from ms_agent.hooks.context import (
-                append_stop_blocking_feedback,
-                apply_hook_result_to_messages,
-            )
+            from ms_agent.hooks.context import (append_stop_blocking_feedback,
+                                                apply_hook_result_to_messages)
 
-            last_text = assistant.content if isinstance(assistant.content, str) else ''
+            last_text = assistant.content if isinstance(
+                assistant.content, str) else ''
             stop = await hook_runtime.run_stop(
                 reason='no_tool_calls',
                 last_assistant_message=last_text,
-                stop_hook_active=getattr(self.runtime, 'stop_hook_active', False),
+                stop_hook_active=getattr(self.runtime, 'stop_hook_active',
+                                         False),
             )
             if stop.action in ('block', 'deny'):
                 append_stop_blocking_feedback(messages, stop.reason)
@@ -640,8 +637,7 @@ class LLMAgent(Agent):
                 self.runtime.stop_hook_active = True
                 await self.loop_callback('after_tool_call', messages)
                 return
-            apply_hook_result_to_messages(
-                messages, stop, hook_event='Stop')
+            apply_hook_result_to_messages(messages, stop, hook_event='Stop')
 
         if would_stop:
             self.runtime.should_stop = True
@@ -708,10 +704,9 @@ class LLMAgent(Agent):
         """
         if self._permission_handler is not None:
             return self._permission_handler
-        from ms_agent.permission import (
-            AutoPermissionHandler,
-            CLIPermissionHandler,
-        )
+        from ms_agent.permission import (AutoPermissionHandler,
+                                         CLIPermissionHandler)
+
         # ``PermissionConfig.from_dict`` already normalizes ``restricted`` ->
         # ``interactive``; accept both so a direct caller passing the raw alias
         # still gets the interactive prompt (not a silent AutoPermissionHandler).
@@ -721,21 +716,19 @@ class LLMAgent(Agent):
 
     def _build_permission_objects(self):
         """Create SafetyGuard and PermissionEnforcer from config if configured."""
-        from ms_agent.permission import (
-            PermissionConfig,
-            PermissionEnforcer,
-            PermissionMemory,
-            SafetyGuard,
-        )
+        from ms_agent.permission import (PermissionConfig, PermissionEnforcer,
+                                         PermissionMemory, SafetyGuard)
 
         raw = {}
         if hasattr(self.config, 'permission'):
-            raw = dict(self.config.permission) if self.config.permission else {}
+            raw = dict(
+                self.config.permission) if self.config.permission else {}
 
         from ms_agent.utils.workspace_context import resolve_workspace_root
 
         workspace_root = str(resolve_workspace_root(self.config))
-        perm_config = PermissionConfig.from_dict(raw, project_root=workspace_root)
+        perm_config = PermissionConfig.from_dict(
+            raw, project_root=workspace_root)
 
         allowed_dirs = [workspace_root]
         for directory in perm_config.safety.allowed_directories:
@@ -751,7 +744,8 @@ class LLMAgent(Agent):
 
         handler = self._select_permission_handler(perm_config.mode)
         memory = PermissionMemory(project_path=workspace_root)
-        enforcer = PermissionEnforcer(config=perm_config, handler=handler, memory=memory)
+        enforcer = PermissionEnforcer(
+            config=perm_config, handler=handler, memory=memory)
 
         return safety_guard, enforcer, perm_config
 
@@ -770,9 +764,8 @@ class LLMAgent(Agent):
         from dataclasses import replace
         mode = {'restricted': 'interactive'}.get(mode, mode)
         if mode not in ('auto', 'strict', 'interactive'):
-            raise ValueError(
-                f"Unknown permission mode '{mode}' "
-                '(auto | restricted | strict | interactive)')
+            raise ValueError(f"Unknown permission mode '{mode}' "
+                             '(auto | restricted | strict | interactive)')
         tm = self.tool_manager
         if tm is not None:
             tm._permission_mode = mode
@@ -795,15 +788,15 @@ class LLMAgent(Agent):
 
         self.task_manager = TaskManager()
 
-        safety_guard, permission_enforcer, perm_config = self._build_permission_objects()
-        session_id = (
-            self.runtime.session_id
-            or getattr(self, 'tag', None)
-            or str(uuid.uuid4())
+        safety_guard, permission_enforcer, perm_config = self._build_permission_objects(
         )
+        session_id = (
+            self.runtime.session_id or getattr(self, 'tag', None)
+            or str(uuid.uuid4()))
         raw_hooks = {}
         if hasattr(self.config, 'hooks') and self.config.hooks:
-            raw_hooks = OmegaConf.to_container(self.config.hooks, resolve=True) or {}
+            raw_hooks = OmegaConf.to_container(
+                self.config.hooks, resolve=True) or {}
         enabled_executors = frozenset(
             raw_hooks.get('enabled_executors', ['command']) or ['command'])
         self._plugin_runtime = PluginRuntime(
@@ -829,7 +822,8 @@ class LLMAgent(Agent):
         hook_runtime = build_hook_runtime(
             self.config,
             session_id=session_id,
-            plugin_hook_registries=self._plugin_runtime.load_result.hook_registries,
+            plugin_hook_registries=self._plugin_runtime.load_result.
+            hook_registries,
         )
         mcp_rt = self.mcp_runtime
         if mcp_rt is not None and plugin_mcp_servers:
@@ -855,17 +849,18 @@ class LLMAgent(Agent):
             trust_remote_code=self.trust_remote_code,
             mcp_callable_check=mcp_rt.is_callable if mcp_rt else None,
             mcp_failure_handler=mcp_rt.record_failure if mcp_rt else None,
-            mcp_unavailable_detail=mcp_rt.unavailable_detail if mcp_rt else None,
+            mcp_unavailable_detail=mcp_rt.unavailable_detail
+            if mcp_rt else None,
             mcp_success_handler=mcp_rt.record_success if mcp_rt else None,
         )
         if mcp_rt is not None:
             self.tool_manager._skip_mcp_reindex = True
         if self._plugin_runtime.agent_registry.has_agents():
             self.tool_manager.ensure_plugin_agent_tools(
-                self._plugin_runtime.agent_registry,
-            )
+                self._plugin_runtime.agent_registry, )
         if hook_runtime.has_session_handlers:
-            self.register_callback(CallbackToHookBridge(self.config, hook_runtime))
+            self.register_callback(
+                CallbackToHookBridge(self.config, hook_runtime))
         self._hook_runtime = hook_runtime
         if not self.runtime.session_id:
             self.runtime.session_id = hook_runtime.session_id
@@ -1019,8 +1014,9 @@ class LLMAgent(Agent):
             data = json.loads(content)
         except (json.JSONDecodeError, TypeError, ValueError):
             return None
-        todos = (data.get('todos') if isinstance(data, dict)
-                 else data if isinstance(data, list) else None)
+        todos = (
+            data.get('todos') if isinstance(data, dict) else
+            data if isinstance(data, list) else None)
         if not isinstance(todos, list):
             return None
         entries = []
@@ -1136,12 +1132,10 @@ class LLMAgent(Agent):
     def _build_personalization_section(self) -> str:
         p_config = getattr(self.config, 'personalization', None)
         config = PersonalizationConfig(
-            global_instruction=(
-                getattr(p_config, 'global_instruction', '') or ''
-            ) if p_config else '',
-            project_instruction=(
-                getattr(p_config, 'project_instruction', '') or ''
-            ) if p_config else '',
+            global_instruction=(getattr(p_config, 'global_instruction', '')
+                                or '') if p_config else '',
+            project_instruction=(getattr(p_config, 'project_instruction', '')
+                                 or '') if p_config else '',
             user_profile=self._profile_manager.read(),
         )
         return PersonalizationInjector.build(config)
@@ -1209,7 +1203,8 @@ class LLMAgent(Agent):
 
     async def _register_memory_tool(self, orchestrator):
         """Register the memory tool into ToolManager and inject prompt guidance."""
-        from ms_agent.memory.unified.memory_tool import MemoryTool, MEMORY_USAGE_PROMPT
+        from ms_agent.memory.unified.memory_tool import (MEMORY_USAGE_PROMPT,
+                                                         MemoryTool)
 
         if not hasattr(orchestrator, 'get_tool_schemas'):
             return
@@ -1241,11 +1236,13 @@ class LLMAgent(Agent):
             logger.info('[unified_memory] Memory tool registered')
 
         # Inject usage guidance into system prompt
-        if hasattr(self.config, 'prompt') and hasattr(self.config.prompt, 'system'):
+        if hasattr(self.config, 'prompt') and hasattr(self.config.prompt,
+                                                      'system'):
             current_prompt = self.config.prompt.system or ''
             if 'Long-term Memory' not in current_prompt:
                 OmegaConf.update(
-                    self.config, 'prompt.system',
+                    self.config,
+                    'prompt.system',
                     current_prompt + '\n\n' + MEMORY_USAGE_PROMPT,
                     merge=True)
 
@@ -1323,13 +1320,13 @@ class LLMAgent(Agent):
         empty strategy list (history is still logged, just never compressed).
         """
         session_cfg = getattr(self.config, 'session_log', None)
-        enabled = getattr(session_cfg, 'enabled', True) if session_cfg else True
+        enabled = getattr(session_cfg, 'enabled',
+                          True) if session_cfg else True
         if not enabled:
             return
 
-        session_dir = getattr(
-            session_cfg, 'dir', None
-        ) if session_cfg else None
+        session_dir = getattr(session_cfg, 'dir',
+                              None) if session_cfg else None
         if session_dir is None:
             # Sessions live globally, keyed by the work dir (Claude Code style),
             # decoupled from output_dir. An explicit session_log.dir (set by the
@@ -1346,22 +1343,26 @@ class LLMAgent(Agent):
                 except Exception:
                     pass
 
-        session_key = getattr(session_cfg, 'session_key', None) if session_cfg else None
+        session_key = getattr(session_cfg, 'session_key',
+                              None) if session_cfg else None
         self.session_log = SessionLog(session_dir, session_key=session_key)
 
         compaction_cfg = getattr(self.config, 'compaction', None)
         compaction_enabled = (
-            getattr(compaction_cfg, 'enabled', True) if compaction_cfg else True
-        )
+            getattr(compaction_cfg, 'enabled', True)
+            if compaction_cfg else True)
 
         if not compaction_enabled:
             self.context_assembler = ContextAssembler(
-                session_log=self.session_log, strategies=[], config={},
+                session_log=self.session_log,
+                strategies=[],
+                config={},
             )
             return
 
         strategies = self._build_compaction_strategies(compaction_cfg)
-        assembler_config = self._build_assembler_config(compaction_cfg, session_cfg)
+        assembler_config = self._build_assembler_config(
+            compaction_cfg, session_cfg)
         flush_callback = self._make_memory_flush_callback()
 
         self.context_assembler = ContextAssembler(
@@ -1384,7 +1385,7 @@ class LLMAgent(Agent):
                 elif name == 'summary_compactor':
                     strategies.append(SummaryCompactor(llm=self.llm))
                 else:
-                    logger.warning(f"Unknown compaction strategy: {name}")
+                    logger.warning(f'Unknown compaction strategy: {name}')
             return strategies
 
         return [ToolOutputPruner(), SummaryCompactor(llm=self.llm)]
@@ -1418,22 +1419,27 @@ class LLMAgent(Agent):
 
     def _make_memory_flush_callback(self):
         """Create a callback that flushes memory before context compaction."""
+
         def _flush(discarded_messages):
             for memory_tool in self.memory_tools:
                 orchestrator = memory_tool
                 if hasattr(orchestrator, 'flush'):
                     import asyncio
+
                     from ms_agent.llm.utils import Message as _Msg
-                    msgs = [_Msg(
-                        role=m.get('role', 'user'),
-                        content=m.get('content', ''),
-                        tool_calls=m.get('tool_calls'),
-                    ) for m in discarded_messages]
+                    msgs = [
+                        _Msg(
+                            role=m.get('role', 'user'),
+                            content=m.get('content', ''),
+                            tool_calls=m.get('tool_calls'),
+                        ) for m in discarded_messages
+                    ]
                     try:
                         loop = asyncio.get_running_loop()
                         loop.create_task(orchestrator.flush(msgs))
                     except RuntimeError:
                         asyncio.run(orchestrator.flush(msgs))
+
         return _flush
 
     def log_output(self, content: Union[str, list]):
@@ -1538,29 +1544,28 @@ class LLMAgent(Agent):
         """
         messages = deepcopy(messages)
         messages = self._append_task_notifications(messages)
-        from ms_agent.hooks.context import (
-            condense_hook_attachments_for_llm,
-            extract_latest_user_prompt,
-            apply_hook_result_to_messages,
-        )
+        from ms_agent.hooks.context import (apply_hook_result_to_messages,
+                                            condense_hook_attachments_for_llm,
+                                            extract_latest_user_prompt)
         messages = condense_hook_attachments_for_llm(messages)
 
         # UserPromptSubmit for multi-turn user input (InputCallback path)
         hook_runtime = getattr(self, '_hook_runtime', None)
-        if (hook_runtime is not None and not hook_runtime.is_empty
-                and messages and messages[-1].role == 'user'
-                and self.runtime.round > 0):
+        if (hook_runtime is not None and not hook_runtime.is_empty and messages
+                and messages[-1].role == 'user' and self.runtime.round > 0):
             prompt_text = extract_latest_user_prompt(messages)
             submit = await hook_runtime.run_user_prompt_submit(prompt_text)
             if submit.action in ('deny', 'block'):
                 if messages and messages[-1].role == 'user':
                     messages.pop()
-                messages.append(Message(
-                    role='system',
-                    content=(
-                        f'UserPromptSubmit operation blocked by hook:\n'
-                        f'{submit.reason}\n\nOriginal prompt: {prompt_text}'),
-                ))
+                messages.append(
+                    Message(
+                        role='system',
+                        content=(
+                            f'UserPromptSubmit operation blocked by hook:\n'
+                            f'{submit.reason}\n\nOriginal prompt: {prompt_text}'
+                        ),
+                    ))
                 self.runtime.should_stop = True
                 yield messages
                 return
@@ -1650,8 +1655,8 @@ class LLMAgent(Agent):
 
                     # Handle reasoning summaries that arrive after content
                     if self.show_reasoning and _response_message is not None:
-                        final_reasoning = getattr(_response_message,
-                                                  'reasoning_content', '') or ''
+                        final_reasoning = getattr(
+                            _response_message, 'reasoning_content', '') or ''
                         if final_reasoning and not _printed_reasoning_header:
                             self._emit_reasoning_start()
                             self._emit_reasoning_delta(final_reasoning)
@@ -1734,8 +1739,8 @@ class LLMAgent(Agent):
         cached_tokens = getattr(_response_message, 'cached_tokens', 0) or 0
         cache_creation_input_tokens = (
             getattr(_response_message, 'cache_creation_input_tokens', 0) or 0)
-        reasoning_tokens = getattr(
-            _response_message, 'reasoning_tokens', 0) or 0
+        reasoning_tokens = getattr(_response_message, 'reasoning_tokens',
+                                   0) or 0
 
         async with LLMAgent.TOKEN_LOCK:
             LLMAgent.TOTAL_PROMPT_TOKENS += prompt_tokens
@@ -1760,8 +1765,7 @@ class LLMAgent(Agent):
         )
         if reasoning_tokens:
             self.log_output(
-                f'[usage_reasoning] reasoning_tokens: {reasoning_tokens}'
-            )
+                f'[usage_reasoning] reasoning_tokens: {reasoning_tokens}')
         if cached_tokens or cache_creation_input_tokens:
             self.log_output(
                 f'[usage_cache] cache_hit: {cached_tokens}, cache_created: {cache_creation_input_tokens}'
@@ -1778,12 +1782,14 @@ class LLMAgent(Agent):
 
         if self._event_sink is not None:
             self._event_sink.emit(
-                TurnCompleted(usage=UsageInfo(
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                    reasoning_tokens=reasoning_tokens,
-                    total_prompt_tokens=LLMAgent.TOTAL_PROMPT_TOKENS,
-                    total_completion_tokens=LLMAgent.TOTAL_COMPLETION_TOKENS)))
+                TurnCompleted(
+                    usage=UsageInfo(
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        reasoning_tokens=reasoning_tokens,
+                        total_prompt_tokens=LLMAgent.TOTAL_PROMPT_TOKENS,
+                        total_completion_tokens=LLMAgent.
+                        TOTAL_COMPLETION_TOKENS)))
 
         yield messages
 
@@ -2033,8 +2039,8 @@ class LLMAgent(Agent):
                             InteractiveSession
                         session = InteractiveSession(
                             self._get_command_router(),
-                            source='tui' if self._input_source is not None
-                            else 'cli',
+                            source='tui'
+                            if self._input_source is not None else 'cli',
                             input_source=self._input_source,
                             event_sink=self._event_sink)
                         turn = await session.run_turn(
@@ -2048,8 +2054,8 @@ class LLMAgent(Agent):
                 else:
                     # Non-interactive with no task: accept piped stdin as the
                     # query; otherwise fail clearly instead of blocking input().
-                    piped = ('' if sys.stdin.isatty()
-                             else sys.stdin.read().strip())
+                    piped = ('' if sys.stdin.isatty() else
+                             sys.stdin.read().strip())
                     if not piped:
                         raise ValueError(
                             'No query provided. Pass --query, pipe input via '
@@ -2092,18 +2098,20 @@ class LLMAgent(Agent):
                 # UserPromptSubmit — first user message
                 if hook_runtime is not None and not hook_runtime.is_empty:
                     from ms_agent.hooks.context import (
-                        extract_latest_user_prompt,
                         apply_hook_result_to_messages,
-                    )
+                        extract_latest_user_prompt)
                     prompt_text = extract_latest_user_prompt(messages)
-                    submit = await hook_runtime.run_user_prompt_submit(prompt_text)
+                    submit = await hook_runtime.run_user_prompt_submit(
+                        prompt_text)
                     if submit.action in ('deny', 'block'):
-                        messages.append(Message(
-                            role='system',
-                            content=(
-                                f'UserPromptSubmit operation blocked by hook:\n'
-                                f'{submit.reason}\n\nOriginal prompt: {prompt_text}'),
-                        ))
+                        messages.append(
+                            Message(
+                                role='system',
+                                content=
+                                (f'UserPromptSubmit operation blocked by hook:\n'
+                                 f'{submit.reason}\n\nOriginal prompt: {prompt_text}'
+                                 ),
+                            ))
                         await self.on_task_end(messages)
                         yield messages
                         await self.cleanup_tools()
@@ -2130,12 +2138,13 @@ class LLMAgent(Agent):
                     # Detect real compaction via last_consolidated advancing
                     # (assemble() only advances it when a strategy consolidated
                     # the window — see ContextAssembler.assemble).
-                    _lc_before = (self.session_log.last_consolidated
-                                  if self.session_log is not None else 0)
+                    _lc_before = (
+                        self.session_log.last_consolidated
+                        if self.session_log is not None else 0)
                     messages = self.context_assembler.assemble()
                     if (self._event_sink is not None
-                            and self.session_log is not None
-                            and self.session_log.last_consolidated > _lc_before):
+                            and self.session_log is not None and
+                            self.session_log.last_consolidated > _lc_before):
                         self._event_sink.emit(ContextCompacted())
 
                 messages = self._apply_pending_rollback(messages)

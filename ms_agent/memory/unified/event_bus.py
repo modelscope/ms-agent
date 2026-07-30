@@ -6,7 +6,6 @@ import uuid
 from typing import Any, Callable, Dict, List
 
 from ms_agent.utils.logger import get_logger
-
 from .protocols import MemoryEvent
 
 logger = get_logger()
@@ -26,11 +25,11 @@ class InMemoryEventBus:
                 if asyncio.iscoroutine(result):
                     await result
             except Exception as e:
-                logger.warning(
-                    f"[event_bus] Subscriber {sid} error: {e}")
+                logger.warning(f'[event_bus] Subscriber {sid} error: {e}')
 
     async def subscribe(
-        self, event_type: str,
+        self,
+        event_type: str,
         callback: Callable[[MemoryEvent], Any],
     ) -> str:
         sid = uuid.uuid4().hex[:8]

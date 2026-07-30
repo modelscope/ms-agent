@@ -42,7 +42,7 @@ class UsageInfo:
 class PlanEntry:
     """One item of a plan/todo list (from the todo / split_task tools)."""
     content: str
-    status: str = 'pending'      # pending | in_progress | completed
+    status: str = 'pending'  # pending | in_progress | completed
 
 
 # ── event base ────────────────────────────────────────────────────────────
@@ -74,7 +74,7 @@ class TurnStarted(AgentEvent):
     """A user turn began (one user input → one or more assistant steps)."""
     EVENT_TYPE: ClassVar[str] = 'turn_started'
     turn_id: str = ''
-    source: str = 'tui'          # cli | tui | webui
+    source: str = 'tui'  # cli | tui | webui
 
 
 @dataclass(frozen=True)
@@ -141,7 +141,7 @@ class ToolCallStarted(AgentEvent):
     EVENT_TYPE: ClassVar[str] = 'tool_call_started'
     call_id: str = ''
     name: str = ''
-    arguments: Any = None        # dict or raw JSON string
+    arguments: Any = None  # dict or raw JSON string
 
 
 @dataclass(frozen=True)
@@ -184,7 +184,7 @@ class PermissionResolved(AgentEvent):
     """A pending permission request was answered."""
     EVENT_TYPE: ClassVar[str] = 'permission_resolved'
     request_id: str = ''
-    action: str = ''             # e.g. allow_once | deny | allow_always
+    action: str = ''  # e.g. allow_once | deny | allow_always
 
 
 # ── context / system notices ──────────────────────────────────────────────
@@ -202,7 +202,7 @@ class ContextCompacted(AgentEvent):
 class Notice(AgentEvent):
     """A user-facing informational notice."""
     EVENT_TYPE: ClassVar[str] = 'notice'
-    level: str = 'info'          # info | success | warning
+    level: str = 'info'  # info | success | warning
     text: str = ''
 
 
@@ -247,8 +247,8 @@ class RecordingSink:
 
     def text(self) -> str:
         """Concatenated assistant content — a quick assertion helper."""
-        return ''.join(e.text for e in self.events
-                       if isinstance(e, ContentDelta))
+        return ''.join(
+            e.text for e in self.events if isinstance(e, ContentDelta))
 
 
 class TeeEventSink:

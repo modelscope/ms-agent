@@ -7,12 +7,10 @@ import copy
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Deque, Dict, List, Literal, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Deque, Dict, List, Literal, Optional
 
-from ms_agent.config.mcp_schema import (
-    ResolvedMCPConfig,
-    connection_params_for_client,
-)
+from ms_agent.config.mcp_schema import (ResolvedMCPConfig,
+                                        connection_params_for_client)
 from ms_agent.tools.mcp_client import MCPClient
 from ms_agent.utils import enhance_error, get_logger
 
@@ -21,14 +19,8 @@ if TYPE_CHECKING:
 
 logger = get_logger()
 
-MCPServerStatus = Literal[
-    'registered',
-    'connecting',
-    'connected',
-    'degraded',
-    'error',
-    'disabled',
-]
+MCPServerStatus = Literal['registered', 'connecting', 'connected', 'degraded',
+                          'error', 'disabled', ]
 
 FAILURE_HISTORY_LIMIT = 20
 # Transient failures (timeout / 5xx) must reach this count before degraded.
@@ -229,8 +221,7 @@ class MCPRuntime:
             state.tool_count = len(state.cached_tools)
             state.last_success_at = _utc_now()
         except Exception as exc:
-            await self.record_failure(
-                name, 'list_tools', str(exc), exc=exc)
+            await self.record_failure(name, 'list_tools', str(exc), exc=exc)
 
     # ── enable / disable ───────────────────────────────────────────────
 
@@ -291,7 +282,8 @@ class MCPRuntime:
 
     # ── config hot update ──────────────────────────────────────────────
 
-    async def apply_config(self, config: ResolvedMCPConfig) -> list[MCPServerState]:
+    async def apply_config(self,
+                           config: ResolvedMCPConfig) -> list[MCPServerState]:
         async with self._sync_lock:
             self._config = config
             old_names = set(self._states)
@@ -299,7 +291,8 @@ class MCPRuntime:
             removed = old_names - new_names
             added = new_names - old_names
             changed = {
-                n for n in old_names & new_names
+                n
+                for n in old_names & new_names
                 if self._states[n].config != config.mcp_servers[n]
             }
 
@@ -375,13 +368,18 @@ class MCPRuntime:
                 'message': f'Unknown MCP server: {server_name}',
             }
         return {
-            'success': False,
-            'error': 'mcp_unavailable',
-            'server_name': server_name,
-            'status': state.status,
-            'message': state.last_error or (
-                f'MCP server {server_name} is not callable (status={state.status})'
-            ),
+            'success':
+            False,
+            'error':
+            'mcp_unavailable',
+            'server_name':
+            server_name,
+            'status':
+            state.status,
+            'message':
+            state.last_error or
+            (f'MCP server {server_name} is not callable (status={state.status})'
+             ),
         }
 
     # ── failure tracking ───────────────────────────────────────────────
@@ -415,8 +413,8 @@ class MCPRuntime:
         if state is None:
             return False
         failure_kind = (
-            classify_mcp_failure(exc) if exc is not None
-            else classify_failure_message(message))
+            classify_mcp_failure(exc)
+            if exc is not None else classify_failure_message(message))
         if failure_kind == 'none':
             return False
         now = _utc_now()
@@ -432,8 +430,7 @@ class MCPRuntime:
         state.consecutive_failures += 1
         should_degrade = (
             failure_kind == 'hard'
-            or state.consecutive_failures >= DEGRADED_FAILURE_THRESHOLD
-        )
+            or state.consecutive_failures >= DEGRADED_FAILURE_THRESHOLD)
         if should_degrade and state.status == 'connected':
             state.status = 'degraded'
             return True

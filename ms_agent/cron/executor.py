@@ -11,8 +11,7 @@ from typing import Any, Optional
 from ms_agent.cron.types import CronJobSpec, ExecutionResult
 
 _CRON_CONTEXT: contextvars.ContextVar[bool] = contextvars.ContextVar(
-    '_CRON_CONTEXT', default=False
-)
+    '_CRON_CONTEXT', default=False)
 
 
 def is_in_cron_context() -> bool:
@@ -105,7 +104,8 @@ class JobExecutor:
             async with job_sema:
                 return await self._do_execute(job, config)
 
-    async def _do_execute(self, job: CronJobSpec, config: Any) -> ExecutionResult:
+    async def _do_execute(self, job: CronJobSpec,
+                          config: Any) -> ExecutionResult:
         if _CRON_CONTEXT.get(False):
             return ExecutionResult(
                 success=False,
@@ -141,7 +141,8 @@ class JobExecutor:
         except asyncio.TimeoutError:
             return ExecutionResult(
                 success=False,
-                error=f'Execution timed out ({job.timeout or self._default_timeout}s)',
+                error=
+                f'Execution timed out ({job.timeout or self._default_timeout}s)',
                 duration_ms=_now_ms() - start_ms,
             )
         except Exception as e:

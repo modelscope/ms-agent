@@ -111,8 +111,7 @@ class MCPClient(ToolBase):
                 server_name=server_name,
                 description=t.description,
                 parameters=t.inputSchema,
-            )
-            for t in session_tools
+            ) for t in session_tools
         ]
 
     async def get_tools_for_server(self, server_name: str) -> List[Tool]:
@@ -134,8 +133,8 @@ class MCPClient(ToolBase):
             try:
                 tools[key] = await self.get_tools_for_server(key)
             except Exception as e:
-                logger.warning(
-                    'Skipping MCP server %s in get_tools: %s', key, e)
+                logger.warning('Skipping MCP server %s in get_tools: %s', key,
+                               e)
                 tools[key] = []
         return tools
 

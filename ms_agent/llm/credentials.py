@@ -12,9 +12,8 @@ This replaces per-provider ``__init__`` credential handling.
 from __future__ import annotations
 
 import os
-from typing import Optional
-
 from omegaconf import DictConfig
+from typing import Optional
 
 from .spec import ProviderSpec
 

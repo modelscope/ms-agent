@@ -492,7 +492,8 @@ class JavaLSPServer(LSPServer):
                 return False
 
             # Create workspace data directory for jdtls
-            workspace_data_dir = Path(self.workspace_dir) / '.ms_agent' / 'lsp' / 'jdtls'
+            workspace_data_dir = Path(
+                self.workspace_dir) / '.ms_agent' / 'lsp' / 'jdtls'
             workspace_data_dir.mkdir(exist_ok=True)
 
             # Start jdtls
@@ -559,7 +560,8 @@ class LSPCodeServer(ToolBase):
 
     def cleanup_lsp_index_dirs(self):
         cleanup_dirs = [
-            os.path.join(self.output_dir, '.ms_agent', 'lsp', 'jdtls'),  # Java LSP
+            os.path.join(self.output_dir, '.ms_agent', 'lsp',
+                         'jdtls'),  # Java LSP
             os.path.join(self.output_dir,
                          '.pyright'),  # Python LSP (if exists)
             os.path.join(self.output_dir, 'node_modules',

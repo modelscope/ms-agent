@@ -327,7 +327,7 @@ MS-Agent **超集** Claude Code manifest，未知字段忽略：
 | **可变数据** | `~/.ms_agent/plugins/data/<id>/` | 与 Claude `CLAUDE_PLUGIN_DATA` 目录**物理隔离** |
 | **Manifest 解析** | 在**已落入 MS-Agent 安装目录的那一份拷贝**上，识别其生态格式 | 不在「用户同时开了 Claude/Codex」时跨工具抢目录 |
 
-用户本机同时装 Claude Code + Codex + MS-Agent **不会**导致 MS-Agent 加载错包，只要 MS-Agent 只消费自己的 `plugins.json` 条目。  
+用户本机同时装 Claude Code + Codex + MS-Agent **不会**导致 MS-Agent 加载错包，只要 MS-Agent 只消费自己的 `plugins.json` 条目。
 只有当用户用 **`--link` 开发模式** 把 `plugins.json.path` 指到 Claude 缓存里的同一路径时，才可能与 Claude 并发写同一目录——此时为显式 opt-in，文档警告。
 
 #### Manifest 路径解析（安装时探测 + 持久化锁定）
@@ -451,7 +451,7 @@ class PluginManifest:
 
 #### 4.3.2 可加载组件存在性（安装门槛）
 
-Plugin **至少须含下列「可加载组件」之一**（§4.4 `loadable=true`）。  
+Plugin **至少须含下列「可加载组件」之一**（§4.4 `loadable=true`）。
 仅含 `scripts/`、`assets/`、`README` **不能**单独构成可安装 Plugin。
 
 | capability id | 判定信号（任一命中即可） |
@@ -1187,7 +1187,7 @@ tests/plugins/
 | **Hermes Python plugin `register_hook()`** | 高 | ❌ 否 | Hermes 进程内 API |
 | **Hermes Gateway hook**（`HOOK.yaml` + `handler.py`） | 中 | ❌ 否（P2 文档） | 仅 Gateway 生命周期 |
 
-**可以一并兼容的部分**：安装/发现/开关/Skills/MCP/Shell hooks —— 与 Claude Plugin 共用 `PluginLoader` 分发链。  
+**可以一并兼容的部分**：安装/发现/开关/Skills/MCP/Shell hooks —— 与 Claude Plugin 共用 `PluginLoader` 分发链。
 **不应承诺一并兼容的部分**：在 ms-agent 内嵌 OpenClaw Gateway 或 Hermes 的 **进程内 hook 虚拟机**。
 
 ### 16.2 为何 OpenClaw 曾被标 P2
@@ -1376,7 +1376,7 @@ async def test_plugin_mcp_tools_sync():
 
 ## 19. 社区 Plugin 组件全景（调研）
 
-> 来源：Claude Code [Plugins reference](https://code.claude.com/docs/en/plugins-reference)、Codex [Build plugins](https://developers.openai.com/codex/plugins/build)、OpenClaw [Plugin CLI](https://documentation.openclaw.ai/cli/plugins)、Hermes 架构文档与 `hooks-design.md` 附录 B。  
+> 来源：Claude Code [Plugins reference](https://code.claude.com/docs/en/plugins-reference)、Codex [Build plugins](https://developers.openai.com/codex/plugins/build)、OpenClaw [Plugin CLI](https://documentation.openclaw.ai/cli/plugins)、Hermes 架构文档与 `hooks-design.md` 附录 B。
 > 目的：避免 F9 只覆盖 skill/hook/mcp 而遗漏社区包中高频出现的其他配置项。
 
 ### 19.1 组件总表
@@ -1417,59 +1417,59 @@ async def test_plugin_mcp_tools_sync():
 
 #### A. 高价值 — 建议并入 P1
 
-1. **`.claude-plugin/` / `.codex-plugin/` manifest 路径**  
+1. **`.claude-plugin/` / `.codex-plugin/` manifest 路径**
    社区包几乎不用根目录 `plugin.json`；Detector 必须识别子目录 manifest。
 
-2. **`.mcp.json` 文件名**（非 `tools/mcp.json`）  
+2. **`.mcp.json` 文件名**（非 `tools/mcp.json`）
    Loader 应同时探测：`.mcp.json`、`tools/mcp.json`、manifest 内联 `mcpServers`。
 
-3. **`agents/` 子 agent 定义**  
-   Claude 社区大量 plugin 通过 agents 提供专用 reviewer/planner。  
+3. **`agents/` 子 agent 定义**
+   Claude 社区大量 plugin 通过 agents 提供专用 reviewer/planner。
    MS-Agent 映射：Playground F1.2 子 agent 模板 + `AgentDelegate` / `capabilities` 包装；frontmatter 字段 `model`、`tools`、`disallowedTools`、`skills` 写入 resolved agent config。
 
-4. **`commands/` 遗留 slash**  
+4. **`commands/` 遗留 slash**
    与 `skills/` 统一为 Skill 加载（Claude 2026 已合并语义）；flat `.md` 走 `SkillLoader` 单文件模式或 `CommandRouter`。
 
-5. **`bin/` PATH 注入**  
-   Claude：启用 plugin 时把 `bin/` 加入 Bash tool 的 PATH。  
+5. **`bin/` PATH 注入**
+   Claude：启用 plugin 时把 `bin/` 加入 Bash tool 的 PATH。
    MS-Agent：`LocalCodeExecutor` / `WorkspaceContext` 扩展 `plugin_bin_paths`；disable 时移除。
 
-6. **`settings.json` 默认配置**  
-   Claude 仅支持 `agent`、`subagentStatusLine` 等键；OpenClaw bundle 还支持 Claude `settings.json` 默认值。  
+6. **`settings.json` 默认配置**
+   Claude 仅支持 `agent`、`subagentStatusLine` 等键；OpenClaw bundle 还支持 Claude `settings.json` 默认值。
    MS-Agent：merge 到 session/project 的 agent.yaml 补丁（enabled 时 apply，disable 时 revert）。
 
-7. **`userConfig` + `${user_config.*}` / `CLAUDE_PLUGIN_OPTION_*`**  
+7. **`userConfig` + `${user_config.*}` / `CLAUDE_PLUGIN_OPTION_*`**
    启用 plugin 时 UI 表单收集；写入 `~/.ms_agent/plugins/data/<id>/config.json`；展开到 MCP/hook/monitor 命令字符串。
 
-8. **`dependencies` 插件依赖**  
+8. **`dependencies` 插件依赖**
    安装 `formatter` 时自动安装 `secrets-vault@~2.1.0`；`PluginInstaller` 拓扑排序。
 
-9. **根目录单文件 `SKILL.md`**  
+9. **根目录单文件 `SKILL.md`**
    无 `skills/` 时整包即一个 skill（marketplace 安装常见）。
 
-10. **Codex `interface` / `assets/`**  
+10. **Codex `interface` / `assets/`**
     Playground Plugin 列表展示 displayName、icon、screenshots；纯 UI，不进入 Runtime。
 
 #### B. 中价值 — P2
 
-11. **`.app.json` App Connectors（Codex）**  
+11. **`.app.json` App Connectors（Codex）**
     Slack/GitHub/Notion OAuth 连接器；需 Playground 后端 OAuth 跳转（`mcp_runtime_management.md` Phase 3 认证项）。
 
-12. **Hook 扩展类型**：`prompt`、`http`、`agent`、`mcp_tool`  
+12. **Hook 扩展类型**：`prompt`、`http`、`agent`、`mcp_tool`
     已在 `hooks-design.md` §17；Plugin 内 hooks.json 常见 prompt 型策略 hook。
 
-13. **`rules/` / 包内 instruction 片段**  
+13. **`rules/` / 包内 instruction 片段**
     映射到 `PersonalizationInjector` 或 project `.ms-agent/config.yaml` patch。
 
-14. **Skill frontmatter 扩展**（Claude 2026 统一 skill/command）  
+14. **Skill frontmatter 扩展**（Claude 2026 统一 skill/command）
     `allowed-tools`、`context: fork`、`agent`、`model`、`paths`、`disable-model-invocation` — 影响 SkillRuntime 与 AgentDelegate 行为。
 
 #### C. 低价值 / 非 Playground 核心 — P3 或 detect-only
 
-15. **`.lsp.json`** — IDE 代码智能；OpenClaw 已支持 bundle 默认，MS-Agent CLI 可 detect + 文档说明。  
-16. **`output-styles/`、`themes/`** — 纯终端/UI 呈现。  
-17. **`monitors/`** — Claude 后台监视 + 通知；需 Monitor tool 对标。  
-18. **`channels`** — MCP 驱动的消息注入通道。  
+15. **`.lsp.json`** — IDE 代码智能；OpenClaw 已支持 bundle 默认，MS-Agent CLI 可 detect + 文档说明。
+16. **`output-styles/`、`themes/`** — 纯终端/UI 呈现。
+17. **`monitors/`** — Claude 后台监视 + 通知；需 Monitor tool 对标。
+18. **`channels`** — MCP 驱动的消息注入通道。
 19. **OpenClaw/Hermes 进程内扩展** — 仅 detect（§16）。
 
 ### 19.3 Marketplace 与 Plugin 的边界
@@ -1531,7 +1531,7 @@ class PluginLoadResult:
 
 ## 附录 D：黄金测例 — hookify
 
-> **选定结论**：MS-Agent Plugin 体系的**最终集成测例**采用 Anthropic 官方社区目录中的 [**hookify**](https://github.com/anthropics/claude-plugins-official/tree/main/plugins/hookify)（`hookify@claude-plugins-official`）。  
+> **选定结论**：MS-Agent Plugin 体系的**最终集成测例**采用 Anthropic 官方社区目录中的 [**hookify**](https://github.com/anthropics/claude-plugins-official/tree/main/plugins/hookify)（`hookify@claude-plugins-official`）。
 > 选型时间：2026-06-18；对照 §19 组件全景与真实社区分发路径。
 
 ### D.1 为何选 hookify（而非 demo 包或其它 official plugin）
