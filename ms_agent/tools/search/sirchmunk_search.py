@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 # Copyright (c) ModelScope Contributors. All rights reserved.
 """Sirchmunk backend for the ``localsearch`` tool.
-
 Configuration lives under ``tools.localsearch`` (same namespace as other tools).
 Legacy top-level ``knowledge_search`` is still accepted for backward compatibility.
 """

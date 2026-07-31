@@ -1,6 +1,9 @@
-import httpx
+from __future__ import annotations
+
 import os
 from typing import Any, Dict, List, Optional
+
+import httpx
 
 from ms_agent.utils.logger import get_logger
 

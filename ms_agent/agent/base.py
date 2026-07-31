@@ -1,3 +1,4 @@
+from __future__ import annotations
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import os
 from abc import ABC, abstractmethod

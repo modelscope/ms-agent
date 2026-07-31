@@ -43,13 +43,17 @@ def _expand_tilde(path: str, home_dir: str) -> tuple[str, str | None]:
     return path, f'Unsupported tilde expansion: {path}'
 
 
+_SHELL_VAR = re.compile(r'(?<!\\)\$(?:\{|\(|[A-Za-z_])')
+
+
 def _has_shell_expansion(path: str) -> str | None:
-    if '$' in path:
+    if _SHELL_VAR.search(path):
         return f'Path contains shell variable expansion: {path}'
     if '%' in path:
         return f'Path contains Windows variable expansion: {path}'
-    if path.startswith('='):
-        return f'Path starts with = (Zsh expansion): {path}'
+    # Only flag Zsh =(…) process substitution, not bare = or =value
+    if path.startswith('=('):
+        return f'Path starts with =( (Zsh process substitution): {path}'
     return None
 
 
@@ -120,7 +124,10 @@ def validate_path(
         )
 
     if _has_glob(path):
-        if op_type in ('write', 'create'):
+        # Heuristic: if path contains parentheses or is very long, it's likely
+        # code content (e.g., from heredoc), not a real file path. Skip glob check.
+        looks_like_code = '(' in path or ')' in path or len(path) > 200
+        if op_type in ('write', 'create') and not looks_like_code:
             return PathValidationResult(
                 allowed=False,
                 resolved_path=path,

@@ -14,10 +14,10 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from typing import Callable, Literal
+from typing import Callable, Literal, Optional
 
 CommandExtractor = Callable[[list[str]], list[str]]
-CommandValidator = Callable[[list[str]], str | None]
+CommandValidator = Callable[[list[str]], Optional[str]]
 
 
 @dataclass(frozen=True)

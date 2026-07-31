@@ -132,6 +132,15 @@ class TestRestoreSnapshot(unittest.TestCase):
             self.assertFalse(ok)
             self.assertEqual(mc, 0)
 
+    def test_restore_without_git_returns_false(self):
+        with tempfile.TemporaryDirectory() as td:
+            os.makedirs(os.path.join(td, '.ms_agent_snapshots'))
+            with patch('ms_agent.utils.snapshot._git',
+                       side_effect=FileNotFoundError('git')):
+                ok, mc = restore_snapshot(td, 'abc1234')
+            self.assertFalse(ok)
+            self.assertEqual(mc, 0)
+
     def test_restore_reverts_file_content(self):
         with tempfile.TemporaryDirectory() as td:
             path = os.path.join(td, 'data.txt')

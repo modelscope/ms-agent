@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import logging
 from typing import Any, Awaitable, Callable

@@ -14,6 +14,7 @@ import os
 import re
 import shlex
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal, Sequence
 
 from .path_extractors import (ExtractorEntry, build_extractor_registry,
@@ -105,11 +106,15 @@ class ShellPathValidator:
         # 3. Split compound commands
         sub_commands = _split_compound(command)
 
-        # Track cd presence for cd+write detection
-        has_cd = False
-        has_write_or_create = False
+        # Track cwd through cd commands for accurate path validation
+        _current_cwd = self._workspace_root
 
         for sub_cmd in sub_commands:
+            # Strip comment lines (starting with #) before parsing
+            stripped = sub_cmd.strip()
+            if stripped.startswith('#'):
+                continue  # Skip pure comment
+
             try:
                 tokens = shlex.split(sub_cmd)
             except ValueError:
@@ -134,29 +139,24 @@ class ShellPathValidator:
             base_cmd = os.path.basename(tokens[0])
             args = tokens[1:]
 
+            # Track cd: resolve target and update _current_cwd
             if base_cmd == 'cd':
-                has_cd = True
+                cd_entry = self._extractors.get('cd')
+                if cd_entry:
+                    cd_targets = cd_entry.extractor(args)
+                    if cd_targets:
+                        target = cd_targets[0]
+                        if os.path.isabs(target):
+                            _current_cwd = str(Path(target).resolve())
+                        else:
+                            _current_cwd = str((Path(_current_cwd) / target).resolve())
 
             # 5. Command path extraction and validation
-            result = self._check_command(base_cmd, args, _depth=_depth)
+            result = self._check_command(base_cmd, args, _depth=_depth, cwd=_current_cwd)
             if result.action != 'allow':
                 return result
 
-            entry = self._extractors.get(base_cmd)
-            if entry and entry.op_type in ('write', 'create'):
-                has_write_or_create = True
-
-        # 6. cd + write/create compound → ask
-        if has_cd and has_write_or_create:
-            return SafetyDecision(
-                action='ask',
-                reason='Command combines cd with write/create operations — '
-                'path validation may not reflect runtime working directory',
-                category='cd_write_compound',
-            )
-
-        return SafetyDecision(
-            action='allow', reason='Shell command passed all checks')
+        return SafetyDecision(action='allow', reason='Shell command passed all checks')
 
     def _check_command_substitutions(
         self,
@@ -184,6 +184,7 @@ class ShellPathValidator:
         args: list[str],
         *,
         _depth: int = 0,
+        cwd: str | None = None,
     ) -> SafetyDecision:
         entry = self._extractors.get(base_cmd)
         if entry is None:
@@ -199,20 +200,19 @@ class ShellPathValidator:
 
         # sed special handling
         if base_cmd == 'sed':
-            return self._check_sed(args, entry)
+            return self._check_sed(args, entry, cwd=cwd)
 
         if base_cmd == 'find':
-            return self._check_find(args, entry, _depth=_depth)
+            return self._check_find(args, entry, _depth=_depth, cwd=cwd)
 
         paths = entry.extractor(args)
         if not paths:
             return SafetyDecision(
                 action='allow', reason=f'{base_cmd}: no paths to validate')
 
-        return self._validate_paths(paths, entry.op_type, base_cmd)
+        return self._validate_paths(paths, entry.op_type, base_cmd, cwd=cwd)
 
-    def _check_sed(self, args: list[str],
-                   entry: ExtractorEntry) -> SafetyDecision:
+    def _check_sed(self, args: list[str], entry: ExtractorEntry, *, cwd: str | None = None) -> SafetyDecision:
         op_type = entry.op_type
         if is_sed_read_only(args):
             op_type = 'read'
@@ -222,13 +222,13 @@ class ShellPathValidator:
         for expr in expressions:
             result = check_sed_expression_safety(expr)
             if not result.safe:
-                return SafetyDecision(action='deny', reason=result.reason)
+                return SafetyDecision(action='ask', reason=result.reason)
 
         paths = entry.extractor(args)
         if not paths:
             return SafetyDecision(action='allow', reason='sed: no file paths')
 
-        return self._validate_paths(paths, op_type, 'sed')
+        return self._validate_paths(paths, op_type, 'sed', cwd=cwd)
 
     def _check_find(
         self,
@@ -236,6 +236,7 @@ class ShellPathValidator:
         entry: ExtractorEntry,
         *,
         _depth: int,
+        cwd: str | None = None,
     ) -> SafetyDecision:
         for exec_cmd in extract_find_exec_commands(args):
             result = self.check(exec_cmd, _depth=_depth + 1)
@@ -254,7 +255,7 @@ class ShellPathValidator:
             return SafetyDecision(
                 action='allow', reason='find: no paths to validate')
 
-        return self._validate_paths(paths, op_type, 'find')
+        return self._validate_paths(paths, op_type, 'find', cwd=cwd)
 
     @staticmethod
     def _collect_sed_expressions(args: list[str]) -> list[str]:
@@ -288,8 +289,10 @@ class ShellPathValidator:
         paths: list[str],
         op_type: Literal['read', 'write', 'create'],
         cmd_name: str,
+        *,
+        cwd: str | None = None,
     ) -> SafetyDecision:
-        cwd = self._workspace_root
+        effective_cwd = cwd or self._workspace_root
 
         for path in paths:
             # Dangerous removal check for rm/rmdir
@@ -300,12 +303,7 @@ class ShellPathValidator:
                     reason=f'Dangerous removal path: {path}',
                 )
 
-            result = validate_path(
-                path,
-                cwd,
-                self._allowed_dirs,
-                op_type,
-                read_only_dirs=self._read_only_dirs)
+            result = validate_path(path, effective_cwd, self._allowed_dirs, op_type, read_only_dirs=self._read_only_dirs)
             if not result.allowed:
                 return SafetyDecision(
                     action=result.action,

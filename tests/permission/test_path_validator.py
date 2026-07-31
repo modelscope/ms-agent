@@ -58,7 +58,13 @@ class TestValidatePath:
         assert not r.allowed
 
     def test_zsh_equals_rejected(self):
+        # Bare =ls is allowed (not Zsh process substitution)
         r = validate_path('=ls', '/tmp', ['/tmp'], 'read')
+        assert r.allowed
+
+    def test_zsh_process_substitution_rejected(self):
+        # =(…) is Zsh process substitution and should be rejected
+        r = validate_path('=(ls)', '/tmp', ['/tmp'], 'read')
         assert not r.allowed
 
     def test_glob_in_write_rejected(self):

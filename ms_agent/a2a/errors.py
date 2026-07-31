@@ -1,3 +1,4 @@
+from __future__ import annotations
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()

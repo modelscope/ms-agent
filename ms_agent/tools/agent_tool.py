@@ -20,7 +20,7 @@ from ms_agent.utils import get_logger
 from ms_agent.utils.stats import (append_stats, build_timing_record,
                                   get_stats_path, monotonic, now_iso,
                                   summarize_usage)
-from ms_agent.utils.stream_writer import SubAgentStreamWriter
+from ms_agent.utils.stream_writer import SubAgentStreamWriter, _msg_to_dict
 
 logger = get_logger()
 
@@ -1289,10 +1289,9 @@ class AgentTool(ToolBase):
             path = os.path.join(subagents_dir, f'{agent_tag}.jsonl')
             with open(path, 'w', encoding='utf-8') as f:
                 for msg in messages:
-                    if hasattr(msg, 'to_dict'):
-                        f.write(
-                            json.dumps(msg.to_dict(), ensure_ascii=False)
-                            + '\n')
+                    f.write(
+                        json.dumps(_msg_to_dict(msg), ensure_ascii=False)
+                        + '\n')
         except Exception as exc:
             logger.warning(
                 f'Failed to save sub-agent transcript for {agent_tag}: {exc}')

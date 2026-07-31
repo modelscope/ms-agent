@@ -122,10 +122,12 @@ class PermissionConfig:
         ask_rules = tuple(d.get('ask_rules', ()))
         user_blacklist = tuple(d.get('blacklist', ()))
         # The default blacklist blocks network-egress shell commands
-        # (curl/wget/ssh/...). ``allow_network: true`` opts out of that secure
-        # default (e.g. to restore legacy "auto = no interception" behavior);
-        # the user's own blacklist entries still apply.
-        allow_network = bool(d.get('allow_network', False))
+        # (curl/wget/ssh/...). ``allow_network: true`` (or legacy
+        # ``no_default_blacklist``) opts out of that secure default; the
+        # user's own blacklist entries still apply.
+        allow_network = bool(
+            d.get('allow_network', False)
+            or d.get('no_default_blacklist', False))
         base_blacklist = () if allow_network else _DEFAULT_BLACKLIST
         blacklist = base_blacklist + tuple(
             p for p in user_blacklist if p not in base_blacklist)

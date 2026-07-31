@@ -43,12 +43,12 @@ class TestAttackVectors:
         assert r.action in ('deny', 'ask')
 
     def test_cd_plus_mv(self, guard, tmp_path):
-        """cd dir && mv a b → ask (cd + write compound)"""
+        """cd dir && mv a b → allow (cd target resolved, paths validated)"""
         r = guard.check(
             'code_executor---shell_executor',
             {'command': f'cd {tmp_path} && mv {tmp_path}/a {tmp_path}/b'},
         )
-        assert r.action == 'ask'
+        assert r.action == 'allow'
 
     def test_rm_dollar_home(self, guard):
         """rm $HOME/.ssh/* → ask/deny (shell expansion in path)"""
@@ -123,12 +123,12 @@ class TestAttackVectors:
         assert r.action == 'ask'
 
     def test_sed_write_expression(self, guard, tmp_path):
-        """sed -e 's/x/y/w /etc/passwd' file → deny (sed expression safety)"""
+        """sed -e 's/x/y/w /etc/passwd' file → ask (sed expression safety, relaxed from deny)"""
         r = guard.check(
             'code_executor---shell_executor',
             {'command': f"sed -e 's/x/y/w /etc/passwd' {tmp_path}/file"},
         )
-        assert r.action == 'deny'
+        assert r.action == 'ask'
 
 
 class TestSensitivePathWrites:

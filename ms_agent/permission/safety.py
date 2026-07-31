@@ -65,7 +65,16 @@ class SafetyGuard:
             return self._check_file_path(tool_args.get('path', ''), 'write')
 
         if tool_name.endswith('---read_file'):
-            return self._check_file_path(tool_args.get('path', ''), 'read')
+            paths = tool_args.get('paths')
+            path = tool_args.get('path', '')
+            if isinstance(paths, list) and paths:
+                for p in paths:
+                    if isinstance(p, str) and p.strip():
+                        result = self._check_file_path(p.strip(), 'read')
+                        if result.action != 'allow':
+                            return result
+                return SafetyDecision(action='allow', reason='All read paths validated')
+            return self._check_file_path(path, 'read')
 
         if tool_name.endswith('---grep') or tool_name.endswith('---glob'):
             return self._check_file_path(tool_args.get('path', '.'), 'read')

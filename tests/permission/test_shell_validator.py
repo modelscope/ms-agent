@@ -62,7 +62,7 @@ class TestWrapperStripping:
 class TestCompoundCommands:
     def test_cd_plus_write(self, validator, tmp_path):
         r = validator.check(f'cd {tmp_path} && rm {tmp_path}/test.txt')
-        assert r.action == 'ask'
+        assert r.action == 'allow'  # cd target resolved, paths validated against resolved cwd
 
     def test_multiple_safe(self, validator, tmp_path):
         r = validator.check(f'ls {tmp_path} && cat {tmp_path}/f')

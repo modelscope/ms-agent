@@ -1,3 +1,4 @@
+from __future__ import annotations
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import asyncio
 import base64
@@ -486,11 +487,11 @@ class FileSystemTool(ToolBase):
         if glob_pat:
             args.extend(['--glob', glob_pat])
         if output_mode == 'files_with_matches':
-            args.extend(['-l', pattern, str(file_path)])
+            args.extend(['-l', '-e', pattern, str(file_path)])
         elif output_mode == 'count':
-            args.extend(['-c', pattern, str(file_path)])
+            args.extend(['-c', '-e', pattern, str(file_path)])
         else:
-            args.extend(['-n', pattern, str(file_path)])
+            args.extend(['-n', '-e', pattern, str(file_path)])
         proc = await asyncio.create_subprocess_exec(
             *args,
             stdout=asyncio.subprocess.PIPE,
@@ -523,11 +524,11 @@ class FileSystemTool(ToolBase):
         if glob_pat:
             args.extend(['--glob', glob_pat])
         if output_mode == 'files_with_matches':
-            args.extend(['-l', pattern, str(root)])
+            args.extend(['-l', '-e', pattern, str(root)])
         elif output_mode == 'count':
-            args.extend(['--count-matches', pattern, str(root)])
+            args.extend(['--count-matches', '-e', pattern, str(root)])
         else:
-            args.extend(['-n', pattern, str(root)])
+            args.extend(['-n', '-e', pattern, str(root)])
         proc = await asyncio.create_subprocess_exec(
             *args,
             stdout=asyncio.subprocess.PIPE,
@@ -974,6 +975,8 @@ class FileSystemTool(ToolBase):
             Success or error message.
         """
         try:
+            if not path:
+                return 'Error: `path` is required.'
             if old_string is None:
                 return 'Error: `old_string` is required.'
             if new_string is None:
