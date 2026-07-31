@@ -197,6 +197,16 @@ class OpenAICompatTransport(Transport):
                     else:
                         formatted_message[key] = value
             formatted_message['content'] = content
+
+            # A tool-call-only assistant turn has no text: send the canonical
+            # ``content: null`` (not an empty string) so gateways that validate
+            # assistant messages accept it. Mirrors the legacy adapter — the
+            # framework no longer injects a placeholder utterance for these.
+            if (formatted_message.get('role') == 'assistant'
+                    and formatted_message.get('tool_calls')
+                    and not content):
+                formatted_message['content'] = None
+
             openai_messages.append(formatted_message)
         return openai_messages
 

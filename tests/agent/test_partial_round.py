@@ -16,8 +16,22 @@ def test_empty_segment_seals_with_placeholder():
     assert records == [{
         'role': 'assistant',
         'content': INTERRUPTED_PLACEHOLDER,
+        'content_placeholder': True,
         'interrupted': True,
     }]
+
+
+def test_partial_round_preserves_reasoning_duration():
+    # When the elapsed thinking time was stamped before cancellation, the
+    # interrupted row keeps `reasoning_duration` (so replay shows "thought Ns",
+    # not 0s) even as the reasoning text moves to the display-only key.
+    records = build_partial_round_records([
+        {'role': 'assistant', 'content': '',
+         'reasoning_content': '思考中…', 'reasoning_duration': 7},
+    ])
+    rec = records[0]
+    assert rec['interrupted_reasoning'] == '思考中…'
+    assert rec['reasoning_duration'] == 7
 
 
 def test_partial_text_kept_verbatim_and_flagged():
@@ -40,6 +54,7 @@ def test_unsigned_reasoning_moves_to_display_only_key():
     assert 'reasoning_content' not in rec
     assert rec['interrupted_reasoning'] == '思考中…'
     assert rec['content'] == INTERRUPTED_PLACEHOLDER  # no visible content
+    assert rec['content_placeholder'] is True  # marked as synthetic filler
 
 
 def test_signed_reasoning_stays_replayable():
@@ -86,6 +101,7 @@ def test_truncated_arguments_dropped_and_placeholder_applied():
     rec = records[0]
     assert 'tool_calls' not in rec
     assert rec['content'] == INTERRUPTED_PLACEHOLDER
+    assert rec['content_placeholder'] is True
 
 
 def test_mixed_valid_and_truncated_calls():

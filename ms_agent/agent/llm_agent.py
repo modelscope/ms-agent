@@ -113,7 +113,13 @@ def build_partial_round_records(rows: List[Dict[str, Any]]) -> List[Dict[str, An
         if rec.get('reasoning_content') and not rec.get('reasoning_signature'):
             rec['interrupted_reasoning'] = rec.pop('reasoning_content')
         if not rec.get('content') and not kept_calls:
+            # Neutral filler so the round reads as closed on replay AND stays a
+            # protocol-valid assistant message on resume (empty content is
+            # rejected on Anthropic; a dangling user row would be re-answered).
+            # ``content_placeholder`` lets UIs identify this as synthetic filler
+            # by a structured flag rather than string-matching the literal.
             rec['content'] = INTERRUPTED_PLACEHOLDER
+            rec['content_placeholder'] = True
         records.append(rec)
         for tc in kept_calls:
             if tc.get('id') in present_results:
@@ -130,6 +136,7 @@ def build_partial_round_records(rows: List[Dict[str, Any]]) -> List[Dict[str, An
         records.append({
             'role': 'assistant',
             'content': INTERRUPTED_PLACEHOLDER,
+            'content_placeholder': True,
             'interrupted': True,
         })
     return records
@@ -1492,9 +1499,13 @@ class LLMAgent(Agent):
         if messages[-1] is not response_message:
             messages.append(response_message)
 
-        if (messages[-1].role == 'assistant' and not messages[-1].content
-                and response_message.tool_calls):
-            messages[-1].content = 'Let me do a tool calling.'
+        # NOTE: a tool-call-only assistant turn is left with EMPTY content on
+        # purpose. It used to be filled with a 'Let me do a tool calling.'
+        # placeholder, but that leaked into both the session log and the model
+        # context (a fake assistant utterance). An assistant message carrying
+        # tool_calls needs no text on any supported transport — the provider
+        # adapters serialize empty content as null/omitted (OpenAI family) or as
+        # tool_use blocks with no text block (Anthropic). See _format_input_message.
 
         # Stamp the reasoning elapsed time onto the assistant message so it can
         # be persisted for replay (display only — never re-enters the LLM, see
@@ -1982,6 +1993,20 @@ class LLMAgent(Agent):
         """
         if self.session_log is None:
             return
+        # If cancelled MID-reasoning, `_emit_reasoning_end` never ran, so the
+        # thinking elapsed time was never computed — finalize it now and stamp
+        # it on the partial-reasoning assistant message, else the interrupted
+        # row persists no `reasoning_duration` and replay shows "thought 0s".
+        started = getattr(self, '_reasoning_started_at', None)
+        if started is not None:
+            dur = round(time.monotonic() - started)
+            self._reasoning_started_at = None
+            for msg in reversed(messages[pre_step_len:]):
+                if (msg.role == 'assistant'
+                        and getattr(msg, 'reasoning_content', '')
+                        and getattr(msg, '_reasoning_duration', None) is None):
+                    msg._reasoning_duration = dur
+                    break
         try:
             rows = [
                 self._msg_to_dict(msg) for msg in messages[pre_step_len:]

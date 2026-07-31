@@ -1065,6 +1065,15 @@ class OpenAI(LLM):
             # The content variable has been processed by _to_structured_content() if needed
             formatted_message['content'] = content
 
+            # A tool-call-only assistant turn has no text: send the canonical
+            # ``content: null`` (not an empty string) so gateways that validate
+            # assistant messages accept it. This is the correct representation
+            # now that the framework no longer injects a placeholder utterance.
+            if (formatted_message.get('role') == 'assistant'
+                    and formatted_message.get('tool_calls')
+                    and not content):
+                formatted_message['content'] = None
+
             openai_messages.append(formatted_message)
 
         return openai_messages

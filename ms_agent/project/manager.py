@@ -169,7 +169,10 @@ class ProjectManager:
             name='Default',
             path=str(default_path.resolve()),
         )
-        self._init_project_dirs(project)
+        # The runtime writes products directly under output_dir (== project
+        # path), so the ``workspace/`` subdir is unused clutter — skip it for
+        # the default project just like open_folder does for mounted ones.
+        self._init_project_dirs(project, init_workspace=False)
         self._save_meta(project)
 
     def _init_project_dirs(self,
