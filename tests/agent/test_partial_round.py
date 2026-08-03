@@ -142,3 +142,46 @@ def test_dict_arguments_accepted():
     ])
     assert records[0]['tool_calls'][0]['arguments'] == {'a': 1}
     assert records[1]['role'] == 'tool'
+
+
+def _persisted_reasoning_duration(reasoning_started_at, last_reasoning_duration):
+    """Run the real _persist_partial_round against a minimal stub and return the
+    reasoning_duration stamped on the persisted partial-reasoning row (or None)."""
+    from ms_agent.agent.llm_agent import LLMAgent
+    from ms_agent.llm.utils import Message
+
+    class _Log:
+
+        def __init__(self):
+            self.rows = []
+
+        def append(self, rec):
+            self.rows.append(rec)
+            return len(self.rows)
+
+    stub = LLMAgent.__new__(LLMAgent)
+    stub.session_log = _Log()
+    stub._reasoning_started_at = reasoning_started_at
+    stub._last_reasoning_duration = last_reasoning_duration
+    # Thinking finished (has reasoning_content) but no _reasoning_duration yet:
+    # handle_new_response never ran because the turn was cancelled.
+    msg = Message(role='assistant', content='正文写到一半',
+                  reasoning_content='想了很久…')
+    LLMAgent._persist_partial_round(stub, [msg], 0)
+    asst = [r for r in stub.session_log.rows
+            if r.get('role') == 'assistant'][-1]
+    return asst.get('reasoning_duration')
+
+
+def test_reasoning_duration_kept_when_cancelled_during_body():
+    # Reasoning ENDED, cancel hit during body streaming: _reasoning_started_at is
+    # None, elapsed parked in _last_reasoning_duration. Must still persist it
+    # (else replay shows "thought 0s").
+    assert _persisted_reasoning_duration(None, 7) == 7
+
+
+def test_reasoning_duration_finalized_when_cancelled_mid_reasoning():
+    # Cancelled mid-reasoning: _reasoning_started_at still set → finalize now.
+    import time
+    dur = _persisted_reasoning_duration(time.monotonic() - 3.0, None)
+    assert dur is not None and dur >= 2

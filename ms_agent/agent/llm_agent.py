@@ -1993,14 +1993,21 @@ class LLMAgent(Agent):
         """
         if self.session_log is None:
             return
-        # If cancelled MID-reasoning, `_emit_reasoning_end` never ran, so the
-        # thinking elapsed time was never computed — finalize it now and stamp
-        # it on the partial-reasoning assistant message, else the interrupted
-        # row persists no `reasoning_duration` and replay shows "thought 0s".
+        # Stamp the thinking elapsed onto the interrupted round's partial
+        # reasoning message, else the row persists no `reasoning_duration` and
+        # replay shows "thought 0s". Two cancel points need it:
+        #  (a) cancelled MID-reasoning — `_emit_reasoning_end` never ran, so the
+        #      elapsed was never computed; finalize it now from the start stamp;
+        #  (b) reasoning already ended and cancel hit during BODY streaming — the
+        #      elapsed is parked in `_last_reasoning_duration`, but
+        #      `handle_new_response` (which normally stamps it) never ran.
         started = getattr(self, '_reasoning_started_at', None)
         if started is not None:
             dur = round(time.monotonic() - started)
             self._reasoning_started_at = None
+        else:
+            dur = getattr(self, '_last_reasoning_duration', None)
+        if dur is not None:
             for msg in reversed(messages[pre_step_len:]):
                 if (msg.role == 'assistant'
                         and getattr(msg, 'reasoning_content', '')
