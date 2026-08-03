@@ -145,6 +145,19 @@ def build_spec(framework: str, name: str, local_dir=None) -> WorkspaceSpec:
     return spec_cls(agent_name=name, local_dir=local)
 
 
+def _existing_skill_names(paths) -> list[str]:
+    """Skill dir names already present on the target (``skills/<name>/...``).
+
+    Fed to ``merge_resources(existing_skills=...)`` so a cross-framework
+    convert / download never silently overwrites a skill the target already
+    has (BUG-024).
+    """
+    return sorted({
+        p.split('/')[1]
+        for p in paths if p.startswith('skills/') and p.count('/') >= 2
+    })
+
+
 def convert_resources(
     resources: dict,
     source_fw: str,
@@ -156,6 +169,7 @@ def convert_resources(
     dst_spec: WorkspaceSpec | None = None,
     fill_missing_defaults: bool = True,
     collect_merges: list[tuple[str, str]] | None = None,
+    collect_skips: list[str] | None = None,
 ) -> dict:
     """Convert workspace resources from one framework format to another.
 
@@ -192,9 +206,19 @@ def convert_resources(
         source_defaults=get_defaults(source_fw),
         target_defaults=get_defaults(target_fw),
         fill_missing_defaults=fill_missing_defaults,
+        overflow_target=(_file_per_agent_identity_path(dst_spec)
+                         if dst_spec is not None else None),
+        identity_source=(_file_per_agent_identity_path(src_spec)
+                         if src_spec is not None else None),
+        existing_skills=(_existing_skill_names(existing_files)
+                         if existing_files else None),
     )
     if collect_merges is not None:
         collect_merges.extend(merged_away_pairs(result))
+    if collect_skips is not None:
+        collect_skips.extend(
+            a.path for a in result.actions
+            if a.action == 'skip' and 'already exists' in a.detail)
     merged = result.merged_files
     if existing_files is not None:
         default_paths = {
@@ -323,8 +347,13 @@ def cmd_upload(
     # boilerplate is never pushed -- keeps upload and convert 1:1-consistent
     # about what "the user's own files" are.
     from ._sync import drop_unchanged_defaults, sanitize_outbound
-    resources = drop_unchanged_defaults(
-        sanitize_outbound(resources, spec), framework, spec)
+    try:
+        resources = drop_unchanged_defaults(
+            sanitize_outbound(resources, spec), framework, spec)
+    except ValueError as e:
+        # Fail-closed sanitize: a config file that cannot be parsed cannot be
+        # verified secret-free -- abort instead of pushing plaintext keys.
+        return _fail(str(e))
     if not resources:
         display_name = local_name if local_name != GLOBAL_AGENT_NAME else 'global'
         return _fail(
@@ -387,6 +416,24 @@ def cmd_upload(
     display.done(
         f'Synced {len(resources)} file(s) to {group}/{repo_n} (incremental)')
     return 0
+
+
+def _download_file(client, group: str, repo_n: str, path: str):
+    """Download one repo file byte-faithfully, decoding text when possible.
+
+    Always fetches raw bytes (``binary=True``): the default text mode decodes
+    the HTTP body with a guessed charset and re-encoding it corrupts binary
+    assets (skills/*/assets/*, openhuman wiki/assets/*.png -- a PNG's ``\\x89``
+    magic byte is not valid UTF-8).  Content that IS valid UTF-8 is returned
+    as ``str`` so the conversion / merge pipeline sees the same text values as
+    before; everything else stays ``bytes``, which convert passes through
+    verbatim and ``spec.apply`` writes to disk unchanged.
+    """
+    raw = client.download_repo_file(group, repo_n, path, binary=True)
+    try:
+        return raw.decode('utf-8')
+    except UnicodeDecodeError:
+        return raw
 
 
 def _remote_paths_for_agent(
@@ -569,8 +616,8 @@ def cmd_download(
             total = len(to_download)
             for i, f in enumerate(to_download, 1):
                 print(f'  [{i}/{total}] downloading {f.path}', flush=True)
-                resources[remote_map[f.path]] = client.download_repo_file(
-                    group, repo_n, f.path)
+                resources[remote_map[f.path]] = _download_file(
+                    client, group, repo_n, f.path)
         else:
             paths = client.list_repo_files(group, repo_n)
             if not paths:
@@ -592,8 +639,8 @@ def cmd_download(
             total = len(paths)
             for i, pth in enumerate(paths, 1):
                 print(f'  [{i}/{total}] downloading {pth}', flush=True)
-                resources[remote_map[pth]] = client.download_repo_file(
-                    group, repo_n, pth)
+                resources[remote_map[pth]] = _download_file(
+                    client, group, repo_n, pth)
     except APIError as e:
         return _fail(api_error_message(e, 'download'))
     except Exception as e:
@@ -632,15 +679,31 @@ def cmd_download(
                 src_spec=src_spec,
                 dst_spec=spec,
                 collect_merges=download_merges,
+                # Same policy as cmd_convert: never invent target default
+                # templates the user did not have -- download+convert and
+                # local convert must produce identical file sets.
+                fill_missing_defaults=False,
             )
         else:
             existing_files = set(spec.collect().keys())
+            download_skips: list[str] = []
             resources = convert_resources(
                 resources,
                 framework,
                 target_fw,
                 existing_files=existing_files,
-                collect_merges=download_merges)
+                src_spec=build_spec(framework, local_name, local_dir),
+                dst_spec=spec,
+                collect_merges=download_merges,
+                collect_skips=download_skips,
+                fill_missing_defaults=False)
+            display.file_list(
+                'Skipped',
+                download_skips,
+                color=display.COLOR_SKIP,
+                marker='[skip]',
+                note='skill already exists on target, not overwritten',
+            )
 
     patterns = spec.resolved_patterns()
     filtered = {
@@ -787,6 +850,7 @@ def convert_workspace(
     if source_fw == target_fw:
         converted = resources
         default_paths: set = set()
+        skipped_skills: list = []
     elif src_spec._is_all() or dst_spec._is_all():
         # All-mode conversion only makes sense between two root-per-agent
         # frameworks (1:1 agent-directory mapping).  Other layouts (e.g.
@@ -810,11 +874,14 @@ def convert_workspace(
             collect_merges=merge_pairs,
         )
         default_paths = set()
+        skipped_skills = []
     else:
         # File-per-agent targets (e.g. qoder ``agents/{name}.md``) keep
         # per-agent identity in a dedicated sub-agent file; route overflow
         # (persona content with no shared mapping) there instead of the
         # shared catch-all so it does not pollute other sub-agents.
+        # Symmetrically, a file-per-agent SOURCE's persona file is flagged so
+        # it folds into the target's persona file instead of being dropped.
         overflow_target = None
         if any('{name}' in p for p in dst_spec.patterns):
             overflow_target = _file_per_agent_identity_path(dst_spec)
@@ -825,13 +892,18 @@ def convert_workspace(
             source_defaults=get_defaults(source_fw),
             target_defaults=get_defaults(target_fw),
             overflow_target=overflow_target,
+            identity_source=_file_per_agent_identity_path(src_spec),
             fill_missing_defaults=False,
+            existing_skills=_existing_skill_names(existing_paths),
         )
         default_paths = {
             a.path
             for a in result.actions if a.action == 'default'
         }
         merge_pairs = merged_away_pairs(result)
+        skipped_skills = sorted(
+            a.path for a in result.actions
+            if a.action == 'skip' and 'already exists' in a.detail)
         converted = result.merged_files
 
     dst_root = dst_spec.workspace_root
@@ -892,6 +964,13 @@ def convert_workspace(
         color=display.COLOR_DROPPED,
         marker='[drop]',
         note=f'not part of the {target_fw} workspace spec',
+    )
+    display.file_list(
+        'Skipped',
+        skipped_skills,
+        color=display.COLOR_SKIP,
+        marker='[skip]',
+        note='skill already exists on target, not overwritten',
     )
     if skipped_defaults:
         display.meta(
@@ -1107,9 +1186,20 @@ def _parse_backup_meta(stem: str) -> tuple[str, str]:
     Filenames look like ``{fw}{delim}{name}_{date}_{time}``; the leading
     ``{fw}{delim}{name}`` prefix is split on ``_`` (watch backups) or ``-``
     (upload backups).
+
+    The framework is anchored on REGISTERED framework names first (longest
+    match): ``ms-agent`` contains the ``-`` delimiter itself, so a naive
+    split would yield ``('ms', 'agent-default')`` and break ``backups -f
+    ms-agent`` filtering / restore lookup (BUG-032). Unregistered prefixes
+    keep the legacy split as a fallback.
     """
     parts = stem.rsplit('_', 2)
     prefix = parts[0] if len(parts) >= 3 else stem
+    for fw in sorted(FRAMEWORK_REGISTRY, key=len, reverse=True):
+        if prefix == fw:
+            return fw, ''  # all-scope backup: framework only
+        if prefix.startswith(fw + '_') or prefix.startswith(fw + '-'):
+            return fw, prefix[len(fw) + 1:]
     delim = '_' if '_' in prefix else '-'
     fw, _, nm = prefix.partition(delim)
     return fw, nm
@@ -1190,6 +1280,15 @@ def cmd_recover(
             f"unknown framework '{framework}'. Available: {available_frameworks()}"
         )
 
+    # Reject a corrupt / non-zip archive up front -- BEFORE the pre-restore
+    # backup and the delete-extra-files pass below touch the workspace, so a
+    # truncated or mislabeled backup fails cleanly (consistent _fail output,
+    # no half-done restore, no raw traceback).
+    if not zipfile.is_zipfile(zip_path):
+        return _fail(
+            f"restore failed: '{zip_path.name}' is not a valid backup "
+            f'archive (corrupt or not a zip file).')
+
     # Parse (framework, name) from the zip filename once, honoring both the
     # ``-`` (upload) and ``_`` (watch) delimiters, and fill in whatever the
     # caller left unspecified.  Reusing _parse_backup_meta keeps this aligned
@@ -1231,11 +1330,23 @@ def cmd_recover(
         print('No existing files to backup.')
 
     # Determine which files are in the zip (strip legacy wrapper prefix).
+    # Restore takes the SAME inbound rules as download: a zip can come from
+    # anywhere (--from-backup accepts arbitrary paths), so entries outside
+    # the workspace spec patterns (executable scripts, hidden credential
+    # files...) are rejected instead of written verbatim into the workspace.
+    spec_patterns = spec.resolved_patterns()
     with zipfile.ZipFile(zip_path, 'r') as zf:
-        zip_entries = {
+        all_entries = {
             _strip_backup_wrapper(info.filename)
             for info in zf.infolist() if not info.is_dir()
         }
+    zip_entries = {
+        rel
+        for rel in all_entries if spec.matches(rel, spec_patterns)
+    }
+    skipped_spec = sorted(all_entries - zip_entries)
+    for rel in skipped_spec:
+        print(f'  Skipped (not in {framework} workspace spec): {rel}')
 
     # Delete local files not in the zip
     deleted = 0
@@ -1256,12 +1367,17 @@ def cmd_recover(
             if info.is_dir():
                 continue
             rel = _strip_backup_wrapper(info.filename)
+            if rel not in zip_entries:
+                continue  # outside the workspace spec (already reported)
             file_target = (resolved_root / rel).resolve()
             if not file_target.is_relative_to(resolved_root):
                 print(f'  Skipped (path traversal): {info.filename}')
                 continue
             file_target.parent.mkdir(parents=True, exist_ok=True)
-            file_target.write_bytes(zf.read(info.filename))
+            # Same inbound sanitize download uses: a foreign zip's config may
+            # carry plaintext keys -- never write them to disk unscrubbed.
+            file_target.write_bytes(
+                spec.sanitize_inbound_file(rel, zf.read(info.filename)))
             print(f'  Restored: {rel}')
             restored += 1
 

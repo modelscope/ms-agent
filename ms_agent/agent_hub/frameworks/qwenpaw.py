@@ -135,9 +135,12 @@ class QwenpawWorkspace(BundledSkillFilterMixin, WorkspaceSpec):
 
         * channel configs additionally blank ``_CHANNEL_LOCAL_KEYS``
           (machine-local paths such as ``db_path``);
-        * every ``mcp.clients.*.env`` mapping is cleared wholesale -- env var
-          names are arbitrary, so values there are treated as secrets even
-          when the name does not match the vocabulary.
+        * every ``env`` mapping is cleared wholesale WHEREVER it lives -- env
+          var names are arbitrary, so values there are treated as secrets
+          even when the name does not match the vocabulary.  Anchoring on the
+          ``env`` key (not on a parent block name) keeps every MCP schema
+          spelling covered (``mcp.clients`` / ``mcp_clients`` /
+          ``mcpClients``), mirroring :func:`scrub_json_secrets`.
         """
 
         def scrub(node: Any) -> None:
@@ -148,6 +151,8 @@ class QwenpawWorkspace(BundledSkillFilterMixin, WorkspaceSpec):
                     # their inner field names happen to look harmless.
                     if is_secret_key(key):
                         node[key] = ''
+                    elif key == 'env' and isinstance(value, dict):
+                        node[key] = {k: '' for k in value}
                     elif isinstance(value, (dict, list)):
                         scrub(value)
             elif isinstance(node, list):
@@ -164,15 +169,6 @@ class QwenpawWorkspace(BundledSkillFilterMixin, WorkspaceSpec):
                 for key in list(ch.keys()):
                     if key in self._CHANNEL_LOCAL_KEYS:
                         ch[key] = ''
-        # MCP env blocks: clear every value regardless of the env var name.
-        mcp = data.get('mcp')
-        if isinstance(mcp, dict):
-            clients = mcp.get('clients')
-            if isinstance(clients, dict):
-                for client in clients.values():
-                    if isinstance(client, dict) and isinstance(
-                            client.get('env'), dict):
-                        client['env'] = {k: '' for k in client['env']}
 
     def _sanitize_agent_json(self, agent_name: str, content: str) -> str:
         """Rewrite machine-specific fields and strip per-channel secrets.
@@ -198,14 +194,22 @@ class QwenpawWorkspace(BundledSkillFilterMixin, WorkspaceSpec):
         """Strip secrets from an ``agent.json`` for upload (no identity rebind).
 
         Only the secret-bearing fields are blanked; ``id`` / ``workspace_dir``
-        keep their local values (they are rebound on the next download). On
-        parse failure the original text is returned unchanged.
+        keep their local values (they are rebound on the next download).
+
+        Sanitizing is a security boundary and the UPLOAD direction must fail
+        closed: a file we cannot parse cannot be verified secret-free, so a
+        malformed ``agent.json`` raises instead of being pushed verbatim
+        (which would put the user's plaintext keys into the remote repo's
+        git history forever).  The inbound (download) path keeps its
+        best-effort pass-through -- a malformed remote file adds no new
+        exposure when written to disk.
         """
         try:
             data: Any = json.loads(content)
         except (json.JSONDecodeError, ValueError):
-            logger.warning('agent.json is not valid JSON; writing as-is')
-            return content
+            raise ValueError(
+                'agent.json is not valid JSON; cannot verify it is free of '
+                'secrets -- refusing to upload it. Fix the file and retry.')
         if not isinstance(data, dict):
             return content
         self._strip_agent_json_secrets(data)
@@ -309,7 +313,9 @@ class QwenpawWorkspace(BundledSkillFilterMixin, WorkspaceSpec):
         try:
             text = content.decode('utf-8')
         except UnicodeDecodeError:
-            return content
+            raise ValueError(
+                f'{rel_path} is not valid UTF-8; cannot verify it is free of '
+                f'secrets -- refusing to upload it. Fix the file and retry.')
         return self._strip_outbound_agent_json(text).encode('utf-8')
 
     def apply(self, resources: dict[str, str]) -> list[str]:

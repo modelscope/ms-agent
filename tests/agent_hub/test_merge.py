@@ -89,6 +89,80 @@ class TestSectionMergerMerge(unittest.TestCase):
         result = self.merger.merge(user, source_default, target_default)
         self.assertIn("user modified", result.content)
 
+    def test_merge_keeps_all_duplicate_titled_sections(self):
+        """Regression (BUG-025): two user sections sharing one heading must
+        BOTH survive the merge, in their original order (the old
+        ``{title: sec}`` map silently kept only the last one)."""
+        result = self.merger.merge(
+            "## Rules\n\nMARK-A\n\n## Rules\n\nMARK-B\n",
+            "## Rules\n\ndefault rules\n",
+            "## Rules\n\ntarget rules\n",
+        )
+        self.assertIn("MARK-A", result.content)
+        self.assertIn("MARK-B", result.content)
+        self.assertLess(
+            result.content.find("MARK-A"), result.content.find("MARK-B"))
+        # The target default body they replaced is gone, not duplicated.
+        self.assertNotIn("target rules", result.content)
+
+    def test_user_diff_keeps_template_line_reused_in_user_paragraph(self):
+        """Regression (BUG-026): a line the user REUSES inside their own new
+        paragraph must survive extraction -- the old global line-set filter
+        deleted it out of the middle of the paragraph. A pristine template
+        still extracts to empty."""
+        from ms_agent.agent_hub._merge import _extract_user_diff_text
+        template = "# T\n\n- keep this line\n- another line\n"
+        user = template + "\n## My List\n\nHEAD\n- keep this line\nTAIL\n"
+        out = _extract_user_diff_text(user, template)
+        self.assertIn("HEAD", out)
+        self.assertIn("- keep this line", out)
+        self.assertIn("TAIL", out)
+        self.assertNotIn("- another line", out)
+        self.assertEqual(_extract_user_diff_text(template, template), "")
+
+    def test_heartbeat_new_tasks_appear_exactly_once(self):
+        """Regression (BUG-028): the base section merge already keeps the
+        user's Active Tasks section; the task-level pass must only fill in
+        MISSING tasks, not append every new task a second time."""
+        from ms_agent.agent_hub._defaults import get_defaults
+        from ms_agent.agent_hub._merge import merge_resources
+        src = get_defaults("qwenpaw")["HEARTBEAT.md"]
+        user = src.replace(
+            "## Active Tasks",
+            "## Active Tasks\n\n- [ ] MARK-TASK-NEW\n- [x] MARK-TASK-DONE")
+        r = merge_resources({"HEARTBEAT.md": user}, "qwenpaw", "nanobot",
+                            source_defaults=get_defaults("qwenpaw"),
+                            target_defaults=get_defaults("nanobot"))
+        txt = r.merged_files.get("HEARTBEAT.md", "")
+        self.assertEqual(txt.count("MARK-TASK-NEW"), 1)
+        # checkbox states preserved verbatim.
+        self.assertIn("- [ ] MARK-TASK-NEW", txt)
+        self.assertIn("- [x] MARK-TASK-DONE", txt)
+
+    def test_heartbeat_multiline_comment_lines_are_not_tasks(self):
+        """Regression (BUG-029): lines INSIDE a multi-line <!-- ... -->
+        comment must not be extracted as tasks (only the opener/closer used
+        to be excluded)."""
+        from ms_agent.agent_hub._merge import HeartbeatMerger
+        m = HeartbeatMerger()
+        tasks = m._extract_task_lines(
+            "<!--\ncomment A\ncomment B\n-->\n"
+            "- [ ] REAL\n<!-- single -->\nplain")
+        self.assertEqual(tasks, ["- [ ] REAL", "plain"])
+
+    def test_heartbeat_target_without_active_tasks_keeps_user_tasks(self):
+        """Regression (BUG-030): when the target template lacks an
+        '## Active Tasks' section, the user's tasks must land in a newly
+        created section instead of being silently dropped."""
+        from ms_agent.agent_hub._merge import HeartbeatMerger
+        r = HeartbeatMerger().merge(
+            "## Active Tasks\n\n- [ ] MARK-ORPHAN-TASK\n",
+            "## Active Tasks\n\n<!-- add -->\n",
+            "# Heartbeat\n\nno active tasks section here\n")
+        self.assertIn("- [ ] MARK-ORPHAN-TASK", r.content)
+        self.assertIn("## Active Tasks", r.content)
+        self.assertIn("no active tasks section here", r.content)
+
     def test_merge_appends_user_added_sections(self):
         user = "## Section A\nbody A\n## Custom Section\ncustom content"
         source_default = "## Section A\nbody A"

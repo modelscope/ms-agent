@@ -304,8 +304,12 @@ class _StoreStub:
             for p, c in self.STORE.items()
         ]
 
-    def download_repo_file(self, path, name, file_path):
-        return self.STORE[file_path]
+    def download_repo_file(self, path, name, file_path, revision="master",
+                           *, binary=False):
+        content = self.STORE[file_path]
+        raw = (content if isinstance(content, bytes) else
+               content.encode("utf-8"))
+        return raw if binary else raw.decode("utf-8", errors="replace")
 
 
 class _QwenpawAllStore(_StoreStub):
@@ -552,6 +556,137 @@ class TestFourFrameworkConvertMatrix(unittest.TestCase):
         self.assertIn("OC_MEM_MARKER", files["MEMORY.md"])
         # single-agent target: no agent-prefixed dirs.
         self.assertFalse(any("bot-a" in p for p in files))
+
+
+class TestQoderPersonaOutbound(unittest.TestCase):
+    """Converting OUT of qoder must not lose the per-agent persona file.
+
+    Regression: ``agents/<name>.md`` (the persona body of a file-per-agent
+    qoder sub-agent) is absent from the static semantic path map, so the
+    resolver carried it over under its original path and the target-spec
+    filter then dropped it -- persona lost on every qoder->X conversion
+    while X->qoder had a working fold-in. Now the source persona file is
+    flagged (identity_source) and folds into the target's persona/catch-all
+    file, surfaced as Merged.
+    """
+
+    PERSONA = "# persona\n\u540d\u5b57\uff1a\u6d4b\u8bd5\u67b6\u6784\u5e08\nGOLD-QODER-PERSONA\n"
+    SHARED = "# AGENTS.md\n## Shared Rules\n- GOLD-QODER-SHARED\n"
+
+    def _convert(self, target_fw: str):
+        """Run a real cmd_convert from an on-disk qoder workspace; return
+        {rel_path: content} of everything written under out_dir."""
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "src"
+            (src / "agents").mkdir(parents=True)
+            (src / "AGENTS.md").write_text(self.SHARED)
+            (src / "agents" / "test-architect.md").write_text(self.PERSONA)
+            out = Path(td) / "out"
+            rc = cmd_convert(
+                "qoder", target_fw,
+                from_name="test-architect", target_name="default",
+                local_dir=str(src), out_dir=str(out))
+            self.assertEqual(rc, 0)
+            return {
+                str(p.relative_to(out)): p.read_text()
+                for p in out.rglob("*") if p.is_file()
+            }
+
+    def test_persona_survives_to_every_target(self):
+        """RISK-001: all 6 outbound targets keep the persona body."""
+        expected_home = {
+            "hermes": "SOUL.md",
+            "openclaw": "workspace/AGENTS.md",
+            "qwenpaw": "workspaces/default/AGENTS.md",
+            "nanobot": "AGENTS.md",
+            "openhuman": "SOUL.md",
+            "ms-agent": "profile.md",
+        }
+        for target, home in expected_home.items():
+            files = self._convert(target)
+            holders = [p for p, c in files.items() if "GOLD-QODER-PERSONA" in c]
+            self.assertEqual(
+                holders, [home],
+                f"qoder->{target}: persona expected in {home}, got {holders}")
+            # shared AGENTS.md rules still migrate too.
+            self.assertTrue(
+                any("GOLD-QODER-SHARED" in c for c in files.values()),
+                f"qoder->{target}: shared rules lost")
+
+    def test_reverse_direction_not_regressed(self):
+        """hermes -> qoder still folds SOUL.md into agents/<target-name>.md."""
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "src"
+            src.mkdir()
+            (src / "SOUL.md").write_text("# Soul\nGOLD-HERMES-PERSONA\n")
+            out = Path(td) / "out"
+            rc = cmd_convert(
+                "hermes", "qoder",
+                from_name="default", target_name="test-architect",
+                local_dir=str(src), out_dir=str(out))
+            self.assertEqual(rc, 0)
+            persona = out / "agents" / "test-architect.md"
+            self.assertTrue(persona.is_file())
+            self.assertIn("GOLD-HERMES-PERSONA", persona.read_text())
+
+
+class TestHermesOptionalSkillsOutbound(unittest.TestCase):
+    """hermes ``optional-skills/`` must survive cross-framework conversion.
+
+    Regression (RISK-004): only the ``skills/`` prefix took the skill-import
+    route in merge_resources; ``optional-skills/`` fell through to the
+    generic branch, was carried over under its original path and then
+    dropped by the target-spec filter -- the whole optional skill tree
+    silently vanished on every hermes->X conversion while ``skills/``
+    migrated fine. Now it is normalized to ``skills/<name>/**`` cross-product.
+    """
+
+    def _make_src(self, td):
+        src = Path(td) / "src"
+        (src / "skills" / "daily-report").mkdir(parents=True)
+        (src / "optional-skills" / "git-helper").mkdir(parents=True)
+        (src / "SOUL.md").write_text("# Soul\npersona\n")
+        (src / "skills" / "daily-report" / "SKILL.md").write_text(
+            "GOLD-SKILL\n")
+        (src / "optional-skills" / "git-helper" / "SKILL.md").write_text(
+            "GOLD-HERMES-DEFAULT-OPTSKILL\n")
+        return src
+
+    def test_optional_skill_normalized_to_skills_on_every_target(self):
+        for target in ("openclaw", "qwenpaw", "nanobot", "openhuman",
+                       "qoder", "ms-agent"):
+            with tempfile.TemporaryDirectory() as td:
+                src = self._make_src(td)
+                out = Path(td) / "out"
+                rc = cmd_convert(
+                    "hermes", target,
+                    from_name="default", target_name="default",
+                    local_dir=str(src), out_dir=str(out))
+                self.assertEqual(rc, 0)
+                hits = [
+                    str(p.relative_to(out)) for p in out.rglob("*")
+                    if p.is_file() and "OPTSKILL" in p.read_text()
+                ]
+                # normalized under skills/<name>/, wherever the workspace root is.
+                self.assertEqual(
+                    len(hits), 1,
+                    f"hermes->{target}: optional skill lost or duplicated: {hits}")
+                self.assertIn("skills/git-helper/SKILL.md", hits[0])
+                self.assertNotIn("optional-skills", hits[0])
+
+    def test_same_framework_keeps_original_prefix(self):
+        """hermes -> hermes stays byte-faithful: optional-skills/ untouched."""
+        with tempfile.TemporaryDirectory() as td:
+            src = self._make_src(td)
+            out = Path(td) / "out"
+            rc = cmd_convert(
+                "hermes", "hermes",
+                from_name="default", target_name="default",
+                local_dir=str(src), out_dir=str(out))
+            self.assertEqual(rc, 0)
+            kept = out / "optional-skills" / "git-helper" / "SKILL.md"
+            self.assertTrue(kept.is_file())
+            self.assertIn("OPTSKILL", kept.read_text())
 
 
 if __name__ == "__main__":

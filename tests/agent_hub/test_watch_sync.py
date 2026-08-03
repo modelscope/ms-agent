@@ -25,6 +25,7 @@ import multiprocessing
 import os
 import shutil
 import signal
+import subprocess
 import sys
 import tempfile
 import time
@@ -328,7 +329,12 @@ class TestWatchSync(unittest.TestCase):
             proc = self._start_watch("qwenpaw", ALL_AGENT_NAME, local_dir, repo_name, push_only=False)
             self._wait_cycles(2)
 
-            remote = self.client.list_repo_files(self.username, repo_name)
+            # Poll instead of a single bare read: a freshly created repo may
+            # 404 for a few seconds on the server side (eventual consistency).
+            remote = self._eventually(
+                lambda: (lambda fl: fl if "bot-a/SOUL.md" in fl and "bot-b/SOUL.md" in fl else None)(
+                    self.client.list_repo_files(self.username, repo_name)),
+                desc="initial push visible on remote")
             self.assertIn("bot-a/SOUL.md", remote)
             self.assertIn("bot-b/SOUL.md", remote)
 
@@ -869,6 +875,74 @@ class TestWatchSync(unittest.TestCase):
             if proc:
                 self._stop_watch(proc)
             self._cleanup(local_dir)
+
+
+class TestStopDaemonTargeting(unittest.TestCase):
+    """``agent stop`` must only ever signal OUR watch daemon (BUG-014).
+
+    Offline: uses throwaway ``sleep`` child processes with crafted argv and
+    a temp-dir pid/stop file, no network or real daemon involved.
+    """
+
+    def _stop(self, tmp, pid_content=None):
+        from unittest import mock
+
+        from ms_agent.agent_hub import _watcher
+        tmp = Path(tmp)
+        if pid_content is not None:
+            (tmp / "watch.pid").write_text(str(pid_content))
+        with mock.patch.object(_watcher, "pid_file",
+                               return_value=tmp / "watch.pid"), \
+                mock.patch.object(_watcher, "stop_file",
+                                  return_value=tmp / "watch.stop"):
+            return _watcher.stop_daemon()
+
+    def test_unrelated_process_with_watch_text_survives(self):
+        """Regression: argv merely CONTAINING 'agent watch' used to get
+        SIGTERMed by the pgrep sweep."""
+        proc = subprocess.Popen([
+            sys.executable, "-c", "import time; time.sleep(60)", "ms-agent",
+            "agent", "watch", "-f", "nanobot"
+        ])
+        try:
+            time.sleep(0.5)
+            with tempfile.TemporaryDirectory() as td:
+                rc = self._stop(td)
+            time.sleep(0.5)
+            self.assertFalse(rc)  # cmd_stop prints 'No watch process running'
+            self.assertIsNone(proc.poll(), "unrelated process was killed")
+        finally:
+            proc.kill()
+
+    def test_real_daemon_marker_is_found_and_stopped(self):
+        """A process carrying the daemon's exact argv marker IS stopped."""
+        proc = subprocess.Popen([
+            sys.executable, "-c", "import time; time.sleep(60)",
+            "ms_agent.agent_hub._watcher", "_daemon", "/tmp/x.json"
+        ])
+        try:
+            time.sleep(0.5)
+            with tempfile.TemporaryDirectory() as td:
+                rc = self._stop(td)
+            time.sleep(1)
+            self.assertTrue(rc)
+            self.assertIsNotNone(proc.poll(), "daemon-marked process survived")
+        finally:
+            proc.kill()
+
+    def test_stale_pid_file_pointing_at_foreign_process(self):
+        """A recycled pid in the pid file must not be signalled."""
+        proc = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)"])
+        try:
+            time.sleep(0.5)
+            with tempfile.TemporaryDirectory() as td:
+                rc = self._stop(td, pid_content=proc.pid)
+            time.sleep(0.5)
+            self.assertFalse(rc)
+            self.assertIsNone(proc.poll(), "foreign pid-file pid was killed")
+        finally:
+            proc.kill()
 
 
 if __name__ == "__main__":

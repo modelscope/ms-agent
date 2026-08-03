@@ -51,9 +51,10 @@ GLOBAL_AGENT_NAME = '__global__'
 
 _SECRET_KEY_RE = re.compile(
     r'(?:^|[_-])'
-    r'(?:api[_-]?key|apikey|access[_-]?key|secret[_-]?key|client[_-]?secret|'
-    r'access[_-]?token|auth[_-]?token|token[_-]?file|'
-    r'key|token|secret|password|passwd|credentials?|sk)$',
+    r'(?:api[_-]?keys?|apikeys?|access[_-]?keys?|secret[_-]?keys?|'
+    r'client[_-]?secrets?|access[_-]?tokens?|auth[_-]?tokens?|token[_-]?file|'
+    r'authorization|bearer|cookies?|session[_-]?ids?|sessionids?|'
+    r'keys?|tokens?|secrets?|passwords?|passwd|credentials?|sk)$',
     re.IGNORECASE,
 )
 
@@ -84,10 +85,17 @@ def scrub_yaml_secrets(
       regardless of key name (that block is a free-form secret bag where API
       keys live under arbitrary names).
 
-    Lines that are not a simple ``key: <scalar>`` (comments, blank lines, list
-    items, mapping/block openers) are emitted verbatim. Flow-style mappings
-    (``env: {API_KEY: x}``) and block scalars are a known limitation of the
-    line-based approach and are left untouched.
+    Beyond simple ``key: <scalar>`` lines the scrubber also covers the other
+    legal spellings a secret can hide in:
+
+    * flow mappings (``llm: {api_key: X, model: y}``) -- secret pairs inside
+      the braces are cleared in place; an ``env: {...}`` flow mapping is
+      cleared wholesale;
+    * block/folded scalars (``api_key: |`` / ``>`` and their chomping
+      variants) -- the opener is blanked and the indented content lines that
+      carry the secret are dropped.
+
+    Comments, blank lines and non-secret lines are emitted verbatim.
 
     Shared by every framework whose config is YAML (hermes ``config.yaml``,
     ms-agent ``config.yaml`` / ``agent.yaml``) so they use one secret vocabulary.
@@ -95,13 +103,25 @@ def scrub_yaml_secrets(
     kv = re.compile(
         r'^(?P<indent>[ \t]*)(?P<key>[^\s:#][^:]*?)(?P<sep>[ \t]*:[ \t]*)'
         r'(?P<val>\S.*)?$')
+    flow_pair = re.compile(r'(?P<key>["\']?[\w.\-]+["\']?)(?P<sep>\s*:\s*)'
+                           r'(?P<val>[^,{}\[\]]+)')
+    block_opener = re.compile(r'^[|>][+-]?\d*$')
     # Indent of the active mcp-servers / nested ``env:`` block openers;
     # ``None`` means we are not currently inside that block.
     mcp_indent: int | None = None
     env_indent: int | None = None
+    # Inside a secret block scalar: drop lines indented deeper than this.
+    skip_indent: int | None = None
     out: list[str] = []
     for line in text.split('\n'):
         stripped = line.strip()
+        if skip_indent is not None:
+            if not stripped:
+                continue  # blank line inside the dropped block scalar
+            cur = len(line) - len(line.lstrip(' \t'))
+            if cur > skip_indent:
+                continue  # secret block-scalar content line: drop
+            skip_indent = None
         # Comments / blank lines never carry secrets nor change block scope.
         if not stripped or stripped.startswith('#'):
             out.append(line)
@@ -118,8 +138,35 @@ def scrub_yaml_secrets(
             mcp_indent = None
         key = m.group('key').strip()
         val = m.group('val')
-        has_scalar = val is not None and val.strip() not in ('|', '>', '{}',
-                                                             '[]')
+        in_env = env_indent is not None and indent > env_indent
+        secret_key = is_secret_key(key)
+        # Block/folded scalar opener (| / > + chomping variants): the secret
+        # lives on the FOLLOWING deeper-indented lines -- blank the key and
+        # drop that content.
+        if val is not None and block_opener.match(val.strip()):
+            if secret_key or in_env:
+                out.append(
+                    f"{m.group('indent')}{m.group('key')}{m.group('sep')}''")
+                skip_indent = indent
+            else:
+                out.append(line)
+            continue
+        # Flow mapping value: scrub secret pairs inside the braces. An
+        # ``env`` (or secret-named) flow mapping is a free-form secret bag ->
+        # clear every value in it.
+        if val is not None and val.lstrip().startswith(
+                '{') and val.strip() != '{}':
+            clear_all = secret_key or in_env or key == 'env'
+
+            def _repl(pm, _all=clear_all):
+                if _all or is_secret_key(pm.group('key').strip('"\'')):
+                    return f"{pm.group('key')}{pm.group('sep')}''"
+                return pm.group(0)
+
+            out.append(f"{m.group('indent')}{m.group('key')}{m.group('sep')}"
+                       f'{flow_pair.sub(_repl, val)}')
+            continue
+        has_scalar = val is not None and val.strip() not in ('{}', '[]')
         # A key with no scalar value opens a mapping/list block: track the
         # mcp-servers and nested ``env`` openers so their descendants can be
         # scoped, then emit the opener line unchanged.
@@ -130,8 +177,6 @@ def scrub_yaml_secrets(
                 env_indent = indent
             out.append(line)
             continue
-        secret_key = is_secret_key(key)
-        in_env = env_indent is not None and indent > env_indent
         if secret_key or in_env:
             out.append(
                 f"{m.group('indent')}{m.group('key')}{m.group('sep')}''")

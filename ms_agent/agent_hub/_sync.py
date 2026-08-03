@@ -56,10 +56,21 @@ def backup_local(spec, name: str) -> Path:
     """Zip all local agent files into a timestamped backup in the cache dir.
 
     Returns the path to the created zip file.
+
+    The timestamp is second-granular, so two backups within the same second
+    (e.g. convert + pre-restore in one scripted run) would collide and the
+    later write would OVERWRITE the earlier restore point (BUG-031). On
+    collision a ``-N`` suffix is appended INSIDE the time segment (never a
+    new ``_`` segment -- ``_parse_backup_meta`` relies on the stem's last
+    two ``_``-separated segments being date and time).
     """
     resources: dict[str, bytes] = spec.collect_bytes()
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     zip_path = cache_dir() / f'{name}_{timestamp}.zip'
+    seq = 2
+    while zip_path.exists():
+        zip_path = cache_dir() / f'{name}_{timestamp}-{seq}.zip'
+        seq += 1
     zip_path.write_bytes(zip_resources(resources))
     return zip_path
 

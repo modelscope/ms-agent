@@ -2,6 +2,7 @@
 """Section-level Markdown merge engine for cross-framework workspace migration."""
 from __future__ import annotations
 
+import difflib
 import re
 from dataclasses import dataclass, field
 
@@ -162,13 +163,21 @@ class SectionMerger:
         target_secs = self.parse_sections(target_default)
 
         actions = []
-        modified_titles = {sec.title for sec in modified}
-        modified_map = {sec.title: sec for sec in modified}
+        # Bucket modified sections BY TITLE INTO LISTS: a user file can
+        # legitimately contain several sections with the same heading, and a
+        # plain ``{title: sec}`` dict would keep only the last one, silently
+        # dropping the earlier bodies (BUG-025). When the target has that
+        # heading, ALL of the user's same-titled sections are placed there in
+        # their original order.
+        modified_by_title: dict[str, list[Section]] = {}
+        for sec in modified:
+            modified_by_title.setdefault(sec.title, []).append(sec)
 
         result_secs = []
         for tsec in target_secs:
-            if tsec.title in modified_titles:
-                result_secs.append(modified_map[tsec.title])
+            if tsec.title and modified_by_title.get(tsec.title):
+                user_secs = modified_by_title.pop(tsec.title)
+                result_secs.extend(user_secs)
                 actions.append(
                     MergeAction(
                         path='',
@@ -176,18 +185,15 @@ class SectionMerger:
                         detail=
                         f"Section '{tsec.title}' -- user modification preserved",
                     ))
-            elif not tsec.title and '' in modified_titles:
-                preamble_sec = modified_map.get('')
-                if preamble_sec:
-                    result_secs.append(preamble_sec)
-                    actions.append(
-                        MergeAction(
-                            path='',
-                            action='user_modified',
-                            detail='Preamble -- user modification preserved',
-                        ))
-                else:
-                    result_secs.append(tsec)
+            elif not tsec.title and modified_by_title.get(''):
+                preamble_sec = modified_by_title.pop('')[0]
+                result_secs.append(preamble_sec)
+                actions.append(
+                    MergeAction(
+                        path='',
+                        action='user_modified',
+                        detail='Preamble -- user modification preserved',
+                    ))
             else:
                 result_secs.append(tsec)
                 if tsec.title:
@@ -228,13 +234,30 @@ class HeartbeatMerger(SectionMerger):
     ACTIVE_TASKS_TITLE = '## Active Tasks'
 
     def _extract_task_lines(self, body: str) -> list[str]:
-        """Extract non-empty, non-comment lines from a section body."""
+        """Extract non-empty, non-comment lines from a section body.
+
+        Tracks multi-line ``<!-- ... -->`` comments: every line inside the
+        comment is skipped, not just the opener/closer -- otherwise the
+        middle lines of a user's block comment get treated as tasks and
+        inserted into the task area (BUG-029).
+        """
         lines = []
+        in_comment = False
         for line in body.split('\n'):
             stripped = line.strip()
-            if stripped and not stripped.startswith(
-                    '<!--') and not stripped.endswith('-->'):
-                lines.append(line)
+            if not stripped:
+                continue
+            if in_comment:
+                if '-->' in stripped:
+                    in_comment = False
+                continue
+            if stripped.startswith('<!--'):
+                if '-->' not in stripped:
+                    in_comment = True
+                continue
+            if stripped.endswith('-->'):
+                continue
+            lines.append(line)
         return lines
 
     def merge(
@@ -275,13 +298,23 @@ class HeartbeatMerger(SectionMerger):
         result_secs = self.parse_sections(result.content)
         for i, sec in enumerate(result_secs):
             if sec.title == self.ACTIVE_TASKS_TITLE:
+                # The base section merge may already have preserved the
+                # user's whole Active Tasks section (it counts as modified),
+                # in which case the new tasks are ALREADY in the result --
+                # appending them again would duplicate every task (BUG-028).
+                # Only insert the ones actually missing.
+                present = set(line.strip()
+                              for line in self._extract_task_lines(sec.body))
+                missing = [t for t in new_tasks if t.strip() not in present]
+                if not missing:
+                    return result
                 body_lines = sec.body.split('\n')
                 insert_idx = len(body_lines)
                 for j, line in enumerate(body_lines):
                     if '<!--' in line and j > 0:
                         insert_idx = j + 1
                         break
-                for task in new_tasks:
+                for task in missing:
                     body_lines.insert(insert_idx, task)
                     insert_idx += 1
                 result_secs[i] = Section(
@@ -289,6 +322,16 @@ class HeartbeatMerger(SectionMerger):
                     body='\n'.join(body_lines),
                 )
                 break
+        else:
+            # Target template has no ``## Active Tasks`` section at all --
+            # without a landing spot the user's tasks would be silently
+            # dropped (BUG-030). Create the section at the end so the tasks
+            # stay traceable in the merged file.
+            result_secs.append(
+                Section(
+                    title=self.ACTIVE_TASKS_TITLE,
+                    body='\n' + '\n'.join(new_tasks) + '\n',
+                ))
 
         result.content = self.sections_to_content(result_secs)
         result.actions.append(
@@ -553,18 +596,29 @@ def _resolve_target_path(source_product: str, source_path: str,
 
 
 def _extract_user_diff_text(user_content: str, source_default: str) -> str:
-    """Extract user customizations as a text block."""
+    """Extract user customizations as a text block.
+
+    Uses a positional line diff (not a global line-membership set): a user's
+    own paragraph may legitimately REUSE a line that also appears somewhere
+    in the template, and a set-based filter would delete it out of the middle
+    of the user's paragraph (BUG-026). The sequence diff only removes lines
+    where they positionally correspond to the template; the same text inside
+    a user-inserted block is kept intact.
+    """
     if not source_default.strip():
         return user_content.strip()
 
     user_lines = user_content.strip().split('\n')
     default_lines = source_default.strip().split('\n')
-    default_set = set(line.strip() for line in default_lines)
+    matcher = difflib.SequenceMatcher(
+        a=[line.strip() for line in default_lines],
+        b=[line.strip() for line in user_lines],
+        autojunk=False)
 
     diff_lines = []
-    for line in user_lines:
-        if line.strip() and line.strip() not in default_set:
-            diff_lines.append(line)
+    for tag, _i1, _i2, j1, j2 in matcher.get_opcodes():
+        if tag in ('insert', 'replace'):
+            diff_lines.extend(user_lines[j1:j2])
 
     return '\n'.join(diff_lines).strip()
 
@@ -594,6 +648,7 @@ def merge_resources(
     existing_skills: list[str] | None = None,
     fill_missing_defaults: bool = True,
     overflow_target: str | None = None,
+    identity_source: str | None = None,
 ) -> FullMergeResult:
     """Merge incoming resources into a target product workspace.
 
@@ -614,6 +669,13 @@ def merge_resources(
             targets (e.g. qoder ``agents/{name}.md``) so a converted persona
             lands in its own sub-agent file rather than polluting the shared
             ``AGENTS.md``.
+        identity_source: the SOURCE's per-agent persona file (file-per-agent
+            source, e.g. qoder ``agents/<name>.md``).  Its name embeds the
+            agent name so it can never appear in the static semantic path
+            map; without this hint the fallback would carry it over under its
+            original path and the target-spec filter would then drop it --
+            losing the persona.  Marking it here forces the overflow/catch-all
+            route (mirror of *overflow_target* for the outbound direction).
     """
     is_cross_product = source_product != target_product
     existing_skill_set = set(existing_skills or [])
@@ -629,9 +691,16 @@ def merge_resources(
     overflow_blocks: list[tuple[str, str]] = []
 
     for path, content in incoming.items():
-        # Skills: direct import, skip if exists
-        if path.startswith('skills/'):
-            parts = path.split('/')
+        # Skills: direct import, skip if exists.  Hermes' official
+        # ``optional-skills/`` tree is structurally identical to ``skills/``;
+        # cross-product it is normalized to ``skills/`` (no other framework
+        # has an optional-skills slot, so keeping the prefix would get the
+        # whole tree dropped by the target-spec filter downstream).
+        skill_path = path
+        if is_cross_product and path.startswith('optional-skills/'):
+            skill_path = 'skills/' + path[len('optional-skills/'):]
+        if skill_path.startswith('skills/'):
+            parts = skill_path.split('/')
             skill_name = parts[1] if len(parts) > 1 else ''
             if skill_name in existing_skill_set:
                 result.actions.append(
@@ -642,17 +711,25 @@ def merge_resources(
                         f"Skill '{skill_name}' already exists on target, skipped",
                     ))
                 continue
-            result.merged_files[path] = content
+            result.merged_files[skill_path] = content
             result.actions.append(
                 MergeAction(
-                    path=path,
+                    path=skill_path,
                     action='import',
-                    detail='Skill imported',
+                    detail='Skill imported' if skill_path == path else
+                    f'Optional skill imported (from {path})',
                 ))
             continue
 
-        target_path = _resolve_target_path(source_product, path,
-                                           target_product)
+        # The source's per-agent persona file (dynamic name, absent from the
+        # static path map): force the no-equivalent route so it folds into the
+        # target's persona file instead of being carried over verbatim and
+        # dropped by the target-spec filter downstream.
+        if is_cross_product and identity_source and path == identity_source:
+            target_path = None
+        else:
+            target_path = _resolve_target_path(source_product, path,
+                                               target_product)
 
         if target_path is None:
             if path.startswith('memory/') or path.startswith(

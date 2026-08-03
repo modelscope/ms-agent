@@ -415,10 +415,15 @@ def daemonize(target, *args, **kwargs):
     pf.write_text(str(proc.pid), encoding='utf-8')
 
 
+# Process-discovery pattern for OUR daemon only.  ``daemonize`` starts the
+# daemon as ``<python> -m ms_agent.agent_hub._watcher _daemon <params.json>``,
+# so this exact argv marker uniquely identifies it.  Broad substrings like
+# ``'agent watch'`` must NEVER be used here: they match any unrelated process
+# whose command line happens to contain the text (a user's script, an editor
+# session...) and ``stop_daemon`` would SIGTERM it (BUG-014) -- while never
+# matching the real daemon, whose argv contains no such text.
 _DEFAULT_WATCH_PATTERNS = [
-    'agent watch',
-    'ms agent watch',
-    'modelscope agent watch',
+    'ms_agent.agent_hub._watcher _daemon',
 ]
 
 
@@ -438,9 +443,18 @@ def stop_daemon(extra_patterns: list[str] | None = None) -> bool:
     if pf.exists():
         try:
             tracked_pid = int(pf.read_text(encoding='utf-8').strip())
-            if hasattr(os, 'fork'):
-                os.kill(tracked_pid, signal.SIGTERM)
-            stopped = True
+            # A pid file can go stale (daemon died, OS reused the pid for an
+            # unrelated process) -- verify the process identity before
+            # signalling it.  If it is not our daemon, never signal it: the
+            # stop-file above is the primary mechanism anyway, so skipping
+            # the signal can at worst delay a real daemon's exit, while a
+            # wrong SIGTERM would kill a user's unrelated process.
+            if not _pid_is_watch_daemon(tracked_pid):
+                tracked_pid = None
+            else:
+                if hasattr(os, 'fork'):
+                    os.kill(tracked_pid, signal.SIGTERM)
+                stopped = True
         except (ValueError, OSError, ProcessLookupError):
             tracked_pid = None
 
@@ -471,6 +485,37 @@ def stop_daemon(extra_patterns: list[str] | None = None) -> bool:
     sf.unlink(missing_ok=True)
 
     return stopped or tracked_pid is not None
+
+
+def _pid_is_watch_daemon(pid: int) -> bool:
+    """Return True only if *pid*'s command line is OUR watch daemon.
+
+    Guards every signal sent to a pid-file pid: pids get recycled by the OS,
+    so an unverified kill could hit an unrelated user process. Any lookup
+    failure returns False (fail-safe: the stop-file still makes a real
+    daemon exit on its next poll).
+    """
+    marker = _DEFAULT_WATCH_PATTERNS[0]
+    try:
+        if hasattr(os, 'fork'):
+            result = subprocess.run(
+                ['ps', '-p', str(pid), '-o', 'command='],
+                capture_output=True,
+                text=True,
+                timeout=5)
+        else:
+            result = subprocess.run(
+                [
+                    'wmic', 'process', 'where', f'processid={int(pid)}', 'get',
+                    'commandline'
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        return result.returncode == 0 and marker in result.stdout
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return False
 
 
 def _find_watch_pids(extra_patterns: list[str] | None = None) -> list[int]:

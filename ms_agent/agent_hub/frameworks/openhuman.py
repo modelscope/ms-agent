@@ -72,15 +72,65 @@ class OpenhumanWorkspace(WorkspaceSpec):
     def _scrub_toml_secrets(self, text: str) -> str:
         # Allow dotted keys (``model.api_key = ...``) and test the last segment
         # so ``a.b.api_key`` is caught, not just a bare top-level ``api_key``.
+        # Beyond simple ``key = <scalar>`` lines this also covers:
+        # * inline tables  ``provider = { api_key = "X" }`` (incl. nested) --
+        #   secret pairs inside the braces are cleared in place;
+        # * arrays         ``tokens = ["X"]`` -> ``tokens = []``;
+        # * multi-line strings (``secret = '''`` / ``\"\"\"``) -- the opener is
+        #   blanked and the content lines up to the closing delimiter dropped.
         pattern = re.compile(
-            r'^(?P<pre>\s*(?P<key>[A-Za-z0-9_.-]+)\s*=\s*).*$')
+            r'^(?P<pre>\s*(?P<key>[A-Za-z0-9_.-]+)\s*=\s*)(?P<val>.*)$')
+        inline_pair = re.compile(r'(?P<key>[A-Za-z0-9_.-]+)(?P<sep>\s*=\s*)'
+                                 r'(?P<val>"[^"]*"|\'[^\']*\'|[^,{}\s][^,}]*)')
         out: list[str] = []
-        for line in text.split('\n'):
+        lines = text.split('\n')
+        i = 0
+        while i < len(lines):
+            line = lines[i]
             m = pattern.match(line)
-            if m and is_secret_key(m.group('key').split('.')[-1]):
-                out.append(m.group('pre') + '""')
-            else:
+            if not m:
                 out.append(line)
+                i += 1
+                continue
+            key = m.group('key').split('.')[-1]
+            val = m.group('val')
+            vstrip = val.strip()
+            if is_secret_key(key):
+                # Multi-line string: blank the opener and drop content lines
+                # up to (and including) the closing delimiter.
+                delim = next((d for d in ('"""', "'''")
+                              if vstrip.startswith(d) and vstrip.count(d) < 2),
+                             None)
+                if delim:
+                    out.append(m.group('pre') + '""')
+                    i += 1
+                    while i < len(lines) and delim not in lines[i]:
+                        i += 1
+                    i += 1  # skip the closing-delimiter line
+                    continue
+                if vstrip.startswith('['):
+                    out.append(m.group('pre') + '[]')
+                    if ']' not in vstrip:  # multi-line array
+                        i += 1
+                        while i < len(lines) and ']' not in lines[i]:
+                            i += 1
+                    i += 1
+                    continue
+                out.append(m.group('pre') + '""')
+                i += 1
+                continue
+            # Non-secret key: still scrub secret pairs inside inline tables
+            # (``provider = { api_key = "X" }``, nested tables included).
+            if '{' in vstrip:
+                out.append(
+                    m.group('pre') + inline_pair.sub(
+                        lambda pm: f"{pm.group('key')}{pm.group('sep')}\"\""
+                        if is_secret_key(pm.group('key').split('.')[-1]) else
+                        pm.group(0), val))
+                i += 1
+                continue
+            out.append(line)
+            i += 1
         return '\n'.join(out)
 
 

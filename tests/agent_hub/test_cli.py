@@ -46,8 +46,13 @@ class _RepoStub:
             for p, c in self.STORE.items()
         ]
 
-    def download_repo_file(self, path, name, file_path):
-        return self.STORE[file_path]
+    def download_repo_file(self, path, name, file_path, revision="master",
+                           *, binary=False):
+        # Mirrors the real SDK: binary=True returns raw bytes, the default
+        # text mode decodes (and would corrupt non-UTF-8 binary content).
+        content = self.STORE[file_path]
+        raw = content if isinstance(content, bytes) else content.encode("utf-8")
+        return raw if binary else raw.decode("utf-8", errors="replace")
 
 
 # ---------------------------------------------------------------------------
@@ -698,6 +703,105 @@ class TestRestoreBehaviour(unittest.TestCase):
         self.assertEqual(fw, "qwenpaw")
         self.assertEqual(nm, "")
 
+    @mock.patch("pathlib.Path.home")
+    @mock.patch("ms_agent.agent_hub._sync.cache_dir")
+    @mock.patch("ms_agent.agent_hub._cache.cache_dir")
+    def test_restore_untrusted_zip_filtered_and_sanitized(self, mock_cache, mock_sync_cache, mock_home):
+        """Regression (BUG-013): restore must apply the same inbound rules as
+        download -- spec filtering (no foreign scripts / hidden credential
+        files written) plus inbound sanitize (no plaintext keys on disk)."""
+        mock_cache.return_value = self.cache_dir
+        mock_sync_cache.return_value = self.cache_dir
+        mock_home.return_value = self.home
+        agent_dir = self.ws / "bot-x"
+        agent_dir.mkdir()
+        self._make_backup(
+            "qwenpaw_bot-x_20260726_090000",
+            {
+                "SOUL.md": "# soul\nrestored.\n",
+                "agent.json": '{"id": "bot-x", "model": '
+                              '{"api_key": "SENTINEL-BUG013-KEY"}}',
+                "run_me.sh": "#!/bin/sh\necho pwned\n",
+                ".hidden_token": "SENTINEL-BUG013-SECRET\n",
+                "../escape.md": "outside\n",
+            },
+        )
+        rc = cmd_recover(target="qwenpaw_bot-x_20260726_090000",
+                         framework="qwenpaw", name="bot-x")
+        self.assertEqual(rc, 0)
+        written = {p.name for p in agent_dir.rglob("*") if p.is_file()}
+        # spec-listed files restored; foreign files rejected.
+        self.assertIn("SOUL.md", written)
+        self.assertNotIn("run_me.sh", written)
+        self.assertNotIn(".hidden_token", written)
+        self.assertNotIn("escape.md", written)
+        # inbound sanitize ran: the plaintext key never reached disk.
+        self.assertNotIn("SENTINEL-BUG013-KEY",
+                         (agent_dir / "agent.json").read_text())
+
+    def test_backup_meta_anchors_on_registered_framework_names(self):
+        """Regression (BUG-032): 'ms-agent' contains the '-' delimiter, so
+        parsing must anchor on registered framework names (longest first)
+        instead of splitting on the first delimiter."""
+        from ms_agent.agent_hub._commands import _parse_backup_meta
+        cases = {
+            "ms-agent-default_20260726_101010": ("ms-agent", "default"),
+            "ms-agent_20260726_101010": ("ms-agent", ""),
+            "ms-agent_default_20260726_101010": ("ms-agent", "default"),
+            "nanobot_default_20260726_101010": ("nanobot", "default"),
+            "qwenpaw_paw_qa_01_20260726_101010": ("qwenpaw", "paw_qa_01"),
+            "nanobot_default_20260731_133225-2": ("nanobot", "default"),
+            "unknownfw_myname_20260726_101010": ("unknownfw", "myname"),
+        }
+        for stem, expected in cases.items():
+            self.assertEqual(_parse_backup_meta(stem), expected, stem)
+
+    @mock.patch("ms_agent.agent_hub._sync.cache_dir")
+    def test_same_second_backups_do_not_overwrite(self, mock_sync_cache):
+        """Regression (BUG-031): two backups within the same second must get
+        distinct filenames (``-N`` inside the time segment), keeping every
+        restore point, and the suffix must not break filename parsing."""
+        import io
+        import zipfile as zf
+
+        from ms_agent.agent_hub._commands import _parse_backup_meta
+        from ms_agent.agent_hub._sync import backup_local
+        cache = Path(self.tmp.name) / "bk_cache"
+        cache.mkdir(exist_ok=True)
+        mock_sync_cache.return_value = cache
+        root = Path(self.tmp.name) / "bk_ws"
+        root.mkdir()
+        (root / "SOUL.md").write_text("V1\n")
+        spec = build_spec("nanobot", "default", str(root))
+        p1 = backup_local(spec, "nanobot_default")
+        (root / "SOUL.md").write_text("V2\n")
+        p2 = backup_local(spec, "nanobot_default")
+        self.assertNotEqual(p1, p2)
+        v1 = zf.ZipFile(io.BytesIO(p1.read_bytes())).read("SOUL.md").decode()
+        self.assertEqual(v1.strip(), "V1")  # first restore point intact
+        self.assertEqual(_parse_backup_meta(p2.stem), ("nanobot", "default"))
+
+    @mock.patch("pathlib.Path.home")
+    @mock.patch("ms_agent.agent_hub._sync.cache_dir")
+    @mock.patch("ms_agent.agent_hub._cache.cache_dir")
+    def test_restore_corrupt_zip_fails_cleanly(self, mock_cache, mock_sync_cache, mock_home):
+        """Regression (BUG-019): a corrupt / non-zip backup crashed with a
+        raw BadZipFile traceback. It must _fail with a readable message and
+        must not touch the workspace (no pre-restore backup, no deletes)."""
+        mock_cache.return_value = self.cache_dir
+        mock_sync_cache.return_value = self.cache_dir
+        mock_home.return_value = self.home
+        agent_dir = self.ws / "bot-x"
+        agent_dir.mkdir()
+        (agent_dir / "SOUL.md").write_text("# existing")
+        bad = self.cache_dir / "qwenpaw_bot-x_20260726_090000.zip"
+        bad.write_text("NOT-A-ZIP")
+        rc = cmd_recover(target=bad.name, framework="qwenpaw", name="bot-x")
+        self.assertEqual(rc, 1)
+        self.assertEqual((agent_dir / "SOUL.md").read_text(), "# existing")
+        # No pre-restore backup was produced before the rejection.
+        self.assertEqual(list(self.cache_dir.glob("*.zip")), [bad])
+
 
 # ---------------------------------------------------------------------------
 # Download command tests (stubbed client)
@@ -789,6 +893,112 @@ class TestDownload(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertTrue((self.out / "memories" / "USER.md").is_file())
         self.assertFalse((self.out / "USER.md").is_file())
+
+    @mock.patch("ms_agent.agent_hub._commands.AgentApi", _DownloadStub)
+    def test_download_binary_asset_byte_faithful(self):
+        """Regression (BUG-015): downloads went through text mode, so a
+        binary asset's non-UTF-8 bytes (PNG magic ``\\x89``) got mangled by
+        decode/re-encode. Downloads must be byte-faithful."""
+        png = b"\x89PNG\r\n\x1a\nopenhuman"
+        orig_store = _DownloadStub.STORE.copy()
+        _DownloadStub.STORE = {
+            "SOUL.md": "soul",
+            "skills/draw/assets/pic.png": png,
+        }
+        try:
+            rc = cmd_download(
+                framework="nanobot", repo="nano",
+                local_dir=str(self.out),
+                endpoint="http://s", token="tok", username="u",
+            )
+            self.assertEqual(rc, 0)
+            written = (self.out / "skills" / "draw" / "assets"
+                       / "pic.png").read_bytes()
+            self.assertEqual(written, png)
+            # Text files still round-trip as text.
+            self.assertEqual((self.out / "SOUL.md").read_text(), "soul")
+        finally:
+            _DownloadStub.STORE = orig_store
+
+    @mock.patch("ms_agent.agent_hub._sync.cache_dir")
+    @mock.patch("ms_agent.agent_hub._commands.AgentApi", _DownloadStub)
+    def test_existing_skill_not_overwritten(self, mock_sync_cache):
+        """Regression (BUG-024): cross-framework convert/download must skip a
+        skill the target already has instead of silently overwriting it."""
+        from ms_agent.agent_hub._commands import cmd_convert
+        cache = Path(self.tmp.name) / "cache"
+        cache.mkdir(exist_ok=True)
+        mock_sync_cache.return_value = cache
+        # convert path: target dst already has skills/demo with own content.
+        src = Path(self.tmp.name) / "cv_src"
+        (src / "skills" / "demo").mkdir(parents=True)
+        (src / "SOUL.md").write_text("# soul")
+        (src / "skills" / "demo" / "SKILL.md").write_text("SRC VERSION")
+        dst = Path(self.tmp.name) / "cv_dst"
+        (dst / "skills" / "demo").mkdir(parents=True)
+        (dst / "skills" / "demo" / "SKILL.md").write_text("TARGET VERSION")
+        rc = cmd_convert("hermes", "nanobot", from_name="default",
+                         local_dir=str(src), out_dir=str(dst))
+        self.assertEqual(rc, 0)
+        self.assertEqual(
+            (dst / "skills" / "demo" / "SKILL.md").read_text(),
+            "TARGET VERSION")
+        # download path: local workspace already has skills/demo.
+        dl = Path(self.tmp.name) / "dl_ws"
+        (dl / "skills" / "demo").mkdir(parents=True)
+        (dl / "skills" / "demo" / "SKILL.md").write_text("LOCAL VERSION")
+        orig_store = _DownloadStub.STORE.copy()
+        _DownloadStub.STORE = {
+            "SOUL.md": "soul",
+            "skills/demo/SKILL.md": "REMOTE VERSION",
+        }
+        try:
+            rc = cmd_download(
+                framework="hermes", repo="h", target="nanobot",
+                local_dir=str(dl),
+                endpoint="http://s", token="tok", username="u")
+        finally:
+            _DownloadStub.STORE = orig_store
+        self.assertEqual(rc, 0)
+        self.assertEqual(
+            (dl / "skills" / "demo" / "SKILL.md").read_text(),
+            "LOCAL VERSION")
+
+    @mock.patch("ms_agent.agent_hub._commands.AgentApi", _DownloadStub)
+    def test_download_convert_parity_with_local_convert(self):
+        """Regression (BUG-020): ``download --target-framework`` must produce
+        the SAME file set as a local ``convert`` -- same persona routing for
+        file-per-agent targets (agents/<name>.md, no shared AGENTS.md
+        pollution) and no invented target default templates."""
+        from ms_agent.agent_hub._commands import cmd_convert
+        src = Path(self.tmp.name) / "src"
+        src.mkdir()
+        for rel, content in _DownloadStub.STORE.items():
+            p = src / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(content)
+        for target, kwargs in (("qoder", {"name": "myagent"}),
+                               ("hermes", {})):
+            dl = Path(self.tmp.name) / f"dl_{target}"
+            cv = Path(self.tmp.name) / f"cv_{target}"
+            rc = cmd_download(
+                framework="nanobot", repo="nano", target=target,
+                local_dir=str(dl),
+                endpoint="http://s", token="tok", username="u", **kwargs)
+            self.assertEqual(rc, 0)
+            rc = cmd_convert(
+                "nanobot", target, from_name="default",
+                target_name=kwargs.get("name"),
+                local_dir=str(src), out_dir=str(cv))
+            self.assertEqual(rc, 0)
+            dl_files = sorted(
+                str(p.relative_to(dl)) for p in dl.rglob("*") if p.is_file())
+            cv_files = sorted(
+                str(p.relative_to(cv)) for p in cv.rglob("*") if p.is_file())
+            self.assertEqual(dl_files, cv_files, f"target={target}")
+        # file-per-agent target: persona landed in its private file.
+        self.assertTrue((Path(self.tmp.name) / "dl_qoder" / "agents"
+                         / "myagent.md").is_file())
 
     def test_download_without_login_fails(self):
         rc = cmd_download(
@@ -1024,6 +1234,33 @@ class TestConvert(unittest.TestCase):
             local_dir=str(self.src / "missing"),
         )
         self.assertEqual(rc, 1)
+
+    @mock.patch("ms_agent.agent_hub._sync.cache_dir")
+    def test_convert_twice_is_idempotent(self, mock_sync_cache):
+        """Regression (BUG-027): re-running convert into the same out-dir
+        must neither duplicate the '## Imported from' overflow block nor
+        wipe the previously migrated user content down to zero."""
+        from ms_agent.agent_hub._defaults import get_defaults
+        cache = Path(self.tmp.name) / "cache"
+        cache.mkdir(exist_ok=True)
+        mock_sync_cache.return_value = cache
+        root = Path(self.tmp.name) / "qp"
+        ws = root / "workspaces" / "default"
+        ws.mkdir(parents=True)
+        (ws / "PROFILE.md").write_text(
+            get_defaults("qwenpaw")["PROFILE.md"]
+            + "\n\n## My Marker\n\nMRGMARKER\n")
+        (ws / "SOUL.md").write_text("# soul\nCUSTOM SOUL\n")
+        out = Path(self.tmp.name) / "oc"
+        for _ in range(2):
+            rc = cmd_convert(
+                source_fw="qwenpaw", target_fw="openclaw",
+                from_name="default",
+                local_dir=str(root), out_dir=str(out))
+            self.assertEqual(rc, 0)
+        agents = (out / "workspace" / "AGENTS.md").read_text()
+        self.assertEqual(agents.count("## Imported from"), 1)
+        self.assertEqual(agents.count("MRGMARKER"), 1)
 
 
 class TestFrameworkUploadCoverage(unittest.TestCase):

@@ -91,5 +91,32 @@ class MsAgentWorkspace(WorkspaceSpec):
                 data, ensure_ascii=False, indent=2).encode('utf-8')
         return content
 
+    def sanitize_outbound_file(self, rel_path: str, content: bytes) -> bytes:
+        """Fail-closed upload sanitize for the secret-bearing config files.
+
+        The inbound hook passes malformed content through verbatim (a broken
+        remote file adds no new exposure when written to disk), but on UPLOAD
+        that same pass-through would push the user's plaintext keys into the
+        remote repo's git history. So a config file we cannot parse -- and
+        therefore cannot verify as secret-free -- is refused here instead.
+        """
+        if rel_path == 'settings.json':
+            try:
+                json.loads(content)
+            except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+                raise ValueError(
+                    f'{rel_path} is not valid JSON; cannot verify it is free '
+                    f'of secrets -- refusing to upload it. Fix the file and '
+                    f'retry.')
+        elif rel_path in ('config.yaml', 'agent.yaml'):
+            try:
+                content.decode('utf-8')
+            except UnicodeDecodeError:
+                raise ValueError(
+                    f'{rel_path} is not valid UTF-8; cannot verify it is '
+                    f'free of secrets -- refusing to upload it. Fix the file '
+                    f'and retry.')
+        return self.sanitize_inbound_file(rel_path, content)
+
 
 register_framework('ms-agent', MsAgentWorkspace)

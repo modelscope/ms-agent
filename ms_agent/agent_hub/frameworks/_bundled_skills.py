@@ -23,11 +23,14 @@ class BundledSkillFilterMixin:
 
     A ``skills/<dir>/`` is treated as framework-provided when its ``SKILL.md``
     frontmatter carries any of: a ``name`` listed in the sibling
-    ``.bundled_manifest`` (Hermes's content library); a top-level ``license``
-    field (the proprietary document skills); a ``builtin_skill_version`` field;
-    or a ``metadata`` block containing ``copaw`` / ``qwenpaw`` /
-    ``builtin_skill_version``. User skills carry none of these and are the only
-    ones kept. Only the ``skills/`` tree is filtered (Hermes's
+    ``.bundled_manifest`` (Hermes's content library); a ``builtin_skill_version``
+    field; or a ``metadata`` block whose nested product entry carries install
+    hints (``emoji``/``requires``/``install``). User skills carry none of these
+    and are the only ones kept. A bare ``license`` field or a bare
+    ``metadata.<product>`` key is deliberately NOT a marker: both appear on
+    user-authored skills (open-source license, custom per-product parameters)
+    and treating them as "bundled" silently dropped those skills
+    (BUG-021/BUG-022). Only the ``skills/`` tree is filtered (Hermes's
     ``optional-skills/`` is left untouched).
     """
 
@@ -70,6 +73,13 @@ class BundledSkillFilterMixin:
 
     def _is_framework_skill(self, skill_md: Path, bundled: frozenset) -> bool:
         """True when a ``SKILL.md`` is framework-provided (not user-authored)."""
+        # The manifest declaration is authoritative and must not depend on
+        # the frontmatter being parseable: a bundled skill whose YAML got
+        # corrupted would otherwise fail open into "user skill" and have its
+        # whole asset tree uploaded (BUG-023). The directory name IS the
+        # skill name in the manifest convention.
+        if skill_md.parent.name in bundled:
+            return True
         try:
             text = skill_md.read_text(encoding='utf-8')
         except OSError:
@@ -87,17 +97,18 @@ class BundledSkillFilterMixin:
         name = meta.get('name')
         if isinstance(name, str) and name.strip() in bundled:
             return True
-        if 'license' in meta or 'builtin_skill_version' in meta:
+        if 'builtin_skill_version' in meta:
             return True
         md = meta.get('metadata')
         if isinstance(md, dict):
-            # Bundled skills carry a metadata block that is either keyed by a
-            # product name (copaw/qwenpaw/openclaw) or holds a
-            # ``builtin_skill_version``; the nested product value carries
-            # install hints (``emoji``/``requires``/``install``). User skills
-            # have no such block.
-            if 'builtin_skill_version' in md or (
-                    md.keys() & {'copaw', 'qwenpaw', 'openclaw'}):
+            # Bundled skills carry a metadata block holding a
+            # ``builtin_skill_version``, or keyed by a product name
+            # (copaw/qwenpaw/openclaw) whose nested value carries install
+            # hints (``emoji``/``requires``/``install``). A product-name key
+            # ALONE is not enough (BUG-022): users legitimately store custom
+            # parameters under ``metadata.<product>``, so only the nested
+            # install-hint shape marks a skill as framework-provided.
+            if 'builtin_skill_version' in md:
                 return True
             for v in md.values():
                 if isinstance(v, dict) and (v.keys() & _BUNDLED_SKILL_KEYS):
