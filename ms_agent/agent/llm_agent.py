@@ -40,7 +40,8 @@ from ms_agent.ui.events import (ContentDelta, ContentEnd, ContextCompacted,
                                 ReasoningDelta, ReasoningEnded,
                                 ReasoningStarted, ToolCallCompleted,
                                 ToolCallStarted, TurnCompleted, UsageInfo)
-from ms_agent.utils import async_retry, read_history, save_history
+from ms_agent.utils import (async_retry, is_retryable_error, read_history,
+                            save_history)
 from ms_agent.utils.constants import DEFAULT_TAG, DEFAULT_USER
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.snapshot import take_snapshot
@@ -1535,7 +1536,11 @@ class LLMAgent(Agent):
         messages.append(Message(role='user', content=body))
         return messages
 
-    @async_retry(max_attempts=Agent.retry_count, delay=1.0)
+    # retry_if: a hard 4xx (bad payload, content filter, auth) is a verdict on
+    # the request, not a transient fault — retrying it 5× only adds ~40s of
+    # backoff before the same failure surfaces.
+    @async_retry(
+        max_attempts=Agent.retry_count, delay=1.0, retry_if=is_retryable_error)
     async def step(
         self, messages: List[Message]
     ) -> AsyncGenerator[List[Message], Any]:  # type: ignore
