@@ -1,0 +1,12 @@
+.pov-tabs-scroll-content .ant-tabs-content-holder {
+    height: 100%;
+}
+
+.pov-tabs-scroll-content .ant-tabs-content {
+    height: 100%;
+    overflow-y: auto;
+}
+
+.pov-table-no-last-border .ant-table-tbody>tr:last-child>td {
+    border-bottom: 0;
+}

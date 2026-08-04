@@ -1,0 +1,51 @@
+[project]
+name = "ms-agent-webui-backend"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=0.117.0",
+    "exa-py>=2.16.0",
+    "fastapi>=0.139.0",
+    "httpx>=0.28.1",
+    "ipykernel>=7.3.0",
+    "jupyter-client>=8.9.1",
+    "loguru>=0.7.3",
+    "mem0ai>=2.0.12",
+    "ms-agent",
+    "pydantic-settings>=2.14.2",
+    "sse-starlette>=3.4.5",
+    "uvicorn[standard]>=0.50.2",
+]
+
+[project.scripts]
+dev = "app.main:dev"
+serve = "app.main:serve"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.uv.sources]
+# The SDK edits are now merged into upstream ms-agent main, so track upstream
+# directly instead of the fork branch. `uv.lock` pins the exact commit resolved
+# at lock time (reproducible — `uv sync` always installs that pin, it does NOT
+# auto-follow the branch). To advance to the latest main: run
+# `uv lock --upgrade-package ms-agent`, then commit the updated lock.
+# For local SDK development, override with an editable checkout, e.g.
+# `uv pip install -e ../../ms-agent-bench` after `uv sync`.
+# End goal: once upstream cuts a release containing these fixes, drop this
+# source entirely and depend on a PyPI version range (e.g. `ms-agent>=1.6.1`).
+ms-agent = { git = "https://github.com/modelscope/ms-agent.git", branch = "main" }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]

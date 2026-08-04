@@ -1,0 +1,225 @@
+/* Tailwind v4. Skip the preflight layer so antd's own resets win.
+ * Layer order: utilities goes last, so Tailwind utilities beat antd's
+ * @layer antd output without needing `!important` on every class.
+ * antd's runtime cssinjs output is wrapped into `@layer antd` by
+ * entry.server.tsx (SSR) and the StyleProvider config in root.tsx (client). */
+@layer theme, base, antd, components, utilities;
+
+/* x-markdown typography themes (light/dark class applied by <Markdown/>).
+ * Imported here (not in the component) so the css always goes through Vite's
+ * pipeline — a deep package css import would crash Node SSR. Plus KaTeX's
+ * stylesheet for the Latex math plugin. */
+@import '@ant-design/x-markdown/themes/light.css';
+@import '@ant-design/x-markdown/themes/dark.css';
+
+/* Class-based dark mode: any descendant of an element with class "dark"
+ * (typically <html>) gets dark: variants. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+/* ================================================================
+ * MSA Design System → Tailwind v4 @theme token registration
+ * Usage examples:
+ *   bg-msa-bg-1   text-msa-text-1   border-msa-line-1
+ *   rounded-msa-8  shadow-msa-s  text-msa-sm
+ * ================================================================ */
+@theme {
+  /* --- Background --- */
+  --color-msa-bg-1: var(--msa-bg-1);
+  --color-msa-bg-2: var(--msa-bg-2);
+
+  /* --- Brand: Purple --- */
+  --color-msa-purple-0: var(--msa-purple-0);
+  --color-msa-purple-1: var(--msa-purple-1);
+  --color-msa-purple-2: var(--msa-purple-2);
+  --color-msa-purple-3: var(--msa-purple-3);
+  --color-msa-purple-4: var(--msa-purple-4);
+  --color-msa-purple-5: var(--msa-purple-5);
+  --color-msa-purple-6: var(--msa-purple-6);
+  --color-msa-purple-7: var(--msa-purple-7);
+  --color-msa-purple-8: var(--msa-purple-8);
+  --color-msa-purple-9: var(--msa-purple-9);
+  --color-msa-purple-10: var(--msa-purple-10);
+
+  /* --- Brand: Blue --- */
+  --color-msa-blue-0: var(--msa-blue-0);
+  --color-msa-blue-1: var(--msa-blue-1);
+  --color-msa-blue-2: var(--msa-blue-2);
+  --color-msa-blue-3: var(--msa-blue-3);
+  --color-msa-blue-4: var(--msa-blue-4);
+  --color-msa-blue-5: var(--msa-blue-5);
+  --color-msa-blue-6: var(--msa-blue-6);
+  --color-msa-blue-7: var(--msa-blue-7);
+  --color-msa-blue-8: var(--msa-blue-8);
+  --color-msa-blue-9: var(--msa-blue-9);
+  --color-msa-blue-10: var(--msa-blue-10);
+
+  /* --- Brand: Green --- */
+  --color-msa-green-0: var(--msa-green-0);
+  --color-msa-green-1: var(--msa-green-1);
+  --color-msa-green-2: var(--msa-green-2);
+  --color-msa-green-3: var(--msa-green-3);
+  --color-msa-green-4: var(--msa-green-4);
+  --color-msa-green-5: var(--msa-green-5);
+  --color-msa-green-6: var(--msa-green-6);
+  --color-msa-green-7: var(--msa-green-7);
+  --color-msa-green-8: var(--msa-green-8);
+  --color-msa-green-9: var(--msa-green-9);
+  --color-msa-green-10: var(--msa-green-10);
+
+  /* --- Neutral --- */
+  --color-msa-neutral-0: var(--msa-neutral-0);
+  --color-msa-neutral-1: var(--msa-neutral-1);
+  --color-msa-neutral-2: var(--msa-neutral-2);
+  --color-msa-neutral-3: var(--msa-neutral-3);
+  --color-msa-neutral-4: var(--msa-neutral-4);
+  --color-msa-neutral-5: var(--msa-neutral-5);
+  --color-msa-neutral-6: var(--msa-neutral-6);
+  --color-msa-neutral-7: var(--msa-neutral-7);
+  --color-msa-neutral-8: var(--msa-neutral-8);
+  --color-msa-neutral-9: var(--msa-neutral-9);
+  --color-msa-neutral-10: var(--msa-neutral-10);
+
+  /* --- Decoration --- */
+  --color-msa-deco-purple: var(--msa-deco-purple);
+  --color-msa-deco-green: var(--msa-deco-green);
+  --color-msa-deco-blue: var(--msa-deco-blue);
+  --color-msa-deco-pink: var(--msa-deco-pink);
+  --color-msa-deco-yellow: var(--msa-deco-yellow);
+  --color-msa-deco-orange: var(--msa-deco-orange);
+  --color-msa-deco-orange1: var(--msa-deco-orange1);
+  --color-msa-deco-green2: var(--msa-deco-green2);
+  --color-msa-deco-pink2: var(--msa-deco-pink2);
+  --color-msa-deco-pink3: var(--msa-deco-pink3);
+  --color-msa-deco-red: var(--msa-deco-red);
+  --color-msa-deco-gray: var(--msa-deco-gray);
+
+  /* --- Text --- */
+  --color-msa-text-0: var(--msa-text-0);
+  --color-msa-text-1: var(--msa-text-1);
+  --color-msa-text-2: var(--msa-text-2);
+  --color-msa-text-3: var(--msa-text-3);
+  --color-msa-text-brand1: var(--msa-text-brand1);
+  --color-msa-text-brand2: var(--msa-text-brand2);
+  --color-msa-text-danger: var(--msa-text-danger);
+  --color-msa-text-disabled: var(--msa-text-disabled);
+
+  /* --- Icon (currentColor glyphs) --- */
+  --color-msa-icon-neutral: var(--msa-icon-neutral);
+
+  /* --- Fill --- */
+  --color-msa-fill-0: var(--msa-fill-0);
+  --color-msa-fill-1: var(--msa-fill-1);
+  --color-msa-fill-2: var(--msa-fill-2);
+  --color-msa-fill-3: var(--msa-fill-3);
+  --color-msa-fill-4: var(--msa-fill-4);
+  --color-msa-fill-5: var(--msa-fill-5);
+  --color-msa-fill-6: var(--msa-fill-6);
+  --color-msa-fill-trans: var(--msa-fill-trans);
+  --color-msa-fill-purple: var(--msa-fill-purple);
+  --color-msa-fill-green: var(--msa-fill-green);
+  --color-msa-fill-orange: var(--msa-fill-orange);
+  --color-msa-fill-cyan: var(--msa-fill-cyan);
+  --color-msa-fill-gray: var(--msa-fill-gray);
+  --color-msa-fill-blue: var(--msa-fill-blue);
+  --color-msa-fill-tag: var(--msa-fill-tag);
+  --color-msa-fill-code-box: var(--msa-fill-code-box);
+  --color-msa-fill-input: var(--msa-fill-input);
+  --color-msa-fill-error: var(--msa-fill-error);
+  --color-msa-fill-warning: var(--msa-fill-warning);
+  --color-msa-fill-brand: var(--msa-fill-brand);
+
+  /* --- Line / Border --- */
+  --color-msa-line-0: var(--msa-line-0);
+  --color-msa-line-1: var(--msa-line-1);
+  --color-msa-line-2: var(--msa-line-2);
+  --color-msa-line-3: var(--msa-line-3);
+  --color-msa-line-input: var(--msa-line-input);
+
+  /* --- Border Radius --- */
+  --radius-msa-0: 0px;
+  --radius-msa-2: 2px;
+  --radius-msa-4: 4px;
+  --radius-msa-6: 6px;
+  --radius-msa-8: 8px;
+  --radius-msa-12: 12px;
+  --radius-msa-16: 16px;
+  --radius-msa-24: 24px;
+  --radius-msa-full: 9999px;
+
+  /* --- Shadows --- */
+  --shadow-msa-light: 2px 2px 10px 2px rgba(63, 63, 63, 0.04);
+  --shadow-msa-s: 0px 1px 6px 0px rgba(38, 36, 76, 0.12);
+  --shadow-msa-m: 0px 2px 32px 0px rgba(39, 37, 76, 0.08);
+  --shadow-msa-l: 0px 2px 32px 0px rgba(39, 37, 76, 0.08);
+  --shadow-msa-popup: 0px 3px 6px -4px rgba(0, 0, 0, 0.12), 0px 6px 16px 0px rgba(0, 0, 0, 0.08), 0px 9px 28px 8px rgba(0, 0, 0, 0.05);
+  --shadow-msa-modal: 0px 6px 16px -8px rgba(0, 0, 0, 0.08), 0px 9px 28px 0px rgba(0, 0, 0, 0.05), 0px 12px 48px 16px rgba(0, 0, 0, 0.03);
+  --shadow-msa-btn-blue: 0px 6px 8px 0px rgba(97, 92, 237, 0.12);
+  --shadow-msa-btn-blue-hover: 0px 6px 8px 0px rgba(97, 92, 237, 0.2);
+  --shadow-msa-btn-red: 0px 6px 8px 0px rgba(235, 47, 47, 0.12);
+  --shadow-msa-btn-red-hover: 0px 6px 8px 0px rgba(235, 47, 47, 0.2);
+
+  /* --- Typography --- */
+  --font-family-msa: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', helvetica, arial, sans-serif;
+  --font-family-msa-mono: 'Monaco', 'Menlo', 'Consolas', monospace;
+
+  --font-size-msa-xs: 12px;
+  --font-size-msa-sm: 13px;
+  --font-size-msa-base: 14px;
+  --font-size-msa-lg: 16px;
+  --font-size-msa-xl: 18px;
+  --font-size-msa-2xl: 20px;
+  --font-size-msa-3xl: 24px;
+  --font-size-msa-4xl: 32px;
+}
+
+/* ================================================================
+ * Global Resets
+ * ================================================================ */
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  margin: 0;
+  font-family: var(--msa-font-family);
+  font-size: var(--msa-font-size-base);
+  line-height: var(--msa-line-height-base);
+  background: var(--msa-bg-2);
+  color: var(--msa-text-1);
+}
+
+/* Tailwind preflight is off; restore the bits we rely on. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+/* --- Anti-flicker loading (skeletons / spinners) ---------------------------
+   Fast responses used to flash a skeleton for a frame or two. Pure-CSS
+   two-phase gate (SSR-safe, no hydration timing):
+   invisible for the first 250ms — a fast load never shows a skeleton at
+   all — then a 150ms fade-in for genuinely slow loads. Apply to the
+   skeleton/spinner WRAPPER that mounts while data is loading. */
+@keyframes msa-loading-reveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.msa-loading-defer {
+  opacity: 0;
+  animation: msa-loading-reveal 150ms ease-out 250ms forwards;
+}

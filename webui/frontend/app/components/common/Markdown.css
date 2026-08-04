@@ -1,0 +1,27 @@
+.msa-md-body {
+  --light-bg: var(--msa-fill-1);
+  --dark-bg: var(--msa-fill-1);
+}
+
+.msa-md-body .msa-code-highlighter pre code {
+  line-height: 1.6;
+  overflow-x: auto;
+}
+
+.msa-md-body pre {
+  background: var(--light-bg) !important;
+}
+
+/* ---- Inline code ----------------------------------------------------------
+ * Subtle chip on the msa fill token instead of the theme's gray + heavy
+ * border; slightly smaller so it doesn't crowd the prose line. */
+.msa-md-body pre:not(.msa-code-highlighter pre) {
+  border-radius: 6px !important;
+}
+
+.msa-md-body pre code:not(.msa-code-highlighter pre code) {
+  background: var(--msa-fill-2) !important;
+  color: var(--msa-text-2) !important;
+  padding: 2px 10px !important;
+  font-size: 0.9em !important;
+}
