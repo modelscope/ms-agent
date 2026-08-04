@@ -41,6 +41,7 @@ MS-Agent是一个轻量级框架，旨在为智能体提供自主探索能力。
 - **代码生成**：支持复杂项目的代码生成任务。
 - **短视频生成**：支持5分钟左右的短视频生成。
 - **Agent Skills**：兼容Anthropic-Agent-Skills协议，实现智能体技能模块。
+- **WebUI**：基于 React Router 和 FastAPI 的本地工作台，通过 SSE 实时返回智能体交互。
 - **轻量级且可扩展**：易于扩展和定制以适应各种应用。
 
 > 历史存档版本，请参考：https://github.com/modelscope/ms-agent/tree/0.8.0
@@ -558,50 +559,47 @@ OPENAI_API_KEY=xxx-xxx T2I_API_KEY=ms-xxx-xxx MANIM_TEST_API_KEY=xxx-xxx ms-agen
 
 ### WebUI
 
-MS-Agent提供了一个简洁轻量的Web界面，用于与智能体进行交互。该界面由React前端和FastAPI后端构建，支持实时的WebSocket通信。
-
-#### Demo
-
-<div align="center">
-  <img src="https://github.com/user-attachments/assets/62026584-6c96-4a84-a849-05ae49906f48" alt="LocalGradioApplication" width="750">
-  <p><em>Demo: WebUI</em></p>
-</div>
+MS-Agent 提供了一个本地智能体工作台，由 React Router 前端和 FastAPI 后端组成，对话通过 Server-Sent Events（SSE）实时返回。
 
 #### 快速开始
 
-**启动WebUI:**
+当前启动器面向源码仓库使用。请先安装：
+
+- [uv](https://docs.astral.sh/uv/)
+- Node.js 22.22.0 或更高版本
+- pnpm 10.x（执行 `corepack prepare pnpm@10.17.1 --activate`）
+
+在仓库根目录以 editable 模式安装 MS-Agent，然后启动 WebUI：
 
 ```bash
+pip install -e .
 ms-agent ui
 ```
 
-**Windows 提示：** 若控制台出现乱码，建议使用 PowerShell 启动脚本：
+第一次运行时，启动器会创建后端环境并安装前端锁定依赖；后续启动会校验这些本地依赖。浏览器默认打开 <http://127.0.0.1:7860>。
+
+进行真实对话前，请先在 **设置 → 模型设置** 中配置模型。环境变量初始化和手动开发方式见 [WebUI 完整指南](https://github.com/modelscope/ms-agent/blob/main/webui/README_ZH.md)。
+
+**Windows 提示：** 若控制台出现乱码，建议使用 UTF-8 PowerShell 启动脚本：
 
 ```powershell
-webui/scripts/start-webui.ps1
+.\webui\scripts\start-webui.ps1
 ```
-
-浏览器打开： http://localhost:7860
-
-**命令参数**
-
-| 选项             | 描述                       | 默认值     |
-|----------------|--------------------------|---------|
-| `--host`       | Server host              | 0.0.0.0 |
-| `--port`       | Server port              | 7860    |
-| `--production` | Production mode          | False   |
-| `--no-browser` | Don't auto-open browser  | False   |
-| `--reload`     | Enable auto-reload (dev) | False   |
 
 **示例**
 
 ```bash
-# Custom port
+# 修改公开前端端口
 ms-agent ui --port 8080
 
-# Production mode without auto browser
-ms-agent ui --production --no-browser
+# 无需模型凭证体验界面
+ms-agent ui --mock
+
+# 不自动打开浏览器
+ms-agent ui --no-browser
 ```
+
+依赖、配置优先级、完整参数、Windows 注意事项和排障方式请阅读 [WebUI 完整指南](https://github.com/modelscope/ms-agent/blob/main/webui/README_ZH.md)。这个最简启动器有意不提供生产环境 SSR 模式。
 
 ---
 

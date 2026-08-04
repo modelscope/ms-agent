@@ -41,7 +41,7 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
 - **Code Generation**: Supports code generation tasks with artifacts.
 - **Short Video Generation**：Support video generation of about 5 minutes.
 - **Agent Skills**: Knowledge-driven skill system — skills provide reusable procedural knowledge that guides the model via standard tool integration, with multi-source loading, progressive disclosure, and runtime self-evolution. See [Agent Skills](ms_agent/skill/README.md).
-- **WebUI**: Modern web interface for agent interaction with real-time WebSocket communication.
+- **WebUI**: Local React Router and FastAPI workspace with SSE-streamed agent interaction.
 - **Lightweight and Extensible**: Easy to extend and customize for various applications.
 
 
@@ -518,51 +518,47 @@ aggregator:
 
 ### WebUI
 
-MS-Agent provides a modern web interface for interacting with agents. Built with React frontend and FastAPI backend, featuring real-time WebSocket communication.
-
-#### Demo
-
-<div align="center">
-  <img src="https://github.com/user-attachments/assets/62026584-6c96-4a84-a849-05ae49906f48" alt="LocalGradioApplication" width="750">
-  <p><em>Demo: WebUI</em></p>
-</div>
+MS-Agent provides a local agent workspace built with a React Router frontend and a FastAPI backend. Chat responses are streamed with Server-Sent Events (SSE).
 
 #### Quick Start
 
-**Start WebUI:**
+The current launcher is intended for a source checkout. Install these tools first:
+
+- [uv](https://docs.astral.sh/uv/)
+- Node.js 22.22.0 or newer
+- pnpm 10.x (`corepack prepare pnpm@10.17.1 --activate`)
+
+From the repository root, install MS-Agent in editable mode and start the WebUI:
 
 ```bash
+pip install -e .
 ms-agent ui
 ```
 
-**Windows tip:** If the console shows garbled text, use the PowerShell helper:
+On the first run, the launcher creates the backend environment and installs the locked frontend dependencies. Later starts verify those local dependencies. The browser opens at <http://127.0.0.1:7860>.
+
+Configure a model in **Settings → Models** before starting a real chat. Environment-variable bootstrap and manual development instructions are available in the [WebUI guide](https://github.com/modelscope/ms-agent/blob/main/webui/README.md).
+
+**Windows tip:** If the console shows garbled text, use the UTF-8 PowerShell helper:
 
 ```powershell
-webui/scripts/start-webui.ps1
+.\webui\scripts\start-webui.ps1
 ```
-
-The browser will automatically open at http://localhost:7860
-
-**Command Options:**
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--host` | Server host | 0.0.0.0 |
-| `--port` | Server port | 7860 |
-| `--production` | Production mode | False |
-| `--no-browser` | Don't auto-open browser | False |
-| `--reload` | Enable auto-reload (dev) | False |
 
 **Examples:**
 
 ```bash
-# Custom port
+# Use another public frontend port
 ms-agent ui --port 8080
 
-# Production mode without auto browser
-ms-agent ui --production --no-browser
+# Exercise the UI without model credentials
+ms-agent ui --mock
+
+# Keep the browser closed
+ms-agent ui --no-browser
 ```
 
+See the [complete WebUI guide](https://github.com/modelscope/ms-agent/blob/main/webui/README.md) for prerequisites, configuration precedence, all launcher options, Windows notes, and troubleshooting. This minimal launcher intentionally does not provide a production SSR mode.
 
 <br>
 

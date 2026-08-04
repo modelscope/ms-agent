@@ -32,17 +32,16 @@ packages = ["app"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 
+[tool.uv]
+# Belt to the launcher's own probe: the sync commands rely on --locked and
+# --inexact, so refuse outright on a uv too old to honour them.
+required-version = ">=0.5.0"
+
 [tool.uv.sources]
-# The SDK edits are now merged into upstream ms-agent main, so track upstream
-# directly instead of the fork branch. `uv.lock` pins the exact commit resolved
-# at lock time (reproducible — `uv sync` always installs that pin, it does NOT
-# auto-follow the branch). To advance to the latest main: run
-# `uv lock --upgrade-package ms-agent`, then commit the updated lock.
-# For local SDK development, override with an editable checkout, e.g.
-# `uv pip install -e ../../ms-agent-bench` after `uv sync`.
-# End goal: once upstream cuts a release containing these fixes, drop this
-# source entirely and depend on a PyPI version range (e.g. `ms-agent>=1.6.1`).
-ms-agent = { git = "https://github.com/modelscope/ms-agent.git", branch = "main" }
+# This backend is developed and launched from the containing ms-agent checkout.
+# Keeping the SDK editable prevents the WebUI from silently running a stale Git
+# pin after framework code changes.
+ms-agent = { path = "../..", editable = true }
 
 [dependency-groups]
 dev = [

@@ -1,6 +1,11 @@
 {
   "name": "ms-agent-webui-frontend",
   "private": true,
+  "packageManager": "pnpm@10.17.1",
+  "engines": {
+    "node": ">=22.22.0",
+    "pnpm": ">=10 <11"
+  },
   "type": "module",
   "scripts": {
     "dev": "react-router dev",

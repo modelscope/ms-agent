@@ -1,11 +1,15 @@
 /**
  * Lightweight cross-component event bus.
  *
- * Convention (see AGENTS.md § Cross-Component Data Sync):
- * When a component mutates data that OTHER mounted components display (e.g.
- * workspace files), it dispatches a named event here. Consumers listen via the
- * corresponding `useOn*` hook and refresh their local state. This avoids global
- * stores / prop drilling / React context for infrequent, fire-and-forget sync.
+ * Convention: when a component mutates data that OTHER mounted components
+ * display (e.g. workspace files), it dispatches a named event here. Consumers
+ * listen via the corresponding `useOn*` hook and refresh their local state.
+ * This avoids global stores / prop drilling / React context for infrequent,
+ * fire-and-forget sync.
+ *
+ * Adding a new sync need means adding a `dispatch*` + `useOn*` pair below —
+ * keep the event name in the `msa:` namespace and document it at its
+ * definition, so this file stays the single registry of cross-component events.
  */
 import { useEffect } from 'react'
 

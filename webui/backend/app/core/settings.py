@@ -1,27 +1,58 @@
+import os
 from pathlib import Path
 from typing import Literal
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # app/core/settings.py -> backend/ ; anchor .env to the file, not the CWD, so it
 # loads identically from the server, a script, or a test regardless of cwd.
 _BACKEND_DIR = Path(__file__).resolve().parents[2]
+# This backend runs in two directory layouts and must resolve its dotenv chain
+# without adaptation in either one:
+#   standalone checkout:   <repo>/backend            -> repo/.env, backend/.env
+#   embedded in ms-agent:  <repo>/webui/backend      -> repo/.env, webui/.env,
+#                                                       backend/.env
+# The embedded layout inserts one directory level, so the repository root --
+# where shared provider credentials live -- sits one level higher. Detect it by
+# the parent directory's name; walking further up unconditionally would read a
+# stray .env from OUTSIDE the checkout in the standalone layout.
+_IS_EMBEDDED = _BACKEND_DIR.parent.name == "webui"
+_ENV_FILES = (
+    (
+        _BACKEND_DIR.parent.parent / ".env",
+        _BACKEND_DIR.parent / ".env",
+        _BACKEND_DIR / ".env",
+    ) if _IS_EMBEDDED else (
+        _BACKEND_DIR.parent / ".env",
+        _BACKEND_DIR / ".env",
+    ))
 
-# Publish both .env files into os.environ (never overriding real exports).
+# Publish all supported .env files into os.environ (never overriding real
+# exports). Later, more specific files win while merging: repository defaults
+# < (webui shared values, embedded layout only) < backend-only values. MCP
+# ${VAR} placeholders need
+# these values in os.environ rather than only in pydantic's settings object.
 # pydantic-settings only extracts its own declared fields; MCP ${VAR}
 # placeholders (headers/args/env in mcp.json) resolve against os.environ at
 # connection time, so keys like DASHSCOPE_API_KEY must actually be there.
-for _env_file in (_BACKEND_DIR / ".env", _BACKEND_DIR.parent / ".env"):
+_dotenv: dict[str, str] = {}
+for _env_file in _ENV_FILES:
     if _env_file.is_file():
-        load_dotenv(_env_file, override=False)
+        _dotenv.update({
+            key: value
+            for key, value in dotenv_values(_env_file).items()
+            if value is not None
+        })
+for _key, _value in _dotenv.items():
+    os.environ.setdefault(_key, _value)
 
 
 class Settings(BaseSettings):
-    # Read backend/.env (backend config) and the repo-root ../.env (shared
-    # provider secrets). Keys don't overlap, so load order is immaterial.
+    # Process environment variables win over dotenv files. Within the files,
+    # the later, more specific file wins (repo < webui < backend).
     model_config = SettingsConfigDict(
-        env_file=(str(_BACKEND_DIR / ".env"), str(_BACKEND_DIR.parent / ".env")),
+        env_file=tuple(str(path) for path in _ENV_FILES),
         env_file_encoding="utf-8",
         extra="ignore",
     )

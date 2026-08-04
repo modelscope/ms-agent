@@ -264,7 +264,7 @@ class RuntimeRegistry:
     runtimes (a /api/chat/permission answer landing on the wrong worker can
     never resolve the ask). Keep `--workers 1` (uvicorn's default); the
     multi-worker upgrade path is sticky session routing or a dedicated
-    agent-runner process — see docs/HANDOFF.md §3.3."""
+    agent-runner process."""
 
     def __init__(self) -> None:
         self._runtimes: dict[str, SessionRuntime] = {}

@@ -94,19 +94,24 @@ ms-agent tui --config path/to/agent.yaml
 
 ## ui — Web UI Server
 
-Launch the Web UI server.
+Launch the source-checkout WebUI development stack. The command supervises an internal FastAPI server and a public React Router development server.
 
 ```shell
-ms-agent ui --host 0.0.0.0 --port 7860
+ms-agent ui
 ```
 
 | Argument | Description | Default |
 | --- | --- | --- |
-| `--host` | The server host to bind to | `0.0.0.0` |
-| `--port` | The server port to bind to | `7860` |
-| `--reload` | Enable auto-reload for development (flag) | `false` |
-| `--production` | Run in production mode (serve built frontend, flag) | `false` |
+| `--host` | Public frontend host | `127.0.0.1` |
+| `--port` | Public frontend port | `7860` |
+| `--backend-port` | Internal FastAPI port | `8000` |
+| `--reload` | Reload the Python backend when its source changes (flag) | `false` |
+| `--mock` | Use the in-memory mock backend instead of MS-Agent (flag) | `false` |
+| `--skip-install` | Skip dependency synchronization; requires existing `.venv` and `node_modules` (flag) | `false` |
+| `--production` | Reserved compatibility flag; exits with an unsupported-mode error | `false` |
 | `--no-browser` | Do not automatically open the browser (flag) | `false` |
+
+The launcher requires uv, Node.js 22.22.0 or newer, and pnpm 10.x. It installs locked project-local dependencies on first use. See the [WebUI guide](https://github.com/modelscope/ms-agent/blob/main/webui/README.md) for setup, model configuration, environment variables, Windows support, and troubleshooting.
 
 ---
 
