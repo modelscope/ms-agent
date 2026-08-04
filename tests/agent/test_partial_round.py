@@ -185,3 +185,67 @@ def test_reasoning_duration_finalized_when_cancelled_mid_reasoning():
     import time
     dur = _persisted_reasoning_duration(time.monotonic() - 3.0, None)
     assert dur is not None and dur >= 2
+
+
+# --- sealing a round that RAISED (not a user Stop) -----------------------
+
+
+def test_errored_marker_replaces_interrupted():
+    # run_loop's exception handler seals with marker='errored'. UIs badge
+    # `interrupted` as a user Stop, so an API failure must not borrow that key.
+    records = build_partial_round_records([], marker='errored')
+    assert records == [{
+        'role': 'assistant',
+        'content': INTERRUPTED_PLACEHOLDER,
+        'content_placeholder': True,
+        'errored': True,
+    }]
+    assert 'interrupted' not in records[0]
+
+
+def test_errored_marker_applies_to_synthesized_tool_results():
+    records = build_partial_round_records(
+        [{'role': 'assistant', 'content': '',
+          'tool_calls': [{'id': 'c1', 'arguments': '{}', 'tool_name': 'grep'}]}],
+        marker='errored')
+    assert [r['role'] for r in records] == ['assistant', 'tool']
+    assert all(r.get('errored') is True for r in records)
+    assert not any('interrupted' in r for r in records)
+
+
+def test_error_seal_closes_dangling_tool_tail():
+    """The regression that made failed turns look like an infinite loop.
+
+    A raised turn used to leave the log tail on a `tool` row. run_loop's resume
+    guard only skips the model call when the tail is `assistant`, so the next
+    request replayed the same round with the same failing context and never
+    drained the queued prompt — every resend was silently dropped.
+    """
+    from ms_agent.agent.llm_agent import LLMAgent
+
+    class _Log:
+
+        def __init__(self, rows):
+            self.rows = list(rows)
+
+        def append(self, rec):
+            self.rows.append(rec)
+            return len(self.rows)
+
+    # Tail as persisted by the round that then blew up on the next LLM call.
+    stub = LLMAgent.__new__(LLMAgent)
+    stub.session_log = _Log([
+        {'role': 'user', 'content': '搜一下今天的热点新闻'},
+        {'role': 'assistant', 'content': '',
+         'tool_calls': [{'id': 'c1', 'arguments': '{}', 'tool_name': 'search'}]},
+        {'role': 'tool', 'content': 'results', 'tool_call_id': 'c1'},
+    ])
+    stub._reasoning_started_at = None
+    stub._last_reasoning_duration = None
+    assert stub.session_log.rows[-1]['role'] == 'tool'  # the poisoned state
+
+    # step() raised before yielding anything -> empty segment.
+    LLMAgent._persist_partial_round(stub, [], 0, marker='errored')
+
+    assert stub.session_log.rows[-1]['role'] == 'assistant'
+    assert stub.session_log.rows[-1]['errored'] is True
