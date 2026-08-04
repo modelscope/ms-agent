@@ -1696,3 +1696,40 @@ class TestEndToEnd:
             assert len(log.get_all_messages()) == 4
         finally:
             loop.close()
+
+
+class TestSessionLogErrorDedup:
+    """record_error is idempotent per (round, message).
+
+    A wedged turn used to append one identical record per retry/replay attempt
+    (observed: five copies of the same 400, all round 15), making replay
+    unreadable. Callers that omit ``round`` opt out of dedup on purpose — they
+    have no round identity to key on.
+    """
+
+    def setup_method(self):
+        import tempfile
+        self.tmpdir = tempfile.mkdtemp()
+
+    def test_same_round_same_message_recorded_once(self):
+        log = SessionLog(self.tmpdir, session_key="err_dedup")
+        for _ in range(5):
+            log.record_error({
+                "message": "APIError: <400> boom",
+                "recoverable": False,
+                "round": 15,
+            })
+        assert len(log.get_errors()) == 1
+
+    def test_round_and_message_changes_are_kept(self):
+        log = SessionLog(self.tmpdir, session_key="err_kept")
+        log.record_error({"message": "APIError: boom", "round": 15})
+        log.record_error({"message": "APIError: boom", "round": 16})
+        log.record_error({"message": "different failure", "round": 15})
+        assert len(log.get_errors()) == 3
+
+    def test_callers_without_a_round_opt_out_of_dedup(self):
+        log = SessionLog(self.tmpdir, session_key="err_optout")
+        log.record_error({"message": "no round identity"})
+        log.record_error({"message": "no round identity"})
+        assert len(log.get_errors()) == 2
