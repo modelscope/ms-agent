@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -15,7 +16,7 @@ import urllib.error
 import urllib.request
 import webbrowser
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .base import CLICommand
 
@@ -29,6 +30,22 @@ CREATE_NEW_PROCESS_GROUP = getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP',
                                    0x00000200)
 CTRL_BREAK_EVENT = getattr(signal, 'CTRL_BREAK_EVENT', 1)
 MIN_NODE_VERSION = (22, 22, 0)
+# The floor is set by the flags _ensure_dependencies passes: `--locked` and
+# `--inexact`. Probed by the launcher rather than delegated to
+# `[tool.uv] required-version` alone, because uv's own refusal reaches us only
+# as an exit code from _run_setup — with no version and no path in the message,
+# which is exactly the ambiguity this check exists to remove.
+MIN_UV_VERSION = (0, 5, 0)
+
+# Health checks target loopback, so they must never traverse a proxy. The
+# default opener installs ProxyHandler(getproxies()), and on macOS getproxies()
+# also reads System Configuration — so an active VPN or a debugging proxy
+# applies with no environment variable set, and 127.0.0.1 is NOT bypassed unless
+# it is explicitly listed in no_proxy. The symptom is brutal: both servers come
+# up healthy, every probe is routed away from them, and after the startup
+# timeout the launcher kills two working processes.
+_LOOPBACK_OPENER = urllib.request.build_opener(
+    urllib.request.ProxyHandler({}))
 
 
 class UIError(RuntimeError):
@@ -140,7 +157,13 @@ class UICMD(CLICommand):
                     'uv': _require_executable('uv'),
                     'pnpm': _require_executable('pnpm'),
                 })
-            _check_tool_versions(tools)
+            _check_tool_versions(tools, frontend_dir=frontend_dir)
+            # Claim both ports BEFORE mutating anything. Dependency sync takes
+            # seconds and writes to .venv / node_modules; discovering the port
+            # clash only after that (as a child's exit code) wasted the work and
+            # reported "backend exited unexpectedly" instead of naming the port.
+            _check_ports_available(frontend_host, self.args.port,
+                                   self.args.backend_port)
             _ensure_dependencies(
                 backend_dir,
                 frontend_dir,
@@ -215,11 +238,14 @@ class UICMD(CLICommand):
         finally:
             for _name, process in reversed(processes):
                 _terminate_process_tree(process)
-            for shutdown_signal in previous_signal_handlers:
-                signal.signal(
-                    shutdown_signal,
-                    previous_signal_handlers[shutdown_signal],
-                )
+            for shutdown_signal, previous in previous_signal_handlers.items():
+                # getsignal() returns None when the handler was installed from
+                # C (an embedding host), and signal.signal(sig, None) raises
+                # TypeError — inside `finally` that would replace the real
+                # exception with a traceback about signal plumbing.
+                if previous is None:
+                    continue
+                signal.signal(shutdown_signal, previous)
 
         if exit_code:
             raise SystemExit(exit_code)
@@ -256,6 +282,35 @@ def _find_webui_dir() -> Path:
                   ', '.join(checked))
 
 
+def _port_in_use(host: str, port: int) -> bool:
+    """Whether *host:port* is already bound (best effort, non-intrusive)."""
+    for family, socktype, proto, _canon, addr in socket.getaddrinfo(
+            host or '127.0.0.1', port, type=socket.SOCK_STREAM):
+        with socket.socket(family, socktype, proto) as probe:
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                probe.bind(addr)
+            except OSError:
+                return True
+    return False
+
+
+def _check_ports_available(frontend_host: str, frontend_port: int,
+                           backend_port: int) -> None:
+    """Fail early, and name the port — the most common cause is a second run."""
+    busy = []
+    if _port_in_use(frontend_host, frontend_port):
+        busy.append(f'frontend {frontend_host}:{frontend_port}')
+    # The backend is always bound to loopback (see _start_backend).
+    if _port_in_use('127.0.0.1', backend_port):
+        busy.append(f'backend 127.0.0.1:{backend_port}')
+    if busy:
+        raise UIError(
+            'Port already in use: ' + ', '.join(busy) +
+            '. Another "ms-agent ui" is probably still running — stop it, or '
+            'pass different --port / --backend-port values.')
+
+
 def _require_executable(name: str) -> str:
     """Resolve a required executable, including ``.cmd``/``.exe`` on Windows."""
     executable = shutil.which(name)
@@ -271,28 +326,58 @@ def _require_executable(name: str) -> str:
                   f'{install_hints.get(name, "Install it and retry.")}')
 
 
-def _check_tool_versions(tools: Dict[str, str]) -> None:
+def _check_tool_versions(tools: Dict[str, str],
+                         frontend_dir: Optional[Path] = None) -> None:
+    """Gate on tool versions, always naming the executable that was measured.
+
+    Printing the resolved path matters more than the version: the common failure
+    is "I installed it into this environment but PATH resolved something else",
+    which an unadorned version number cannot distinguish.
+    """
     node_version = _read_semantic_version(tools['node'], '--version', 'Node.js')
     if node_version < MIN_NODE_VERSION:
         required = '.'.join(str(part) for part in MIN_NODE_VERSION)
         actual = '.'.join(str(part) for part in node_version)
         raise UIError(
             f'Node.js {required} or newer is required by React Router 8 '
-            f'(found {actual}).')
+            f'(found {actual} at {tools["node"]}).')
+
+    if 'uv' in tools:
+        uv_version = _read_semantic_version(tools['uv'], '--version', 'uv')
+        if uv_version < MIN_UV_VERSION:
+            required = '.'.join(str(part) for part in MIN_UV_VERSION)
+            actual = '.'.join(str(part) for part in uv_version)
+            raise UIError(
+                f'uv {required} or newer is required (found {actual} at '
+                f'{tools["uv"]}). If you installed a newer uv into this '
+                f'environment, an older one is still earlier on PATH — check '
+                f'with "command -v uv".')
 
     if 'pnpm' in tools:
-        pnpm_version = _read_semantic_version(tools['pnpm'], '--version',
-                                              'pnpm')
+        # Measure pnpm inside webui/frontend: `packageManager` in its
+        # package.json makes pnpm self-manage, so the binary that actually runs
+        # `pnpm install` there may differ from the one first on PATH. Probing
+        # from an arbitrary cwd validates the wrong executable.
+        pnpm_version = _read_semantic_version(
+            tools['pnpm'], '--version', 'pnpm', cwd=frontend_dir)
         if pnpm_version[0] != 10:
             actual = '.'.join(str(part) for part in pnpm_version)
             raise UIError(
-                f'pnpm 10.x is required by this WebUI (found {actual}). '
-                'Run "corepack prepare pnpm@10.17.1 --activate" and retry.')
+                f'pnpm 10.x is required by this WebUI (found {actual} at '
+                f'{tools["pnpm"]}). Install it with '
+                f'"npm install --global --prefix \\"$CONDA_PREFIX\\" '
+                f'pnpm@10.17.1" (or "corepack prepare pnpm@10.17.1 --activate" '
+                f'on Node < 25, where corepack is still bundled), then verify '
+                f'with "command -v pnpm".')
 
 
-def _read_semantic_version(executable: str, flag: str,
-                           label: str) -> Tuple[int, int, int]:
-    run_kwargs = {}
+def _read_semantic_version(executable: str,
+                           flag: str,
+                           label: str,
+                           cwd: Optional[Path] = None) -> Tuple[int, int, int]:
+    run_kwargs: Dict[str, Any] = {}
+    if cwd is not None:
+        run_kwargs['cwd'] = str(cwd)
     if _requires_windows_shell(executable):
         # Corepack commonly exposes pnpm as pnpm.cmd. CreateProcess cannot
         # execute a command script directly, so let subprocess quote it for
@@ -313,11 +398,40 @@ def _read_semantic_version(executable: str, flag: str,
             subprocess.TimeoutExpired) as exc:
         raise UIError(f'Could not determine the {label} version: {exc}') from exc
 
-    match = re.search(r'(\d+)\.(\d+)(?:\.(\d+))?', result.stdout)
-    if not match:
-        raise UIError(
-            f'Could not parse the {label} version from {result.stdout!r}.')
-    return tuple(int(part or 0) for part in match.groups())
+    return _parse_semantic_version(result.stdout, label, executable)
+
+
+#: A version at the very start of a line: ``v22.22.0`` / ``10.17.1``.
+_VERSION_BARE = re.compile(r'^v?(\d+)\.(\d+)(?:\.(\d+))?\b')
+#: A version after a single leading token: ``uv 0.12.1 (a6042f67 2026-03-24)``.
+_VERSION_AFTER_NAME = re.compile(r'^\S+\s+v?(\d+)\.(\d+)(?:\.(\d+))?\b')
+
+
+def _parse_semantic_version(output: str, label: str,
+                            executable: str) -> Tuple[int, int, int]:
+    """Read the tool's version, ignoring any preamble noise.
+
+    Searching the whole buffer for the first dotted number is wrong: tools
+    prepend notices (Node deprecation warnings, corepack "about to download
+    pnpm-10.17.1.tgz", mise/conda preambles, uv "a newer version is available",
+    and on Windows whatever cmd.exe AutoRun echoes). Matching that noise yields
+    a *confident wrong version* — worse than failing to parse, because the
+    caller then rejects a perfectly good toolchain citing a number the user
+    never installed.
+
+    Two passes over the lines, last first: a bare version wins outright, and
+    only if no line carries one do we accept ``<name> <version>`` (uv's shape).
+    Ordering the passes this way keeps a trailing "Update available 11.0.0"
+    notice from beating the real version on the line above it.
+    """
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    for pattern in (_VERSION_BARE, _VERSION_AFTER_NAME):
+        for line in reversed(lines):
+            match = pattern.match(line)
+            if match:
+                return tuple(int(part or 0) for part in match.groups())
+    raise UIError(f'Could not parse the {label} version from {executable}: '
+                  f'{output!r}')
 
 
 def _ensure_dependencies(
@@ -346,8 +460,18 @@ def _ensure_dependencies(
     print(f'[setup] {action} WebUI backend dependencies...', flush=True)
     backend_env = _child_environment()
     backend_env['UV_PROJECT_ENVIRONMENT'] = str(backend_dir / '.venv')
+    # --locked, not --frozen: `--frozen` means "use the lockfile WITHOUT
+    # checking that it is up to date", which is the opposite of pnpm's
+    # identically-named --frozen-lockfile. Since `ms-agent` is a path dependency
+    # whose requirements are dynamic (setup.py parses requirements/*.txt), a
+    # stale lock would sync a venv missing a new dependency and only surface as
+    # an ImportError inside the worker, after the 120s health-check wait.
+    # --inexact: uv syncs exactly by default and would UNINSTALL anything not in
+    # the resolution — including the dev group this command excludes. Without it
+    # every launch removes pytest, so `webui/backend`'s own test suite cannot
+    # survive a single `ms-agent ui`.
     _run_setup(
-        [tools['uv'], 'sync', '--frozen', '--no-dev'],
+        [tools['uv'], 'sync', '--locked', '--no-dev', '--inexact'],
         cwd=backend_dir,
         label='backend dependency synchronization',
         env=backend_env,
@@ -378,6 +502,9 @@ def _run_setup(command: List[str],
         _terminate_process_tree(process)
         raise
     except OSError as exc:
+        # Reap before surfacing: this process was never added to `processes`, so
+        # execute()'s finally cannot reach it and it would outlive the launcher.
+        _terminate_process_tree(process)
         raise UIError(f'{label} failed: {exc}') from exc
     if return_code:
         _terminate_process_tree(process)
@@ -512,7 +639,7 @@ def _wait_for_http(
         try:
             request = urllib.request.Request(
                 url, headers={'User-Agent': 'ms-agent-ui-launcher'})
-            with urllib.request.urlopen(request, timeout=2) as response:
+            with _LOOPBACK_OPENER.open(request, timeout=2) as response:
                 if response.status == 200:
                     return
                 last_error = f'HTTP {response.status}'

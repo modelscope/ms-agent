@@ -20,6 +20,24 @@ This is not a production deployment or a standalone wheel installation. The
 command needs an MS-Agent source checkout containing this `webui/` directory,
 and the frontend is served by its development server.
 
+### Not carried over from the previous WebUI
+
+This interface replaced an earlier Vite/MUI one. It is a general agent
+workspace and deliberately does **not** reproduce that version's dedicated
+**Deep Research** view (the `deep_research_worker` / `DeepResearchView`
+pipeline). Run Agentic Insight v2 from the CLI instead — see
+[`projects/deep_research/v2`](../projects/deep_research/v2/README.md).
+
+### Runtime constraints
+
+- The chat runtime, event buffers, turn locks, and permission futures all live
+  in process memory, so the backend **must stay single-worker**. Adding uvicorn
+  workers silently breaks stop/interrupt, re-attach, and authorization prompts.
+- Chat streams over SSE; there is no WebSocket anywhere in the stack.
+- `--host` accepts any interface, and the stack has **no authentication**. On a
+  non-loopback host, anyone who can reach the port gets the agent — including
+  its shell tool.
+
 ## Prerequisites
 
 | Tool | Required version | Purpose |
@@ -28,6 +46,26 @@ and the frontend is served by its development server.
 | [uv](https://docs.astral.sh/uv/) | Recent version | Synchronizes `webui/backend/.venv` |
 | [Node.js](https://nodejs.org/) | **22.22.0 or newer** | Required by React Router 8 |
 | [pnpm](https://pnpm.io/installation) | **10.x** | Synchronizes frontend dependencies; the project pins 10.17.1 |
+
+With `--skip-install` only Node.js is required — the launcher never resolves
+`uv` or `pnpm` in that mode.
+
+### Installing the tools without Corepack
+
+Corepack is no longer bundled with Node.js 25+, and inside a conda environment
+"installed" is not the same as "resolved" — PATH may still find an older global
+copy. The launcher prints the executable path it resolved whenever a version
+check fails; to install both tools into the ACTIVE environment:
+
+```bash
+pip install uv                                        # uv into this env's bin/
+npm install --global --prefix "$CONDA_PREFIX" pnpm@10.17.1
+hash -r                                               # rehash, then verify:
+command -v uv pnpm                                    # both under $CONDA_PREFIX/bin
+```
+
+On Node.js < 25, `corepack enable && corepack prepare pnpm@10.17.1 --activate`
+still works as an alternative for pnpm.
 
 The WebUI's Python 3.12 does not need to be the currently activated Python;
 uv selects a compatible interpreter and can download one when necessary.
@@ -60,7 +98,7 @@ ms-agent ui
 On the first launch, the command automatically runs the equivalent of:
 
 ```bash
-cd webui/backend && uv sync --frozen --no-dev
+cd webui/backend && uv sync --locked --no-dev --inexact
 cd webui/frontend && pnpm install --frozen-lockfile
 ```
 
@@ -72,6 +110,14 @@ To verify the interface without a model credential, use the in-memory backend:
 
 ```bash
 ms-agent ui --mock
+```
+
+On Windows, use the PowerShell wrapper (it forces UTF-8 console output before
+delegating to the same command):
+
+```powershell
+py -m pip install -e .
+.\webui\scripts\start-webui.ps1
 ```
 
 Press `Ctrl+C` in the launcher terminal to stop both services.
@@ -134,10 +180,10 @@ These are optional alternatives to configuring the model in the browser:
 
 | Variable | Meaning |
 | --- | --- |
-| `OPENAI_API_KEY` | Credential for an OpenAI-compatible endpoint |
-| `OPENAI_BASE_URL` | Base URL for that endpoint |
-| `MS_AGENT_LLM_PROVIDER` | MS-Agent provider ID to seed on first setup |
-| `MS_AGENT_LLM_MODEL` | Model ID to seed on first setup |
+| `MS_AGENT_LLM_MODEL` | Model ID to seed. **Bootstrap does nothing at all unless this is set** — the other three are ignored without it. |
+| `MS_AGENT_LLM_PROVIDER` | MS-Agent provider ID to seed (default `openai`). Must actually serve the model above: `qwen*` is DashScope/ModelScope, not OpenAI. |
+| `OPENAI_API_KEY` | Credential, applied **only** when the provider is `openai`. Other providers resolve their own variable (`DASHSCOPE_API_KEY`, `DEEPSEEK_API_KEY`, …). |
+| `OPENAI_BASE_URL` | Base URL, same `openai`-only rule. |
 
 Bootstrap only fills a missing `llm` block. If
 `~/.ms_agent/settings.json` (or the selected `MS_AGENT_HOME`) already contains
@@ -172,7 +218,7 @@ Normal `ms-agent ui` users should not set these manually:
 | `--backend-port PORT` | `8000` | Internal FastAPI port |
 | `--reload` | off | Reload the Python backend after source changes; frontend HMR is always active |
 | `--mock` | off | Use in-memory demonstration data without model credentials |
-| `--skip-install` | off | Skip both dependency synchronization commands; fails if either local environment is missing |
+| `--skip-install` | off | Skip both dependency synchronization commands; fails if either local environment is missing. With it, only Node.js needs to be on `PATH` — `uv` and `pnpm` are not resolved at all. |
 | `--no-browser` | off | Do not open a browser automatically |
 | `--production` | unsupported | Reserved option that exits with an explanatory error |
 
@@ -209,7 +255,7 @@ mock data by default.
 
 ```bash
 cd webui/backend
-uv sync --frozen
+uv sync --locked
 uv run --frozen dev
 ```
 
@@ -231,6 +277,32 @@ Open <http://localhost:5173>. The Vite development server proxies `/api/*` to
 `http://127.0.0.1:8000`, which is also the default endpoint used by SSR route
 loaders. To use another backend port, set `API_BASE_URL` for the frontend
 process before starting it.
+
+## Tests
+
+The backend suite lives in `webui/backend/tests` and runs inside the backend's
+own environment. Note that the launcher syncs that environment **without** the
+dev group, so install it once before testing:
+
+```bash
+cd webui/backend
+uv sync --locked            # includes the dev group (pytest)
+./.venv/bin/python -m pytest
+```
+
+The launcher/contract suites live with the repository's tests and run with any
+Python that has the SDK installed:
+
+```bash
+python -m pytest tests/cli/test_ui.py tests/ui
+```
+
+The frontend has no automated tests yet; `pnpm typecheck` is the gate, and
+manual Chrome walkthroughs are the UI regression instrument.
+
+The repository CI (`pytest tests`) does **not** include `webui/backend/tests` —
+its dependencies (FastAPI and friends) are not installed there. Run it locally
+as above when touching the backend or the SDK surfaces it consumes.
 
 ## Windows
 
@@ -291,6 +363,13 @@ the manual-start section. `--skip-install` is only appropriate after both
 `webui/backend/.venv` and `webui/frontend/node_modules` already exist.
 
 ### A port is already in use
+
+The launcher checks both ports before it touches any dependency, so this fails
+fast and names the port. Two rules it enforces:
+
+- `--port` and `--backend-port` must differ.
+- The frontend uses `--strictPort`, so a busy frontend port is a hard failure —
+  it never silently moves to the next one.
 
 Select both ports explicitly:
 

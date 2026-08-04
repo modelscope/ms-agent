@@ -18,6 +18,22 @@ http://127.0.0.1:7860       React Router 开发服务器
 这不是生产部署方案，也不是独立 wheel 安装方式。命令需要在包含本
 `webui/` 目录的 MS-Agent 源码 checkout 中运行，前端由开发服务器提供。
 
+
+### 相比旧版 WebUI 的能力变化
+
+当前界面替换了此前的 Vite/MUI 版本，定位是通用 Agent 工作区，**不再提供**旧版
+那个专门的 **Deep Research** 视图（`deep_research_worker` / `DeepResearchView`
+这套链路）。Agentic Insight v2 请改用 CLI 运行，见
+[`projects/deep_research/v2`](../projects/deep_research/v2/README.md)。
+
+### 必须遵守的运行约束
+
+- 对话运行时、事件缓冲、turn lock、权限 Future 全部在进程内存里，后端**必须保持
+  单 worker**。加 uvicorn worker 会静默破坏停止/中断、重新接管和授权弹窗。
+- 对话走 SSE，整个栈里没有任何 WebSocket。
+- `--host` 接受任意网卡，而这套栈**没有认证**。绑到非回环地址时，能访问端口的人
+  就能使用这个 Agent——包括它的 shell 工具。
+
 ## 前置环境
 
 | 工具 | 版本要求 | 用途 |
@@ -45,6 +61,22 @@ corepack enable
 corepack prepare pnpm@10.17.1 --activate
 ```
 
+### 不依赖 Corepack 安装工具
+
+Node.js 25+ 不再内置 Corepack，而且在 conda 环境里「装了」不等于「会被解析到」——
+PATH 可能仍然命中一个更旧的全局副本。版本检查失败时，启动器会打印它实际解析到的
+可执行文件路径；把两个工具装进**当前激活环境**：
+
+```bash
+pip install uv                                        # uv 装进本环境的 bin/
+npm install --global --prefix "$CONDA_PREFIX" pnpm@10.17.1
+hash -r                                               # 刷新缓存后验证：
+command -v uv pnpm                                    # 都应位于 $CONDA_PREFIX/bin
+```
+
+Node.js < 25 上，`corepack enable && corepack prepare pnpm@10.17.1 --activate`
+仍是 pnpm 的可选替代方案。
+
 ## 快速开始
 
 在 MS-Agent 仓库根目录执行：
@@ -64,7 +96,7 @@ py -m pip install -e .
 首次启动时，命令会自动完成相当于下面两步的依赖同步：
 
 ```bash
-cd webui/backend && uv sync --frozen --no-dev
+cd webui/backend && uv sync --locked --no-dev --inexact
 cd webui/frontend && pnpm install --frozen-lockfile
 ```
 
@@ -135,10 +167,10 @@ Copy-Item .\webui\backend\.env.example .\webui\backend\.env
 
 | 变量 | 含义 |
 | --- | --- |
-| `OPENAI_API_KEY` | OpenAI 兼容端点的凭据 |
-| `OPENAI_BASE_URL` | 该端点的 Base URL |
-| `MS_AGENT_LLM_PROVIDER` | 首次初始化使用的 MS-Agent 供应商 ID |
-| `MS_AGENT_LLM_MODEL` | 首次初始化使用的模型 ID |
+| `MS_AGENT_LLM_MODEL` | 要初始化的模型 ID。**不设置它，初始化根本不会执行**，其余三个变量也随之失效。 |
+| `MS_AGENT_LLM_PROVIDER` | 初始化使用的 MS-Agent 供应商 ID（默认 `openai`）。必须真的提供上面那个模型：`qwen*` 属于 DashScope/ModelScope，不属于 OpenAI。 |
+| `OPENAI_API_KEY` | 凭据，**仅当**供应商是 `openai` 时生效。其他供应商各自读取自己的变量（`DASHSCOPE_API_KEY`、`DEEPSEEK_API_KEY` 等）。 |
+| `OPENAI_BASE_URL` | Base URL，同样只在 `openai` 时生效。 |
 
 初始化只会补充尚不存在的 `llm` 配置。如果 `~/.ms_agent/settings.json`
 （或 `MS_AGENT_HOME` 指向的目录）已经包含 `llm`，修改这些环境变量**不会**
@@ -172,7 +204,7 @@ Copy-Item .\webui\backend\.env.example .\webui\backend\.env
 | `--backend-port PORT` | `8000` | 内部 FastAPI 端口 |
 | `--reload` | 关闭 | Python 后端源码变化时自动重载；前端始终启用 HMR |
 | `--mock` | 关闭 | 使用无需模型凭据的内存演示数据 |
-| `--skip-install` | 关闭 | 跳过两项依赖同步；任一项目本地环境缺失时会报错 |
+| `--skip-install` | 关闭 | 跳过两项依赖同步；任一项目本地环境缺失时会报错。使用它时只需要 PATH 上有 Node.js——`uv` 与 `pnpm` 完全不会被解析 |
 | `--no-browser` | 关闭 | 不自动打开浏览器 |
 | `--production` | 不支持 | 保留参数，使用时会明确报错并退出 |
 
@@ -206,7 +238,7 @@ ms-agent ui --host 0.0.0.0
 
 ```bash
 cd webui/backend
-uv sync --frozen
+uv sync --locked
 uv run --frozen dev
 ```
 
@@ -227,6 +259,28 @@ pnpm dev
 打开 <http://localhost:5173>。Vite 开发服务器会把 `/api/*` 代理到
 `http://127.0.0.1:8000`，SSR 路由 loader 默认也使用这个地址。如果手工修改
 后端端口，需要在启动前端进程前相应设置 `API_BASE_URL`。
+
+## 测试
+
+后端测试位于 `webui/backend/tests`，在后端自己的环境里运行。注意启动器同步该环境时
+**不含** dev 组，测试前先补装一次：
+
+```bash
+cd webui/backend
+uv sync --locked            # 含 dev 组（pytest）
+./.venv/bin/python -m pytest
+```
+
+启动器/契约测试放在仓库的 tests 里，任何装有 SDK 的 Python 都能跑：
+
+```bash
+python -m pytest tests/cli/test_ui.py tests/ui
+```
+
+前端暂无自动化测试；`pnpm typecheck` 是门禁，UI 回归靠真实 Chrome 走查。
+
+仓库 CI（`pytest tests`）**不包含** `webui/backend/tests`——它的依赖（FastAPI 等）
+没有装在那里。改动后端或它消费的 SDK 面时，请按上面的方式在本地运行。
 
 ## Windows
 
@@ -282,6 +336,14 @@ pnpm --version
 ### 端口已被占用
 
 同时指定新的前后端端口：
+
+启动器会在同步任何依赖**之前**检查两个端口，所以失败很快且会点名端口。另外有两条
+强制规则：
+
+- `--port` 与 `--backend-port` 不能相同；
+- 前端使用 `--strictPort`，端口被占用是硬失败，不会自动顺延到下一个端口。
+
+显式指定两个端口：
 
 ```bash
 ms-agent ui --port 8080 --backend-port 8001

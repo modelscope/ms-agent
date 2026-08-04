@@ -195,22 +195,34 @@ def test_setup_failure_cleans_its_process_tree(
     assert cleanup_calls == [process]
 
 
-def test_tool_versions_accept_supported_node_and_pnpm(monkeypatch):
+def test_tool_versions_accept_supported_node_and_pnpm(monkeypatch, tmp_path):
     versions = {
         '/tools/node': (22, 22, 0),
         '/tools/pnpm': (10, 17, 1),
     }
+    probes = []
 
-    monkeypatch.setattr(
-        ui,
-        '_read_semantic_version',
-        lambda executable, flag, label: versions[executable],
+    def fake_version(executable, flag, label, cwd=None):
+        probes.append({'executable': executable, 'label': label, 'cwd': cwd})
+        return versions[executable]
+
+    monkeypatch.setattr(ui, '_read_semantic_version', fake_version)
+
+    ui._check_tool_versions(
+        {
+            'node': '/tools/node',
+            'pnpm': '/tools/pnpm',
+        },
+        frontend_dir=tmp_path,
     )
 
-    ui._check_tool_versions({
-        'node': '/tools/node',
-        'pnpm': '/tools/pnpm',
-    })
+    # Assert what was measured, not merely that nothing raised: an empty body in
+    # _check_tool_versions used to satisfy this test.
+    assert [p['label'] for p in probes] == ['Node.js', 'pnpm']
+    # pnpm MUST be probed inside webui/frontend — `packageManager` there makes
+    # pnpm self-manage, so a probe from another cwd measures the wrong binary.
+    assert probes[1]['cwd'] == tmp_path
+    assert probes[0]['cwd'] is None
 
 
 def test_tool_versions_do_not_require_pnpm_when_install_is_skipped(monkeypatch):
@@ -218,7 +230,8 @@ def test_tool_versions_do_not_require_pnpm_when_install_is_skipped(monkeypatch):
     monkeypatch.setattr(
         ui,
         '_read_semantic_version',
-        lambda executable, flag, label: calls.append(label) or (22, 22, 0),
+        lambda executable, flag, label, cwd=None: calls.append(label) or
+        (22, 22, 0),
     )
 
     ui._check_tool_versions({'node': '/tools/node'})
@@ -247,14 +260,14 @@ def test_tool_versions_reject_unsupported_versions(
     monkeypatch.setattr(
         ui,
         '_read_semantic_version',
-        lambda executable, flag, label: versions[executable],
+        lambda executable, flag, label, cwd=None: versions[executable],
     )
 
     with pytest.raises(ui.UIError, match=message):
         ui._check_tool_versions({'node': 'node', 'pnpm': 'pnpm'})
 
 
-def test_dependency_sync_uses_frozen_project_local_commands(
+def test_dependency_sync_uses_locked_project_local_commands(
     tmp_path,
     monkeypatch,
 ):
@@ -288,7 +301,9 @@ def test_dependency_sync_uses_frozen_project_local_commands(
 
     assert calls == [
         {
-            'command': ['/tools/uv', 'sync', '--frozen', '--no-dev'],
+            'command': [
+                '/tools/uv', 'sync', '--locked', '--no-dev', '--inexact'
+            ],
             'cwd': backend_dir,
             'label': 'backend dependency synchronization',
             'env': {
@@ -507,3 +522,138 @@ def test_posix_process_tree_cleanup_escalates_process_group(monkeypatch):
     assert process.sent_signals == []
     assert process.terminate_calls == 0
     assert process.kill_calls == 0
+
+
+# --- version parsing must ignore preamble noise ---------------------------
+
+
+@pytest.mark.parametrize(
+    ('stdout', 'expected'),
+    [
+        ('v22.22.0\n', (22, 22, 0)),
+        ('10.17.1\n', (10, 17, 1)),
+        ('22.22\n', (22, 22, 0)),
+        # Node prints deprecation notices; the old first-match-anywhere regex
+        # read "20.1" here and rejected a valid pnpm as "found 20.1.0".
+        ('WARN Node.js 20.1 is deprecated\n10.17.1\n', (10, 17, 1)),
+        # Corepack announces the download of the pinned pnpm before printing it.
+        ('! Corepack is about to download pnpm-10.17.1.tgz\n10.17.1\n',
+         (10, 17, 1)),
+        # uv tells you a newer version exists; that is not the version you have.
+        ('warning: uv 0.12.9 is available (you have 0.12.1)\nuv 0.12.1\n',
+         (0, 12, 1)),
+        # A version-manager / conda preamble with a dotted number.
+        ('Anaconda3 2024.02 activated\n10.17.1\n', (10, 17, 1)),
+        ('  \n\nv26.0.0\n  \n', (26, 0, 0)),
+    ],
+)
+def test_semantic_version_ignores_preamble_noise(stdout, expected):
+    assert ui._parse_semantic_version(stdout, 'pnpm', '/tools/pnpm') == expected
+
+
+def test_semantic_version_error_names_the_executable():
+    with pytest.raises(ui.UIError, match=r'/tools/pnpm'):
+        ui._parse_semantic_version('no version here\n', 'pnpm', '/tools/pnpm')
+
+
+# --- port preflight -------------------------------------------------------
+
+
+def test_port_preflight_names_the_busy_port(monkeypatch):
+    monkeypatch.setattr(ui, '_port_in_use',
+                        lambda host, port: port == 8000)
+
+    with pytest.raises(ui.UIError) as excinfo:
+        ui._check_ports_available('127.0.0.1', 7860, 8000)
+
+    message = str(excinfo.value)
+    assert 'backend 127.0.0.1:8000' in message
+    # The overwhelmingly common cause deserves to be named.
+    assert 'ms-agent ui' in message
+    assert 'frontend' not in message
+
+
+def test_port_preflight_passes_when_both_free(monkeypatch):
+    monkeypatch.setattr(ui, '_port_in_use', lambda host, port: False)
+    ui._check_ports_available('127.0.0.1', 7860, 8000)
+
+
+def test_port_in_use_detects_a_real_listener():
+    import socket as _socket
+    with _socket.socket() as server:
+        server.bind(('127.0.0.1', 0))
+        server.listen(1)
+        port = server.getsockname()[1]
+        assert ui._port_in_use('127.0.0.1', port) is True
+    # Once closed the port is free again (SO_REUSEADDR keeps this deterministic).
+    assert ui._port_in_use('127.0.0.1', port) is False
+
+
+# --- health probe must never traverse a proxy ------------------------------
+
+
+def test_health_probe_opener_has_no_proxy_handler():
+    import urllib.request as _rq
+    proxy_handlers = [
+        h for h in ui._LOOPBACK_OPENER.handlers
+        if isinstance(h, _rq.ProxyHandler)
+    ]
+    # A ProxyHandler built from an empty mapping is present but inert; what must
+    # never happen is inheriting getproxies() (env or macOS System Config), which
+    # would route 127.0.0.1 away from our own servers and time the launcher out.
+    assert all(h.proxies == {} for h in proxy_handlers)
+
+
+# --- version constants must not drift from the frontend manifest -----------
+
+
+def _frontend_package_json():
+    import json
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    return json.loads(
+        (root / 'webui' / 'frontend' / 'package.json').read_text('utf-8'))
+
+
+def test_min_node_version_matches_package_json_engines():
+    """ui.MIN_NODE_VERSION duplicates engines.node by necessity (the launcher
+    gates before any Node tooling can read the manifest). This lock is what
+    keeps the two from drifting apart silently."""
+    import re
+    engines = _frontend_package_json()['engines']['node']
+    match = re.fullmatch(r'>=(\d+)\.(\d+)\.(\d+)', engines)
+    assert match, f'unexpected engines.node format: {engines!r}'
+    assert tuple(int(p) for p in match.groups()) == ui.MIN_NODE_VERSION
+
+
+def test_pnpm_major_gate_matches_package_manager_pin():
+    """The launcher accepts any pnpm 10.x; the manifest pins 10.17.1 and bounds
+    engines.pnpm to >=10 <11. All three must agree on the major."""
+    pkg = _frontend_package_json()
+    pinned = pkg['packageManager']
+    assert pinned.startswith('pnpm@10.'), pinned
+    assert pkg['engines']['pnpm'] == '>=10 <11'
+
+
+def test_tool_versions_reject_old_uv_with_path(monkeypatch):
+    versions = {
+        '/tools/node': (22, 22, 0),
+        '/tools/uv': (0, 4, 9),
+    }
+    monkeypatch.setattr(
+        ui,
+        '_read_semantic_version',
+        lambda executable, flag, label, cwd=None: versions[executable],
+    )
+
+    with pytest.raises(ui.UIError) as excinfo:
+        ui._check_tool_versions({
+            'node': '/tools/node',
+            'uv': '/tools/uv',
+        })
+
+    message = str(excinfo.value)
+    assert 'uv 0.5.0 or newer' in message
+    # The resolved path is the actionable part: "installed it, but PATH found
+    # another one" is indistinguishable from a bare version number.
+    assert '/tools/uv' in message

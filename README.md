@@ -65,13 +65,13 @@ MS-Agent is a lightweight framework designed to empower agents with autonomous e
   - **Multimodal Model Input**: Support image, video, and other multimodal inputs. See [Multimodal Docs](docs/zh/Components/multimodal-support.md).
 
 * 🚀 Feb 06, 2026: Release MS-Agent v1.6.0rc1, which includes the following updates:
-  - **Agentic Insight v2**: A fully refactored deep-research system with better performance, scalability, and trustworthiness, now available in WebUI. See [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2).
+  - **Agentic Insight v2**: A fully refactored deep-research system with better performance, scalability, and trustworthiness, available in the legacy WebUI (the current WebUI has no dedicated Deep Research view — run it from the CLI). See [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2).
 
 * 🚀 Feb 04, 2026: Release MS-Agent v1.6.0rc0, which includes the following updates:
   - **Code Genesis** for complex code generation tasks, refer to [Code Genesis](https://github.com/modelscope/ms-agent/tree/main/projects/code_genesis)
   - **Singularity Cinema** for animated video generation workflow, refactored version, refer to [Singularity Cinema](https://github.com/modelscope/ms-agent/tree/main/projects/singularity_cinema)
   - **Agent Skills v2**: Knowledge-driven skill system — skills as procedural knowledge with progressive disclosure, multi-source loading, and standard tool integration. Refer to [Agent Skills](https://github.com/modelscope/ms-agent/tree/main/ms_agent/skill).
-  - **WebUI**: A new WebUI has been added, featuring agentic chatting capabilities, complex code generation and video generation workflow.
+  - **WebUI**: A new WebUI has been added, featuring agentic chatting capabilities, complex code generation and video generation workflow. (Superseded — see the current [WebUI guide](webui/README.md).)
 
 
 * 🎬 Nov 13, 2025: Release Singularity Cinema, to support short video generation for complex scenarios, check [here](projects/singularity_cinema/README_EN.md)
@@ -537,7 +537,7 @@ ms-agent ui
 
 On the first run, the launcher creates the backend environment and installs the locked frontend dependencies. Later starts verify those local dependencies. The browser opens at <http://127.0.0.1:7860>.
 
-Configure a model in **Settings → Models** before starting a real chat. Environment-variable bootstrap and manual development instructions are available in the [WebUI guide](https://github.com/modelscope/ms-agent/blob/main/webui/README.md).
+Configure a model in **Settings → Models** before starting a real chat. Environment-variable bootstrap and manual development instructions are available in the [WebUI guide](webui/README.md).
 
 **Windows tip:** If the console shows garbled text, use the UTF-8 PowerShell helper:
 
@@ -558,7 +558,7 @@ ms-agent ui --mock
 ms-agent ui --no-browser
 ```
 
-See the [complete WebUI guide](https://github.com/modelscope/ms-agent/blob/main/webui/README.md) for prerequisites, configuration precedence, all launcher options, Windows notes, and troubleshooting. This minimal launcher intentionally does not provide a production SSR mode.
+See the [complete WebUI guide](webui/README.md) for prerequisites, configuration precedence, all launcher options, Windows notes, and troubleshooting. This minimal launcher intentionally does not provide a production SSR mode.
 
 <br>
 

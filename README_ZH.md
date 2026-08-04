@@ -61,13 +61,13 @@ MS-Agent是一个轻量级框架，旨在为智能体提供自主探索能力。
   - **多模态模型输入**：支持图片、视频等多模态输入，详情请参考[多模态文档](docs/zh/Components/multimodal-support.md)。
 
 * 🚀 **2026年2月6日：发布 MS-Agent v1.6.0rc1，主要更新内容如下：**
-  - **Agentic Insight v2**：完整重构的深度研究系统，性能更优、可扩展性更强、可信度更高，支持在webui中使用，详情请参考 [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2)
+  - **Agentic Insight v2**：完整重构的深度研究系统，性能更优、可扩展性更强、可信度更高，可在旧版 WebUI 中使用（当前 WebUI 没有专门的 Deep Research 入口，请用 CLI 运行），详情请参考 [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2)
 
 * 🚀 **2026年2月4日：发布 MS-Agent v1.6.0rc0，主要更新内容如下：**
   - **Code Genesis**：针对复杂代码生成任务的专项功能，详情请参考 [Code Genesis](https://github.com/modelscope/ms-agent/tree/main/projects/code_genesis)
   - **Singularity Cinema**：动画视频生成工作流的重构版本，详情请参考 [Singularity Cinema](https://github.com/modelscope/ms-agent/tree/main/projects/singularity_cinema)
   - **全新技能框架 (Skills Framework)**：全新设计的技能系统，显著增强了系统的健壮性与可扩展性。详情请参考 [MS-Agent Skills](https://github.com/modelscope/ms-agent/tree/main/ms_agent/skill)
-  - **WebUI**：新增 Web 交互界面，支持智能体对话、复杂代码生成以及视频生成工作流。
+  - **WebUI**：新增 Web 交互界面，支持智能体对话、复杂代码生成以及视频生成工作流。（已被替换，当前版本见 [WebUI 完整指南](webui/README_ZH.md)。）
 
 * 🎬 2025.11.13: 发布了“奇点放映室”，用于进行知识类文档的复杂场景短视频制作，具体查看[这里](projects/singularity_cinema/README.md)
 
@@ -578,7 +578,7 @@ ms-agent ui
 
 第一次运行时，启动器会创建后端环境并安装前端锁定依赖；后续启动会校验这些本地依赖。浏览器默认打开 <http://127.0.0.1:7860>。
 
-进行真实对话前，请先在 **设置 → 模型设置** 中配置模型。环境变量初始化和手动开发方式见 [WebUI 完整指南](https://github.com/modelscope/ms-agent/blob/main/webui/README_ZH.md)。
+进行真实对话前，请先在 **设置 → 模型设置** 中配置模型。环境变量初始化和手动开发方式见 [WebUI 完整指南](webui/README_ZH.md)。
 
 **Windows 提示：** 若控制台出现乱码，建议使用 UTF-8 PowerShell 启动脚本：
 
@@ -599,7 +599,7 @@ ms-agent ui --mock
 ms-agent ui --no-browser
 ```
 
-依赖、配置优先级、完整参数、Windows 注意事项和排障方式请阅读 [WebUI 完整指南](https://github.com/modelscope/ms-agent/blob/main/webui/README_ZH.md)。这个最简启动器有意不提供生产环境 SSR 模式。
+依赖、配置优先级、完整参数、Windows 注意事项和排障方式请阅读 [WebUI 完整指南](webui/README_ZH.md)。这个最简启动器有意不提供生产环境 SSR 模式。
 
 ---
 
