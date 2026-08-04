@@ -262,6 +262,31 @@ class TestResumeMessageRoundTrip:
         assert msgs[1].tool_call_id == "call_1"
         assert msgs[1].name == "search"
 
+    def test_memory_orchestrator_round_trip_preserves_tool_fields(self):
+        """The unified-memory round-trip runs on EVERY turn, in-memory, before
+        the LLM call — so a field dropped there is dropped from the live
+        request. This previously regressed independently of the assembler
+        (the test above imported the assembler's copy and never covered it),
+        and OpenAI-compatible providers answered with
+        ``missing field 'tool_call_id'``.
+        """
+        from ms_agent.memory.unified.orchestrator import (_dicts_to_messages,
+                                                          _messages_to_dicts)
+        from ms_agent.llm.utils import Message
+
+        msgs = [
+            Message(role="assistant", content="",
+                    tool_calls=[{"id": "call_1", "type": "function"}]),
+            Message(role="tool", content="result",
+                    tool_call_id="call_1", name="search"),
+        ]
+        out = _dicts_to_messages(_messages_to_dicts(msgs))
+        assert out[1].tool_call_id == "call_1"
+        assert out[1].name == "search"
+        # And it must actually reach the wire: to_dict_clean() drops falsy
+        # values, so a lost id disappears from the payload entirely.
+        assert out[1].to_dict_clean()["tool_call_id"] == "call_1"
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # 2. ViewStrategies
