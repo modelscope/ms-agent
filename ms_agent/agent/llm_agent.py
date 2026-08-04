@@ -40,7 +40,8 @@ from ms_agent.ui.events import (ContentDelta, ContentEnd, ContextCompacted,
                                 ReasoningDelta, ReasoningEnded,
                                 ReasoningStarted, ToolCallCompleted,
                                 ToolCallStarted, TurnCompleted, UsageInfo)
-from ms_agent.utils import async_retry, read_history, save_history
+from ms_agent.utils import (async_retry, is_retryable_error, read_history,
+                            save_history)
 from ms_agent.utils.constants import DEFAULT_TAG, DEFAULT_USER
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.snapshot import take_snapshot
@@ -59,8 +60,15 @@ INTERRUPTED_PLACEHOLDER = '[interrupted]'
 _INTERRUPTED_TOOL_RESULT = '[Interrupted: tool execution was cancelled]'
 
 
-def build_partial_round_records(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Turn an interrupted round's in-memory rows into protocol-valid log records.
+def build_partial_round_records(
+        rows: List[Dict[str, Any]],
+        marker: str = 'interrupted') -> List[Dict[str, Any]]:
+    """Turn an unfinished round's in-memory rows into protocol-valid log records.
+
+    ``marker`` is the boolean key stamped on every produced record, naming *why*
+    the round ended early: ``interrupted`` (user Stop / cancellation) or
+    ``errored`` (the turn raised). UIs badge these differently, so an API
+    failure must not be sealed as an interruption.
 
     ``rows`` are the ``_msg_to_dict`` serializations of ``messages[pre_step_len:]``
     at cancellation time. Rules (each keeps replay valid on BOTH transports):
@@ -79,7 +87,7 @@ def build_partial_round_records(rows: List[Dict[str, Any]]) -> List[Dict[str, An
       with no content and no kept calls gets the neutral placeholder content so
       the turn reads as closed (an empty assistant block would be rejected on
       Anthropic replay, and a dangling user row would be re-answered on resume).
-    - every row is flagged ``interrupted: true`` — an extra key that survives in
+    - every row is flagged ``<marker>: true`` — an extra key that survives in
       the log for UI replay but is filtered out of the LLM context rebuild.
     """
     present_results = {
@@ -89,7 +97,7 @@ def build_partial_round_records(rows: List[Dict[str, Any]]) -> List[Dict[str, An
     records: List[Dict[str, Any]] = []
     for row in rows:
         rec = dict(row)
-        rec['interrupted'] = True
+        rec[marker] = True
         if rec.get('role') != 'assistant':
             records.append(rec)
             continue
@@ -130,14 +138,14 @@ def build_partial_round_records(rows: List[Dict[str, Any]]) -> List[Dict[str, An
                 'tool_call_id': tc.get('id'),
                 'name': tc.get('tool_name', ''),
                 'is_error': True,
-                'interrupted': True,
+                marker: True,
             })
     if not records:
         records.append({
             'role': 'assistant',
             'content': INTERRUPTED_PLACEHOLDER,
             'content_placeholder': True,
-            'interrupted': True,
+            marker: True,
         })
     return records
 
@@ -1528,7 +1536,11 @@ class LLMAgent(Agent):
         messages.append(Message(role='user', content=body))
         return messages
 
-    @async_retry(max_attempts=Agent.retry_count, delay=1.0)
+    # retry_if: a hard 4xx (bad payload, content filter, auth) is a verdict on
+    # the request, not a transient fault — retrying it 5× only adds ~40s of
+    # backoff before the same failure surfaces.
+    @async_retry(
+        max_attempts=Agent.retry_count, delay=1.0, retry_if=is_retryable_error)
     async def step(
         self, messages: List[Message]
     ) -> AsyncGenerator[List[Message], Any]:  # type: ignore
@@ -1980,16 +1992,24 @@ class LLMAgent(Agent):
             d['tokens'] = prompt_tokens + completion_tokens
         return d
 
-    def _persist_partial_round(self, messages: List[Message],
-                               pre_step_len: int) -> None:
-        """Seal an interrupted round into the SessionLog (best-effort).
+    def _persist_partial_round(self,
+                               messages: List[Message],
+                               pre_step_len: int,
+                               marker: str = 'interrupted') -> None:
+        """Seal an unfinished round into the SessionLog (best-effort).
 
-        Called from run_loop's cancellation handler, where the normal
-        round-boundary persistence can no longer run. Serializes the round's
-        in-memory rows and appends the protocol-repaired records built by
-        :func:`build_partial_round_records`. Synchronous file I/O only (safe
-        inside a cancelled task); never raises — sealing must not break the
-        cancellation unwind.
+        Called from run_loop's cancellation handler AND its exception handler,
+        where the normal round-boundary persistence can no longer run.
+        Serializes the round's in-memory rows and appends the protocol-repaired
+        records built by :func:`build_partial_round_records`. Synchronous file
+        I/O only (safe inside a cancelled task); never raises — sealing must not
+        break the unwind.
+
+        Sealing is not cosmetic: without it the log tail stays on a ``user`` or
+        ``tool`` row, and the next resume rebuilds that same round and re-calls
+        the model instead of reading the user's new prompt (see run_loop's
+        ``load_cache`` guard). ``marker`` records why the round ended —
+        ``interrupted`` for Stop, ``errored`` for a raised turn.
         """
         if self.session_log is None:
             return
@@ -2018,7 +2038,7 @@ class LLMAgent(Agent):
             rows = [
                 self._msg_to_dict(msg) for msg in messages[pre_step_len:]
             ]
-            for record in build_partial_round_records(rows):
+            for record in build_partial_round_records(rows, marker=marker):
                 self.session_log.append(record)
         except Exception:
             logger.warning('persist partial round failed', exc_info=True)
@@ -2034,6 +2054,11 @@ class LLMAgent(Agent):
         Args:
             messages: Input prompt string or list of Message objects.
         """
+        # Bound BEFORE the try so the exception handler can always read it:
+        # setup (agent/LLM construction, credential resolution) raises well
+        # before the round loop, and an unbound local there would turn a clean
+        # provider error into an UnboundLocalError. None = no round to seal.
+        pre_step_len: Optional[int] = None
         try:
             self.max_chat_round = getattr(self.config, 'max_chat_round',
                                           LLMAgent.DEFAULT_MAX_CHAT_ROUND)
@@ -2266,6 +2291,17 @@ class LLMAgent(Agent):
             import traceback
 
             logger.warning(traceback.format_exc())
+            # Seal the round FIRST. A raised turn leaves the log tail on a
+            # `user`/`tool` row, and run_loop's resume guard only skips the
+            # model call when the tail is `assistant` — so the next request
+            # rebuilds this same round, re-sends the identical failing context,
+            # and never reaches after_tool_call (which is what drains the queued
+            # prompt). The user sees the turn "loop" while every resend is
+            # silently discarded. Sealing closes the round, so the rebuilt agent
+            # blocks on read_prompt and consumes the new message instead.
+            if pre_step_len is not None:
+                self._persist_partial_round(
+                    messages, pre_step_len, marker='errored')
             if self._event_sink is not None:
                 # A run_loop turn-abort is non-recoverable (the turn produced no
                 # usable assistant output); mark it so live == persisted/replay.

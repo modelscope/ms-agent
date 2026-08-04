@@ -262,6 +262,31 @@ class TestResumeMessageRoundTrip:
         assert msgs[1].tool_call_id == "call_1"
         assert msgs[1].name == "search"
 
+    def test_memory_orchestrator_round_trip_preserves_tool_fields(self):
+        """The unified-memory round-trip runs on EVERY turn, in-memory, before
+        the LLM call — so a field dropped there is dropped from the live
+        request. This previously regressed independently of the assembler
+        (the test above imported the assembler's copy and never covered it),
+        and OpenAI-compatible providers answered with
+        ``missing field 'tool_call_id'``.
+        """
+        from ms_agent.memory.unified.orchestrator import (_dicts_to_messages,
+                                                          _messages_to_dicts)
+        from ms_agent.llm.utils import Message
+
+        msgs = [
+            Message(role="assistant", content="",
+                    tool_calls=[{"id": "call_1", "type": "function"}]),
+            Message(role="tool", content="result",
+                    tool_call_id="call_1", name="search"),
+        ]
+        out = _dicts_to_messages(_messages_to_dicts(msgs))
+        assert out[1].tool_call_id == "call_1"
+        assert out[1].name == "search"
+        # And it must actually reach the wire: to_dict_clean() drops falsy
+        # values, so a lost id disappears from the payload entirely.
+        assert out[1].to_dict_clean()["tool_call_id"] == "call_1"
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # 2. ViewStrategies
@@ -1671,3 +1696,40 @@ class TestEndToEnd:
             assert len(log.get_all_messages()) == 4
         finally:
             loop.close()
+
+
+class TestSessionLogErrorDedup:
+    """record_error is idempotent per (round, message).
+
+    A wedged turn used to append one identical record per retry/replay attempt
+    (observed: five copies of the same 400, all round 15), making replay
+    unreadable. Callers that omit ``round`` opt out of dedup on purpose — they
+    have no round identity to key on.
+    """
+
+    def setup_method(self):
+        import tempfile
+        self.tmpdir = tempfile.mkdtemp()
+
+    def test_same_round_same_message_recorded_once(self):
+        log = SessionLog(self.tmpdir, session_key="err_dedup")
+        for _ in range(5):
+            log.record_error({
+                "message": "APIError: <400> boom",
+                "recoverable": False,
+                "round": 15,
+            })
+        assert len(log.get_errors()) == 1
+
+    def test_round_and_message_changes_are_kept(self):
+        log = SessionLog(self.tmpdir, session_key="err_kept")
+        log.record_error({"message": "APIError: boom", "round": 15})
+        log.record_error({"message": "APIError: boom", "round": 16})
+        log.record_error({"message": "different failure", "round": 15})
+        assert len(log.get_errors()) == 3
+
+    def test_callers_without_a_round_opt_out_of_dedup(self):
+        log = SessionLog(self.tmpdir, session_key="err_optout")
+        log.record_error({"message": "no round identity"})
+        log.record_error({"message": "no round identity"})
+        assert len(log.get_errors()) == 2
