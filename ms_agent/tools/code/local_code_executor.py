@@ -332,6 +332,18 @@ class LocalCodeExecutionTool(ToolBase):
                 'HOME': os.environ.get('HOME', ''),
                 'LANG': os.environ.get('LANG', ''),
             }
+            if os.name == 'nt':
+                # ``create_subprocess_shell`` uses the native Windows command
+                # processor. Keep the non-secret OS/user variables that cmd
+                # and programs using temporary/profile directories require.
+                for key in (
+                        'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'PATHEXT', 'TEMP',
+                        'TMP', 'TMPDIR', 'USERPROFILE', 'HOMEDRIVE',
+                        'HOMEPATH', 'USERNAME', 'APPDATA', 'LOCALAPPDATA',
+                        'PROGRAMDATA', 'OS', 'PROCESSOR_ARCHITECTURE'):
+                    value = os.environ.get(key)
+                    if value is not None:
+                        env[key] = value
 
         if not self.tool_config or not hasattr(self.tool_config, field):
             return env
@@ -589,7 +601,12 @@ class LocalCodeExecutionTool(ToolBase):
                 indent=2)
 
     def _prepare_shell_command(self, command: str) -> str:
-        """Wrap composite shell input in ``sh -lc`` when needed (matches sandbox behavior)."""
+        """Use the native Windows shell; wrap composite POSIX input when needed."""
+        if os.name == 'nt':
+            # asyncio.create_subprocess_shell delegates to cmd.exe on Windows;
+            # wrapping native syntax in a usually unavailable POSIX shell
+            # makes otherwise valid compound commands fail.
+            return command
         shell_meta = ('&&', '||', '|', ';', '>', '<', '`', '$(', 'cd ',
                       'export ')
         already_wrapped = command.lstrip().startswith(

@@ -103,7 +103,20 @@ class SessionLog:
         turn-level / API errors that must NOT go back to the model (tool-call
         errors stay as ordinary ``role="tool"`` messages instead).  ``event``
         typically carries ``message``, ``error_type``, ``recoverable``, ``round``.
+
+        Idempotent per (round, message): a round that is retried or replayed
+        must not stack identical records. A wedged turn used to append one per
+        attempt, growing a log of dozens of copies of the same failure and
+        making replay unreadable. Dedup needs a ``round`` to key on; without one
+        every call is recorded (callers that omit it are opting out).
         """
+        rnd = event.get('round')
+        if rnd is not None:
+            message = event.get('message')
+            for prior in self.get_errors():
+                if (prior.get('round') == rnd
+                        and prior.get('message') == message):
+                    return
         seq = self._next_seq()
         record = {
             "_type": "error",
