@@ -3,9 +3,9 @@
 
 ``ProviderRouter.create(config)`` is the data-driven replacement for the
 hard-coded ``all_services_mapping`` factory. It resolves the spec (by service
-name, then by model-name keywords, else a generic OpenAI-compatible fallback),
-resolves credentials, builds the matching transport, and returns an
-``LLMProvider``.
+name; by model-name keywords only when no service is configured; else a generic
+OpenAI-compatible fallback named after the service), resolves credentials,
+builds the matching transport, and returns an ``LLMProvider``.
 
 ``LLMProvider`` is a drop-in for the legacy LLM instances on the agent hot path:
 it exposes ``.model``, ``.config`` and ``.generate(messages, tools, **kwargs)``
@@ -108,7 +108,15 @@ class ProviderRouter:
         model = config.llm.model
 
         spec = self._registry.get(service)
-        if spec is None:
+        if spec is None and not service:
+            # Model-name inference only applies when the config names no
+            # service. A configured-but-unknown service is a custom provider:
+            # its credentials live under ``<service>_api_key`` /
+            # ``<service>_base_url``, so inferring a built-in spec from the
+            # model name would look them up under that vendor's name instead
+            # and silently fall back to that vendor's default endpoint (e.g. a
+            # private gateway serving a model named ``deepseek-*`` would be
+            # routed to api.deepseek.com).
             spec = self._registry.resolve_by_model(model)
         if spec is None:
             logger.info(
