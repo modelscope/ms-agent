@@ -699,6 +699,19 @@ def merge_resources(
         skill_path = path
         if is_cross_product and path.startswith('optional-skills/'):
             skill_path = 'skills/' + path[len('optional-skills/'):]
+        # Qoder ``commands/<x>.md`` ARE skills: the host runs them via the
+        # skill framework (a ``name``/``description`` frontmatter + body,
+        # triggered by ``/<x>``), identical in shape to a ``SKILL.md``. No
+        # other framework has a ``commands/`` slot, so carrying the path over
+        # verbatim gets it dropped by the target-spec filter (it looks
+        # imported but never loads). Cross-product, re-home each command as
+        # its own skill dir ``skills/<x>/SKILL.md`` so the target loads it
+        # like a native skill; same-product qoder->qoder keeps it as-is.
+        elif (is_cross_product and source_product == 'qoder'
+              and path.startswith('commands/') and path.endswith('.md')):
+            cmd_name = path[len('commands/'):-len('.md')]
+            if cmd_name:
+                skill_path = f'skills/{cmd_name}/SKILL.md'
         if skill_path.startswith('skills/'):
             parts = skill_path.split('/')
             skill_name = parts[1] if len(parts) > 1 else ''
@@ -717,7 +730,9 @@ def merge_resources(
                     path=skill_path,
                     action='import',
                     detail='Skill imported' if skill_path == path else
-                    f'Optional skill imported (from {path})',
+                    (f'Qoder command converted to skill (from {path})'
+                     if path.startswith('commands/') else
+                     f'Optional skill imported (from {path})'),
                 ))
             continue
 

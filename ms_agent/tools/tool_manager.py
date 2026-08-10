@@ -301,16 +301,14 @@ class ToolManager:
         elif (isinstance(self.mcp_config, dict)
               and self.mcp_config.get('mcpServers')):
             logger.warning_once(
-                'mcp package not installed; MCP tools disabled for this run'
-            )
+                'mcp package not installed; MCP tools disabled for this run')
         for tool in self.extra_tools:
             try:
                 await tool.connect()
             except Exception as e:
                 logger.warning(
                     f'Tool {getattr(tool, "name", type(tool).__name__)} '
-                    f'failed to connect: {e}; disabling.'
-                )
+                    f'failed to connect: {e}; disabling.')
 
         # reindex_tool() self-gates its MCP portion on _skip_mcp_reindex, so it
         # is always safe to call here: extra tools get indexed in every path,
@@ -457,7 +455,8 @@ class ToolManager:
                 key = self._build_index_key(server_name, tool['tool_name'])
                 existing = self._tool_index.get(key)
                 if existing is not None:
-                    if existing[0] is not tool_ins or existing[1] != server_name:
+                    if existing[
+                            0] is not tool_ins or existing[1] != server_name:
                         logger.warning(
                             'Tool name collision on %r: keeping owner from %r, '
                             'ignoring new from %r', key, existing[1],
@@ -538,19 +537,28 @@ class ToolManager:
                     safety_decision = self._safety_guard.check(
                         tool_name, args_dict)
                     if safety_decision.action == 'deny':
-                        return {'result': f'Blocked by safety policy: {safety_decision.reason}',
-                                'is_error': True}
+                        return {
+                            'result':
+                            f'Blocked by safety policy: {safety_decision.reason}',
+                            'is_error': True
+                        }
                     if safety_decision.action == 'ask':
                         resolved = resolve_ask(safety_decision,
                                                self._permission_mode,
                                                self._read_policy)
                         if resolved.action == 'deny':
-                            return {'result': f'Blocked by safety policy: {resolved.reason}',
-                                    'is_error': True}
+                            return {
+                                'result':
+                                f'Blocked by safety policy: {resolved.reason}',
+                                'is_error': True
+                            }
                         if resolved.action == 'ask':
                             if self._permission_enforcer is None:
-                                return {'result': f'Blocked by safety policy (requires confirmation): {resolved.reason}',
-                                        'is_error': True}
+                                return {
+                                    'result':
+                                    f'Blocked by safety policy (requires confirmation): {resolved.reason}',
+                                    'is_error': True
+                                }
                             # interactive mode: force the enforcer to confirm with
                             # the user; whitelist/memory must not bypass a safety
                             # ask (REVIEW P1-2).
@@ -594,8 +602,10 @@ class ToolManager:
                 if isinstance(perm_out, str):
                     return perm_out
                 if perm_out.action == 'deny':
-                    return {'result': f'Tool call denied: {perm_out.reason}',
-                            'is_error': True}
+                    return {
+                        'result': f'Tool call denied: {perm_out.reason}',
+                        'is_error': True
+                    }
                 if perm_out.updated_args is not None:
                     tool_args = perm_out.updated_args
                     tool_info['arguments'] = tool_args
@@ -634,9 +644,8 @@ class ToolManager:
                 if isinstance(response, str) and len(response) > max_len:
                     half = max_len // 2
                     trunc_notice = (
-                        f"\n\n...[SYSTEM: Output truncated, {len(response)} chars total, "
-                        f"showing first and last {half} chars]...\n\n"
-                    )
+                        f'\n\n...[SYSTEM: Output truncated, {len(response)} chars total, '
+                        f'showing first and last {half} chars]...\n\n')
                     response = response[:half] + trunc_notice + response[-half:]
 
                 if (self.mcp_success_handler is not None
@@ -707,7 +716,9 @@ class ToolManager:
                 exc_msg = str(e) or '(no error message)'
                 tn = tool_info.get('tool_name', '(unknown)')
                 tb_lines = tb_str.strip().splitlines()
-                tb_tail = '\n'.join(tb_lines[-6:]) if len(tb_lines) > 6 else '\n'.join(tb_lines)
+                tb_tail = '\n'.join(
+                    tb_lines[-6:]) if len(tb_lines) > 6 else '\n'.join(
+                        tb_lines)
                 if tool_ins is not None and tool_ins is self.servers:
                     await self._report_mcp_failure(
                         server_name,

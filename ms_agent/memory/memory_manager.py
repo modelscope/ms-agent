@@ -1,6 +1,5 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import os
-
 from omegaconf import DictConfig, OmegaConf
 from typing import Dict
 

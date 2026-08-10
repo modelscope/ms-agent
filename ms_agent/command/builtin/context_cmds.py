@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from ms_agent.command.router import CommandRouter
 from ms_agent.command.types import (CommandContext, CommandDef, CommandResult,
                                     CommandResultType)

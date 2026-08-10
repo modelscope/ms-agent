@@ -42,7 +42,8 @@ class PermissionHandler(Protocol):
         context: str,
         suggestions: list[str] | None = None,
         call_id: str = '',
-    ) -> PermissionResponse: ...
+    ) -> PermissionResponse:
+        ...
 
 
 class AutoPermissionHandler:
@@ -163,13 +164,20 @@ class WebPermissionHandler:
         self._pending[request_id] = future
 
         self._event_emitter.emit({
-            'type': 'permission_request',
-            'request_id': request_id,
-            'call_id': call_id,
-            'tool_name': tool_name,
-            'tool_args': tool_args,
-            'context': context,
-            'suggestions': suggestions or [],
+            'type':
+            'permission_request',
+            'request_id':
+            request_id,
+            'call_id':
+            call_id,
+            'tool_name':
+            tool_name,
+            'tool_args':
+            tool_args,
+            'context':
+            context,
+            'suggestions':
+            suggestions or [],
             'options': [a.value for a in PermissionAction],
         })
 

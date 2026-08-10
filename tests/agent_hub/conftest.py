@@ -6,12 +6,20 @@ Mirrors modelscope-hub's remote-skip mechanism: integration tests marked
 valid credentials are supplied via the ``TOKEN`` environment variable (or
 ``MODELSCOPE_RUN_REMOTE_TESTS=true``). This keeps the default ``pytest`` run
 fast and offline instead of hanging on network calls.
+
+Also turns on ``TRY_EXP_FRAMEWORKS`` for the whole suite: only ms-agent and
+qwenpaw are exposed by default, but the gated frameworks are still fully
+implemented and maintained, so their layout/conversion regressions must keep
+running here. The gate itself (off by default, on via the env var) is covered
+explicitly in ``test_cli.py``.
 """
 from __future__ import annotations
 
 import os
 
 import pytest
+
+os.environ.setdefault("TRY_EXP_FRAMEWORKS", "True")
 
 
 def is_remote_enabled() -> bool:

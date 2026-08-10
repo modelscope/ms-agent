@@ -81,8 +81,7 @@ async def resolve_hook_permission_decision(
             if rule and rule.action == 'ask':
                 if permission_enforcer:
                     return await permission_enforcer.check(
-                        tool_name, args, force_decision=rule,
-                        call_id=call_id)
+                        tool_name, args, force_decision=rule, call_id=call_id)
         return PermissionDecision(
             action='allow',
             reason=hook_result.reason or 'Allowed by PreToolUse hook',
@@ -106,8 +105,7 @@ async def resolve_hook_permission_decision(
         return await permission_enforcer.check(
             tool_name,
             args,
-            force_decision=PermissionDecision(
-                action='ask', reason=pr.reason),
+            force_decision=PermissionDecision(action='ask', reason=pr.reason),
             call_id=call_id,
         )
 

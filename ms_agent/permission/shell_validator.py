@@ -149,14 +149,17 @@ class ShellPathValidator:
                         if os.path.isabs(target):
                             _current_cwd = str(Path(target).resolve())
                         else:
-                            _current_cwd = str((Path(_current_cwd) / target).resolve())
+                            _current_cwd = str(
+                                (Path(_current_cwd) / target).resolve())
 
             # 5. Command path extraction and validation
-            result = self._check_command(base_cmd, args, _depth=_depth, cwd=_current_cwd)
+            result = self._check_command(
+                base_cmd, args, _depth=_depth, cwd=_current_cwd)
             if result.action != 'allow':
                 return result
 
-        return SafetyDecision(action='allow', reason='Shell command passed all checks')
+        return SafetyDecision(
+            action='allow', reason='Shell command passed all checks')
 
     def _check_command_substitutions(
         self,
@@ -212,7 +215,11 @@ class ShellPathValidator:
 
         return self._validate_paths(paths, entry.op_type, base_cmd, cwd=cwd)
 
-    def _check_sed(self, args: list[str], entry: ExtractorEntry, *, cwd: str | None = None) -> SafetyDecision:
+    def _check_sed(self,
+                   args: list[str],
+                   entry: ExtractorEntry,
+                   *,
+                   cwd: str | None = None) -> SafetyDecision:
         op_type = entry.op_type
         if is_sed_read_only(args):
             op_type = 'read'
@@ -303,7 +310,12 @@ class ShellPathValidator:
                     reason=f'Dangerous removal path: {path}',
                 )
 
-            result = validate_path(path, effective_cwd, self._allowed_dirs, op_type, read_only_dirs=self._read_only_dirs)
+            result = validate_path(
+                path,
+                effective_cwd,
+                self._allowed_dirs,
+                op_type,
+                read_only_dirs=self._read_only_dirs)
             if not result.allowed:
                 return SafetyDecision(
                     action=result.action,

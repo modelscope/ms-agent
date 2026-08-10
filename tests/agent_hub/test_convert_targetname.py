@@ -689,5 +689,66 @@ class TestHermesOptionalSkillsOutbound(unittest.TestCase):
             self.assertIn("OPTSKILL", kept.read_text())
 
 
+class TestQoderCommandsToSkillOutbound(unittest.TestCase):
+    """Qoder ``commands/<x>.md`` must convert to a target skill.
+
+    The host runs qoder commands via the skill framework (a
+    ``name``/``description`` frontmatter + body, triggered by ``/<x>``), so
+    they are skills in all but path. No other framework has a ``commands/``
+    slot, so carrying the path over verbatim let the target-spec filter drop
+    it -- imported on paper, never loaded. Cross-product each command is
+    re-homed as ``skills/<x>/SKILL.md``; qoder->qoder keeps it verbatim.
+    """
+
+    def _make_src(self, td):
+        src = Path(td) / "src"
+        (src / "agents").mkdir(parents=True)
+        (src / "commands").mkdir(parents=True)
+        (src / "AGENTS.md").write_text("# Agents\n")
+        (src / "agents" / "default.md").write_text("# Default\npersona\n")
+        (src / "commands" / "check-user-resources.md").write_text(
+            "---\nname: check-user-resources\n"
+            "description: check system resources\n---\n\nGOLD-QODER-COMMAND\n")
+        return src
+
+    def test_command_becomes_skill_on_every_target(self):
+        for target in ("openclaw", "qwenpaw", "nanobot", "openhuman",
+                       "hermes", "ms-agent"):
+            with tempfile.TemporaryDirectory() as td:
+                src = self._make_src(td)
+                out = Path(td) / "out"
+                rc = cmd_convert(
+                    "qoder", target,
+                    from_name="default", target_name="default",
+                    local_dir=str(src), out_dir=str(out))
+                self.assertEqual(rc, 0)
+                hits = [
+                    str(p.relative_to(out)) for p in out.rglob("*")
+                    if p.is_file() and "GOLD-QODER-COMMAND" in p.read_text()
+                ]
+                self.assertEqual(
+                    len(hits), 1,
+                    f"qoder->{target}: command lost or duplicated: {hits}")
+                self.assertIn(
+                    "skills/check-user-resources/SKILL.md", hits[0])
+                self.assertNotIn("commands/", hits[0])
+
+    def test_same_framework_keeps_command_prefix(self):
+        """qoder -> qoder stays byte-faithful: commands/ untouched."""
+        with tempfile.TemporaryDirectory() as td:
+            src = self._make_src(td)
+            out = Path(td) / "out"
+            rc = cmd_convert(
+                "qoder", "qoder",
+                from_name="default", target_name="default",
+                local_dir=str(src), out_dir=str(out))
+            self.assertEqual(rc, 0)
+            kept = out / "commands" / "check-user-resources.md"
+            self.assertTrue(kept.is_file())
+            self.assertIn("GOLD-QODER-COMMAND", kept.read_text())
+            self.assertFalse(
+                (out / "skills" / "check-user-resources").exists())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

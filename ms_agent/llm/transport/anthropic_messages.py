@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import inspect
 import json
-from typing import (Any, Dict, Generator, Iterator, List, Optional, Union)
+from typing import Any, Dict, Generator, Iterator, List, Optional, Union
 
 from ms_agent.llm.transport.base import Transport
 from ms_agent.llm.utils import Message, Tool, ToolCall
@@ -83,8 +83,8 @@ class AnthropicMessagesTransport(Transport):
                 return {}
         return value if value is not None else {}
 
-    def _format_input_message(
-            self, messages: List[Message]) -> List[Dict[str, Any]]:
+    def _format_input_message(self,
+                              messages: List[Message]) -> List[Dict[str, Any]]:
         formatted_messages = []
         # tool_use ids from the most recent assistant turn, awaiting their
         # results. Anthropic requires every tool_result to carry the matching
@@ -107,22 +107,28 @@ class AnthropicMessagesTransport(Transport):
                     thinking_block['signature'] = signature
                 content.append(thinking_block)
             if msg.content:
-                content.append(
-                    {'type': 'text', 'text': self._as_text(msg.content)})
+                content.append({
+                    'type': 'text',
+                    'text': self._as_text(msg.content)
+                })
             if msg.tool_calls:
                 pending_tool_ids = []
                 for tool_call in msg.tool_calls:
                     tid = tool_call['id']
                     pending_tool_ids.append(tid)
                     content.append({
-                        'type': 'tool_use',
-                        'id': tid,
-                        'name': tool_call['tool_name'],
-                        'input': self._as_tool_input(tool_call.get('arguments'))
+                        'type':
+                        'tool_use',
+                        'id':
+                        tid,
+                        'name':
+                        tool_call['tool_name'],
+                        'input':
+                        self._as_tool_input(tool_call.get('arguments'))
                     })
             if msg.role == 'tool':
-                tool_use_id = msg.tool_call_id or (
-                    pending_tool_ids.pop(0) if pending_tool_ids else '')
+                tool_use_id = msg.tool_call_id or (pending_tool_ids.pop(0)
+                                                   if pending_tool_ids else '')
                 result_block = {
                     'type': 'tool_result',
                     'tool_use_id': tool_use_id,

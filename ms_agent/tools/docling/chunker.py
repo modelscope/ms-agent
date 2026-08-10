@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from docling_core.transforms.chunker import BaseChunk, DocChunk
 from docling_core.transforms.chunker.hierarchical_chunker import (
     ChunkingDocSerializer, ChunkingSerializerProvider)

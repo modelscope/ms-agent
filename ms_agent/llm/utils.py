@@ -179,10 +179,13 @@ class ToolResult:
                 is_error=bool(raw.get('is_error', False)),
                 extra={
                     k: v
-                    for k, v in raw.items()
-                    if k not in [
-                        'text', 'resources', 'result', 'tool_detail',
-                        'hook_attachments', 'is_error',
+                    for k, v in raw.items() if k not in [
+                        'text',
+                        'resources',
+                        'result',
+                        'tool_detail',
+                        'hook_attachments',
+                        'is_error',
                     ]
                 })
         raise TypeError('tool_call_result must be str or dict')

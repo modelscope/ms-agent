@@ -69,10 +69,9 @@ class PermissionEnforcer:
         except (TypeError, ValueError):
             return True  # can't introspect — assume it takes it, don't strip
         params = sig.parameters.values()
-        return (
-            any(p.name == param for p in params)
-            or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params)
-        )
+        return (any(p.name == param for p in params)
+                or any(p.kind == inspect.Parameter.VAR_KEYWORD
+                       for p in params))
 
     async def check(
         self,
