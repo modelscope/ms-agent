@@ -84,6 +84,18 @@ class Mem0Backend(BaseMemoryBackend):
             self._mem0 = None
 
     async def close(self) -> None:
+        # Drop the vector client explicitly. Embedded stores (qdrant/chroma on a
+        # local path) hold an exclusive OS file lock, so merely releasing the
+        # reference leaves the store locked until GC gets around to it -- long
+        # enough that the next agent, or any other process on the same path,
+        # fails with "already accessed by another instance".
+        client = getattr(getattr(self._mem0, 'vector_store', None), 'client',
+                         None)
+        if client is not None:
+            try:
+                client.close()
+            except Exception as e:  # pragma: no cover - best-effort teardown
+                logger.debug(f'[mem0_backend] vector client close failed: {e}')
         self._mem0 = None
 
     # ── inject ───────────────────────────────────────────────────────
@@ -142,7 +154,14 @@ class Mem0Backend(BaseMemoryBackend):
                 return
             await _offload(self._mem0.add, convo, user_id=self._user_id)
         except Exception as e:
-            logger.warning(f'[mem0_backend] add failed: {e}')
+            # Deliberately non-fatal -- a memory write must never break the
+            # turn. But log at error with the exception type: this is the only
+            # trace a failed ingestion leaves, and the symptom it produces
+            # (conversation succeeds, memory stays empty forever) gives the
+            # user nothing to search for.
+            logger.error(
+                f'[mem0_backend] add failed, nothing was persisted for this '
+                f'round: {type(e).__name__}: {e}')
 
     # ── Search ───────────────────────────────────────────────────────
 
