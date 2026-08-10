@@ -2248,6 +2248,18 @@ class LLMAgent(Agent):
                     for msg in messages[pre_step_len:step_end_len]:
                         self.session_log.append(self._msg_to_dict(msg))
 
+                # Ingest THIS round's memory here, for the same reason the
+                # SessionLog write above moved up: after_tool_call blocks on the
+                # next prompt in interactive mode. Running afterwards made
+                # 'add_after_step' mean "after the *next* step" — round N was
+                # only ingested once round N+1 arrived, a single-round session
+                # was never ingested at all (the run-loop tail that would have
+                # caught it is skipped when the input source raises EOF), and
+                # the message list it saw had the next user turn already
+                # appended. Before the block, `messages` is exactly this round.
+                await self.add_memory(
+                    messages, add_type='add_after_step', **kwargs)
+
                 await self.after_tool_call(messages)
                 self.runtime.round += 1
 
@@ -2258,9 +2270,6 @@ class LLMAgent(Agent):
                         self.session_log.append(self._msg_to_dict(msg))
                     self.session_log.round = self.runtime.round
 
-                # save memory and history
-                await self.add_memory(
-                    messages, add_type='add_after_step', **kwargs)
                 self.save_history(messages)
 
                 # +1 means the next round the assistant may give a conclusion
