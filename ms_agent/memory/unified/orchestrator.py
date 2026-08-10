@@ -12,6 +12,9 @@ from typing import Any, Dict, List, Optional
 
 from ms_agent.llm.utils import Message
 from ms_agent.memory.base import Memory
+# Single canonical deserializer, shared with ContextAssembler. A second local
+# copy previously drifted and silently dropped `tool_call_id` / `name`.
+from ms_agent.session.context_assembler import _dicts_to_messages
 from ms_agent.utils.logger import get_logger
 from .config import MemoryConfig
 from .protocols import MemoryBackend, MemoryEntry
@@ -181,6 +184,15 @@ class MemoryOrchestrator(Memory):
 
 
 def _messages_to_dicts(messages: List[Message]) -> List[Dict[str, Any]]:
+    """Serialize for ``backend.inject()`` — must be lossless.
+
+    This round-trip (``run()``: messages -> dicts -> inject -> messages) runs on
+    EVERY turn, so any field dropped here is dropped from the live LLM context,
+    not just from storage. ``tool_call_id`` in particular is mandatory on the
+    wire for ``role='tool'`` rows: losing it makes OpenAI-compatible providers
+    reject the request with ``missing field 'tool_call_id'``. Keep this the
+    exact inverse of ``_dicts_to_messages`` below.
+    """
     result: List[Dict[str, Any]] = []
     for m in messages:
         if isinstance(m, dict):
@@ -189,24 +201,15 @@ def _messages_to_dicts(messages: List[Message]) -> List[Dict[str, Any]]:
             d: Dict[str, Any] = {'role': m.role, 'content': m.content or ''}
             if m.tool_calls:
                 d['tool_calls'] = m.tool_calls
+            if m.tool_call_id:
+                d['tool_call_id'] = m.tool_call_id
+            if m.name:
+                d['name'] = m.name
+            if m.reasoning_content:
+                d['reasoning_content'] = m.reasoning_content
+            if m.reasoning_signature:
+                d['reasoning_signature'] = m.reasoning_signature
             result.append(d)
         else:
             result.append({'role': 'user', 'content': str(m)})
-    return result
-
-
-def _dicts_to_messages(dicts: List[Dict[str, Any]]) -> List[Message]:
-    result: List[Message] = []
-    for d in dicts:
-        if isinstance(d, Message):
-            result.append(d)
-        elif isinstance(d, dict):
-            result.append(
-                Message(
-                    role=d.get('role', 'user'),
-                    content=d.get('content', ''),
-                    tool_calls=d.get('tool_calls'),
-                ))
-        else:
-            result.append(Message(role='user', content=str(d)))
     return result

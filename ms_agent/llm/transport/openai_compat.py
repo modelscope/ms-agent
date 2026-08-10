@@ -171,6 +171,14 @@ class OpenAICompatTransport(Transport):
             cache_indice = max(cache_indices) if cache_indices else None
 
         openai_messages = []
+        # Order-matched fallback for a tool row that reaches us without its id.
+        # OpenAI-compatible gateways reject such a message outright
+        # ("missing field `tool_call_id`"), killing the whole turn, so pair it
+        # with the preceding assistant turn's calls instead. The Anthropic
+        # transport has carried the same guard for a while; this keeps the two
+        # symmetric. Note `to_dict_clean()` omits falsy values, so a None/'' id
+        # disappears from the dict entirely rather than arriving as None.
+        pending_tool_ids: List[str] = []
         for idx, message in enumerate(messages):
             if isinstance(message, Message):
                 if isinstance(message.content, str):
@@ -205,6 +213,22 @@ class OpenAICompatTransport(Transport):
             if (formatted_message.get('role') == 'assistant'
                     and formatted_message.get('tool_calls') and not content):
                 formatted_message['content'] = None
+
+            role = formatted_message.get('role')
+            if role == 'assistant':
+                pending_tool_ids = [
+                    tc.get('id') for tc in (formatted_message.get('tool_calls')
+                                            or []) if isinstance(tc, dict)
+                    and tc.get('id')
+                ]
+            elif role == 'tool' and not formatted_message.get('tool_call_id'):
+                if pending_tool_ids:
+                    formatted_message['tool_call_id'] = pending_tool_ids.pop(0)
+                else:
+                    logger.warning(
+                        'tool message has no tool_call_id and no preceding '
+                        'assistant tool_calls to match it against; the provider '
+                        'will likely reject this request')
 
             openai_messages.append(formatted_message)
         return openai_messages
