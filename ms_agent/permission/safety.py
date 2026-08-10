@@ -73,7 +73,8 @@ class SafetyGuard:
                         result = self._check_file_path(p.strip(), 'read')
                         if result.action != 'allow':
                             return result
-                return SafetyDecision(action='allow', reason='All read paths validated')
+                return SafetyDecision(
+                    action='allow', reason='All read paths validated')
             return self._check_file_path(path, 'read')
 
         if tool_name.endswith('---grep') or tool_name.endswith('---glob'):

@@ -284,6 +284,74 @@ class TestQwenpawConfigRoot(unittest.TestCase):
         self.assertEqual(self._root_name([]), ".copaw")
 
 
+class TestOpenhumanUserWorkspace(unittest.TestCase):
+    """Regression (BUG-033): openhuman keeps its files in a per-device user
+    workspace ``~/.openhuman/users/<user-id>/workspace``, not directly under
+    ``~/.openhuman``, so the old fixed root collected ZERO files on real
+    installs. Profiles under ``personalities/`` are sub-agents.
+    """
+
+    USER_ID = "local-u-mwj2l941-2317-local"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name) / ".openhuman"
+        self.ws = self.root / "users" / self.USER_ID / "workspace"
+        (self.ws / "personalities" / "Alice").mkdir(parents=True)
+        (self.ws / "personalities" / "Bob").mkdir(parents=True)
+        (self.ws / "wiki").mkdir()
+        (self.ws / "SOUL.md").write_text("# global soul\n")
+        (self.ws / "IDENTITY.md").write_text("# id\n")
+        (self.ws / "config.toml").write_text('name = "bot"\n')
+        (self.ws / "wiki" / "note.md").write_text("note\n")
+        (self.ws / "personalities" / "Alice" / "SOUL.md").write_text("# A\n")
+        (self.ws / "personalities" / "Bob" / "SOUL.md").write_text("# B\n")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_resolves_per_device_user_workspace(self):
+        spec = build_spec("openhuman", "default", str(self.root))
+        self.assertEqual(spec.workspace_root, self.ws)
+        self.assertEqual(
+            sorted(spec.collect_bytes()),
+            ["IDENTITY.md", "SOUL.md", "config.toml", "wiki/note.md"])
+
+    def test_default_root_probes_users_dir(self):
+        from ms_agent.agent_hub.frameworks.openhuman import OpenhumanWorkspace
+        with mock.patch("pathlib.Path.home", return_value=self.root.parent):
+            self.assertEqual(
+                OpenhumanWorkspace(agent_name="default").default_root, self.ws)
+
+    def test_profiles_are_sub_agents(self):
+        spec = build_spec("openhuman", "default", str(self.root))
+        self.assertEqual(spec.list_agents(), ["default", "Alice", "Bob"])
+        alice = build_spec("openhuman", "Alice", str(self.root))
+        self.assertEqual(alice.workspace_root,
+                         self.ws / "personalities" / "Alice")
+        self.assertEqual(sorted(alice.collect_bytes()), ["SOUL.md"])
+
+    def test_all_mode_prefixes_profile_dirs(self):
+        spec = build_spec("openhuman", "all", str(self.root))
+        self.assertEqual(sorted(spec.collect_bytes()),
+                         ["Alice/SOUL.md", "Bob/SOUL.md"])
+        self.assertTrue(spec.is_root_per_agent)
+        self.assertEqual(spec.split_all_path("Alice/SOUL.md"),
+                         ("Alice", "SOUL.md"))
+        self.assertEqual(spec.join_all_path("Bob", "SOUL.md"), "Bob/SOUL.md")
+
+    def test_local_dir_may_point_at_workspace_itself(self):
+        spec = build_spec("openhuman", "default", str(self.ws))
+        self.assertEqual(spec.workspace_root, self.ws)
+        self.assertIn("SOUL.md", spec.collect_bytes())
+
+    def test_fresh_install_without_users_dir_is_not_an_error(self):
+        fresh = Path(self.tmp.name) / "fresh"
+        fresh.mkdir()
+        spec = build_spec("openhuman", "default", str(fresh))
+        self.assertEqual(spec.collect_bytes(), {})
+
+
 class TestQwenpawAgentJsonSecrets(unittest.TestCase):
     """agent.json sanitize must blank secrets ANYWHERE in the JSON tree.
 

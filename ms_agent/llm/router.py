@@ -15,9 +15,8 @@ available via ``generate_response`` for new consumers.
 from __future__ import annotations
 
 import dataclasses
-from typing import Generator, List, Optional, Union
-
 from omegaconf import DictConfig, OmegaConf
+from typing import Generator, List, Optional, Union
 
 from ms_agent.utils import get_logger
 from .adapter import ResponseAdapter

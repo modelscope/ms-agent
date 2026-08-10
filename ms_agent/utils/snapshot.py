@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # Copyright (c) Alibaba, Inc. and its affiliates.
 """
 Lightweight snapshot utility for ms-agent output directories.

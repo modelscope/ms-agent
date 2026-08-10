@@ -70,13 +70,11 @@ def expand_skill(catalog: 'SkillCatalog', name_or_id: str,
         f"User's request: {args}" if args else
         'The user invoked this skill without additional arguments; follow '
         'its instructions and proceed (ask for the missing input only if the '
-        'skill requires one).'
-    )
+        'skill requires one).')
     enriched = (
         f'Use the [{skill.name}] skill located at `{skill.skill_path}`.\n\n'
         f'{body}\n\n'
-        f'{tail}'
-    )
+        f'{tail}')
     return CommandResult(
         type=CommandResultType.SUBMIT_PROMPT,
         content=enriched,

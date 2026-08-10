@@ -1,5 +1,7 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 """CLI command tests: helper functions, upload/download/convert flows (stubbed client)."""
+import io
+import os
 import tempfile
 import unittest
 import zipfile
@@ -9,6 +11,7 @@ from unittest import mock
 from ms_agent.agent_hub._commands import (
     available_frameworks,
     build_spec,
+    check_framework,
     cmd_convert,
     cmd_download,
     cmd_list,
@@ -58,6 +61,68 @@ class _RepoStub:
 # ---------------------------------------------------------------------------
 # Helper function unit tests
 # ---------------------------------------------------------------------------
+
+
+class TestExperimentalFrameworkGate(unittest.TestCase):
+    """Only ms-agent / qwenpaw are exposed unless TRY_EXP_FRAMEWORKS is set.
+
+    conftest turns the gate ON for the rest of the suite (the gated frameworks
+    still need their regressions), so each test here pins the env var itself
+    rather than relying on the ambient value.
+    """
+
+    def _clear(self):
+        return mock.patch.dict(os.environ, {"TRY_EXP_FRAMEWORKS": ""})
+
+    def _enable(self, value="True"):
+        return mock.patch.dict(os.environ, {"TRY_EXP_FRAMEWORKS": value})
+
+    def test_stable_frameworks_always_allowed(self):
+        with self._clear():
+            for fw in ("ms-agent", "qwenpaw"):
+                self.assertIsNone(check_framework(fw))
+
+    def test_gated_frameworks_rejected_by_default(self):
+        with self._clear():
+            for fw in ("qoder", "hermes", "nanobot", "openclaw", "openhuman"):
+                err = check_framework(fw)
+                self.assertIsNotNone(err, f"{fw} should be gated by default")
+                # points at the opt-in, and does not pretend the name is bogus
+                self.assertIn("TRY_EXP_FRAMEWORKS", err)
+                self.assertNotIn("unknown", err)
+
+    def test_gated_frameworks_allowed_when_enabled(self):
+        for value in ("True", "true", "1", "yes", "on"):
+            with self._enable(value):
+                self.assertIsNone(
+                    check_framework("qoder"), f"{value!r} should enable")
+
+    def test_falsy_values_keep_gate_closed(self):
+        for value in ("", "false", "0", "no"):
+            with self._enable(value):
+                self.assertIsNotNone(
+                    check_framework("qoder"), f"{value!r} must not enable")
+
+    def test_unknown_framework_is_reported_as_unknown(self):
+        for ctx in (self._clear(), self._enable()):
+            with ctx:
+                err = check_framework("bogus")
+                self.assertIn("unknown", err)
+                self.assertNotIn("TRY_EXP_FRAMEWORKS", err)
+
+    def test_available_frameworks_reflects_the_gate(self):
+        with self._clear():
+            self.assertEqual(available_frameworks(), "ms-agent, qwenpaw")
+        with self._enable():
+            listed = available_frameworks()
+            for fw in ("qoder", "hermes", "ms-agent", "qwenpaw"):
+                self.assertIn(fw, listed)
+
+    def test_commands_exit_nonzero_for_gated_framework(self):
+        with self._clear():
+            with mock.patch("sys.stderr", new=io.StringIO()) as err:
+                self.assertEqual(cmd_status("qoder"), 1)
+            self.assertIn("TRY_EXP_FRAMEWORKS", err.getvalue())
 
 
 class TestRepoName(unittest.TestCase):
@@ -409,6 +474,78 @@ class TestUploadCmd(unittest.TestCase):
         self.assertEqual(rc, 0)
         client = _StubClient.instances[0]
         self.assertEqual(client.created_visibility, ["private"])
+
+    def test_create_repo_sends_boolean_private_not_visibility(self):
+        """The agent API takes a boolean ``private`` (inverted), not the old
+        ``visibility`` string: a string is rejected 400 by the server, and a
+        missing field silently defaults to public. The caller-facing label
+        stays ``public``/``private`` on purpose."""
+        from modelscope_hub.agent import AgentApi
+
+        sent = {}
+
+        class _FakeOpenApi:
+
+            def request(self, method, path=None, **kw):
+                sent.clear()
+                sent.update(kw.get("json_body") or {})
+                return {}
+
+        api = AgentApi.__new__(AgentApi)
+        api._openapi = _FakeOpenApi()
+
+        AgentApi.create_repo(api, "grp", "a", visibility="private")
+        self.assertEqual(sent["private"], True)
+        self.assertNotIn("visibility", sent)
+
+        AgentApi.create_repo(api, "grp", "b")  # default public
+        self.assertEqual(sent["private"], False)
+        self.assertIsInstance(sent["private"], bool)
+        self.assertNotIn("visibility", sent)
+
+        with self.assertRaises(ValueError):
+            AgentApi.create_repo(api, "grp", "c", visibility="Public")
+
+    def test_agent_field_readers_handle_renamed_and_legacy_keys(self):
+        """``private`` is an INVERTED boolean, so ``private=False`` (public)
+        must not be swallowed by a falsy ``or``-chain; the renamed time field
+        and the legacy spellings are both accepted."""
+        from modelscope_hub.agent import (agent_last_modified,
+                                          agent_visibility_label)
+        self.assertEqual(agent_visibility_label({"private": False}), "public")
+        self.assertEqual(agent_visibility_label({"Private": False}), "public")
+        self.assertEqual(agent_visibility_label({"private": True}), "private")
+        self.assertEqual(agent_visibility_label({"Private": True}), "private")
+        # legacy servers still send the string form, in any casing / with
+        # padding / as the int enum or its numeric string
+        self.assertEqual(
+            agent_visibility_label({"Visibility": "private"}), "private")
+        self.assertEqual(
+            agent_visibility_label({"Visibility": "Public"}), "public")
+        self.assertEqual(
+            agent_visibility_label({"visibility": "PRIVATE"}), "private")
+        self.assertEqual(
+            agent_visibility_label({"Visibility": "  public  "}), "public")
+        self.assertEqual(agent_visibility_label({"Visibility": 5}), "public")
+        self.assertEqual(agent_visibility_label({"Visibility": 1}), "private")
+        self.assertEqual(agent_visibility_label({"Visibility": "5"}), "public")
+        # new field wins over a stale legacy one
+        self.assertEqual(
+            agent_visibility_label({"private": False, "Visibility": "private"}),
+            "public")
+        # unknown / empty values are never guessed into "private"
+        self.assertEqual(agent_visibility_label({"Visibility": "weird"}),
+                         "weird")
+        self.assertEqual(agent_visibility_label({"Visibility": ""}), "-")
+        self.assertEqual(agent_visibility_label({}), "-")
+
+        self.assertEqual(
+            agent_last_modified({"LastModified": "2026-07-16T10:30:00Z"}),
+            "2026-07-16T10:30:00Z")
+        self.assertEqual(
+            agent_last_modified({"GmtModified": "2026-07-16T18:30:00+08:00"}),
+            "2026-07-16T18:30:00+08:00")
+        self.assertEqual(agent_last_modified({}), "-")
 
     @mock.patch("ms_agent.agent_hub._commands.AgentApi", _StubClient)
     def test_upload_global_only_no_agents_dir(self):

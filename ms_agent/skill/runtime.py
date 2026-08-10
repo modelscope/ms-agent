@@ -112,9 +112,7 @@ class SkillRuntime:
     def needs_refresh(self) -> bool:
         return self._version != self._last_applied_version
 
-    def maybe_refresh_system_prompt(
-        self, messages: list
-    ) -> bool:
+    def maybe_refresh_system_prompt(self, messages: list) -> bool:
         """Keep messages[0] in step with the current skill state.
 
         Rebuilds the system prompt via _system_content_builder (injected by
