@@ -45,6 +45,36 @@ class SharedMemoryManager:
         return cls._instances[key]
 
     @classmethod
+    async def close_matching(cls, base_dir: str) -> int:
+        """Close and drop every shared instance rooted at ``base_dir``.
+
+        The owner-of-last-resort for embedded stores: closing an instance
+        releases its vector client (and with it the store's exclusive file
+        lock), which per-agent cleanup deliberately does NOT do — an
+        instance may be shared by several live agents, so only whoever knows
+        no agent still needs the store (e.g. a runtime registry evicting the
+        last session of a project) may call this. Returns how many instances
+        were closed."""
+        target = os.path.abspath(os.path.expanduser(str(base_dir)))
+        closed = 0
+        for key, mem in list(cls._instances.items()):
+            mem_cfg = getattr(mem, 'mem_config', None)
+            base = getattr(mem_cfg, 'base_dir', None)
+            if base is None or os.path.abspath(str(base)) != target:
+                continue
+            try:
+                close = getattr(mem, 'close', None)
+                if close is not None:
+                    await close()
+            except Exception as e:  # noqa: BLE001 - eviction is best-effort
+                logger.warning(
+                    f'closing shared memory for {key} failed: {e}')
+            cls._instances.pop(key, None)
+            closed += 1
+            logger.info(f'Closed shared memory instance: {key}')
+        return closed
+
+    @classmethod
     def clear_shared_memory(cls, config: DictConfig, mem_instance_type: str):
         """Clear shared memory instances. If config is provided, clear specific instance."""
         if config is None:

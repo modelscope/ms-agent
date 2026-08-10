@@ -938,6 +938,19 @@ class LLMAgent(Agent):
             await self.mcp_runtime.stop()
         if self.tool_manager is not None:
             await self.tool_manager.cleanup()
+        # Drain scheduled memory ingestion so a teardown right after the last
+        # turn cannot lose its write. Flush only — memory instances are shared
+        # across agents of the same store (SharedMemoryManager), so CLOSING
+        # them here would yank the store out from under a sibling agent; the
+        # owner of the shared instance decides when to close (e.g. via
+        # SharedMemoryManager.close_matching).
+        for tool in self.memory_tools:
+            flush = getattr(tool, 'flush_pending', None)
+            if flush is not None:
+                try:
+                    await flush(timeout=15)
+                except Exception as e:  # noqa: BLE001 - cleanup is best-effort
+                    logger.warning(f'memory flush on cleanup failed: {e}')
 
     @property
     def stream(self):
@@ -1937,6 +1950,20 @@ class LLMAgent(Agent):
                 if not any(v is not None
                            for v in [user_id, agent_id, run_id, memory_type]):
                     continue
+                # Ingestion runs an extraction LLM + embeddings (seconds).
+                # Backends that support it take the write off the turn's
+                # critical path — schedule_add returns immediately and the
+                # write serializes against retrieval on the store's own lock.
+                # Others (legacy memory types) keep the awaited behaviour.
+                if add_type == 'add_after_step' and hasattr(
+                        tool, 'schedule_add'):
+                    tool.schedule_add(
+                        messages,
+                        user_id=user_id,
+                        agent_id=agent_id,
+                        run_id=run_id,
+                        memory_type=memory_type)
+                    continue
                 await tool.add(
                     messages,
                     user_id=user_id,
@@ -2250,6 +2277,17 @@ class LLMAgent(Agent):
                     # plus synthesized interrupted tool results — before the
                     # cancellation unwinds. Sync file I/O only; must re-raise.
                     self._persist_partial_round(messages, pre_step_len)
+                    # An interrupted round is never ingested into long-term
+                    # memory: a half-finished answer is not durable
+                    # conversational truth. Advance the ingest ledger past it
+                    # (sync, in-memory + small file write) so the next turn's
+                    # delta does not sweep the partial content in either.
+                    for _mem_tool in self.memory_tools:
+                        if hasattr(_mem_tool, 'mark_ingested'):
+                            try:
+                                _mem_tool.mark_ingested(messages)
+                            except Exception:  # noqa: E722 - never mask cancel
+                                pass
                     raise
 
                 # Persist THIS round's step output (assistant + any tool
@@ -2264,17 +2302,21 @@ class LLMAgent(Agent):
                     for msg in messages[pre_step_len:step_end_len]:
                         self.session_log.append(self._msg_to_dict(msg))
 
-                # Ingest THIS round's memory here, for the same reason the
-                # SessionLog write above moved up: after_tool_call blocks on the
-                # next prompt in interactive mode. Running afterwards made
-                # 'add_after_step' mean "after the *next* step" — round N was
+                # Ingest memory here — before after_tool_call, which blocks on
+                # the next prompt in interactive mode (running afterwards made
+                # 'add_after_step' mean "after the *next* step": round N was
                 # only ingested once round N+1 arrived, a single-round session
-                # was never ingested at all (the run-loop tail that would have
-                # caught it is skipped when the input source raises EOF), and
-                # the message list it saw had the next user turn already
-                # appended. Before the block, `messages` is exactly this round.
-                await self.add_memory(
-                    messages, add_type='add_after_step', **kwargs)
+                # never at all, and the ingested list already carried the next
+                # user turn). Only on a CLOSING round — an assistant reply with
+                # no tool calls, i.e. the turn is complete. Tool rounds are
+                # intermediate state, not durable conversational truth, and
+                # ingesting every round made memory cost O(rounds x history):
+                # a 4-round tool-calling answer paid ~4 extraction-LLM calls
+                # where one covers it (the closing ingest sees the whole turn).
+                if (messages and messages[-1].role == 'assistant'
+                        and not messages[-1].tool_calls):
+                    await self.add_memory(
+                        messages, add_type='add_after_step', **kwargs)
 
                 await self.after_tool_call(messages)
                 self.runtime.round += 1
