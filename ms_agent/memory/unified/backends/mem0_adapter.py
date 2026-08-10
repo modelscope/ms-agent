@@ -67,8 +67,13 @@ class Mem0Backend(BaseMemoryBackend):
         self._config = config
         self._mem0: Any = None  # mem0.Memory instance
         self._user_id: str = config.user_id
-        self._snapshot: Optional[str] = None
-        self._snapshot_dirty = True
+        # Per-turn retrieval cache: one turn = one embedding + one vector
+        # search. The turn key is the latest user message — every round of a
+        # multi-round (tool-calling) turn injects with the same user message,
+        # so rounds 2..N reuse the round-1 results instead of paying another
+        # embedding round-trip each. Invalidated on writes/deletes.
+        self._turn_cache_key: Optional[str] = None
+        self._turn_cache_results: Optional[list] = None
 
     # ── Lifecycle ────────────────────────────────────────────────────
 
@@ -111,13 +116,21 @@ class Mem0Backend(BaseMemoryBackend):
         if not query:
             return messages
 
-        try:
-            results = _result_list(await _offload(_mem0_search, self._mem0,
-                                                  query, self._user_id))
-            if not results:
+        turn_key = f'{self._user_id}\x1f{query}'
+        if turn_key == self._turn_cache_key \
+                and self._turn_cache_results is not None:
+            results = self._turn_cache_results
+        else:
+            try:
+                results = _result_list(
+                    await _offload(_mem0_search, self._mem0, query,
+                                   self._user_id))
+            except Exception as e:
+                logger.debug(f'[mem0_backend] search failed: {e}')
                 return messages
-        except Exception as e:
-            logger.debug(f'[mem0_backend] search failed: {e}')
+            self._turn_cache_key = turn_key
+            self._turn_cache_results = results
+        if not results:
             return messages
 
         formatted = self._format_results(results)
@@ -139,31 +152,32 @@ class Mem0Backend(BaseMemoryBackend):
         self,
         messages: List[Dict[str, Any]],
         **kwargs: Any,
-    ) -> None:
+    ) -> int:
+        """Ingest via mem0's fact extraction. Returns the number of memory
+        events mem0 produced (ADD/UPDATE/DELETE). Raises on failure — the
+        orchestrator owns the swallow-and-report policy, and needs the
+        exception to know the write did NOT land (so its delta ledger keeps
+        the messages for a retry instead of marking them ingested)."""
         if not self._mem0:
-            return
-        try:
-            # mem0 rejects non-chat fields and roles like `tool`; feed it the
-            # user/assistant text turns only.
-            convo = [
-                {
-                    'role': m['role'],
-                    'content': m['content']
-                } for m in messages
-                if m.get('role') in ('user', 'assistant') and m.get('content')
-            ]
-            if not convo:
-                return
-            await _offload(self._mem0.add, convo, user_id=self._user_id)
-        except Exception as e:
-            # Deliberately non-fatal -- a memory write must never break the
-            # turn. But log at error with the exception type: this is the only
-            # trace a failed ingestion leaves, and the symptom it produces
-            # (conversation succeeds, memory stays empty forever) gives the
-            # user nothing to search for.
-            logger.error(
-                f'[mem0_backend] add failed, nothing was persisted for this '
-                f'round: {type(e).__name__}: {e}')
+            return 0
+        # mem0 rejects non-chat fields and roles like `tool`; feed it the
+        # user/assistant text turns only.
+        convo = [
+            {
+                'role': m['role'],
+                'content': m['content']
+            } for m in messages
+            if m.get('role') in ('user', 'assistant') and m.get('content')
+        ]
+        if not convo:
+            return 0
+        result = await _offload(self._mem0.add, convo, user_id=self._user_id)
+        # A write changes what retrieval should see.
+        self._turn_cache_key = None
+        self._turn_cache_results = None
+        if isinstance(result, dict):
+            return len(result.get('results') or [])
+        return len(result or [])
 
     # ── Search ───────────────────────────────────────────────────────
 
@@ -191,8 +205,9 @@ class Mem0Backend(BaseMemoryBackend):
     # ── Cache ────────────────────────────────────────────────────────
 
     def invalidate(self) -> None:
-        self._snapshot = None
-        self._snapshot_dirty = True
+        # External edit (UI delete, another writer): next inject re-queries.
+        self._turn_cache_key = None
+        self._turn_cache_results = None
 
     # ── Internal helpers ─────────────────────────────────────────────
 

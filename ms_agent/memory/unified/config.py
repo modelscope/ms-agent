@@ -26,6 +26,11 @@ class MemoryConfig:
     # LLM for extraction (reuses agent LLM if None)
     llm_config: Optional[Dict[str, Any]] = None
 
+    # Ingest every Nth completed turn (1 = every turn). Turns skipped by the
+    # interval are still covered later: the orchestrator's delta ledger sends
+    # everything not yet ingested on the next firing ingest.
+    ingest_interval: int = 1
+
     # Backend-specific options keyed by backend name
     backend_options: Dict[str, Any] = field(default_factory=dict)
 
@@ -113,7 +118,7 @@ class MemoryConfig:
             if k in ns:
                 flat[k] = ns[k]
 
-        for k in ('enabled', 'base_dir', 'llm_config'):
+        for k in ('enabled', 'base_dir', 'llm_config', 'ingest_interval'):
             if k in raw:
                 flat[k] = raw[k]
 
