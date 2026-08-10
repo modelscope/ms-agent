@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from contextlib import contextmanager
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.markup import escape
@@ -71,6 +72,9 @@ class RichEventSink:
         # add a blank line between sections (tools ↔ assistant) for breathing
         # room without spacing tightly-grouped tool lines apart.
         self._last_kind: Optional[str] = None
+        # Buffered draws while something else owns the screen (see hold_output).
+        # None = draw straight through.
+        self._held: Optional[list] = None
 
     # ── sink protocol ──────────────────────────────────────────────────────
 
@@ -78,6 +82,44 @@ class RichEventSink:
         handler = getattr(self, f'_on_{event.type}', None)
         if handler is not None:
             handler(event)
+
+    # ── screen ownership ───────────────────────────────────────────────────
+
+    @contextmanager
+    def hold_output(self):
+        """Buffer this sink's draws while a modal owns the terminal.
+
+        A permission menu (``tui.select.select_async``) is a prompt_toolkit
+        Application rendered inline on the SAME event loop this sink draws from,
+        so any print landing mid-menu corrupts what the user is reading. Tool
+        completions now arrive as each call finishes rather than after the whole
+        round (``LLMAgent.parallel_tool_call``), which is exactly when that can
+        happen: approving one call lets the next one's menu open while the first
+        is still executing, and its result lands underneath.
+
+        Events are still HANDLED immediately — only the drawing waits — so
+        durations and internal state stay measured at the true moment.
+
+        Nested holds share the outermost buffer; the flush happens once, when
+        the screen is actually released.
+        """
+        if self._held is not None:
+            yield  # already held by an outer scope — it owns the flush
+            return
+        self._held = []
+        try:
+            yield
+        finally:
+            held, self._held = self._held, None
+            for args, kwargs in held:
+                self.console.print(*args, **kwargs)
+
+    def _print(self, *args, **kwargs) -> None:
+        """Draw now, or queue it if a modal currently owns the screen."""
+        if self._held is not None:
+            self._held.append((args, kwargs))
+            return
+        self.console.print(*args, **kwargs)
 
     def finalize(self) -> None:
         """Tear down any in-flight Live region (call on error / turn abort)."""
@@ -161,24 +203,26 @@ class RichEventSink:
         if self._last_kind != 'tool':
             # Blank before a new tool group (turn start or after text), but keep
             # consecutive tool lines tight together.
-            self.console.print()
+            self._print()
         self._tool_started[ev.call_id] = time.monotonic()
         header = escape(tool_header(ev.name, ev.arguments))
-        self.console.print(f'[{self.theme.tool_bullet}]•[/] {header}')
+        self._print(f'[{self.theme.tool_bullet}]•[/] {header}')
         self._last_kind = 'tool'
 
     def _on_tool_call_completed(self, ev) -> None:
-        # Indented one-line summary: "  └ 42 lines · 1.2s".
+        # Indented one-line summary: "  └ 42 lines · 1.2s". Measured HERE even
+        # when the draw is held back for a permission menu — the elapsed time is
+        # the tool's, not the user's deliberation.
         start = self._tool_started.pop(ev.call_id, None)
         dur = f' · {time.monotonic() - start:.1f}s' if start else ''
         if ev.error:
             summary = escape(tool_summary(ev.result, ev.error))
-            self.console.print(
+            self._print(
                 f'  [{self.theme.tool_error_border}]└[/] '
                 f'[{self.theme.tool_error_border}]{summary}[/][dim]{dur}[/]')
         else:
             summary = escape(tool_summary(ev.result))
-            self.console.print(f'  [dim]└ {summary}{dur}[/]')
+            self._print(f'  [dim]└ {summary}{dur}[/]')
 
     # ── plan / notices / context / errors ──────────────────────────────────
 
@@ -196,7 +240,7 @@ class RichEventSink:
                 e.get('content', '') if isinstance(e, dict) else getattr(
                     e, 'content', ''))
             lines.append(f'{mark.get(status, "○")} {content}')
-        self.console.print(
+        self._print(
             Panel(
                 '\n'.join(lines),
                 title='plan',
@@ -207,7 +251,7 @@ class RichEventSink:
         detail = ''
         if ev.before_tokens and ev.after_tokens:
             detail = f' {ev.before_tokens}→{ev.after_tokens} tok'
-        self.console.print(
+        self._print(
             f'[{self.theme.notice_info}]· context compacted{detail} ·[/]')
 
     def _on_notice(self, ev) -> None:
@@ -225,17 +269,17 @@ class RichEventSink:
                     background_color='default')
             else:
                 body = Text(ev.text)
-            self.console.print(Panel(body, border_style='dim', expand=False))
+            self._print(Panel(body, border_style='dim', expand=False))
             return
         style = {
             'success': self.theme.notice_success,
             'warning': self.theme.notice_warning
         }.get(ev.level, self.theme.notice_info)
-        self.console.print(f'[{style}]{ev.text}[/]')
+        self._print(f'[{style}]{ev.text}[/]')
 
     def _on_error(self, ev) -> None:
         self.finalize()
-        self.console.print(
+        self._print(
             Panel(
                 f'[bold]{ev.message}[/]',
                 title='error',

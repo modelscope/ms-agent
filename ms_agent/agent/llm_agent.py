@@ -678,23 +678,29 @@ class LLMAgent(Agent):
         """
         Execute multiple tool calls in parallel and append results to the message list.
 
+        Each result is turned into its tool message and ANNOUNCED
+        (``ToolCallCompleted``, plus ``PlanUpdated`` for todo tools) the moment
+        that call returns — not once the whole batch has. A round can contain
+        one call blocked on a human's approval next to calls that are already
+        finished, and those must be able to report themselves as finished.
+        The messages are still appended in call order, matching ``tool_calls``.
+
         Args:
             messages (List[Message]): Current conversation history.
 
         Returns:
             List[Message]: Updated message list including tool responses.
         """
-        tool_call_result = await self.tool_manager.parallel_call_tool(
-            messages[-1].tool_calls)
-        assert len(tool_call_result) == len(messages[-1].tool_calls)
-        for tool_call_result, tool_call_query in zip(tool_call_result,
-                                                     messages[-1].tool_calls):
-            tool_call_result_format = ToolResult.from_raw(tool_call_result)
+        tool_calls = messages[-1].tool_calls
+        results: Dict[int, Message] = {}
+
+        def _on_result(index: int, tool_call, raw, duration_s: float) -> None:
+            tool_call_result_format = ToolResult.from_raw(raw)
             _new_message = Message(
                 role='tool',
                 content=tool_call_result_format.text,
-                tool_call_id=tool_call_query['id'],
-                name=tool_call_query['tool_name'],
+                tool_call_id=tool_call['id'],
+                name=tool_call['tool_name'],
                 resources=tool_call_result_format.resources,
                 tool_detail=tool_call_result_format.tool_detail,
                 hook_attachments=tool_call_result_format.hook_attachments,
@@ -704,10 +710,41 @@ class LLMAgent(Agent):
             if _new_message.tool_call_id is None:
                 # If tool call id is None, add a random one
                 _new_message.tool_call_id = str(uuid.uuid4())[:8]
-                tool_call_query['id'] = _new_message.tool_call_id
-            messages.append(_new_message)
+                tool_call['id'] = _new_message.tool_call_id
+            # This call's OWN wall clock. It used to be the batch's span
+            # attributed to every call in it, which over-reported every fast
+            # tool that shared a round with a slow one.
+            _new_message._duration_ms = int(duration_s * 1000)
+            results[index] = _new_message
             self.log_output(_new_message.content)
+            self._emit_tool_completed(_new_message, duration_s)
+
+        await self.tool_manager.parallel_call_tool(
+            tool_calls, on_result=_on_result)
+        assert len(results) == len(tool_calls)
+        for index in range(len(tool_calls)):
+            messages.append(results[index])
         return messages
+
+    def _emit_tool_completed(self, message: Message, duration_s: float) -> None:
+        """Report one finished tool call to the UI (and the plan it may carry)."""
+        if self._event_sink is None:
+            return
+        content = (
+            message.content
+            if isinstance(message.content, str) else str(message.content))
+        is_error = bool(getattr(message, 'is_error', False))
+        self._event_sink.emit(
+            ToolCallCompleted(
+                call_id=str(getattr(message, 'tool_call_id', '') or ''),
+                name=str(getattr(message, 'name', '') or ''),
+                result=content or '',
+                error=(content or 'tool call failed') if is_error else None,
+                duration_s=round(duration_s, 3)))
+        # todo/split_task tool results drive the plan panel.
+        plan = self._extract_plan_from_tool_result(message)
+        if plan is not None:
+            self._event_sink.emit(PlanUpdated(entries=plan))
 
     def _select_permission_handler(self, mode: str):
         """Pick the PermissionHandler by mode + runtime environment.
@@ -1727,37 +1764,11 @@ class LLMAgent(Agent):
                             name=str(
                                 tc.get('tool_name') or tc.get('name') or ''),
                             arguments=tc.get('arguments')))
-            _tool_start = len(messages)
-            _tool_t0 = time.monotonic()
+            # Each call stamps its own ``_duration_ms`` (persistence/replay) and
+            # emits its own ToolCallCompleted / PlanUpdated as it finishes —
+            # inside parallel_tool_call, not after the batch, so one call held
+            # up by an approval doesn't hold back its finished siblings.
             messages = await self.parallel_tool_call(messages)
-            # Batch wall-clock: exact for the common single-tool round; for
-            # parallel multi-tool rounds it attributes the batch span to each
-            # (they ran concurrently within it). Stamp for persistence/replay
-            # regardless of sink, and report it live via ToolCallCompleted.
-            _tool_ms = int((time.monotonic() - _tool_t0) * 1000)
-            for m in messages[_tool_start:]:
-                if getattr(m, 'role', None) == 'tool':
-                    m._duration_ms = _tool_ms
-            if self._event_sink is not None:
-                for m in messages[_tool_start:]:
-                    if getattr(m, 'role', None) == 'tool':
-                        _content = (
-                            m.content
-                            if isinstance(m.content, str) else str(m.content))
-                        _is_err = bool(getattr(m, 'is_error', False))
-                        self._event_sink.emit(
-                            ToolCallCompleted(
-                                call_id=str(
-                                    getattr(m, 'tool_call_id', '') or ''),
-                                name=str(getattr(m, 'name', '') or ''),
-                                result=_content or '',
-                                error=(_content or 'tool call failed')
-                                if _is_err else None,
-                                duration_s=round(_tool_ms / 1000, 3)))
-                        # todo/split_task tool results drive the plan panel.
-                        _plan = self._extract_plan_from_tool_result(m)
-                        if _plan is not None:
-                            self._event_sink.emit(PlanUpdated(entries=_plan))
 
         # usage
         # NOTE: token accounting must run BEFORE after_tool_call. The interactive

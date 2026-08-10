@@ -8,6 +8,7 @@ import json
 import math
 import os
 import sys
+import time
 import uuid
 from copy import copy
 from types import TracebackType
@@ -744,8 +745,33 @@ class ToolManager:
                     True,
                 }
 
-    async def parallel_call_tool(self, tool_list: List[ToolCall]):
-        tasks = [self.single_call_tool(tool) for tool in tool_list]
+    async def parallel_call_tool(
+        self,
+        tool_list: List[ToolCall],
+        on_result: Optional[Callable[[int, ToolCall, Any, float],
+                                     None]] = None,
+    ):
+        """Run a round's tool calls concurrently, in call order in the result.
+
+        ``on_result(index, tool_call, result, duration_s)`` — when given — fires
+        the moment THAT call returns, rather than after the whole batch. The
+        distinction matters as soon as one call can block for a long time: under
+        interactive permissions a call suspended on a human's approval used to
+        hold back every sibling's completion, so calls that were already done
+        (or needed no approval at all) still looked like they were running until
+        the human answered. It runs on the event loop between tool calls, so
+        keep it cheap and non-throwing — an exception propagates out of the
+        gather and fails the round.
+        """
+
+        async def _call(index: int, tool: ToolCall):
+            started = time.monotonic()
+            result = await self.single_call_tool(tool)
+            if on_result is not None:
+                on_result(index, tool, result, time.monotonic() - started)
+            return result
+
+        tasks = [_call(i, tool) for i, tool in enumerate(tool_list)]
         result = await asyncio.gather(*tasks)
         return result
 
