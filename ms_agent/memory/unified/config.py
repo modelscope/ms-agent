@@ -31,6 +31,10 @@ class MemoryConfig:
     # everything not yet ingested on the next firing ingest.
     ingest_interval: int = 1
 
+    # How many recalled memories retrieval-style backends (mem0) inject per
+    # turn.
+    recall_top_k: int = 10
+
     # Backend-specific options keyed by backend name
     backend_options: Dict[str, Any] = field(default_factory=dict)
 
@@ -118,7 +122,8 @@ class MemoryConfig:
             if k in ns:
                 flat[k] = ns[k]
 
-        for k in ('enabled', 'base_dir', 'llm_config', 'ingest_interval'):
+        for k in ('enabled', 'base_dir', 'llm_config', 'ingest_interval',
+                  'recall_top_k'):
             if k in raw:
                 flat[k] = raw[k]
 

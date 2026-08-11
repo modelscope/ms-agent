@@ -46,12 +46,12 @@ def _result_list(results: Any) -> List[Dict[str, Any]]:
     return list(results or [])
 
 
-def _mem0_search(m0: Any, query: str, user_id: str) -> Any:
+def _mem0_search(m0: Any, query: str, user_id: str, top_k: int = 10) -> Any:
     """mem0 2.x moved entity params into ``filters=``; 1.x uses kwargs."""
     try:
-        return m0.search(query, filters={'user_id': user_id})
+        return m0.search(query, filters={'user_id': user_id}, top_k=top_k)
     except TypeError:
-        return m0.search(query, user_id=user_id)
+        return m0.search(query, user_id=user_id, limit=top_k)
 
 
 class Mem0Backend(BaseMemoryBackend):
@@ -121,10 +121,11 @@ class Mem0Backend(BaseMemoryBackend):
                 and self._turn_cache_results is not None:
             results = self._turn_cache_results
         else:
+            top_k = max(1, int(getattr(self._config, 'recall_top_k', 10)))
             try:
                 results = _result_list(
                     await _offload(_mem0_search, self._mem0, query,
-                                   self._user_id))
+                                   self._user_id, top_k))
             except Exception as e:
                 logger.debug(f'[mem0_backend] search failed: {e}')
                 return messages
@@ -133,7 +134,8 @@ class Mem0Backend(BaseMemoryBackend):
         if not results:
             return messages
 
-        formatted = self._format_results(results)
+        formatted = self._format_results(
+            results, max(1, int(getattr(self._config, 'recall_top_k', 10))))
         if not formatted:
             return messages
 
@@ -220,9 +222,9 @@ class Mem0Backend(BaseMemoryBackend):
         return ''
 
     @staticmethod
-    def _format_results(results: Any) -> str:
+    def _format_results(results: Any, top_k: int = 10) -> str:
         lines = []
-        for r in _result_list(results)[:10]:
+        for r in _result_list(results)[:top_k]:
             text = r.get('memory', r.get('text', ''))
             if text:
                 lines.append(f'- {text}')
