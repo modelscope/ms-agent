@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 # Copyright (c) ModelScope Contributors. All rights reserved.
 """Sirchmunk backend for the ``localsearch`` tool.
-
 Configuration lives under ``tools.localsearch`` (same namespace as other tools).
 Legacy top-level ``knowledge_search`` is still accepted for backward compatibility.
 """
@@ -87,7 +88,12 @@ class SirchmunkSearch:
             str(Path(p).expanduser().resolve()) for p in paths
         ]
 
-        _work_path = rag_config.get('work_path', './.sirchmunk')
+        _work_path = rag_config.get('work_path', None)
+        if not _work_path:
+            from ms_agent.project.paths import search_index_dir
+            _work_path = str(
+                search_index_dir(
+                    getattr(config, 'output_dir', None) or '.', 'sirchmunk'))
         self.work_path: Path = Path(_work_path).expanduser().resolve()
 
         self.reuse_knowledge = rag_config.get('reuse_knowledge', True)

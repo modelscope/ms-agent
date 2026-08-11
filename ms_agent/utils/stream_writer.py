@@ -52,7 +52,7 @@ class SubAgentStreamWriter:
         self._agent_tag: Optional[str] = None
         self._file = None  # opened lazily in on_start
 
-        subagents_dir = os.path.join(output_dir, 'subagents')
+        subagents_dir = os.path.join(output_dir, '.ms_agent', 'subagents')
         os.makedirs(subagents_dir, exist_ok=True)
         safe_id = self._call_id.replace('/', '_').replace('\\', '_')
         self._path: str = os.path.join(subagents_dir,

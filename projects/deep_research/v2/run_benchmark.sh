@@ -30,11 +30,6 @@ else
     echo -e "${RED}Error: Neither 'python' nor 'python3' is available in PATH.${NC}"
     exit 1
 fi
-PYTHON_BIN="/Users/luyan/software/miniconda3/bin/python"
-
-# When stdout is redirected (e.g., nohup > file), Python is block-buffered by default.
-# Force unbuffered output so progress lines like "[xx] OK" show up in logs promptly.
-export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"
 
 # When stdout is redirected (e.g., nohup > file), Python is block-buffered by default.
 # Force unbuffered output so progress lines like "[xx] OK" show up in logs promptly.

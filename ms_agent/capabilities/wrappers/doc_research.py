@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import asyncio
 import logging
@@ -220,7 +222,8 @@ def _create_workflow(workdir: str) -> Any:
         base_url=base_url,
     )
 
-    from ms_agent.workflow.deep_research.research_workflow import ResearchWorkflow
+    from ms_agent.workflow.deep_research.research_workflow import \
+        ResearchWorkflow
     return ResearchWorkflow(
         client=client,
         workdir=workdir,

@@ -1,5 +1,6 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import os
+import requests
 import shutil
 import subprocess
 import tempfile
@@ -7,10 +8,7 @@ import zipfile
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
-import requests
-
 from ms_agent.utils.logger import get_logger
-
 from .loader import SkillLoader
 from .safety import SkillSafetyScanner
 from .schema import SkillSchema, SkillSchemaParser
@@ -19,7 +17,7 @@ from .sources import SkillSource, SkillSourceType, parse_skill_source
 logger = get_logger()
 
 MODELSCOPE_SKILL_API = (
-    "https://www.modelscope.cn/api/v1/skills/{skill_id}/archive/zip/master")
+    'https://www.modelscope.cn/api/v1/skills/{skill_id}/archive/zip/master')
 
 
 def _download_skill_zip(skill_id: str, local_dir: str) -> str:
@@ -31,15 +29,20 @@ def _download_skill_zip(skill_id: str, local_dir: str) -> str:
     url = MODELSCOPE_SKILL_API.format(skill_id=skill_id)
     os.makedirs(local_dir, exist_ok=True)
 
-    _owner, name = skill_id.split("/", 1)
+    # A single-segment skill_id (custom/local skill, no owner) must not raise
+    # on unpacking; fall back to using the whole id as the name.
+    if '/' in skill_id:
+        _owner, name = skill_id.split('/', 1)
+    else:
+        name = skill_id
     skill_dir = os.path.join(local_dir, name)
 
     resp = requests.get(url, stream=True, timeout=120)
     resp.raise_for_status()
 
-    zip_path = os.path.join(local_dir, f"{name}.zip")
+    zip_path = os.path.join(local_dir, f'{name}.zip')
     try:
-        with open(zip_path, "wb") as fh:
+        with open(zip_path, 'wb') as fh:
             for chunk in resp.iter_content(chunk_size=8192):
                 if chunk:
                     fh.write(chunk)
@@ -48,7 +51,7 @@ def _download_skill_zip(skill_id: str, local_dir: str) -> str:
             shutil.rmtree(skill_dir)
         os.makedirs(skill_dir, exist_ok=True)
 
-        with zipfile.ZipFile(zip_path, "r") as zf:
+        with zipfile.ZipFile(zip_path, 'r') as zf:
             zf.extractall(skill_dir)
 
         entries = os.listdir(skill_dir)
@@ -64,17 +67,20 @@ def _download_skill_zip(skill_id: str, local_dir: str) -> str:
         if os.path.exists(zip_path):
             os.remove(zip_path)
 
-    logger.info(f"Skill {skill_id} downloaded to {skill_dir}")
+    logger.info(f'Skill {skill_id} downloaded to {skill_dir}')
     return skill_dir
 
-BUILTIN_SKILLS_DIR = Path(__file__).parent.parent / "skills"
+
+BUILTIN_SKILLS_DIR = Path(__file__).parent.parent / 'skills'
 if not BUILTIN_SKILLS_DIR.exists():
     _repo_root = Path(__file__).parent.parent.parent
-    _candidate = _repo_root / "skills"
+    _candidate = _repo_root / 'skills'
     if _candidate.exists():
         BUILTIN_SKILLS_DIR = _candidate
 
-USER_SKILLS_DIR = Path.home() / ".ms_agent" / "skills"
+from ms_agent.project.paths import global_home as _global_home  # noqa: E402
+
+USER_SKILLS_DIR = _global_home() / 'skills'
 
 
 class SkillCatalog:
@@ -111,32 +117,37 @@ class SkillCatalog:
         # 1. Built-in skills (lowest priority)
         if BUILTIN_SKILLS_DIR.exists():
             sources.append(
-                SkillSource(type=SkillSourceType.LOCAL_DIR,
-                            path=str(BUILTIN_SKILLS_DIR)))
+                SkillSource(
+                    type=SkillSourceType.LOCAL_DIR,
+                    path=str(BUILTIN_SKILLS_DIR)))
 
-        # 2. User home skills
-        for subdir in ("installed", "custom"):
-            d = USER_SKILLS_DIR / subdir
-            if d.exists():
-                sources.append(
-                    SkillSource(type=SkillSourceType.LOCAL_DIR,
-                                path=str(d)))
+        # 2. User home skills — one live tree, scanned whole (the loader
+        # walks it and stops at SKILL.md roots). Subdirectories are
+        # organization, not origin: legacy installed/ & custom/ keep working
+        # as plain subpaths.
+        if USER_SKILLS_DIR.exists():
+            sources.append(
+                SkillSource(
+                    type=SkillSourceType.LOCAL_DIR, path=str(USER_SKILLS_DIR)))
 
         # 3a. Structured sources (higher priority)
-        if hasattr(skills_config, "sources") and skills_config.sources:
+        if hasattr(skills_config, 'sources') and skills_config.sources:
             for src_cfg in skills_config.sources:
                 sources.append(
                     SkillSource(
                         type=SkillSourceType(src_cfg.type),
-                        path=getattr(src_cfg, "path", None),
-                        repo_id=getattr(src_cfg, "repo_id", None),
-                        url=getattr(src_cfg, "url", None),
-                        revision=getattr(src_cfg, "revision", None),
-                        subdir=getattr(src_cfg, "subdir", None),
-                        enabled=getattr(src_cfg, "enabled", True),
+                        path=getattr(src_cfg, 'path', None),
+                        repo_id=getattr(src_cfg, 'repo_id', None),
+                        url=getattr(src_cfg, 'url', None),
+                        revision=getattr(src_cfg, 'revision', None),
+                        subdir=getattr(src_cfg, 'subdir', None),
+                        enabled=getattr(src_cfg, 'enabled', True),
+                        origin=getattr(src_cfg, 'origin', 'config'),
+                        plugin_id=getattr(src_cfg, 'plugin_id', None),
+                        capability=getattr(src_cfg, 'capability', None),
                     ))
         # 3b. Simple path list (backward compat)
-        elif hasattr(skills_config, "path") and skills_config.path:
+        elif hasattr(skills_config, 'path') and skills_config.path:
             paths = skills_config.path
             if isinstance(paths, str):
                 paths = [paths]
@@ -144,40 +155,62 @@ class SkillCatalog:
                 sources.append(parse_skill_source(str(p)))
 
         # 4. Workspace auto-discover (highest priority)
-        if getattr(skills_config, "auto_discover", False):
-            workspace_skills = Path.cwd() / "skills"
+        if getattr(skills_config, 'auto_discover', False):
+            workspace_skills = Path.cwd() / 'skills'
             if workspace_skills.exists():
                 sources.append(
-                    SkillSource(type=SkillSourceType.LOCAL_DIR,
-                                path=str(workspace_skills)))
+                    SkillSource(
+                        type=SkillSourceType.LOCAL_DIR,
+                        path=str(workspace_skills)))
 
         self._sources = sources
         self.load_from_sources(sources)
 
         # Apply whitelist / disabled filters
-        if hasattr(skills_config, "whitelist"):
+        if hasattr(skills_config, 'whitelist'):
             wl = skills_config.whitelist
             if wl is None:
                 self._whitelist = None
             elif isinstance(wl, (list, tuple)):
                 self._whitelist = set(wl) if wl else set()
-        if hasattr(skills_config, "disabled") and skills_config.disabled:
+        if hasattr(skills_config, 'disabled') and skills_config.disabled:
             self._disabled_skills = set(skills_config.disabled)
 
     def load_from_sources(self, sources: List[SkillSource]) -> None:
-        self._sources = sources
+        # Dedup by identity — the same dir may arrive both as the implicit
+        # live tree and as an explicit config source; loading it twice only
+        # burns IO and log noise.
+        seen: set = set()
+        unique: List[SkillSource] = []
         for source in sources:
+            path = (
+                str(Path(source.path).expanduser().resolve())
+                if source.path else None)
+            key = (source.type, path, source.repo_id, source.url,
+                   source.subdir, source.plugin_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(source)
+        self._sources = unique
+        for source in unique:
             if not source.enabled:
                 continue
             try:
                 skills = self._materialize_and_load(source)
                 for skill in skills.values():
-                    self._register_skill(skill)
+                    self._register_skill(skill, source)
             except Exception as e:
-                logger.warning(f"Failed to load skill source {source}: {e}")
+                logger.warning(f'Failed to load skill source {source}: {e}')
 
-    def _materialize_and_load(
-            self, source: SkillSource) -> Dict[str, SkillSchema]:
+    def _materialize_and_load(self,
+                              source: SkillSource) -> Dict[str, SkillSchema]:
+        if (source.capability == 'commands' and source.path
+                and str(source.path).endswith('.md')):
+            return self._loader.load_command_markdown(
+                source.path,
+                plugin_id=source.plugin_id,
+            )
         if source.type == SkillSourceType.LOCAL_DIR:
             return self._loader.load_skills(source.path)
         elif source.type == SkillSourceType.MODELSCOPE:
@@ -186,27 +219,26 @@ class SkillCatalog:
             return self._load_from_git(source)
         return {}
 
-    def _load_from_modelscope(
-            self, source: SkillSource) -> Dict[str, SkillSchema]:
+    def _load_from_modelscope(self,
+                              source: SkillSource) -> Dict[str, SkillSchema]:
         try:
             from modelscope.hub.api import HubApi
             api = HubApi()
-            local_dir = str(USER_SKILLS_DIR / "installed")
+            local_dir = str(USER_SKILLS_DIR / 'installed')
             local_path = api.download_skill(
                 skill_id=source.repo_id, local_dir=local_dir)
         except (ImportError, AttributeError):
             local_path = _download_skill_zip(
-                source.repo_id,
-                str(USER_SKILLS_DIR / "installed"))
+                source.repo_id, str(USER_SKILLS_DIR / 'installed'))
         if source.subdir:
             local_path = str(Path(local_path) / source.subdir)
         return self._loader.load_skills(local_path)
 
     def _load_from_git(self, source: SkillSource) -> Dict[str, SkillSchema]:
-        dest = Path(tempfile.mkdtemp(prefix="ms_agent_skill_"))
-        cmd = ["git", "clone", "--depth", "1"]
+        dest = Path(tempfile.mkdtemp(prefix='ms_agent_skill_'))
+        cmd = ['git', 'clone', '--depth', '1']
         if source.revision:
-            cmd += ["--branch", source.revision]
+            cmd += ['--branch', source.revision]
         cmd += [source.url, str(dest)]
         subprocess.run(cmd, check=True, capture_output=True)
         local_path = str(dest / source.subdir) if source.subdir else str(dest)
@@ -226,7 +258,8 @@ class SkillCatalog:
         self._trust_policy = getattr(safety_cfg, 'trust_policy', 'permissive')
         llm_config = {}
         if getattr(safety_cfg, 'llm_check', False):
-            llm_config['model'] = getattr(safety_cfg, 'llm_model', 'qwen3.7-max')
+            llm_config['model'] = getattr(safety_cfg, 'llm_model',
+                                          'qwen3.7-max')
         self._safety_scanner = SkillSafetyScanner(
             enable_llm_check=getattr(safety_cfg, 'llm_check', False),
             llm_config=llm_config,
@@ -236,6 +269,8 @@ class SkillCatalog:
     @staticmethod
     def _infer_trust_level(skill: SkillSchema, source=None) -> str:
         """Determine trust level from the skill's source path."""
+        if source is not None and getattr(source, 'origin', None) == 'plugin':
+            return 'plugin'
         skill_path_str = str(skill.skill_path)
         builtin_str = str(BUILTIN_SKILLS_DIR)
         user_str = str(USER_SKILLS_DIR)
@@ -246,12 +281,16 @@ class SkillCatalog:
             return 'local'
         return 'community'
 
-    def _register_skill(self, skill: SkillSchema) -> None:
+    def _register_skill(self, skill: SkillSchema, source=None) -> None:
         """Register a skill; later registrations override earlier ones.
 
         Runs safety scanning (when enabled) and applies trust policy.
         """
-        skill._trust_level = self._infer_trust_level(skill)
+        skill._trust_level = self._infer_trust_level(skill, source)
+        if source is not None:
+            skill._origin = getattr(source, 'origin', 'config')
+            skill._plugin_id = getattr(source, 'plugin_id', None)
+            skill._capability = getattr(source, 'capability', None)
 
         if self._safety_scanner:
             try:
@@ -260,16 +299,14 @@ class SkillCatalog:
                 if (report.risk_level == 'dangerous'
                         and self._trust_policy == 'strict'):
                     logger.warning(
-                        f"Blocked dangerous skill: {skill.skill_id}")
+                        f'Blocked dangerous skill: {skill.skill_id}')
                     return
                 elif report.risk_level != 'safe':
-                    logger.warning(
-                        f"Skill '{skill.skill_id}': "
-                        f"{report.risk_level} "
-                        f"({len(report.findings)} finding(s))")
+                    logger.warning(f"Skill '{skill.skill_id}': "
+                                   f'{report.risk_level} '
+                                   f'({len(report.findings)} finding(s))')
             except Exception as e:
-                logger.warning(
-                    f"Safety scan failed for {skill.skill_id}: {e}")
+                logger.warning(f'Safety scan failed for {skill.skill_id}: {e}')
 
         self._skills[skill.skill_id] = skill
         self._invalidate_cache()
@@ -293,7 +330,7 @@ class SkillCatalog:
         for sid, skill in self.get_enabled_skills().items():
             frontmatter = SkillSchemaParser.parse_yaml_frontmatter(
                 skill.content)
-            if frontmatter and frontmatter.get("always", False):
+            if frontmatter and frontmatter.get('always', False):
                 result[sid] = skill
         return result
 
@@ -304,9 +341,61 @@ class SkillCatalog:
     #  Hot reload
     # ------------------------------------------------------------------ #
 
+    def reload_sources(self, sources: List[SkillSource]) -> None:
+        """Reload only skills contributed by the given sources."""
+        if not sources:
+            return
+        target_paths = {
+            str(Path(source.path).expanduser().resolve())
+            for source in sources if source.path
+        }
+        target_keys = {(source.plugin_id, source.capability)
+                       for source in sources if source.plugin_id}
+        remove_ids: List[str] = []
+        for sid, skill in self._skills.items():
+            plugin_id = getattr(skill, '_plugin_id', None)
+            capability = getattr(skill, '_capability', None)
+            if plugin_id and (plugin_id, capability) in target_keys:
+                remove_ids.append(sid)
+                continue
+            for file_info in skill.files:
+                file_path = str(Path(file_info.path).expanduser().resolve())
+                if file_path in target_paths:
+                    remove_ids.append(sid)
+                    break
+        for sid in remove_ids:
+            self._skills.pop(sid, None)
+        for source in sources:
+            if not source.enabled:
+                continue
+            try:
+                skills = self._materialize_and_load(source)
+                for skill in skills.values():
+                    self._register_skill(skill, source)
+            except Exception as e:
+                logger.warning(f'Failed to reload skill source {source}: {e}')
+        self._invalidate_cache()
+
     def reload(self) -> None:
         self._skills.clear()
         self.load_from_sources(self._sources)
+
+    def resync(self, skills_config) -> None:
+        """Rebuild the catalog in place from a (possibly updated) config.
+
+        In place, so long-lived holders (command bridge, skill toolset,
+        search engine) keep observing the same object; the search index
+        follows lazily via the cache version. Picks up new/removed sources
+        and disabled changes — unlike reload(), which only re-reads the
+        already-known source list.
+        """
+        self._skills.clear()
+        self._sources = []
+        self._disabled_skills = set()
+        self._whitelist = None
+        self._config = skills_config
+        self.load_from_config(skills_config)
+        self._invalidate_cache()
 
     def reload_skill(self, skill_id: str) -> Optional[SkillSchema]:
         skill = self._skills.get(skill_id)
@@ -349,7 +438,7 @@ class SkillCatalog:
 
     def get_skills_summary(self) -> str:
         if self._summary_cache_version == self._cache_version:
-            return self._summary_cache or ""
+            return self._summary_cache or ''
         self._summary_cache = self._build_summary()
         self._summary_cache_version = self._cache_version
         return self._summary_cache
@@ -357,9 +446,8 @@ class SkillCatalog:
     def _build_summary(self) -> str:
         skills = self.get_enabled_skills()
         if not skills:
-            return ""
+            return ''
         lines = []
         for sid, skill in sorted(skills.items()):
-            lines.append(
-                f"- **{skill.name}** (`{sid}`): {skill.description}")
-        return "\n".join(lines)
+            lines.append(f'- **{skill.name}** (`{sid}`): {skill.description}')
+        return '\n'.join(lines)

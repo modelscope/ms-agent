@@ -31,8 +31,6 @@ wheels/
 /package
 /temp
 **/tmp/
-.env*
-.claude-trace/
 /apps/agentfabric/tmp/
 MANIFEST
 
@@ -43,6 +41,7 @@ MANIFEST
 *.spec
 release.sh
 build.sh
+scripts/tb21-bench.sh
 *.html
 
 # Installer logs
@@ -124,6 +123,8 @@ venv.bak/
 .idea
 .cursor
 .firecrawl
+.claude/
+.claude-trace/
 
 # custom
 *.pkl
@@ -152,7 +153,6 @@ apps/agentfabric/config/local_user/*
 *.pt
 .run/
 .run/*
-.claude*
 
 # ast template
 ast_index_file.py
@@ -168,3 +168,6 @@ ms_agent/app/temp_workspace/
 
 # webui
 webui/work_dir/
+
+.ms_agent_snapshots/
+.ms_agent/

@@ -1,0 +1,3 @@
+# Media stack for the singularity_cinema project and audio/video tools (matplotlib stays in the base install for the local code executor).
+edge_tts
+moviepy

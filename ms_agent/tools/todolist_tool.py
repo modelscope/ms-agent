@@ -86,21 +86,31 @@ class TodoListTool(ToolBase):
                                       'plan.json') if tool_cfg else 'plan.json'
         self._plan_md_filename = getattr(tool_cfg, 'plan_md_filename',
                                          'plan.md') if tool_cfg else 'plan.md'
+        # Lock files are framework internals: default to the canonical
+        # ``<output_dir>/.ms_agent/locks`` (project.paths.locks_dir) instead of
+        # littering the workspace root with a ``.locks`` dir. An explicit
+        # ``lock_subdir`` config still wins (joined under output_dir).
         self._lock_subdir = getattr(tool_cfg, 'lock_subdir',
-                                    '.locks') if tool_cfg else '.locks'
+                                    None) if tool_cfg else None
         self._auto_render_md = bool(getattr(tool_cfg, 'auto_render_md',
                                             True)) if tool_cfg else True
+
+    def _lock_dir(self) -> str:
+        if self._lock_subdir:
+            return os.path.join(self.output_dir, self._lock_subdir)
+        from ms_agent.project.paths import locks_dir
+        return str(locks_dir(self.output_dir))
 
     async def connect(self) -> None:
         # Nothing to connect; file-based tool.
         _ensure_dir(self.output_dir)
-        _ensure_dir(os.path.join(self.output_dir, self._lock_subdir))
+        _ensure_dir(self._lock_dir())
 
     def _paths(self) -> _PlanPaths:
         return _PlanPaths(
             plan_json=os.path.join(self.output_dir, self._plan_filename),
             plan_md=os.path.join(self.output_dir, self._plan_md_filename),
-            lock_dir=os.path.join(self.output_dir, self._lock_subdir),
+            lock_dir=self._lock_dir(),
         )
 
     async def _get_tools_inner(self) -> Dict[str, Any]:

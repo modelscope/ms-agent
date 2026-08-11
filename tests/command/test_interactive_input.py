@@ -170,6 +170,11 @@ def _make_callback_agent(config):
     agent.callbacks = []
     agent.trust_remote_code = False
     agent._command_router = None
+    # main's _get_command_router() -> _register_plugin_commands() reads this;
+    # None makes it a no-op (real agents set it in __init__).
+    agent._plugin_runtime = None
+    agent._event_sink = None
+    agent._input_source = None
     return agent
 
 

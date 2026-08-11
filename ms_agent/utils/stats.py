@@ -25,12 +25,13 @@ def _get_lock(path: str) -> asyncio.Lock:
 def get_stats_path(config: Any,
                    default_filename: str = 'workflow_stats.json') -> str:
     stats_file = getattr(config, 'stats_file', None)
-    output_dir = getattr(config, 'output_dir', './output')
+    output_dir = getattr(config, 'output_dir', None) or '.'
     if stats_file:
         if os.path.isabs(stats_file):
             return stats_file
         return os.path.join(output_dir, stats_file)
-    return os.path.join(output_dir, default_filename)
+    from ms_agent.project.paths import stats_file as _stats_path
+    return str(_stats_path(output_dir, default_filename))
 
 
 def summarize_usage(messages: Optional[Iterable[Message]]) -> Dict[str, int]:

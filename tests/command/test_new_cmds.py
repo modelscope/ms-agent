@@ -172,7 +172,8 @@ class TestModel:
         assert cfg_file.read_text(encoding='utf-8') == yaml_text
 
         # The override landed in the project patch, which from_task merges back.
-        patch_file = tmp_path / '.ms-agent' / 'config.yaml'
+        # Writer now targets the new .ms_agent/ dir (resolver reads both).
+        patch_file = tmp_path / '.ms_agent' / 'config.yaml'
         assert patch_file.exists()
         patch_cfg = OmegaConf.load(str(patch_file))
         assert patch_cfg.llm.model == 'qwen3.7-max'

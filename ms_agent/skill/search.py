@@ -31,8 +31,7 @@ class SkillSearchEngine:
     #  Public API
     # ------------------------------------------------------------------ #
 
-    def search(self, query: str,
-               top_k: int = 10) -> List[Tuple[str, float]]:
+    def search(self, query: str, top_k: int = 10) -> List[Tuple[str, float]]:
         """Return ``(skill_id, score)`` pairs ranked by relevance."""
         self._ensure_indexed()
         results = self._retriever.search(query, top_k=top_k)
@@ -47,16 +46,14 @@ class SkillSearchEngine:
             return BM25Retriever()
         elif backend == 'vector':
             from ms_agent.retriever.vector import VectorRetriever
-            return VectorRetriever(
-                embed_model=kwargs.get('embed_model'))
+            return VectorRetriever(embed_model=kwargs.get('embed_model'))
         elif backend == 'hybrid':
-            from ms_agent.retriever.vector import VectorRetriever
-            from ms_agent.retriever.hybrid import HybridRetriever
             from ms_agent.retriever.fusion import RRFFusion, WeightedFusion
+            from ms_agent.retriever.hybrid import HybridRetriever
+            from ms_agent.retriever.vector import VectorRetriever
 
             bm25 = BM25Retriever()
-            vector = VectorRetriever(
-                embed_model=kwargs.get('embed_model'))
+            vector = VectorRetriever(embed_model=kwargs.get('embed_model'))
 
             fusion_name = kwargs.get('fusion', 'rrf')
             if fusion_name == 'rrf':
@@ -80,10 +77,9 @@ class SkillSearchEngine:
         docs: List[str] = []
         ids: List[str] = []
         for sid, skill in skills.items():
-            corpus = (
-                f"{skill.name} {skill.description} "
-                f"{' '.join(skill.tags or [])} "
-                f"{skill.content[:500]}")
+            corpus = (f'{skill.name} {skill.description} '
+                      f"{' '.join(skill.tags or [])} "
+                      f'{skill.content[:500]}')
             docs.append(corpus)
             ids.append(sid)
 

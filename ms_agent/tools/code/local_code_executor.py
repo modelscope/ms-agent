@@ -15,10 +15,8 @@ from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils import get_logger
 from ms_agent.utils.artifact_manager import ArtifactManager
-from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR
 from ms_agent.utils.utils import install_package
-from ms_agent.utils.workspace_policy import (WorkspacePolicyError,
-                                             WorkspacePolicyKernel)
+from ms_agent.utils.workspace_context import WorkspaceContext
 
 logger = get_logger()
 
@@ -62,7 +60,7 @@ class LocalKernelSession:
 
         # Ensure dependencies exist before importing.
         install_package('ipykernel')
-        install_package('jupyter-client')
+        install_package('jupyter-client', 'jupyter_client')
 
         from jupyter_client import AsyncKernelManager
 
@@ -234,9 +232,8 @@ class LocalCodeExecutionTool(ToolBase):
 
     def __init__(self, config):
         super().__init__(config)
-        self.output_dir = Path(
-            getattr(config, 'output_dir',
-                    DEFAULT_OUTPUT_DIR)).expanduser().resolve()
+        self._ws = WorkspaceContext.from_config(config)
+        self.output_dir = self._ws.root
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.tool_config = getattr(
@@ -258,36 +255,13 @@ class LocalCodeExecutionTool(ToolBase):
         self._task_manager = None
         self._watcher_tasks: Set[asyncio.Task] = set()
 
-        wp = getattr(getattr(config, 'tools', None), 'workspace_policy', None)
-        extra_allow: List[str] = []
-        deny_globs = None
-        if wp is not None:
-            extra_allow = list(getattr(wp, 'allow_roots', []) or [])
-            dg = getattr(wp, 'deny_globs', None)
-            if dg:
-                deny_globs = list(dg)
         shell_cfg = getattr(self.tool_config, 'shell',
                             None) if self.tool_config else None
-        shell_mode = getattr(
-            shell_cfg, 'default_mode',
-            'workspace_write') if shell_cfg else 'workspace_write'
-        net = bool(getattr(shell_cfg, 'network_enabled',
-                           False)) if shell_cfg else False
-        max_cmd = int(getattr(shell_cfg, 'max_command_chars',
-                              8192)) if shell_cfg else 8192
-        self._policy = WorkspacePolicyKernel(
-            self.output_dir,
-            extra_allow_roots=extra_allow,
-            deny_globs=deny_globs,
-            shell_default_mode=str(shell_mode),
-            shell_network_enabled=net,
-            max_command_chars=max_cmd,
-        )
         max_kb = 256
         if shell_cfg and getattr(shell_cfg, 'max_output_kb', None):
             max_kb = int(shell_cfg.max_output_kb)
         self._artifacts = ArtifactManager(
-            self.output_dir, max_combined_bytes=max_kb * 1024)
+            self._ws.root, max_combined_bytes=max_kb * 1024)
 
         self.exclude_func(
             getattr(getattr(config, 'tools', None), 'code_executor', None))
@@ -358,6 +332,18 @@ class LocalCodeExecutionTool(ToolBase):
                 'HOME': os.environ.get('HOME', ''),
                 'LANG': os.environ.get('LANG', ''),
             }
+            if os.name == 'nt':
+                # ``create_subprocess_shell`` uses the native Windows command
+                # processor. Keep the non-secret OS/user variables that cmd
+                # and programs using temporary/profile directories require.
+                for key in (
+                        'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'PATHEXT', 'TEMP',
+                        'TMP', 'TMPDIR', 'USERPROFILE', 'HOMEDRIVE',
+                        'HOMEPATH', 'USERNAME', 'APPDATA', 'LOCALAPPDATA',
+                        'PROGRAMDATA', 'OS', 'PROCESSOR_ARCHITECTURE'):
+                    value = os.environ.get(key)
+                    if value is not None:
+                        env[key] = value
 
         if not self.tool_config or not hasattr(self.tool_config, field):
             return env
@@ -374,6 +360,12 @@ class LocalCodeExecutionTool(ToolBase):
             if value is None:
                 continue
             env[key] = str(value)
+        plugin_bins = getattr(self.tool_config, 'plugin_bin_paths',
+                              None) if self.tool_config else None
+        if plugin_bins:
+            paths = [str(path) for path in plugin_bins if path]
+            if paths:
+                env['PATH'] = os.pathsep.join(paths + [env.get('PATH', '')])
         return env
 
     async def connect(self) -> None:
@@ -481,13 +473,16 @@ class LocalCodeExecutionTool(ToolBase):
                                 'description': 'Shell command to execute'
                             },
                             'timeout': {
-                                'type': 'integer',
-                                'minimum': 1,
-                                'maximum': int(
-                                    os.getenv('TOOL_CALL_TIMEOUT_MAX', '600')),
+                                'type':
+                                'integer',
+                                'minimum':
+                                1,
+                                'maximum':
+                                int(os.getenv('TOOL_CALL_TIMEOUT_MAX', '600')),
                                 'description':
                                 'Execution timeout in seconds (host-wide ceiling, default 600s; TOOL_CALL_TIMEOUT_MAX).',
-                                'default': self._shell_timeout
+                                'default':
+                                self._shell_timeout
                             },
                             'run_in_background': {
                                 'type': 'boolean',
@@ -606,7 +601,12 @@ class LocalCodeExecutionTool(ToolBase):
                 indent=2)
 
     def _prepare_shell_command(self, command: str) -> str:
-        """Wrap composite shell input in ``sh -lc`` when needed (matches sandbox behavior)."""
+        """Use the native Windows shell; wrap composite POSIX input when needed."""
+        if os.name == 'nt':
+            # asyncio.create_subprocess_shell delegates to cmd.exe on Windows;
+            # wrapping native syntax in a usually unavailable POSIX shell
+            # makes otherwise valid compound commands fail.
+            return command
         shell_meta = ('&&', '||', '|', ';', '>', '<', '`', '$(', 'cd ',
                       'export ')
         already_wrapped = command.lstrip().startswith(
@@ -718,18 +718,6 @@ class LocalCodeExecutionTool(ToolBase):
         exec_timeout = timeout or self._shell_timeout
         call_id = call_id or f'shell-{os.urandom(4).hex()}'
 
-        try:
-            self._policy.assert_shell_command_allowed(command)
-        except WorkspacePolicyError as e:
-            return json.dumps(
-                {
-                    'success': False,
-                    'error': str(e)
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-
         shell_cmd = self._prepare_shell_command(command)
 
         if run_in_background:
@@ -749,7 +737,7 @@ class LocalCodeExecutionTool(ToolBase):
                     shell_cmd,
                     stdout=ai_subprocess.PIPE,
                     stderr=ai_subprocess.PIPE,
-                    cwd=str(self._policy.workspace_root),
+                    cwd=str(self._ws.root),
                     env=self.shell_env,
                 )
             except FileNotFoundError as exc:
@@ -789,12 +777,15 @@ class LocalCodeExecutionTool(ToolBase):
                     )
                     await self._task_manager.complete(task_id, text)
                 except asyncio.TimeoutError:
-                    logger.warning(f'Shell command timed out after {exec_timeout} seconds (task {task_id})')
+                    logger.warning(
+                        f'Shell command timed out after {exec_timeout} seconds (task {task_id})'
+                    )
                     try:
                         process.kill()
                         await process.communicate()
                     except Exception as exc:  # noqa: B902
-                        logger.error(f'Process cleanup failed: {exc}', exc_info=True)
+                        logger.error(
+                            f'Process cleanup failed: {exc}', exc_info=True)
                     if self._task_manager:
                         await self._task_manager.fail(
                             task_id,
@@ -825,7 +816,7 @@ class LocalCodeExecutionTool(ToolBase):
                 shell_cmd,
                 stdout=ai_subprocess.PIPE,
                 stderr=ai_subprocess.PIPE,
-                cwd=str(self._policy.workspace_root),
+                cwd=str(self._ws.root),
                 env=self.shell_env,
             )
         except FileNotFoundError as exc:
@@ -842,7 +833,9 @@ class LocalCodeExecutionTool(ToolBase):
             stdout, stderr = await asyncio.wait_for(
                 process.communicate(), timeout=exec_timeout)
         except asyncio.TimeoutError:
-            logger.warning(f'Shell command timed out after {exec_timeout} seconds (call {call_id})')
+            logger.warning(
+                f'Shell command timed out after {exec_timeout} seconds (call {call_id})'
+            )
             process.kill()
             try:
                 await process.communicate()

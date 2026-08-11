@@ -9,7 +9,7 @@ class AudioGenerator(ToolBase):
 
     def __init__(self, config):
         super().__init__(config)
-        self.temp_dir = os.path.join(self.output_dir, '.temp',
+        self.temp_dir = os.path.join(self.output_dir, '.ms_agent', 'tmp',
                                      'audio_generator')
         os.makedirs(self.temp_dir, exist_ok=True)
         audio_generator = self.config.audio_generator

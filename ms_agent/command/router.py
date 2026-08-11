@@ -7,12 +7,8 @@ Reference: nanobot/command/router.py (structure) + qwen-code (pre-parse + typed 
 """
 from __future__ import annotations
 
-from ms_agent.command.types import (
-    CommandContext,
-    CommandDef,
-    CommandHandler,
-    CommandResult,
-)
+from ms_agent.command.types import (CommandContext, CommandDef, CommandHandler,
+                                    CommandResult)
 
 
 class CommandRouter:
@@ -64,9 +60,8 @@ class CommandRouter:
 
     # -- dispatch --
 
-    async def dispatch_priority(
-        self, ctx: CommandContext
-    ) -> CommandResult | None:
+    async def dispatch_priority(self,
+                                ctx: CommandContext) -> CommandResult | None:
         handler = self._priority.get(ctx.command_name.lower())
         if handler:
             return await handler(ctx)
@@ -103,9 +98,8 @@ class CommandRouter:
                 return cmd_def
         return None
 
-    def list_commands(
-        self, source: str = 'cli'
-    ) -> dict[str, list[CommandDef]]:
+    def list_commands(self,
+                      source: str = 'cli') -> dict[str, list[CommandDef]]:
         result: dict[str, list[CommandDef]] = {}
         for cmd_def in self._registry.values():
             if source in cmd_def.ui_scope:
@@ -115,6 +109,10 @@ class CommandRouter:
     @staticmethod
     def parse_input(text: str) -> tuple[str, str]:
         stripped = text.strip()
+        # Empty / whitespace-only input has no command; split() would yield an
+        # empty list and IndexError on parts[0].
+        if not stripped:
+            return '', ''
         parts = stripped.split(maxsplit=1)
         cmd = parts[0].lstrip('/').lower()
         args = parts[1] if len(parts) > 1 else ''

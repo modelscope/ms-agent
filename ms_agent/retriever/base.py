@@ -23,7 +23,8 @@ class BaseRetriever(ABC):
     """
 
     @abstractmethod
-    def index(self, documents: List[str],
+    def index(self,
+              documents: List[str],
               doc_ids: Optional[List[str]] = None) -> None:
         """Build search index from *documents*.
 
@@ -45,5 +46,6 @@ class FusionStrategy(ABC):
     """Merge multiple ranked result lists into one."""
 
     @abstractmethod
-    def fuse(self, result_lists: List[List[SearchResult]]) -> List[SearchResult]:
+    def fuse(self,
+             result_lists: List[List[SearchResult]]) -> List[SearchResult]:
         """Merge *result_lists* (one per retriever) into a single ranked list."""

@@ -3,7 +3,7 @@ import argparse
 import asyncio
 import os
 from importlib import resources as importlib_resources
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, OmegaConf, open_dict
 
 from ms_agent.config import Config
 from ms_agent.config.env import Env
@@ -92,6 +92,13 @@ class RunCMD(CLICommand):
             default=None,
             help='The directory or the repo id of the config file')
         parser.add_argument(
+            '--output_dir',
+            required=False,
+            type=str,
+            default=None,
+            help='Directory for agent outputs, histories, and artifacts. '
+            'Overrides output_dir in the config file.')
+        parser.add_argument(
             '--project',
             required=False,
             type=str,
@@ -153,6 +160,15 @@ class RunCMD(CLICommand):
             default=None,
             help='Comma-separated list of paths for knowledge search.')
         parser.set_defaults(func=subparser_func)
+
+    @staticmethod
+    def _apply_cli_overrides(config, args):
+        """Apply run-command options that should win over config files."""
+        output_dir = getattr(args, 'output_dir', None)
+        if output_dir and isinstance(config, DictConfig):
+            with open_dict(config):
+                config.output_dir = output_dir
+        return config
 
     def execute(self):
         if getattr(self.args, 'project', None):
@@ -229,6 +245,7 @@ class RunCMD(CLICommand):
             print(blue_color_prefix + line_end + blue_color_suffix, flush=True)
 
         config = Config.from_task(self.args.config)
+        config = self._apply_cli_overrides(config, self.args)
 
         # If knowledge_search_paths is provided, configure tools.localsearch
         if getattr(self.args, 'knowledge_search_paths', None):
@@ -243,7 +260,6 @@ class RunCMD(CLICommand):
                 if tl is None or not OmegaConf.is_config(tl):
                     localsearch_config = {
                         'paths': paths,
-                        'work_path': './.sirchmunk',
                         'mode': 'FAST',
                     }
                     config.tools['localsearch'] = OmegaConf.create(

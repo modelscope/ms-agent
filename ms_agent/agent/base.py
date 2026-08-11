@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import os
 from abc import ABC, abstractmethod
@@ -6,7 +8,8 @@ from typing import Any, AsyncGenerator, List, Optional, Tuple, Union
 
 from ms_agent.llm import Message
 from ms_agent.utils import read_history, save_history
-from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR, DEFAULT_RETRY_COUNT
+from ms_agent.utils.constants import DEFAULT_RETRY_COUNT
+from ms_agent.utils.workspace_context import resolve_workspace_root
 
 
 class Agent(ABC):
@@ -42,8 +45,28 @@ class Agent(ABC):
         self.trust_remote_code = trust_remote_code
         self.config.tag = tag
         self.config.trust_remote_code = trust_remote_code
-        self.output_dir = getattr(self.config, 'output_dir',
-                                  DEFAULT_OUTPUT_DIR)
+        workspace_root = resolve_workspace_root(self.config)
+        self.output_dir = str(workspace_root)
+        try:
+            from omegaconf import open_dict
+            with open_dict(self.config):
+                self.config.output_dir = self.output_dir
+        except Exception:
+            pass
+        # Merge the work-dir project patch (e.g. a persisted /model override) so
+        # config overrides round-trip from <work_dir>/.ms_agent/config.yaml —
+        # anchored to the project (the work dir), not the config file's
+        # directory. This keeps running a shared/template config from picking up
+        # (or scattering) overrides in that config's folder.
+        try:
+            from omegaconf import OmegaConf
+
+            from ms_agent.config.resolver import ConfigResolver
+            patch = ConfigResolver()._load_project_patch(self.output_dir)
+            if patch is not None:
+                self.config = OmegaConf.merge(self.config, patch)
+        except Exception:
+            pass
 
     @abstractmethod
     async def run(
@@ -79,9 +102,8 @@ class Agent(ABC):
         from ms_agent.utils.snapshot import list_snapshots
         return list_snapshots(self.output_dir)
 
-    def rollback(
-        self, commit_hash: str
-    ) -> tuple[bool, Optional[List['Message']]]:
+    def rollback(self,
+                 commit_hash: str) -> tuple[bool, Optional[List['Message']]]:
         """Restore output_dir to a previous snapshot and truncate history."""
         raise NotImplementedError()
 

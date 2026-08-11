@@ -9,7 +9,7 @@ class VideoGenerator(ToolBase):
 
     def __init__(self, config):
         super().__init__(config)
-        self.temp_dir = os.path.join(self.output_dir, '.temp',
+        self.temp_dir = os.path.join(self.output_dir, '.ms_agent', 'tmp',
                                      'video_generator')
         os.makedirs(self.temp_dir, exist_ok=True)
         video_generator = self.config.video_generator

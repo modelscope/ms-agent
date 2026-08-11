@@ -1,23 +1,21 @@
+from __future__ import annotations
+
 from ms_agent.command.router import CommandRouter
-from ms_agent.command.types import (
-    CommandContext,
-    CommandDef,
-    CommandResult,
-    CommandResultType,
-)
+from ms_agent.command.types import (CommandContext, CommandDef, CommandResult,
+                                    CommandResultType)
 
 CMD_USAGE = CommandDef(
     name='usage',
     description='Show token usage statistics',
     category='info',
-    aliases=('stats',),
+    aliases=('stats', ),
 )
 
 CMD_QUIT = CommandDef(
     name='quit',
     description='Exit the interactive session',
     category='session',
-    aliases=('exit',),
+    aliases=('exit', ),
 )
 
 CMD_TOOLS = CommandDef(
@@ -30,7 +28,7 @@ CMD_COMPACT = CommandDef(
     name='compact',
     description='Compress conversation context',
     category='context',
-    aliases=('compress',),
+    aliases=('compress', ),
 )
 
 CMD_CONTEXT = CommandDef(
@@ -61,7 +59,8 @@ async def cmd_usage(ctx: CommandContext) -> CommandResult:
         )
     if ctx.runtime:
         lines.append(f'Rounds:            {ctx.runtime.round}')
-    return CommandResult(type=CommandResultType.MESSAGE, content='\n'.join(lines))
+    return CommandResult(
+        type=CommandResultType.MESSAGE, content='\n'.join(lines))
 
 
 async def cmd_quit(ctx: CommandContext) -> CommandResult:
@@ -81,51 +80,70 @@ def _is_tool_entry(tools_config, key: str) -> bool:
 async def cmd_tools(ctx: CommandContext) -> CommandResult:
     if not ctx.runtime or not ctx.runtime.llm:
         return CommandResult(
-            type=CommandResultType.MESSAGE, content='No active agent.'
-        )
+            type=CommandResultType.MESSAGE, content='No active agent.')
 
     config = ctx.runtime.llm.config
     tools_config = getattr(config, 'tools', None)
     if not tools_config:
         return CommandResult(
-            type=CommandResultType.MESSAGE, content='No tools configured.'
-        )
+            type=CommandResultType.MESSAGE, content='No tools configured.')
 
     tool_names = [k for k in tools_config if _is_tool_entry(tools_config, k)]
     if not tool_names:
         return CommandResult(
-            type=CommandResultType.MESSAGE, content='No tools configured.'
-        )
+            type=CommandResultType.MESSAGE, content='No tools configured.')
 
     lines = [f'Configured tools ({len(tool_names)}):']
     for name in sorted(tool_names):
         lines.append(f'  • {name}')
-    return CommandResult(type=CommandResultType.MESSAGE, content='\n'.join(lines))
+    return CommandResult(
+        type=CommandResultType.MESSAGE, content='\n'.join(lines))
 
 
 async def cmd_compact(ctx: CommandContext) -> CommandResult:
+    """Prune old tool outputs from the live context to free tokens.
+
+    Keeps the most recent tool results in full and elides older large ones in
+    place (the same idea as ContextAssembler's ToolOutputPruner, applied on
+    demand). Automatic per-round compaction still runs when session_log +
+    compaction are configured; this is the manual trigger.
+    """
     messages = ctx.extra.get('messages')
     if not messages:
         return CommandResult(
-            type=CommandResultType.MESSAGE, content='No messages available.'
-        )
+            type=CommandResultType.MESSAGE, content='No messages available.')
 
-    try:
-        from ms_agent.session.context_assembler import ContextAssembler  # noqa: F401
-    except ImportError:
+    keep_recent = 3
+    prune_threshold = 200
+    tool_idxs = [
+        i for i, m in enumerate(messages) if getattr(m, 'role', None) == 'tool'
+    ]
+    to_prune = tool_idxs[:-keep_recent] if len(tool_idxs) > keep_recent else []
+
+    pruned = 0
+    freed = 0
+    for i in to_prune:
+        m = messages[i]
+        content = m.content if isinstance(m.content, str) else str(m.content
+                                                                   or '')
+        if len(content) > prune_threshold and not content.startswith(
+                '[compacted'):
+            placeholder = f'[compacted tool output: {len(content)} chars elided]'
+            freed += len(content) - len(placeholder)
+            messages[i].content = placeholder
+            pruned += 1
+
+    if pruned == 0:
         return CommandResult(
             type=CommandResultType.MESSAGE,
-            content=(
-                'Context compaction not available yet.'
-            ),
+            content=(f'Nothing to compact ({len(messages)} messages; no large '
+                     f'old tool outputs beyond the last {keep_recent}).'),
         )
-
     return CommandResult(
         type=CommandResultType.MESSAGE,
         content=(
-            f'Compaction requested. Current message count: {len(messages)}.\n'
-            f'(Full implementation available after PR#912 merge)'
-        ),
+            f'Compacted {pruned} old tool output(s), ~{freed} chars freed. '
+            f'The {keep_recent} most recent are kept in full.'),
     )
 
 
@@ -198,9 +216,7 @@ async def cmd_context(ctx: CommandContext) -> CommandResult:
         filled = round(pct / 100 * bar_len)
         bar = '█' * filled + '░' * (bar_len - filled)
         lines.append(f'Context: [{bar}] {pct:.1f}%')
-        lines.append(
-            f'  Used:     {used:,} / {context_window:,} tokens'
-        )
+        lines.append(f'  Used:     {used:,} / {context_window:,} tokens')
     else:
         lines.append(f'Context used: {used:,} tokens')
         if model:
@@ -217,9 +233,12 @@ async def cmd_context(ctx: CommandContext) -> CommandResult:
         user_msgs = sum(1 for m in messages if m.role == 'user')
         assistant_msgs = sum(1 for m in messages if m.role == 'assistant')
         tool_msgs = sum(1 for m in messages if m.role == 'tool')
-        lines.append(f'Messages:   {msg_count} (user:{user_msgs} asst:{assistant_msgs} tool:{tool_msgs})')
+        lines.append(
+            f'Messages:   {msg_count} (user:{user_msgs} asst:{assistant_msgs} tool:{tool_msgs})'
+        )
 
-    return CommandResult(type=CommandResultType.MESSAGE, content='\n'.join(lines))
+    return CommandResult(
+        type=CommandResultType.MESSAGE, content='\n'.join(lines))
 
 
 def register_context_commands(router: CommandRouter) -> None:

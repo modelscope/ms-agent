@@ -33,4 +33,6 @@ class ProfileManager:
         self._dir.mkdir(parents=True, exist_ok=True)
         tmp = self._path.with_suffix('.tmp')
         tmp.write_text(content, encoding='utf-8')
-        tmp.rename(self._path)
+        # replace() is atomic and cross-platform; rename() raises on Windows
+        # when the destination already exists.
+        tmp.replace(self._path)

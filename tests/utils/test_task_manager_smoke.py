@@ -359,5 +359,39 @@ class TestAgentToolEscape(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data['status'], 'async_launched')
 
 
+class TestAgentToolTranscript(unittest.TestCase):
+
+    def test_save_transcript_writes_message_objects_and_dicts(self):
+        import json
+        import tempfile
+
+        from omegaconf import OmegaConf
+
+        from ms_agent.llm.utils import Message
+        from ms_agent.tools.agent_tool import AgentTool
+
+        with tempfile.TemporaryDirectory() as td:
+            config = OmegaConf.create({
+                'tag': 'test',
+                'output_dir': td,
+                'tools': {},
+            })
+            tool = AgentTool(config)
+            messages = [
+                Message(role='user', content='hello'),
+                {'role': 'assistant', 'content': 'hi'},
+            ]
+            tool._save_transcript(messages, 'worker-1')
+            path = os.path.join(td, 'subagents', 'worker-1.jsonl')
+            self.assertTrue(os.path.isfile(path))
+            lines = open(path, encoding='utf-8').read().strip().split('\n')
+            self.assertEqual(len(lines), 2)
+            parsed = [json.loads(line) for line in lines]
+            self.assertEqual(parsed[0]['role'], 'user')
+            self.assertEqual(parsed[0]['content'], 'hello')
+            self.assertEqual(parsed[1]['role'], 'assistant')
+            self.assertEqual(parsed[1]['content'], 'hi')
+
+
 if __name__ == '__main__':
     unittest.main()

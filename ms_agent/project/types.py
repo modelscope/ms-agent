@@ -43,7 +43,7 @@ class SessionStatus(str, Enum):
 class Session:
     """Immutable session metadata.
 
-    Message storage is delegated to ms_agent.session.SessionLog. 
+    Message storage is delegated to ms_agent.session.SessionLog.
     The session_key field bridges SessionManager and SessionLog.
     """
 

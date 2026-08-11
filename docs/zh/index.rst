@@ -11,6 +11,7 @@ MS-Agent 官方文档
 
    GetStarted/installation
    GetStarted/quick-start
+   GetStarted/cli
 
 .. toctree::
    :maxdepth: 2

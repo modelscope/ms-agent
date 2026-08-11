@@ -25,4 +25,6 @@ class JSONFileStore:
         tmp = self._path.with_suffix('.tmp')
         with open(tmp, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        tmp.rename(self._path)
+        # replace() is atomic and cross-platform; rename() raises on Windows
+        # when the destination already exists.
+        tmp.replace(self._path)

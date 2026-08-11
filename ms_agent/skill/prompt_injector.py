@@ -21,13 +21,32 @@ Exercise caution with skills marked as "warning" or "dangerous".
 """
 
     ALWAYS_SKILLS_HEADER = (
-        "# Active Skills\n\n"
-        "The following skills are always active. Follow their instructions.\n")
+        '# Active Skills\n\n'
+        'The following skills are always active. Follow their instructions.\n')
 
     DISCOVERY_HINT = (
-        "\nUse `skills_list(query=...)` to discover available skills.\n")
+        '\nUse `skills_list(query=...)` to discover available skills.\n')
 
-    def __init__(self, catalog, *, prompt_injection: str = 'all'):
+    #: Appended when the host emits skill-update notices into the
+    #: conversation (``skills.update_notice``): the prompt's own list is a
+    #: session-start snapshot, and the latest in-conversation notice wins.
+    UPDATE_NOTICE_HINT = """
+**About skill list updates:**
+The skill list here reflects the state when this session started. Skills
+can be added, removed, enabled, disabled or edited mid-conversation; when
+that happens, a <system-reminder> skill-update notice containing the FULL
+current list appears in the conversation.
+- If any skill-update notice exists, the LATEST one is authoritative and
+  supersedes this list and all earlier notices.
+- Earlier notices may be outdated; that is normal bookkeeping — do not
+  mention notices or list changes to the user unless asked.
+"""
+
+    def __init__(self,
+                 catalog,
+                 *,
+                 prompt_injection: str = 'all',
+                 update_notice: bool = False):
         """
         Args:
             catalog: The SkillCatalog instance.
@@ -35,9 +54,14 @@ Exercise caution with skills marked as "warning" or "dangerous".
                 ``"always_only"`` (only always-active skills in prompt,
                 rest via skills_list), or ``"none"`` (pure tool-driven
                 discovery).
+            update_notice: When True, the section explains that
+                in-conversation skill-update notices supersede the
+                prompt's own list (the host is responsible for emitting
+                them).
         """
         self._catalog = catalog
         self._prompt_injection = prompt_injection
+        self._update_notice = update_notice
 
     def build_skill_prompt_section(self) -> str:
         """Build the skill section for system prompt injection.
@@ -52,26 +76,29 @@ Exercise caution with skills marked as "warning" or "dangerous".
             parts.append(self.ALWAYS_SKILLS_HEADER)
             for sid, skill in always_skills.items():
                 content = self._strip_frontmatter(skill.content)
-                parts.append(f"## {skill.name}\n\n{content}\n")
+                parts.append(f'## {skill.name}\n\n{content}\n')
 
         # Part 2: summary index -- only when prompt_injection == "all"
         if self._prompt_injection == 'all':
             summary = self._catalog.get_skills_summary()
             if summary:
                 parts.append(self.SKILL_SECTION_HEADER)
+                if self._update_notice:
+                    parts.append(self.UPDATE_NOTICE_HINT)
                 parts.append(summary)
-                parts.append("")
+                parts.append('')
         elif self._prompt_injection in ('always_only', 'none'):
             has_skills = bool(self._catalog.get_enabled_skills())
             if has_skills:
                 parts.append(self.SKILL_SECTION_HEADER)
+                if self._update_notice:
+                    parts.append(self.UPDATE_NOTICE_HINT)
                 parts.append(self.DISCOVERY_HINT)
 
-        return "\n".join(parts)
+        return '\n'.join(parts)
 
     @staticmethod
     def _strip_frontmatter(content: str) -> str:
         """Remove YAML frontmatter from markdown content."""
         return re.sub(
-            r'^---\s*\n.*?\n---\s*\n', '', content,
-            flags=re.DOTALL).strip()
+            r'^---\s*\n.*?\n---\s*\n', '', content, flags=re.DOTALL).strip()

@@ -625,8 +625,8 @@ class WebSearchTool(ToolBase):
             getattr(tool_cfg, 'spill_max_inline_chars', 120000)
             or 120000) if tool_cfg else 120000
         self._spill_subdir = str(
-            getattr(tool_cfg, 'spill_subdir', 'web_search_artifacts')
-            or 'web_search_artifacts') if tool_cfg else 'web_search_artifacts'
+            getattr(tool_cfg, 'spill_subdir', '.ms_agent/web_search')
+            or '.ms_agent/web_search') if tool_cfg else '.ms_agent/web_search'
         self._spill_preview_chars = int(
             getattr(tool_cfg, 'spill_preview_chars', 600)
             or 600) if tool_cfg else 600

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # Copyright (c) Alibaba, Inc. and its affiliates.
 """
 Lightweight snapshot utility for ms-agent output directories.
@@ -17,7 +19,6 @@ from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
 
-_SNAPSHOT_DIR_NAME = '.ms_agent_snapshots'
 _META_FILE = 'snapshot_meta.json'
 
 
@@ -41,7 +42,9 @@ def _git(args: list[str],
 
 
 def _snapshot_git_dir(output_dir: str) -> str:
-    return os.path.join(output_dir, _SNAPSHOT_DIR_NAME)
+    # Collapsed under <output_dir>/.ms_agent/ (was <output_dir>/.ms_agent_snapshots).
+    from ms_agent.project.paths import snapshots_dir
+    return str(snapshots_dir(output_dir))
 
 
 def _configure_snapshot_repo_for_automation(work_tree: str,
@@ -81,7 +84,11 @@ def _ensure_repo(output_dir: str) -> str:
         os.makedirs(info_dir, exist_ok=True)
         exclude_file = os.path.join(info_dir, 'exclude')
         with open(exclude_file, 'a', encoding='utf-8') as f:
-            f.write(f'\n{_SNAPSHOT_DIR_NAME}/\n')
+            # Exclude only the snapshot git repo itself (must not self-track).
+            # The rest of .ms_agent/ (history cache, etc.) is still captured,
+            # preserving the pre-move behavior where <output_dir>/.memory was
+            # part of the snapshot.
+            f.write('\n.ms_agent/snapshots/\n')
     # Always (re)apply: repos created before this fix may still inherit hooks.
     _configure_snapshot_repo_for_automation(output_dir, git_dir)
     return git_dir
@@ -165,7 +172,8 @@ def take_snapshot(output_dir: str,
         logger.warning_once('[snapshot] git not found — snapshots disabled.')
         return None
     except subprocess.CalledProcessError as e:
-        logger.warning(f'[snapshot] git error: {e.stderr.strip()}')
+        stderr = (e.stderr or '').strip()
+        logger.warning(f'[snapshot] git error: {stderr or e}')
         return None
     except Exception as e:
         logger.warning(f'[snapshot] unexpected error: {e}')
@@ -229,6 +237,13 @@ def restore_snapshot(output_dir: str, commit_hash: str) -> tuple[bool, int]:
         meta = _load_meta(output_dir)
         message_count = meta.get(commit_hash, {}).get('message_count', 0)
         return True, message_count
+    except FileNotFoundError:
+        logger.warning_once('[snapshot] git not found — snapshots disabled.')
+        return False, 0
     except subprocess.CalledProcessError as e:
-        logger.warning(f'[snapshot] restore failed: {e.stderr.strip()}')
+        stderr = (e.stderr or '').strip()
+        logger.warning(f'[snapshot] restore failed: {stderr or e}')
+        return False, 0
+    except Exception as e:
+        logger.warning(f'[snapshot] unexpected restore error: {e}')
         return False, 0

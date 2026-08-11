@@ -234,16 +234,25 @@ if __name__ == '__main__':
         'requirements/framework.txt')
 
     extra_requires = {}
-    all_requires = []
     extra_requires['research'], _ = parse_requirements(
         'requirements/research.txt')
     extra_requires['code'], _ = parse_requirements('requirements/code.txt')
     extra_requires['webui'], _ = parse_requirements('requirements/webui.txt')
-    all_requires.extend(install_requires)
-    all_requires.extend(extra_requires['research'])
-    all_requires.extend(extra_requires['code'])
-    all_requires.extend(extra_requires['webui'])
-    extra_requires['all'] = all_requires
+    extra_requires['acp'], _ = parse_requirements('requirements/acp.txt')
+    extra_requires['a2a'], _ = parse_requirements('requirements/a2a.txt')
+    extra_requires['retrieval'], _ = parse_requirements(
+        'requirements/retrieval.txt')
+    extra_requires['cinema'], _ = parse_requirements('requirements/cinema.txt')
+    extra_requires['docs'], _ = parse_requirements('requirements/docs.txt')
+
+    # ``all`` aggregates every *runtime* extra so that `pip install ms-agent[all]`
+    # yields a fully-featured install. ``docs`` is build-only and intentionally
+    # excluded. De-duplicated for a clean, deterministic dependency set.
+    all_requires = list(install_requires)
+    for _group in ('research', 'code', 'webui', 'acp', 'a2a', 'retrieval',
+                   'cinema'):
+        all_requires.extend(extra_requires[_group])
+    extra_requires['all'] = sorted(set(all_requires))
 
     setup(
         name='ms-agent',

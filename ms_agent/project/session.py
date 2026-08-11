@@ -26,9 +26,19 @@ class SessionManager:
 
     def __init__(self, project: Project) -> None:
         self._project = project
-        self._sessions_dir = (
-            Path(project.path) / '.ms-agent' / 'sessions'
-        )
+        # Sessions live globally under ~/.ms_agent/projects/<id>/sessions,
+        # co-located with the runtime SessionLog root (paths.py), not inside the
+        # project's work dir. Legacy <work>/.ms-agent/sessions is migrated
+        # forward once if present.
+        from ms_agent.project.paths import global_projects_root
+        self._sessions_dir = (global_projects_root() / project.id / 'sessions')
+        legacy = Path(project.path) / '.ms-agent' / 'sessions'
+        if legacy.is_dir() and not self._sessions_dir.exists():
+            try:
+                import shutil
+                shutil.copytree(legacy, self._sessions_dir)
+            except Exception:
+                pass
         self._sessions_dir.mkdir(parents=True, exist_ok=True)
 
     @property
@@ -115,8 +125,7 @@ class SessionManager:
         except ImportError:
             raise ImportError(
                 'ms_agent.session.SessionLog is not available. '
-                'Ensure the feat/memory_update branch (PR#912) is merged.'
-            )
+                'Ensure the feat/memory_update branch (PR#912) is merged.')
 
     # -- internal --
 

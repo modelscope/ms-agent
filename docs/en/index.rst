@@ -11,6 +11,7 @@ MS-Agent DOCUMENTATION
 
    GetStarted/Introduction
    GetStarted/Installation
+   GetStarted/CLI
 
 .. toctree::
    :maxdepth: 2

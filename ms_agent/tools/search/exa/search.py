@@ -1,9 +1,8 @@
 # flake8: noqa
 import os
 import threading
-from typing import TYPE_CHECKING, List, Optional, Set, Union
-
 from exa_py import Exa
+from typing import TYPE_CHECKING, List, Optional, Set, Union
 
 from ms_agent.tools.search.exa.schema import ExaSearchRequest, ExaSearchResult
 from ms_agent.tools.search.search_base import SearchEngine, SearchEngineType

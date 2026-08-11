@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import httpx
 import inspect
@@ -8,8 +10,6 @@ from openai.types.chat.chat_completion_message_tool_call import (
     ChatCompletionMessageToolCall, Function)
 from typing import Any, Dict, Generator, Iterable, List, Optional
 
-import httpx
-import json
 from ms_agent.llm import LLM
 from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.utils import (MAX_CONTINUE_RUNS, assert_package_exist,
@@ -72,14 +72,29 @@ class OpenAI(LLM):
         self.model: str = config.llm.model
         self.max_continue_runs = getattr(config.llm, 'max_continue_runs',
                                          None) or MAX_CONTINUE_RUNS
+        # Resolution: explicit arg -> config field -> env var -> service
+        # default. The env fallback keeps `service: openai` working with a
+        # `.env` that only sets OPENAI_BASE_URL/OPENAI_API_KEY (matching the
+        # provider-router CredentialResolver), instead of silently hitting the
+        # real OpenAI endpoint.
+        import os
         base_url = base_url or getattr(
-            config.llm, 'openai_base_url',
-            None) or get_service_config('openai').base_url
-        api_key = api_key or getattr(config.llm, 'openai_api_key', None)
+            config.llm, 'openai_base_url', None) or os.environ.get(
+                'OPENAI_BASE_URL') or get_service_config('openai').base_url
+        api_key = api_key or getattr(config.llm, 'openai_api_key',
+                                     None) or os.environ.get('OPENAI_API_KEY')
 
+        # Bound the network call so a dead/misconfigured endpoint fails fast
+        # instead of hanging the caller indefinitely (openai's default is a
+        # 600s read timeout with no connect bound). Overridable via
+        # config.llm.timeout / config.llm.connect_timeout.
+        _read_timeout = getattr(config.llm, 'timeout', None) or 300.0
+        _connect_timeout = getattr(config.llm, 'connect_timeout', None) or 20.0
         self.client = openai.OpenAI(
             api_key=api_key,
             base_url=base_url,
+            timeout=httpx.Timeout(
+                float(_read_timeout), connect=float(_connect_timeout)),
         )
         self.base_url = base_url or ''
         self.args: Dict = OmegaConf.to_container(
@@ -211,7 +226,7 @@ class OpenAI(LLM):
             tools = None
         return tools
 
-    @retry(max_attempts=LLM.retry_count, delay=1.0)
+    @retry(max_attempts=LLM.retry_count, delay=3.0)
     def generate(self,
                  messages: List[Message],
                  tools: Optional[List[Tool]] = None,
@@ -231,6 +246,8 @@ class OpenAI(LLM):
         args = self.args.copy()
         args.update(kwargs)
         stream = args.get('stream', False)
+        if not stream:
+            args.pop('stream_options', None)
 
         if not stream:
             args.pop('stream_options', None)
@@ -1047,6 +1064,14 @@ class OpenAI(LLM):
             # Always use the transformed content to support features like prefix caching
             # The content variable has been processed by _to_structured_content() if needed
             formatted_message['content'] = content
+
+            # A tool-call-only assistant turn has no text: send the canonical
+            # ``content: null`` (not an empty string) so gateways that validate
+            # assistant messages accept it. This is the correct representation
+            # now that the framework no longer injects a placeholder utterance.
+            if (formatted_message.get('role') == 'assistant'
+                    and formatted_message.get('tool_calls') and not content):
+                formatted_message['content'] = None
 
             openai_messages.append(formatted_message)
 

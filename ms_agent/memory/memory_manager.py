@@ -1,7 +1,7 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
-from typing import Dict
-
+import os
 from omegaconf import DictConfig, OmegaConf
+from typing import Dict
 
 from ms_agent.memory import Memory, memory_mapping
 from ms_agent.utils import get_logger
@@ -18,12 +18,19 @@ class SharedMemoryManager:
     async def get_shared_memory(cls, config: DictConfig,
                                 mem_instance_type: str) -> Memory:
         """Get or create a shared memory instance based on configuration."""
-        user_id: str = getattr(
-            getattr(config.memory, mem_instance_type, OmegaConf.create({})),
-            'user_id', DEFAULT_USER)
-        path: str = getattr(
-            getattr(config.memory, mem_instance_type, OmegaConf.create({})),
-            'path', DEFAULT_OUTPUT_DIR)
+        node = getattr(config.memory, mem_instance_type, OmegaConf.create({}))
+        # unified_memory namespaces the user under `namespace.user_id`;
+        # legacy memories keep a top-level `user_id`. Honor both.
+        user_id: str = getattr(node, 'user_id', None) or getattr(
+            getattr(node, 'namespace', OmegaConf.create({})), 'user_id',
+            None) or DEFAULT_USER
+        # The store roots under the work dir (<output_dir>/.ms_agent/memory for
+        # unified_memory), so the share key must isolate per resolved work dir —
+        # otherwise two projects on the same model would read/write each
+        # other's MEMORY.md through one cached instance.
+        path: str = getattr(node, 'path', None) or getattr(
+            config, 'output_dir', None) or DEFAULT_OUTPUT_DIR
+        path = os.path.abspath(os.path.expanduser(str(path)))
         llm_str: str = getattr(config.llm, 'model', 'default_model')
 
         key = f'{mem_instance_type}_{user_id}_{llm_str}_{path}'

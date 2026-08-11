@@ -19,7 +19,7 @@ class ArtifactManager:
         max_combined_bytes: int = 256 * 1024,
         preview_head_chars: int = 4000,
         preview_tail_chars: int = 2000,
-        artifact_subdir: str = '.ms_agent_artifacts',
+        artifact_subdir: str = '.ms_agent/artifacts',
     ) -> None:
         self._root = Path(output_dir).expanduser().resolve()
         self.max_combined_bytes = max_combined_bytes

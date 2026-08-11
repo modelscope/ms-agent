@@ -8,9 +8,9 @@ from typing import Optional
 
 
 class SkillSourceType(Enum):
-    LOCAL_DIR = "local"
-    MODELSCOPE = "modelscope"
-    GIT = "git"
+    LOCAL_DIR = 'local'
+    MODELSCOPE = 'modelscope'
+    GIT = 'git'
 
 
 @dataclass
@@ -22,6 +22,9 @@ class SkillSource:
     revision: Optional[str] = None
     subdir: Optional[str] = None
     enabled: bool = True
+    origin: str = 'config'
+    plugin_id: Optional[str] = None
+    capability: Optional[str] = None
 
 
 _MODELSCOPE_URI_RE = re.compile(
@@ -33,8 +36,7 @@ _MODELSCOPE_SKILL_URL_RE = re.compile(
 
 _OWNER_REPO_RE = re.compile(r'^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')
 
-_AT_PREFIX_RE = re.compile(
-    r'^@(?P<repo>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)$')
+_AT_PREFIX_RE = re.compile(r'^@(?P<repo>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)$')
 
 
 def _looks_like_path(raw: str) -> bool:
