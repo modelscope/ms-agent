@@ -315,14 +315,60 @@ class WorkspaceSpec(ABC):
     # Core helpers
     # ------------------------------------------------------------------
 
+    # Sub-paths (in priority order) that may hold the real data root when
+    # ``local_dir`` is given one level too high -- e.g. nanobot's install root
+    # ``.nanobot`` versus its data root ``.nanobot/workspace``.  Empty (the
+    # default) means the install root IS the data root, so no probing happens.
+    _ROOT_SUBDIRS: tuple[str, ...] = ()
+
+    def _holds_own_files(self, base: Path) -> bool:
+        """Whether *base* directly holds this framework's files.
+
+        Markers are the leading segments of every pattern that carry no
+        wildcard or ``{name}`` placeholder, i.e. the fixed top-level entries
+        a populated workspace of this framework must have.
+        """
+        for pattern in self.patterns:
+            head = pattern.split('/')[0]
+            if any(c in head for c in '*?{'):
+                continue
+            if (base / head).exists():
+                return True
+        return False
+
+    def _probe_root(self, base: Path) -> Path:
+        """Resolve *base* to the data root, descending one known sub-path.
+
+        Users naturally pass the install root (``--local_dir ~/.nanobot``)
+        while the files live a level down (``~/.nanobot/workspace``), which
+        used to fail with a bare 'no files found'.  Descend only into a
+        declared sub-path that already EXISTS, and only when *base* holds none
+        of this framework's own files -- so an explicit data root still wins,
+        and a fresh/empty output dir is never redirected (that would silently
+        relocate written files).  Deliberately not a recursive search: this
+        path is also the WRITE target for download/convert, where guessing a
+        nested directory (a backup copy, say) could clobber unrelated files.
+        """
+        if not self._ROOT_SUBDIRS or self._holds_own_files(base):
+            return base
+        for sub in self._ROOT_SUBDIRS:
+            candidate = base / sub
+            if candidate.is_dir():
+                return candidate
+        return base
+
     @property
     def root(self) -> Path:
-        """Effective framework data root: ``local_dir`` override, else the default.
+        """Effective framework data root: ``local_dir`` override, else default.
 
         ``local_dir`` ALWAYS means the data root, uniformly across every
         framework; per-agent subdirectories (if any) are derived from it by
-        ``workspace_root``."""
-        return self._local_dir if self._local_dir is not None else self.default_root
+        ``workspace_root``.  An override that points at the install root
+        instead is normalized by :meth:`_probe_root`.
+        """
+        if self._local_dir is not None:
+            return self._probe_root(self._local_dir)
+        return self.default_root
 
     @property
     def workspace_root(self) -> Path:

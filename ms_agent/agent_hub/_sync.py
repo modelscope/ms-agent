@@ -184,6 +184,43 @@ def _retry_on_master_missing(fn, *, retries: int = 6, delay: float = 1.0):
             raise
 
 
+def _verify_visibility_or_abort(client: 'AgentApi', username: str,
+                                name: str, requested: str) -> None:
+    """Read back a freshly created repo's visibility; abort on a leak.
+
+    The visibility flag is set at creation time (not subject to the file-tree
+    eventual-consistency lag), so a private request that reads back as public
+    means the server did not honor it and any push would leak. Rather than
+    report success with a ``private`` label the server never applied, raise so
+    the caller aborts before uploading a single byte.
+
+    Conservative on purpose: only a POSITIVE ``public`` reading fails. If the
+    metadata cannot be read (transient error, anonymous-probe fallback with no
+    fields, or an unrecognized value), proceed rather than block a legitimate
+    upload on an unverifiable state.
+    """
+    if requested != 'private':
+        return
+    from modelscope_hub.agent import agent_visibility_label
+    try:
+        info = client.repo_info(username, name)
+    except Exception as exc:
+        logger.warning(
+            'Could not verify visibility for %s/%s (%s); proceeding.',
+            username, name, exc)
+        return
+    if not info:
+        logger.warning(
+            'Could not read back visibility for %s/%s; proceeding.', username,
+            name)
+        return
+    if agent_visibility_label(info) == 'public':
+        raise RuntimeError(
+            f'requested private but {username}/{name} was created PUBLIC on '
+            f'the server; aborting before upload to avoid leaking content. '
+            f'Delete the repo and retry, or check server-side permissions.')
+
+
 def push_resources(
     client: 'AgentApi',
     username: str,
@@ -214,15 +251,24 @@ def push_resources(
         return
 
     # Ensure repo exists (idempotent create).
+    created = False
     try:
         if not client.check_repo(username, name):
             client.create_repo(
                 username, name, framework=framework, visibility=visibility)
-            logger.info('Created empty agent repo %s/%s (framework=%s, %s).',
-                        username, name, framework, visibility)
+            created = True
+            logger.info(
+                'Created empty agent repo %s/%s (framework=%s, requested '
+                'visibility=%s).', username, name, framework, visibility)
     except Exception as exc:
         logger.warning('create_repo check failed (%s), proceeding anyway.',
                        exc)
+
+    # Before pushing any content, confirm the server actually honored a
+    # private request -- a mismatch here used to be reported as a successful
+    # "private" upload while the repo was in fact public (silent leak).
+    if created:
+        _verify_visibility_or_abort(client, username, name, visibility)
 
     # Idempotent upsert: skip files whose content already matches the remote.
     # A repeated full upload of unchanged content would otherwise issue

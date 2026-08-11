@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import difflib
+import fnmatch
 import re
 from dataclasses import dataclass, field
 
@@ -446,6 +447,36 @@ _DEFAULT_FILE_CLASS = {
     'heartbeat': 'HEARTBEAT.md',
 }
 
+# Framework-private files: same NAME across frameworks but incompatible FORMAT
+# (e.g. hermes vs ms-agent ``config.yaml``, ms-agent vs qwenpaw ``skill.json``).
+# They have no cross-framework semantics, so on a convert they must be dropped
+# -- NOT carried over verbatim.  The normal safety net (a file with no target
+# pattern is filtered out downstream) fails exactly here, because the target
+# framework happens to declare an identically-named pattern and would load a
+# file it cannot parse.  Same-framework sync is unaffected (that path keeps
+# every file verbatim by design).
+PRODUCT_PRIVATE_FILES = {
+    'hermes': frozenset(['config.yaml', 'hooks/*']),
+    'ms-agent':
+    frozenset(
+        ['config.yaml', 'settings.json', 'agent.yaml', 'facts.json',
+         'skill.json']),
+    'qwenpaw': frozenset(['agent.json', 'skill.json']),
+    'openhuman': frozenset(['config.toml']),
+}
+
+
+def _is_private_file(product: str, path: str) -> bool:
+    """Whether *path* is a framework-private (non-portable) file of *product*.
+
+    Matches by fnmatch so glob entries like ``hooks/*`` cover their whole tree.
+    """
+    for pat in PRODUCT_PRIVATE_FILES.get(product, ()):
+        if path == pat or fnmatch.fnmatch(path, pat):
+            return True
+    return False
+
+
 _section_merger = SectionMerger()
 _heartbeat_merger = HeartbeatMerger()
 
@@ -733,6 +764,22 @@ def merge_resources(
                     (f'Qoder command converted to skill (from {path})'
                      if path.startswith('commands/') else
                      f'Optional skill imported (from {path})'),
+                ))
+            continue
+
+        # Framework-private config/manifest with no cross-framework meaning
+        # (e.g. hermes vs ms-agent ``config.yaml``): on a convert it must be
+        # dropped rather than carried over, since the target framework may
+        # declare an identically-named file it cannot parse. Same-framework
+        # sync keeps everything, so only guard the cross-product path.
+        if is_cross_product and _is_private_file(source_product, path):
+            result.actions.append(
+                MergeAction(
+                    path=path,
+                    action='skip',
+                    detail=(f'{path} is {source_product}-private '
+                            f'(incompatible format on {target_product}), '
+                            f'dropped'),
                 ))
             continue
 

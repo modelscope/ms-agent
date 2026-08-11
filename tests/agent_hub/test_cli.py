@@ -251,6 +251,12 @@ class _StubClient:
     # Subclasses/tests may set this to simulate pre-existing remote files.
     preset_remote = []
 
+    # Metadata returned by ``repo_info`` for the post-create visibility
+    # read-back. Default ``{}`` (unknown) makes verification proceed, matching
+    # every existing upload test; a test can set ``{"private": False}`` to
+    # simulate the server ignoring a private request.
+    preset_repo_info = {}
+
     def __init__(self, *args, **kwargs):
         self.created = []
         self.created_visibility = []
@@ -262,6 +268,9 @@ class _StubClient:
 
     def check_repo(self, path, name):
         return False
+
+    def repo_info(self, path, name):
+        return type(self).preset_repo_info
 
     def list_repo_files(self, path, name, revision="master"):
         return list(type(self).preset_remote)
@@ -347,6 +356,60 @@ class TestUploadCmd(unittest.TestCase):
         self.assertIn("AGENTS.md", client.uploaded_resources)
         for v in client.uploaded_resources.values():
             self.assertIsInstance(v, bytes)
+
+    @mock.patch("ms_agent.agent_hub._commands.AgentApi", _StubClient)
+    def test_private_request_honored_proceeds(self):
+        """Server confirms private -> upload proceeds normally."""
+        _StubClient.preset_repo_info = {"private": True}
+        try:
+            rc = cmd_upload(
+                framework="qoder", name="reviewer",
+                local_dir=str(self.root),
+                endpoint="http://s", token="tok", username="u",
+                visibility="private",
+            )
+        finally:
+            _StubClient.preset_repo_info = {}
+        self.assertEqual(rc, 0)
+        client = _StubClient.instances[0]
+        self.assertEqual(client.created_visibility, ["private"])
+        self.assertIsNotNone(client.uploaded_resources)
+
+    @mock.patch("ms_agent.agent_hub._commands.AgentApi", _StubClient)
+    def test_private_request_created_public_aborts_before_upload(self):
+        """Server ignored private (repo is public) -> abort, nothing uploaded.
+
+        Regression: this used to log a cheerful "private" success while the
+        repo was public -- a silent leak with exit code 0.
+        """
+        _StubClient.preset_repo_info = {"private": False}
+        try:
+            rc = cmd_upload(
+                framework="qoder", name="reviewer",
+                local_dir=str(self.root),
+                endpoint="http://s", token="tok", username="u",
+                visibility="private",
+            )
+        finally:
+            _StubClient.preset_repo_info = {}
+        self.assertEqual(rc, 1)  # non-zero: the failure is observable on CLI
+        client = _StubClient.instances[0]
+        # Repo was created, but NO content was pushed after the mismatch.
+        self.assertEqual(client.created_visibility, ["private"])
+        self.assertIsNone(client.uploaded_resources)
+
+    @mock.patch("ms_agent.agent_hub._commands.AgentApi", _StubClient)
+    def test_unverifiable_visibility_proceeds(self):
+        """Metadata unreadable -> proceed rather than block a real upload."""
+        _StubClient.preset_repo_info = {}  # unknown
+        rc = cmd_upload(
+            framework="qoder", name="reviewer",
+            local_dir=str(self.root),
+            endpoint="http://s", token="tok", username="u",
+            visibility="private",
+        )
+        self.assertEqual(rc, 0)
+        self.assertIsNotNone(_StubClient.instances[0].uploaded_resources)
 
     @mock.patch("ms_agent.agent_hub._commands.AgentApi", _StubClient)
     def test_full_upload_prunes_stale_remote_in_scope(self):
@@ -650,7 +713,7 @@ class TestBackupsFilterCmd(unittest.TestCase):
         from contextlib import redirect_stdout
         buf = io.StringIO()
         with redirect_stdout(buf):
-            rc = cmd_recover(target="last", framework="qoder")
+            cmd_recover(target="last", framework="qoder")
         # rc=1 because the fake zip doesn't have valid data to restore,
         # but it should attempt the qoder_reviewer (latest qoder) not qwenpaw.
         self.assertNotIn("no backups found", buf.getvalue().lower())

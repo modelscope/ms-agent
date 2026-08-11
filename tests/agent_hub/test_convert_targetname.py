@@ -750,5 +750,73 @@ class TestQoderCommandsToSkillOutbound(unittest.TestCase):
                 (out / "skills" / "check-user-resources").exists())
 
 
+class TestPrivateConfigDroppedOnConvert(unittest.TestCase):
+    """Framework-private config files must not survive a cross convert.
+
+    ``config.yaml`` exists in both hermes and ms-agent but with incompatible
+    formats, and ``skill.json`` in both ms-agent and qwenpaw. They have no
+    cross-framework meaning, so carrying them over left an unparseable file in
+    the target workspace. They are dropped cross-product; same-framework sync
+    still keeps them verbatim.
+    """
+
+    def test_hermes_to_ms_agent_drops_config_yaml(self):
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "src"
+            (src / "skills" / "s").mkdir(parents=True)
+            (src / "SOUL.md").write_text("# Soul\nGOLD-PERSONA\n")
+            (src / "config.yaml").write_text("llm:\n  model: x\nhooks: {}\n")
+            (src / "skills" / "s" / "SKILL.md").write_text("GOLD-SKILL\n")
+            out = Path(td) / "out"
+            rc = cmd_convert(
+                "hermes", "ms-agent",
+                from_name="default", target_name="default",
+                local_dir=str(src), out_dir=str(out))
+            self.assertEqual(rc, 0)
+            names = {p.name for p in out.rglob("*") if p.is_file()}
+            self.assertNotIn("config.yaml", names)
+            # persona + user skill still migrate
+            all_text = "".join(
+                p.read_text() for p in out.rglob("*") if p.is_file())
+            self.assertIn("GOLD-PERSONA", all_text)
+            self.assertIn("GOLD-SKILL", all_text)
+
+    def test_ms_agent_to_hermes_drops_config_and_skill_json(self):
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "src"
+            src.mkdir()
+            (src / "profile.md").write_text("# Profile\nGOLD-PERSONA\n")
+            (src / "config.yaml").write_text("llm:\n  model: x\ntools: {}\n")
+            (src / "skill.json").write_text('{"skills": []}')
+            out = Path(td) / "out"
+            rc = cmd_convert(
+                "ms-agent", "hermes",
+                from_name="default", target_name="default",
+                local_dir=str(src), out_dir=str(out))
+            self.assertEqual(rc, 0)
+            names = {p.name for p in out.rglob("*") if p.is_file()}
+            self.assertNotIn("config.yaml", names)
+            self.assertNotIn("skill.json", names)
+            all_text = "".join(
+                p.read_text() for p in out.rglob("*") if p.is_file())
+            self.assertIn("GOLD-PERSONA", all_text)
+
+    def test_same_framework_keeps_config_yaml(self):
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "src"
+            src.mkdir()
+            (src / "profile.md").write_text("# Profile\n")
+            (src / "config.yaml").write_text("llm:\n  model: GOLD-CFG\n")
+            out = Path(td) / "out"
+            rc = cmd_convert(
+                "ms-agent", "ms-agent",
+                from_name="default", target_name="default",
+                local_dir=str(src), out_dir=str(out))
+            self.assertEqual(rc, 0)
+            kept = out / "config.yaml"
+            self.assertTrue(kept.is_file())
+            self.assertIn("GOLD-CFG", kept.read_text())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

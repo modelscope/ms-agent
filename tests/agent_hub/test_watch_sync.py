@@ -43,6 +43,8 @@ from ms_agent.agent_hub._workspace import (
     FRAMEWORK_REGISTRY,
 )
 
+from . import skip_if_server_rejects
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
@@ -85,8 +87,7 @@ def _watch_process_target(
     spec_cls = FRAMEWORK_REGISTRY[framework]
     spec = spec_cls(agent_name=agent_name, local_dir=Path(local_dir))
     client = AgentApi(server, token)
-    user_data = client._openapi.get_current_user()
-    username = user_data.get("username") or user_data.get("Username") or ""
+    username = client._openapi.get_current_username()
 
     watch_loop(spec, client, username, repo_name, framework, interval=interval, push_only=push_only)
 
@@ -115,8 +116,7 @@ class TestWatchSync(unittest.TestCase):
         from modelscope_hub.config import set_default_config
         set_default_config(None)
         cls.client = AgentApi(SERVER, TOKEN)
-        user_data = cls.client._openapi.get_current_user()
-        cls.username = user_data.get("username") or user_data.get("Username") or ""
+        cls.username = cls.client._openapi.get_current_username()
         assert cls.username, "login failed"
         print(f"    Logged in as {cls.username}")
 
@@ -163,6 +163,7 @@ class TestWatchSync(unittest.TestCase):
         that files already on the remote are updated and files removed from
         the set are deleted on the remote.
         """
+        skip_if_server_rejects(framework)
         from ms_agent.agent_hub._sync import push_resources, push_incremental
         byte_files = {
             k: (v.encode("utf-8") if isinstance(v, str) else v)
@@ -194,6 +195,7 @@ class TestWatchSync(unittest.TestCase):
 
     def _start_watch(self, framework: str, agent_name: str, local_dir: str, repo_name: str, push_only: bool = True) -> multiprocessing.Process:
         """Start a watch_loop in a child process, return the Process."""
+        skip_if_server_rejects(framework)
         p = multiprocessing.Process(
             target=_watch_process_target,
             args=(SERVER, TOKEN, self._data_dir, framework, agent_name, local_dir, repo_name, WATCH_INTERVAL, push_only),
@@ -567,11 +569,13 @@ class TestWatchSync(unittest.TestCase):
                 sf.unlink()
 
             proc = self._start_watch("qwenpaw", repo_name, local_dir, repo_name)
-            self._wait_cycles(2)
 
-            remote = self.client.list_repo_files(self.username, repo_name)
-            self.assertIn("SOUL.md", remote)
-            self.assertIn("PROFILE.md", remote)
+            # A freshly created repo can still be materializing, so poll instead
+            # of reading once after a fixed sleep (see ``_eventually``).
+            self._eventually(
+                lambda: {"SOUL.md", "PROFILE.md"}.issubset(
+                    set(self.client.list_repo_files(self.username, repo_name))),
+                desc="all local files pushed on first sync")
         finally:
             if proc:
                 self._stop_watch(proc)
