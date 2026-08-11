@@ -2,7 +2,6 @@ aiohttp
 croniter>=1.3.0
 dotenv
 json5
-loguru
 markdown
 matplotlib
 mcp
