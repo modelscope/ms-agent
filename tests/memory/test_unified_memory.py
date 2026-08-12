@@ -1601,11 +1601,13 @@ class TestMem0BackendInternals:
             loop.close()
 
     def test_invalidate(self):
-        self.backend._snapshot = "cached"
-        self.backend._snapshot_dirty = False
+        # invalidate() must drop the per-turn retrieval cache so the next
+        # inject re-queries (an external edit changed what search should see).
+        self.backend._turn_cache_key = "user\x1fquery"
+        self.backend._turn_cache_results = [{"memory": "cached"}]
         self.backend.invalidate()
-        assert self.backend._snapshot is None
-        assert self.backend._snapshot_dirty is True
+        assert self.backend._turn_cache_key is None
+        assert self.backend._turn_cache_results is None
 
     def test_close_safe(self):
         loop = asyncio.new_event_loop()
