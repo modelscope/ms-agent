@@ -159,7 +159,7 @@ export function ModelSelector({
           <span className="h-2 w-2 inline-block rounded-full bg-msa-purple-5" />
         }
       >
-        {defaultModel?.display_name ?? t.home.modelPill}
+        {defaultModel?.display_name ?? t.home.modelUnset}
       </PillButton>
     </Popover>
   )

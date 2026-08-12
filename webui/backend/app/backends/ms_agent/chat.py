@@ -90,6 +90,24 @@ def _compose_prompt(msg) -> str:
     return f"{text}\n\n{block}" if text else block
 
 
+def _touch_session(project, session_id: str) -> None:
+    """Bump the session's ``updated_at`` to now.
+
+    The SDK only refreshes that timestamp inside ``SessionManager.update()``,
+    i.e. when session METADATA changes. Appending conversation rows goes through
+    SessionLog and never touches the meta file, so before this the field really
+    recorded "when the title was generated" (the one ``update()`` call webui
+    makes) rather than the last activity. Session lists are ordered by it, so a
+    long-running conversation stayed stuck at the bottom while brand-new ones
+    sat on top. Called at the START of every turn so the ordering reflects the
+    conversation the user is actually in, without waiting for it to finish.
+    """
+    try:
+        sm_for(project).update(session_id)
+    except Exception:  # ordering is cosmetic; never fail a turn over it
+        logger.debug("session touch failed", exc_info=True)
+
+
 def _resolve_or_create(req: ChatRequest):
     """Return (project, session). Reuse an existing session by id; otherwise
     create one under the requested project (default project when unspecified)."""
@@ -97,6 +115,7 @@ def _resolve_or_create(req: ChatRequest):
         found = find_session(req.session_id)
         if found:
             project, session, _sm = found
+            _touch_session(project, session.id)
             return project, session
     try:
         project = resolve_project(req.project_id)
@@ -225,7 +244,10 @@ def _tool_step_meta(name: str, args: dict) -> dict | None:
     - file_system write_file    -> file_write; edit_file -> file_edit (distinct
       cards: a full-content write vs an in-place edit render differently).
     - file_system grep/glob      -> search (a workspace query).
-    - skills                     -> skill_load.
+    - skills skill_view          -> skill_load (the only one that loads a skill:
+      its content, or one file inside it); skills_list -> skill_list (catalog
+      listing, or a search when `query` is set); skill_manage -> skill_manage
+      (create/edit/delete).
     - code_executor shell/py/nb  -> terminal (command / code body).
     - web_search *_search        -> search (a web query); fetch_page -> browser.
     - unified_memory             -> memory (add/replace/remove/read).
@@ -243,16 +265,51 @@ def _tool_step_meta(name: str, args: dict) -> dict | None:
             (args[k] for k in _PATH_KEYS if isinstance(args.get(k), str) and args[k]),
             "",
         )
+        # A multi-file read/edit passes `paths: [...]`. Keep the joined string
+        # for display, but also surface the individual paths so the frontend's
+        # "still exists?" check tests each one (matching the joined string
+        # against the workspace set never hits — it false-flags "deleted").
+        multi: list[str] = []
         if not path and isinstance(args.get("paths"), list):
-            path = ", ".join(str(p) for p in args["paths"][:3] if p)
+            multi = [str(p) for p in args["paths"] if p]
+            path = ", ".join(multi[:3])
         if path and leaf == "read_file":
-            return {"kind": "file_read", "path": path, "name": name}
+            m = {"kind": "file_read", "path": path, "name": name}
+            if multi:
+                m["paths"] = multi
+            return m
         if path and leaf == "write_file":
-            return {"kind": "file_write", "path": path, "name": name}
+            m = {"kind": "file_write", "path": path, "name": name}
+            if multi:
+                m["paths"] = multi
+            return m
         if path and leaf == "edit_file":
-            return {"kind": "file_edit", "path": path, "name": name}
+            m = {"kind": "file_edit", "path": path, "name": name}
+            if multi:
+                m["paths"] = multi
+            return m
     if base == "skills":
-        return {"kind": "skill_load", "name": args.get("skill_id") or leaf or name}
+        # The skills server exposes THREE unrelated actions; only skill_view
+        # actually pulls a skill's content into the turn, so only it may read as
+        # "load skill".
+        if leaf == "skills_list":
+            # One tool, two meanings: a bare call lists the catalog, a call with
+            # `query` searches it.
+            m = {"kind": "skill_list", "name": name}
+            query = str(args.get("query") or "")
+            if query:
+                m["query"] = query
+            return m
+        if leaf == "skill_manage":
+            return {"kind": "skill_manage", "name": name,
+                    "action": str(args.get("action") or ""),
+                    "skill": str(args.get("skill_id") or "")}
+        # skill_view: the skill itself, or one file inside it — the display name
+        # says which (the card renders this verbatim as its title chip).
+        skill = str(args.get("skill_id") or leaf or name)
+        file_path = str(args.get("file_path") or "")
+        return {"kind": "skill_load",
+                "name": f"{skill}/{file_path}" if file_path else skill}
     if base == "code_executor":
         if leaf == "shell_executor":
             return {"kind": "terminal", "name": name, "code": str(args.get("command") or "")}
@@ -266,6 +323,35 @@ def _tool_step_meta(name: str, args: dict) -> dict | None:
         action = str(args.get("action") or ("read" if leaf == "memory_read" else ""))
         return {"kind": "memory", "name": name, "action": action}
     return {"kind": "tool_call", "name": name, "source": _tool_source(name)}
+
+
+# Step kinds whose own card CARRIES the authorization ask instead of being
+# preceded by a generic "call tool" card: a terminal ask must show the command
+# as a code block with Reject/Run (the command IS what the user judges), which
+# the frontend's TerminalStepCard already renders from `state`. A search ask
+# likewise belongs on the search card — otherwise the raw `web_search---x` tool
+# name is what the user sees while the search runs, instead of "searching {q}".
+# Same for file operations: the path is the thing being judged, and the card can
+# then say "reading {path}" while it runs.
+_AUTH_INLINE_KINDS = (
+    "terminal", "search", "file_read", "file_write", "file_edit",
+)
+
+
+def _inline_auth_meta(meta: dict, tool: str, args: dict) -> dict:
+    """Fold an authorization ask into its tool's own step card when that card
+    can host the decision (``_AUTH_INLINE_KINDS``), else return ``meta``
+    unchanged (the generic authorization card).
+
+    The ask keeps every authorization field (state / request_id / session_id /
+    tool_name / call_id ...) — only `kind` and the card's display payload come
+    from the tool mapping, so the frontend renders the tool's own card and
+    resolves the decision from the same card.
+    """
+    step = _tool_step_meta(tool, args)
+    if step is None or step.get("kind") not in _AUTH_INLINE_KINDS:
+        return meta
+    return {**meta, **step}
 
 
 class _TurnMapper:
@@ -351,6 +437,8 @@ class _TurnMapper:
             return self._tool_step(payload)
         if t == "permission_request":
             return self._permission_step(payload)
+        if t == "permission_resolved":
+            return self._permission_resolved_step(payload)
         if t == "error":
             return [ChatChunk(type="error", meta={
                 "message": payload.get("message", ""),
@@ -436,6 +524,11 @@ class _TurnMapper:
         authorization card. The turn is suspended on the handler's Future until
         POST /api/chat/permission resolves it (or it times out to deny).
 
+        A shell/code ask keeps its TERMINAL card instead (see _AUTH_INLINE_KINDS):
+        the command is what the user is judging, so it must be shown as the
+        terminal code block with Reject/Run, not as a generic "call tool" card
+        with JSON arguments.
+
         During attach replay, the session log's resolved state is used so the
         card shows approved/rejected instead of stale pending buttons."""
         tool = str(payload.get("tool_name") or "")
@@ -476,7 +569,39 @@ class _TurnMapper:
             "group": group,
             "source": _tool_source(tool),
         }
-        return [ChatChunk(type="step", meta=meta)]
+        return [ChatChunk(type="step", meta=_inline_auth_meta(meta, tool, args))]
+
+    def _permission_resolved_step(self, payload: dict) -> list[ChatChunk]:
+        """A refusal decided WITHOUT this client acting: the ask timed out, or
+        another viewer denied it. Emitted by the runtime's permission handler (the
+        SDK announces nothing when it times out), so the card flips to "rejected"
+        at the moment the decision is made instead of waiting for the gated call's
+        errored result.
+
+        Deliberately carries no ``request_id``: the decision is final, so the card
+        must render its rejected state rather than live buttons. Shares the ask's
+        ``call_id`` and ``group`` so the frontend replaces that card in place.
+        """
+        tool = str(payload.get("tool_name") or "")
+        call_id = str(payload.get("call_id") or "")
+        args = _as_dict(payload.get("tool_args"))
+        preview = json.dumps(args, ensure_ascii=False)
+        if len(preview) > 160:
+            preview = preview[:160] + "…"
+        pend = self._pending.get(call_id)
+        group = pend[2] if pend else (self._group_seq or 1)
+        meta = {
+            "kind": "authorization",
+            "state": str(payload.get("state") or "rejected"),
+            "call_id": call_id,
+            "session_id": self._session_id,
+            "tool_name": tool,
+            "arguments": args,
+            "desc": f"{tool} {preview}".strip(),
+            "group": group,
+            "source": _tool_source(tool),
+        }
+        return [ChatChunk(type="step", meta=_inline_auth_meta(meta, tool, args))]
 
     def flush(self) -> list[ChatChunk]:
         """Close an open thought block and emit any pending (interrupted) tool calls
@@ -521,6 +646,79 @@ class _TurnMapper:
                 "status": _PLAN_STATUS.get(entry.get("status", "pending"), "pending"),
             }))
         return out
+
+
+def _seal_errored_turn(rt, session_id: str, prompt: str,
+                       message: str = '') -> None:
+    """Make a failed turn survive a reload.
+
+    A turn can raise before the SDK has written anything — credential
+    resolution and agent construction both happen ahead of the round loop. The
+    log then holds only its metadata header, so ``GET /messages`` returns an
+    empty conversation and the client's ``refreshMessages()`` (fired by the
+    ``done`` frame) replaces the live view — user bubble and error card included
+    — with nothing. The message looks like it was never sent.
+
+    So: record the user turn ourselves when the log has no trace of it, then
+    close the round with an ``errored`` assistant row. ``errored`` rather than
+    ``interrupted`` because UIs badge the latter as a user-initiated Stop.
+    """
+    log = getattr(getattr(rt, "agent", None), "session_log", None)
+    # A live agent persists its own turns: it consumed the prompt (writing the
+    # user row) and its exception handler seals the round. When it exists, a
+    # closed tail means "already sealed by the SDK" — re-appending the prompt
+    # here would duplicate the whole turn (user row, seal, and error record).
+    sdk_owns_turn = log is not None
+    if log is None:
+        # The most important case has no agent at all: credential resolution and
+        # agent construction run before the runtime exposes one, so `rt.agent`
+        # is unset for exactly the failures that most need recording. Reach the
+        # log the way replay does instead.
+        try:
+            found = find_session(session_id)
+            if not found:
+                return
+            _project, session, sm = found
+            log = sm.get_session_log(session)
+        except Exception:
+            logger.debug("seal errored turn: no session log", exc_info=True)
+            return
+    try:
+        msgs = log.get_all_messages()
+        # Only a pre-agent failure can leave the turn entirely unpersisted; for
+        # it, a closed tail (assistant, or an empty log) proves the prompt never
+        # reached the log, so write it — else refresh blanks the failed send.
+        if prompt and not sdk_owns_turn and (not msgs
+                                             or msgs[-1].get("role")
+                                             == "assistant"):
+            log.append({"role": "user", "content": prompt})
+            msgs = log.get_all_messages()
+        if msgs and msgs[-1].get("role") in ("user", "tool"):
+            log.append({
+                "role": "assistant",
+                "content": _INTERRUPTED_PLACEHOLDER,
+                "content_placeholder": True,
+                "errored": True,
+            })
+        # The SDK records the error itself, but only from run_loop's handler —
+        # a failure during agent construction never gets there, so replay would
+        # show the message and an empty bubble with no reason. Record it here
+        # when this turn has none, keyed on "no error after the last user row"
+        # so a normal in-loop failure is not duplicated.
+        if message and hasattr(log, "get_errors"):
+            last_user = max(
+                (m.get("seq", -1)
+                 for m in log.get_all_messages() if m.get("role") == "user"),
+                default=-1)
+            if not any(
+                    e.get("seq", -1) > last_user for e in log.get_errors()):
+                log.record_error({
+                    "message": message,
+                    "error_type": message.split(":", 1)[0],
+                    "recoverable": False,
+                })
+    except Exception:
+        logger.debug("seal errored turn skipped", exc_info=True)
 
 
 def _seal_interrupted_turn(rt) -> None:
@@ -1160,6 +1358,13 @@ async def stream(req: ChatRequest) -> AsyncIterator[dict]:
                         "message": payload.get("message", ""),
                         "recoverable": bool(payload.get("recoverable", False)),
                     }))
+                # Close the round before the done frame. Without this the log
+                # tail stays on a `user`/`tool` row and the next request replays
+                # this same failing round instead of reading the new prompt
+                # (the SDK seals too, but only once the round loop was reached).
+                _seal_errored_turn(
+                    rt, session_id, prompt,
+                    message=payload.get("message", ""))
                 _persist_loop_end()
                 done = ChatChunk(
                     type="done",

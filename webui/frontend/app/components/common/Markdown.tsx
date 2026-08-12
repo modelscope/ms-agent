@@ -1,9 +1,12 @@
-import { CodeHighlighter, Mermaid } from '@ant-design/x'
+import { Actions, CodeHighlighter, Mermaid } from '@ant-design/x'
+import { ConfigProvider } from 'antd'
+import { useContext } from 'react'
 import { XMarkdown } from '@ant-design/x-markdown'
 import type { ComponentProps } from '@ant-design/x-markdown'
 import Latex from '@ant-design/x-markdown/plugins/Latex'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { useTheme } from '~/lib/theme'
+import CopyIcon from '~/assets/icons/copy.svg?react'
 import './Markdown.css'
 // Typography themes (x-markdown-light / x-markdown-dark) are @imported in
 // app.css — importing the package css here would crash Node SSR (deep css
@@ -58,6 +61,31 @@ function useHighlightProps() {
   }
 }
 
+/** Code-block header matching CodeHighlighter's built-in one (language name
+ * left, copy action right) with ONE change: the copy glyph is our own
+ * `copy.svg`, the same asset the assistant-bubble copy button uses.
+ *
+ * A custom `header` is the only way in — CodeHighlighter exposes no icon prop
+ * and hardcodes `<Actions.Copy text={code} />`. `Actions.Copy` itself does take
+ * an `icon`, so the built-in copy behaviour (clipboard write + copied feedback)
+ * is kept as-is; only the glyph is swapped.
+ *
+ * The header/title class names have to be reproduced for the component's own
+ * stylesheet to still apply, so the prefix is resolved the same way the
+ * component resolves it — antd's `ConfigContext.getPrefixCls` (which is exactly
+ * what x's internal `useXProviderContext` forwards) — rather than hardcoding
+ * `ant-`, which a ConfigProvider `prefixCls` would break. */
+function CodeHeader({ lang, code }: { lang: string; code: string }) {
+  const { getPrefixCls } = useContext(ConfigProvider.ConfigContext)
+  const prefixCls = getPrefixCls('codeHighlighter')
+  return (
+    <div className={`${prefixCls}-header`}>
+      <span className={`${prefixCls}-header-title`}>{lang}</span>
+      <Actions.Copy text={code} icon={<CopyIcon className="h-4 w-4" />} />
+    </div>
+  )
+}
+
 /** Fenced code blocks → CodeHighlighter (language pill + copy button);
  * ```mermaid fences → live Mermaid diagrams; inline code stays plain. */
 function Code(props: ComponentProps) {
@@ -79,6 +107,7 @@ function Code(props: ComponentProps) {
           className="msa-code-highlighter"
           lang="mermaid"
           highlightProps={highlightProps}
+          header={<CodeHeader lang="mermaid" code={body} />}
         >
           {body}
         </CodeHighlighter>
@@ -92,6 +121,7 @@ function Code(props: ComponentProps) {
       className="msa-code-highlighter"
       highlightProps={highlightProps}
       prismLightMode={false}
+      header={<CodeHeader lang={lang} code={body} />}
     >
       {body}
     </CodeHighlighter>
@@ -103,8 +133,31 @@ function MermaidTag(props: ComponentProps) {
   return <Mermaid>{textOf(props.children)}</Mermaid>
 }
 
+/** Links always open in a NEW tab. Markdown here is model output (citations,
+ * search results, docs) — navigating the SPA away from a live conversation
+ * would drop the user out of the chat (and can abort an in-flight turn), so
+ * every link leaves the app in a separate tab instead of in place.
+ * `rel="noopener noreferrer"` because the target is untrusted content. */
+function Anchor(props: ComponentProps) {
+  const {
+    children,
+    // Dropped: x-markdown injects parser metadata that is not valid DOM.
+    domNode: _domNode,
+    streamStatus: _streamStatus,
+    lang: _lang,
+    block: _block,
+    ...rest
+  } = props as ComponentProps & { href?: string }
+  return (
+    <a {...rest} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  )
+}
+
 // Stable references (x-markdown best practice: never rebuild per render).
 const COMPONENTS = {
+  a: Anchor,
   code: Code,
   mermaid: MermaidTag
 }

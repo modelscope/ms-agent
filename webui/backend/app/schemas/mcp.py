@@ -33,6 +33,18 @@ class McpCreate(BaseModel):
     headers: dict = Field(default_factory=dict)
 
 
+class McpReplace(BaseModel):
+    """Desired full contents of one scope, in display order.
+
+    Used by the raw-JSON editor: the document it saves IS the whole scope, so it
+    is applied as a single atomic replace rather than a delete-all + re-create
+    sequence from the client.
+    """
+
+    scope: str
+    servers: list[McpCreate] = Field(default_factory=list)
+
+
 class McpUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     description: str | None = None

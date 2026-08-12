@@ -227,7 +227,7 @@ export const MessageList = forwardRef<
             }}
             className="absolute bottom-5 right-5 z-10 !rounded-full"
             variant="tonal"
-            icon={<DownloadIcon />}
+            icon={<DownloadIcon className="h-4 w-4" />}
           ></IconButton>
         </Tooltip>
       )}

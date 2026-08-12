@@ -17,6 +17,12 @@ dependencies = [
     "uvicorn[standard]>=0.50.2",
 ]
 
+[project.optional-dependencies]
+# Offline embeddings for vector memory (fastembed drags in onnxruntime,
+# ~100 MB of wheels + a one-time ~220 MB model download on first use):
+#   uv sync --extra local-embed
+local-embed = ["fastembed>=0.8"]
+
 [project.scripts]
 dev = "app.main:dev"
 serve = "app.main:serve"
@@ -33,15 +39,35 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 
 [tool.uv]
-# Belt to the launcher's own probe: the sync commands rely on --locked and
-# --inexact, so refuse outright on a uv too old to honour them.
+# The launcher and docs rely on `uv sync --locked --inexact`; refuse
+# outright on a uv too old to honour those flags.
 required-version = ">=0.5.0"
 
+[[tool.uv.index]]
+# 国内构建机与 CI 直连 pypi.org 极不稳定：uv sync 曾在 pillow/matplotlib/
+# modelscope 这几个几 MB 的 wheel 上反复重下八九分钟，最终 30s 超时构建失败
+# （2026-08-05，run 58179298）。锁文件会把这里的地址记进每个包的 registry，
+# 所以换源必须重新 uv lock 才生效——只设环境变量对 --frozen 无效。
+# apt 与 uv 自身的安装早已固定在同一面镜像上（见 Dockerfile）。
+name = "aliyun"
+url = "https://mirrors.aliyun.com/pypi/simple/"
+default = true
+
 [tool.uv.sources]
-# This backend is developed and launched from the containing ms-agent checkout.
-# Keeping the SDK editable prevents the WebUI from silently running a stale Git
-# pin after framework code changes.
-ms-agent = { path = "../..", editable = true }
+# TEMPORARY pin to the fork branch carrying SDK fixes the WebUI needs for
+# testing and which upstream has not merged yet (tool_call_id loss through
+# unified memory, errored-round sealing so a failed turn cannot swallow the
+# next prompt, fast-fail on non-retryable 4xx, per-round error-record dedup).
+# `uv.lock` pins the exact commit resolved at lock time (`uv sync` installs
+# that pin; it does NOT auto-follow the branch).
+#
+# Once the upstream PR from this branch merges into modelscope/ms-agent main,
+# switch back and re-pin:
+#   ms-agent = { git = "https://github.com/modelscope/ms-agent.git", branch = "main" }
+#   uv lock --upgrade-package ms-agent   # then commit pyproject + uv.lock
+# For local SDK development, override with an editable checkout, e.g.
+# `uv pip install -e ../../ms-agent-bench` after `uv sync`.
+ms-agent = { git = "https://github.com/alcholiclg/ms-agent.git", branch = "fix/runtime-robustness" }
 
 [dependency-groups]
 dev = [

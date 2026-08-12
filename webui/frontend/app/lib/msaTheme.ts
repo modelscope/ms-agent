@@ -93,6 +93,12 @@ const componentTokens = {
     itemSelectedBg: light.bg[1],
     itemSelectedColor: light.text.brand1,
     borderRadiusSM: 6
+  },
+  // See the dark counterpart: the default gradient stops (fill[2] → fill[3]) are
+  // near-identical here too, so the shimmer never appeared to move.
+  Skeleton: {
+    gradientFromColor: light.fill.skeleton,
+    gradientToColor: light.fill.skeletonShimmer
   }
 }
 
@@ -109,6 +115,15 @@ const darkComponentTokens = {
     itemSelectedBg: dark.bg[1],
     itemSelectedColor: dark.text.brand1,
     borderRadiusSM: 6
+  },
+  // Skeleton derives its colour from `colorFillContent`/`colorFill`, and the
+  // dark map above points both at fill[2]/fill[3] — the same #202020. That made
+  // loading skeletons invisible on dark panels (1.04 contrast against the
+  // #1c1c1e background) with a shimmer whose two gradient stops were identical.
+  // Translucent white keeps a stable contrast over any dark surface.
+  Skeleton: {
+    gradientFromColor: dark.fill.skeleton,
+    gradientToColor: dark.fill.skeletonShimmer
   }
 }
 

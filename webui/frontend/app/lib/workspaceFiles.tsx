@@ -82,5 +82,24 @@ export function useWorkspaceFileSet(): Set<string> | null {
 export function useFileExists(path: string, serverBaked: boolean): boolean {
   const fileSet = useWorkspaceFileSet()
   if (!path || fileSet === null) return serverBaked
-  return fileSet.has(path)
+  if (fileSet.has(path)) return true
+  // Absence is NOT proof of deletion: the listing is a curated view, not a
+  // full inventory — the backend deliberately hides framework internals
+  // (`sessions/`, `.ms_agent/snapshots`, machine-format memory dumps). Every
+  // such file the agent legitimately reads would otherwise render as
+  // "deleted".
+  //
+  // Rather than mirror the backend's hide rules here (they would drift), only
+  // let the set contradict the server for a directory it demonstrably
+  // enumerated: if some sibling shares this path's parent, the directory is
+  // covered and a missing entry really means gone.
+  const slash = path.lastIndexOf('/')
+  const parent = slash === -1 ? '' : path.slice(0, slash + 1)
+  for (const known of fileSet) {
+    if (known === path) continue
+    const knownSlash = known.lastIndexOf('/')
+    const knownParent = knownSlash === -1 ? '' : known.slice(0, knownSlash + 1)
+    if (knownParent === parent) return false // directory covered → truly gone
+  }
+  return serverBaked
 }

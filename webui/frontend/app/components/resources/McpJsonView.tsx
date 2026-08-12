@@ -1,4 +1,4 @@
-import { Button, message } from 'antd'
+import { App, Button } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { CodeEditor } from '~/components/common/CodeEditor'
 import { api } from '~/lib/api'
@@ -20,6 +20,7 @@ export function McpJsonView({
   onCancel
 }: McpJsonViewProps) {
   const { t } = useT()
+  const { message } = App.useApp()
   const original = useMemo(
     () => JSON.stringify(toMcpServers(items), null, 2),
     [items]
@@ -43,10 +44,14 @@ export function McpJsonView({
     }
     setSaving(true)
     try {
-      await Promise.all(items.map((m) => api.deleteMcp(m.id)))
-      for (const m of parsed) {
-        await api.createMcp({ ...m, scope })
-      }
+      // ONE atomic call. Deleting every server and re-creating them from the
+      // document (what this did before) meant a rename left the old server
+      // behind whenever its delete was lost to a concurrent one, and a single
+      // rejected entry wiped the whole scope, since the deletes had landed.
+      await api.replaceMcps(
+        scope,
+        parsed.map((m) => ({ ...m, scope }))
+      )
       onSaved()
     } finally {
       setSaving(false)

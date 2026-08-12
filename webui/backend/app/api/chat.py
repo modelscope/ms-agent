@@ -6,7 +6,6 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.backends import get_backend
 from app.core.envelope import EnvelopeRoute
-from app.core.settings import settings
 from app.schemas.chat import ChatRequest
 
 router = APIRouter(prefix="/api/chat", tags=["chat"], route_class=EnvelopeRoute)
@@ -48,15 +47,12 @@ class PermissionResolve(BaseModel):
 
 @router.post("/permission")
 async def resolve_permission(body: PermissionResolve) -> dict:
-    if settings.agent_backend == "ms_agent":
-        from app.backends.ms_agent.runtime import registry
+    from app.backends.ms_agent.runtime import registry
 
-        resolved = registry.resolve_permission(
-            body.session_id, body.request_id, body.action
-        )
-        return {"resolved": resolved}
-    # mock backend never emits real asks; accept and ignore.
-    return {"resolved": True}
+    resolved = registry.resolve_permission(
+        body.session_id, body.request_id, body.action
+    )
+    return {"resolved": resolved}
 
 
 class ChatInterrupt(BaseModel):
@@ -72,13 +68,10 @@ class ChatInterrupt(BaseModel):
 
 @router.post("/interrupt")
 async def interrupt_chat(body: ChatInterrupt) -> dict:
-    if settings.agent_backend == "ms_agent":
-        from app.backends.ms_agent.runtime import registry
+    from app.backends.ms_agent.runtime import registry
 
-        stopped = await registry.interrupt(body.session_id)
-        return {"stopped": stopped}
-    # mock backend has no live runtime to stop.
-    return {"stopped": True}
+    stopped = await registry.interrupt(body.session_id)
+    return {"stopped": stopped}
 
 
 # NOTE: the former POST /api/chat/cancel (pagehide sendBeacon) was removed.

@@ -57,6 +57,25 @@ def project_to_schema(project) -> ProjectSchema:
         is_default=(project.id == DEFAULT_PROJECT_ID),
         memory_enabled=bool(project.memory_enabled),
         memory_backend=_memory_backend(project.memory_backend),
+        # Sticky flag written the first time memory is saved as enabled; an
+        # already-enabled project created before the flag existed counts as
+        # locked too (its storage is live regardless of the bookkeeping).
+        memory_backend_locked=bool(
+            meta.get("memory_backend_locked", False)
+            or project.memory_enabled
+        ),
+        # Project-owned memory-model group (absent on legacy projects = the
+        # follow-conversation defaults).
+        memory_llm_provider_id=(meta.get("memory_models") or {}).get("llm_provider_id"),
+        memory_llm_model=(meta.get("memory_models") or {}).get("llm_model"),
+        memory_embed_mode=(
+            (meta.get("memory_models") or {}).get("embed_mode")
+            if (meta.get("memory_models") or {}).get("embed_mode") in ("provider", "local")
+            else "provider"
+        ),
+        memory_embed_provider_id=(meta.get("memory_models") or {}).get("embed_provider_id"),
+        memory_embed_model=(meta.get("memory_models") or {}).get("embed_model"),
+        memory_recall_top_k=(meta.get("memory_models") or {}).get("recall_top_k"),
         mcp_auto_attach=meta.get("mcp_auto_attach", True),
         skill_auto_attach=meta.get("skill_auto_attach", True),
         permission_mode=meta.get("permission_mode", "restricted"),

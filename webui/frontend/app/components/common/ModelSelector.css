@@ -1,6 +1,7 @@
 /* ModelSelector.css
- * 当某个 model item 被 hover 或选中时，隐藏其上/下相邻的分割线，
- * 使高亮块呈现为独立的圆角卡片。分割线仍占位（opacity 过渡），布局不跳动。
+ * When a model item is hovered or selected, hide the divider directly above and
+ * below it so the highlight reads as a standalone rounded card. The dividers
+ * keep their space (opacity transition), so the layout never jumps.
  */
 .msel-list button:hover+.msel-divider,
 .msel-list .msel-selected+.msel-divider,

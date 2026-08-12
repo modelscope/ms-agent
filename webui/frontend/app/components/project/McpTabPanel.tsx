@@ -104,7 +104,7 @@ export function McpTabPanel({ project }: Props) {
       </div>
 
       {/* Content */}
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto overflow-x-hidden">
         {viaJson ? (
           <McpJsonView
             scope={activeScope}
@@ -115,7 +115,7 @@ export function McpTabPanel({ project }: Props) {
         ) : items === null ? (
           <CardSkeletonGrid className="grid grid-cols-1 gap-3 md:grid-cols-2" />
         ) : items.length === 0 ? (
-          <EmptyState size="lg" description={t.resources.empty} />
+          <EmptyState size="lg" description={t.resources.mcpEmpty} />
         ) : (
           <>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -135,7 +135,9 @@ export function McpTabPanel({ project }: Props) {
                         if (result.healthy) {
                           message.success(`${m.name}: ${t.resources.statusOk}`)
                         } else {
-                          message.error(`${m.name}: ${result.error || t.resources.statusError}`)
+                          message.error(
+                            `${m.name}: ${result.error || t.resources.statusError}`
+                          )
                         }
                       } catch {
                         message.error(`${m.name}: ${t.resources.statusError}`)

@@ -17,7 +17,7 @@ export default function AppearanceSettings() {
 
   return (
     <div className="space-y-8">
-      {/* 外观 */}
+      {/* Appearance */}
       <section>
         <div className="mb-4 text-base font-semibold text-msa-text-1">
           {t.settings.appearanceTheme}
@@ -38,7 +38,7 @@ export default function AppearanceSettings() {
         </div>
       </section>
 
-      {/* 语言 */}
+      {/* Language */}
       <section>
         <div className="mb-4 text-base font-semibold text-msa-text-1">
           {t.settings.appearanceLanguage}

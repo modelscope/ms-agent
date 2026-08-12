@@ -3,7 +3,6 @@ import os
 import tempfile
 
 os.environ["MS_AGENT_HOME"] = tempfile.mkdtemp(prefix="ms_agent_test_home_")
-os.environ.setdefault("AGENT_BACKEND", "ms_agent")
 os.environ.setdefault("LOG_LEVEL", "ERROR")
 
 import pytest

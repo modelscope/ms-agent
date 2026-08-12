@@ -101,6 +101,11 @@ const light = {
     4: '#f1f1fd',
     5: '#dde8f7',
     6: 'rgba(255, 255, 255, 0.7)',
+    // Loading-skeleton shimmer — see the dark counterpart. Translucent black so
+    // the two gradient stops actually differ (fill[2] and fill[3] are within
+    // 0.02 luminance of each other, which left the shimmer motionless).
+    skeleton: 'rgba(0, 0, 0, 0.06)',
+    skeletonShimmer: 'rgba(0, 0, 0, 0.15)',
     trans: 'rgba(0, 0, 0, 0.7)',
     trans1: 'rgba(0, 0, 0, 0.7)',
     orangered: '#fbf1f1',
@@ -223,6 +228,13 @@ const dark = {
     4: '#333150',
     5: '#2d2b4d',
     6: '#0a0a0a',
+    // Loading-skeleton shimmer (antd Skeleton gradient endpoints). Kept
+    // TRANSLUCENT so the contrast holds on every dark surface: the opaque
+    // fills above sit at #202020, which is within 1.05 contrast of the panel
+    // background (#1c1c1e) — a skeleton painted in them is invisible, and with
+    // fill[2] === fill[3] the shimmer had no gradient to animate either.
+    skeleton: 'rgba(255, 255, 255, 0.08)',
+    skeletonShimmer: 'rgba(255, 255, 255, 0.18)',
     trans: 'rgba(255, 255, 255, 0.7)',
     trans1: 'rgba(255, 255, 255, 0.7)',
     orangered: '#141414',

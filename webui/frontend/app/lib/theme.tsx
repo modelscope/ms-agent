@@ -50,6 +50,9 @@ export function ThemeProvider({
 
   // Keep the <html> class in sync — needed both for the OS-pref upgrade above
   // and any user toggle. The server-rendered class is set in root.tsx Layout.
+  // This class also drives `color-scheme` (app.css `html` / `html.dark`), which
+  // themes browser-drawn UI (scrollbars, form controls, native pickers) — so it
+  // must stay a class on <html>, not move to a data attribute or inline style.
   useEffect(() => {
     if (typeof document === "undefined") return;
     document.documentElement.classList.toggle("dark", theme === "dark");

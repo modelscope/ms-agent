@@ -1,3 +1,4 @@
+import { Tooltip } from 'antd'
 import { NavLink, Outlet, useNavigate } from 'react-router'
 import IconModelSettings from '~/assets/icons/model-settings.svg?react'
 import IconMcpSkill from '~/assets/icons/mcp-skill-manage.svg?react'
@@ -10,6 +11,7 @@ import { useT } from '~/lib/i18n'
 import { metaDict, pageTitle } from '~/lib/pageTitle'
 import type { Route } from './+types/settings'
 import { getLastAppRoute } from '~/lib/lastAppRoute'
+import { useMatchMedia } from '~/lib/useMatchMedia'
 
 /** Fallback for settings routes without their own `meta` (the index route
  * redirects to Models, so it only flashes). Concrete pages override this. */
@@ -21,6 +23,12 @@ export function meta({ matches }: Route.MetaArgs) {
 export default function SettingsLayout() {
   const { t } = useT()
   const navigate = useNavigate()
+  // Below `md` this rail collapses to icons only (CSS-driven, see the
+  // `hidden md:inline` labels), leaving nothing to say what each icon is — so
+  // the label moves into a tooltip. Above `md` the label is right there and a
+  // tooltip would only repeat it. Tooltips add no DOM until hovered, so keying
+  // this off a media-query hook costs no layout and cannot flash.
+  const compact = !useMatchMedia('(min-width: 768px)')
 
   const items: { to: string; label: string; icon: typeof IconModelSettings }[] =
     [
@@ -67,33 +75,40 @@ export default function SettingsLayout() {
         {/* Nav menu */}
         <nav className="mt-4 flex w-full flex-1 flex-col gap-1">
           {items.map((it) => (
-            <NavLink
+            <Tooltip
               key={it.to}
-              to={it.to}
-              className={({ isActive }) =>
-                `flex items-center justify-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors md:justify-start ${
-                  isActive
-                    ? 'bg-msa-fill-0 font-medium text-msa-text-1'
-                    : 'text-msa-text-2 hover:bg-msa-fill-3'
-                }`
-              }
+              title={compact ? it.label : ''}
+              placement="right"
             >
-              <it.icon className="h-5 w-5 shrink-0" />
-              <span className="hidden md:inline">{it.label}</span>
-            </NavLink>
+              <NavLink
+                to={it.to}
+                className={({ isActive }) =>
+                  `flex items-center justify-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors md:justify-start ${
+                    isActive
+                      ? 'bg-msa-fill-0 font-medium text-msa-text-1'
+                      : 'text-msa-text-2 hover:bg-msa-fill-3'
+                  }`
+                }
+              >
+                <it.icon className="h-5 w-5 shrink-0" />
+                <span className="hidden md:inline">{it.label}</span>
+              </NavLink>
+            </Tooltip>
           ))}
         </nav>
 
         {/* Back button */}
-        <button
-          onClick={goBack}
-          className="flex w-full items-center justify-center gap-3 px-2 py-2 text-sm font-medium text-msa-text-1 border-none rounded-lg cursor-pointer bg-msa-fill-2 hover:bg-msa-fill-4 md:justify-start"
-        >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-msa-fill-0 shadow-sm">
-            <IconBack className="h-4 w-4" />
-          </span>
-          <span className="hidden md:inline">{t.settings.back}</span>
-        </button>
+        <Tooltip title={compact ? t.settings.back : ''} placement="right">
+          <button
+            onClick={goBack}
+            className="flex w-full items-center justify-center gap-3 px-2 py-2 text-sm font-medium text-msa-text-1 border-none rounded-lg cursor-pointer bg-msa-fill-2 hover:bg-msa-fill-4 md:justify-start"
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-msa-fill-0 shadow-sm">
+              <IconBack className="h-4 w-4" />
+            </span>
+            <span className="hidden md:inline">{t.settings.back}</span>
+          </button>
+        </Tooltip>
       </aside>
 
       {/* Right content */}

@@ -1,6 +1,7 @@
 import { App, Dropdown, Input, Modal, Popover, Tooltip } from 'antd'
 import type { MenuProps } from 'antd'
 import { IconButton } from '~/components/common/IconButton'
+import { EmptyState } from '~/components/common/EmptyState'
 import { useEffect, useMemo, useState } from 'react'
 import logoImg from '~/assets/images/logo.png'
 import {
@@ -81,11 +82,9 @@ export function Sidebar({
     return map
   }, [sessions])
 
-  const orderedProjects = useMemo(() => {
-    const def = projects.filter((p) => p.is_default)
-    const named = projects.filter((p) => !p.is_default)
-    return [...def, ...named]
-  }, [projects])
+  // Rendered in the order the API returns (plain creation order). The default
+  // project is no longer pinned to the top — it behaves like any other project.
+  const orderedProjects = projects
 
   const openNewChat = () => {
     navigate('/')
@@ -180,6 +179,7 @@ export function Sidebar({
               projects={orderedProjects}
               sessionsByProject={sessionsByProject}
               onNavigate={onNavigate}
+              onEditProject={openEditProject}
             />
 
             {/* Spacer pushes settings to the bottom */}
@@ -343,14 +343,115 @@ function SidebarNavItem({
   )
 }
 
+/** The project row's two actions (new chat + rename/delete menu), shared by the
+ * expanded sidebar row and the collapsed sidebar's popover row so both offer the
+ * same thing. `pinned` keeps them visible instead of hover-revealed — used on the
+ * row whose project page is open, which is already highlighted. */
+function ProjectRowActions({
+  project,
+  pinned,
+  onNavigate,
+  onEditProject
+}: {
+  project: Project
+  pinned: boolean
+  onNavigate?: () => void
+  onEditProject?: (p: Project) => void
+}) {
+  const { t } = useT()
+  const { modal } = App.useApp()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const revalidator = useRevalidator()
+
+  const handleDeleteProject = () => {
+    modal.confirm({
+      title: t.sidebar.deleteProject,
+      content: t.sidebar.confirmDeleteProject,
+      okText: t.sidebar.confirmOk,
+      cancelText: t.sidebar.confirmCancel,
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        await api.deleteProject(project.id)
+        revalidator.revalidate()
+        if (location.pathname.startsWith(`/projects/${project.id}`))
+          navigate('/')
+      }
+    })
+  }
+
+  const projectMenu: MenuProps = {
+    items: [
+      {
+        key: 'edit',
+        label: t.sidebar.editProject,
+        onClick: () => {
+          onEditProject?.(project)
+        }
+      },
+      ...(!project.is_default
+        ? [
+            {
+              key: 'delete',
+              label: t.sidebar.deleteProject,
+              danger: true,
+              onClick: handleDeleteProject
+            }
+          ]
+        : [])
+    ]
+  }
+
+  const actionClass = `!shrink-0 !transition-opacity hover:!text-msa-purple-5 ${
+    pinned ? '' : '!opacity-0 group-hover:!opacity-100'
+  }`
+
+  return (
+    <>
+      <Tooltip title={t.nav.newChat}>
+        <IconButton
+          icon={<AddIcon className="h-3.5 w-3.5" />}
+          variant="ghost"
+          size="xs"
+          className={actionClass}
+          onClick={() => {
+            navigate(`/projects/${project.id}/new`)
+            onNavigate?.()
+          }}
+        />
+      </Tooltip>
+      {/* Extra wrapper needed because Dropdown close events bypass the trigger
+          button (and here also keeps the click off the row's toggle). */}
+      <span onClick={(e) => e.stopPropagation()}>
+        <Dropdown
+          menu={projectMenu}
+          trigger={['click']}
+          placement="bottomRight"
+        >
+          <Tooltip title={t.resources.more}>
+            <IconButton
+              icon={<MoreIcon className="h-3.5 w-3.5" />}
+              variant="ghost"
+              size="xs"
+              className={actionClass}
+            />
+          </Tooltip>
+        </Dropdown>
+      </span>
+    </>
+  )
+}
+
 function CollapsedProjectList({
   projects,
   sessionsByProject,
-  onNavigate
+  onNavigate,
+  onEditProject
 }: {
   projects: Project[]
   sessionsByProject: Map<string, Session[]>
   onNavigate?: () => void
+  onEditProject?: (p: Project) => void
 }) {
   const content = (
     <div className="max-h-[60vh] w-56 overflow-y-auto py-1">
@@ -360,6 +461,7 @@ function CollapsedProjectList({
           project={p}
           sessions={sessionsByProject.get(p.id) ?? []}
           onNavigate={onNavigate}
+          onEditProject={onEditProject}
         />
       ))}
     </div>
@@ -372,7 +474,9 @@ function CollapsedProjectList({
         placement="rightTop"
         trigger="hover"
         arrow={false}
-        overlayInnerStyle={{ padding: 4 }}
+        styles={{
+          container: { padding: 4 }
+        }}
       >
         <IconButton
           variant="ghost"
@@ -389,27 +493,34 @@ function CollapsedProjectList({
 function CollapsedProjectGroup({
   project,
   sessions,
-  onNavigate
+  onNavigate,
+  onEditProject
 }: {
   project: Project
   sessions: Session[]
   onNavigate?: () => void
+  onEditProject?: (p: Project) => void
 }) {
   const location = useLocation()
   const navigate = useNavigate()
-  const { running } = usePresence()
   const isActiveProject = location.pathname.startsWith(
     `/projects/${project.id}`
   )
+  const isProjectPage =
+    location.pathname.replace(/\/+$/, '') === `/projects/${project.id}`
   const [open, setOpen] = useState(isActiveProject)
 
-  const projectName = project.is_default ? project.name : project.name
+  const projectName = project.name
 
   return (
     <div>
-      {/* Project header */}
+      {/* Project header — mirrors the expanded row: the row toggles the group,
+          the NAME enters the project. Without that click the collapsed sidebar
+          had no way into a project's own page at all. */}
       <div
-        className="flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 hover:bg-msa-fill-2"
+        className={`group flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 transition-colors hover:bg-msa-fill-2 ${
+          isProjectPage ? 'bg-msa-fill-4' : ''
+        }`}
         onClick={() => setOpen(!open)}
       >
         <span className="flex h-4 w-4 shrink-0 items-center justify-center text-[10px] text-msa-neutral-3">
@@ -417,43 +528,46 @@ function CollapsedProjectGroup({
             className={`h-3 w-3 transition-transform ${open ? '' : 'rotate-180'}`}
           />
         </span>
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-msa-text-1">
+        <span
+          className={`min-w-0 flex-1 truncate text-sm font-semibold ${
+            isActiveProject ? 'text-msa-purple-5' : 'text-msa-text-1'
+          }`}
+          title={projectName}
+          onClick={(e) => {
+            e.stopPropagation()
+            navigate(`/projects/${project.id}`)
+            onNavigate?.()
+          }}
+        >
           {projectName}
         </span>
-        <span className="shrink-0 text-xs tabular-nums text-msa-text-2">
-          {sessions.length}
-        </span>
+        {sessions.length > 0 && (
+          <span className="shrink-0 text-xs tabular-nums text-msa-text-2">
+            {sessions.length}
+          </span>
+        )}
+        <ProjectRowActions
+          project={project}
+          pinned={isProjectPage}
+          onNavigate={onNavigate}
+          onEditProject={onEditProject}
+        />
       </div>
-      {/* Sessions */}
+      {/* Sessions — the SAME row component the expanded sidebar uses, so the
+          rename/delete menu, running spinner and active highlight behave
+          identically here. This popover previously hand-rolled the row and its
+          "more" glyph was a bare <span> with no Dropdown and no handler, i.e. a
+          decoration that looked clickable but did nothing. */}
       {open && sessions.length > 0 && (
         <div className="py-0.5">
-          {sessions.map((s) => {
-            const isActive = location.pathname.includes(`/sessions/${s.id}`)
-            return (
-              <div
-                key={s.id}
-                className={`group flex cursor-pointer items-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors ${
-                  isActive
-                    ? 'bg-msa-fill-3 font-medium text-msa-text-1'
-                    : 'text-msa-text-2 hover:bg-msa-fill-2'
-                }`}
-                onClick={() => {
-                  navigate(`/projects/${project.id}/sessions/${s.id}`)
-                  onNavigate?.()
-                }}
-              >
-                <span className="min-w-0 flex-1 truncate">{s.title}</span>
-                {(running.has(s.id) || s.running) && (
-                  <SpinnerIcon className="h-3 w-3 shrink-0 animate-spin text-msa-text-brand1" />
-                )}
-                {isActive && (
-                  <span className="shrink-0 text-msa-text-3">
-                    <MoreIcon className="h-3.5 w-3.5" />
-                  </span>
-                )}
-              </div>
-            )
-          })}
+          {sessions.map((s) => (
+            <SessionItem
+              key={s.id}
+              session={s}
+              projectId={project.id}
+              onNavigate={onNavigate}
+            />
+          ))}
         </div>
       )}
     </div>
@@ -482,15 +596,13 @@ function ProjectGroup({
   onEditProject?: (p: Project) => void
 }) {
   const { t } = useT()
-  const { modal } = App.useApp()
   const location = useLocation()
   const navigate = useNavigate()
-  const revalidator = useRevalidator()
 
   const isActiveProject = location.pathname.startsWith(
     `/projects/${project.id}`
   )
-  const [open, setOpen] = useState(isActiveProject || project.is_default)
+  const [open, setOpen] = useState(isActiveProject)
 
   useEffect(() => {
     if (isActiveProject) setOpen(true)
@@ -499,50 +611,19 @@ function ProjectGroup({
   // All sessions are shown directly (no secondary fold / "show all" toggle).
   const visibleSessions = sessions
 
-  const handleDeleteProject = () => {
-    modal.confirm({
-      title: t.sidebar.deleteProject,
-      content: t.sidebar.confirmDeleteProject,
-      okText: t.sidebar.confirmOk,
-      cancelText: t.sidebar.confirmCancel,
-      okButtonProps: { danger: true },
-      onOk: async () => {
-        await api.deleteProject(project.id)
-        revalidator.revalidate()
-        if (isActiveProject) navigate('/')
-      }
-    })
-  }
-
-  const projectMenu: MenuProps = {
-    items: [
-      {
-        key: 'edit',
-        label: t.sidebar.editProject,
-        onClick: () => {
-          onEditProject?.(project)
-        }
-      },
-      ...(!project.is_default
-        ? [
-            {
-              key: 'delete',
-              label: t.sidebar.deleteProject,
-              danger: true,
-              onClick: handleDeleteProject
-            }
-          ]
-        : [])
-    ]
-  }
-
   const projectName = project.name
+  // EXACTLY this project's own detail page — not one of its sessions, not its
+  // "new chat" route. Only this pins the row's highlight and its two actions;
+  // `isActiveProject` (any descendant route) still colors the name and keeps the
+  // group expanded, which is the "you are inside this project" cue.
+  const isProjectPage =
+    location.pathname.replace(/\/+$/, '') === `/projects/${project.id}`
 
   return (
     <div>
       {/* Project header row */}
       <div
-        className="group flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-2 transition-colors hover:bg-msa-fill-2"
+        className={`group flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-2 transition-colors hover:bg-msa-fill-4 ${isProjectPage ? 'bg-msa-fill-4' : ''}`}
         onClick={() => setOpen(!open)}
       >
         {/* Chevron */}
@@ -571,49 +652,29 @@ function ProjectGroup({
         >
           {projectName}
         </span>
-        {/* Count */}
-        <span className="shrink-0 rounded-md bg-white/80 px-1.5 py-0.5 text-xs tabular-nums text-msa-text-2 dark:bg-msa-fill-2">
+        <span className="shrink-0 rounded-[12px] px-[6px] py-[1px] font-[500] text-xs tabular-nums text-msa-text-1 bg-msa-fill-3">
           {sessions.length}
         </span>
-        {/* Add session */}
-        <Tooltip title={t.nav.newChat}>
-          <IconButton
-            icon={<AddIcon className="h-3.5 w-3.5" />}
-            variant="ghost"
-            size="xs"
-            className="!shrink-0 !opacity-0 !transition-opacity hover:!text-msa-purple-5 group-hover:!opacity-100"
-            onClick={() => {
-              navigate(`/projects/${project.id}/new`)
-              onNavigate?.()
-            }}
-          />
-        </Tooltip>
-        {/* More menu — extra wrapper needed because Dropdown close events bypass the trigger button */}
-        <span onClick={(e) => e.stopPropagation()}>
-          <Dropdown
-            menu={projectMenu}
-            trigger={['click']}
-            placement="bottomRight"
-          >
-            <Tooltip title={t.resources.more}>
-              <IconButton
-                icon={<MoreIcon className="h-3.5 w-3.5" />}
-                variant="ghost"
-                size="xs"
-                className="!shrink-0 !opacity-0 !transition-opacity hover:!text-msa-purple-5 group-hover:!opacity-100"
-              />
-            </Tooltip>
-          </Dropdown>
-        </span>
+        <ProjectRowActions
+          project={project}
+          pinned={isProjectPage}
+          onNavigate={onNavigate}
+          onEditProject={onEditProject}
+        />
       </div>
 
       {/* Session list */}
       {open && (
         <div className="space-y-0.5 py-1">
           {sessions.length === 0 ? (
-            <p className="py-2 text-center text-xs text-msa-text-3">
-              {t.widgets.empty}
-            </p>
+            // The shared empty state, not a bare "empty" label. `chat` art: this
+            // list holds conversations, so the speech bubble fits where the
+            // generic crate does not.
+            <EmptyState
+              size="sm"
+              art="chat"
+              description={t.sidebar.noSessions}
+            />
           ) : (
             <>
               {visibleSessions.map((s) => (
@@ -702,6 +763,11 @@ function SessionItem({
   // highlighted immediately — the router location can lag the address bar.
   const to = `/projects/${projectId}/sessions/${session.id}`
   const active = useUrlPath() === to
+  // Hover-revealed by default; pinned visible on the open session — same rule as
+  // the project row above, so the highlighted row always carries its actions.
+  const rowActionClass = `!shrink-0 !transition-opacity ${
+    active ? '' : '!opacity-0 group-hover:!opacity-100'
+  }`
   return (
     <>
       <NavLink
@@ -710,7 +776,7 @@ function SessionItem({
         onClick={onNavigate}
         className={`group flex items-center gap-1 truncate rounded-lg pl-8 pr-2.5 py-2 text-sm transition-colors ${
           active
-            ? 'bg-msa-fill-3 font-medium text-msa-text-1'
+            ? 'bg-msa-fill-2 font-medium text-msa-text-1'
             : 'text-msa-text-2 hover:bg-msa-fill-2'
         }`}
         title={session.title}
@@ -719,23 +785,23 @@ function SessionItem({
         {isRunning && (
           <SpinnerIcon className="h-3 w-3 shrink-0 animate-spin text-msa-text-brand1" />
         )}
-        <span
-          onClick={(e) => {
-            e.stopPropagation()
-            e.preventDefault()
-          }}
-        >
+        {/* More menu — the wrapper keeps a stray click off the row's link.
+            (IconButton already stops propagation itself, so this is belt and
+            braces rather than the thing that makes the menu work.) */}
+        <span onClick={(e) => e.stopPropagation()}>
           <Dropdown
             menu={sessionMenu}
             trigger={['click']}
             placement="bottomRight"
           >
-            <IconButton
-              icon={<MoreIcon className="h-3.5 w-3.5" />}
-              variant="ghost"
-              size="xs"
-              className="!shrink-0 !opacity-0 !transition-opacity group-hover:!opacity-100"
-            />
+            <Tooltip title={t.resources.more}>
+              <IconButton
+                icon={<MoreIcon className="h-3.5 w-3.5" />}
+                variant="ghost"
+                size="xs"
+                className={rowActionClass}
+              />
+            </Tooltip>
           </Dropdown>
         </span>
       </NavLink>

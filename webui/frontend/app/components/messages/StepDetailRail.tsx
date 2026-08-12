@@ -5,7 +5,7 @@ import type { Dict } from '~/lib/i18n'
 import type { AgentStep } from '~/lib/agentProvider'
 import { faviconOf, hostOf, parseWebSearchResults } from './searchResults'
 import JumpIcon from '~/assets/icons/jump.svg?react'
-import GlobeIcon from '~/assets/files/web.svg?react'
+import GlobeIcon from '~/assets/icons/globe.svg?react'
 import CloseIcon from '~/assets/icons/close.svg?react'
 
 /** Human title for the rail header, per step kind. */
@@ -21,6 +21,22 @@ function titleFor(step: AgentStep, t: Dict): string {
       return `${t.chat.stepFileEdit}：${s(meta.path)}`
     case 'skill_load':
       return `${t.chat.stepLoadSkill} ${s(meta.name)}`
+    case 'skill_list':
+      return meta.query
+        ? `${t.chat.stepSkillSearch} ${s(meta.query)}`
+        : t.chat.stepSkillList
+    case 'skill_manage': {
+      const action = s(meta.action)
+      const label =
+        action === 'create'
+          ? t.chat.stepSkillCreate
+          : action === 'edit'
+            ? t.chat.stepSkillEdit
+            : action === 'delete'
+              ? t.chat.stepSkillDelete
+              : t.chat.stepSkillManage
+      return meta.skill ? `${label} ${s(meta.skill)}` : label
+    }
     case 'browser':
       return `${t.chat.stepBrowser} ${s(meta.title ?? meta.url)}`
     case 'terminal':
@@ -154,7 +170,7 @@ function SearchResults({ raw }: { raw: string }) {
             key={i}
             href={r.url}
             target="_blank"
-            rel="noreferrer"
+            rel="noopener noreferrer"
             className="block overflow-hidden rounded-xl border border-msa-line-1 bg-msa-fill-1 transition-colors hover:bg-msa-fill-4"
           >
             {inner}

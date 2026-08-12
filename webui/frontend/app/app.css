@@ -178,6 +178,23 @@
 /* ================================================================
  * Global Resets
  * ================================================================ */
+/* Tell the engine which palette the page is in, so BROWSER-DRAWN surfaces we
+   can't style follow the theme: scrollbars, form controls, `<select>` popups,
+   date/color pickers, spellcheck underlines, the canvas behind overscroll, and
+   the default background before CSS paints.
+
+   Driven off the same `.dark` class on <html> that everything else keys on
+   (set during SSR in root.tsx, toggled by theme.tsx) — so it is correct on the
+   very first frame, with no JS and no hydration gap. `only` prevents the engine
+   from silently substituting the other scheme. */
+html {
+  color-scheme: only light;
+}
+
+html.dark {
+  color-scheme: only dark;
+}
+
 html,
 body,
 #root {

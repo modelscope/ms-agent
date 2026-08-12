@@ -102,3 +102,26 @@ export function useOnSessionDone(callback: (sessionId: string) => void) {
     return () => window.removeEventListener('msa:session-done', handler)
   }, [callback])
 }
+
+// ─── Session turn start ────────────────────────────────────────
+
+/** Dispatch when a turn is SENT for a session (and for a brand-new chat, the
+ * moment the backend hands back its id). The mirror image of
+ * `dispatchSessionDone`: without it the sidebar spinner only appeared on the
+ * next heartbeat, up to a full poll interval after the user pressed send. */
+export function dispatchSessionStarted(sessionId: string) {
+  if (typeof window !== 'undefined')
+    window.dispatchEvent(
+      new CustomEvent('msa:session-started', { detail: sessionId })
+    )
+}
+
+/** Listen for session-started events (payload = sessionId string). */
+export function useOnSessionStarted(callback: (sessionId: string) => void) {
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handler = (e: Event) => callback((e as CustomEvent).detail)
+    window.addEventListener('msa:session-started', handler)
+    return () => window.removeEventListener('msa:session-started', handler)
+  }, [callback])
+}

@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useLoaderData } from 'react-router'
 import { ChatView } from '~/components/chat/ChatView'
-import { api } from '~/lib/api'
+import { ApiError, api, orThrow } from '~/lib/api'
 import { historyToAgentMessages } from '~/lib/agentProvider'
 import { metaDict, pageTitle } from '~/lib/pageTitle'
 import type { Route } from './+types/project-session'
@@ -24,10 +24,20 @@ export function meta({ loaderData, matches }: Route.MetaArgs) {
 export async function loader({ params }: Route.LoaderArgs) {
   const sessionId = params.sessionId as string
   const [project, session, messages, plan, artifacts] = await Promise.all([
-    api.getProject(params.projectId as string),
+    // An unknown project id must surface as a 404 page, not "unexpected error".
+    orThrow(api.getProject(params.projectId as string)),
     // Whether a turn is in flight (running in the background): drives an
     // immediate live re-attach instead of a blank assistant area.
-    api.getSession(sessionId, { silent: true }).catch(() => null),
+    //
+    // A 404 here means the URL names a session that does not exist — there is no
+    // conversation to show, so it becomes the 404 page rather than an empty one.
+    // Any OTHER failure stays best-effort: a transient blip must not replace a
+    // readable session with an error page.
+    api.getSession(sessionId, { silent: true }).catch((err) => {
+      if (err instanceof ApiError && err.status === 404)
+        throw new Response(err.message, { status: 404 })
+      return null
+    }),
     // History echo is best-effort: a fresh/unknown session yields an empty list
     // rather than blocking the page.
     api.listSessionMessages(sessionId, { silent: true }).catch(() => []),

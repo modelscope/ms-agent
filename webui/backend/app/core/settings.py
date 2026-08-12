@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-from typing import Literal
 
 from dotenv import dotenv_values
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -61,11 +60,6 @@ class Settings(BaseSettings):
     port: int = 8000
 
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
-
-    # mock       — in-memory seed data (frontend-only dev, no SDK needed)
-    # ms_agent   — real ms-agent SDK (projects/sessions/config/chat on disk)
-    # anthropic/openai — reserved (not wired)
-    agent_backend: Literal["mock", "ms_agent", "anthropic", "openai"] = "mock"
 
     anthropic_api_key: str = ""
     openai_api_key: str = ""

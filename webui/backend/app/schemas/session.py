@@ -137,6 +137,6 @@ class Artifact(BaseModel):
     # True when the agent wrote/edited this file during the session but it no
     # longer exists on disk (user deleted it, or a later step removed it). The
     # ledger keeps the entry — history is not erased by later user actions — and
-    # the frontend renders it greyed ("已删除").
+    # the frontend renders it greyed ("deleted").
     deleted: bool = False
     preview: str | None = None

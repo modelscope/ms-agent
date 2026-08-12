@@ -14,6 +14,20 @@ from app.backends.ms_agent.common import home
 
 logger = logging.getLogger("app.ms_agent.config")
 
+# mem0 2.x opens a SECOND, process-global qdrant store at
+# ~/.mem0/migrations_qdrant for every Memory instance whose vector provider is
+# qdrant (mem0/memory/main.py, `if MEM0_TELEMETRY:`). Embedded qdrant takes an
+# exclusive OS file lock per path, so that global store caps the whole machine
+# at one live vector project — the second one dies with "Storage folder ... is
+# already accessed by another instance". Turning telemetry off skips the branch
+# entirely (and stops mem0 phoning home to PostHog).
+#
+# mem0's telemetry module reads this at ITS import time, so it has to be set
+# before the first `import mem0`. Module scope is early enough: every mem0
+# import in this repo is lazy (`_vector_memory_available` below, `memory.py`,
+# and the SDK's mem0_adapter.start()), and memory.py imports this module first.
+os.environ.setdefault("MEM0_TELEMETRY", "false")
+
 
 def _apply_webui_defaults(config):
     """Make a newly-created WebUI session useful without requiring a hand-written
@@ -51,11 +65,42 @@ def _vector_memory_available() -> bool:
         return False
 
 
-# DashScope OpenAI-compatible embeddings (probed: 1024 dims). The embedder must
-# come from a provider that actually serves /embeddings — the active chat model
-# (e.g. DeepSeek) usually does not.
-_EMBEDDER_MODEL = "text-embedding-v4"
-_EMBEDDER_DIMS = 1024
+class MemoryConfigError(RuntimeError):
+    """Vector memory cannot be built as configured.
+
+    ``code`` is machine-readable for the UI:
+    - ``embed_unavailable``: no usable embeddings endpoint (provider serves
+      none / credentials missing) and no local fallback;
+    - ``local_missing``: local mode chosen but fastembed is not installed;
+    - ``embedder_mismatch``: the store was built with a different embedding
+      model — searching across a model swap silently degrades recall, so we
+      refuse and offer a rebuild instead.
+    """
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+# Embedding models known to work per provider, verified against the exact call
+# shape mem0 sends (``dimensions`` + ``encoding_format=float``). A provider
+# absent here serves no /embeddings at all (verified: DeepSeek and Moonshot
+# 403 it, MiniMax returns no data, a custom Aliyun MaaS endpoint 400s
+# "Model not exist") — which is why "just use the chat provider" needs a
+# fallback: about half of the chat providers cannot embed.
+_KNOWN_EMBED_MODELS: dict[str, str] = {
+    "dashscope": "text-embedding-v4",
+    "openai": "text-embedding-3-small",
+    "modelscope": "Qwen/Qwen3-Embedding-4B",
+    "zhipu": "embedding-3",
+    "openrouter": "openai/text-embedding-3-small",
+}
+
+# The bundled offline default: the lightest multilingual model fastembed
+# ships (384 dims, ~220 MB one-time download, ONNX — no network at runtime).
+_LOCAL_EMBED_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+
+_EMBEDDER_IDENTITY_FILE = "embedder.json"
 
 
 def _read_settings() -> dict:
@@ -68,61 +113,371 @@ def _read_settings() -> dict:
         return {}
 
 
-def _mem0_options(project) -> dict | None:
-    """mem0 backend options for a 'vector' project.
+def _local_embed_available() -> bool:
+    """fastembed ships as the optional `local-embed` extra (it drags in
+    onnxruntime); absence is a normal state the UI must explain, not a bug."""
+    try:
+        import fastembed  # noqa: F401
 
-    - embedder: the DashScope-compatible provider from settings.json
-      (dashscope/openai entries), falling back to OPENAI_* env.
-    - llm (fact extraction): the active chat model from settings.json.llm.
-    - vector_store: local on-disk qdrant under the project memory dir
-      (embedded mode — no server).
-    Returns None when no embeddings-capable credentials exist."""
+        return True
+    except Exception:
+        return False
+
+
+def _project_memory_models(project) -> dict:
+    """The PROJECT's memory-model choices, materialized into its sidecar at
+    creation. The global settings block only seeds new projects (modal
+    prefill) — it is deliberately never read here, so changing a global
+    default cannot ripple through existing stores (which are pinned to their
+    embedder by identity anyway). Absent (legacy project) = follow defaults.
+    """
+    from app.backends.ms_agent import sidecar
+
+    meta = sidecar.get("projects", getattr(project, "id", None) or "", {}) or {}
+    return meta.get("memory_models") or {}
+
+
+def _resolve_embedder(settings: dict, mem_cfg: dict) -> dict:
+    """Decide where embeddings come from. Never guesses silently:
+
+    1. explicit local mode -> the local model (error if not installed);
+    2. explicit provider -> exactly that provider (error if it cannot embed —
+       the user pinned it, switching behind their back is the old bug);
+    3. default -> the CONVERSATION provider if it is known to embed, else the
+       local model, else a clear error. ``fallback_reason`` records a taken
+       fallback so the UI can say why.
+    """
+    providers = settings.get("providers") or {}
+    mode = mem_cfg.get("embed_mode") or "provider"
+
+    def _local(reason: str | None = None) -> dict:
+        if not _local_embed_available():
+            raise MemoryConfigError(
+                "local_missing",
+                "local embedding model is not installed — run "
+                "`uv sync --extra local-embed` in backend/ and restart",
+            )
+        return {
+            "mode": "local",
+            "provider": None,
+            "model": mem_cfg.get("embed_model") or _LOCAL_EMBED_MODEL,
+            "fallback_reason": reason,
+        }
+
+    if mode == "local":
+        return _local()
+
+    explicit_pid = mem_cfg.get("embed_provider_id")
+    pid = explicit_pid or (settings.get("llm") or {}).get("provider") or ""
+    entry = providers.get(pid) or {}
+    model = mem_cfg.get("embed_model") or _KNOWN_EMBED_MODELS.get(pid)
+    if entry.get("api_key") and entry.get("base_url") and model:
+        return {
+            "mode": "provider",
+            "provider": pid,
+            "model": model,
+            "api_key": entry["api_key"],
+            "base_url": entry["base_url"],
+            "fallback_reason": None,
+        }
+
+    if explicit_pid:
+        raise MemoryConfigError(
+            "embed_unavailable",
+            f"provider {pid!r} cannot serve embeddings as configured "
+            "(missing credentials or no known embedding model — set one "
+            "explicitly in settings → personalization)",
+        )
+    # Following the conversation provider and it cannot embed: fall back to
+    # the local model rather than silently billing some other vendor.
+    reason = (
+        f"provider {pid!r} serves no embeddings; using the local model"
+        if pid else "no conversation provider configured; using the local model"
+    )
+    return _local(reason)
+
+
+def _embedder_identity_path(project):
     from ms_agent.project.paths import memory_dir
 
-    s = _read_settings()
-    emb_creds = None
-    for pid in ("dashscope", "openai"):
-        p = (s.get("providers") or {}).get(pid) or {}
-        if p.get("api_key") and p.get("base_url"):
-            emb_creds = {"api_key": p["api_key"], "openai_base_url": p["base_url"]}
-            break
-    if emb_creds is None and os.environ.get("OPENAI_API_KEY") and os.environ.get("OPENAI_BASE_URL"):
-        emb_creds = {
-            "api_key": os.environ["OPENAI_API_KEY"],
-            "openai_base_url": os.environ["OPENAI_BASE_URL"],
-        }
-    if emb_creds is None:
+    return memory_dir(project.path) / _EMBEDDER_IDENTITY_FILE
+
+
+def _load_embedder_identity(project) -> dict | None:
+    import json
+
+    try:
+        with open(_embedder_identity_path(project), encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) and data.get("model") else None
+    except (OSError, ValueError):
         return None
 
+
+def _store_embedder_identity(project, identity: dict) -> None:
+    import json
+
+    path = _embedder_identity_path(project)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(identity, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8")
+    except OSError as e:  # bookkeeping must never break memory itself
+        logger.warning("embedder identity write failed for %s: %s", path, e)
+
+
+def _probe_embed_dimension(desc: dict) -> tuple[int, bool]:
+    """``(dimension, provider_accepts_dimensions_param)`` for the resolved
+    embedder — measured, not assumed (mempalace's RFC 001 approach): the
+    width is baked into the qdrant collection at creation, and a hardcoded
+    table goes stale the moment a vendor changes a default.
+
+    Providers are probed twice: once bare (native width), once passing
+    ``dimensions=<native>`` — mem0 sends that argument whenever
+    ``embedding_dims`` is configured, and non-matryoshka backends reject it,
+    so we only configure it when the probe proved it is accepted.
+    """
+    if desc["mode"] == "local":
+        from fastembed import TextEmbedding
+
+        for m in TextEmbedding.list_supported_models():
+            if m.get("model") == desc["model"] and m.get("dim"):
+                return int(m["dim"]), False
+        # Unknown to the table — load the model once and measure.
+        return int(TextEmbedding(model_name=desc["model"]).embedding_size), False
+
+    from openai import OpenAI
+
+    client = OpenAI(
+        api_key=desc["api_key"], base_url=desc["base_url"],
+        timeout=30, max_retries=0)
+    native = len(
+        client.embeddings.create(
+            model=desc["model"], input="dimension probe").data[0].embedding)
+    try:
+        echoed = len(
+            client.embeddings.create(
+                model=desc["model"], input="dimension probe",
+                dimensions=native).data[0].embedding)
+        return native, echoed == native
+    except Exception:
+        return native, False
+
+
+def _openai_compat_base_url(provider: str) -> str | None:
+    """The vendor's canonical OpenAI-compatible endpoint, per the SDK registry.
+
+    settings.json may hold a different-protocol url for the same vendor —
+    DeepSeek ships both ``/v1`` and ``/anthropic`` — while mem0's per-vendor
+    clients are OpenAI clients underneath. So take the registry's value rather
+    than doing string surgery on whatever the user configured. Returns None for
+    vendors that are not OpenAI-compatible at all (real Anthropic), where the
+    configured url is the right one. Same lookup as ``model_link``."""
+    try:
+        from ms_agent.llm.spec import TRANSPORT_OPENAI_COMPAT, get_registry
+    except Exception:  # pragma: no cover - import guard
+        return None
+    spec = get_registry().get(provider)
+    if spec is None or spec.transport != TRANSPORT_OPENAI_COMPAT:
+        return None
+    return spec.default_base_url or None
+
+
+def _mem0_base_url_key(provider: str) -> str | None:
+    """mem0's base-url field name for a native provider (``deepseek_base_url``,
+    ``anthropic_base_url``, …), or None if it takes no such argument.
+
+    Introspected rather than hardcoded: the set of native providers moves
+    between mem0 versions, and an unrecognised kwarg is a TypeError at config
+    construction, not a warning."""
+    import inspect
+
+    try:
+        from mem0.utils.factory import LlmFactory
+
+        config_cls = LlmFactory.provider_to_class[provider][1]
+        params = inspect.signature(config_cls.__init__).parameters
+    except Exception:  # pragma: no cover - unknown provider / mem0 layout change
+        return None
+    key = f"{provider}_base_url"
+    return key if key in params else None
+
+
+def _mem0_llm(settings: dict, mem_cfg: dict | None = None) -> dict | None:
+    """The mem0 ``llm`` block used for per-round fact extraction.
+
+    Defaults to the CONVERSATION model; an explicit choice in settings →
+    personalization (``memory_llm_provider_id``/``memory_llm_model``) pins
+    extraction to a model of the user's own, decoupled from what chat uses.
+
+    The chosen model may be reached over the Anthropic protocol (DeepSeek's
+    ``/anthropic`` endpoint, for one). Declaring that as mem0's ``openai``
+    provider — which this used to do unconditionally — makes mem0 POST
+    ``/anthropic/chat/completions`` and take a 404, silently: extraction
+    writes nothing and the memory panel stays empty forever. Resolve the
+    protocol instead of assuming it:
+
+    1. the provider already speaks OpenAI → mem0's ``openai`` provider;
+    2. else mem0 has a native provider of the same name → use it, with the
+       vendor's OpenAI-compatible url from the SDK registry;
+    3. else None — mem0 falls back to its own default, and we warn, because
+       picking a different vendor would mean guessing a model name it serves.
+    """
+    mem_cfg = mem_cfg or {}
+    override_pid = mem_cfg.get("llm_provider_id")
+    override_model = mem_cfg.get("llm_model")
+    if override_pid and override_model:
+        entry = (settings.get("providers") or {}).get(override_pid) or {}
+        # Synthesize the same shape the follow-conversation path reads, so
+        # both flow through one protocol-resolution body below.
+        llm = {
+            "provider": override_pid,
+            "model": override_model,
+            "api_key": entry.get("api_key"),
+            "base_url": entry.get("base_url"),
+        }
+    else:
+        llm = settings.get("llm") or {}
+    model = llm.get("model")
+    if not model:
+        return None
+    pid = llm.get("provider") or ""
+    entry = (settings.get("providers") or {}).get(pid) or {}
+    api_key = llm.get("api_key") or entry.get("api_key")
+    if not api_key:
+        logger.warning("no api key for memory fact extraction (provider %r)", pid)
+        return None
+
+    if entry.get("protocol") == "openai":
+        base_url = llm.get("base_url") or entry.get("base_url")
+        if base_url:
+            return {
+                "provider": "openai",
+                "config": {
+                    "model": model,
+                    "api_key": api_key,
+                    "openai_base_url": base_url,
+                },
+            }
+
+    base_url_key = _mem0_base_url_key(pid)
+    if base_url_key is not None:
+        config = {"model": model, "api_key": api_key}
+        base_url = _openai_compat_base_url(pid) or entry.get("base_url")
+        if base_url:
+            config[base_url_key] = base_url
+        return {"provider": pid, "config": config}
+
+    logger.warning(
+        "provider %r speaks %r and mem0 has no native adapter for it; leaving "
+        "the fact-extraction LLM to mem0's default — vector memory will likely "
+        "not be written",
+        pid,
+        entry.get("protocol") or "unknown",
+    )
+    return None
+
+
+def _resolve_embedder_identity(project, desc: dict) -> dict:
+    """The store's embedder identity: recorded once, then enforced.
+
+    The identity file (``<project>/.ms_agent/memory/embedder.json``) pins
+    which model produced the store's vectors. Checked at build time — before
+    any query — so a model swap fails fast with a rebuild path instead of
+    silently mixing vector spaces (mixed spaces don't error, they just make
+    recall garbage). A store predating the identity file adopts the current
+    embedder with a warning: its vectors cannot be attributed after the fact.
+    """
+    import time as _time
+
+    from ms_agent.project.paths import memory_dir
+
+    current = {"provider": desc.get("provider") or "local", "model": desc["model"]}
+    stored = _load_embedder_identity(project)
+    if stored is not None:
+        if (stored.get("provider"), stored.get("model")) != (
+                current["provider"], current["model"]):
+            raise MemoryConfigError(
+                "embedder_mismatch",
+                f"this project's memory was built with "
+                f"{stored.get('provider')}/{stored.get('model')} but the "
+                f"current embedder is {current['provider']}/{current['model']}"
+                " — searching across a model swap silently degrades recall. "
+                "Rebuild the memory store to switch.",
+            )
+        return stored
+
+    dims, pass_dims = _probe_embed_dimension(desc)
+    identity = {
+        **current,
+        "dimension": dims,
+        "pass_dimensions": pass_dims,
+        "created_at": _time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+    }
+    if (memory_dir(project.path) / "qdrant").exists():
+        identity["adopted_existing_store"] = True
+        logger.warning(
+            "project %s has a vector store predating embedder identity "
+            "tracking; adopting %s/%s for it",
+            project.id, current["provider"], current["model"])
+    _store_embedder_identity(project, identity)
+    return identity
+
+
+def _mem0_options(project) -> dict:
+    """mem0 backend options for a 'vector' project.
+
+    - embedder: resolved by ``_resolve_embedder`` (explicit choice →
+      conversation provider → local model), identity-checked against the
+      store it is about to write into;
+    - llm (fact extraction): see ``_mem0_llm``;
+    - vector_store: local on-disk qdrant under the project memory dir
+      (embedded mode — no server; see the MEM0_TELEMETRY note at module top).
+
+    Raises :class:`MemoryConfigError` when vector memory cannot be built as
+    configured — callers decide whether that surfaces (API) or degrades
+    (agent build)."""
+    from ms_agent.project.paths import memory_dir
+
+    settings = _read_settings()
+    mem_cfg = _project_memory_models(project)
+    desc = _resolve_embedder(settings, mem_cfg)
+    identity = _resolve_embedder_identity(project, desc)
+    dims = int(identity["dimension"])
+
+    if desc["mode"] == "local":
+        embedder = {
+            "provider": "fastembed",
+            "config": {"model": desc["model"], "embedding_dims": dims},
+        }
+    else:
+        config = {
+            "api_key": desc["api_key"],
+            "openai_base_url": desc["base_url"],
+            "model": desc["model"],
+        }
+        # mem0 forwards `dimensions` to the API whenever embedding_dims is
+        # set; only set it where the probe proved the backend accepts it.
+        if identity.get("pass_dimensions"):
+            config["embedding_dims"] = dims
+        embedder = {"provider": "openai", "config": config}
+
     options: dict = {
-        "embedder": {
-            "provider": "openai",
-            "config": {
-                **emb_creds,
-                "model": _EMBEDDER_MODEL,
-                "embedding_dims": _EMBEDDER_DIMS,
-            },
-        },
+        "embedder": embedder,
         "vector_store": {
             "provider": "qdrant",
             "config": {
                 "path": str(memory_dir(project.path) / "qdrant"),
                 "on_disk": True,
                 "collection_name": "webui_memory",
-                "embedding_model_dims": _EMBEDDER_DIMS,
+                "embedding_model_dims": dims,
             },
         },
     }
-    llm = s.get("llm") or {}
-    if llm.get("api_key") and llm.get("base_url") and llm.get("model"):
-        options["llm"] = {
-            "provider": "openai",
-            "config": {
-                "model": llm["model"],
-                "api_key": llm["api_key"],
-                "openai_base_url": llm["base_url"],
-            },
-        }
+    llm = _mem0_llm(settings, mem_cfg)
+    if llm is not None:
+        options["llm"] = llm
     return options
 
 
@@ -136,7 +491,10 @@ def _apply_webui_memory(config, project):
     - memory_backend "vector" -> Mem0Backend (mem0 + local qdrant); writes
       happen through mem0's per-round fact extraction, so the node also
       activates the agent's `add_after_step` ingestion hook.
-    Falls back to file (with a warning) when mem0/embeddings are unavailable.
+    A vector project whose memory cannot be built (no embedder, identity
+    mismatch, mem0 missing) runs WITHOUT memory for the session — never as a
+    silent file fallback, which would write a MEMORY.md the vector UI never
+    shows. The reason reaches the user through GET /memory/status.
     Disabled -> drop any lower-layer memory block so the WebUI toggle is
     authoritative (no memory tools, no injection)."""
     from omegaconf import OmegaConf
@@ -154,16 +512,31 @@ def _apply_webui_memory(config, project):
             "add_after_step": {"user_id": pid},
         }
         if backend == "vector":
-            options = _mem0_options(project) if _vector_memory_available() else None
-            if options is not None:
-                node["storage"]["backend"] = "mem0"
-                node["mem0"] = options
+            recall = (_project_memory_models(project) or {}).get("recall_top_k")
+            if isinstance(recall, int) and recall > 0:
+                node["recall_top_k"] = recall
+            node_ok = False
+            if _vector_memory_available():
+                try:
+                    options = _mem0_options(project)
+                    node["storage"]["backend"] = "mem0"
+                    node["mem0"] = options
+                    node_ok = True
+                except MemoryConfigError as e:
+                    logger.warning(
+                        "vector memory disabled for project %s this session "
+                        "(%s): %s", pid, e.code, e)
+                except Exception:
+                    logger.warning(
+                        "vector memory disabled for project %s this session",
+                        pid, exc_info=True)
             else:
                 logger.warning(
-                    "memory_backend 'vector' unavailable (mem0ai missing or no "
-                    "embeddings provider); falling back to file for project %s",
-                    pid,
-                )
+                    "vector memory disabled for project %s: mem0ai missing", pid)
+            if not node_ok:
+                if OmegaConf.select(config, "memory", default=None) is not None:
+                    del config["memory"]
+                return config
         elif backend != "file":
             logger.warning("unknown memory_backend %r; using file", backend)
         OmegaConf.update(config, "memory.unified_memory", node, merge=True)

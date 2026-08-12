@@ -18,6 +18,7 @@ import { api } from '~/lib/api'
 import {
   dispatchUrlChange,
   dispatchSessionDone,
+  dispatchSessionStarted,
   dispatchWorkspaceChanged,
   useOnWorkspaceChanged
 } from '~/lib/events'
@@ -100,6 +101,8 @@ interface ChatPanelProps {
    * are workspace-relative refs the turn sends straight through.
    */
   autoSubmitFiles?: ChatFileRef[]
+  /** Ordered text+skill-pill segments of the carried draft (skill pills only). */
+  autoSubmitSegments?: MessageSegment[]
   /**
    * History messages to seed the message list with when entering an existing
    * session. Re-seeded whenever the session (or its loaded history) changes.
@@ -160,6 +163,7 @@ export function ChatPanel({
   renderSender,
   autoSubmitMessage,
   autoSubmitFiles,
+  autoSubmitSegments,
   initialMessages,
   initialPlan,
   initialArtifacts,
@@ -209,6 +213,9 @@ export function ChatPanel({
     provider.onSessionStart = (id, pid) => {
       sidRef.current = id
       setStartedSessionId(id)
+      // A brand-new chat has no id until this frame, so this is the earliest
+      // point its sidebar spinner can light up.
+      dispatchSessionStarted(id)
       revalidator.revalidate()
       if (sessionId === null && !urlSyncedRef.current) {
         const proj = pid ?? effectiveProjectId
@@ -248,7 +255,16 @@ export function ChatPanel({
     }
   }, [provider, revalidator, sessionId, effectiveProjectId, onSessionStarted])
 
-  const { messages, onRequest, isRequesting, abort } = useXChat({
+  const {
+    messages,
+    onRequest,
+    isRequesting,
+    abort,
+    // True while the store is still resolving `defaultMessages`. That init is
+    // ASYNC and finishes with a full `setMessages(defaults)`, which would wipe
+    // any entry added before it lands — so the auto-submit must wait for it.
+    isDefaultMessagesRequesting
+  } = useXChat({
     provider,
     // Seed the store at construction so history is present from the first
     // render (the route loader already resolved it before this renders).
@@ -285,23 +301,31 @@ export function ChatPanel({
   })
 
   // Fire-once auto-submit (for prefill carried over from ProjectOverview).
+  // Routed through `handleSubmit` rather than calling `onRequest` directly, so a
+  // carried draft behaves EXACTLY like one typed in this session: skill-pill
+  // segments become structured content, the plan is refreshed, and the
+  // turn-timing refs are reset. Hand-rolling the request here previously
+  // dropped `segments`, silently turning a carried "/skill …" into plain text.
+  //
+  // GATED on the store finishing its async `defaultMessages` init: that init
+  // ends with `setMessages(defaults)`, so submitting before it completed had the
+  // user's own message wiped out of the list — the turn ran (the backend got the
+  // text and streamed a reply) but the bubble for what they typed was gone.
   const autoSentRef = useRef(false)
   useEffect(() => {
-    if (autoSentRef.current || !autoSubmitMessage) return
-    const text = autoSubmitMessage.trim()
-    if (!text) return
+    if (autoSentRef.current || isDefaultMessagesRequesting) return
+    const text = (autoSubmitMessage ?? '').trim()
+    const hasSegments = !!autoSubmitSegments?.length
+    // A carried draft of only a skill pill (no typed text) is still valid.
+    if (!text && !hasSegments) return
     autoSentRef.current = true
-    onRequest({
-      session_id: sidRef.current,
-      project_id: effectiveProjectId,
-      message: {
-        role: 'user',
-        content: text,
-        files: autoSubmitFiles?.length ? autoSubmitFiles : undefined
-      }
-    })
+    handleSubmit(
+      text,
+      autoSubmitFiles?.length ? autoSubmitFiles : undefined,
+      hasSegments ? autoSubmitSegments : undefined
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoSubmitMessage])
+  }, [autoSubmitMessage, autoSubmitSegments, isDefaultMessagesRequesting])
 
   // The pinned composer plan box always mirrors the latest workspace plan.json
   // (GET /api/sessions/{id}/plan) — the live plan file (tool writes + manual
@@ -331,20 +355,29 @@ export function ChatPanel({
     setPlanTasks(toThinkingTasks(initialPlan?.tasks ?? []))
     setPlanFileActive(initialPlan?.active ?? false)
   }, [initialPlan])
+  // The session id to read session-scoped data with. On a brand-new chat the
+  // `sessionId` PROP stays null for the whole first turn: the id arrives on the
+  // stream's `session` frame and the URL is updated with replaceState, which
+  // deliberately does NOT remount the route (the reply must keep streaming), so
+  // no new prop ever arrives. Reading the prop alone made the plan and the file
+  // list clear themselves to empty for that entire turn — a file written on the
+  // home page never showed up in the composer's file list.
+  const liveSessionId = sessionId ?? startedSessionId
+
   const refreshPlan = useCallback(() => {
-    if (!sessionId) {
+    if (!liveSessionId) {
       setPlanTasks([])
       setPlanFileActive(false)
       return
     }
     api
-      .getSessionPlan(sessionId)
+      .getSessionPlan(liveSessionId)
       .then((plan) => {
         setPlanTasks(toThinkingTasks(plan.tasks))
         setPlanFileActive(plan.active)
       })
       .catch(() => {})
-  }, [sessionId])
+  }, [liveSessionId])
 
   useEffect(() => {
     refreshPlan()
@@ -360,15 +393,15 @@ export function ChatPanel({
     setArtifacts(initialArtifacts ?? [])
   }, [initialArtifacts])
   const refreshArtifacts = useCallback(() => {
-    if (!sessionId) {
+    if (!liveSessionId) {
       setArtifacts([])
       return
     }
     api
-      .listArtifacts(sessionId)
+      .listArtifacts(liveSessionId)
       .then(setArtifacts)
       .catch(() => {})
-  }, [sessionId])
+  }, [liveSessionId])
   useEffect(() => {
     refreshArtifacts()
   }, [refreshArtifacts])
@@ -455,6 +488,9 @@ export function ChatPanel({
     const text = value.trim()
     const attached = files?.length ? files : undefined
     setStoppedLocally(false)
+    // A new turn: drop the previous turn's mirrored origin so a Stop on THIS
+    // turn can never freeze a duration measured from the old one.
+    turnOriginRef.current = 0
     // A bare skill pill is a valid submission (the backend answers with the
     // skill intro when there are no args).
     if (!text && !attached && !segments?.length) return
@@ -465,6 +501,10 @@ export function ChatPanel({
     // segment array (text interleaved with skill pills); plain text stays a
     // string. The backend parses either.
     const content = segments?.length ? segments : text
+    // Light up the sidebar spinner now instead of on the next presence
+    // heartbeat. For a brand-new chat there is no id yet — `onSessionStart`
+    // dispatches it as soon as the backend assigns one.
+    if (sidRef.current) dispatchSessionStarted(sidRef.current)
     onRequest({
       session_id: sidRef.current,
       project_id: effectiveProjectId,
@@ -480,11 +520,28 @@ export function ChatPanel({
   // with real elapsed times, steps, the text so far) and then streams the live
   // tail; `liveTail` renders it as the in-progress assistant message.
   const { running: presenceRunning } = usePresence()
+  // Derived as a boolean so the attach effect below doesn't re-run (and abort its
+  // stream) merely because the heartbeat handed out a new Set instance.
+  const presenceSaysRunning = !!sessionId && presenceRunning.has(sessionId)
   // True while the attach SSE is open: drives the composer into its loading
   // state so the Stop button is available for a rejoined turn too.
   const [attaching, setAttaching] = useState(false)
   const attachCtrlRef = useRef<AbortController | null>(null)
+  // One-shot latch per TURN: set once a turn we attached to ends (or is stopped),
+  // so a stale heartbeat can't make us rejoin a finished turn. It is re-armed
+  // when the heartbeat reports a NEW turn (not-running → running), otherwise the
+  // next turn started from another tab would be invisible here — startAttach
+  // would return early forever, leaving both the stream and the history refresh
+  // unarmed. Keyed on the TRANSITION, not on "not running": re-arming the moment
+  // a turn ends would let a still-true `initialRunning` (loader data lags by a
+  // revalidation) open a pointless attach to the turn that just finished.
   const attachDoneRef = useRef(false)
+  const prevPresenceRunningRef = useRef(false)
+  useEffect(() => {
+    const wasRunning = prevPresenceRunningRef.current
+    prevPresenceRunningRef.current = presenceSaysRunning
+    if (presenceSaysRunning && !wasRunning) attachDoneRef.current = false
+  }, [presenceSaysRunning])
 
   // Turn-completion backstop for the artifact ledger: shell-created/deleted
   // files never emit a file_write step, so re-pull once streaming stops.
@@ -504,6 +561,17 @@ export function ChatPanel({
     // background — planFileActive must reflect the current server truth before
     // any stream frames arrive.
     refreshPlan()
+    // Re-read the HISTORY too, for the same reason: a turn we only learned about
+    // from the heartbeat was started somewhere else (another tab), so this view's
+    // history predates the user message that kicked it off. Attaching alone would
+    // stream an assistant reply under a conversation that never shows the
+    // question. A route revalidation does NOT fix this — `displayHistory` is
+    // seeded from the loader once, at mount.
+    //
+    // No loop risk: this sits behind the same one-shot guard as the attach itself
+    // (an already-open stream or an already-finished turn returned above), and
+    // the state it writes is not in the attach effect's dependencies.
+    refreshMessages()
     // Placeholder immediately (renders the loading bubble, not a blank area).
     setLiveTail({ role: 'assistant', content: '' })
     ;(async () => {
@@ -579,36 +647,52 @@ export function ChatPanel({
   // stale (React Router caches loader data on back-navigation), so a fresh
   // check guarantees the same behavior as a full page refresh.
   //
-  // The CLEANUP of this effect aborts any in-flight attach SSE (the backend
-  // then sees zero watchers; the turn itself keeps running). Tying the abort
-  // to this effect instead of a separate [] cleanup avoids the race where
-  // React’s StrictMode double-mount (or a same-cycle re-render) abort the
-  // signal immediately after starting it.
+  // This effect only ARMS the attach; tearing it down lives in its own effect
+  // below. Aborting from here meant every change of a trigger flag killed a
+  // healthy stream and reopened it: on a refresh mid-turn, `initialRunning`
+  // attaches at mount and the first heartbeat then flips `presenceSaysRunning`
+  // false→true, producing a second attach (plus a second plan + history read)
+  // one beat later.
   useEffect(() => {
     if (!sessionId || isRequesting) return
-    if (initialRunning || presenceRunning.has(sessionId)) {
+    if (initialRunning || presenceSaysRunning) {
       startAttach()
-    } else {
-      // Fallback: the loader might have returned stale data. Ask the server
-      // directly (lightweight, single-field check).
-      let cancelled = false
-      api
-        .getSession(sessionId, { silent: true })
-        .then((s) => {
-          if (!cancelled && s?.running) startAttach()
-        })
-        .catch(() => {})
-      return () => {
-        cancelled = true
-        attachCtrlRef.current?.abort()
-        attachCtrlRef.current = null
-      }
+      return
     }
+    // Fallback: the loader might have returned stale data. Ask the server
+    // directly (lightweight, single-field check).
+    let cancelled = false
+    api
+      .getSession(sessionId, { silent: true })
+      .then((s) => {
+        if (!cancelled && s?.running) startAttach()
+      })
+      .catch(() => {})
     return () => {
+      cancelled = true
+    }
+  }, [
+    sessionId,
+    isRequesting,
+    initialRunning,
+    // A BOOLEAN, not the presence Set: the set gets a new identity every
+    // heartbeat, which would re-run this effect (and re-check the session) for
+    // no reason.
+    presenceSaysRunning,
+    startAttach
+  ])
+
+  // Teardown, on its own: detach this viewer when the session changes or the
+  // panel unmounts — nothing else. The backend then sees zero watchers; the turn
+  // itself keeps running (only the Stop button cancels one). Keyed on sessionId,
+  // which is also this panel's remount key, so in practice it fires on unmount.
+  useEffect(
+    () => () => {
       attachCtrlRef.current?.abort()
       attachCtrlRef.current = null
-    }
-  }, [sessionId, isRequesting, initialRunning, presenceRunning, startAttach])
+    },
+    [sessionId]
+  )
 
   // Explicit stop: cancel the in-flight turn on the backend (which seals it as
   // interrupted) AND abort the local stream(s). A bare abort — or navigating
@@ -659,6 +743,12 @@ export function ChatPanel({
       attachCtrlRef.current = null
       attachDoneRef.current = true
       setLiveTail(null)
+      // Clear the flag HERE: the aborted stream's `finally` won't, because its
+      // `attachCtrlRef.current === ctrl` guard now fails (we just nulled the
+      // ref). Without this the composer stays in its loading state forever —
+      // the Stop button never turns back into Send after stopping a turn that
+      // was rejoined by a page refresh.
+      setAttaching(false)
     }
     abort()
   }
@@ -694,6 +784,15 @@ export function ChatPanel({
   // the turn already stopped. Freezing here pins "processing Ns" to the moment
   // the user actually stopped it.
   const stoppedAtRef = useRef(0)
+  // Wall-clock origin of the turn currently streaming, mirrored out of the
+  // message so it survives the message being REPLACED. On abort, useXChat drops
+  // the in-flight entry and re-adds it through `requestFallback` under a fresh
+  // id (x-chat: setMessages(ori.filter(…loading/updating…).concat(createMessage(
+  // fallback,'abort')))). Reading `turnStartedAt` off that rebuilt message is
+  // fragile — when it doesn't survive, the frozen duration comes out undefined
+  // and the header falls back to a remount-fresh `elapsed` of 0, flashing
+  // "processing 0s" until the server history lands with the real number.
+  const turnOriginRef = useRef(0)
 
   // True from the Stop press until BOTH the /interrupt call and the canonical
   // history refresh have settled. Folded into the composer's loading state so a
@@ -713,9 +812,17 @@ export function ChatPanel({
         // session this fetch was issued for, so it can't overwrite another
         // session's view or mis-bump its seed.
         if (sidRef.current !== sid) return
-        setDisplayHistory(
-          historyToAgentMessages(msgs as unknown as HistoryMessage[])
-        )
+        const hist = historyToAgentMessages(msgs as unknown as HistoryMessage[])
+        // Safety net: never trade local entries for NOTHING. The backend seals
+        // failed turns so server history normally contains them, but if a turn
+        // died before anything could be persisted, replacing the live view
+        // with an empty history (and bumping the seed) would silently discard
+        // the user's bubble and the error card — the message would look like
+        // it was never sent. Keep the local view; the next successful refresh
+        // takes over.
+        if (hist.length === 0 && messagesLenRef.current > seedLenRef.current)
+          return
+        setDisplayHistory(hist)
         // Bump seed atomically with the history update: newEntries becomes
         // empty in the same render that displayHistory becomes fresh.
         seedLenRef.current = messagesLenRef.current
@@ -768,6 +875,18 @@ export function ChatPanel({
     ]
   }
 
+  // Mirror the streaming turn's origin while it is still intact, so Stop can
+  // freeze a correct duration even if the abort rebuild drops the field.
+  // Cleared on a fresh send (handleSubmit) rather than here, so it stays
+  // readable through the stop → seal → refresh window.
+  if (!stoppedLocally) {
+    const liveOrigin = items.reduce<number>((acc, it) => {
+      const t = it.message.turnStartedAt
+      return it.message.role === 'assistant' && typeof t === 'number' ? t : acc
+    }, 0)
+    if (liveOrigin) turnOriginRef.current = liveOrigin
+  }
+
   // Local stop: stamp the interrupted marker onto the turn's last assistant
   // entry right away (copy, never mutate state) so this very render shows the
   // interrupted presentation. The server-sealed history replaces it moments
@@ -792,8 +911,14 @@ export function ChatPanel({
                 // the same number — no jump between live and replay.
                 loopDurationMs:
                   it.message.loopDurationMs ??
-                  (it.message.turnStartedAt
-                    ? Math.max(0, stoppedAtRef.current - it.message.turnStartedAt)
+                  // Prefer the message's own origin; fall back to the mirrored
+                  // ref for the case where the abort rebuild lost it.
+                  ((it.message.turnStartedAt ?? turnOriginRef.current)
+                    ? Math.max(
+                        0,
+                        stoppedAtRef.current -
+                          (it.message.turnStartedAt ?? turnOriginRef.current)
+                      )
                     : undefined),
                 // A cut-short thought block gets closed but NOT given a
                 // duration: the SDK only finalizes one when thinking ends

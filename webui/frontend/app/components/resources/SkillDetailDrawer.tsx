@@ -9,6 +9,7 @@ import { useT } from '~/lib/i18n'
 import type { Skill } from '~/lib/types'
 import ViewIcon from '~/assets/icons/view.svg?react'
 import TerminalIcon from '~/assets/icons/terminal.svg?react'
+import { languageFor } from '~/lib/editorLanguage'
 
 interface Props {
   open: boolean
@@ -21,30 +22,6 @@ interface Props {
 
 type ViewMode = 'preview' | 'code'
 
-const LANGUAGE_BY_EXT: Record<string, string> = {
-  md: 'markdown',
-  markdown: 'markdown',
-  py: 'python',
-  ts: 'typescript',
-  tsx: 'typescript',
-  js: 'javascript',
-  jsx: 'javascript',
-  json: 'json',
-  sh: 'shell',
-  bash: 'shell',
-  yaml: 'yaml',
-  yml: 'yaml',
-  svg: 'xml',
-  xml: 'xml',
-  html: 'html',
-  css: 'css',
-  txt: 'plaintext'
-}
-
-function languageFor(path: string): string {
-  const ext = path.split('.').pop()?.toLowerCase() ?? ''
-  return LANGUAGE_BY_EXT[ext] ?? 'plaintext'
-}
 
 /** Build a FolderTree data set from the backend's flat relative-path list.
  * Keys follow the FolderTree convention (`dir:<path>` / `file:<path>`) so the

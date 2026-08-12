@@ -13,12 +13,40 @@ const MD = '(min-width: 768px)'
 // Sidebar data (projects + sessions) is loaded server-side so the shell paints
 // with content on first render — no client-fetch flash. Revalidates on
 // navigation, so newly created sessions/projects appear automatically.
+//
+// The Composer's toolbar data rides along for the same reason: fetching it on
+// mount made the pills paint placeholder labels first (the generic "Model") and
+// then reflow
+// to the real model name, visibly jolting the input box on every route change.
+// Resolved here it is present in the first render, and React Router keeps the
+// previous value while revalidating, so the row never changes width after paint.
 export async function loader() {
-  const [projects, sessions] = await Promise.all([
+  const [
+    projects,
+    sessions,
+    providers,
+    models,
+    agentSettings,
+    globalMcps,
+    globalSkills
+  ] = await Promise.all([
     api.listProjects(),
-    api.listSessions()
+    api.listSessions(),
+    api.listProviders(),
+    api.listModels(),
+    api.getAgentSettings(),
+    api.listMcps('global'),
+    api.listSkills('global')
   ])
-  return { projects, sessions }
+  return {
+    projects,
+    sessions,
+    providers,
+    models,
+    agentSettings,
+    globalMcps,
+    globalSkills
+  }
 }
 
 const matchesQuery = (q: string) =>
@@ -65,7 +93,14 @@ export default function AppLayout() {
           closable={false}
           styles={{ body: { padding: 0 } }}
         >
-          <Sidebar onNavigate={() => setSidebarDrawer(false)} />
+          {/* The sidebar's own logo/collapse toggle must CLOSE the drawer here:
+              there is no compact mode on small screens, and leaving
+              `onCollapse` unset made that button inert (it renders and reacts to
+              hover, but clicking did nothing). */}
+          <Sidebar
+            onCollapse={() => setSidebarDrawer(false)}
+            onNavigate={() => setSidebarDrawer(false)}
+          />
         </Drawer>
 
         <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-[10px]">

@@ -23,11 +23,19 @@ def get_settings() -> AgentSettings:
         default_model_id = encode_model_id(provider, model) if (provider and model) else None
         cfg = _ps().load()
     backend = cfg.memory_backend if cfg.memory_backend in ("file", "vector") else "file"
+    mem_cfg = sidecar.get("agent_settings", "memory_models", {}) or {}
+    embed_mode = mem_cfg.get("embed_mode")
     return AgentSettings(
         default_provider_id=provider,
         default_model_id=default_model_id,
         default_memory_enabled=bool(cfg.memory_enabled),
         default_memory_backend=backend,
+        memory_llm_provider_id=mem_cfg.get("llm_provider_id"),
+        memory_llm_model=mem_cfg.get("llm_model"),
+        memory_embed_mode=embed_mode if embed_mode in ("provider", "local") else "provider",
+        memory_embed_provider_id=mem_cfg.get("embed_provider_id"),
+        memory_embed_model=mem_cfg.get("embed_model"),
+        memory_recall_top_k=mem_cfg.get("recall_top_k"),
         global_mcp_auto_attach=sidecar.get("agent_settings", "global_mcp_auto_attach", True),
         global_skill_auto_attach=sidecar.get("agent_settings", "global_skill_auto_attach", True),
     )
@@ -57,4 +65,16 @@ def update_settings(body: AgentSettings) -> AgentSettings:
         )
     sidecar.put("agent_settings", "global_mcp_auto_attach", body.global_mcp_auto_attach)
     sidecar.put("agent_settings", "global_skill_auto_attach", body.global_skill_auto_attach)
+    sidecar.put(
+        "agent_settings",
+        "memory_models",
+        {
+            "llm_provider_id": body.memory_llm_provider_id,
+            "llm_model": body.memory_llm_model,
+            "embed_mode": body.memory_embed_mode,
+            "embed_provider_id": body.memory_embed_provider_id,
+            "embed_model": body.memory_embed_model,
+            "recall_top_k": body.memory_recall_top_k,
+        },
+    )
     return get_settings()

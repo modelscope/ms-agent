@@ -1,5 +1,4 @@
 import { Typography } from 'antd'
-import type { ReactNode } from 'react'
 import { FileTypeIcon } from '~/components/common/FileCard'
 import { useT } from '~/lib/i18n'
 import { useFileExists } from '~/lib/workspaceFiles'
@@ -10,74 +9,13 @@ import type { OnOpenStep, OnOpenFile } from './types'
 import { TerminalStepCard } from './steps/TerminalStepCard'
 import { ToolCallStepCard } from './steps/ToolCallStepCard'
 import { ArtifactStepCard } from './steps/ArtifactStepCard'
+import { StepCardShell, StepInProgressRow } from './steps/StepCardShell'
 import { AuthConfirmStepCard } from './steps/AuthConfirmStepCard'
 import LoadSkillIcon from '~/assets/icons/load-skill.svg?react'
 import SearchIcon from '~/assets/icons/search.svg?react'
 import MemoryIcon from '~/assets/icons/memory.svg?react'
 import JumpIcon from '~/assets/icons/jump.svg?react'
-import GlobeIcon from '~/assets/files/web.svg?react'
-
-/**
- * Shared shell for single-line step cards: leading icon + title + trailing
- * jump chevron. Clicking opens the workspace rail via `onClick`. When
- * `disabled` (e.g. a file whose workspace entry was deleted) it renders as a
- * non-interactive card — no chevron, `cursor-not-allowed`, muted title — with
- * an optional trailing `note` (e.g. "this file was deleted").
- */
-function StepCardShell({
-  icon,
-  children,
-  onClick,
-  disabled = false,
-  note,
-  maxWidthClass = 'max-w-full'
-}: {
-  icon: ReactNode
-  children: ReactNode
-  onClick?: () => void
-  disabled?: boolean
-  note?: ReactNode
-  maxWidthClass?: string
-}) {
-  if (disabled) {
-    return (
-      <div
-        className={`flex w-fit cursor-not-allowed items-center gap-2 rounded-xl border border-msa-line-1 bg-msa-fill-1 px-3 py-2 text-left ${maxWidthClass}`}
-      >
-        <span className="flex h-4 w-4 shrink-0 items-center justify-center text-msa-text-3">
-          {icon}
-        </span>
-        <Typography.Text
-          ellipsis={{ tooltip: { title: children } }}
-          className="min-w-0 flex-1 !text-sm !text-msa-text-3"
-        >
-          {children}
-        </Typography.Text>
-        {note && (
-          <span className="shrink-0 text-xs text-msa-text-danger">{note}</span>
-        )}
-      </div>
-    )
-  }
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`group flex w-fit cursor-pointer items-center gap-2 rounded-xl border border-msa-line-1 bg-msa-fill-1 px-3 py-2 text-left transition-colors hover:bg-msa-fill-4 ${maxWidthClass}`}
-    >
-      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-msa-text-3">
-        {icon}
-      </span>
-      <Typography.Text
-        ellipsis={{ tooltip: { title: children } }}
-        className="min-w-0 flex-1 !text-sm !text-msa-text-1"
-      >
-        {children}
-      </Typography.Text>
-      <JumpIcon className="h-4 w-4 shrink-0 text-msa-text-3" />
-    </button>
-  )
-}
+import GlobeIcon from '~/assets/icons/globe.svg?react'
 
 /** File step card ("modified: x" / "read: x") with LIVE existence: a webui
  * rename/delete flips it to the disabled "deleted" card immediately (via the
@@ -98,86 +36,116 @@ function FileStepCard({
   const icon = <FileTypeIcon name={path} className="h-4 w-4" />
   if (!exists) {
     return (
-      <StepCardShell icon={icon} disabled note={t.home.fileDeleted}>
+      <StepCardShell
+        icon={icon}
+        disabled
+        note={t.home.fileDeleted}
+        tipText={`${label}：${path}`}
+      >
         <span className="align-middle">{label}：</span>
         <InlineCode>{path}</InlineCode>
       </StepCardShell>
     )
   }
   return (
-    <StepCardShell icon={icon} onClick={onOpen}>
+    <StepCardShell icon={icon} onClick={onOpen} tipText={`${label}：${path}`}>
       <span className="align-middle">{label}：</span>
       <InlineCode>{path}</InlineCode>
     </StepCardShell>
   )
 }
 
-/** Human label + detail for a tool that is CURRENTLY executing (status
- * "running"). Reuses the finished-card i18n strings; the spinner conveys the
- * in-progress state, so no separate "…ing" wording is needed. */
-function runningDescriptor(
-  kind: string,
-  meta: Record<string, unknown>,
-  s: ReturnType<typeof useT>['t']['chat']
-): { label: string; detail: string } {
-  switch (kind) {
-    case 'search':
-      return String(meta.scope ?? '') === 'files'
-        ? { label: s.stepSearchFiles, detail: String(meta.query ?? '') }
-        : { label: s.stepSearch, detail: String(meta.query ?? '') }
-    case 'browser':
-      return { label: s.stepBrowser, detail: String(meta.title ?? meta.url ?? '') }
-    case 'terminal':
-      return { label: s.stepTerminal, detail: '' }
-    case 'file_read':
-      return { label: s.stepFileRead, detail: String(meta.path ?? '') }
-    case 'file_write':
-      return { label: s.stepFileWrite, detail: String(meta.path ?? '') }
-    case 'file_edit':
-      return { label: s.stepFileEdit, detail: String(meta.path ?? '') }
-    case 'skill_load':
-      return { label: s.stepLoadSkill, detail: String(meta.name ?? '') }
-    case 'memory':
-      return {
-        label: String(meta.action ?? '') === 'read' ? s.stepMemoryRead : s.stepMemory,
-        detail: ''
-      }
-    default:
-      return { label: s.stepInvoke, detail: String(meta.name ?? '') }
+/** One file row INSIDE the multi-file wrapper card (no border of its own — the
+ * wrapper owns the border; the row is just a clickable line with hover bg and
+ * its own live deleted state). */
+function MultiFileRow({
+  path,
+  label,
+  serverExists,
+  onOpen
+}: {
+  path: string
+  label: string
+  serverExists: boolean
+  onOpen: () => void
+}) {
+  const { t } = useT()
+  const exists = useFileExists(path, serverExists)
+  const icon = <FileTypeIcon name={path} className="h-4 w-4" />
+  const inner = (
+    <>
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-msa-text-3">
+        {icon}
+      </span>
+      <Typography.Text
+        ellipsis={{ tooltip: { title: `${label}：${path}` } }}
+        className={`min-w-0 flex-1 !text-sm ${
+          exists ? '!text-msa-text-1' : '!text-msa-text-3'
+        }`}
+      >
+        <span className="align-middle">{label}：</span>
+        <InlineCode>{path}</InlineCode>
+      </Typography.Text>
+    </>
+  )
+  if (!exists) {
+    return (
+      <div className="flex w-full cursor-not-allowed items-center gap-2 rounded-lg px-2 py-1.5 text-left">
+        {inner}
+        <span className="shrink-0 text-xs text-msa-text-danger">
+          {t.home.fileDeleted}
+        </span>
+      </div>
+    )
   }
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="group flex w-full cursor-pointer items-center gap-2 rounded-lg border-0 bg-transparent px-2 py-1.5 text-left transition-colors hover:bg-msa-fill-4"
+    >
+      {inner}
+      <JumpIcon className="h-4 w-4 shrink-0 text-msa-text-3" />
+    </button>
+  )
 }
 
-/** Live "executing" card shown from tool_call_started until the result frame
- * (same call_id) replaces it — so a slow tool (e.g. web_search) gives immediate
- * feedback instead of a blank gap. A leading spinner marks the in-progress
- * state; the label says which tool is running. */
-function RunningStepCard({ step }: { step: AgentStep }) {
-  const { t } = useT()
-  const { label, detail } = runningDescriptor(step.kind, step.meta, t.chat)
-  const tip = detail ? `${label} ${detail}` : label
+/** Wrapper for a SINGLE tool call that read/edited SEVERAL files: one bordered
+ * card holding the file rows flat inside, so it reads as one tool invocation
+ * (matching the "used 1 tool" count) rather than N separate tool cards. */
+function MultiFileStepCard({
+  paths,
+  label,
+  serverExists,
+  onOpen
+}: {
+  paths: string[]
+  label: string
+  serverExists: boolean
+  onOpen: (path: string) => void
+}) {
   return (
-    <div className="flex w-fit max-w-full items-center gap-2 rounded-xl border border-msa-line-1 bg-msa-fill-1 px-3 py-2 text-left">
-      <span
-        className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-[1.5px] border-msa-line-1 border-t-msa-text-brand1"
-        aria-hidden
-      />
-      <Typography.Text
-        ellipsis={{ tooltip: { title: tip } }}
-        className="min-w-0 flex-1 !text-sm !text-msa-text-2"
-      >
-        <span className="align-middle">{label}</span>
-        {detail ? (
-          <>
-            {' '}
-            <InlineCode>{detail}</InlineCode>
-          </>
-        ) : null}
-      </Typography.Text>
+    <div className="flex w-fit max-w-full flex-col gap-0.5 rounded-xl border border-msa-line-1 bg-msa-fill-1 p-1.5">
+      {paths.map((p, i) => (
+        <MultiFileRow
+          key={`${p}-${i}`}
+          path={p}
+          label={label}
+          serverExists={serverExists}
+          onOpen={() => onOpen(p)}
+        />
+      ))}
     </div>
   )
 }
 
-/** Dispatches a step to the correct card by its kind. */
+/** Dispatches a step to the correct card by its kind.
+ *
+ * A step still executing (`meta.status === "running"`, emitted on
+ * tool_call_started) is NOT a card of its own: it dispatches to the very card
+ * its result will land in, and that card renders its own in-progress state (a
+ * spinner in place of its leading glyph). One card per tool call, from start to
+ * result — no separate placeholder that swaps out mid-flight. */
 export function StepCard({
   step,
   onOpenStep,
@@ -194,10 +162,7 @@ export function StepCard({
   const { t } = useT()
   const meta = step.meta
   const open = () => onOpenStep?.(step)
-
-  // A tool still executing (emitted on tool_call_started): show a live
-  // "running" card until its result frame (same call_id) replaces it in place.
-  if (meta.status === 'running') return <RunningStepCard step={step} />
+  const running = meta.status === 'running'
 
   switch (step.kind) {
     case 'terminal':
@@ -240,6 +205,60 @@ export function StepCard({
           titleText={`${t.chat.stepLoadSkill} ${String(meta.name ?? '')}`}
         />
       )
+    case 'skill_list': {
+      // Same SDK tool for both: a `query` makes it a search, without one it's a
+      // plain catalog listing.
+      const query = String(meta.query ?? '')
+      const label = query ? t.chat.stepSkillSearch : t.chat.stepSkillList
+      return (
+        <ToolCallStepCard
+          step={step}
+          isLast={isLast}
+          icon={<LoadSkillIcon className="h-4 w-4 text-msa-text-brand1" />}
+          title={
+            query ? (
+              <>
+                <span className="align-middle">{label}</span>{' '}
+                <InlineCode>{query}</InlineCode>
+              </>
+            ) : (
+              label
+            )
+          }
+          titleText={query ? `${label} ${query}` : label}
+        />
+      )
+    }
+    case 'skill_manage': {
+      const action = String(meta.action ?? '')
+      const label =
+        action === 'create'
+          ? t.chat.stepSkillCreate
+          : action === 'edit'
+            ? t.chat.stepSkillEdit
+            : action === 'delete'
+              ? t.chat.stepSkillDelete
+              : t.chat.stepSkillManage
+      const skill = String(meta.skill ?? '')
+      return (
+        <ToolCallStepCard
+          step={step}
+          isLast={isLast}
+          icon={<LoadSkillIcon className="h-4 w-4 text-msa-text-brand1" />}
+          title={
+            skill ? (
+              <>
+                <span className="align-middle">{label}</span>{' '}
+                <InlineCode>{skill}</InlineCode>
+              </>
+            ) : (
+              label
+            )
+          }
+          titleText={skill ? `${label} ${skill}` : label}
+        />
+      )
+    }
     case 'file_read':
     case 'file_write':
     case 'file_edit': {
@@ -252,14 +271,68 @@ export function StepCard({
           : step.kind === 'file_edit'
             ? t.chat.stepFileEdit
             : t.chat.stepFileWrite
-      // Errored file steps (permission denied, interrupted, etc.) render as a
-      // ToolCallStepCard accordion showing what was attempted + the error.
-      if (meta.status === 'error') {
+      // The accordion form of this card, used whenever the operation needs more
+      // than a one-line row: the authorization ask (three decision buttons), a
+      // refusal, or a failure (the error text). It keeps the file's identity —
+      // that file type's glyph + the operation named on the path — instead of
+      // falling back to "call tool file_system---write_file" plus a JSON blob.
+      const askLabel =
+        step.kind === 'file_read'
+          ? t.chat.stepFileReadAsk
+          : step.kind === 'file_edit'
+            ? t.chat.stepFileEditAsk
+            : t.chat.stepFileWriteAsk
+      const fileAccordion = (
+        <ToolCallStepCard
+          step={step}
+          onOpenStep={onOpenStep}
+          isLast={isLast}
+          icon={<FileTypeIcon name={path} className="h-4 w-4" />}
+          title={
+            <>
+              <span className="align-middle">{askLabel}</span>{' '}
+              <InlineCode>{path}</InlineCode>
+            </>
+          }
+          titleText={`${askLabel} ${path}`}
+        />
+      )
+      // An ask (or a refusal) has no room in a one-line row for the decision
+      // buttons / the rejected badge. Titled with the pre-action verb, since
+      // nothing has happened yet.
+      const askState = String(meta.state ?? '')
+      if (askState === 'pending' || askState === 'rejected') return fileAccordion
+      // In progress: "reading/writing/editing {path}", not the past-tense row.
+      // Either the live `running` frame, or an ask already approved whose result
+      // hasn't landed (what an attach replay hands back after a refresh).
+      if (
+        running ||
+        (askState === 'approved' && !!meta.request_id && !meta.result)
+      ) {
+        return <StepInProgressRow step={step} />
+      }
+      // Failed (interrupted, permission denied, write error …): the accordion
+      // shows what was attempted plus the error, under a "call failed" badge.
+      if (meta.status === 'error') return fileAccordion
+      // A multi-file read/edit is ONE tool call: wrap its files in a single
+      // bordered card (rows flat inside), so it reads as one invocation and
+      // matches the "used N tools" count — not N separate tool cards. Each row
+      // is still individually clickable + deleted-flagged.
+      //
+      // SEVERAL files, though: the tool also accepts `paths` with a single entry,
+      // and wrapping that produced a visibly different card from the same
+      // operation called with `path` — an inset borderless row inside a frame,
+      // instead of the normal one-line card. One file, one plain card.
+      const multi = Array.isArray(meta.paths)
+        ? (meta.paths as unknown[]).map(String).filter(Boolean)
+        : []
+      if (multi.length > 1) {
         return (
-          <ToolCallStepCard
-            step={step}
-            onOpenStep={onOpenStep}
-            isLast={isLast}
+          <MultiFileStepCard
+            paths={multi}
+            label={label}
+            serverExists={meta.exists !== false}
+            onOpen={(p) => (onOpenFile ? onOpenFile(p) : open())}
           />
         )
       }
@@ -313,12 +386,74 @@ export function StepCard({
         )
       }
       const results = parseWebSearchResults(meta.result)
+      // An ask (or a refusal) needs the accordion: room for the three decision
+      // buttons / the rejected badge, which a one-line row has no space for. The
+      // ask lands on THIS card rather than a generic "call tool" one (backend
+      // _AUTH_INLINE_KINDS), so the user reads the query, not `web_search---x`.
+      const askState = String(meta.state ?? '')
+      if (askState === 'pending' || askState === 'rejected') {
+        return (
+          <ToolCallStepCard
+            step={step}
+            isLast={isLast}
+            icon={<GlobeIcon className="h-4 w-4" />}
+            title={
+              <>
+                <span className="align-middle">{t.chat.stepSearch}</span>{' '}
+                <InlineCode>{query}</InlineCode>
+              </>
+            }
+            titleText={`${t.chat.stepSearch} ${query}`}
+          />
+        )
+      }
+      // Still searching: the one-line row states it's in progress and is NOT
+      // openable — there is no result list behind it yet. Two ways to be here:
+      // the live `running` frame, OR an ASK already approved whose result hasn't
+      // landed (what an attach replay after a page refresh hands back — those
+      // frames carry the resolved ask, not a `running` status).
+      if (
+        running ||
+        (askState === 'approved' && !!meta.request_id && !meta.result)
+      ) {
+        return <StepInProgressRow step={step} />
+      }
       const favicons = results
         .map((r) => faviconOf(r.url))
         .filter(Boolean)
         .slice(0, 3)
+      // A refusal is NOT a failure: a denied call's errored result reads "Tool
+      // call denied", so it gets the rejection wording in the muted tone — red
+      // "call failed" is reserved for searches that actually tried and broke
+      // (timeout, interruption, upstream error).
+      const denied =
+        askState === 'rejected' ||
+        (meta.status === 'error' &&
+          /denied/i.test(String(meta.error ?? meta.result ?? '')))
+      const failed = meta.status === 'error' && !denied
       return (
-        <StepCardShell icon={<GlobeIcon className="h-4 w-4" />} onClick={open}>
+        <StepCardShell
+          icon={<GlobeIcon className="h-4 w-4" />}
+          onClick={open}
+          // The outcome belongs on the ROW itself — the error text only lives in
+          // the rail, which the user has to open to see.
+          note={
+            denied
+              ? t.chat.authRejected
+              : failed
+                ? t.chat.callFailed
+                : undefined
+          }
+          noteTone={denied ? 'muted' : 'danger'}
+          tipText={
+            results.length > 0
+              ? `${t.chat.stepSearch} ${query} ${t.chat.searchedPages.replace(
+                  '{n}',
+                  String(results.length)
+                )}`
+              : `${t.chat.stepSearch} ${query}`
+          }
+        >
           <span className="align-middle">{t.chat.stepSearch}</span>{' '}
           <InlineCode>{query}</InlineCode>
           {results.length > 0 && (

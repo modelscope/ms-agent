@@ -5,7 +5,9 @@ import type {
   Mcp,
   McpHealth,
   MemoryBackend,
+  MemoryDoc,
   MemoryItem,
+  MemoryStatus,
   Model,
   Profile,
   Project,
@@ -211,6 +213,9 @@ export const api = {
       description: string
       local_path: string
       memory_enabled: boolean
+      // Accepted only while the project has never had memory enabled; the
+      // server answers 400 for a change once it is locked.
+      memory_backend: MemoryBackend
       mcp_auto_attach: boolean
       skill_auto_attach: boolean
       permission_mode: 'restricted' | 'auto'
@@ -255,6 +260,15 @@ export const api = {
   listMcps: (scope?: Scope) => json<Mcp[]>(`/api/mcps${q({ scope })}`),
   createMcp: (body: Omit<Mcp, 'id' | 'created_at'>) =>
     json<Mcp>('/api/mcps', { method: 'POST', body: JSON.stringify(body) }),
+  /** Replace a scope's servers with exactly `servers`, in this order — one
+   * atomic call for the raw-JSON editor, whose document IS the whole scope.
+   * Doing it client-side (delete every server, then re-create) lost everything
+   * whenever a later create was rejected. */
+  replaceMcps: (scope: Scope, servers: Omit<Mcp, 'id' | 'created_at'>[]) =>
+    json<Mcp[]>('/api/mcps', {
+      method: 'PUT',
+      body: JSON.stringify({ scope, servers })
+    }),
   updateMcp: (
     id: string,
     body: Partial<Omit<Mcp, 'id' | 'created_at' | 'scope'>>
@@ -292,25 +306,43 @@ export const api = {
   deleteSkill: (id: string) =>
     json<void>(`/api/skills/${pid(id)}`, { method: 'DELETE' }),
 
-  // Memory — project-scoped items. Default project rejects (400).
-  listMemoryItems: (projectId: string) =>
-    json<MemoryItem[]>(`/api/projects/${pid(projectId)}/memory/items`),
-  createMemoryItem: (projectId: string, content: string) =>
-    json<MemoryItem>(`/api/projects/${pid(projectId)}/memory/items`, {
-      method: 'POST',
-      body: JSON.stringify({ content })
-    }),
-  updateMemoryItem: (projectId: string, itemId: string, content: string) =>
-    json<MemoryItem>(
-      `/api/projects/${pid(projectId)}/memory/items/${pid(itemId)}`,
-      {
-        method: 'PUT',
-        body: JSON.stringify({ content })
-      }
+  // Memory — project-scoped items. 400s when the project has memory off.
+  // The vector card renders load failures itself (a misconfigured vector
+  // backend is a legible state, not a transient error), so it passes
+  // `{ silent: true }` to keep the global toast out of it.
+  listMemoryItems: (projectId: string, opts?: ApiCallOpts) =>
+    json<MemoryItem[]>(
+      `/api/projects/${pid(projectId)}/memory/items`,
+      {},
+      opts
     ),
   deleteMemoryItem: (projectId: string, itemId: string) =>
     json<void>(`/api/projects/${pid(projectId)}/memory/items/${pid(itemId)}`, {
       method: 'DELETE'
+    }),
+  // Memory health: resolved embedder identity, why vector memory is unusable
+  // (machine-readable code), last background-ingest outcome.
+  getMemoryStatus: (projectId: string, opts?: ApiCallOpts) =>
+    json<MemoryStatus>(
+      `/api/projects/${pid(projectId)}/memory/status`,
+      {},
+      opts
+    ),
+  // Start the vector store over with the current embedder (the remedy for an
+  // embedder mismatch); the old store is moved aside, never deleted.
+  rebuildMemory: (projectId: string) =>
+    json<MemoryStatus>(`/api/projects/${pid(projectId)}/memory/rebuild`, {
+      method: 'POST'
+    }),
+
+  // Memory as ONE markdown document — file backend only (vector rejects with
+  // 400). Same store as the item endpoints above, viewed wholesale.
+  getMemoryDoc: (projectId: string, opts?: ApiCallOpts) =>
+    json<MemoryDoc>(`/api/projects/${pid(projectId)}/memory/doc`, {}, opts),
+  putMemoryDoc: (projectId: string, content: string) =>
+    json<MemoryDoc>(`/api/projects/${pid(projectId)}/memory/doc`, {
+      method: 'PUT',
+      body: JSON.stringify({ content })
     }),
 
   // Workspace files
@@ -511,4 +543,23 @@ export const api = {
   // with a turn in flight (drives the sidebar running spinners).
   postPresence: () =>
     json<{ running: string[] }>('/api/presence', { method: 'POST' })
+}
+
+/**
+ * Turn an API failure inside a route loader into a thrown `Response`.
+ *
+ * A raw `ApiError` cannot survive the SSR boundary: React Router serializes a
+ * loader error to the client as a plain Error, dropping both the class and the
+ * `status`. The error page would then render 404 on the server and "unexpected
+ * error" after hydration — a visible downgrade. A thrown Response carries its
+ * status across intact, so both sides agree.
+ */
+export async function orThrow<T>(promise: Promise<T>): Promise<T> {
+  try {
+    return await promise
+  } catch (err) {
+    if (err instanceof ApiError)
+      throw new Response(err.message, { status: err.status })
+    throw err
+  }
 }

@@ -69,6 +69,8 @@ export type StepKind =
   | "terminal"
   | "tool_call"
   | "skill_load"
+  | "skill_list"
+  | "skill_manage"
   | "file_read"
   | "file_write"
   | "file_edit"
@@ -411,6 +413,20 @@ function appendTaskSnapshot(
  *   auth card already tells the story). */
 function appendStepPart(parts: AgentPart[], meta: Record<string, unknown>): void {
   const isRunning = meta.status === "running";
+  // Paths this step just wrote, handed to the workspace listeners so a freshly
+  // written file is merged into the live file set immediately. Without them the
+  // card renders against the PREVIOUS set, which already covers the directory —
+  // and "covered directory, path absent" reads as deleted, so the card flashed
+  // "this file was deleted" until the refetch landed.
+  const writtenPaths = (): string[] => {
+    const multi = Array.isArray(meta.paths)
+      ? (meta.paths as unknown[]).map(String).filter(Boolean)
+      : [];
+    if (multi.length > 0) return multi;
+    const single = String(meta.path ?? "");
+    return single ? [single] : [];
+  };
+  const notifyWorkspace = () => dispatchWorkspaceChanged(writtenPaths());
   // Live-card merge by call_id: a tool's "running" card (emitted on
   // tool_call_started) is replaced IN PLACE by its completed / interrupted step
   // (same call_id) — so a slow tool shows an immediate "executing" card that
@@ -421,13 +437,11 @@ function appendStepPart(parts: AgentPart[], meta: Record<string, unknown>): void
     for (let i = parts.length - 1; i >= 0; i--) {
       const p = parts[i];
       if (p.kind === "step" && String(p.step.meta.call_id ?? "") === callId) {
-        // A rejected authorization keeps its card; an errored result must not
-        // overwrite the "rejected" story.
-        if (
-          p.step.meta.kind === "authorization" &&
-          p.step.meta.state === "rejected" &&
-          meta.status === "error"
-        ) {
+        // A rejected ask keeps its card; an errored result must not overwrite
+        // the "rejected" story. Keyed on `state`, not on the card kind: a shell
+        // ask renders as its own terminal card (backend _AUTH_INLINE_KINDS), so
+        // the rejection can live on any step kind.
+        if (p.step.meta.state === "rejected" && meta.status === "error") {
           return;
         }
         parts[i] = { kind: "step", step: { kind: meta.kind as StepKind, meta } };
@@ -435,28 +449,30 @@ function appendStepPart(parts: AgentPart[], meta: Record<string, unknown>): void
           !isRunning &&
           (meta.kind === "file_write" || meta.kind === "file_edit")
         )
-          dispatchWorkspaceChanged();
+          notifyWorkspace();
         return;
       }
     }
   }
   // Fallback for buffers/history without call_id: continue an authorization card
-  // by tool_name when the tool result arrives.
+  // by tool_name when the tool result arrives. `tool_name` is stamped only on
+  // ask cards, so it identifies one whatever kind it renders as (a shell ask is
+  // a terminal card).
   if (meta.kind !== "authorization") {
     const name = String(meta.tool ?? meta.name ?? "");
     for (let i = parts.length - 1; i >= 0; i--) {
       const p = parts[i];
       if (
         p.kind === "step" &&
-        p.step.kind === "authorization" &&
-        String(p.step.meta.tool_name ?? "") === name
+        String(p.step.meta.tool_name ?? "") === name &&
+        name !== ""
       ) {
         if (p.step.meta.state === "rejected" && meta.status === "error") {
           return; // rejection already shown by the auth card
         }
         parts[i] = { kind: "step", step: { kind: meta.kind as StepKind, meta } };
         if (meta.kind === "file_write" || meta.kind === "file_edit")
-          dispatchWorkspaceChanged();
+          notifyWorkspace();
         return;
       }
     }
@@ -465,7 +481,7 @@ function appendStepPart(parts: AgentPart[], meta: Record<string, unknown>): void
   // Notify workspace when a file is actually WRITTEN (not while still running)
   // so the file list refreshes mid-turn (not waiting for the turn to finish).
   if (!isRunning && (meta.kind === "file_write" || meta.kind === "file_edit")) {
-    dispatchWorkspaceChanged();
+    notifyWorkspace();
   }
 }
 

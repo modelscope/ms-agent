@@ -9,6 +9,8 @@ import {
   useRef,
   useState
 } from 'react'
+import { collectDroppedFiles } from '~/lib/dropFiles'
+import type { DroppedFile } from '~/lib/dropFiles'
 import { useT } from '~/lib/i18n'
 import './FolderTree.css'
 
@@ -99,7 +101,7 @@ export interface FolderTreeActions {
   /** Move/rename `src` to `dest` (both workspace-relative). */
   onMove: (src: string, dest: string) => void
   /** Native OS files dropped onto a folder node (`dir` '' = workspace root). */
-  onUploadTo: (dir: string, files: FileList) => void
+  onUploadTo: (dir: string, files: DroppedFile[]) => void
   /** Batch delete a multi-selection. */
   onDeleteMany: (items: { path: string; isDir: boolean }[]) => void
   /** Batch download (files only; folders are filtered out by the caller). */
@@ -408,13 +410,16 @@ export function FolderTree({
             if (!e.dataTransfer.types.includes('Files')) return
             setDropDir((k) => (k === key ? null : k))
           },
-          onDrop: (e: React.DragEvent) => {
+          onDrop: async (e: React.DragEvent) => {
             if (!e.dataTransfer.types.includes('Files')) return
             e.preventDefault()
             e.stopPropagation()
             setDropDir(null)
-            if (e.dataTransfer.files.length > 0)
-              actions.onUploadTo(dir, e.dataTransfer.files)
+            // Entry-tree walk, not `dataTransfer.files`: a dropped FOLDER is not a
+            // file there (it surfaces as an unreadable directory entry), so
+            // dropping one used to upload a single junk file named after it.
+            const entries = await collectDroppedFiles(e.dataTransfer)
+            if (entries.length > 0) actions.onUploadTo(dir, entries)
           }
         }
       : {}

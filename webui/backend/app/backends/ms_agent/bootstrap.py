@@ -1,6 +1,6 @@
 """ms_agent backend startup: home/env, default project, LLM settings seed.
 
-Runs once at app boot (only when AGENT_BACKEND=ms_agent). Idempotent.
+Runs once at app boot. Idempotent.
 """
 from __future__ import annotations
 
@@ -55,10 +55,16 @@ def _seed_llm_settings(home_dir: str) -> None:
         return  # nothing to seed; rely on framework default + env credentials
     provider = settings.ms_agent_llm_provider or "openai"
     llm: dict = {"provider": provider, "model": model}
-    if settings.openai_api_key:
-        llm["api_key"] = settings.openai_api_key
-    if settings.openai_base_url:
-        llm["base_url"] = settings.openai_base_url
+    # OPENAI_* are OpenAI's credentials, so only apply them when OpenAI is the
+    # provider being seeded. Copying them onto e.g. dashscope pinned the wrong
+    # base_url onto the llm block; leaving them out lets the SDK's
+    # CredentialResolver pick up that provider's own env vars
+    # (DASHSCOPE_API_KEY, DEEPSEEK_API_KEY, …).
+    if provider == "openai":
+        if settings.openai_api_key:
+            llm["api_key"] = settings.openai_api_key
+        if settings.openai_base_url:
+            llm["base_url"] = settings.openai_base_url
     data["llm"] = llm
     data.setdefault("default_model", f"{provider}/{model}")
 

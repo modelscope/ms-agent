@@ -1,100 +1,87 @@
 """Project-scoped memory items.
 
-Memory is gated per-project. Default project never has memory. Each project
-that has `memory_enabled=True` holds a list of content items (no path/filename).
+Memory is gated per-project: every route 404s for an unknown project and 400s
+when the project has `memory_enabled=False`. The default project is not special
+here — it simply ships with memory off.
 """
 
 from fastapi import APIRouter, HTTPException
 
-from app.core import store
 from app.core.envelope import EnvelopeRoute
-from app.core.settings import settings
-from app.schemas.memory import MemoryItem, MemoryItemCreate, MemoryItemUpdate
+from app.schemas.memory import (
+    MemoryDoc,
+    MemoryDocUpdate,
+    MemoryItem,
+    MemoryItemCreate,
+    MemoryItemUpdate,
+    MemoryStatus,
+)
 
 router = APIRouter(prefix="/api/projects/{project_id}/memory", tags=["memory"],
                    route_class=EnvelopeRoute)
 
 
-def _ms() -> bool:
-    return settings.agent_backend == "ms_agent"
+@router.get("/status")
+def get_status(project_id: str) -> MemoryStatus:
+    """Health of the project's memory: the resolved embedder identity, why
+    vector memory is unusable if it is, and the last ingest outcome."""
+    from app.backends.ms_agent import memory
+
+    return memory.get_status(project_id)
 
 
-def _project(project_id: str) -> dict:
-    row = store.projects.get(project_id)
-    if not row:
-        raise HTTPException(404, "project not found")
-    if row["is_default"]:
-        raise HTTPException(400, "default project does not support memory")
-    if not row.get("memory_enabled"):
-        raise HTTPException(400, "memory is disabled for this project")
-    return row
+@router.post("/rebuild")
+async def rebuild(project_id: str) -> MemoryStatus:
+    """Start the vector store over with the current embedder (the remedy for
+    an embedder mismatch). The old store is moved to qdrant.bak-<ts>."""
+    from app.backends.ms_agent import memory
 
-
-def _items(project_id: str) -> list[dict]:
-    return store.memory_files.setdefault(project_id, [])
-
-
-def _find(project_id: str, item_id: str) -> dict | None:
-    for item in _items(project_id):
-        if item["id"] == item_id:
-            return item
-    return None
+    return await memory.rebuild(project_id)
 
 
 @router.get("/items")
-def list_items(project_id: str) -> list[MemoryItem]:
-    if _ms():
-        from app.backends.ms_agent import memory
+async def list_items(project_id: str) -> list[MemoryItem]:
+    from app.backends.ms_agent import memory
 
-        return memory.list_items(project_id)
-    _project(project_id)
-    rows = sorted(_items(project_id), key=lambda x: x.get("updated_at", ""))
-    return [MemoryItem.model_validate(r) for r in rows]
+    return await memory.list_items(project_id)
 
 
 @router.post("/items", status_code=201)
 def create_item(project_id: str, body: MemoryItemCreate) -> MemoryItem:
-    if _ms():
-        from app.backends.ms_agent import memory
+    from app.backends.ms_agent import memory
 
-        return memory.create_item(project_id, body)
-    _project(project_id)
-    row = {
-        "id": store.new_id("mem_"),
-        "project_id": project_id,
-        "content": body.content,
-        "updated_at": store.now(),
-    }
-    _items(project_id).append(row)
-    return MemoryItem.model_validate(row)
+    return memory.create_item(project_id, body)
 
 
 @router.put("/items/{item_id}")
 def update_item(project_id: str, item_id: str,
                 body: MemoryItemUpdate) -> MemoryItem:
-    if _ms():
-        from app.backends.ms_agent import memory
+    from app.backends.ms_agent import memory
 
-        return memory.update_item(project_id, item_id, body)
-    _project(project_id)
-    row = _find(project_id, item_id)
-    if not row:
-        raise HTTPException(404, "memory item not found")
-    row["content"] = body.content
-    row["updated_at"] = store.now()
-    return MemoryItem.model_validate(row)
+    return memory.update_item(project_id, item_id, body)
 
 
 @router.delete("/items/{item_id}", status_code=204)
-def delete_item(project_id: str, item_id: str) -> None:
-    if _ms():
-        from app.backends.ms_agent import memory
+async def delete_item(project_id: str, item_id: str) -> None:
+    from app.backends.ms_agent import memory
 
-        return memory.delete_item(project_id, item_id)
-    _project(project_id)
-    items = _items(project_id)
-    for i, item in enumerate(items):
-        if item["id"] == item_id:
-            items.pop(i)
-            return
-    raise HTTPException(404, "memory item not found")
+    return await memory.delete_item(project_id, item_id)
+
+
+# ── file backend only: memory as one markdown document ─────────────────────
+# `memory_backend="file"` stores memory as a single MEMORY.md the agent reads,
+# so the UI previews/edits it as a document. 400 for vector projects.
+
+
+@router.get("/doc")
+def get_doc(project_id: str) -> MemoryDoc:
+    from app.backends.ms_agent import memory
+
+    return memory.get_doc(project_id)
+
+
+@router.put("/doc")
+def put_doc(project_id: str, body: MemoryDocUpdate) -> MemoryDoc:
+    from app.backends.ms_agent import memory
+
+    return memory.put_doc(project_id, body)

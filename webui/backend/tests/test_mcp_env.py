@@ -8,12 +8,12 @@ from app.backends.ms_agent import mcp_health
 def test_env_files_published_to_environ():
     """settings.py publishes backend/.env + repo-root .env into os.environ
     (key presence only — values are never asserted or printed)."""
-    # AGENT_BACKEND lives in backend/.env; its being loadable proves the
+    # CORS_ORIGINS lives in backend/.env; its being loadable proves the
     # injection ran at import time (conftest imports app.core.settings).
     from app.core.settings import settings
 
-    assert settings.agent_backend  # settings side intact
-    assert "AGENT_BACKEND" in os.environ or "agent_backend" in os.environ
+    assert settings.cors_origins  # settings side intact
+    assert "CORS_ORIGINS" in os.environ or "cors_origins" in os.environ
 
 
 def test_probe_runtime_view_expands_placeholders(monkeypatch):

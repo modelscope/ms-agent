@@ -1,5 +1,9 @@
 import { Input, Radio } from 'antd'
 import { useEffect, useState } from 'react'
+import {
+  MemoryModelConfig,
+  type MemoryModelValue
+} from '~/components/project/MemoryModelConfig'
 import { MsaSwitch } from '~/components/common/MsaSwitch'
 import { MsaTextArea } from '~/components/common/MsaTextArea'
 import { api } from '~/lib/api'
@@ -59,7 +63,7 @@ export default function PersonalizationSettings() {
 
   return (
     <div className="space-y-8">
-      {/* 个性化指令 */}
+      {/* Personalization instructions */}
       <section>
         <div className="mb-3 text-base font-semibold text-msa-text-1">
           {t.personalization.tabInstructions}
@@ -73,7 +77,7 @@ export default function PersonalizationSettings() {
         />
       </section>
 
-      {/* 用户 Profile */}
+      {/* User profile */}
       <section>
         <div className="mb-4 text-base font-semibold text-msa-text-1">
           {t.personalization.tabProfile}
@@ -120,10 +124,13 @@ export default function PersonalizationSettings() {
         </div>
       </section>
 
-      {/* 记忆设置 */}
+      {/* Memory settings */}
       <section>
         <div className="mb-4 text-base font-semibold text-msa-text-1">
           {t.personalization.tabMemory}
+        </div>
+        <div className="-mt-2 mb-4 text-xs text-msa-text-3">
+          {t.personalization.memorySectionDesc}
         </div>
         <div className="space-y-5">
           <div>
@@ -159,6 +166,17 @@ export default function PersonalizationSettings() {
               {t.personalization.memoryBackendDesc}
             </div>
           </div>
+
+          {/* Vector defaults (extraction / embedding / recall) — gated on the
+              default backend: under defaults-only semantics these rows only
+              pre-fill projects created as vector; the modal remains the full
+              per-project surface. */}
+          {settings?.default_memory_backend === 'vector' && settings && (
+            <MemoryModelConfig
+              value={settings as MemoryModelValue}
+              onChange={(patch) => updateSettings(patch)}
+            />
+          )}
         </div>
       </section>
     </div>

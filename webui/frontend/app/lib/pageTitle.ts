@@ -24,7 +24,7 @@ export function metaDict(
 /**
  * Build a document title: context-specific parts first (most specific →
  * least), always suffixed with the product name, e.g.
- * `修复登录 bug · 我的项目 · 魔搭 MS Agent`. Blank parts are dropped, so a
+ * `Fix login bug · My project · MS Agent`. Blank parts are dropped, so a
  * missing project/session name just shortens the title.
  */
 export function pageTitle(dict: Dict, ...parts: (string | undefined)[]): string {

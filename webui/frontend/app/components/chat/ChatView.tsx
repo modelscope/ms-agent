@@ -1,4 +1,4 @@
-import { Button, Drawer } from 'antd'
+import { Button } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router'
 import { ChatBackdrop } from '~/components/chat/ChatBackdrop'
@@ -6,6 +6,7 @@ import { ChatPanel } from '~/components/chat/ChatPanel'
 import type { ChatComposerCtx } from '~/components/chat/ChatPanel'
 import { Composer } from '~/components/common/Composer'
 import { SessionRightRail } from '~/components/session/SessionRightRail'
+import { RailDrawer } from '~/components/common/RailDrawer'
 import { StepDetailRail } from '~/components/messages/StepDetailRail'
 import type { AgentStep } from '~/components/messages/types'
 import { api } from '~/lib/api'
@@ -14,7 +15,7 @@ import { WorkspaceFilesProvider } from '~/lib/workspaceFiles'
 import { useMatchMedia } from '~/lib/useMatchMedia'
 import type { Project } from '~/lib/types'
 import type { AgentMessage } from '~/lib/agentProvider'
-import type { ChatFileRef } from '~/lib/agentProvider'
+import type { ChatFileRef, MessageSegment } from '~/lib/agentProvider'
 import type { SessionPlan, Artifact } from '~/lib/types'
 import WorkspaceIcon from '~/assets/icons/workspace.svg?react'
 
@@ -27,6 +28,9 @@ interface Props {
   autoSubmitMessage?: string
   /** Files attached to the auto-submitted draft (carried from overview). */
   autoSubmitFiles?: ChatFileRef[]
+  /** Ordered text+skill-pill segments of the auto-submitted draft. Present
+   * only when the carried draft used at least one skill pill. */
+  autoSubmitSegments?: MessageSegment[]
   /** History messages to seed the chat with (existing-session detail mode). */
   initialMessages?: AgentMessage[]
   /** Todo plan to seed the pinned plan box on SSR (existing-session mode). */
@@ -43,6 +47,7 @@ export function ChatView({
   sessionId,
   autoSubmitMessage,
   autoSubmitFiles,
+  autoSubmitSegments,
   initialMessages,
   initialPlan,
   initialArtifacts,
@@ -56,6 +61,10 @@ export function ChatView({
   const prefillFiles =
     autoSubmitFiles ??
     (location.state as { prefillFiles?: ChatFileRef[] } | null)?.prefillFiles
+  const prefillSegments =
+    autoSubmitSegments ??
+    (location.state as { prefillSegments?: MessageSegment[] } | null)
+      ?.prefillSegments
 
   // The carried draft lives in the history entry's state, which survives a
   // browser refresh — and ChatPanel's fire-once guard resets on a full reload,
@@ -65,13 +74,27 @@ export function ChatView({
   // this mount, so the auto-submit itself is unaffected.
   useEffect(() => {
     const hs = window.history.state as {
-      usr?: { prefill?: unknown; prefillFiles?: unknown }
+      usr?: {
+        prefill?: unknown
+        prefillFiles?: unknown
+        prefillSegments?: unknown
+      }
     } | null
-    if (hs?.usr?.prefill == null && hs?.usr?.prefillFiles == null) return
+    if (
+      hs?.usr?.prefill == null &&
+      hs?.usr?.prefillFiles == null &&
+      hs?.usr?.prefillSegments == null
+    )
+      return
     window.history.replaceState(
       {
         ...hs,
-        usr: { ...hs.usr, prefill: undefined, prefillFiles: undefined }
+        usr: {
+          ...hs.usr,
+          prefill: undefined,
+          prefillFiles: undefined,
+          prefillSegments: undefined
+        }
       },
       ''
     )
@@ -212,6 +235,18 @@ export function ChatView({
     return () => window.removeEventListener('keydown', closeOnEsc)
   }, [railOpen, railDrawer])
 
+  // Switching conversations resets a STEP-DETAIL rail back to the file
+  // workspace: the detail belonged to a step in the session being left, so it
+  // is meaningless in another chat — but the rail stays OPEN, just showing the
+  // (per-project) workspace instead. Only `detailStep` is cleared; railOpen /
+  // railDrawer are untouched, so there is no close animation. Keyed on the
+  // committed route `sessionId` (not `activeSessionId`), so a brand-new chat
+  // committing its own id isn't treated as a switch.
+  useEffect(() => {
+    setDetailStep(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId])
+
   // If the viewport crosses the xl breakpoint while the rail is open, migrate it
   // between the two presentations instead of leaving a side-by-side panel that
   // crushes the chat column on a now-narrow page: squeezing below xl turns an
@@ -293,6 +328,7 @@ export function ChatView({
       workspaceOpen={railOpen}
       autoSubmitMessage={prefill}
       autoSubmitFiles={prefillFiles}
+      autoSubmitSegments={prefillSegments}
       initialMessages={initialMessages}
       initialPlan={initialPlan}
       initialArtifacts={initialArtifacts}
@@ -362,7 +398,7 @@ export function ChatView({
 
   // Overlay rail (<xl): a right drawer instead of squeezing the narrow page.
   const railDrawerEl = (
-    <Drawer
+    <RailDrawer
       rootClassName="xl:hidden"
       open={railDrawer}
       onClose={closeRail}
@@ -371,13 +407,9 @@ export function ChatView({
         // migration hands the drawer's content off to the side-by-side panel.
         if (!open && !railOpen) setDetailStep(null)
       }}
-      placement="right"
-      size="min(720px, 92vw)"
-      closable={false}
-      styles={{ body: { padding: 0 }, header: { display: 'none' } }}
     >
       {railBody}
-    </Drawer>
+    </RailDrawer>
   )
 
   // New-chat mode: no file workspace, but a clicked step still opens the

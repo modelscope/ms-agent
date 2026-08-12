@@ -1,11 +1,19 @@
-import { Button, Form, Input, Modal, Tooltip } from 'antd'
+import { App, Button, Form, Input, Modal, Radio, Tooltip } from 'antd'
 import type { UploadFile } from 'antd'
 import { useEffect, useRef, useState } from 'react'
 import { api } from '~/lib/api'
 import { dispatchWorkspaceChanged } from '~/lib/events'
+import { collectDroppedFiles } from '~/lib/dropFiles'
 import { useT } from '~/lib/i18n'
-import type { AgentSettings, Project } from '~/lib/types'
+import type { MemoryBackend, Project } from '~/lib/types'
 import UploadIcon from '~/assets/icons/upload.svg?react'
+import {
+  MEMORY_MODEL_DEFAULTS,
+  MemoryModelConfig,
+  memoryModelErrors,
+  type MemoryModelErrors,
+  type MemoryModelValue
+} from './MemoryModelConfig'
 import { MsaSwitch } from '../common/MsaSwitch'
 import { MsaButton } from '../common/MsaButton'
 import CloseIcon from '~/assets/icons/close.svg?react'
@@ -33,9 +41,20 @@ export function NewProjectModal({
   onUpdated
 }: Props) {
   const { t } = useT()
+  const { message } = App.useApp()
   const [form] = Form.useForm<FormValues>()
-  const [settings, setSettings] = useState<AgentSettings | null>(null)
   const [memoryEnabled, setMemoryEnabled] = useState(true)
+  const [memoryBackend, setMemoryBackend] = useState<MemoryBackend>('file')
+  const [memoryModels, setMemoryModels] = useState<MemoryModelValue>(
+    MEMORY_MODEL_DEFAULTS
+  )
+  // Invalid memory-model fields, set on a blocked submit and cleared the moment
+  // the user edits the group (so the red state tracks the current input).
+  const [memoryErrors, setMemoryErrors] = useState<MemoryModelErrors>({})
+  // Editing a project whose memory was ever enabled: the backend is frozen.
+  // Creating always starts unlocked — the lock is applied server-side the
+  // moment the project is saved with memory on.
+  const backendLocked = !!project?.memory_backend_locked
   const [files, setFiles] = useState<UploadFile[]>([])
   const [submitting, setSubmitting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -58,6 +77,15 @@ export function NewProjectModal({
     if (isEditing) {
       // Edit mode: load existing project data
       setMemoryEnabled(project.memory_enabled ?? true)
+      setMemoryBackend(project.memory_backend ?? 'file')
+      setMemoryModels({
+        memory_llm_provider_id: project.memory_llm_provider_id ?? null,
+        memory_llm_model: project.memory_llm_model ?? null,
+        memory_embed_mode: project.memory_embed_mode ?? 'provider',
+        memory_embed_provider_id: project.memory_embed_provider_id ?? null,
+        memory_embed_model: project.memory_embed_model ?? null,
+        memory_recall_top_k: project.memory_recall_top_k ?? null
+      })
       setFiles([])
       form.setFieldsValue({
         name: project.name,
@@ -76,8 +104,16 @@ export function NewProjectModal({
     } else {
       // Create mode: reset form with default settings
       api.getAgentSettings().then((s) => {
-        setSettings(s)
         setMemoryEnabled(s.default_memory_enabled)
+        setMemoryBackend(s.default_memory_backend ?? 'file')
+        setMemoryModels({
+          memory_llm_provider_id: s.memory_llm_provider_id ?? null,
+          memory_llm_model: s.memory_llm_model ?? null,
+          memory_embed_mode: s.memory_embed_mode ?? 'provider',
+          memory_embed_provider_id: s.memory_embed_provider_id ?? null,
+          memory_embed_model: s.memory_embed_model ?? null,
+          memory_recall_top_k: s.memory_recall_top_k ?? null
+        })
         setFiles([])
         form.setFieldsValue({ name: '', instructions: '', local_path: '' })
       })
@@ -86,14 +122,31 @@ export function NewProjectModal({
 
   const submit = async () => {
     const v = await form.validateFields()
+    // The memory-model group is not part of the antd Form, so validate it here.
+    // Only guards the vector backend (the file backend has no such fields).
+    if (memoryBackend === 'vector') {
+      const errs = memoryModelErrors(memoryModels)
+      if (Object.keys(errs).length > 0) {
+        setMemoryErrors(errs)
+        message.error(t.personalization.memoryModelIncomplete)
+        return
+      }
+    }
     setSubmitting(true)
     try {
       if (isEditing) {
         // Update existing project
         const updated = await api.updateProject(project.id, {
           name: v.name,
-          local_path: v.local_path,
-          memory_enabled: memoryEnabled
+          // local_path is deliberately not sent: it is read-only when editing
+          // and the server rejects a change anyway.
+          memory_enabled: memoryEnabled,
+          // Omitted once locked: the server rejects a change, and re-sending
+          // the current value would be a pointless round trip.
+          ...(backendLocked ? {} : { memory_backend: memoryBackend }),
+          // The memory-model group is project-owned; send it whole so the
+          // server replaces the stored copy.
+          ...(memoryBackend === 'vector' ? memoryModels : {})
         })
         await api.putInstruction(`project:${project.id}`, v.instructions.trim())
         if (files.length > 0) {
@@ -119,7 +172,8 @@ export function NewProjectModal({
           name: v.name,
           local_path: v.local_path,
           memory_enabled: memoryEnabled,
-          memory_backend: settings?.default_memory_backend ?? 'file'
+          memory_backend: memoryBackend,
+          ...(memoryBackend === 'vector' ? memoryModels : {})
         })
         if (v.instructions.trim()) {
           await api.putInstruction(`project:${created.id}`, v.instructions)
@@ -161,9 +215,9 @@ export function NewProjectModal({
     >
       <Form form={form} layout="vertical" className="!mt-4">
         <Form.Item
-          label={`${t.projects.nameLabel}：`}
+          label={`${t.projects.nameLabel}`}
           name="name"
-          rules={[{ required: true, message: '' }]}
+          rules={[{ required: true }]}
         >
           <Input placeholder={t.projects.namePlaceholder} autoFocus />
         </Form.Item>
@@ -188,44 +242,9 @@ export function NewProjectModal({
             onDrop={async (e) => {
               e.preventDefault()
               e.stopPropagation()
-              // Use the FileSystem API to traverse dropped folders and extract
-              // individual files with their relative paths preserved.
-              const entries: { file: File; path: string }[] = []
-              const readEntry = async (
-                entry: FileSystemEntry,
-                basePath: string
-              ) => {
-                if (entry.isFile) {
-                  const file = await new Promise<File>((resolve) =>
-                    (entry as FileSystemFileEntry).file(resolve)
-                  )
-                  entries.push({ file, path: basePath + file.name })
-                } else if (entry.isDirectory) {
-                  const reader = (
-                    entry as FileSystemDirectoryEntry
-                  ).createReader()
-                  let batch: FileSystemEntry[] = []
-                  // readEntries is chunked; loop until empty.
-                  do {
-                    batch = await new Promise<FileSystemEntry[]>((resolve) =>
-                      reader.readEntries(resolve)
-                    )
-                    for (const child of batch)
-                      await readEntry(child, basePath + entry.name + '/')
-                  } while (batch.length > 0)
-                }
-              }
-              const items = Array.from(e.dataTransfer.items)
-              for (const item of items) {
-                if (item.kind !== 'file') continue
-                const entry = item.webkitGetAsEntry?.()
-                if (entry) {
-                  await readEntry(entry, '')
-                } else {
-                  const f = item.getAsFile()
-                  if (f) entries.push({ file: f, path: f.name })
-                }
-              }
+              // Folders are walked (see lib/dropFiles): `dataTransfer.files`
+              // would report a dropped directory as one unreadable entry.
+              const entries = await collectDroppedFiles(e.dataTransfer)
               if (entries.length === 0) return
               const dropped = entries.map(({ file, path }) => ({
                 uid: `${path}-${file.lastModified}-${Math.random()}`,
@@ -327,9 +346,29 @@ export function NewProjectModal({
           )}
         </Form.Item>
 
-        <Form.Item label={t.newProject.locationLabel} name="local_path">
-          <Input placeholder={t.newProject.locationPlaceholder} />
+        {/* Project location. Read-only when editing: the directory IS the
+            project's identity and holds all of its data, and nothing moves it on
+            disk, so a changed path would point at a directory without the
+            project's sessions/workspace/memory (the server rejects it too). */}
+        <Form.Item
+          label={t.newProject.locationLabel}
+          name="local_path"
+          className="!mb-0"
+        >
+          <Input
+            placeholder={t.newProject.locationPlaceholder}
+            readOnly={isEditing}
+            disabled={isEditing}
+          />
         </Form.Item>
+        {/* Hint styled like the memory-backend one below rather than antd's
+            `extra`, which renders at the body font size and sits flush against
+            the field. */}
+        <div className="mt-1.5 mb-6 text-xs text-msa-text-3">
+          {isEditing
+            ? t.newProject.locationLockedHint
+            : t.newProject.locationHint}
+        </div>
 
         {/* Memory toggle section */}
         <div className="mb-2">
@@ -342,6 +381,70 @@ export function NewProjectModal({
             </span>
             <MsaSwitch checked={memoryEnabled} onChange={setMemoryEnabled} />
           </div>
+
+          {/* Storage backend — only meaningful with memory on, and frozen once
+              the project has ever had memory enabled (it decides the on-disk
+              layout, so switching later would orphan stored memory). */}
+          <div className="mt-3 flex items-center gap-3">
+            <span
+              className={`text-sm ${
+                memoryEnabled ? 'text-msa-text-2' : 'text-msa-text-disabled'
+              }`}
+            >
+              {t.newProject.memoryBackendLabel}
+            </span>
+            {/* Disabled while memory is off (nothing to store, so the choice is
+                meaningless) and once the backend is frozen.
+
+                Keyed on the LIVE toggle above, never on the SAVED
+                `project.memory_enabled`: the server only accepts a backend change
+                while memory has NEVER been enabled
+                (projects.py::_backend_locked), so gating on the saved value made
+                the control unreachable exactly when it was still changeable.
+                Flipping the switch here re-enables these instantly. */}
+            <Radio.Group
+              value={memoryBackend}
+              disabled={backendLocked || !memoryEnabled}
+              onChange={(e) => setMemoryBackend(e.target.value)}
+            >
+              <Radio value="file">{t.newProject.backendFile}</Radio>
+              <Radio value="vector">{t.newProject.backendVector}</Radio>
+            </Radio.Group>
+          </div>
+          <div className="mt-1.5 text-xs text-msa-text-3">
+            {backendLocked
+              ? t.newProject.memoryBackendLockedHint
+              : t.newProject.memoryBackendHint}
+          </div>
+
+          {/* Vector-only extended config, owned by THIS project (the global
+              settings only pre-filled it at open). */}
+          {memoryBackend === 'vector' && (
+            <div className="mt-4 border-t border-msa-line-1 pt-4">
+              <MemoryModelConfig
+                value={memoryModels}
+                errors={memoryErrors}
+                onChange={(patch) => {
+                  setMemoryModels((cur) => ({ ...cur, ...patch }))
+                  // Any edit invalidates the last submit's error flags.
+                  setMemoryErrors({})
+                }}
+              />
+              {isEditing &&
+                backendLocked &&
+                project?.memory_backend === 'vector' &&
+                (memoryModels.memory_embed_mode !==
+                  (project.memory_embed_mode ?? 'provider') ||
+                  memoryModels.memory_embed_provider_id !==
+                    (project.memory_embed_provider_id ?? null) ||
+                  memoryModels.memory_embed_model !==
+                    (project.memory_embed_model ?? null)) && (
+                  <div className="mt-2 text-xs text-msa-text-danger">
+                    {t.newProject.embedChangeWarn}
+                  </div>
+                )}
+            </div>
+          )}
         </div>
       </Form>
     </Modal>

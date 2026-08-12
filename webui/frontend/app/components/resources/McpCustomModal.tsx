@@ -1,10 +1,10 @@
-import { Form, Input, Modal, Radio, Segmented, message } from 'antd'
+import { App, Form, Input, Modal, Radio, Segmented } from 'antd'
 import { useEffect, useState } from 'react'
 import { CodeEditor } from '~/components/common/CodeEditor'
 import { api } from '~/lib/api'
 import { useT } from '~/lib/i18n'
 import type { Mcp, McpTransport, Scope } from '~/lib/types'
-import { fromMcpServers } from './mcpJson'
+import { fromMcpServers, toMcpServers } from './mcpJson'
 
 interface Props {
   open: boolean
@@ -41,6 +41,7 @@ export function McpCustomModal({
   onSaved
 }: Props) {
   const { t } = useT()
+  const { message } = App.useApp()
   const isEdit = !!editingMcp
   const [tab, setTab] = useState<TabMode>('form')
   const [text, setText] = useState('')
@@ -55,8 +56,11 @@ export function McpCustomModal({
   useEffect(() => {
     if (open) {
       setTab('form')
-      setText('')
       if (editingMcp) {
+        // Both tabs are views of the SAME server, so the JSON one is seeded with
+        // the server's current config — an empty editor would look like there is
+        // nothing to edit, and saving it would wipe the config.
+        setText(JSON.stringify(toMcpServers([editingMcp]), null, 2))
         form.setFieldsValue({
           name: editingMcp.name,
           transport: editingMcp.transport,
@@ -64,6 +68,7 @@ export function McpCustomModal({
           description: editingMcp.description
         })
       } else {
+        setText('')
         form.resetFields()
       }
     }
@@ -96,10 +101,20 @@ export function McpCustomModal({
       onClose()
       return
     }
+    // Editing targets ONE existing server: creating from here would leave the
+    // edited server untouched and silently add a duplicate beside it.
+    if (isEdit && parsed.length > 1) {
+      message.error(t.mcpImport.editSingleOnly)
+      return
+    }
     setSubmitting(true)
     try {
-      for (const m of parsed) {
-        await api.createMcp({ ...m, scope })
+      if (isEdit) {
+        await api.updateMcp(editingMcp!.id, parsed[0])
+      } else {
+        for (const m of parsed) {
+          await api.createMcp({ ...m, scope })
+        }
       }
       onSaved()
     } finally {
@@ -115,7 +130,9 @@ export function McpCustomModal({
       onCancel={onClose}
       title={
         <div className="flex items-center gap-2">
-          <span>{t.mcpImport.customTitle}</span>
+          <span>
+            {isEdit ? t.mcpImport.editTitle : t.mcpImport.customTitle}
+          </span>
           {scopeBadge && (
             <span className="rounded bg-msa-fill-purple px-1.5 py-0.5 text-[10px] text-msa-text-brand1">
               {scopeBadge}
@@ -134,6 +151,8 @@ export function McpCustomModal({
         value={tab}
         onChange={setTab}
         options={[
+          // Neutral labels: these switch the VIEW (form vs raw JSON), and the
+          // modal title already says whether we are adding or editing.
           { value: 'form', label: t.mcpImport.formTab },
           { value: 'json', label: t.mcpImport.jsonTab }
         ]}
@@ -190,16 +209,14 @@ export function McpCustomModal({
         </Form>
       ) : (
         <div className="relative overflow-hidden rounded-md border border-msa-line-1">
-          {!text && (
-            <pre className="pointer-events-none absolute inset-0 z-10 m-0 overflow-hidden whitespace-pre-wrap pl-[24px] pt-px font-mono text-xs leading-[18px] text-msa-text-3 opacity-60">
-              {TEMPLATE}
-            </pre>
-          )}
+          {/* The template hint is passed to monaco (not drawn as an overlay), so
+              it lands on the same baseline/indent as the caret. */}
           <CodeEditor
             value={text}
             onChange={setText}
             language="json"
             height={360}
+            placeholder={TEMPLATE}
           />
         </div>
       )}

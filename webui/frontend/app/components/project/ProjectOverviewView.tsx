@@ -24,9 +24,11 @@ import { SkillTabPanel } from '~/components/project/SkillTabPanel'
 import { ProjectWidgetRail } from '~/components/project/ProjectWidgetRail'
 import { api } from '~/lib/api'
 import { dispatchWorkspaceChanged, useOnWorkspaceChanged } from '~/lib/events'
-import type { ChatFileRef } from '~/lib/agentProvider'
+import type { ChatFileRef, MessageSegment } from '~/lib/agentProvider'
 import { downloadWorkspaceAll, downloadWorkspacePath } from '~/lib/download'
 import { EmptyState } from '~/components/common/EmptyState'
+import { SessionRightRail } from '~/components/session/SessionRightRail'
+import { RailDrawer } from '~/components/common/RailDrawer'
 import { DeferredSkeleton } from '~/components/common/DeferredSkeleton'
 import { useT } from '~/lib/i18n'
 import type { Project, Session, WorkspaceFile } from '~/lib/types'
@@ -42,7 +44,7 @@ import ChatsIcon from '~/assets/icons/recent-chats.svg?react'
 import MediaIcon from '~/assets/icons/media.svg?react'
 import ParamsIcon from '~/assets/icons/params.svg?react'
 import TodoIcon from '~/assets/icons/todo.svg?react'
-import GlobeIcon from '~/assets/files/web.svg?react'
+import GlobeIcon from '~/assets/icons/globe.svg?react'
 import TerminalIcon from '~/assets/icons/terminal.svg?react'
 import FolderIcon from '~/assets/icons/folder.svg?react'
 import DownloadIcon from '~/assets/icons/download.svg?react'
@@ -80,14 +82,22 @@ export function ProjectOverviewView({
     )
   }
 
-  const handleSubmit = async (text: string, files?: ChatFileRef[]) => {
+  const handleSubmit = async (
+    text: string,
+    files?: ChatFileRef[],
+    segments?: MessageSegment[]
+  ) => {
     const session = await api.createSession({
       title: text.slice(0, 60) || 'New chat',
       project_id: project.id,
       preview: text
     })
+    // Carry the composer's FULL submission across the navigation. `segments` is
+    // the ordered text+skill-pill layout: dropping it here downgraded a
+    // "/skill …" first message to plain text, so the skill never ran for a
+    // conversation started from this page (it worked from inside a session).
     navigate(`/projects/${project.id}/sessions/${session.id}`, {
-      state: { prefill: text, prefillFiles: files }
+      state: { prefill: text, prefillFiles: files, prefillSegments: segments }
     })
   }
 
@@ -96,10 +106,24 @@ export function ProjectOverviewView({
   // flow so narrow screens never squeeze or hide it silently).
   const [detailsDrawer, setDetailsDrawer] = useState(false)
 
+  // Clicking a file in the workspace table opens the SAME rail the chat view
+  // uses (tree + preview + editor), rather than a second, weaker preview built
+  // just for this page. `nonce` re-triggers the selection when the same file is
+  // clicked again after closing the drawer.
+  const [openFileReq, setOpenFileReq] = useState<{
+    path: string
+    nonce: number
+  } | null>(null)
+  const [workspaceDrawer, setWorkspaceDrawer] = useState(false)
+  const openWorkspaceFile = (path: string) => {
+    setOpenFileReq((prev) => ({ path, nonce: (prev?.nonce ?? 0) + 1 }))
+    setWorkspaceDrawer(true)
+  }
+
   return (
     <div className="flex h-full min-h-0 rounded-[16px] bg-msa-fill-0 px-4 py-4 md:px-9 md:py-6">
       {/* Main content */}
-      <section className="min-h-0 min-w-0 flex-5">
+      <section className="min-h-0 min-w-0 flex-5 flex-shrink-0">
         <div className="w-full flex flex-col h-full">
           {/* Project title with edit icon */}
           <div className="flex items-center gap-2 mb-[12px]">
@@ -108,7 +132,7 @@ export function ProjectOverviewView({
             </h1>
             {onEditProject && (
               <IconButton
-                icon={<EditIcon />}
+                icon={<EditIcon className="h-4 w-4" />}
                 size="sm"
                 variant="filled"
                 onClick={() => onEditProject(project)}
@@ -118,7 +142,7 @@ export function ProjectOverviewView({
             <Tooltip title={t.projectDetail.detailsPanel}>
               <IconButton
                 className="ml-auto lg:hidden"
-                icon={<DetailsIcon />}
+                icon={<DetailsIcon className="h-4 w-4" />}
                 size="sm"
                 variant="filled"
                 onClick={() => setDetailsDrawer(true)}
@@ -187,7 +211,12 @@ export function ProjectOverviewView({
                       {t.projectDetail.tabWorkspace}
                     </span>
                   ),
-                  children: <WorkspacePanel project={project} />
+                  children: (
+                    <WorkspacePanel
+                      project={project}
+                      onOpenFile={openWorkspaceFile}
+                    />
+                  )
                 },
                 {
                   key: 'mcps',
@@ -222,7 +251,7 @@ export function ProjectOverviewView({
       </section>
 
       {/* Right widget rail — large screen only, no divider */}
-      <div className="hidden flex-3 ml-[20px] lg:block">
+      <div className="hidden flex-3 w-0 ml-[20px] lg:block">
         <ProjectWidgetRail project={project} />
       </div>
 
@@ -238,6 +267,24 @@ export function ProjectOverviewView({
       >
         <ProjectWidgetRail project={project} />
       </Drawer>
+
+      {/* Workspace file preview — the chat view's rail in the shared overlay
+          shell (RailDrawer). Wider than the chat's version: this page has no
+          conversation to keep visible behind it, so the tree + preview split
+          gets more room. */}
+      <RailDrawer
+        open={workspaceDrawer}
+        onClose={() => setWorkspaceDrawer(false)}
+        size="min(1100px, 94vw)"
+        destroyOnHidden
+      >
+        <SessionRightRail
+          project={project}
+          active={workspaceDrawer}
+          openFile={openFileReq ?? undefined}
+          onClose={() => setWorkspaceDrawer(false)}
+        />
+      </RailDrawer>
     </div>
   )
 }
@@ -347,7 +394,14 @@ function RecentChats({
 
 /* ─── Workspace Panel ──────────────────────────────── */
 
-function WorkspacePanel({ project }: { project: Project }) {
+function WorkspacePanel({
+  project,
+  onOpenFile
+}: {
+  project: Project
+  /** Preview a file in the workspace rail drawer. */
+  onOpenFile: (path: string) => void
+}) {
   // Drives the add-file caret flip (antd Dropdown owns the panel).
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const { t } = useT()
@@ -524,7 +578,7 @@ function WorkspacePanel({ project }: { project: Project }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex h-full min-h-0 flex-col">
       {/* Hidden file inputs */}
       <input
         ref={fileInputRef}
@@ -547,7 +601,7 @@ function WorkspacePanel({ project }: { project: Project }) {
       />
 
       {files === null ? (
-        <DeferredSkeleton className="rounded-xl border border-msa-line-1 overflow-hidden">
+        <DeferredSkeleton className="min-h-0 flex-1 rounded-xl border border-msa-line-1 overflow-hidden">
           {/* Info bar — mirrors the real workspace info bar */}
           <div className="flex items-center justify-between px-5 py-3.5 bg-msa-fill-2 border-b border-msa-line-1">
             <Skeleton.Input active size="small" style={{ width: 180 }} />
@@ -571,9 +625,9 @@ function WorkspacePanel({ project }: { project: Project }) {
           ))}
         </DeferredSkeleton>
       ) : files.length > 0 ? (
-        <div className="rounded-xl border border-msa-line-1 overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-msa-line-1 overflow-hidden">
           {/* Info bar */}
-          <div className="flex items-center justify-between px-5 py-3.5 bg-msa-fill-2 border-b border-msa-line-1">
+          <div className="flex shrink-0 items-center justify-between px-5 py-3.5 bg-msa-fill-2 border-b border-msa-line-1">
             <span className="text-sm text-msa-text-3">
               {t.workspace.lastEdited}
               {lastEdited && formatDate(lastEdited)}
@@ -615,7 +669,7 @@ function WorkspacePanel({ project }: { project: Project }) {
 
           {/* Breadcrumb */}
           {currentPath && (
-            <div className="flex items-center gap-1.5 px-5 py-2.5 text-sm border-b border-msa-line-1">
+            <div className="flex shrink-0 items-center gap-1.5 px-5 py-2.5 text-sm border-b border-msa-line-1">
               <button
                 type="button"
                 className="text-msa-text-brand1 hover:underline bg-transparent border-none cursor-pointer p-0"
@@ -642,122 +696,134 @@ function WorkspacePanel({ project }: { project: Project }) {
             </div>
           )}
 
-          {/* File table */}
-          <Table
-            dataSource={visibleFiles}
-            rowKey="path"
-            showHeader={false}
-            pagination={false}
-            size="middle"
-            className="pov-table-no-last-border"
-            locale={{
-              emptyText: (
-                <EmptyState size="sm" description={t.workspace.empty} />
-              )
-            }}
-            columns={[
-              {
-                dataIndex: 'path',
-                render: (_: string, record: WorkspaceFile) => {
-                  const displayName = record.path.slice(currentPath.length)
-                  return (
-                    <span className="flex items-center gap-3">
-                      {record.kind === 'folder' ? (
-                        <FolderIcon className="h-4 w-4" />
-                      ) : (
-                        <FileTypeIcon name={displayName} className="h-4 w-4" />
-                      )}
-                      {record.kind === 'folder' ? (
-                        <button
-                          type="button"
-                          className="text-sm text-msa-text-1 hover:text-msa-text-brand1 bg-transparent border-none cursor-pointer p-0 text-left"
-                          onClick={() => setCurrentPath(record.path + '/')}
-                        >
-                          {displayName}
-                        </button>
-                      ) : (
-                        <span className="text-sm text-msa-text-1">
-                          {displayName}
-                        </span>
-                      )}
+          {/* File table (only this area scrolls; info bar + breadcrumb stay
+              fixed above it) */}
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <Table
+              dataSource={visibleFiles}
+              rowKey="path"
+              showHeader={false}
+              pagination={false}
+              size="middle"
+              className="pov-table-no-last-border"
+              locale={{
+                emptyText: (
+                  <EmptyState size="sm" description={t.workspace.empty} />
+                )
+              }}
+              columns={[
+                {
+                  dataIndex: 'path',
+                  render: (_: string, record: WorkspaceFile) => {
+                    const displayName = record.path.slice(currentPath.length)
+                    return (
+                      <span className="flex items-center gap-3">
+                        {record.kind === 'folder' ? (
+                          <FolderIcon className="h-4 w-4" />
+                        ) : (
+                          <FileTypeIcon
+                            name={displayName}
+                            className="h-4 w-4"
+                          />
+                        )}
+                        {record.kind === 'folder' ? (
+                          <button
+                            type="button"
+                            className="text-sm text-msa-text-1 hover:text-msa-text-brand1 bg-transparent border-none cursor-pointer p-0 text-left"
+                            onClick={() => setCurrentPath(record.path + '/')}
+                          >
+                            {displayName}
+                          </button>
+                        ) : (
+                          /* Same affordance as a folder row: a file opens its
+                             preview instead of navigating into it. */
+                          <button
+                            type="button"
+                            className="text-sm text-msa-text-1 hover:text-msa-text-brand1 bg-transparent border-none cursor-pointer p-0 text-left"
+                            onClick={() => onOpenFile(record.path)}
+                          >
+                            {displayName}
+                          </button>
+                        )}
+                      </span>
+                    )
+                  }
+                },
+                {
+                  dataIndex: 'size',
+                  width: 100,
+                  render: (size: number) => (
+                    <span className="text-sm text-msa-text-1">
+                      {formatSize(size)}
                     </span>
                   )
-                }
-              },
-              {
-                dataIndex: 'size',
-                width: 100,
-                render: (size: number) => (
-                  <span className="text-sm text-msa-text-1">
-                    {formatSize(size)}
-                  </span>
-                )
-              },
-              {
-                dataIndex: 'updated_at',
-                width: 140,
-                render: (date: string) => (
-                  <span className="text-sm text-msa-text-3">
-                    {getRelativeTime(date, t)}
-                  </span>
-                )
-              },
-              {
-                key: 'actions',
-                width: 120,
-                render: (_: unknown, record: WorkspaceFile) => (
-                  <Space size={16}>
-                    <button
-                      type="button"
-                      className="text-sm text-msa-text-brand1 hover:underline bg-transparent border-none cursor-pointer p-0"
-                      onClick={() => handleDownload(record.path)}
-                    >
-                      {t.workspace.download}
-                    </button>
-                    <Popconfirm
-                      title={`${t.workspace.deleteConfirm}${record.kind === 'folder' ? t.workspace.folderLabel : t.workspace.fileLabel} ${record.path.slice(currentPath.length)}?`}
-                      onConfirm={async () => {
-                        if (record.kind === 'folder') {
-                          // Delete all files under this folder
-                          const prefix = record.path + '/'
-                          const children = (files ?? []).filter((f) =>
-                            f.path.startsWith(prefix)
-                          )
-                          await Promise.all(
-                            children.map((f) =>
-                              api
-                                .deleteWorkspaceFile(project.id, f.path, {
-                                  silent: true
-                                })
-                                .catch(() => {})
-                            )
-                          )
-                        }
-                        await api
-                          .deleteWorkspaceFile(project.id, record.path)
-                          .catch(() => {})
-                        dispatchWorkspaceChanged()
-                      }}
-                      okText={t.workspace.delete}
-                      cancelText={t.workspace.cancel}
-                    >
+                },
+                {
+                  dataIndex: 'updated_at',
+                  width: 140,
+                  render: (date: string) => (
+                    <span className="text-sm text-msa-text-3">
+                      {getRelativeTime(date, t)}
+                    </span>
+                  )
+                },
+                {
+                  key: 'actions',
+                  width: 120,
+                  render: (_: unknown, record: WorkspaceFile) => (
+                    <Space size={16}>
                       <button
                         type="button"
                         className="text-sm text-msa-text-brand1 hover:underline bg-transparent border-none cursor-pointer p-0"
+                        onClick={() => handleDownload(record.path)}
                       >
-                        {t.workspace.delete}
+                        {t.workspace.download}
                       </button>
-                    </Popconfirm>
-                  </Space>
-                )
-              }
-            ]}
-          />
+                      <Popconfirm
+                        title={`${t.workspace.deleteConfirm}${record.kind === 'folder' ? t.workspace.folderLabel : t.workspace.fileLabel} ${record.path.slice(currentPath.length)}?`}
+                        onConfirm={async () => {
+                          if (record.kind === 'folder') {
+                            // Delete all files under this folder
+                            const prefix = record.path + '/'
+                            const children = (files ?? []).filter((f) =>
+                              f.path.startsWith(prefix)
+                            )
+                            await Promise.all(
+                              children.map((f) =>
+                                api
+                                  .deleteWorkspaceFile(project.id, f.path, {
+                                    silent: true
+                                  })
+                                  .catch(() => {})
+                              )
+                            )
+                          }
+                          await api
+                            .deleteWorkspaceFile(project.id, record.path)
+                            .catch(() => {})
+                          dispatchWorkspaceChanged()
+                        }}
+                        okText={t.workspace.delete}
+                        cancelText={t.workspace.cancel}
+                      >
+                        <button
+                          type="button"
+                          className="text-sm text-msa-text-brand1 hover:underline bg-transparent border-none cursor-pointer p-0"
+                        >
+                          {t.workspace.delete}
+                        </button>
+                      </Popconfirm>
+                    </Space>
+                  )
+                }
+              ]}
+            />
+          </div>
         </div>
       ) : (
-        <div className="rounded-xl border border-msa-line-1 overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-msa-line-1 overflow-hidden">
           {/* Info bar */}
-          <div className="flex items-center justify-between px-5 py-3.5 bg-msa-fill-2 border-b border-msa-line-1">
+          <div className="flex shrink-0 items-center justify-between px-5 py-3.5 bg-msa-fill-2 border-b border-msa-line-1">
             <span className="text-sm text-msa-text-3" />
             <Space size={12}>
               <Tooltip title={t.workspace.refresh}>
@@ -784,7 +850,7 @@ function WorkspacePanel({ project }: { project: Project }) {
               </Dropdown>
             </Space>
           </div>
-          <div className="py-16">
+          <div className="flex min-h-0 flex-1 items-center justify-center py-16">
             <EmptyState size="lg" description={t.workspace.empty} />
           </div>
         </div>

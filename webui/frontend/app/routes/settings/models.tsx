@@ -97,6 +97,17 @@ export default function ModelsSettings() {
     [models, settings?.default_provider_id]
   )
 
+  // The settings pointer survives deleting the model it names, so it can address
+  // a model that no longer exists. Resolve it against the options and treat an
+  // unresolvable pointer as "nothing selected".
+  const resolvedDefaultModelId = useMemo(
+    () =>
+      defaultModelOptions.some((o) => o.value === settings?.default_model_id)
+        ? (settings?.default_model_id ?? undefined)
+        : undefined,
+    [defaultModelOptions, settings?.default_model_id]
+  )
+
   return (
     <div className="flex h-full flex-col">
       {/* Default model picker */}
@@ -126,7 +137,12 @@ export default function ModelsSettings() {
               {t.settings.model}
             </div>
             <Select
-              value={settings?.default_model_id ?? undefined}
+              // Only show a value the options can label. The active model can
+              // point at a DELETED model (settings keeps the pointer), and antd
+              // then renders the raw value — a base64 model id — as the label.
+              // Falling back to the placeholder says "nothing selected", which is
+              // what an unresolvable pointer means.
+              value={resolvedDefaultModelId}
               onChange={(v) => updateSettings({ default_model_id: v })}
               options={defaultModelOptions}
               className="w-full"

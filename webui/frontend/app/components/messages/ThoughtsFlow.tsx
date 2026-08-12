@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useT } from '~/lib/i18n'
+import { Markdown } from '~/components/common/Markdown'
 import ThinkingIcon from '~/assets/icons/thinking.svg?react'
 import ArrowDownIcon from '~/assets/icons/arrow-down.svg?react'
+import './ThoughtsFlow.css'
 
 /** Format elapsed seconds as "Ns" (< 60s) or "Nm Ns" (per the design). */
 function formatDuration(seconds: number): string {
@@ -63,15 +65,14 @@ export function ThoughtsFlow({
 
   // Finished → the reported duration; live → the ticking counter.
   //
-  // A duration of 0 is treated as "none": the SDK rounds the thinking time to
-  // whole seconds, so a sub-second block reports 0 — and a block cut short by
-  // Stop reports nothing at all (its end callback never runs, and history
-  // carries no start time). Rendering "0s" in the first case but nothing in the
-  // second made the label flicker from "0s" to blank when the canonical history
-  // replaced the live turn. "0s" carries no information anyway, so both cases
-  // now show the bare label.
-  const reported = duration != null && duration > 0 ? duration : undefined
-  const shown = isDone ? reported : elapsed
+  // `duration` is in WHOLE SECONDS and 0 is a real value: the SDK rounds down,
+  // so any sub-second block legitimately reports 0. Only `null`/absent means
+  // "unknown" — a block cut short by Stop never runs its end callback, and the
+  // replayed row then carries no duration at all (see `_history_step`, which
+  // passes the number through and only falls back to None when the field is
+  // missing). Suppressing 0 as if it were unknown hid the time on every quick
+  // thought, which is most of them.
+  const shown = isDone ? (duration ?? undefined) : elapsed
   const timing = shown != null ? ` ${formatDuration(shown)}` : ''
   const header = isDone
     ? `${t.chat.thoughts}${timing}`
@@ -108,8 +109,12 @@ export function ThoughtsFlow({
         }`}
       >
         <div className="overflow-hidden">
-          <div className="whitespace-pre-wrap pt-1.5 text-sm leading-relaxed text-msa-text-3">
-            {text}
+          {/* Reasoning is model output too (lists, emphasis, code spans, links),
+              so it goes through the shared Markdown renderer rather than being
+              dumped as pre-wrapped plain text. `streaming` while the block is
+              still open, so partial syntax isn't parsed as broken markup. */}
+          <div className="tf-reasoning pt-1.5 leading-relaxed text-msa-text-3">
+            <Markdown content={text} streaming={!isDone} />
           </div>
         </div>
       </div>

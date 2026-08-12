@@ -17,6 +17,18 @@ export interface Project {
   is_default: boolean
   memory_enabled: boolean
   memory_backend: MemoryBackend
+  /** True once memory has been saved as enabled at least once: the backend
+   * choice is frozen from then on (it decides the on-disk storage layout).
+   * Toggling `memory_enabled` itself stays allowed. */
+  memory_backend_locked: boolean
+  /** Project-owned memory-model group (materialized from global defaults at
+   * creation; global changes never touch existing projects). */
+  memory_llm_provider_id: string | null
+  memory_llm_model: string | null
+  memory_embed_mode: 'provider' | 'local'
+  memory_embed_provider_id: string | null
+  memory_embed_model: string | null
+  memory_recall_top_k: number | null
   mcp_auto_attach: boolean
   skill_auto_attach: boolean
   permission_mode: PermissionMode
@@ -147,6 +159,52 @@ export interface MemoryItem {
   updated_at: string
 }
 
+/** The whole file-backend memory document (`MEMORY.md`). Only meaningful when
+ * `memory_backend === 'file'`, where memory IS one markdown file: the UI
+ * previews and edits it as a document instead of line-by-line items. */
+export interface MemoryDoc {
+  project_id: string
+  content: string
+  updated_at: string
+}
+
+/** Which embedding model a vector project's store runs on. */
+export interface MemoryEmbedderInfo {
+  mode: 'provider' | 'local'
+  provider: string | null
+  model: string | null
+  dimension: number | null
+  /** Set when the default resolution had to fall back (e.g. the conversation
+   * provider serves no embeddings) — shown verbatim to explain the choice. */
+  fallback_reason: string | null
+}
+
+/** Why vector memory is unusable right now; `code` picks the remedy the UI
+ * offers (a rebuild button for `embedder_mismatch`, an install hint for
+ * `local_missing`). */
+export interface MemoryErrorInfo {
+  code: 'embedder_mismatch' | 'embed_unavailable' | 'local_missing' | string
+  message: string
+}
+
+/** Last background-ingest outcome of the live runtime. */
+export interface MemoryIngestInfo {
+  state: 'idle' | 'scheduled' | 'running' | 'ok' | 'error' | string
+  at: string | null
+  count: number | null
+  error: string | null
+  pending: number
+}
+
+export interface MemoryStatus {
+  project_id: string
+  backend: 'file' | 'vector'
+  embedder: MemoryEmbedderInfo | null
+  error: MemoryErrorInfo | null
+  ingest: MemoryIngestInfo | null
+  local_embed_available: boolean
+}
+
 export interface WorkspaceFile {
   project_id: string
   path: string
@@ -203,6 +261,14 @@ export interface AgentSettings {
   default_model_id: string | null
   default_memory_enabled: boolean
   default_memory_backend: MemoryBackend
+  /** Vector-memory model choices. All null = follow the conversation model;
+   * explicit values pin extraction / embeddings independently of chat. */
+  memory_llm_provider_id: string | null
+  memory_llm_model: string | null
+  memory_embed_mode: 'provider' | 'local'
+  memory_embed_provider_id: string | null
+  memory_embed_model: string | null
+  memory_recall_top_k: number | null
   global_mcp_auto_attach: boolean
   global_skill_auto_attach: boolean
 }

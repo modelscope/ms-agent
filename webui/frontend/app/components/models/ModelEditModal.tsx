@@ -139,6 +139,10 @@ export function ModelEditModal({
       destroyOnHidden
       width={480}
     >
+      {/* messageVariables on each required item: the labels are JSX nodes (text +
+          red asterisk, since requiredMark is off), which antd can't interpolate
+          into its built-in validate messages — it would fall back to the raw
+          field path. Feeding it the label TEXT keeps antd's own wording. */}
       <Form form={form} layout="vertical" requiredMark={false}>
         <Form.Item
           label={
@@ -148,6 +152,7 @@ export function ModelEditModal({
             </span>
           }
           name="provider_id"
+          messageVariables={{ label: t.modelsAdmin.apiProviderLabel }}
           rules={[{ required: true }]}
         >
           <Select
@@ -166,6 +171,7 @@ export function ModelEditModal({
             </span>
           }
           name="name"
+          messageVariables={{ label: t.modelsAdmin.modelName }}
           rules={[{ required: true, max: 160 }]}
           extra={
             <span className="text-[11px] text-slate-400">

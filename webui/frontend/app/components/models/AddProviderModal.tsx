@@ -119,6 +119,10 @@ export function AddProviderModal({ open, provider, onClose, onSaved }: Props) {
       destroyOnHidden
       width={520}
     >
+      {/* messageVariables on each required item: the labels are JSX nodes (text +
+          red asterisk, since requiredMark is off), which antd can't interpolate
+          into its built-in validate messages — it would fall back to the raw
+          field path. Feeding it the label TEXT keeps antd's own wording. */}
       <Form form={form} layout="vertical" requiredMark={false}>
         <Form.Item
           label={
@@ -128,7 +132,19 @@ export function AddProviderModal({ open, provider, onClose, onSaved }: Props) {
             </span>
           }
           name="id"
-          rules={[{ required: true, pattern: /^[a-z0-9][a-z0-9_-]{0,40}$/ }]}
+          messageVariables={{ label: t.modelsAdmin.providerName }}
+          rules={[
+            // Two SEPARATE rules on purpose: one rule object carrying both
+            // `required` and `pattern` would report the pattern's message for an
+            // empty field too, since a message belongs to the rule, not the check.
+            { required: true },
+            {
+              pattern: /^[a-z0-9][a-z0-9_-]{0,40}$/,
+              // The only custom message here: antd's built-in pattern wording
+              // prints the raw regex at the user.
+              message: t.modelsAdmin.providerIdHint
+            }
+          ]}
           extra={
             <span className="text-[11px] text-slate-400">
               {t.modelsAdmin.providerIdHint}
@@ -145,6 +161,7 @@ export function AddProviderModal({ open, provider, onClose, onSaved }: Props) {
             </span>
           }
           name="name"
+          messageVariables={{ label: t.modelsAdmin.displayName }}
           rules={[{ required: true, max: 80 }]}
         >
           <Input placeholder={t.modelsAdmin.displayNamePlaceholder} />
@@ -159,6 +176,7 @@ export function AddProviderModal({ open, provider, onClose, onSaved }: Props) {
             </span>
           }
           name="protocol"
+          messageVariables={{ label: t.modelsAdmin.protocol }}
           rules={[{ required: true }]}
         >
           <Select

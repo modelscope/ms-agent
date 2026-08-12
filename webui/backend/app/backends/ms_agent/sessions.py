@@ -127,44 +127,68 @@ def _history_step(
         # history doesn't show two identical "rejected" cards.
         if "denied" in str(errored[call_id]).lower():
             return None
-    # Errored/interrupted file steps keep `tool_call` kind so the frontend
-    # renders them with the rich accordion (ToolCallStepCard) showing arguments
-    # and error state, rather than the simplified "已修改" one-liner.
-    if meta.get("status") == "error" and kind in ("file_read", "file_write",
-                                                  "file_edit"):
-        kind = "tool_call"
+    # NOTE: an errored/interrupted file step used to be re-kinded to `tool_call`
+    # here, to get the rich accordion (arguments + error) instead of the
+    # simplified "wrote x" one-liner. The file card renders that accordion itself
+    # now — keeping the file's glyph and "write file {path}" title — so re-kinding
+    # only threw the identity away and replayed "call tool file_system---write_file"
+    # where the live stream shows the file.
     if kind in ("file_read", "file_write",
                 "file_edit") and project is not None:
-        path = str(meta.get("path") or "")
-        if path:
-            try:
-                meta["exists"] = (Path(project.path) / path).is_file()
-            except OSError:
-                meta["exists"] = False
+        # Multi-file steps carry `paths: [...]`; the display `path` is a
+        # comma-joined string that would never resolve. Check each real file
+        # and mark existing only when ALL are present (single-file steps just
+        # check their one `path`).
+        multi = meta.get("paths")
+        try:
+            if isinstance(multi, list) and multi:
+                meta["exists"] = all(
+                    (Path(project.path) / str(p)).is_file() for p in multi
+                )
+            else:
+                path = str(meta.get("path") or "")
+                if path:
+                    meta["exists"] = (Path(project.path) / path).is_file()
+        except OSError:
+            meta["exists"] = False
     return SessionStep(kind=kind, meta=meta)
 
 
-def _permission_step(row: dict) -> SessionStep:
+def _permission_step(row: dict) -> SessionStep | None:
     """Build a replayed (read-only) authorization card from a persisted
-    permission record. Mirrors the live ``chat._permission_step`` meta shape,
-    minus the live-only request_id/session_id (a replayed card is resolved, so
-    it renders its ``state`` and shows no buttons)."""
+    permission record, or None to drop it. Mirrors the live
+    ``chat._permission_step`` meta shape, minus the live-only
+    request_id/session_id (a replayed card is resolved, so it renders its
+    ``state`` and shows no buttons).
+
+    Asks folded into their tool's own card while live (``_AUTH_INLINE_KINDS``,
+    e.g. a shell command) replay the same way, so a rejected command still shows
+    its terminal code block. An APPROVED one is dropped: its tool step replayed
+    right after says the same thing (that is what the live stream ends up
+    showing too, the result card having replaced the ask in place).
+    """
     tool = str(row.get("tool_name") or "")
     args = row.get("arguments") if isinstance(row.get("arguments"),
                                               dict) else {}
     preview = json.dumps(args, ensure_ascii=False)
     if len(preview) > 160:
         preview = preview[:160] + "…"
-    from app.backends.ms_agent.chat import _tool_source
+    from app.backends.ms_agent.chat import _inline_auth_meta, _tool_source
 
-    return SessionStep(kind="authorization",
-                       meta={
-                           "state": str(row.get("state") or "approved"),
-                           "tool_name": tool,
-                           "arguments": args,
-                           "desc": f"{tool} {preview}".strip(),
-                           "source": _tool_source(tool),
-                       })
+    state = str(row.get("state") or "approved")
+    meta = _inline_auth_meta(
+        {
+            "kind": "authorization",
+            "state": state,
+            "tool_name": tool,
+            "arguments": args,
+            "desc": f"{tool} {preview}".strip(),
+            "source": _tool_source(tool),
+        }, tool, args)
+    kind = str(meta.pop("kind"))
+    if kind != "authorization" and state == "approved":
+        return None
+    return SessionStep(kind=kind, meta=meta)
 
 
 def _plan_entries(tc: dict, results: dict[str, str]) -> list | None:
@@ -471,12 +495,14 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
         # Any authorization that never matched a tool step (unusual) still
         # renders, appended in record order so nothing is dropped.
         for rec in pending_perms:
-            parts.append(SessionPart(kind="step", step=_permission_step(rec)))
+            pstep = _permission_step(rec)
+            if pstep is not None:
+                parts.append(SessionPart(kind="step", step=pstep))
         pending_perms = []
         content = "\n\n".join(p.text for p in parts
                               if p.kind == "text" and p.text).strip()
-        if content or any(p.kind in ("step", "thought", "tasks", "interrupted")
-                          for p in parts):
+        if content or any(p.kind in ("step", "thought", "tasks", "interrupted",
+                                     "error") for p in parts):
             messages.append(
                 SessionMessage(role="assistant",
                                content=content,
@@ -518,19 +544,18 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
                 turn_plan_file = pf
             continue
         if row.get("_type") == "error":
-            flush()
-            msg = str(row.get("message") or "")
-            messages.append(
-                SessionMessage(
-                    role="assistant",
-                    content=msg,
-                    parts=[
-                        SessionPart(
-                            kind="error",
-                            text=msg,
-                            recoverable=bool(row.get("recoverable", False)),
-                        )
-                    ],
+            # Accumulate into the CURRENT turn instead of flushing it early.
+            # Flushing here emitted the error as its own message and closed the
+            # turn before the `loop_end` marker (which lands at a later seq) had
+            # been read — so the turn's duration was applied to an already-empty
+            # part list and dropped, and replay showed no "N s" where the live
+            # view had one. Accumulating also matches the live stream, where an
+            # error frame is just another part of the running message.
+            parts.append(
+                SessionPart(
+                    kind="error",
+                    text=str(row.get("message") or ""),
+                    recoverable=bool(row.get("recoverable", False)),
                 ))
             continue
         if row.get("_type") == "permission":
@@ -660,8 +685,10 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
                                                call_id=str(tc.get("id") or ""))
                     if perm is not None:
                         pstep = _permission_step(perm)
-                        pstep.meta["group"] = group_seq
-                        parts.append(SessionPart(kind="step", step=pstep))
+                        if pstep is not None:
+                            pstep.meta["group"] = group_seq
+                            parts.append(
+                                SessionPart(kind="step", step=pstep))
                     step = _history_step(tc, errored, results, durations,
                                          project)
                     if step is not None:
@@ -899,7 +926,7 @@ def list_artifacts(sid: str) -> list[Artifact]:
     live directory scan), so it reflects what the conversation produced
     regardless of what the user later did to those files: a file the agent wrote
     but the user then deleted stays listed as ``deleted=True`` (the design's
-    greyed "已删除" card), and a later user edit does not remove the entry.
+    greyed "deleted" card), and a later user edit does not remove the entry.
 
     v1 only tracks the ``file_system`` write/edit tools, which carry an explicit
     path argument. Files created indirectly by ``code_executor``/shell are not

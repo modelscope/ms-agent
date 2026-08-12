@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 
 from app.backends.ms_agent.config import build_agent
@@ -86,7 +87,7 @@ class QueueEventSink:
     terminal marker by then — the turn_lock guarantees turns don't overlap).
 
     Events are stamped with a monotonic ``_ts`` so replayed reasoning keeps its
-    真实 elapsed time instead of the replay instant.
+    real elapsed time instead of the replay instant.
     """
 
     def __init__(self) -> None:
@@ -149,7 +150,12 @@ def _persisting_permission_handler(sink, session_log_getter):
     approved/rejected state. The record is display-only (filtered out of the LLM
     context by SessionLog). ``session_log_getter`` is called lazily at ask() time
     because the log is created when the agent's run loop starts (after this
-    handler is built)."""
+    handler is built).
+
+    It also ANNOUNCES a refusal (``permission_resolved``): the SDK's ask() returns
+    DENY silently on timeout, so without this the only hint reaching live viewers
+    is the gated call's errored result — the card sat there offering buttons for a
+    decision that had already been made for it."""
     from ms_agent.permission.handler import (
         PermissionAction,
         WebPermissionHandler,
@@ -181,6 +187,19 @@ def _persisting_permission_handler(sink, session_log_getter):
                     })
             except Exception:  # never let persistence break the turn
                 logger.debug("permission record skipped", exc_info=True)
+            if response.action == PermissionAction.DENY:
+                # Announce the refusal NOW. Covers both ways one happens: the
+                # 120s timeout (no client action at all) and a deny clicked in
+                # ANOTHER tab. Carries no request_id — the decision is final, so
+                # the card must render its rejected state, not live buttons. The
+                # frontend merges it onto the ask by call_id.
+                sink.push({
+                    "type": "permission_resolved",
+                    "call_id": str(call_id or ""),
+                    "tool_name": tool_name,
+                    "tool_args": tool_args,
+                    "state": "rejected",
+                })
             return response
 
     return _PersistingWebPermissionHandler(_PermissionEmitter(sink))
@@ -223,7 +242,15 @@ class SessionRuntime:
             mcp_config=mcp_config,
             permission_handler=self.permission_handler,
         )
+        # Last user-driven activity (monotonic). The idle sweeper evicts
+        # runtimes that sat untouched past the TTL — an idle vector project
+        # otherwise pins its embedded qdrant lock and its in-RAM vectors until
+        # the server restarts.
+        self.last_active: float = time.monotonic()
         self.run_task: asyncio.Task = asyncio.create_task(self._drive())
+
+    def touch(self) -> None:
+        self.last_active = time.monotonic()
 
     async def _drive(self) -> None:
         try:
@@ -239,6 +266,7 @@ class SessionRuntime:
             self.sink.push({"type": DRIVER_DONE})
 
     async def enqueue(self, text: str, marker: dict | None = None) -> None:
+        self.touch()
         # Plain string when no marker, so simple consumers/tests stay unchanged.
         await self.input_queue.put((text, marker) if marker else text)
 
@@ -266,16 +294,40 @@ class RuntimeRegistry:
     multi-worker upgrade path is sticky session routing or a dedicated
     agent-runner process."""
 
+    # Idle eviction: a runtime untouched this long is torn down, and when it
+    # was its project's last live runtime the project's shared memory store is
+    # closed too (releasing the embedded qdrant file lock + resident vectors).
+    # Env-overridable for ops / tests (seconds and count). Read at USE time,
+    # not at class definition — this module may be imported before
+    # app.core.settings has published the .env into os.environ.
+    @property
+    def IDLE_TTL_S(self) -> int:
+        return int(os.environ.get("MSA_RUNTIME_IDLE_TTL", 30 * 60))
+
+    @property
+    def SWEEP_INTERVAL_S(self) -> int:
+        return int(os.environ.get("MSA_RUNTIME_SWEEP_INTERVAL", 60))
+
+    # Soft cap on simultaneously live runtimes: beyond it the oldest IDLE ones
+    # are evicted early (in-flight turns are never touched).
+    @property
+    def MAX_RUNTIMES(self) -> int:
+        return int(os.environ.get("MSA_RUNTIME_MAX", 8))
+
     def __init__(self) -> None:
         self._runtimes: dict[str, SessionRuntime] = {}
         self._create_lock = asyncio.Lock()
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._sweeper: asyncio.Task | None = None
 
     # -- running state -------------------------------------------------------
 
     def peek(self, session_id: str) -> "SessionRuntime | None":
         """The live runtime, if any — without building one (for attach)."""
-        return self._runtimes.get(session_id)
+        rt = self._runtimes.get(session_id)
+        if rt is not None:
+            rt.touch()
+        return rt
 
     def is_running(self, session_id: str) -> bool:
         """Whether the session has a turn in flight (live or background)."""
@@ -297,6 +349,7 @@ class RuntimeRegistry:
 
         async with self._create_lock:
             self._loop = asyncio.get_running_loop()  # for cross-thread toggles
+            self._ensure_sweeper()
             rt = self._runtimes.get(session.id)
             # Rebuild on model switch, but never mid-turn: an in-flight turn holds
             # turn_lock, so defer the swap to the next idle turn to avoid cancelling it.
@@ -306,12 +359,81 @@ class RuntimeRegistry:
                 and rt.model_key != model_link.active_model()
             )
             if rt is not None and not rt.run_task.done() and not model_changed:
+                rt.touch()
                 return rt
             if rt is not None:
                 await rt.aclose()
             rt = SessionRuntime(project, session, await self._resolve_mcp(project))
             self._runtimes[session.id] = rt
             return rt
+
+    # -- idle eviction -------------------------------------------------------
+
+    def _ensure_sweeper(self) -> None:
+        if self._sweeper is None or self._sweeper.done():
+            self._sweeper = asyncio.get_running_loop().create_task(
+                self._sweep_loop())
+
+    async def _sweep_loop(self) -> None:
+        while True:
+            await asyncio.sleep(self.SWEEP_INTERVAL_S)
+            try:
+                await self._sweep_once()
+            except Exception:  # noqa: BLE001 - the sweeper must survive
+                logger.warning("runtime sweep failed", exc_info=True)
+
+    async def _sweep_once(self) -> None:
+        now = time.monotonic()
+        idle = [
+            rt for rt in list(self._runtimes.values())
+            if not rt.turn_lock.locked()  # never touch an in-flight turn
+        ]
+        expired = {
+            rt.session.id
+            for rt in idle if now - rt.last_active > self.IDLE_TTL_S
+        }
+        # Over the cap: also evict the oldest idle ones beyond it.
+        overflow = len(self._runtimes) - self.MAX_RUNTIMES
+        if overflow > 0:
+            for rt in sorted(idle, key=lambda r: r.last_active)[:overflow]:
+                expired.add(rt.session.id)
+        for sid in expired:
+            await self._evict(sid)
+
+    async def _evict(self, session_id: str) -> None:
+        async with self._create_lock:
+            rt = self._runtimes.get(session_id)
+            if rt is None or rt.turn_lock.locked():
+                return  # a turn started while we decided; leave it alone
+            self._runtimes.pop(session_id, None)
+        logger.info("evicting idle runtime for session %s", session_id)
+        await rt.aclose()  # cancels the driver; cleanup flushes pending ingest
+        await self._release_project_memory(rt.project)
+
+    async def _release_project_memory(self, project) -> None:
+        """Close the project's shared memory store once its LAST runtime is
+        gone — that is what actually releases the embedded qdrant file lock
+        (per-agent cleanup deliberately never closes shared instances)."""
+        if project is None:  # partial runtimes (tests) have no project
+            return
+        pid = getattr(project, "id", None)
+        if pid is not None and any(
+                getattr(rt.project, "id", None) == pid
+                for rt in self._runtimes.values()):
+            return  # a sibling session still needs the store
+        try:
+            from ms_agent.memory.memory_manager import SharedMemoryManager
+            from ms_agent.project.paths import memory_dir
+
+            close = getattr(SharedMemoryManager, "close_matching", None)
+            if close is None:  # older SDK without the helper
+                return
+            closed = await close(str(memory_dir(project.path)))
+            if closed:
+                logger.info("released shared memory for project %s", pid)
+        except Exception:  # noqa: BLE001 - eviction is best-effort
+            logger.warning("shared memory release failed for %s", pid,
+                           exc_info=True)
 
     async def _resolve_mcp(self, project) -> dict:
         """Resolve enabled MCP servers and probe them (connect+initialize), so an
@@ -422,6 +544,10 @@ class RuntimeRegistry:
                 _seal_interrupted_turn(rt)
             except Exception:  # never let sealing crash the stop
                 logger.debug("seal on interrupt skipped", exc_info=True)
+        # Every removal path must consider releasing the project's shared
+        # memory — a runtime popped here never reaches the idle sweeper, and
+        # without this the store's qdrant lock outlives its last runtime.
+        await self._release_project_memory(getattr(rt, "project", None))
         return True
 
     async def close(self, session_id: str) -> None:
@@ -429,6 +555,7 @@ class RuntimeRegistry:
             rt = self._runtimes.pop(session_id, None)
         if rt is not None:
             await rt.aclose()
+            await self._release_project_memory(getattr(rt, "project", None))
 
     def discard(self, session_id: str) -> None:
         """Sync best-effort stop (for use from sync routes, e.g. session delete):

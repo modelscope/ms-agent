@@ -12,11 +12,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CodeEditor } from '~/components/common/CodeEditor'
 import { EmptyState } from '~/components/common/EmptyState'
 import { FolderTree } from '~/components/common/FolderTree'
+import { languageFor } from '~/lib/editorLanguage'
 import { DeferredSkeleton } from '~/components/common/DeferredSkeleton'
 import type { FolderTreeActions } from '~/components/common/FolderTree'
 import { IconButton } from '~/components/common/IconButton'
 import { api } from '~/lib/api'
 import { dispatchWorkspaceChanged, useOnWorkspaceChanged } from '~/lib/events'
+import { collectDroppedFiles } from '~/lib/dropFiles'
 import { downloadWorkspaceAll, downloadWorkspaceFile } from '~/lib/download'
 import { useT } from '~/lib/i18n'
 import type { Project, WorkspaceFile } from '~/lib/types'
@@ -112,27 +114,6 @@ function toTreeData(node: DirNode): TreeDataNode[] {
   return [...dirs, ...files]
 }
 
-const LANGUAGE_BY_EXT: Record<string, string> = {
-  md: 'markdown',
-  py: 'python',
-  ts: 'typescript',
-  tsx: 'typescript',
-  js: 'javascript',
-  jsx: 'javascript',
-  json: 'json',
-  sh: 'shell',
-  yaml: 'yaml',
-  yml: 'yaml',
-  svg: 'xml',
-  html: 'html',
-  css: 'css',
-  txt: 'plaintext'
-}
-
-function languageFor(path: string): string {
-  const ext = path.split('.').pop()?.toLowerCase() ?? ''
-  return LANGUAGE_BY_EXT[ext] ?? 'plaintext'
-}
 
 type PreviewKind = 'text' | 'image' | 'video' | 'audio' | 'unsupported'
 
@@ -517,14 +498,29 @@ export function SessionRightRail({
   }
 
   const uploadTo = async (dir: string, fileList: FileList) => {
-    const uploads = Array.from(fileList).map((file) =>
+    await uploadEntries(
+      dir,
+      Array.from(fileList).map((file) => ({
+        file,
+        path: file.webkitRelativePath || file.name
+      }))
+    )
+  }
+
+  /** Upload files that already know their relative path — what a folder pick
+   * (webkitRelativePath) or a folder DROP (walked entry tree) both produce, so a
+   * dropped directory lands as its real contents instead of one unreadable
+   * directory "file". */
+  const uploadEntries = async (
+    dir: string,
+    entries: { file: File; path: string }[]
+  ) => {
+    if (entries.length === 0) return
+    const uploads = entries.map(({ file, path }) =>
       api
-        .uploadWorkspaceFile(
-          project.id,
-          file,
-          joinPath(dir, file.webkitRelativePath || file.name),
-          { silent: [409] }
-        )
+        .uploadWorkspaceFile(project.id, file, joinPath(dir, path), {
+          silent: [409]
+        })
         .catch(() => {})
     )
     await Promise.all(uploads)
@@ -602,7 +598,7 @@ export function SessionRightRail({
     onCopyPath: copyPath,
     onDownload: (path) => downloadWorkspaceFile(project.id, path),
     onMove: moveEntry,
-    onUploadTo: uploadTo,
+    onUploadTo: uploadEntries,
     onDeleteMany: deleteMany,
     onDownloadMany: downloadMany,
     onCopyPaths: copyPaths,
@@ -746,11 +742,13 @@ export function SessionRightRail({
                   // Folder nodes handle (and stop) their own drops.
                   if (e.dataTransfer.types.includes('Files')) e.preventDefault()
                 }}
-                onDrop={(e) => {
+                onDrop={async (e) => {
                   if (!e.dataTransfer.types.includes('Files')) return
                   e.preventDefault()
-                  if (e.dataTransfer.files.length > 0)
-                    uploadTo('', e.dataTransfer.files)
+                  // Walk the entry tree: a dropped FOLDER is not in
+                  // `dataTransfer.files` (it appears there as an unreadable
+                  // directory entry), so it used to upload as a 96 B junk file.
+                  uploadEntries('', await collectDroppedFiles(e.dataTransfer))
                 }}
               >
                 {files === null ? (

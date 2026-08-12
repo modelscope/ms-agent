@@ -1,6 +1,8 @@
 import { App, Button, Dropdown, Tooltip, Typography } from 'antd'
 import type { MenuProps } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouteLoaderData } from 'react-router'
+import type { loader as appLoader } from '~/layouts/app'
 import { taskStatusIcon } from '~/components/messages/TaskPlan'
 import IconFolder from '~/assets/icons/folder.svg?react'
 import IconTask from '~/assets/icons/task.svg?react'
@@ -136,6 +138,14 @@ export function Composer({
   const { t } = useT()
   const { message } = App.useApp()
 
+  // Projects/models/providers/settings and the global MCP + Skill lists are
+  // resolved by the app layout's loader, so they are available before the first
+  // render instead of arriving mid-flight and resizing the pill row.
+  const appData = useRouteLoaderData('layouts/app') as
+    | Awaited<ReturnType<typeof appLoader>>
+    | undefined
+  const hasAppData = !!appData
+
   // Prevent SSR hydration flash: fix height until client mount
   const [mounted, setMounted] = useState(false)
   useEffect(() => {
@@ -173,7 +183,7 @@ export function Composer({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [pillsExpanded])
 
-  const [projects, setProjects] = useState<Project[]>([])
+  const [projects, setProjects] = useState<Project[]>(appData?.projects ?? [])
   const [createOpen, setCreateOpen] = useState(false)
   const [pickedProjectId, setPickedProjectId] = useState<string | null>(null)
 
@@ -184,26 +194,26 @@ export function Composer({
     [project, projects, pickedProjectId]
   )
 
-  // null = not loaded yet, so the model pill's panel shows a skeleton instead
-  // of "no models" before the lists arrive.
-  const [models, setModels] = useState<Model[] | null>(null)
-  const [providers, setProviders] = useState<Provider[] | null>(null)
-  const [settings, setSettings] = useState<AgentSettings | null>(null)
-  // Fetch MCP/skill lists (global + project-scoped) directly. No shared
-  // context — each Composer mount fetches fresh data for its project, merged.
-  const [globalMcps, setGlobalMcps] = useState<Mcp[]>([])
-  const [globalSkills, setGlobalSkills] = useState<Skill[]>([])
+  // Toolbar data comes from the app layout's loader, so the pills render their
+  // real labels in the very first paint. Seeding state (rather than reading the
+  // loader on every render) keeps the optimistic updates below working: a model
+  // switch shows immediately without waiting for a revalidation.
+  const [models, setModels] = useState<Model[] | null>(appData?.models ?? null)
+  const [providers, setProviders] = useState<Provider[] | null>(
+    appData?.providers ?? null
+  )
+  const [settings, setSettings] = useState<AgentSettings | null>(
+    appData?.agentSettings ?? null
+  )
+  // Global lists also come from the loader; only the project-scoped halves are
+  // fetched here, since the project can be picked in this component (homepage).
+  const [globalMcps, setGlobalMcps] = useState<Mcp[]>(appData?.globalMcps ?? [])
+  const [globalSkills, setGlobalSkills] = useState<Skill[]>(
+    appData?.globalSkills ?? []
+  )
   const [projectMcps, setProjectMcps] = useState<Mcp[]>([])
   const [projectSkills, setProjectSkills] = useState<Skill[]>([])
   useEffect(() => {
-    api
-      .listMcps('global')
-      .then(setGlobalMcps)
-      .catch(() => setGlobalMcps([]))
-    api
-      .listSkills('global')
-      .then(setGlobalSkills)
-      .catch(() => setGlobalSkills([]))
     if (effectiveProject) {
       const scope: Scope = `project:${effectiveProject.id}`
       api
@@ -259,6 +269,10 @@ export function Composer({
   const hasProjectPicker = !project && !!onProjectChange
 
   useEffect(() => {
+    // Everything here already arrived with the layout loader on the normal
+    // path; this only covers a Composer mounted outside that layout, where
+    // there is no loader data to seed from.
+    if (hasAppData) return
     Promise.all([
       api.listProviders(),
       api.listModels(),
@@ -268,10 +282,18 @@ export function Composer({
       setModels(ms)
       setSettings(s)
     })
+    api
+      .listMcps('global')
+      .then(setGlobalMcps)
+      .catch(() => setGlobalMcps([]))
+    api
+      .listSkills('global')
+      .then(setGlobalSkills)
+      .catch(() => setGlobalSkills([]))
     if (hasProjectPicker) {
       api.listProjects().then(setProjects)
     }
-  }, [hasProjectPicker])
+  }, [hasProjectPicker, hasAppData])
 
   const updateSettings = async (patch: Partial<AgentSettings>) => {
     if (!settings) return
@@ -279,24 +301,26 @@ export function Composer({
     setSettings(next)
   }
 
+  // Slash-command suggestions list EVERY known skill (global + project),
+  // enabled or not. Invoking one with `/` force-enables it for that turn, so
+  // gating the list on `enabled` only hid skills the user could legitimately
+  // reach — unlike the pill's popover, which reports what is currently on.
   const skillSuggestions = useMemo(
     () =>
-      mergedSkills
-        .filter((s) => s.enabled)
-        .map((s) => ({
-          id: s.id,
-          name: s.name,
-          value: `/${s.name}`,
-          label: `/${s.name}`,
-          // One-liner description shown beside the name (same derivation as
-          // SkillCard: first non-heading line of the skill content, which is
-          // the SKILL.md description for discovered/built-in skills).
-          desc:
-            (s.content || '')
-              .split('\n')
-              .map((line) => line.trim())
-              .find((line) => line && !line.startsWith('#')) ?? ''
-        })),
+      mergedSkills.map((s) => ({
+        id: s.id,
+        name: s.name,
+        value: `/${s.name}`,
+        label: `/${s.name}`,
+        // One-liner description shown beside the name (same derivation as
+        // SkillCard: first non-heading line of the skill content, which is
+        // the SKILL.md description for discovered/built-in skills).
+        desc:
+          (s.content || '')
+            .split('\n')
+            .map((line) => line.trim())
+            .find((line) => line && !line.startsWith('#')) ?? ''
+      })),
     [mergedSkills]
   )
 
@@ -475,18 +499,45 @@ export function Composer({
     [effectiveProjectId]
   )
 
+  // Pressing Enter with no usable model has nothing to hover, so the tooltip is
+  // opened programmatically for a moment. Hover keeps working on its own
+  // (uncontrolled `open` would kill that, hence the timer resetting to false).
+  const [modelHintOpen, setModelHintOpen] = useState(false)
+  useEffect(() => {
+    if (!modelHintOpen) return
+    const timer = setTimeout(() => setModelHintOpen(false), 2500)
+    return () => clearTimeout(timer)
+  }, [modelHintOpen])
+
   const hasUploading = files.some((f) => f.status === 'uploading')
   const hasReadyFiles = files.some((f) => f.status === 'done')
+  // No usable model — the settings pointer names a model that is no longer in
+  // the catalog (deleting the active model leaves the pointer behind) or names
+  // nothing at all. The backend would silently fall back to whatever its config
+  // still holds, so the turn "works" while the UI shows no model: block sending
+  // instead and say why. `null` = still loading, which must not block.
+  const modelMissing =
+    models !== null &&
+    settings !== null &&
+    !models.some((m) => m.id === settings.default_model_id)
   // Send is allowed when nothing is still uploading and there is text, a
   // ready file, or a picked skill pill (a bare skill invocation is valid —
   // the backend answers with the skill intro).
   const canSend =
     !hasUploading &&
+    !modelMissing &&
     (!!draft.trim() || hasReadyFiles || pickedSkills.length > 0)
 
   const handleSubmit = (value: string) => {
     const text = value.trim()
     if (hasUploading) return
+    // Enter reaches here without passing the button's disabled state, so the
+    // guard is repeated — and surfaces the same tooltip the button shows, since
+    // a keystroke that silently does nothing reads as a broken composer.
+    if (modelMissing) {
+      setModelHintOpen(true)
+      return
+    }
     const ready = files.filter((f) => f.status === 'done' && f.path)
     if (!text && ready.length === 0 && pickedSkills.length === 0) return
     const refs: ChatFileRef[] = ready.map((f) => ({
@@ -554,31 +605,17 @@ export function Composer({
 
   const projectMenuItems: MenuProps['items'] = hasProjectPicker
     ? [
-        ...(defaultProject
-          ? [
-              {
-                key: defaultProject.id,
-                icon: <FolderIcon className="h-4 w-4" />,
-                label: defaultProject.name,
-                onClick: () => {
-                  setPickedProjectId(defaultProject.id)
-                  onProjectChange?.(defaultProject.id)
-                }
-              },
-              { type: 'divider' as const }
-            ]
-          : []),
-        ...projects
-          .filter((p) => !p.is_default)
-          .map((p) => ({
-            key: p.id,
-            icon: <FolderIcon className="h-4 w-4" />,
-            label: p.name,
-            onClick: () => {
-              setPickedProjectId(p.id)
-              onProjectChange?.(p.id)
-            }
-          })),
+        // One flat list: the default project is listed inline with the rest
+        // instead of being hoisted into its own section above a divider.
+        ...projects.map((p) => ({
+          key: p.id,
+          icon: <FolderIcon className="h-4 w-4" />,
+          label: p.name,
+          onClick: () => {
+            setPickedProjectId(p.id)
+            onProjectChange?.(p.id)
+          }
+        })),
         { type: 'divider' as const },
         {
           key: '__create__',
@@ -1063,7 +1100,19 @@ export function Composer({
                             </Tooltip>
                           </>
                         )}
-                        <Tooltip title={loading ? t.home.stop : t.home.send}>
+                        <Tooltip
+                          // `open` is only forced for the no-model hint (Enter has
+                          // no hover to rely on); otherwise undefined leaves the
+                          // tooltip in its normal hover mode.
+                          open={modelMissing && modelHintOpen ? true : undefined}
+                          title={
+                            loading
+                              ? t.home.stop
+                              : modelMissing
+                                ? t.home.modelRequired
+                                : t.home.send
+                          }
+                        >
                           {loading ? (
                             <IconButton
                               variant="primary"
@@ -1073,12 +1122,21 @@ export function Composer({
                               onClick={() => onCancel?.()}
                             />
                           ) : (
-                            <IconButton
-                              variant="primary"
-                              icon={<SendIcon className="h-4 w-4" />}
-                              onClick={() => handleSubmit(draft)}
-                              disabled={!canSend}
-                            />
+                            // A disabled button fires no pointer events, so the
+                            // wrapper is what the tooltip hovers on — without it
+                            // the "pick a model" hint would be unreachable.
+                            <span
+                              onMouseEnter={() => {
+                                if (modelMissing) setModelHintOpen(true)
+                              }}
+                            >
+                              <IconButton
+                                variant="primary"
+                                icon={<SendIcon className="h-4 w-4" />}
+                                onClick={() => handleSubmit(draft)}
+                                disabled={!canSend}
+                              />
+                            </span>
                           )}
                         </Tooltip>
                       </div>

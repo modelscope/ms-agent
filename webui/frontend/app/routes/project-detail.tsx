@@ -2,7 +2,7 @@ import { useLoaderData, useRevalidator } from 'react-router'
 import { useState } from 'react'
 import { ProjectOverviewView } from '~/components/project/ProjectOverviewView'
 import { NewProjectModal } from '~/components/project/NewProjectModal'
-import { api } from '~/lib/api'
+import { api, orThrow } from '~/lib/api'
 import type { Project } from '~/lib/types'
 import { metaDict, pageTitle } from '~/lib/pageTitle'
 import type { Route } from './+types/project-detail'
@@ -18,7 +18,8 @@ export function meta({ loaderData, matches }: Route.MetaArgs) {
 export async function loader({ params }: Route.LoaderArgs) {
   const projectId = params.projectId as string
   const [project, sessions] = await Promise.all([
-    api.getProject(projectId),
+    // An unknown id must surface as a 404 page, not "unexpected error".
+    orThrow(api.getProject(projectId)),
     api.listSessions(projectId)
   ])
   return { project, sessions }

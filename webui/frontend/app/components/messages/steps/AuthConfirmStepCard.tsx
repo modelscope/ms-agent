@@ -5,8 +5,9 @@ import { api } from '~/lib/api'
 import { useT } from '~/lib/i18n'
 import type { AgentStep } from '~/lib/agentProvider'
 import { InlineCode } from '../InlineCode'
-import AuthorizeIcon from '~/assets/icons/authorize.svg?react'
+import InvokeIcon from '~/assets/icons/invoke.svg?react'
 import ArrowDownIcon from '~/assets/icons/arrow-down.svg?react'
+import SpinnerIcon from '~/assets/icons/generating.svg?react'
 
 type AuthState = 'pending' | 'approved' | 'rejected' | 'cancelled'
 
@@ -43,6 +44,11 @@ export function AuthConfirmStepCard({
   const desc = String(step.meta.desc ?? '')
   const requestId = String(step.meta.request_id ?? '')
   const sessionId = String(step.meta.session_id ?? '')
+
+  // Approved and still waiting for the tool's result step to replace this card:
+  // the header's spinner (in place of the authorize glyph) carries that state, so
+  // resolving the ask doesn't reflow the card the way a footer row would.
+  const executing = state === 'approved' && !!requestId
 
   // Parse "tool_name {args_json}" from desc
   const firstBrace = desc.indexOf('{')
@@ -88,16 +94,28 @@ export function AuthConfirmStepCard({
   }
 
   return (
-    <div className="w-full overflow-hidden rounded-xl border border-msa-line-1 bg-msa-fill-2">
+    <div className="w-full overflow-hidden rounded-xl border border-msa-line-1 bg-msa-fill-1">
       {/* Header */}
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center gap-2 border-none px-3 py-2 text-left transition-colors outline-none cursor-pointer bg-msa-fill-2"
+        className="flex w-full items-center gap-2 border-none px-3 py-2 text-left transition-colors outline-none cursor-pointer bg-msa-fill-1"
       >
-        {/* Its own glyph (check-in-box), not the tool-call wrench: the card asks
-            for a decision, so it must not read as "a tool ran". */}
-        <AuthorizeIcon className="h-4 w-4 shrink-0 text-msa-text-3" />
+        {/* The SAME glyph the finished tool-call card uses: one tool call keeps
+            one identity from the ask through to its result. (It used to switch to
+            an authorize glyph here, whose box outline read as the terminal icon.)
+            Swapped for the spinner once approved — the decision is made, the tool
+            is running. */}
+        {executing ? (
+          <SpinnerIcon
+            aria-hidden
+            className="h-4 w-4 shrink-0 animate-spin text-msa-text-brand1"
+          />
+        ) : (
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center text-msa-text-3">
+            <InvokeIcon className="h-4 w-4" />
+          </span>
+        )}
         <Typography.Text
           className="min-w-0 flex-1 !text-sm !text-msa-text-1"
           ellipsis={{
@@ -115,6 +133,11 @@ export function AuthConfirmStepCard({
           </span>{' '}
           <InlineCode>{toolName}</InlineCode>
         </Typography.Text>
+        {executing && (
+          <span className="shrink-0 text-xs text-msa-text-3">
+            {t.chat.authExecuting}
+          </span>
+        )}
         {state === 'rejected' && (
           <span className="shrink-0 text-xs text-msa-text-3">
             {t.chat.authRejected}
@@ -145,7 +168,7 @@ export function AuthConfirmStepCard({
                 <div className="mb-1 text-xs font-medium text-msa-text-3">
                   {t.chat.detailArguments}
                 </div>
-                <pre className="m-0 max-h-[200px] overflow-y-auto whitespace-pre-wrap break-all rounded-lg bg-msa-fill-1 p-2 font-mono text-xs leading-relaxed text-msa-text-2">
+                <pre className="m-0 max-h-[200px] overflow-y-auto whitespace-pre-wrap break-all rounded-lg bg-msa-fill-0 p-2 font-mono text-xs leading-relaxed text-msa-text-2">
                   {argsFormatted}
                 </pre>
               </div>

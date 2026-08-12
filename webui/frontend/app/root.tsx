@@ -15,11 +15,13 @@ import {
 
 import './app.css'
 import { NProgressHandler } from '~/components/common/NProgressHandler'
-import { type ApiError, registerApiErrorReporter } from '~/lib/api'
+import { ErrorState } from '~/components/common/ErrorState'
+import { ApiError, registerApiErrorReporter } from '~/lib/api'
 import { getDesignTokenStyleContent } from '~/lib/designTokens'
 import { LANG_COOKIE, dictFor, type Lang, LangProvider, useT } from '~/lib/i18n'
 import { getMsaAntdTheme, msaModalProps } from '~/lib/msaTheme'
 import { THEME_COOKIE, type Theme, ThemeProvider, useTheme } from '~/lib/theme'
+import { MsaButton } from './components/common/MsaButton'
 
 interface RootData {
   initialTheme: Theme
@@ -145,24 +147,51 @@ export default function App() {
 
 export function ErrorBoundary() {
   const error = useRouteError()
-  const title = isRouteErrorResponse(error)
-    ? `${error.status} ${error.statusText}`
-    : 'Unexpected error'
-  const detail =
-    isRouteErrorResponse(error) && typeof error.data === 'string'
+  const { t } = useT()
+  const routeError = isRouteErrorResponse(error)
+  // A loader that let an API failure propagate carries the real HTTP status on
+  // the ApiError — without reading it, a missing project/session would show no
+  // status at all when it is plainly a 404.
+  const apiStatus = error instanceof ApiError ? error.status : undefined
+  const status = routeError ? error.status : apiStatus
+  // The status code IS the headline. A client-side exception carries no status,
+  // so it falls back to the error's OWN name (`TypeError`) rather than a phrase
+  // we made up — same principle as the description below.
+  const code = status
+    ? String(status)
+    : error instanceof Error
+      ? error.name
+      : undefined
+  // The server's own message is the explanation — it is the only text that knows
+  // what actually failed. Inventing a per-status sentence here would replace
+  // "project not found" with something vaguer.
+  const description = routeError
+    ? typeof error.data === 'string' && error.data
       ? error.data
-      : error instanceof Error
-        ? error.message
-        : 'Something went wrong.'
+      : error.statusText
+    : error instanceof Error
+      ? error.message
+      : String(error ?? '')
 
   return (
-    <div className="flex h-full items-center justify-center p-8">
-      <div className="max-w-lg space-y-3 rounded-lg border border-red-200 bg-red-50 p-6 dark:border-red-900 dark:bg-red-950">
-        <h1 className="text-lg font-semibold text-red-700 dark:text-red-300">
-          {title}
-        </h1>
-        <p className="text-sm text-red-600 dark:text-red-400">{detail}</p>
-      </div>
-    </div>
+    <ErrorState
+      code={code}
+      description={description}
+      action={
+        // Full page load, not a router navigation: whatever broke may have left
+        // the client in a bad state, so going home should re-bootstrap the app.
+        // Navigating via onClick keeps this a real <button> — with `href` antd
+        // renders an <a>, whose own color rule beats the variant's `text-white`
+        // and leaves dark text on the dark primary fill.
+        <MsaButton
+          variant="primary"
+          onClick={() => {
+            window.location.href = '/'
+          }}
+        >
+          {t.errors.backHome}
+        </MsaButton>
+      }
+    />
   )
 }

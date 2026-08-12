@@ -7,8 +7,10 @@ import { useT } from '~/lib/i18n'
 import type { AgentStep } from '~/lib/agentProvider'
 import type { OnOpenStep } from '../types'
 import { InlineCode } from '../InlineCode'
+import { StepInProgressRow, stepHasInProgressRow } from './StepCardShell'
 import InvokeIcon from '~/assets/icons/invoke.svg?react'
 import ArrowDownIcon from '~/assets/icons/arrow-down.svg?react'
+import SpinnerIcon from '~/assets/icons/generating.svg?react'
 
 type ToolState = 'pending' | 'approved' | 'rejected' | 'cancelled'
 
@@ -31,7 +33,7 @@ export function ToolCallStepCard({
   isLast?: boolean
   /** Header icon override (defaults to the generic invoke icon). */
   icon?: ReactNode
-  /** Header title override (defaults to "调用 {tool name}"). */
+  /** Header title override (defaults to the localized "Call {tool name}"). */
   title?: ReactNode
   /** Plain-text mirror of `title` for the overflow tooltip (rich nodes like
    * InlineCode read badly on the dark tooltip background). */
@@ -75,10 +77,10 @@ export function ToolCallStepCard({
   const failed = meta.status === 'error' && !denied
   const errorText = String(meta.error ?? result ?? '')
 
-  const resolve = async (approve: boolean) => {
-    const next: ToolState = approve ? 'approved' : 'rejected'
+  const resolve = async (action: 'allow_once' | 'allow_always' | 'deny') => {
+    const next: ToolState = action === 'deny' ? 'rejected' : 'approved'
     if (!requestId || !sessionId) {
-      setLocalState(next)
+      setState(next)
       return
     }
     setBusy(true)
@@ -86,9 +88,9 @@ export function ToolCallStepCard({
       const { resolved } = await api.resolvePermission({
         session_id: sessionId,
         request_id: requestId,
-        action: approve ? 'allow_once' : 'deny'
+        action
       })
-      setLocalState(resolved ? next : 'rejected')
+      setState(resolved ? next : 'rejected')
     } catch {
       // Global error toast handles it.
     } finally {
@@ -96,16 +98,54 @@ export function ToolCallStepCard({
     }
   }
 
+  const setState = (next: ToolState) => {
+    setLocalState(next)
+    // Also write the decision into the part's meta: the streaming layer reads it
+    // to decide what to do with the tool's RESULT step (rejected → the errored
+    // result is dropped so this card keeps telling the "rejected" story). Mirrors
+    // AuthConfirmStepCard — required now that asks are hosted by this card
+    // (backend _AUTH_INLINE_KINDS), where a missed write-back made a REFUSED call
+    // end up rendered as "call failed".
+    step.meta.state = next
+  }
+
+  // In progress — either of the two ways a call can be mid-flight:
+  // - status "running": announced by tool_call_started, result frame not in yet;
+  // - approved here with the ask still on the card and no result.
+  // Rendered in the HEADER (spinner in place of the tool glyph), so resolving
+  // the ask doesn't reflow the card the way a footer row would. This is also the
+  // in-progress state for the kinds StepCard routes through this card (browser,
+  // file grep/glob, memory, skill_load).
+  const executing =
+    meta.status === 'running' || (state === 'approved' && !!requestId && !result)
+
+  // A kind with its own in-progress ROW (a web search, a file operation) is only
+  // using this accordion for its ASK (details + decision buttons). The moment
+  // it's approved it hands back to that row — rendered from here, not from the
+  // kind dispatcher, because the approval lives in this component's state and the
+  // parent won't re-render until the next stream frame (which can be a minute
+  // away for a slow call).
+  if (executing && stepHasInProgressRow(step)) {
+    return <StepInProgressRow step={step} />
+  }
+
   return (
-    <div className="w-full overflow-hidden rounded-xl border border-msa-line-1 bg-msa-fill-2">
+    <div className="w-full overflow-hidden rounded-xl border border-msa-line-1 bg-msa-fill-1">
       {/* Header */}
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center gap-2 border-none px-3 py-2 text-left transition-colors outline-none cursor-pointer bg-msa-fill-2"
+        className="flex w-full items-center gap-2 border-none px-3 py-2 text-left transition-colors outline-none cursor-pointer bg-msa-fill-1"
       >
         <span className="flex h-4 w-4 shrink-0 items-center justify-center text-msa-text-3">
-          {icon ?? <InvokeIcon className="h-4 w-4" />}
+          {executing ? (
+            <SpinnerIcon
+              aria-hidden
+              className="h-4 w-4 animate-spin text-msa-text-brand1"
+            />
+          ) : (
+            (icon ?? <InvokeIcon className="h-4 w-4" />)
+          )}
         </span>
         <Typography.Text
           className="min-w-0 flex-1 !text-sm !text-msa-text-1"
@@ -132,6 +172,11 @@ export function ToolCallStepCard({
             </>
           )}
         </Typography.Text>
+        {executing && (
+          <span className="shrink-0 text-xs text-msa-text-3">
+            {t.chat.authExecuting}
+          </span>
+        )}
         {denied && (
           <span className="shrink-0 text-xs text-msa-text-3">
             {t.chat.authRejected}
@@ -162,7 +207,7 @@ export function ToolCallStepCard({
                 <div className="mb-1 text-xs font-medium text-msa-text-3">
                   {t.chat.detailArguments}
                 </div>
-                <pre className="m-0 max-h-[200px] overflow-y-auto whitespace-pre-wrap break-all rounded-lg bg-msa-fill-1 p-2 font-mono text-xs leading-relaxed text-msa-text-2">
+                <pre className="m-0 max-h-[200px] overflow-y-auto whitespace-pre-wrap break-all rounded-lg bg-msa-fill-0 p-2 font-mono text-xs leading-relaxed text-msa-text-2">
                   {argsStr}
                 </pre>
               </div>
@@ -187,27 +232,34 @@ export function ToolCallStepCard({
                   <div className="mb-1 text-xs font-medium text-msa-text-3">
                     {t.chat.detailResult}
                   </div>
-                  <pre className="m-0 max-h-[200px] overflow-y-auto whitespace-pre-wrap break-all rounded-lg bg-msa-fill-1 p-2 font-mono text-xs leading-relaxed text-msa-text-2">
+                  <pre className="m-0 max-h-[200px] overflow-y-auto whitespace-pre-wrap break-all rounded-lg bg-msa-fill-0 p-2 font-mono text-xs leading-relaxed text-msa-text-2">
                     {result}
                   </pre>
                 </div>
               )
             )}
 
-            {/* Authorization: pending → buttons, rejected → label */}
+            {/* Authorization: pending → deny / always run / run once */}
             {state === 'pending' && (
               <div className="flex justify-end gap-2 pt-1">
                 <MsaButton
                   variant="outlined"
                   disabled={busy}
-                  onClick={() => resolve(false)}
+                  onClick={() => resolve('deny')}
                 >
                   {t.chat.authReject}
                 </MsaButton>
                 <MsaButton
+                  variant="outlined"
+                  disabled={busy}
+                  onClick={() => resolve('allow_always')}
+                >
+                  {t.chat.authApproveAlways}
+                </MsaButton>
+                <MsaButton
                   variant="primary"
                   disabled={busy}
-                  onClick={() => resolve(true)}
+                  onClick={() => resolve('allow_once')}
                 >
                   {t.chat.authApprove}
                 </MsaButton>

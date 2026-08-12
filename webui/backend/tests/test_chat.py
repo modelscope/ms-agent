@@ -175,14 +175,15 @@ def test_turn_mapper_maps_new_protocol():
 
 
 def test_turn_mapper_maps_permission_request_to_authorization_step():
+    """The generic card is what a tool WITHOUT its own card gets (an MCP tool here;
+    terminal / search / file asks fold into theirs — see _AUTH_INLINE_KINDS)."""
     m = chat._TurnMapper("sid-9")
     out = m.map({
         "type": "permission_request",
         "request_id": "req-1",
-        "tool_name": "file_system---write_file",
+        "tool_name": "howtocook-mcp---whatToEat",
         "tool_args": {
-            "path": "a.md",
-            "content": "x"
+            "people": 2
         },
     })
     # Emitted as a standalone authorization step (no task nesting).
@@ -190,8 +191,190 @@ def test_turn_mapper_maps_permission_request_to_authorization_step():
     meta = out[0].meta
     assert meta["kind"] == "authorization" and meta["state"] == "pending"
     assert meta["request_id"] == "req-1" and meta["session_id"] == "sid-9"
-    assert meta["tool_name"] == "file_system---write_file"
-    assert "a.md" in meta["desc"]
+    assert meta["tool_name"] == "howtocook-mcp---whatToEat"
+    assert "people" in meta["desc"]
+    assert meta["source"] == "mcp"
+
+
+def test_turn_mapper_announces_a_timed_out_permission_as_rejected():
+    """The SDK's ask() returns DENY silently when it times out, so the runtime
+    pushes `permission_resolved`. It must map to the ask's OWN card, in the
+    rejected state, WITHOUT a request_id — the decision is final, so the card must
+    stop offering buttons the moment it arrives (before the gated call's errored
+    result, which used to be the only hint)."""
+    m = chat._TurnMapper("sid-3")
+    # The ask came first and is still pending in the mapper's book-keeping.
+    m.map({
+        "type": "tool_call_started",
+        "name": "code_executor---shell_executor",
+        "call_id": "c1",
+        "arguments": {
+            "command": "echo aaa"
+        },
+    })
+    out = m.map({
+        "type": "permission_resolved",
+        "call_id": "c1",
+        "tool_name": "code_executor---shell_executor",
+        "tool_args": {
+            "command": "echo aaa"
+        },
+        "state": "rejected",
+    })
+    assert [c.type for c in out] == ["step"]
+    meta = out[0].meta
+    # Folded into the terminal card (same as its ask), so the refused command
+    # stays visible with a rejected badge.
+    assert meta["kind"] == "terminal" and meta["code"] == "echo aaa"
+    assert meta["state"] == "rejected"
+    assert meta["call_id"] == "c1"  # replaces the pending ask in place
+    assert meta["group"] == 1
+    assert "request_id" not in meta
+
+
+def test_turn_mapper_announced_rejection_uses_the_generic_card_when_not_inlined():
+    m = chat._TurnMapper("sid-3")
+    out = m.map({
+        "type": "permission_resolved",
+        "call_id": "c2",
+        "tool_name": "howtocook-mcp---whatToEat",
+        "tool_args": {
+            "people": 2
+        },
+        "state": "rejected",
+    })
+    assert out[0].meta["kind"] == "authorization"
+    assert out[0].meta["state"] == "rejected"
+    assert "request_id" not in out[0].meta
+
+
+def test_turn_mapper_maps_shell_permission_request_to_terminal_card():
+    """A shell ask is hosted by its own TERMINAL card (command as a code block +
+    Reject/Run), not by the generic "call tool" + JSON arguments card: the
+    command is what the user judges. It still carries every authorization field,
+    so the decision resolves from that same card."""
+    m = chat._TurnMapper("sid-9")
+    out = m.map({
+        "type": "permission_request",
+        "request_id": "req-2",
+        "call_id": "c9",
+        "tool_name": "code_executor---shell_executor",
+        "tool_args": {
+            "command": "brew install --cask flutter"
+        },
+    })
+    assert [c.type for c in out] == ["step"]
+    meta = out[0].meta
+    assert meta["kind"] == "terminal"
+    assert meta["code"] == "brew install --cask flutter"
+    assert meta["state"] == "pending"
+    assert meta["request_id"] == "req-2" and meta["session_id"] == "sid-9"
+    # Kept so the frontend can still merge the tool's result into this card.
+    assert meta["call_id"] == "c9"
+    assert meta["tool_name"] == "code_executor---shell_executor"
+
+
+def test_turn_mapper_maps_search_permission_request_to_search_card():
+    """A web-search ask is hosted by the SEARCH card, carrying the query. Left on
+    the generic "call tool" card, everything the user saw while the search ran was
+    the raw `web_search---exa_search` tool name."""
+    m = chat._TurnMapper("sid-7")
+    out = m.map({
+        "type": "permission_request",
+        "request_id": "req-3",
+        "call_id": "c8",
+        "tool_name": "web_search---exa_search",
+        "tool_args": {
+            "query": "today's tech news"
+        },
+    })
+    meta = out[0].meta
+    assert meta["kind"] == "search" and meta["scope"] == "web"
+    assert meta["query"] == "today's tech news"
+    assert meta["state"] == "pending"
+    assert meta["request_id"] == "req-3" and meta["call_id"] == "c8"
+
+
+def test_attach_replay_of_running_search_keeps_the_searching_shape():
+    """Refreshing mid-search: the attach replay hands back the RESOLVED ask
+    (state=approved + a live request_id) — there is no `running` status on that
+    frame. The search card keys its "searching …" row on exactly this shape, so
+    the contract is locked here: approved + request_id + no result.
+    """
+    m = chat._TurnMapper(
+        "sid-5",
+        resolved_permissions=[{
+            "tool_name": "web_search---exa_search",
+            "call_id": "c4",
+            "state": "approved",
+        }],
+    )
+    out = m.map({
+        "type": "permission_request",
+        "request_id": "req-9",
+        "call_id": "c4",
+        "tool_name": "web_search---exa_search",
+        "tool_args": {
+            "query": "stock market"
+        },
+    })
+    meta = out[0].meta
+    assert meta["kind"] == "search" and meta["scope"] == "web"
+    assert meta["state"] == "approved"
+    assert meta["request_id"] == "req-9"
+    assert meta["query"] == "stock market"
+    assert "result" not in meta and meta.get("status") is None
+
+
+def test_turn_mapper_maps_file_permission_request_to_the_file_card():
+    """A file operation's ask is hosted by its own file card, carrying the path —
+    that is what the user judges. On the generic "call tool" card all they saw was
+    `file_system---write_file` plus a JSON blob."""
+    m = chat._TurnMapper("sid-6")
+    out = m.map({
+        "type": "permission_request",
+        "request_id": "req-7",
+        "call_id": "c7",
+        "tool_name": "file_system---write_file",
+        "tool_args": {
+            "path": "a.txt",
+            "content": "hello"
+        },
+    })
+    meta = out[0].meta
+    assert meta["kind"] == "file_write" and meta["path"] == "a.txt"
+    assert meta["state"] == "pending"
+    assert meta["request_id"] == "req-7" and meta["call_id"] == "c7"
+    # read_file / edit_file keep their own kinds too (distinct wording per op).
+    assert chat._TurnMapper("s").map({
+        "type": "permission_request",
+        "tool_name": "file_system---read_file",
+        "tool_args": {
+            "path": "b.md"
+        },
+    })[0].meta["kind"] == "file_read"
+    assert chat._TurnMapper("s").map({
+        "type": "permission_request",
+        "tool_name": "file_system---edit_file",
+        "tool_args": {
+            "path": "c.py"
+        },
+    })[0].meta["kind"] == "file_edit"
+
+
+def test_turn_mapper_keeps_generic_card_for_other_permission_requests():
+    """Only _AUTH_INLINE_KINDS fold in; an MCP tool still asks on the generic
+    authorization card."""
+    m = chat._TurnMapper("sid-7")
+    out = m.map({
+        "type": "permission_request",
+        "request_id": "req-4",
+        "tool_name": "howtocook-mcp---whatToEat",
+        "tool_args": {
+            "n": 1
+        },
+    })
+    assert out[0].meta["kind"] == "authorization"
 
 
 def test_turn_mapper_emits_standalone_step_for_toolcall_without_plan():
@@ -245,6 +428,55 @@ def test_running_card_emitted_on_start_and_flush_keeps_call_id():
     assert len(steps) == 1
     assert steps[0].meta["call_id"] == "c1"
     assert steps[0].meta["status"] == "error"
+
+
+def test_tool_step_meta_splits_the_three_skills_tools():
+    """The skills server exposes skills_list / skill_view / skill_manage — three
+    unrelated actions. Only skill_view loads a skill, so only it may map to
+    skill_load; the others used to borrow that same "load skill" card and read
+    nonsensically (e.g. "load skill skills_list")."""
+    meta = chat._tool_step_meta
+
+    # skills_list: catalog listing, or a SEARCH when a query is given.
+    assert meta("skills---skills_list", {}) == {
+        "kind": "skill_list",
+        "name": "skills---skills_list",
+    }
+    assert meta("skills---skills_list", {"query": "docker"}) == {
+        "kind": "skill_list",
+        "name": "skills---skills_list",
+        "query": "docker",
+    }
+
+    # skill_view: the one that loads a skill. Reading one FILE inside the skill
+    # says so in the display name.
+    assert meta("skills---skill_view", {"skill_id": "docker-expert"}) == {
+        "kind": "skill_load",
+        "name": "docker-expert",
+    }
+    assert meta("skills---skill_view", {
+        "skill_id": "docker-expert",
+        "file_path": "scripts/build.py",
+    }) == {
+        "kind": "skill_load",
+        "name": "docker-expert/scripts/build.py",
+    }
+
+    # skill_manage: create / edit / delete, distinguished by `action`.
+    assert meta("skills---skill_manage", {
+        "action": "create",
+        "skill_id": "my-skill",
+        "content": "...",
+    }) == {
+        "kind": "skill_manage",
+        "name": "skills---skill_manage",
+        "action": "create",
+        "skill": "my-skill",
+    }
+    assert meta("skills---skill_manage", {
+        "action": "delete",
+        "skill_id": "my-skill",
+    })["action"] == "delete"
 
 
 def test_tool_step_meta_maps_full_taxonomy():
@@ -647,7 +879,9 @@ def test_reconstruct_surfaces_errors_and_failed_steps():
             "seq":
             1
         },
-        # failed tool result -> marks its step; API/turn error -> own message.
+        # failed tool result -> marks its step; API/turn error -> a part of
+        # the SAME turn (flushing it as its own message closed the turn before
+        # its loop_end marker arrived, dropping the turn's duration on replay).
         {
             "role": "tool",
             "tool_call_id": "c1",
@@ -661,16 +895,28 @@ def test_reconstruct_surfaces_errors_and_failed_steps():
             "recoverable": False,
             "seq": 3
         },
+        {
+            "_type": "loop_end",
+            "duration_ms": 4200,
+            "seq": 4
+        },
     ]
     msgs = _reconstruct(rows)
 
-    assert [m.role for m in msgs] == ["user", "assistant", "assistant"]
+    assert [m.role for m in msgs] == ["user", "assistant"]
     step = msgs[1].parts[0].step
-    assert step.kind == "tool_call" and step.meta["status"] == "error"
+    # A failed file op KEEPS its file kind (the card renders the accordion with
+    # arguments + error itself). It used to be re-kinded to `tool_call` to get
+    # that accordion, which replayed as "call tool file_system---read_file" while
+    # the live stream showed the file.
+    assert step.kind == "file_read" and step.meta["status"] == "error"
     assert step.meta["error"] == "no such file"
-    assert msgs[2].parts[0].kind == "error" and msgs[2].parts[
-        0].recoverable is False
-    assert "APIError: 500" in msgs[2].content
+    error_parts = [p for p in msgs[1].parts if p.kind == "error"]
+    assert len(error_parts) == 1 and error_parts[0].recoverable is False
+    assert "APIError: 500" in error_parts[0].text
+    # The loop_end lands after the error record; accumulating (not flushing)
+    # is what lets the errored turn keep its wall-clock duration on replay.
+    assert msgs[1].duration_ms == 4200
 
 
 def test_reconstruct_replays_reasoning_and_skips_compacted_rows():
@@ -758,16 +1004,14 @@ def test_reconstruct_replays_permission_and_durations():
     assert [m.role for m in msgs] == ["user", "assistant"]
     kinds = [p.kind for p in msgs[1].parts]
     # The permission row persists eagerly (seq=1, before the round-boundary
-    # assistant/tool rows), but replay must match the LIVE frame order: the
-    # turn's reasoning first, then the auth card ADJACENT to the tool step it
-    # gated. So: thought → auth card → tool step (not auth → thought → tool).
-    # (The permission's dict args match the tool_call's JSON-string args —
-    # exercises _perm_key normalization.)
-    assert kinds == ["thought", "step", "step"]
+    # assistant/tool rows) and must be MATCHED to the call it gated (the dict args
+    # vs the tool_call's JSON-string args — exercises _perm_key normalization).
+    # A file ask lives on the file card itself now, so an APPROVED one replays as
+    # nothing: its tool step below already shows the same path. Had the match
+    # failed, the card would have flushed at turn end as a third part.
+    assert kinds == ["thought", "step"]
     assert msgs[1].parts[0].duration == 4
-    auth = msgs[1].parts[1].step
-    assert auth.kind == "authorization" and auth.meta["state"] == "approved"
-    tool_step = msgs[1].parts[2].step
+    tool_step = msgs[1].parts[1].step
     assert tool_step.kind == "file_write" and tool_step.meta[
         "duration_ms"] == 1180
 
@@ -844,16 +1088,94 @@ def test_reconstruct_pairs_each_permission_with_its_tool_step():
     kinds = [(p.kind, (p.step.kind if p.kind == "step" else None),
               (p.step.meta.get("state") or p.step.meta.get("status")
                if p.kind == "step" else None)) for p in parts]
-    # thought, then (auth approved → its file_write), then the rejected auth
-    # card alone — its DENIED tool step is dropped by _history_step (the
-    # rejected card already tells the story; showing both duplicated the UI),
-    # but the card still sits at the call's original position.
+    # thought, then a.md's write (its APPROVED ask card is dropped — a file ask
+    # rides the file card, so the step itself tells the story), then b.md's
+    # REFUSED ask, which keeps its card at the call's original position while its
+    # denied tool step is dropped by _history_step (showing both duplicated the
+    # rejection).
     assert kinds == [
         ("thought", None, None),
-        ("step", "authorization", "approved"),
         ("step", "file_write", None),
-        ("step", "authorization", "rejected"),
+        ("step", "file_write", "rejected"),
     ]
+
+
+def test_reconstruct_replays_shell_permission_as_terminal_card():
+    """History mirrors the live shape for shell asks: a REJECTED command replays
+    as its terminal card (code + rejected state) while its denied tool step is
+    dropped; an APPROVED one drops the ask card instead, since the replayed
+    terminal tool step already shows the same command — exactly what the live
+    stream ends up with once the result replaces the ask in place."""
+    from app.backends.ms_agent.sessions import _reconstruct
+
+    rows = [
+        {
+            "role": "user",
+            "content": "run them",
+            "seq": 0
+        },
+        {
+            "_type": "permission",
+            "tool_name": "code_executor---shell_executor",
+            "arguments": {
+                "command": "ls"
+            },
+            "state": "approved",
+            "seq": 1
+        },
+        {
+            "_type": "permission",
+            "tool_name": "code_executor---shell_executor",
+            "arguments": {
+                "command": "rm -rf /"
+            },
+            "state": "rejected",
+            "seq": 2
+        },
+        {
+            "role":
+            "assistant",
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "tool_name": "code_executor---shell_executor",
+                    "arguments": {
+                        "command": "ls"
+                    }
+                },
+                {
+                    "id": "c2",
+                    "tool_name": "code_executor---shell_executor",
+                    "arguments": {
+                        "command": "rm -rf /"
+                    }
+                },
+            ],
+            "seq":
+            3
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "c1",
+            "content": "a.md",
+            "seq": 4
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "c2",
+            "content": "Tool call denied",
+            "is_error": True,
+            "seq": 5
+        },
+    ]
+    parts = _reconstruct(rows)[1].parts
+    steps = [p.step for p in parts if p.kind == "step"]
+    assert [s.kind for s in steps] == ["terminal", "terminal"]
+    # Approved: only the tool step (no duplicate ask card above it).
+    assert steps[0].meta["code"] == "ls" and "state" not in steps[0].meta
+    # Rejected: the ask card itself, carrying the command it refused.
+    assert steps[1].meta["code"] == "rm -rf /"
+    assert steps[1].meta["state"] == "rejected"
 
 
 def test_reconstruct_unmatched_permission_still_renders():
@@ -958,12 +1280,16 @@ def test_reconstruct_pairs_permission_by_call_id_exactly():
         },
     ]
     parts = _reconstruct(rows)[1].parts
-    auth_states = [
-        p.step.meta.get("state") for p in parts
-        if p.kind == "step" and p.step.kind == "authorization"
+    steps = [(p.step.kind, p.step.meta.get("state"), p.step.meta.get("result"))
+             for p in parts if p.kind == "step"]
+    # c1 (first in the array) was approved — a file ask rides the file card, so the
+    # approved one drops and its successful step shows. c2 was rejected — its card
+    # survives at c2's position while its denied step drops. Pairing by ARGS/order
+    # instead of call_id would swap them, putting the rejected card first.
+    assert steps == [
+        ("file_write", None, "ok"),
+        ("file_write", "rejected", None),
     ]
-    # c1 (first in array) → approved; c2 → rejected — matched by id, not order.
-    assert auth_states == ["approved", "rejected"]
 
 
 def test_reconstruct_populates_changed_files():
@@ -1660,7 +1986,7 @@ async def test_registry_interrupt_discards_and_seals():
     assert "sid-x" not in registry._runtimes
     tail = log.get_all_messages()[-1]
     assert tail["role"] == "assistant" and tail["interrupted"] is True
-    assert tail["content"] == "[interrupted]"  # neutral marker, not 中文哨兵
+    assert tail["content"] == "[interrupted]"  # neutral marker, not a localized sentinel
 
 
 async def test_registry_interrupt_noop_without_live_runtime():
@@ -1933,7 +2259,8 @@ def test_reconstruct_interrupted_mid_tools_marks_steps():
     parts = msgs[1].parts
     assert [p.kind for p in parts] == ["step", "interrupted"]
     step = parts[0].step
-    assert step.kind == "tool_call" and step.meta["status"] == "error"
+    # Keeps its file kind — see test_reconstruct_surfaces_errors_and_failed_steps.
+    assert step.kind == "file_write" and step.meta["status"] == "error"
     assert "Interrupted" in step.meta["error"]
 
 
@@ -2616,3 +2943,152 @@ def test_interrupt_seals_while_holding_create_lock_and_removes_runtime():
     assert stopped is True
     assert seen.get("locked_during_seal") is True  # seal ran with the lock held
     assert "s1" not in reg._runtimes  # runtime removed by the stop
+
+
+def test_history_step_multi_file_exists_checks_each_path(tmp_path):
+    """A multi-file read persists `paths: [...]` and a comma-joined display
+    `path`. Existence must be judged per-file (ALL present ⇒ exists), never by
+    matching the joined string — which would false-flag every multi-read as a
+    deleted file."""
+    from app.backends.ms_agent.sessions import _history_step
+
+    (tmp_path / "Dockerfile").write_text("x", encoding="utf-8")
+    (tmp_path / "docker-compose.yml").write_text("y", encoding="utf-8")
+    project = type("P", (), {"path": str(tmp_path)})()
+
+    tc = {
+        "id": "c1",
+        "tool_name": "file_system---read_file",
+        "arguments": json.dumps(
+            {"paths": ["Dockerfile", "docker-compose.yml"]}
+        ),
+    }
+    step = _history_step(tc, {}, {}, {}, project)
+    assert step is not None
+    assert step.meta["paths"] == ["Dockerfile", "docker-compose.yml"]
+    # Both files present → exists True (not a false "deleted").
+    assert step.meta["exists"] is True
+    assert step.meta["path"] == "Dockerfile, docker-compose.yml"
+
+    # One missing → the whole multi-step reads as gone.
+    tc2 = {
+        "id": "c2",
+        "tool_name": "file_system---read_file",
+        "arguments": json.dumps({"paths": ["Dockerfile", "gone.txt"]}),
+    }
+    step2 = _history_step(tc2, {}, {}, {}, project)
+    assert step2.meta["exists"] is False
+
+
+def test_resolve_or_create_touches_existing_session_updated_at(monkeypatch):
+    """Reusing a session bumps its ``updated_at``.
+
+    Session lists are ordered by that field, and the SDK only refreshes it
+    inside ``SessionManager.update()`` -- appending conversation rows goes
+    through SessionLog and leaves the meta file alone. Without the explicit
+    touch the timestamp recorded when the title was generated, so an actively
+    used conversation never rose to the top of the sidebar.
+    """
+    touched: list[tuple[str, tuple]] = []
+
+    class _SM:
+        def update(self, session_id, **kwargs):
+            touched.append((session_id, tuple(sorted(kwargs))))
+
+    session = _FakeSession()
+    project = _FakeProject()
+
+    monkeypatch.setattr(chat, "find_session",
+                        lambda sid: (project, session, _SM()))
+    monkeypatch.setattr(chat, "sm_for", lambda proj: _SM())
+
+    got_project, got_session = chat._resolve_or_create(
+        ChatRequest(session_id="sid-1", project_id=None,
+                    message=ChatMessage(role="user", content="hi")))
+
+    assert got_project is project and got_session is session
+    # Touched exactly once, with NO field kwargs: the call must only move the
+    # timestamp, never overwrite the name/status.
+    assert touched == [("sid-1", ())]
+
+
+def test_touch_session_never_raises_when_update_fails(monkeypatch):
+    """Ordering is cosmetic -- a failing touch must not break the turn."""
+
+    class _Boom:
+        def update(self, *_a, **_k):
+            raise RuntimeError("disk full")
+
+    monkeypatch.setattr(chat, "sm_for", lambda proj: _Boom())
+    chat._touch_session(_FakeProject(), "sid-1")  # must not raise
+
+
+def test_permission_handler_announces_a_denial_to_live_viewers(monkeypatch):
+    """A refusal must reach the stream, not just the session log. The SDK's ask()
+    resolves to DENY silently on timeout, so the runtime's wrapper pushes a
+    `permission_resolved` event — without it a viewer's card kept offering buttons
+    for a request that was already dead."""
+    import asyncio
+
+    from ms_agent.permission.handler import (
+        PermissionAction,
+        PermissionResponse,
+        WebPermissionHandler,
+    )
+
+    from app.backends.ms_agent import runtime as runtime_mod
+
+    pushed: list[dict] = []
+
+    class _Sink:
+        def push(self, payload: dict) -> None:
+            pushed.append(payload)
+
+    async def _timed_out(self, tool_name, tool_args, context, suggestions=None,
+                         call_id=""):
+        return PermissionResponse(action=PermissionAction.DENY,
+                                  feedback="Permission request timed out")
+
+    monkeypatch.setattr(WebPermissionHandler, "ask", _timed_out)
+    handler = runtime_mod._persisting_permission_handler(_Sink(), lambda: None)
+    asyncio.run(
+        handler.ask("code_executor---shell_executor", {"command": "echo aaa"},
+                    "", call_id="c1"))
+
+    assert [e["type"] for e in pushed] == ["permission_resolved"]
+    assert pushed[0]["state"] == "rejected"
+    assert pushed[0]["call_id"] == "c1"
+    assert pushed[0]["tool_name"] == "code_executor---shell_executor"
+
+
+def test_permission_handler_stays_silent_on_approval(monkeypatch):
+    """An APPROVAL needs no announcement: the deciding client already flipped its
+    card, other viewers get the resolved ask on attach, and the tool's result
+    lands next. Emitting one would replace the live card with a request_id-less
+    copy and drop its "executing" state."""
+    import asyncio
+
+    from ms_agent.permission.handler import (
+        PermissionAction,
+        PermissionResponse,
+        WebPermissionHandler,
+    )
+
+    from app.backends.ms_agent import runtime as runtime_mod
+
+    pushed: list[dict] = []
+
+    class _Sink:
+        def push(self, payload: dict) -> None:
+            pushed.append(payload)
+
+    async def _allow(self, tool_name, tool_args, context, suggestions=None,
+                     call_id=""):
+        return PermissionResponse(action=PermissionAction.ALLOW_ONCE)
+
+    monkeypatch.setattr(WebPermissionHandler, "ask", _allow)
+    handler = runtime_mod._persisting_permission_handler(_Sink(), lambda: None)
+    asyncio.run(
+        handler.ask("code_executor---shell_executor", {"command": "echo aaa"},
+                    "", call_id="c1"))
+    assert pushed == []

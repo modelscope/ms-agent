@@ -14,16 +14,12 @@ completion in the background. Only the explicit Stop button
 from fastapi import APIRouter
 
 from app.core.envelope import EnvelopeRoute
-from app.core.settings import settings
 
 router = APIRouter(prefix="/api", tags=["presence"], route_class=EnvelopeRoute)
 
 
 @router.post("/presence")
 async def presence() -> dict:
-    if settings.agent_backend == "ms_agent":
-        from app.backends.ms_agent.runtime import registry
+    from app.backends.ms_agent.runtime import registry
 
-        return {"running": registry.running_sessions()}
-    # mock backend has no live runtimes.
-    return {"running": []}
+    return {"running": registry.running_sessions()}

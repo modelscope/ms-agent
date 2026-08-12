@@ -59,12 +59,22 @@ export function TurnProcess({
     return () => clearInterval(id)
   }, [live, startedAt])
 
-  // Prefer the server's loop duration once the turn is done (authoritative and
-  // identical across live / replay); fall back to the live tick. `elapsed` is
+  // Prefer the server's loop duration (authoritative and identical across live /
+  // replay); while the turn runs, fall back to the live tick. `elapsed` is
   // rendered even at 0 — hiding it for the first second made the header text
   // change width one tick later, which read as a jitter.
-  const seconds = durationMs != null ? Math.floor(durationMs / 1000) : elapsed
-  const timing = ` ${formatDuration(seconds)}`
+  //
+  // A FINISHED turn with no server duration shows NO time at all. Replayed
+  // history carries no `startedAt`, so the live tick is a constant 0 there:
+  // printing it produced "done 0s" on turns whose own thought block reported
+  // 1s — an outer total smaller than a step inside it. Turns persisted without a
+  // `loop_end` marker (interrupts, and every round written before that marker
+  // existed) hit exactly this path. Treat 0 like missing for the same reason the
+  // thought header does: a zero here means "unknown", never "instant".
+  const reported =
+    durationMs != null && durationMs > 0 ? Math.floor(durationMs / 1000) : null
+  const shown = reported ?? (live ? elapsed : null)
+  const timing = shown != null ? ` ${formatDuration(shown)}` : ''
 
   if (!done) {
     return (

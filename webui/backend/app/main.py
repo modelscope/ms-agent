@@ -16,7 +16,6 @@ from app.api import (
     skills,
     workspace,
 )
-from app.core import store
 from app.core.envelope import register_exception_handlers
 from app.core.settings import settings
 
@@ -35,20 +34,16 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    if settings.agent_backend == "ms_agent":
-        # Ensure ~/.ms_agent + default project + settings.json llm are ready.
-        from app.backends.ms_agent.bootstrap import bootstrap
+    # Ensure ~/.ms_agent + default project + settings.json llm are ready.
+    from app.backends.ms_agent.bootstrap import bootstrap
 
-        bootstrap()
+    bootstrap()
 
-        @app.on_event("shutdown")
-        async def _shutdown() -> None:
-            from app.backends.ms_agent.runtime import registry
+    @app.on_event("shutdown")
+    async def _shutdown() -> None:
+        from app.backends.ms_agent.runtime import registry
 
-            await registry.close_all()
-    else:
-        # Seed in-memory mock store at boot. Cheap, idempotent.
-        store.seed()
+        await registry.close_all()
 
     app.include_router(chat.router)
     app.include_router(presence.router)
