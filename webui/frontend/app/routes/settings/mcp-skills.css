@@ -1,0 +1,43 @@
+.mcp-skills-tabs-flex .ant-tabs-content-holder {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+}
+
+.mcp-skills-tabs-flex .ant-tabs-content {
+    height: 100%;
+}
+
+.mcp-skills-tabs-flex .ant-tabs-tabpane {
+    height: 100%;
+}
+
+/* The tab labels and the action buttons share the tab bar's flex row. Whether
+   they fit together depends on the actual content width (which varies with the
+   settings sidebar state), so switch on a container query rather than a fixed
+   viewport breakpoint. */
+.mcp-skills-shell {
+    container-type: inline-size;
+}
+
+/* Narrow: buttons get their own row above the tabs; the extra slot is empty so
+   antd measures the nav (tab labels) at full width. */
+.mcp-skills-top-actions {
+    display: flex;
+}
+
+.mcp-skills-extra {
+    display: none;
+}
+
+/* Wide enough for the tabs + buttons to coexist: put the buttons back on the
+   tab bar's right (extra slot) and drop the standalone top row. */
+@container (min-width: 480px) {
+    .mcp-skills-top-actions {
+        display: none;
+    }
+
+    .mcp-skills-extra {
+        display: flex;
+    }
+}

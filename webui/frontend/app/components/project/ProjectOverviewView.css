@@ -1,0 +1,20 @@
+.pov-tabs-scroll-content .ant-tabs-content-holder {
+    height: 100%;
+}
+
+.pov-tabs-scroll-content .ant-tabs-content {
+    height: 100%;
+    overflow-y: auto;
+}
+
+/* Let a pane's own flex column resolve `h-full` (workspace: fixed info bar +
+   internally-scrolling file table). A pane whose content overflows still
+   scrolls via .ant-tabs-content — overflow:visible descendants extend its
+   scrollable area — so other tabs (recent chats) are unaffected. */
+.pov-tabs-scroll-content .ant-tabs-tabpane {
+    height: 100%;
+}
+
+.pov-table-no-last-border .ant-table-tbody>tr:last-child>td {
+    border-bottom: 0;
+}

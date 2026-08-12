@@ -1,0 +1,72 @@
+[project]
+name = "ms-agent-webui-backend"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=0.117.0",
+    "exa-py>=2.16.0",
+    "fastapi>=0.139.0",
+    "httpx>=0.28.1",
+    "ipykernel>=7.3.0",
+    "jupyter-client>=8.9.1",
+    "loguru>=0.7.3",
+    "mem0ai>=2.0.12",
+    "ms-agent",
+    "pydantic-settings>=2.14.2",
+    "sse-starlette>=3.4.5",
+    "uvicorn[standard]>=0.50.2",
+]
+
+[project.optional-dependencies]
+# Offline embeddings for vector memory (fastembed drags in onnxruntime,
+# ~100 MB of wheels + a one-time ~220 MB model download on first use):
+#   uv sync --extra local-embed
+local-embed = ["fastembed>=0.8"]
+
+[project.scripts]
+dev = "app.main:dev"
+serve = "app.main:serve"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.uv]
+# The launcher and docs rely on `uv sync --locked --inexact`; refuse
+# outright on a uv too old to honour those flags.
+required-version = ">=0.5.0"
+
+[[tool.uv.index]]
+# 国内构建机与 CI 直连 pypi.org 极不稳定：uv sync 曾在 pillow/matplotlib/
+# modelscope 这几个几 MB 的 wheel 上反复重下八九分钟，最终 30s 超时构建失败
+# （2026-08-05，run 58179298）。锁文件会把这里的地址记进每个包的 registry，
+# 所以换源必须重新 uv lock 才生效——只设环境变量对 --frozen 无效。
+# apt 与 uv 自身的安装早已固定在同一面镜像上（见 Dockerfile）。
+name = "aliyun"
+url = "https://mirrors.aliyun.com/pypi/simple/"
+default = true
+
+[tool.uv.sources]
+# ADAPTED FROM ms-agent-webui (upstream of this snapshot): there the SDK is a
+# git pin; here the backend lives INSIDE the ms-agent checkout it runs against,
+# so it must build from the containing tree. Editable keeps the two in step —
+# otherwise `ms-agent ui` would silently serve a stale SDK after framework code
+# changed right next to it.
+#
+# This block plus `uv.lock` are the only permanent differences from the source
+# repo; every other file under webui/ is a byte-exact copy. Do not "fix" the
+# rest here — it will be overwritten by the next snapshot (see docs/MIGRATION.md).
+ms-agent = { path = "../..", editable = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]

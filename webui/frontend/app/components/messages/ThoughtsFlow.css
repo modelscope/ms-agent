@@ -1,0 +1,36 @@
+/* ThoughtsFlow.css */
+/* Reasoning body renders through the shared <Markdown/>, whose typography theme
+   sets its own text color and 14px base. Reasoning is secondary content, so
+   re-scope it to the muted token and the surrounding small size.
+
+   Chosen over `transform: scale()` + `opacity`: scaling renders text on
+   fractional pixels (visibly soft), needs a width/offset hack to undo the
+   layout the un-scaled box still occupies, and `opacity` fades the WHOLE
+   subtree — code blocks and links lose their contrast and brand color with it.
+   A real font-size plus a real color token keeps code and links crisp.
+
+   Belt-and-braces on the color: set the theme's own variable AND target the
+   elements it colors (p / li / td), so a variable rename upstream can't
+   silently restore full-contrast body text. Prefix `tf-` per the
+   component-scoped CSS rule. */
+.tf-reasoning .msa-md-body {
+  --text-color: var(--msa-text-3);
+  --heading-color: var(--msa-text-3);
+  font-size: 0.875rem;
+}
+
+.tf-reasoning .msa-md-body p,
+.tf-reasoning .msa-md-body li,
+.tf-reasoning .msa-md-body td {
+  color: var(--msa-text-3);
+}
+
+/* Tighten the vertical rhythm: a thought block sits inside a collapsible row,
+   so the theme's article-style paragraph spacing is too airy here. */
+.tf-reasoning .msa-md-body > :first-child {
+  margin-top: 0;
+}
+
+.tf-reasoning .msa-md-body > :last-child {
+  margin-bottom: 0;
+}

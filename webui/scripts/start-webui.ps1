@@ -1,8 +1,12 @@
 $ErrorActionPreference = "Stop"
 
-# Force UTF-8 output for this session to avoid garbled text in Windows consoles.
-$OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::UTF8
+# Preserve the UTF-8 console behavior added after Windows user feedback.
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+$OutputEncoding = [Console]::OutputEncoding = $utf8
+[Console]::InputEncoding = $utf8
 $env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
 chcp 65001 | Out-Null
 
 ms-agent ui @args
+exit $LASTEXITCODE
