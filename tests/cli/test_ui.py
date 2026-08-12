@@ -22,7 +22,6 @@ def test_ui_parser_defaults_are_local_and_non_production():
     assert args.port == 7860
     assert args.backend_port == 8000
     assert args.reload is False
-    assert args.mock is False
     assert args.skip_install is False
     assert args.production is False
     assert args.no_browser is False

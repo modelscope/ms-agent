@@ -106,7 +106,6 @@ ms-agent ui
 | `--port` | Public frontend port | `7860` |
 | `--backend-port` | Internal FastAPI port | `8000` |
 | `--reload` | Reload the Python backend when its source changes (flag) | `false` |
-| `--mock` | Use the in-memory mock backend instead of MS-Agent (flag) | `false` |
 | `--skip-install` | Skip dependency synchronization; requires existing `.venv` and `node_modules` (flag) | `false` |
 | `--production` | Reserved compatibility flag; exits with an unsupported-mode error | `false` |
 | `--no-browser` | Do not automatically open the browser (flag) | `false` |

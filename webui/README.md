@@ -106,12 +106,6 @@ Later launches recheck both environments against their lockfiles. No global
 Python or Node packages are installed by this synchronization. After both
 services report ready, the browser opens at <http://127.0.0.1:7860>.
 
-To verify the interface without a model credential, use the in-memory backend:
-
-```bash
-ms-agent ui --mock
-```
-
 On Windows, use the PowerShell wrapper (it forces UTF-8 console output before
 delegating to the same command):
 
@@ -205,7 +199,6 @@ Normal `ms-agent ui` users should not set these manually:
 | Variable | How it is managed |
 | --- | --- |
 | `HOST`, `PORT` | Internal FastAPI address, derived from launcher options |
-| `AGENT_BACKEND` | `ms_agent` by default; `mock` when `--mock` is used |
 | `API_BASE_URL` | Injected into the React Router process |
 | `CORS_ORIGINS` | Only normally relevant when starting the services manually |
 
@@ -217,7 +210,6 @@ Normal `ms-agent ui` users should not set these manually:
 | `--port PORT` | `7860` | Frontend port and browser URL |
 | `--backend-port PORT` | `8000` | Internal FastAPI port |
 | `--reload` | off | Reload the Python backend after source changes; frontend HMR is always active |
-| `--mock` | off | Use in-memory demonstration data without model credentials |
 | `--skip-install` | off | Skip both dependency synchronization commands; fails if either local environment is missing. With it, only Node.js needs to be on `PATH` — `uv` and `pnpm` are not resolved at all. |
 | `--no-browser` | off | Do not open a browser automatically |
 | `--production` | unsupported | Reserved option that exits with an explanatory error |
@@ -228,8 +220,8 @@ Examples:
 # Use different ports
 ms-agent ui --port 8080 --backend-port 8001
 
-# UI development with mock data
-ms-agent ui --mock --reload
+# Reload the backend as its source changes
+ms-agent ui --reload
 
 # Start without opening a browser
 ms-agent ui --no-browser
@@ -249,9 +241,8 @@ terminals. It is not needed for normal use.
 
 ### 1. Backend
 
-For the real MS-Agent backend, first create `webui/backend/.env` and set
-`AGENT_BACKEND=ms_agent`. Without that setting, a manually started backend uses
-mock data by default.
+Model credentials come from `webui/backend/.env` (see `.env.example`); copy it
+before the first manual start.
 
 ```bash
 cd webui/backend
@@ -316,7 +307,7 @@ wrapper:
 All launcher arguments are forwarded:
 
 ```powershell
-.\webui\scripts\start-webui.ps1 --mock --no-browser
+.\webui\scripts\start-webui.ps1 --reload --no-browser
 ```
 
 The wrapper switches the current console to UTF-8 and sets `PYTHONUTF8` and

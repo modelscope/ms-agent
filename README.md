@@ -551,9 +551,6 @@ Configure a model in **Settings → Models** before starting a real chat. Enviro
 # Use another public frontend port
 ms-agent ui --port 8080
 
-# Exercise the UI without model credentials
-ms-agent ui --mock
-
 # Keep the browser closed
 ms-agent ui --no-browser
 ```

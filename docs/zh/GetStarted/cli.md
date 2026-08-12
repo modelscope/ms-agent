@@ -103,7 +103,6 @@ ms-agent ui
 | `--port` | 公开前端端口 | `7860` |
 | `--backend-port` | 内部 FastAPI 端口 | `8000` |
 | `--reload` | 后端源码变化时自动重载（开关） | `false` |
-| `--mock` | 使用内存模拟后端而非 MS-Agent（开关） | `false` |
 | `--skip-install` | 跳过依赖同步；要求 `.venv` 和 `node_modules` 已存在（开关） | `false` |
 | `--production` | 兼容性保留参数；当前会提示不支持并退出 | `false` |
 | `--no-browser` | 不自动打开浏览器（开关） | `false` |

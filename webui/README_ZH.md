@@ -104,12 +104,6 @@ cd webui/frontend && pnpm install --frozen-lockfile
 或 Node 包。两个服务就绪后，浏览器会自动打开
 <http://127.0.0.1:7860>。
 
-如果暂时没有模型凭据，只想确认界面和交互，可以使用内存 mock 后端：
-
-```bash
-ms-agent ui --mock
-```
-
 在启动终端中按 `Ctrl+C` 会同时停止两个服务。
 
 ## 配置模型
@@ -191,7 +185,6 @@ Copy-Item .\webui\backend\.env.example .\webui\backend\.env
 | 变量 | 管理方式 |
 | --- | --- |
 | `HOST`、`PORT` | FastAPI 内部地址，由启动参数决定 |
-| `AGENT_BACKEND` | 默认 `ms_agent`；使用 `--mock` 时为 `mock` |
 | `API_BASE_URL` | 启动器注入 React Router 进程 |
 | `CORS_ORIGINS` | 通常只在手工分别启动服务时需要关注 |
 
@@ -203,7 +196,6 @@ Copy-Item .\webui\backend\.env.example .\webui\backend\.env
 | `--port PORT` | `7860` | 前端端口和浏览器访问端口 |
 | `--backend-port PORT` | `8000` | 内部 FastAPI 端口 |
 | `--reload` | 关闭 | Python 后端源码变化时自动重载；前端始终启用 HMR |
-| `--mock` | 关闭 | 使用无需模型凭据的内存演示数据 |
 | `--skip-install` | 关闭 | 跳过两项依赖同步；任一项目本地环境缺失时会报错。使用它时只需要 PATH 上有 Node.js——`uv` 与 `pnpm` 完全不会被解析 |
 | `--no-browser` | 关闭 | 不自动打开浏览器 |
 | `--production` | 不支持 | 保留参数，使用时会明确报错并退出 |
@@ -214,8 +206,8 @@ Copy-Item .\webui\backend\.env.example .\webui\backend\.env
 # 修改前后端端口
 ms-agent ui --port 8080 --backend-port 8001
 
-# 使用 mock 数据开发界面
-ms-agent ui --mock --reload
+# 后端源码变化时自动重载
+ms-agent ui --reload
 
 # 不自动打开浏览器
 ms-agent ui --no-browser
@@ -233,8 +225,7 @@ ms-agent ui --host 0.0.0.0
 
 ### 1. 后端
 
-如果要手工启动真实 MS-Agent 后端，先创建 `webui/backend/.env` 并设置
-`AGENT_BACKEND=ms_agent`。没有该设置时，手工启动的后端默认使用 mock 数据。
+模型凭据来自 `webui/backend/.env`（参考 `.env.example`），手工启动前先复制一份。
 
 ```bash
 cd webui/backend
@@ -293,7 +284,7 @@ python -m pytest tests/cli/test_ui.py tests/ui
 所有启动参数都会原样转发：
 
 ```powershell
-.\webui\scripts\start-webui.ps1 --mock --no-browser
+.\webui\scripts\start-webui.ps1 --reload --no-browser
 ```
 
 这个脚本会把当前控制台切换为 UTF-8，并设置 `PYTHONUTF8` 和

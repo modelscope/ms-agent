@@ -54,20 +54,16 @@ url = "https://mirrors.aliyun.com/pypi/simple/"
 default = true
 
 [tool.uv.sources]
-# TEMPORARY pin to the fork branch carrying SDK fixes the WebUI needs for
-# testing and which upstream has not merged yet (tool_call_id loss through
-# unified memory, errored-round sealing so a failed turn cannot swallow the
-# next prompt, fast-fail on non-retryable 4xx, per-round error-record dedup).
-# `uv.lock` pins the exact commit resolved at lock time (`uv sync` installs
-# that pin; it does NOT auto-follow the branch).
+# ADAPTED FROM ms-agent-webui (upstream of this snapshot): there the SDK is a
+# git pin; here the backend lives INSIDE the ms-agent checkout it runs against,
+# so it must build from the containing tree. Editable keeps the two in step —
+# otherwise `ms-agent ui` would silently serve a stale SDK after framework code
+# changed right next to it.
 #
-# Once the upstream PR from this branch merges into modelscope/ms-agent main,
-# switch back and re-pin:
-#   ms-agent = { git = "https://github.com/modelscope/ms-agent.git", branch = "main" }
-#   uv lock --upgrade-package ms-agent   # then commit pyproject + uv.lock
-# For local SDK development, override with an editable checkout, e.g.
-# `uv pip install -e ../../ms-agent-bench` after `uv sync`.
-ms-agent = { git = "https://github.com/alcholiclg/ms-agent.git", branch = "fix/runtime-robustness" }
+# This block plus `uv.lock` are the only permanent differences from the source
+# repo; every other file under webui/ is a byte-exact copy. Do not "fix" the
+# rest here — it will be overwritten by the next snapshot (see docs/MIGRATION.md).
+ms-agent = { path = "../..", editable = true }
 
 [dependency-groups]
 dev = [

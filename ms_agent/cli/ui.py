@@ -100,10 +100,6 @@ class UICMD(CLICommand):
             action='store_true',
             help='Reload the Python backend when its source changes.')
         parser.add_argument(
-            '--mock',
-            action='store_true',
-            help='Use the in-memory mock backend instead of ms-agent.')
-        parser.add_argument(
             '--skip-install',
             action='store_true',
             help='Do not install missing project-local dependencies.')
@@ -188,7 +184,6 @@ class UICMD(CLICommand):
                 backend_dir,
                 port=self.args.backend_port,
                 reload=self.args.reload,
-                mock=self.args.mock,
             )
             processes.append(('backend', backend))
             _wait_for_http(
@@ -532,13 +527,11 @@ def _start_backend(
     backend_dir: Path,
     port: int,
     reload: bool,
-    mock: bool,
 ) -> subprocess.Popen:
     env = _child_environment()
     env.update({
         'HOST': '127.0.0.1',
         'PORT': str(port),
-        'AGENT_BACKEND': 'mock' if mock else 'ms_agent',
     })
     python_dir = 'Scripts' if IS_WINDOWS else 'bin'
     python_name = 'python.exe' if IS_WINDOWS else 'python'

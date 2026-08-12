@@ -592,9 +592,6 @@ ms-agent ui
 # 修改公开前端端口
 ms-agent ui --port 8080
 
-# 无需模型凭证体验界面
-ms-agent ui --mock
-
 # 不自动打开浏览器
 ms-agent ui --no-browser
 ```
