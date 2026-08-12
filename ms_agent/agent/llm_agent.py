@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import asyncio
 import importlib
@@ -92,7 +93,8 @@ def build_partial_round_records(
     """
     present_results = {
         row.get('tool_call_id')
-        for row in rows if row.get('role') == 'tool' and row.get('tool_call_id')
+        for row in rows
+        if row.get('role') == 'tool' and row.get('tool_call_id')
     }
     records: List[Dict[str, Any]] = []
     for row in rows:
@@ -313,7 +315,8 @@ class LLMAgent(Agent):
         prompt_injection = getattr(skills_config, 'prompt_injection', 'all')
         update_notice = bool(getattr(skills_config, 'update_notice', False))
         self._skill_injector = SkillPromptInjector(
-            self._skill_catalog, prompt_injection=prompt_injection,
+            self._skill_catalog,
+            prompt_injection=prompt_injection,
             update_notice=update_notice)
 
         search_cfg = getattr(skills_config, 'search', None)
@@ -675,23 +678,29 @@ class LLMAgent(Agent):
         """
         Execute multiple tool calls in parallel and append results to the message list.
 
+        Each result is turned into its tool message and ANNOUNCED
+        (``ToolCallCompleted``, plus ``PlanUpdated`` for todo tools) the moment
+        that call returns — not once the whole batch has. A round can contain
+        one call blocked on a human's approval next to calls that are already
+        finished, and those must be able to report themselves as finished.
+        The messages are still appended in call order, matching ``tool_calls``.
+
         Args:
             messages (List[Message]): Current conversation history.
 
         Returns:
             List[Message]: Updated message list including tool responses.
         """
-        tool_call_result = await self.tool_manager.parallel_call_tool(
-            messages[-1].tool_calls)
-        assert len(tool_call_result) == len(messages[-1].tool_calls)
-        for tool_call_result, tool_call_query in zip(tool_call_result,
-                                                     messages[-1].tool_calls):
-            tool_call_result_format = ToolResult.from_raw(tool_call_result)
+        tool_calls = messages[-1].tool_calls
+        results: Dict[int, Message] = {}
+
+        def _on_result(index: int, tool_call, raw, duration_s: float) -> None:
+            tool_call_result_format = ToolResult.from_raw(raw)
             _new_message = Message(
                 role='tool',
                 content=tool_call_result_format.text,
-                tool_call_id=tool_call_query['id'],
-                name=tool_call_query['tool_name'],
+                tool_call_id=tool_call['id'],
+                name=tool_call['tool_name'],
                 resources=tool_call_result_format.resources,
                 tool_detail=tool_call_result_format.tool_detail,
                 hook_attachments=tool_call_result_format.hook_attachments,
@@ -701,10 +710,41 @@ class LLMAgent(Agent):
             if _new_message.tool_call_id is None:
                 # If tool call id is None, add a random one
                 _new_message.tool_call_id = str(uuid.uuid4())[:8]
-                tool_call_query['id'] = _new_message.tool_call_id
-            messages.append(_new_message)
+                tool_call['id'] = _new_message.tool_call_id
+            # This call's OWN wall clock. It used to be the batch's span
+            # attributed to every call in it, which over-reported every fast
+            # tool that shared a round with a slow one.
+            _new_message._duration_ms = int(duration_s * 1000)
+            results[index] = _new_message
             self.log_output(_new_message.content)
+            self._emit_tool_completed(_new_message, duration_s)
+
+        await self.tool_manager.parallel_call_tool(
+            tool_calls, on_result=_on_result)
+        assert len(results) == len(tool_calls)
+        for index in range(len(tool_calls)):
+            messages.append(results[index])
         return messages
+
+    def _emit_tool_completed(self, message: Message, duration_s: float) -> None:
+        """Report one finished tool call to the UI (and the plan it may carry)."""
+        if self._event_sink is None:
+            return
+        content = (
+            message.content
+            if isinstance(message.content, str) else str(message.content))
+        is_error = bool(getattr(message, 'is_error', False))
+        self._event_sink.emit(
+            ToolCallCompleted(
+                call_id=str(getattr(message, 'tool_call_id', '') or ''),
+                name=str(getattr(message, 'name', '') or ''),
+                result=content or '',
+                error=(content or 'tool call failed') if is_error else None,
+                duration_s=round(duration_s, 3)))
+        # todo/split_task tool results drive the plan panel.
+        plan = self._extract_plan_from_tool_result(message)
+        if plan is not None:
+            self._event_sink.emit(PlanUpdated(entries=plan))
 
     def _select_permission_handler(self, mode: str):
         """Pick the PermissionHandler by mode + runtime environment.
@@ -898,6 +938,19 @@ class LLMAgent(Agent):
             await self.mcp_runtime.stop()
         if self.tool_manager is not None:
             await self.tool_manager.cleanup()
+        # Drain scheduled memory ingestion so a teardown right after the last
+        # turn cannot lose its write. Flush only — memory instances are shared
+        # across agents of the same store (SharedMemoryManager), so CLOSING
+        # them here would yank the store out from under a sibling agent; the
+        # owner of the shared instance decides when to close (e.g. via
+        # SharedMemoryManager.close_matching).
+        for tool in self.memory_tools:
+            flush = getattr(tool, 'flush_pending', None)
+            if flush is not None:
+                try:
+                    await flush(timeout=15)
+                except Exception as e:  # noqa: BLE001 - cleanup is best-effort
+                    logger.warning(f'memory flush on cleanup failed: {e}')
 
     @property
     def stream(self):
@@ -1520,7 +1573,8 @@ class LLMAgent(Agent):
         # _msg_to_dict; the attribute is not a dataclass field so to_dict_clean
         # skips it). Cleared after use so it doesn't leak to the next message.
         dur = getattr(self, '_last_reasoning_duration', None)
-        if dur is not None and getattr(response_message, 'reasoning_content', ''):
+        if dur is not None and getattr(response_message, 'reasoning_content',
+                                       ''):
             response_message._reasoning_duration = dur
         self._last_reasoning_duration = None
 
@@ -1637,8 +1691,8 @@ class LLMAgent(Agent):
 
                         if self.stream_output and self.show_reasoning:
                             reasoning_text = (
-                                getattr(_response_message, 'reasoning_content', '')
-                                or '')
+                                getattr(_response_message, 'reasoning_content',
+                                        '') or '')
                             # Some providers may reset / shorten content across chunks.
                             if len(reasoning_text) < len(_reasoning):
                                 _reasoning = ''
@@ -1723,36 +1777,11 @@ class LLMAgent(Agent):
                             name=str(
                                 tc.get('tool_name') or tc.get('name') or ''),
                             arguments=tc.get('arguments')))
-            _tool_start = len(messages)
-            _tool_t0 = time.monotonic()
+            # Each call stamps its own ``_duration_ms`` (persistence/replay) and
+            # emits its own ToolCallCompleted / PlanUpdated as it finishes —
+            # inside parallel_tool_call, not after the batch, so one call held
+            # up by an approval doesn't hold back its finished siblings.
             messages = await self.parallel_tool_call(messages)
-            # Batch wall-clock: exact for the common single-tool round; for
-            # parallel multi-tool rounds it attributes the batch span to each
-            # (they ran concurrently within it). Stamp for persistence/replay
-            # regardless of sink, and report it live via ToolCallCompleted.
-            _tool_ms = int((time.monotonic() - _tool_t0) * 1000)
-            for m in messages[_tool_start:]:
-                if getattr(m, 'role', None) == 'tool':
-                    m._duration_ms = _tool_ms
-            if self._event_sink is not None:
-                for m in messages[_tool_start:]:
-                    if getattr(m, 'role', None) == 'tool':
-                        _content = (m.content if isinstance(m.content, str)
-                                    else str(m.content))
-                        _is_err = bool(getattr(m, 'is_error', False))
-                        self._event_sink.emit(
-                            ToolCallCompleted(
-                                call_id=str(
-                                    getattr(m, 'tool_call_id', '') or ''),
-                                name=str(getattr(m, 'name', '') or ''),
-                                result=_content or '',
-                                error=(_content or 'tool call failed')
-                                if _is_err else None,
-                                duration_s=round(_tool_ms / 1000, 3)))
-                        # todo/split_task tool results drive the plan panel.
-                        _plan = self._extract_plan_from_tool_result(m)
-                        if _plan is not None:
-                            self._event_sink.emit(PlanUpdated(entries=_plan))
 
         # usage
         # NOTE: token accounting must run BEFORE after_tool_call. The interactive
@@ -1920,6 +1949,20 @@ class LLMAgent(Agent):
 
                 if not any(v is not None
                            for v in [user_id, agent_id, run_id, memory_type]):
+                    continue
+                # Ingestion runs an extraction LLM + embeddings (seconds).
+                # Backends that support it take the write off the turn's
+                # critical path — schedule_add returns immediately and the
+                # write serializes against retrieval on the store's own lock.
+                # Others (legacy memory types) keep the awaited behaviour.
+                if add_type == 'add_after_step' and hasattr(
+                        tool, 'schedule_add'):
+                    tool.schedule_add(
+                        messages,
+                        user_id=user_id,
+                        agent_id=agent_id,
+                        run_id=run_id,
+                        memory_type=memory_type)
                     continue
                 await tool.add(
                     messages,
@@ -2234,6 +2277,17 @@ class LLMAgent(Agent):
                     # plus synthesized interrupted tool results — before the
                     # cancellation unwinds. Sync file I/O only; must re-raise.
                     self._persist_partial_round(messages, pre_step_len)
+                    # An interrupted round is never ingested into long-term
+                    # memory: a half-finished answer is not durable
+                    # conversational truth. Advance the ingest ledger past it
+                    # (sync, in-memory + small file write) so the next turn's
+                    # delta does not sweep the partial content in either.
+                    for _mem_tool in self.memory_tools:
+                        if hasattr(_mem_tool, 'mark_ingested'):
+                            try:
+                                _mem_tool.mark_ingested(messages)
+                            except Exception:  # noqa: E722 - never mask cancel
+                                pass
                     raise
 
                 # Persist THIS round's step output (assistant + any tool
@@ -2248,6 +2302,22 @@ class LLMAgent(Agent):
                     for msg in messages[pre_step_len:step_end_len]:
                         self.session_log.append(self._msg_to_dict(msg))
 
+                # Ingest memory here — before after_tool_call, which blocks on
+                # the next prompt in interactive mode (running afterwards made
+                # 'add_after_step' mean "after the *next* step": round N was
+                # only ingested once round N+1 arrived, a single-round session
+                # never at all, and the ingested list already carried the next
+                # user turn). Only on a CLOSING round — an assistant reply with
+                # no tool calls, i.e. the turn is complete. Tool rounds are
+                # intermediate state, not durable conversational truth, and
+                # ingesting every round made memory cost O(rounds x history):
+                # a 4-round tool-calling answer paid ~4 extraction-LLM calls
+                # where one covers it (the closing ingest sees the whole turn).
+                if (messages and messages[-1].role == 'assistant'
+                        and not messages[-1].tool_calls):
+                    await self.add_memory(
+                        messages, add_type='add_after_step', **kwargs)
+
                 await self.after_tool_call(messages)
                 self.runtime.round += 1
 
@@ -2258,9 +2328,6 @@ class LLMAgent(Agent):
                         self.session_log.append(self._msg_to_dict(msg))
                     self.session_log.round = self.runtime.round
 
-                # save memory and history
-                await self.add_memory(
-                    messages, add_type='add_after_step', **kwargs)
                 self.save_history(messages)
 
                 # +1 means the next round the assistant may give a conclusion
@@ -2305,8 +2372,9 @@ class LLMAgent(Agent):
             if self._event_sink is not None:
                 # A run_loop turn-abort is non-recoverable (the turn produced no
                 # usable assistant output); mark it so live == persisted/replay.
-                self._event_sink.emit(ErrorRaised(
-                    message=f'{type(e).__name__}: {e}', recoverable=False))
+                self._event_sink.emit(
+                    ErrorRaised(
+                        message=f'{type(e).__name__}: {e}', recoverable=False))
             # Persist the turn/API error as a display-only record. It is filtered
             # out of get_all_messages(), so it never re-enters the LLM context on
             # resume (unrecoverable), but history can replay that it happened.

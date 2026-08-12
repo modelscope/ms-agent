@@ -40,10 +40,13 @@ class PermissionEnforcer:
         self._memory = memory or PermissionMemory()
         self._matcher = PermissionMatcher()
         # Parallel tool calls (asyncio.gather in ToolManager.parallel_call_tool)
-        # would otherwise invoke the interactive handler concurrently — N
-        # prompts fighting over one terminal deadlocks. Serialize asks with a
-        # lock created lazily per running loop (the per-turn TUI uses a fresh
-        # loop each turn, so a single init-time Lock would bind to the wrong one).
+        # reach the handler concurrently. Whether that is safe is the HANDLER's
+        # property, not a blanket rule: a terminal-bound one (CLI prompt / TUI
+        # menu) deadlocks with N prompts fighting over one stdin, while a
+        # request_id-keyed UI wants them all at once. Handlers opt in with
+        # ``supports_concurrent_asks``; everyone else is serialized with a lock
+        # created lazily per running loop (the per-turn TUI uses a fresh loop
+        # each turn, so a single init-time Lock would bind to the wrong one).
         self._ask_lock: asyncio.Lock | None = None
         self._ask_lock_loop = None
 
@@ -54,13 +57,31 @@ class PermissionEnforcer:
             self._ask_lock_loop = loop
         return self._ask_lock
 
-    async def _serialized_ask(self, **kwargs) -> PermissionResponse:
+    async def _ask_user(self,
+                        *,
+                        forced: bool = False,
+                        **kwargs) -> PermissionResponse | None:
+        """Put one ask in front of the user, serialized unless the handler
+        declares it can service several at once.
+
+        Returns ``None`` when a queued ask turned out to be unnecessary: while
+        it waited for the lock, an earlier ask in the same round was answered
+        with allow_session / allow_always covering this call too, so prompting
+        again would ask the user something they just answered. ``forced`` asks
+        (a SafetyGuard confirmation) skip that shortcut — memory must never
+        bypass a safety ask.
+        """
         # ``call_id`` is a newer, optional kwarg (see check()). A handler that
         # predates it — or a lightweight test double — need not accept it; drop
         # it for such handlers so their fixed signature keeps working.
         if 'call_id' in kwargs and not self._handler_accepts('call_id'):
             kwargs.pop('call_id')
+        if getattr(self._handler, 'supports_concurrent_asks', False):
+            return await self._handler.ask(**kwargs)
         async with self._ask_lock_for_loop():
+            if not forced and self._memory.matches(kwargs['tool_name'],
+                                                   kwargs['tool_args']):
+                return None
             return await self._handler.ask(**kwargs)
 
     def _handler_accepts(self, param: str) -> bool:
@@ -69,10 +90,9 @@ class PermissionEnforcer:
         except (TypeError, ValueError):
             return True  # can't introspect — assume it takes it, don't strip
         params = sig.parameters.values()
-        return (
-            any(p.name == param for p in params)
-            or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params)
-        )
+        return (any(p.name == param for p in params)
+                or any(p.kind == inspect.Parameter.VAR_KEYWORD
+                       for p in params))
 
     async def check(
         self,
@@ -97,7 +117,8 @@ class PermissionEnforcer:
 
         if force_decision and force_decision.action == 'ask':
             suggestions = generate_suggestions(tool_name, tool_args)
-            response = await self._serialized_ask(
+            response = await self._ask_user(
+                forced=True,
                 tool_name=tool_name,
                 tool_args=tool_args,
                 context=force_decision.reason or '',
@@ -127,9 +148,9 @@ class PermissionEnforcer:
                 reason='Allowed by remembered permission',
             )
 
-        # 5. Ask user via handler (serialized against parallel tool calls)
+        # 5. Ask user via handler (serialized unless it opts into concurrency)
         suggestions = generate_suggestions(tool_name, tool_args)
-        response = await self._serialized_ask(
+        response = await self._ask_user(
             tool_name=tool_name,
             tool_args=tool_args,
             context='',
@@ -141,10 +162,18 @@ class PermissionEnforcer:
 
     def _process_response(
         self,
-        response: PermissionResponse,
+        response: PermissionResponse | None,
         tool_name: str,
         tool_args: dict[str, Any],
     ) -> PermissionDecision:
+        if response is None:
+            # The ask was skipped: memory started covering this call while it
+            # was queued behind another one (see _ask_user).
+            return PermissionDecision(
+                action='allow',
+                reason='Allowed by remembered permission',
+            )
+
         if response.action == PermissionAction.ALLOW_ONCE:
             return PermissionDecision(
                 action='allow', reason='User allowed once')

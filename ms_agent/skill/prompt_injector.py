@@ -42,7 +42,10 @@ current list appears in the conversation.
   mention notices or list changes to the user unless asked.
 """
 
-    def __init__(self, catalog, *, prompt_injection: str = 'all',
+    def __init__(self,
+                 catalog,
+                 *,
+                 prompt_injection: str = 'all',
                  update_notice: bool = False):
         """
         Args:

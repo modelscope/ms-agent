@@ -1,0 +1,39 @@
+llm:
+  service: openai
+  model: qwen3.6-flash
+  openai_api_key:
+  openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+
+
+generation_config:
+  max_tokens: 64000
+  extra_body:
+    enable_thinking: false
+
+
+skills:
+  auto_discovery: false
+  enable_manage: false
+
+
+tools:
+  code_executor:
+    mcp: false
+    implementation: python_env
+    exclude:
+      - notebook_executor
+      - python_executor
+      - reset_executor
+      - get_executor_info
+  file_system:
+    mcp: false
+    include:
+      - read_file
+      - write_file
+      - edit_file
+      - grep
+      - glob
+
+
+max_chat_round: 10
+enable_snapshots: false

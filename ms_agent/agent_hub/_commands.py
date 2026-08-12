@@ -11,7 +11,8 @@ import getpass
 import os
 import sys
 import zipfile
-from modelscope_hub.agent import AgentApi
+from modelscope_hub.agent import (AgentApi, agent_last_modified,
+                                  agent_visibility_label)
 from modelscope_hub.errors import APIError
 from pathlib import Path
 
@@ -133,9 +134,49 @@ def resolve_local_name(name: str | None, framework: str, local_dir=None):
                   f'Please specify --name to select one.')
 
 
+STABLE_FRAMEWORKS = frozenset(['ms-agent', 'qwenpaw'])
+
+_TRY_EXP_ENV = 'TRY_EXP_FRAMEWORKS'
+
+
+def _experimental_enabled() -> bool:
+    """True when ``TRY_EXP_FRAMEWORKS`` opts into the experimental frameworks.
+
+    Read on every call (not cached at import time) so tests and callers can
+    flip the variable within a live process.
+    """
+    return os.environ.get(_TRY_EXP_ENV,
+                          '').strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def _enabled_frameworks() -> set[str]:
+    """Registered frameworks the current environment is allowed to use."""
+    if _experimental_enabled():
+        return set(FRAMEWORK_REGISTRY)
+    return {fw for fw in FRAMEWORK_REGISTRY if fw in STABLE_FRAMEWORKS}
+
+
 def available_frameworks() -> str:
-    """Comma-separated list of registered frameworks."""
-    return ', '.join(sorted(FRAMEWORK_REGISTRY))
+    """Comma-separated list of frameworks usable in the current environment."""
+    return ', '.join(sorted(_enabled_frameworks()))
+
+
+def check_framework(framework: str, label: str = 'framework') -> str | None:
+    """Validate *framework*, returning an error message or ``None`` if OK.
+
+    Distinguishes a genuinely unknown name from a registered-but-experimental
+    one: the latter gets a hint about ``TRY_EXP_FRAMEWORKS`` instead of a
+    misleading "unknown framework", since the framework does exist and works
+    -- it is only gated.
+    """
+    if framework in _enabled_frameworks():
+        return None
+    if framework in FRAMEWORK_REGISTRY:
+        return (f"{label} '{framework}' is experimental and not enabled. "
+                f'Set {_TRY_EXP_ENV}=True to use it. '
+                f'Enabled: {available_frameworks()}')
+    return (f"unknown {label} '{framework}'. "
+            f'Available: {available_frameworks()}')
 
 
 def build_spec(framework: str, name: str, local_dir=None) -> WorkspaceSpec:
@@ -288,10 +329,9 @@ def _convert_resources_all(
 
 def cmd_status(framework: str, local_dir=None) -> int:
     """List discoverable sub-agents for a framework."""
-    if framework not in FRAMEWORK_REGISTRY:
-        return _fail(
-            f"unknown framework '{framework}'. Available: {available_frameworks()}"
-        )
+    err = check_framework(framework)
+    if err:
+        return _fail(err)
 
     spec = build_spec(framework, DEFAULT_AGENT_NAME, local_dir)
     agents = spec.list_agents()
@@ -318,10 +358,9 @@ def cmd_upload(
     username: str | None = None,
 ) -> int:
     """Upload local agent files to remote."""
-    if framework not in FRAMEWORK_REGISTRY:
-        return _fail(
-            f"unknown framework '{framework}'. Available: {available_frameworks()}"
-        )
+    err = check_framework(framework)
+    if err:
+        return _fail(err)
 
     local_name, err = resolve_local_name(name, framework, local_dir)
     if err:
@@ -529,10 +568,9 @@ def cmd_download(
     if not repo:
         return _fail(
             '--repo is required for download (the remote repository name)')
-    if framework not in FRAMEWORK_REGISTRY:
-        return _fail(
-            f"unknown framework '{framework}'. Available: {available_frameworks()}"
-        )
+    err = check_framework(framework)
+    if err:
+        return _fail(err)
 
     if not endpoint:
         return _fail('not logged in. Provide endpoint.')
@@ -648,10 +686,9 @@ def cmd_download(
 
     # Optional format conversion.
     target_fw = target or framework
-    if target_fw not in FRAMEWORK_REGISTRY:
-        return _fail(
-            f"unknown target framework '{target_fw}'. Available: {available_frameworks()}"
-        )
+    err = check_framework(target_fw, 'target framework')
+    if err:
+        return _fail(err)
 
     local_name = name or DEFAULT_AGENT_NAME
     spec = build_spec(target_fw, local_name, local_dir)
@@ -1013,10 +1050,9 @@ def cmd_convert(
     """Local-only format conversion: read a workspace, convert, write it out."""
     for fw, label in ((source_fw, '--from-framework'), (target_fw,
                                                         '--target-framework')):
-        if fw not in FRAMEWORK_REGISTRY:
-            return _fail(
-                f"unknown framework '{fw}' for {label}. Available: {available_frameworks()}"
-            )
+        err = check_framework(fw, f'framework for {label}')
+        if err:
+            return _fail(err)
 
     src_name = from_name or DEFAULT_AGENT_NAME
     dst_name = target_name or src_name
@@ -1058,10 +1094,9 @@ def cmd_watch(
     from ._cache import pid_file
     from ._watcher import daemonize, watch_loop
 
-    if framework not in FRAMEWORK_REGISTRY:
-        return _fail(
-            f"unknown framework '{framework}'. Available: {available_frameworks()}"
-        )
+    err = check_framework(framework)
+    if err:
+        return _fail(err)
 
     if name:
         local_name, err = resolve_local_name(name, framework, local_dir)
@@ -1275,10 +1310,10 @@ def cmd_recover(
         if not zip_path.exists():
             return _fail(f'backup not found: {fname} (looked in {cdir})')
 
-    if framework and framework not in FRAMEWORK_REGISTRY:
-        return _fail(
-            f"unknown framework '{framework}'. Available: {available_frameworks()}"
-        )
+    if framework:
+        err = check_framework(framework)
+        if err:
+            return _fail(err)
 
     # Reject a corrupt / non-zip archive up front -- BEFORE the pre-restore
     # backup and the delete-extra-files pass below touch the workspace, so a
@@ -1454,9 +1489,8 @@ def cmd_list(
         repo_name = item.get('Name') or item.get('name') or ''
         repo_id = f'{owner_name}/{repo_name}' if owner_name else repo_name
         fw = item.get('Framework') or item.get('framework') or '-'
-        vis = item.get('Visibility') or item.get('visibility') or '-'
-        updated = item.get('GmtModified') or item.get(
-            'LastUpdatedDate') or item.get('last_updated_date') or '-'
+        vis = agent_visibility_label(item)
+        updated = agent_last_modified(item)
         if isinstance(updated, str) and 'T' in updated:
             updated = updated.split('T')[0]
         rows.append((repo_id, fw, vis, updated))

@@ -179,6 +179,9 @@ webui/work_dir/
 .ms_agent_snapshots/
 .ms_agent/
 
+# React Router's generated route/type artefacts.
+webui/frontend/.react-router
+
 # Chrome DevTools probes this exact path on every page load; ignore the
 # file it asks for so a local 404-silencer never gets committed again.
 webui/frontend/public/.well-known/appspecific/com.chrome.devtools.json

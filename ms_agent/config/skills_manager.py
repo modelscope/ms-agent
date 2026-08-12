@@ -61,8 +61,8 @@ def resolve_source_entry(entry: Any, base: Path) -> Any:
     if os.path.isabs(raw):
         return entry
     candidate = Path(base) / raw
-    if (not raw.startswith(('./', '../'))
-            and _OWNER_REPO_RE.match(raw) and not candidate.exists()):
+    if (not raw.startswith(('./', '../')) and _OWNER_REPO_RE.match(raw)
+            and not candidate.exists()):
         return entry  # hub shorthand, not a local dir
     return str(candidate.resolve())
 
@@ -77,14 +77,14 @@ class SkillsConfigManager:
 
     def load_global(self) -> Dict[str, Any]:
         data = self._read(self._global_path())
-        return self._resolved(data, base=self._global_dir,
-                              tree=self.global_skills_tree())
+        return self._resolved(
+            data, base=self._global_dir, tree=self.global_skills_tree())
 
     def load_project(self, project_path: str) -> Dict[str, Any]:
         data = self._read(self._project_path(project_path))
         base = Path(os.path.expanduser(str(project_path))).resolve()
-        return self._resolved(data, base=base,
-                              tree=self.project_skills_tree(project_path))
+        return self._resolved(
+            data, base=base, tree=self.project_skills_tree(project_path))
 
     def load_merged(self,
                     project_path: Optional[str] = None) -> Dict[str, Any]:
@@ -116,8 +116,7 @@ class SkillsConfigManager:
         exists. Preserves the empty-dict shape for missing/empty files."""
         out = dict(data)
         sources = [
-            resolve_source_entry(s, base)
-            for s in (data.get('sources') or [])
+            resolve_source_entry(s, base) for s in (data.get('sources') or [])
         ]
         implicit: List[str] = []
         if tree.is_dir():

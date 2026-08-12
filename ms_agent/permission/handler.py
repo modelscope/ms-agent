@@ -34,6 +34,17 @@ class PermissionResponse:
 
 
 class PermissionHandler(Protocol):
+    """Confirmation UI for a tool call the policy can't decide on its own.
+
+    Optional duck-typed attribute ``supports_concurrent_asks`` (default
+    ``False`` when absent) declares whether several asks may be in flight at
+    once. It is False for anything bound to the one terminal — N prompts
+    fighting over a single stdin/menu deadlock — so ``PermissionEnforcer``
+    serializes those. A handler that keys pending asks by id and renders them
+    independently (``WebPermissionHandler``) sets it True, so a round's
+    parallel tool calls all surface for decision at the same time instead of
+    one-at-a-time behind whoever the user answers first.
+    """
 
     async def ask(
         self,
@@ -42,11 +53,15 @@ class PermissionHandler(Protocol):
         context: str,
         suggestions: list[str] | None = None,
         call_id: str = '',
-    ) -> PermissionResponse: ...
+    ) -> PermissionResponse:
+        ...
 
 
 class AutoPermissionHandler:
     """Always allows — used as fallback or in auto mode."""
+
+    # Never blocks on anything, so it has no reason to be serialized.
+    supports_concurrent_asks = True
 
     async def ask(
         self,
@@ -140,6 +155,12 @@ class EventEmitter(Protocol):
 class WebPermissionHandler:
     """Async handler that suspends on a Future until the frontend responds."""
 
+    # Pending asks are keyed by request_id and each renders as its own card, so
+    # a round's parallel tool calls can all wait for a decision simultaneously.
+    # Serializing them instead would show one card at a time while the untouched
+    # siblings sat there looking like they were already running.
+    supports_concurrent_asks = True
+
     def __init__(
         self,
         event_emitter: EventEmitter,
@@ -163,13 +184,20 @@ class WebPermissionHandler:
         self._pending[request_id] = future
 
         self._event_emitter.emit({
-            'type': 'permission_request',
-            'request_id': request_id,
-            'call_id': call_id,
-            'tool_name': tool_name,
-            'tool_args': tool_args,
-            'context': context,
-            'suggestions': suggestions or [],
+            'type':
+            'permission_request',
+            'request_id':
+            request_id,
+            'call_id':
+            call_id,
+            'tool_name':
+            tool_name,
+            'tool_args':
+            tool_args,
+            'context':
+            context,
+            'suggestions':
+            suggestions or [],
             'options': [a.value for a in PermissionAction],
         })
 

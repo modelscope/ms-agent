@@ -127,8 +127,8 @@ class SkillCatalog:
         # as plain subpaths.
         if USER_SKILLS_DIR.exists():
             sources.append(
-                SkillSource(type=SkillSourceType.LOCAL_DIR,
-                            path=str(USER_SKILLS_DIR)))
+                SkillSource(
+                    type=SkillSourceType.LOCAL_DIR, path=str(USER_SKILLS_DIR)))
 
         # 3a. Structured sources (higher priority)
         if hasattr(skills_config, 'sources') and skills_config.sources:
@@ -183,8 +183,9 @@ class SkillCatalog:
         seen: set = set()
         unique: List[SkillSource] = []
         for source in sources:
-            path = (str(Path(source.path).expanduser().resolve())
-                    if source.path else None)
+            path = (
+                str(Path(source.path).expanduser().resolve())
+                if source.path else None)
             key = (source.type, path, source.repo_id, source.url,
                    source.subdir, source.plugin_id)
             if key in seen:

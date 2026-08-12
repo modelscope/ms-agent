@@ -159,8 +159,7 @@ if __name__ == '__main__':
     extra_requires['a2a'], _ = parse_requirements('requirements/a2a.txt')
     extra_requires['retrieval'], _ = parse_requirements(
         'requirements/retrieval.txt')
-    extra_requires['cinema'], _ = parse_requirements(
-        'requirements/cinema.txt')
+    extra_requires['cinema'], _ = parse_requirements('requirements/cinema.txt')
     extra_requires['docs'], _ = parse_requirements('requirements/docs.txt')
 
     # ``all`` aggregates every *runtime* extra so that `pip install ms-agent[all]`

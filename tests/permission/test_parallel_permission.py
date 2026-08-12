@@ -1,7 +1,10 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
-"""Parallel tool calls (ToolManager.parallel_call_tool → asyncio.gather) must
-not invoke the interactive permission handler concurrently: N prompts fighting
-over one terminal deadlocks. The enforcer serializes asks."""
+"""Parallel tool calls (ToolManager.parallel_call_tool → asyncio.gather) reach
+the permission handler concurrently. Whether that is safe is the handler's
+property: a terminal-bound one deadlocks with N prompts fighting over one
+stdin, so the enforcer serializes it; a handler that declares
+``supports_concurrent_asks`` gets them all at once (a web UI renders each
+pending ask as its own card)."""
 import asyncio
 
 import pytest
@@ -45,9 +48,65 @@ async def test_parallel_asks_are_serialized(tmp_path):
     assert handler.max_in_flight == 1
 
 
+class _ConcurrentProbe(_ConcurrencyProbe):
+    """Same probe, but declaring it can service several asks at once."""
+    supports_concurrent_asks = True
+
+
+@pytest.mark.asyncio
+async def test_concurrent_handler_asks_overlap(tmp_path):
+    """A handler that opts in sees the whole round's asks at once, instead of
+    one-at-a-time behind whichever the user answers first."""
+    cfg = PermissionConfig.from_dict({'mode': 'restricted'})
+    handler = _ConcurrentProbe()
+    enf = PermissionEnforcer(
+        config=cfg, handler=handler,
+        memory=PermissionMemory(project_path=str(tmp_path)))
+
+    results = await asyncio.gather(
+        *[enf.check('some_tool', {'i': i}) for i in range(5)])
+
+    assert all(r.action == 'allow' for r in results)
+    assert handler.calls == 5
+    assert handler.max_in_flight == 5
+
+
+class _AlwaysAllowOnce:
+    """Serialized handler whose FIRST answer is allow_always; later asks should
+    never reach it — memory now covers them."""
+
+    def __init__(self):
+        self.calls = 0
+
+    async def ask(self, tool_name, tool_args, context, suggestions=None,
+                  call_id=''):
+        self.calls += 1
+        await asyncio.sleep(0.01)
+        return PermissionResponse(
+            action=PermissionAction.ALLOW_ALWAYS, pattern=tool_name)
+
+
+@pytest.mark.asyncio
+async def test_queued_ask_skipped_once_memory_covers_it(tmp_path):
+    """A serialized ask waiting its turn re-checks memory before prompting: the
+    user already answered "always allow" for this exact pattern on the sibling
+    ahead of it in the queue."""
+    cfg = PermissionConfig.from_dict({'mode': 'restricted'})
+    handler = _AlwaysAllowOnce()
+    enf = PermissionEnforcer(
+        config=cfg, handler=handler,
+        memory=PermissionMemory(project_path=str(tmp_path)))
+
+    results = await asyncio.gather(
+        *[enf.check('some_tool', {'i': i}) for i in range(4)])
+
+    assert all(r.action == 'allow' for r in results)
+    assert handler.calls == 1  # the other three were covered by memory
+
+
 class _CallIdCapture:
     """Handler that records the call_id it was asked with (and tolerates
-    handlers that don't accept it — see enforcer._serialized_ask)."""
+    handlers that don't accept it — see enforcer._ask_user)."""
     def __init__(self):
         self.seen = []
 

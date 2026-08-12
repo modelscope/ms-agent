@@ -1070,8 +1070,7 @@ class OpenAI(LLM):
             # assistant messages accept it. This is the correct representation
             # now that the framework no longer injects a placeholder utterance.
             if (formatted_message.get('role') == 'assistant'
-                    and formatted_message.get('tool_calls')
-                    and not content):
+                    and formatted_message.get('tool_calls') and not content):
                 formatted_message['content'] = None
 
             openai_messages.append(formatted_message)

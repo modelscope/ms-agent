@@ -19,7 +19,6 @@ from __future__ import annotations
 import json
 import os
 import re
-
 from omegaconf import OmegaConf
 from typing import Any, Dict, Optional
 
@@ -103,7 +102,8 @@ def resolve_mcp_config(
     return {'mcpServers': expand_env_placeholders(servers)}
 
 
-def merge_skills_into_config(config, global_home: str, work_dir: Optional[str]):
+def merge_skills_into_config(config, global_home: str,
+                             work_dir: Optional[str]):
     """Merge managed skill sources + disabled from skills.json into
     ``config.skills`` (in place, returns config). Catalog dedups by skill_id.
 
@@ -116,8 +116,8 @@ def merge_skills_into_config(config, global_home: str, work_dir: Optional[str]):
     """
     try:
         from ms_agent.config.skills_manager import SkillsConfigManager
-        merged = SkillsConfigManager(global_dir=global_home).load_merged(
-            work_dir)
+        merged = SkillsConfigManager(
+            global_dir=global_home).load_merged(work_dir)
     except Exception:
         return config
     src_strings = merged.get('sources') or []
@@ -156,14 +156,14 @@ def merge_skills_into_config(config, global_home: str, work_dir: Optional[str]):
 
     combined_sources = base_sources + new_sources
     combined_disabled = list(dict.fromkeys(yaml_disabled + list(disabled)))
-    OmegaConf.update(config, 'skills._yaml_disabled', yaml_disabled,
-                     merge=False)
+    OmegaConf.update(
+        config, 'skills._yaml_disabled', yaml_disabled, merge=False)
     if combined_sources or existing_sources:
-        OmegaConf.update(config, 'skills.sources', combined_sources,
-                         merge=False)
+        OmegaConf.update(
+            config, 'skills.sources', combined_sources, merge=False)
     if combined_disabled or getattr(skills, 'disabled', None):
-        OmegaConf.update(config, 'skills.disabled', combined_disabled,
-                         merge=False)
+        OmegaConf.update(
+            config, 'skills.disabled', combined_disabled, merge=False)
     return config
 
 

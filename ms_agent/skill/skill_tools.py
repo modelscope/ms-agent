@@ -403,8 +403,7 @@ class SkillToolSet(ToolBase):
         skill_dir = self._get_managed_skills_dir() / skill_id
 
         if skill_dir.exists() or self._catalog.get_skill(skill_id):
-            return json.dumps(
-                {"error": f"Skill '{skill_id}' already exists"})
+            return json.dumps({'error': f"Skill '{skill_id}' already exists"})
 
         frontmatter = SkillSchemaParser.parse_yaml_frontmatter(content)
         if (not frontmatter or 'name' not in frontmatter
@@ -468,8 +467,8 @@ class SkillToolSet(ToolBase):
             skill.skill_path.resolve().relative_to(managed_dir)
         except ValueError:
             return json.dumps({
-                "error":
-                    "Can only delete skills inside the managed skills tree"
+                'error':
+                'Can only delete skills inside the managed skills tree'
             })
 
         shutil.rmtree(skill.skill_path)

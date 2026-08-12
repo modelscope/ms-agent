@@ -3,13 +3,12 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from typing import Any
-
 from acp import (PROTOCOL_VERSION, Agent, InitializeResponse,
                  NewSessionResponse, PromptResponse, run_agent, text_block)
 from acp.schema import (AgentCapabilities, ClientCapabilities, Implementation,
                         PermissionOption, PromptCapabilities,
                         SessionCapabilities, SessionListCapabilities)
+from typing import Any
 
 from ms_agent.utils.logger import get_logger
 from .config import (apply_config_option, build_config_options,

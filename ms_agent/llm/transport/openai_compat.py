@@ -211,8 +211,7 @@ class OpenAICompatTransport(Transport):
             # assistant messages accept it. Mirrors the legacy adapter — the
             # framework no longer injects a placeholder utterance for these.
             if (formatted_message.get('role') == 'assistant'
-                    and formatted_message.get('tool_calls')
-                    and not content):
+                    and formatted_message.get('tool_calls') and not content):
                 formatted_message['content'] = None
 
             role = formatted_message.get('role')
@@ -474,8 +473,8 @@ class OpenAICompatTransport(Transport):
                     first_run = not messages[-1].to_dict().get(flag, False)
                     if self.continue_gen_mode and chunk.choices[
                             0].finish_reason in [
-                            'length', 'null'
-                    ] and (max_runs is None or max_runs != 0):
+                                'length', 'null'
+                            ] and (max_runs is None or max_runs != 0):
                         logger.info(
                             f'finish_reason: {chunk.choices[0].finish_reason}, '
                             f'continue generate.')
