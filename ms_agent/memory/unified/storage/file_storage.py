@@ -37,6 +37,11 @@ class FileMemoryStorage:
         self.char_limit = config.char_limit
         self.security_scan = config.security_scan
         self._content_cache: Optional[str] = None
+        # (mtime_ns, size) of the file the cache was read from. External
+        # writers exist (the WebUI memory editor, hand edits) and MEMORY.md
+        # rides in the system prompt — a never-expiring cache made those
+        # edits invisible to a running session.
+        self._cache_stat: Optional[tuple] = None
 
     # ------------------------------------------------------------------
     # MemoryStorage protocol
@@ -168,13 +173,19 @@ class FileMemoryStorage:
     # ------------------------------------------------------------------
 
     def _read(self) -> str:
-        if self._content_cache is not None:
+        try:
+            st = self.memory_path.stat()
+            stat_key = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            self._content_cache = None
+            self._cache_stat = None
+            return ''
+        if self._content_cache is not None and self._cache_stat == stat_key:
             return self._content_cache
-        if self.memory_path.exists():
-            content = self.memory_path.read_text(encoding='utf-8')
-            self._content_cache = content
-            return content
-        return ''
+        content = self.memory_path.read_text(encoding='utf-8')
+        self._content_cache = content
+        self._cache_stat = stat_key
+        return content
 
     def _write(self, content: str) -> None:
         self.memory_path.parent.mkdir(parents=True, exist_ok=True)
@@ -188,6 +199,12 @@ class FileMemoryStorage:
                 os.unlink(tmp)
             raise
         self._content_cache = content
+        try:
+            st = self.memory_path.stat()
+            self._cache_stat = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            self._cache_stat = None
 
     def invalidate_cache(self) -> None:
         self._content_cache = None
+        self._cache_stat = None

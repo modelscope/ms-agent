@@ -61,6 +61,12 @@ class SessionLog:
 
         self._ensure_metadata()
 
+    @property
+    def directory(self) -> Path:
+        """The session directory — where per-session sidecar files
+        (plan.json, skill_surface.json, prompt_surface.json, ...) live."""
+        return self._dir
+
     # ------------------------------------------------------------------
     # Write path (append-only)
     # ------------------------------------------------------------------

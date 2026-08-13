@@ -14,28 +14,13 @@ from ms_agent.tools.base import ToolBase
 if TYPE_CHECKING:
     from .orchestrator import MemoryOrchestrator
 
+from ms_agent.prompting.builtin import MEMORY_TOOL_GUIDANCE
+
 SERVER_NAME = 'unified_memory'
 
-MEMORY_USAGE_PROMPT = """
-## Long-term Memory
-
-You have access to a persistent long-term memory system. Use the memory tools to proactively manage it during conversation.
-
-**When to save:**
-- User explicitly states a preference (e.g. "I prefer ruff over flake8")
-- User shares important project context (tech stack, conventions, deadlines)
-- User corrects you — save the correction to avoid repeating the mistake
-- Key decisions are made during the conversation
-- User's recurring patterns you notice (coding style, communication preferences)
-
-**When NOT to save:**
-- Transient information (today's weather, one-off questions)
-- Information already present in your memory
-- Conversation filler or greetings
-- Sensitive credentials or secrets (API keys, passwords)
-
-**Be conservative** — only save facts that will genuinely help in future sessions. Quality over quantity.
-""".strip()
+#: Deprecated alias — the guidance text now lives in prompting.builtin and is
+#: injected as an assembly segment by LLMAgent (never by mutating config).
+MEMORY_USAGE_PROMPT = MEMORY_TOOL_GUIDANCE
 
 
 class MemoryTool(ToolBase):

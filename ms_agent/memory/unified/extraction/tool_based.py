@@ -20,14 +20,17 @@ SAVE_MEMORY_TOOL = {
     'type': 'function',
     'function': {
         'name': 'save_memory',
-        'description': '保存整合结果到持久化存储。输出完整的长期记忆 markdown。',
+        'description': ('Persist the consolidation result. Output the '
+                        'complete long-term memory markdown.'),
         'parameters': {
             'type': 'object',
             'properties': {
                 'memory_update': {
                     'type': 'string',
-                    'description': ('完整的长期记忆 markdown，包含所有现有事实加新增内容。'
-                                    '无变化则原样返回。'),
+                    'description':
+                    ('The complete long-term memory markdown: all existing '
+                     'facts plus additions. Return it unchanged when nothing '
+                     'changed.'),
                 }
             },
             'required': ['memory_update'],
