@@ -100,3 +100,48 @@ def test_inject_replaces_stale_block_instead_of_skipping(tmp_path):
     assert '第一版' not in content
     assert content.count('<long-term-memory>') == 1
     assert content.startswith('S')
+
+
+def test_clearing_memory_removes_the_section(tmp_path):
+    """Forgetting is a state, not a no-op: when MEMORY.md is emptied, the
+    block a previous round put on the head must be REMOVED, not left behind
+    (an empty snapshot used to skip injection entirely)."""
+    backend = _backend(tmp_path)
+    path = _memory_path(backend)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('用户偏好深色主题。\n', encoding='utf-8')
+
+    msgs = [{'role': 'system', 'content': 'S'}, {'role': 'user', 'content': 'q'}]
+    out = asyncio.run(backend.inject([dict(m) for m in msgs]))
+    assert '深色主题' in out[0]['content']
+
+    # Cleared through the UI editor / by hand, head carried into next round.
+    path.write_text('', encoding='utf-8')
+    _bump_mtime(path)
+    out2 = asyncio.run(backend.inject(out))
+    content = out2[0]['content']
+    assert '深色主题' not in content
+    assert '<long-term-memory>' not in content
+    assert content == 'S'  # head is back to exactly what it was
+
+
+def test_memory_tool_remove_drops_the_entry_from_the_prompt(tmp_path):
+    """Same through the agent's own memory tool (add -> remove -> gone)."""
+    backend = _backend(tmp_path)
+    asyncio.run(
+        backend.handle_tool_call('memory', {
+            'action': 'add',
+            'content': '发布前跑 make check。'
+        }))
+    msgs = [{'role': 'system', 'content': 'S'}, {'role': 'user', 'content': 'q'}]
+    out = asyncio.run(backend.inject([dict(m) for m in msgs]))
+    assert 'make check' in out[0]['content']
+
+    asyncio.run(
+        backend.handle_tool_call('memory', {
+            'action': 'remove',
+            'content': '发布前跑 make check。'
+        }))
+    out2 = asyncio.run(backend.inject(out))
+    assert 'make check' not in out2[0]['content']
+    assert '<long-term-memory>' not in out2[0]['content']
