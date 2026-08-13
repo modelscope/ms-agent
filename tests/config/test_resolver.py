@@ -290,7 +290,11 @@ class TestPersonalizationInResolver:
         (global_dir / 'settings.json').write_text(json.dumps({'llm': {'model': 'x'}}))
         resolver = ConfigResolver(global_dir=str(global_dir))
         config = resolver.resolve()
-        assert not hasattr(config, 'personalization') or config.personalization is None
+        # The framework-default definition (the general assistant) opts into
+        # workspace files via personalization.enabled — that node is expected.
+        # settings.json contributed nothing else: no instruction fields.
+        assert config.personalization.enabled is True
+        assert getattr(config.personalization, 'global_instruction', None) in (None, '')
 
     def test_project_instruction_from_project_patch(self, tmp_path):
         global_dir = tmp_path / '.ms_agent'
@@ -313,4 +317,7 @@ class TestPersonalizationInResolver:
         (global_dir / 'settings.json').write_text(json.dumps(settings))
         resolver = ConfigResolver(global_dir=str(global_dir))
         config = resolver.resolve()
-        assert not hasattr(config, 'personalization') or config.personalization is None
+        # An empty settings field must not be mapped; the only personalization
+        # key present is the framework default's `enabled` contract flag.
+        assert config.personalization.enabled is True
+        assert getattr(config.personalization, 'global_instruction', None) in (None, '')

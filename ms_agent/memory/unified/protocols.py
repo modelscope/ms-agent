@@ -33,6 +33,12 @@ from datetime import datetime, timezone
 from typing import (Any, Callable, Dict, List, Optional, Protocol,
                     runtime_checkable)
 
+#: Stable first-line marker of a durable recall block (see
+#: ``recall_block()`` implementations). LLMAgent uses it to keep the attach
+#: idempotent per turn WITHOUT treating every <system-reminder> on the
+#: message (skill notices, prompt-files notices) as "already attached".
+RECALL_BLOCK_MARKER = 'Relevant long-term memories for this request'
+
 # ===================================================================
 # Layer 1 -- Data structures
 # ===================================================================

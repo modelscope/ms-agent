@@ -18,8 +18,13 @@ class PersonalizationSettings:
     are preserved as-is during save.
     """
 
-    def __init__(self, global_dir: str = '~/.ms_agent') -> None:
-        self._path = Path(os.path.expanduser(global_dir)) / SETTINGS_FILE
+    def __init__(self, global_dir: str | None = None) -> None:
+        # Follows MS_AGENT_HOME by default (see ProfileManager for rationale).
+        if global_dir is None:
+            from ms_agent.project.paths import global_home
+            self._path = global_home() / SETTINGS_FILE
+        else:
+            self._path = Path(os.path.expanduser(global_dir)) / SETTINGS_FILE
 
     def load(self) -> PersonalizationConfig:
         data = self._read_section()

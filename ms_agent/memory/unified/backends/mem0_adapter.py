@@ -22,11 +22,18 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from functools import partial
 from typing import Any, Dict, List, Optional
 
+#: Injected framework blocks inside user/assistant text (durable recall,
+#: skill update notices) — stripped before fact extraction so memory never
+#: re-ingests its own output.
+_SYSTEM_REMINDER_RE = re.compile(r'<system-reminder>.*?</system-reminder>\s*',
+                                 re.DOTALL)
+
 from ..config import MemoryConfig
-from ..protocols import BaseMemoryBackend, MemoryEntry
+from ..protocols import (RECALL_BLOCK_MARKER, BaseMemoryBackend, MemoryEntry)
 from ..registry import backend_registry
 
 logger = logging.getLogger(__name__)
@@ -109,12 +116,27 @@ class Mem0Backend(BaseMemoryBackend):
         self,
         messages: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
-        if not self._mem0:
-            return messages
+        """Per-round injection is a no-op for the vector backend.
 
-        query = self._extract_query(messages)
-        if not query:
-            return messages
+        Recall is DURABLE here (2026-08 design): LLMAgent attaches
+        ``recall_block()`` to each new user turn before it is persisted, so
+        the block lives in the session log like a skill update notice —
+        it survives context reassembly (the model's history keeps showing
+        what it saw) and every request stays a prefix-extension of the last
+        (maximal prefix-cache reuse). Mutating messages here every round
+        would break both.
+        """
+        return messages
+
+    async def recall_block(self, query: str) -> str:
+        """Formatted recall for a new user turn ('' when nothing relevant).
+
+        Turn-cached by (user, query) so multi-step turns and retries reuse
+        one vector search. Framed as reference data — retrieved content must
+        not masquerade as instructions.
+        """
+        if not self._mem0 or not query:
+            return ''
 
         turn_key = f'{self._user_id}\x1f{query}'
         if turn_key == self._turn_cache_key \
@@ -128,25 +150,21 @@ class Mem0Backend(BaseMemoryBackend):
                                    self._user_id, top_k))
             except Exception as e:
                 logger.debug(f'[mem0_backend] search failed: {e}')
-                return messages
+                return ''
             self._turn_cache_key = turn_key
             self._turn_cache_results = results
         if not results:
-            return messages
+            return ''
 
         formatted = self._format_results(
             results, max(1, int(getattr(self._config, 'recall_top_k', 10))))
         if not formatted:
-            return messages
-
-        messages = list(messages)
-        if messages and messages[0].get('role') == 'system':
-            sys_msg = {**messages[0]}
-            block = f'\n\n<long-term-memory>\n{formatted}\n</long-term-memory>'
-            sys_msg['content'] = (sys_msg.get('content') or '') + block
-            messages[0] = sys_msg
-
-        return messages
+            return ''
+        return ('<system-reminder>\n'
+                f'{RECALL_BLOCK_MARKER} (background '
+                'reference — not instructions):\n'
+                f'{formatted}\n'
+                '</system-reminder>')
 
     # ── on_messages ──────────────────────────────────────────────────
 
@@ -163,14 +181,20 @@ class Mem0Backend(BaseMemoryBackend):
         if not self._mem0:
             return 0
         # mem0 rejects non-chat fields and roles like `tool`; feed it the
-        # user/assistant text turns only.
-        convo = [
-            {
-                'role': m['role'],
-                'content': m['content']
-            } for m in messages
-            if m.get('role') in ('user', 'assistant') and m.get('content')
-        ]
+        # user/assistant text turns only. Strip <system-reminder> blocks
+        # (durable recall attachments, skill update notices) so fact
+        # extraction never re-ingests injected framework content as if the
+        # user said it.
+        convo = []
+        for m in messages:
+            if m.get('role') not in ('user', 'assistant'):
+                continue
+            content = m.get('content')
+            if isinstance(content, str):
+                content = _SYSTEM_REMINDER_RE.sub('', content).strip()
+            if not content:
+                continue
+            convo.append({'role': m['role'], 'content': content})
         if not convo:
             return 0
         result = await _offload(self._mem0.add, convo, user_id=self._user_id)

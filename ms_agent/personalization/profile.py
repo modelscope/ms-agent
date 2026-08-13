@@ -13,8 +13,15 @@ class ProfileManager:
     into the system prompt's User Profile section.
     """
 
-    def __init__(self, global_dir: str = '~/.ms_agent') -> None:
-        self._dir = Path(os.path.expanduser(global_dir))
+    def __init__(self, global_dir: str | None = None) -> None:
+        # Default follows the runtime home (honors MS_AGENT_HOME) instead of a
+        # hard-coded '~/.ms_agent' — a no-arg ProfileManager used to read a
+        # different file than a UI writing to a redirected home (dead link).
+        if global_dir is None:
+            from ms_agent.project.paths import global_home
+            self._dir = global_home()
+        else:
+            self._dir = Path(os.path.expanduser(global_dir))
         self._path = self._dir / PROFILE_FILENAME
 
     @property

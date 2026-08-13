@@ -58,15 +58,20 @@ class Agent(ABC):
         # anchored to the project (the work dir), not the config file's
         # directory. This keeps running a shared/template config from picking up
         # (or scattering) overrides in that config's folder.
-        try:
-            from omegaconf import OmegaConf
+        # Skipped when ConfigResolver.resolve() already merged the patch (it
+        # marks the config): merging twice here re-applied the patch ON TOP of
+        # caller-side overrides, silently making the project patch the highest
+        # priority layer.
+        if not getattr(self.config, '_project_patch_applied', False):
+            try:
+                from omegaconf import OmegaConf
 
-            from ms_agent.config.resolver import ConfigResolver
-            patch = ConfigResolver()._load_project_patch(self.output_dir)
-            if patch is not None:
-                self.config = OmegaConf.merge(self.config, patch)
-        except Exception:
-            pass
+                from ms_agent.config.resolver import ConfigResolver
+                patch = ConfigResolver()._load_project_patch(self.output_dir)
+                if patch is not None:
+                    self.config = OmegaConf.merge(self.config, patch)
+            except Exception:
+                pass
 
     @abstractmethod
     async def run(

@@ -26,6 +26,10 @@ from ms_agent.memory.memory_manager import SharedMemoryManager
 from ms_agent.personalization.injector import PersonalizationInjector
 from ms_agent.personalization.profile import ProfileManager
 from ms_agent.personalization.types import PersonalizationConfig
+from ms_agent.project.paths import global_home
+from ms_agent.prompting import workspace_files
+from ms_agent.prompting.builtin import (BASE_AGENT_PROMPT, LIVE_FILES_HINT,
+                                        MEMORY_TOOL_GUIDANCE)
 from ms_agent.rag.base import RAG
 from ms_agent.rag.utils import rag_mapping
 from ms_agent.session import ContextAssembler, SessionLog
@@ -184,6 +188,8 @@ class LLMAgent(Agent):
 
     AGENT_NAME = 'LLMAgent'
 
+    # Deprecated: the base slot now falls back to prompting.builtin
+    # BASE_AGENT_PROMPT; kept only for external references.
     DEFAULT_SYSTEM = 'You are a helpful assistant.'
 
     DEFAULT_MAX_CHAT_ROUND = 20
@@ -240,6 +246,16 @@ class LLMAgent(Agent):
             default_yaml = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)), 'agent.yaml')
             llm_config = Config.from_task(default_yaml)
+            # This implicit merge only borrows the default definition's
+            # plumbing (llm/tools/callbacks) for partial configs. Its
+            # environment contract (personalization.enabled) must NOT ride
+            # along: workspace files apply only when the default assistant is
+            # the *explicit* definition (bare run / tui / webui resolve), or
+            # when the caller's own config opts in.
+            if hasattr(llm_config, 'personalization'):
+                from omegaconf import open_dict
+                with open_dict(llm_config):
+                    del llm_config['personalization']
             config = OmegaConf.merge(llm_config, config)
         super().__init__(config, tag, trust_remote_code)
         self.callbacks: List[Callback] = []
@@ -265,6 +281,9 @@ class LLMAgent(Agent):
         # Skill system (initialized in prepare_skills)
         self._skill_catalog = None
         self._skill_injector = None
+        # Conditional system-prompt segment; set by _register_memory_tool once
+        # the memory tool actually registered (never mutates config.prompt).
+        self._memory_guidance = ''
         self._rollback_messages: Optional[List[Message]] = None
 
         # Skill runtime (initialized in prepare_skills)
@@ -298,6 +317,12 @@ class LLMAgent(Agent):
 
         # Personalization (lazy-loaded in _build_personalization_section)
         self._profile_manager = ProfileManager()
+
+        # Per-source fingerprints of the hot-reloadable head files as of the
+        # last state the model was told about (None until initialized from the
+        # session sidecar or the first build). Drift against this baseline
+        # fires a durable update notice on the next user turn.
+        self._prompt_surface: Optional[Dict[str, str]] = None
 
     async def prepare_skills(self):
         """Initialize the skill system from config.skills.
@@ -377,17 +402,46 @@ class LLMAgent(Agent):
     def _build_system_content(self) -> str:
         """Build the full system prompt content.
 
-        Assembly order: base prompt → personalization → skill injection.
+        Layering (docs: prompt-context design-final §2):
+        ① BASE — explicit ``prompt.system`` replaces the built-in base prompt
+          (and only this layer);
+        ② SOUL.md persona + ③④⑤ instructions/profile files — environment
+          layers, gated by ``personalization.enabled`` (schema default false;
+          the packaged default agent.yaml opts in);
+        ⑥ memory guidance — conditional, present only after the memory tool
+          registered (see _register_memory_tool);
+        ⑦ skill section — unchanged.
         Used by create_messages() and SkillRuntime.maybe_refresh_system_prompt().
         """
-        content = self.system or LLMAgent.DEFAULT_SYSTEM
+        content = self.system or BASE_AGENT_PROMPT
 
-        personalization = self._build_personalization_section()
-        if personalization:
-            content += '\n\n' + personalization
+        if self._personalization_enabled():
+            soul = workspace_files.soul_content()
+            if soul:
+                content += '\n\n' + soul
+            personalization = self._build_personalization_section()
+            if personalization:
+                content += '\n\n' + personalization
+            if soul or personalization:
+                # Self-knowledge of the hot-reload contract; without it the
+                # model tends to tell users its prompt is a static snapshot.
+                # {home} resolves the logical ~/.ms_agent labels to the real
+                # directory so agent-side edits target the right files.
+                content += '\n\n' + LIVE_FILES_HINT.format(
+                    home=str(global_home()))
+
+        if self._memory_guidance:
+            content += '\n\n' + self._memory_guidance
 
         if self._skill_injector:
-            skill_section = self._skill_injector.build_skill_prompt_section()
+            # Through the runtime when present: in update_notice mode it pins
+            # the skill section to its session-start snapshot (byte-stable;
+            # changes go through in-conversation notices) while the rest of
+            # the head stays hot-reloadable.
+            if self._skill_runtime is not None:
+                skill_section = self._skill_runtime.build_skill_section()
+            else:
+                skill_section = self._skill_injector.build_skill_prompt_section()
             if skill_section:
                 content += '\n\n' + skill_section
 
@@ -1198,14 +1252,38 @@ class LLMAgent(Agent):
 
         return messages
 
-    def _build_personalization_section(self) -> str:
+    def _personalization_enabled(self) -> bool:
+        """Environment contract: does this definition accept workspace files?
+
+        Schema default is **false** so self-contained yamls (task pipelines
+        like deep_research) stay byte-identical regardless of what lives in
+        the user's home. The packaged default agent.yaml — the general
+        assistant that bare CLI / TUI / WebUI all run — opts in explicitly.
+        """
         p_config = getattr(self.config, 'personalization', None)
+        if p_config is None:
+            return False
+        return bool(getattr(p_config, 'enabled', False))
+
+    def _build_personalization_section(self) -> str:
+        """Sections ③④⑤: file-first with legacy-field fallback.
+
+        The fallback criterion is "file strips to empty", NOT "file exists" —
+        ensure-materialized templates are comment-only and must not shadow a
+        legacy settings/project field before the user writes anything.
+        """
+        p_config = getattr(self.config, 'personalization', None)
+        legacy_global = (getattr(p_config, 'global_instruction', '')
+                         or '') if p_config else ''
+        legacy_project = (getattr(p_config, 'project_instruction', '')
+                          or '') if p_config else ''
         config = PersonalizationConfig(
-            global_instruction=(getattr(p_config, 'global_instruction', '')
-                                or '') if p_config else '',
-            project_instruction=(getattr(p_config, 'project_instruction', '')
-                                 or '') if p_config else '',
-            user_profile=self._profile_manager.read(),
+            global_instruction=workspace_files.global_instructions_block(
+                legacy_fallback=legacy_global),
+            project_instruction=workspace_files.project_instructions_block(
+                getattr(self, 'output_dir', None),
+                legacy_fallback=legacy_project),
+            user_profile=workspace_files.profile_block(),
         )
         return PersonalizationInjector.build(config)
 
@@ -1272,8 +1350,7 @@ class LLMAgent(Agent):
 
     async def _register_memory_tool(self, orchestrator):
         """Register the memory tool into ToolManager and inject prompt guidance."""
-        from ms_agent.memory.unified.memory_tool import (MEMORY_USAGE_PROMPT,
-                                                         MemoryTool)
+        from ms_agent.memory.unified.memory_tool import MemoryTool
 
         if not hasattr(orchestrator, 'get_tool_schemas'):
             return
@@ -1304,16 +1381,11 @@ class LLMAgent(Agent):
             await self.tool_manager.index_extra_tool(mem_tool)
             logger.info('[unified_memory] Memory tool registered')
 
-        # Inject usage guidance into system prompt
-        if hasattr(self.config, 'prompt') and hasattr(self.config.prompt,
-                                                      'system'):
-            current_prompt = self.config.prompt.system or ''
-            if 'Long-term Memory' not in current_prompt:
-                OmegaConf.update(
-                    self.config,
-                    'prompt.system',
-                    current_prompt + '\n\n' + MEMORY_USAGE_PROMPT,
-                    merge=True)
+        # Register the usage guidance as an assembly segment (design-final §2
+        # rule 3). The previous approach mutated config.prompt.system in
+        # place, which made the config object a hidden prompt writer and broke
+        # the "definition is read-only" contract.
+        self._memory_guidance = MEMORY_TOOL_GUIDANCE
 
     def _schedule_add_memory_after_task(self, messages, timestamp=None):
 
@@ -1344,6 +1416,151 @@ class LLMAgent(Agent):
             if ks_config is not None:
                 self.knowledge_search: SirchmunkSearch = SirchmunkSearch(
                     self.config)
+
+    async def _attach_memory_recall(self, messages: List[Message]) -> None:
+        """Durably attach vector-memory recall to a NEW user turn.
+
+        Runs exactly once per user turn, right before the turn is persisted:
+        the recall block becomes part of the message in the SessionLog (the
+        same mechanism skill update notices use), so it
+        - survives per-round context reassembly (the model's own history
+          keeps showing what it actually saw), and
+        - keeps the request a strict prefix-extension of the previous one
+          (maximal prefix-cache reuse — an ephemeral per-round attach
+          diverged at the previous user message and re-prefilled the whole
+          last turn).
+        Backends without ``recall_block`` (e.g. the file backend, whose
+        snapshot rides in the system prompt) are unaffected.
+        """
+        if not self.memory_tools or not messages:
+            return
+        last = messages[-1]
+        if getattr(last, 'role', None) != 'user':
+            return
+        content = last.content
+        if not isinstance(content, str):
+            return
+        # The turn may already carry other <system-reminder> blocks (skill
+        # update notice prefixed by the host, prompt-files update notice) —
+        # they must not suppress recall, and must not leak into the retrieval
+        # query. Idempotency is per-block: the backend's own marker.
+        query = workspace_files.REMINDER_BLOCK_RE.sub('', content).strip()
+        if not query:
+            return
+        for tool in self.memory_tools:
+            recall = getattr(tool, 'recall_block', None)
+            if recall is None:
+                continue
+            marker = getattr(tool, 'recall_marker', None)
+            if marker and marker in content:
+                return  # this turn already carries a recall block
+            try:
+                block = await recall(query)
+            except Exception as e:
+                logger.warning(f'[memory] recall attach skipped: {e}')
+                continue
+            if block:
+                if block in content:
+                    return  # marker-less backend, identical block attached
+                last.content = f'{last.content}\n\n{block}'
+                return
+
+    # ── prompt-files update notices (hot-reload perception) ──────────────
+    #
+    # The head hot-reloads silently (content compare each round). These
+    # helpers give the model the missing *event*: per-source fingerprints are
+    # tracked against what the model was last told, and drift is announced as
+    # a durable <system-reminder> prefixed to the next user message — same
+    # delivery contract as skill update notices (part of the persisted turn,
+    # survives reassembly, prefix-cache friendly). Mid-turn edits are
+    # announced at the next turn boundary; the *content* still applies
+    # immediately through the per-round refresh.
+
+    def _prompt_surface_sidecar(self) -> Optional[Path]:
+        if self.session_log is None:
+            return None
+        return self.session_log.directory / 'prompt_surface.json'
+
+    def _current_prompt_surface(self) -> Dict[str, str]:
+        return workspace_files.head_source_fingerprints(
+            getattr(self, 'output_dir', None))
+
+    def _commit_prompt_surface(self, surface: Dict[str, str]) -> None:
+        """The model has now been told this state — persist it."""
+        self._prompt_surface = surface
+        path = self._prompt_surface_sidecar()
+        if path is None:
+            return
+        try:
+            tmp = path.with_suffix('.json.tmp')
+            tmp.write_text(
+                json.dumps({
+                    'version': 1,
+                    'sources': surface
+                },
+                           ensure_ascii=False,
+                           indent=1),
+                encoding='utf-8')
+            tmp.replace(path)
+        except OSError as e:
+            logger.warning(f'[prompt-surface] sidecar save failed: {e}')
+
+    def _load_prompt_surface(self) -> Optional[Dict[str, str]]:
+        path = self._prompt_surface_sidecar()
+        if path is None:
+            return None
+        try:
+            data = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return None
+        sources = data.get('sources')
+        return sources if isinstance(sources, dict) else None
+
+    def _init_prompt_surface(self) -> None:
+        """Session start (fresh first turn): begin tracking, announce nothing
+        — the head was just built from these very files."""
+        if not self._personalization_enabled():
+            return
+        self._commit_prompt_surface(self._current_prompt_surface())
+
+    def _attach_prompt_update_notice(self, messages: List[Message]):
+        """Prefix a durable update notice to a NEW user turn on drift.
+
+        Returns a commit callable to invoke AFTER the turn is persisted (safe
+        over-notify: an interrupted turn re-fires the notice next time, never
+        silently drops it), or None when nothing was attached.
+        """
+        if not self._personalization_enabled():
+            return None
+        if not messages:
+            return None
+        last = messages[-1]
+        if getattr(last, 'role', None) != 'user' or not isinstance(
+                last.content, str):
+            return None
+
+        baseline = self._prompt_surface
+        if baseline is None:
+            baseline = self._load_prompt_surface()
+        current = self._current_prompt_surface()
+        if baseline is None:
+            # Resumed session predating surface tracking: unknowable drift.
+            # Start tracking silently rather than spamming every legacy
+            # resume with a vague "may have changed".
+            self._commit_prompt_surface(current)
+            return None
+
+        # A label missing from the baseline (schema growth) never fires.
+        changed = sorted(label for label, digest in current.items()
+                         if label in baseline and baseline[label] != digest)
+        if not changed:
+            if current.keys() - baseline.keys():
+                self._commit_prompt_surface(current)
+            return None
+
+        notice = workspace_files.render_update_notice(changed)
+        last.content = f'{notice}\n\n{last.content}'
+        return lambda: self._commit_prompt_surface(current)
 
     async def condense_memory(self, messages: List[Message]) -> List[Message]:
         """Inject long-term memory context into the message list.
@@ -2221,6 +2438,13 @@ class LLMAgent(Agent):
                         messages, submit, hook_event='UserPromptSubmit')
 
                 await self.do_rag(messages)
+                # Durable recall attach BEFORE seeding: the block becomes part
+                # of this turn in the log (skill-notice style), so it survives
+                # context reassembly and keeps the prefix cache maximal.
+                await self._attach_memory_recall(messages)
+                # Head files were just read to build this head — baseline the
+                # surface so later turns can detect (and announce) drift.
+                self._init_prompt_surface()
 
                 # Seed SessionLog with initial messages
                 if self.session_log is not None:
@@ -2319,6 +2543,16 @@ class LLMAgent(Agent):
                         messages, add_type='add_after_step', **kwargs)
 
                 await self.after_tool_call(messages)
+                # New user turn (interactive multi-turn): attach the durable
+                # augmentations BEFORE the slice below persists them — same
+                # semantics as the round-0 attach. Order: state notice first
+                # (prompt-files drift, prefixed), then recall (appended; its
+                # query strips reminder blocks so notices never pollute it).
+                commit_surface = None
+                if len(messages) > step_end_len:
+                    commit_surface = self._attach_prompt_update_notice(
+                        messages)
+                    await self._attach_memory_recall(messages)
                 self.runtime.round += 1
 
                 # Persist whatever after_tool_call appended (the next user
@@ -2327,6 +2561,11 @@ class LLMAgent(Agent):
                     for msg in messages[step_end_len:]:
                         self.session_log.append(self._msg_to_dict(msg))
                     self.session_log.round = self.runtime.round
+                if commit_surface is not None:
+                    # Only now is the notice durably part of the turn — an
+                    # interrupted persist re-fires it next time (over-notify,
+                    # never silent-drop).
+                    commit_surface()
 
                 self.save_history(messages)
 

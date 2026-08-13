@@ -45,7 +45,7 @@ from ms_agent.memory.base import Memory
 from ms_agent.session.context_assembler import _dicts_to_messages
 from ms_agent.utils.logger import get_logger
 from .config import MemoryConfig
-from .protocols import MemoryBackend, MemoryEntry
+from .protocols import (RECALL_BLOCK_MARKER, MemoryBackend, MemoryEntry)
 from .registry import backend_registry
 
 logger = get_logger()
@@ -145,6 +145,27 @@ class MemoryOrchestrator(Memory):
             msg_dicts = _messages_to_dicts(messages)
             injected = await backend.inject(msg_dicts)
         return _dicts_to_messages(injected)
+
+    # ------------------------------------------------------------------
+    # Durable recall (attached to the user turn by LLMAgent)
+    # ------------------------------------------------------------------
+
+    #: Attach-idempotency marker for LLMAgent (matches the first line every
+    #: recall_block() implementation renders).
+    recall_marker = RECALL_BLOCK_MARKER
+
+    async def recall_block(self, query: str) -> str:
+        """Formatted recall for a NEW user turn; '' when the backend has no
+        per-query recall (file backend) or memory is disabled. Same store
+        lock as run() — retrieval must not overlap a write."""
+        if not self.mem_config.enabled:
+            return ''
+        async with _store_lock(self.mem_config.base_dir):
+            backend = await self._ensure_started()
+            fn = getattr(backend, 'recall_block', None)
+            if fn is None:
+                return ''
+            return await fn(query)
 
     # ------------------------------------------------------------------
     # Memory ABC -- add() / schedule_add()
