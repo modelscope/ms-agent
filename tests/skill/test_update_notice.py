@@ -33,15 +33,36 @@ class _Msg:
 
 class TestHeadGate:
 
-    def test_disabled_gate_keeps_head_untouched(self, tmp_path):
+    def test_notice_mode_pins_skill_section_but_head_still_refreshes(
+            self, tmp_path):
+        """Source-tiered refresh (2026-08): in update_notice mode the SKILL
+        section is frozen at its session snapshot (skill changes ride the
+        in-conversation notices), while instruction/persona layers keep
+        hot-reloading through the content compare."""
         cat = _catalog(tmp_path)
-        rt = SkillRuntime(catalog=cat)
-        rt.set_system_content_builder(lambda: 'NEW HEAD')
+        injector = SkillPromptInjector(cat, update_notice=True)
+        rt = SkillRuntime(catalog=cat, injector=injector)
         rt.head_refresh_enabled = False
 
-        messages = [_Msg('system', 'OLD HEAD')]
+        frozen = rt.build_skill_section()
+        assert 'alpha' in frozen
+        # a skill change must NOT alter the pinned section...
+        rt.toggle('alpha', False)
+        assert rt.build_skill_section() == frozen
+        # ...while the live injector output did change underneath
+        assert injector.build_skill_prompt_section() != frozen
+
+        instructions = {'text': 'OLD INSTRUCTIONS'}
+        rt.set_system_content_builder(
+            lambda: instructions['text'] + '\n\n' + rt.build_skill_section())
+        messages = [_Msg('system', 'OLD INSTRUCTIONS\n\n' + frozen)]
+        # nothing changed -> zero churn (skill toggle above is invisible)
         assert rt.maybe_refresh_system_prompt(messages) is False
-        assert messages[0].content == 'OLD HEAD'
+        # an instruction-layer change (e.g. edited AGENTS.md) DOES apply
+        instructions['text'] = 'EDITED INSTRUCTIONS'
+        assert rt.maybe_refresh_system_prompt(messages) is True
+        assert messages[0].content.startswith('EDITED INSTRUCTIONS')
+        assert frozen in messages[0].content
 
     def test_enabled_gate_still_refreshes(self, tmp_path):
         cat = _catalog(tmp_path)
