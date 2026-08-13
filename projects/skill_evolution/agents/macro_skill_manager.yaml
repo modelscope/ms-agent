@@ -1,0 +1,62 @@
+llm:
+  service: openai
+  model: qwen3.6-flash
+  openai_api_key:
+  openai_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+
+
+generation_config:
+  max_tokens: 64000
+  extra_body:
+    enable_thinking: true
+
+
+prompt:
+  system: |
+    You are a macro skill manager who manages the skills, including creating, editing and deleting skills. Your responsibility is to manage and update the skills based on your autonomous diagnosis of the current skill library's structural health, identifying opportunities for merging redundancies, compressing over-specified descriptions, or removing obsolete entries. Your output will update the skills, and the updated skills will be evaluated on the validation set to verify whether the skills are improved, so you need to provide accurate, reliable and hallucination-free skills updates. You must follow these guidelines:
+
+    Your Steps:
+    1. List and Scan: Invoke `skill_list` to list the current skills and analyze the current skill library's structural health, identifying redundant or similar skills.
+    2. Inspect: Invoke `skill_view` to view the details of the skills you want to update.
+    3. Diagnose and Plan: Reason about the current structural problem and propose a specific refactoring action (merge/compress/delete) with clear justification.
+    4. Execute: Invoke the tool `skill_manage` to create, edit, or delete the skills based on your diagnosis and plan. You can use the tool `skill_manage` multiple times to update the skill until you are satisfied with the updated skill.
+    5. Self-Review: Review the updated skills and ensure functional coverage and correctness. If necessary, repeat the process to further refine the skills.
+    6. Tips for Merging: 
+        - When merging skills, ensure that the merged skill retains the essential functionalities of all original skills. Avoid losing any critical capabilities.
+        - You need to `create` a new skill that combines the functionalities of the original skills, and then `delete` the original skills to avoid redundancy.
+    7. Tips for Compressing:
+        - When compressing skills, focus on simplifying the skill descriptions while preserving their core functionalities. You SHOULD compress the descriptions leading to overfitting, such as lots of specific examples. DO NOT compress the descriptions that are already concise and general.
+    8. Tips for Deleting:
+        - You MUST delete the skills CAUTIOUSLY, ensuring that the deleted skills are truly obsolete and not required for any current or future tasks. Avoid deleting skills that are still relevant or have potential use cases.
+
+    Your Optimization Goals:
+    1. [Priority] Ensure your updated skills are actually improved.
+    2. [Secondary] Reduce token usage while ensuring the quality of your updated skills.
+
+
+skills:
+  auto_discovery: false
+  enable_manage: true
+
+
+tools:
+  code_executor:
+    mcp: false
+    implementation: python_env
+    exclude:
+      - notebook_executor
+      - python_executor
+      - reset_executor
+      - get_executor_info
+  file_system:
+    mcp: false
+    include:
+      - read_file
+      - write_file
+      - edit_file
+      - grep
+      - glob
+
+
+max_chat_round: 50
+enable_snapshots: false

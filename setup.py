@@ -5,7 +5,6 @@ from setuptools.command.build_py import build_py as _build_py
 
 import os
 import shutil
-from typing import List
 
 
 def readme():
@@ -137,92 +136,11 @@ class build_py(_build_py):
 
             shutil.copytree(src, dst)
 
-        # Build and copy webui
-        self._build_and_copy_webui()
 
-    def _build_and_copy_webui(self):
-        """Build frontend and copy webui files to build directory"""
-        import subprocess
-
-        repo_root = os.path.dirname(__file__)
-        webui_src = os.path.join(repo_root, 'webui')
-
-        if not os.path.isdir(webui_src):
-            print(
-                'Warning: webui directory not found, skipping webui packaging')
-            return
-
-        frontend_src = os.path.join(webui_src, 'frontend')
-        backend_src = os.path.join(webui_src, 'backend')
-
-        # Check if npm is available
-        try:
-            subprocess.run(['npm', '--version'],
-                           capture_output=True,
-                           check=True,
-                           timeout=5)
-            npm_available = True
-        except (subprocess.CalledProcessError, FileNotFoundError,
-                subprocess.TimeoutExpired):
-            npm_available = False
-            print(
-                'Warning: npm not found, cannot build frontend. WebUI may not work properly.'
-            )
-
-        # Build frontend if npm is available
-        if npm_available and os.path.isdir(frontend_src):
-            print('Building frontend with npm...')
-
-            # Install dependencies if needed
-            node_modules = os.path.join(frontend_src, 'node_modules')
-            if not os.path.exists(node_modules):
-                print('Installing frontend dependencies...')
-                try:
-                    subprocess.run(['npm', 'install'],
-                                   cwd=frontend_src,
-                                   check=True,
-                                   timeout=300)
-                except (subprocess.CalledProcessError,
-                        subprocess.TimeoutExpired) as e:
-                    print(f'Warning: npm install failed: {e}')
-                    return
-
-            # Build frontend
-            try:
-                subprocess.run(['npm', 'run', 'build'],
-                               cwd=frontend_src,
-                               check=True,
-                               timeout=300)
-                print('Frontend built successfully')
-            except (subprocess.CalledProcessError,
-                    subprocess.TimeoutExpired) as e:
-                print(f'Warning: npm build failed: {e}')
-                return
-
-        # Copy webui to build directory
-        webui_dst = os.path.join(self.build_lib, 'ms_agent', 'webui')
-
-        # Copy backend
-        if os.path.isdir(backend_src):
-            backend_dst = os.path.join(webui_dst, 'backend')
-            if os.path.exists(backend_dst):
-                shutil.rmtree(backend_dst)
-            shutil.copytree(backend_src, backend_dst)
-            print(f'Copied backend to {backend_dst}')
-
-        # Copy frontend dist (built files)
-        frontend_dist_src = os.path.join(frontend_src, 'dist')
-        if os.path.isdir(frontend_dist_src):
-            frontend_dst = os.path.join(webui_dst, 'frontend', 'dist')
-            os.makedirs(os.path.dirname(frontend_dst), exist_ok=True)
-            if os.path.exists(frontend_dst):
-                shutil.rmtree(frontend_dst)
-            shutil.copytree(frontend_dist_src, frontend_dst)
-            print(f'Copied frontend dist to {frontend_dst}')
-        else:
-            print(
-                'Warning: frontend dist not found, WebUI may not work in production mode'
-            )
+# The SSR WebUI is intentionally source-checkout-only. ``ms-agent ui``
+# synchronizes its independent Python and Node lockfiles at runtime; building
+# the framework package must not invoke a JavaScript package manager or copy an
+# obsolete static ``dist`` tree.
 
 
 if __name__ == '__main__':
@@ -237,7 +155,6 @@ if __name__ == '__main__':
     extra_requires['research'], _ = parse_requirements(
         'requirements/research.txt')
     extra_requires['code'], _ = parse_requirements('requirements/code.txt')
-    extra_requires['webui'], _ = parse_requirements('requirements/webui.txt')
     extra_requires['acp'], _ = parse_requirements('requirements/acp.txt')
     extra_requires['a2a'], _ = parse_requirements('requirements/a2a.txt')
     extra_requires['retrieval'], _ = parse_requirements(
@@ -249,8 +166,7 @@ if __name__ == '__main__':
     # yields a fully-featured install. ``docs`` is build-only and intentionally
     # excluded. De-duplicated for a clean, deterministic dependency set.
     all_requires = list(install_requires)
-    for _group in ('research', 'code', 'webui', 'acp', 'a2a', 'retrieval',
-                   'cinema'):
+    for _group in ('research', 'code', 'acp', 'a2a', 'retrieval', 'cinema'):
         all_requires.extend(extra_requires[_group])
     extra_requires['all'] = sorted(set(all_requires))
 
@@ -271,8 +187,6 @@ if __name__ == '__main__':
         package_data={
             'ms_agent': [
                 'projects/**/*',
-                'webui/backend/**/*',
-                'webui/frontend/dist/**/*',
             ],
             '': ['*.h', '*.cpp', '*.cu'],
         },

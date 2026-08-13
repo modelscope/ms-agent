@@ -131,7 +131,13 @@ class TuiApp:
         # interactive at runtime and get real confirmations.
         from ms_agent.tui.permission import TUIPermissionHandler
         self.agent.set_permission_handler(
-            TUIPermissionHandler(console=self.console, theme=self.theme))
+            TUIPermissionHandler(
+                console=self.console,
+                theme=self.theme,
+                # Lets the menu hold the renderer's draws while it owns the
+                # terminal (a sibling tool finishing mid-menu must not print
+                # into it) — see RichEventSink.hold_output.
+                renderer=self.renderer))
 
         # ('new', None) | ('resume', '<#|id>') | None, set by session commands.
         self._pending_switch: Optional[Tuple[str, Optional[str]]] = None

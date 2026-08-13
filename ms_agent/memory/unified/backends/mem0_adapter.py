@@ -46,12 +46,12 @@ def _result_list(results: Any) -> List[Dict[str, Any]]:
     return list(results or [])
 
 
-def _mem0_search(m0: Any, query: str, user_id: str) -> Any:
+def _mem0_search(m0: Any, query: str, user_id: str, top_k: int = 10) -> Any:
     """mem0 2.x moved entity params into ``filters=``; 1.x uses kwargs."""
     try:
-        return m0.search(query, filters={'user_id': user_id})
+        return m0.search(query, filters={'user_id': user_id}, top_k=top_k)
     except TypeError:
-        return m0.search(query, user_id=user_id)
+        return m0.search(query, user_id=user_id, limit=top_k)
 
 
 class Mem0Backend(BaseMemoryBackend):
@@ -67,8 +67,13 @@ class Mem0Backend(BaseMemoryBackend):
         self._config = config
         self._mem0: Any = None  # mem0.Memory instance
         self._user_id: str = config.user_id
-        self._snapshot: Optional[str] = None
-        self._snapshot_dirty = True
+        # Per-turn retrieval cache: one turn = one embedding + one vector
+        # search. The turn key is the latest user message — every round of a
+        # multi-round (tool-calling) turn injects with the same user message,
+        # so rounds 2..N reuse the round-1 results instead of paying another
+        # embedding round-trip each. Invalidated on writes/deletes.
+        self._turn_cache_key: Optional[str] = None
+        self._turn_cache_results: Optional[list] = None
 
     # ── Lifecycle ────────────────────────────────────────────────────
 
@@ -84,6 +89,18 @@ class Mem0Backend(BaseMemoryBackend):
             self._mem0 = None
 
     async def close(self) -> None:
+        # Drop the vector client explicitly. Embedded stores (qdrant/chroma on a
+        # local path) hold an exclusive OS file lock, so merely releasing the
+        # reference leaves the store locked until GC gets around to it -- long
+        # enough that the next agent, or any other process on the same path,
+        # fails with "already accessed by another instance".
+        client = getattr(getattr(self._mem0, 'vector_store', None), 'client',
+                         None)
+        if client is not None:
+            try:
+                client.close()
+            except Exception as e:  # pragma: no cover - best-effort teardown
+                logger.debug(f'[mem0_backend] vector client close failed: {e}')
         self._mem0 = None
 
     # ── inject ───────────────────────────────────────────────────────
@@ -99,16 +116,26 @@ class Mem0Backend(BaseMemoryBackend):
         if not query:
             return messages
 
-        try:
-            results = _result_list(await _offload(_mem0_search, self._mem0,
-                                                  query, self._user_id))
-            if not results:
+        turn_key = f'{self._user_id}\x1f{query}'
+        if turn_key == self._turn_cache_key \
+                and self._turn_cache_results is not None:
+            results = self._turn_cache_results
+        else:
+            top_k = max(1, int(getattr(self._config, 'recall_top_k', 10)))
+            try:
+                results = _result_list(
+                    await _offload(_mem0_search, self._mem0, query,
+                                   self._user_id, top_k))
+            except Exception as e:
+                logger.debug(f'[mem0_backend] search failed: {e}')
                 return messages
-        except Exception as e:
-            logger.debug(f'[mem0_backend] search failed: {e}')
+            self._turn_cache_key = turn_key
+            self._turn_cache_results = results
+        if not results:
             return messages
 
-        formatted = self._format_results(results)
+        formatted = self._format_results(
+            results, max(1, int(getattr(self._config, 'recall_top_k', 10))))
         if not formatted:
             return messages
 
@@ -127,24 +154,32 @@ class Mem0Backend(BaseMemoryBackend):
         self,
         messages: List[Dict[str, Any]],
         **kwargs: Any,
-    ) -> None:
+    ) -> int:
+        """Ingest via mem0's fact extraction. Returns the number of memory
+        events mem0 produced (ADD/UPDATE/DELETE). Raises on failure — the
+        orchestrator owns the swallow-and-report policy, and needs the
+        exception to know the write did NOT land (so its delta ledger keeps
+        the messages for a retry instead of marking them ingested)."""
         if not self._mem0:
-            return
-        try:
-            # mem0 rejects non-chat fields and roles like `tool`; feed it the
-            # user/assistant text turns only.
-            convo = [
-                {
-                    'role': m['role'],
-                    'content': m['content']
-                } for m in messages
-                if m.get('role') in ('user', 'assistant') and m.get('content')
-            ]
-            if not convo:
-                return
-            await _offload(self._mem0.add, convo, user_id=self._user_id)
-        except Exception as e:
-            logger.warning(f'[mem0_backend] add failed: {e}')
+            return 0
+        # mem0 rejects non-chat fields and roles like `tool`; feed it the
+        # user/assistant text turns only.
+        convo = [
+            {
+                'role': m['role'],
+                'content': m['content']
+            } for m in messages
+            if m.get('role') in ('user', 'assistant') and m.get('content')
+        ]
+        if not convo:
+            return 0
+        result = await _offload(self._mem0.add, convo, user_id=self._user_id)
+        # A write changes what retrieval should see.
+        self._turn_cache_key = None
+        self._turn_cache_results = None
+        if isinstance(result, dict):
+            return len(result.get('results') or [])
+        return len(result or [])
 
     # ── Search ───────────────────────────────────────────────────────
 
@@ -172,8 +207,9 @@ class Mem0Backend(BaseMemoryBackend):
     # ── Cache ────────────────────────────────────────────────────────
 
     def invalidate(self) -> None:
-        self._snapshot = None
-        self._snapshot_dirty = True
+        # External edit (UI delete, another writer): next inject re-queries.
+        self._turn_cache_key = None
+        self._turn_cache_results = None
 
     # ── Internal helpers ─────────────────────────────────────────────
 
@@ -186,9 +222,9 @@ class Mem0Backend(BaseMemoryBackend):
         return ''
 
     @staticmethod
-    def _format_results(results: Any) -> str:
+    def _format_results(results: Any, top_k: int = 10) -> str:
         lines = []
-        for r in _result_list(results)[:10]:
+        for r in _result_list(results)[:top_k]:
             text = r.get('memory', r.get('text', ''))
             if text:
                 lines.append(f'- {text}')

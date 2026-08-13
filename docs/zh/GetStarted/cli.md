@@ -91,19 +91,23 @@ ms-agent tui --config path/to/agent.yaml
 
 ## ui — Web UI 服务
 
-启动 Web UI 服务。
+启动源码仓库中的 WebUI 开发栈。该命令同时管理内部 FastAPI 服务和公开的 React Router 开发服务。
 
 ```shell
-ms-agent ui --host 0.0.0.0 --port 7860
+ms-agent ui
 ```
 
 | 参数 | 说明 | 默认值 |
 | --- | --- | --- |
-| `--host` | 绑定的服务主机 | `0.0.0.0` |
-| `--port` | 绑定的服务端口 | `7860` |
-| `--reload` | 开发模式启用自动重载（开关） | `false` |
-| `--production` | 生产模式（服务已构建的前端，开关） | `false` |
+| `--host` | 公开前端绑定的主机 | `127.0.0.1` |
+| `--port` | 公开前端端口 | `7860` |
+| `--backend-port` | 内部 FastAPI 端口 | `8000` |
+| `--reload` | 后端源码变化时自动重载（开关） | `false` |
+| `--skip-install` | 跳过依赖同步；要求 `.venv` 和 `node_modules` 已存在（开关） | `false` |
+| `--production` | 兼容性保留参数；当前会提示不支持并退出 | `false` |
 | `--no-browser` | 不自动打开浏览器（开关） | `false` |
+
+启动器要求 uv、Node.js 22.22.0 或更高版本以及 pnpm 10.x，并会在首次使用时安装锁定的项目内依赖。安装、模型配置、环境变量、Windows 支持与排障说明见 [WebUI 完整指南](https://github.com/modelscope/ms-agent/blob/main/webui/README_ZH.md)。
 
 ---
 

@@ -1,0 +1,15 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="20"
+  height="20"
+  viewBox="0 0 20 20"
+  fill="none"
+>
+  <circle cx="10" cy="10" r="6.4" stroke="currentColor" stroke-width="1.2" />
+  <path
+    d="M10 6.4A3.6 3.6 0 1 0 13.6 10"
+    stroke="currentColor"
+    stroke-width="1.2"
+    stroke-linecap="round"
+  />
+</svg>

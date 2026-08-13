@@ -1,4 +1,0 @@
-aiohttp
-fastapi
-pandas
-uvicorn[standard]

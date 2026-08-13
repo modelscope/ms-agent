@@ -220,20 +220,11 @@ DR_BENCH_ROOT=/path/to/deep_research_bench \
 
 **注意：** 脚本会从仓库根目录的 `.env` 自动读取 API keys，请确保已正确配置环境变量。
 
-#### 在 WebUI 中使用
+#### WebUI 状态
 
-你也可以在内置 WebUI 中使用 Agentic Insight v2：
-
-```bash
-ms-agent ui
-```
-
-然后打开 `http://localhost:7860`，选择 **Deep Research**，并确保已配置：
-
-- `OPENAI_API_KEY` / `OPENAI_BASE_URL`（LLM 配置）
-- 二选一：`EXA_API_KEY` 或 `SERPAPI_API_KEY`（搜索工具）
-
-你可以通过 `.env` 或 WebUI 的 **Settings** 进行配置。WebUI 的运行产物会保存在 `webui/work_dir/<session_id>/` 下。
+当前源码版 WebUI 是通用智能体工作台，不再提供旧版专用的 **Deep Research**
+选择入口。请通过上文的 CLI 流程运行 Agentic Insight v2；当前界面的能力和配置
+方式见 [WebUI 完整指南](../../../webui/README_ZH.md)。
 
 ### 输出（结果位置）
 
