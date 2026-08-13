@@ -220,20 +220,12 @@ DR_BENCH_ROOT=/path/to/deep_research_bench \
 
 **Note:** The script automatically reads API keys from `.env` in the repository root. Ensure environment variables are properly configured before running.
 
-#### Run in WebUI
+#### WebUI status
 
-You can also use Agentic Insight v2 from the built-in WebUI:
-
-```bash
-ms-agent ui
-```
-
-Then open `http://localhost:7860`, select **Deep Research**, and make sure you have configured:
-
-- `OPENAI_API_KEY` / `OPENAI_BASE_URL` (LLM settings)
-- Either `EXA_API_KEY` or `SERPAPI_API_KEY` (search tools)
-
-You can set them via `.env` or in WebUI **Settings**. WebUI run artifacts are stored under `webui/work_dir/<session_id>/`.
+The current source-checkout WebUI is a general agent workspace and does not
+expose the legacy dedicated **Deep Research** selector. Run Agentic Insight v2
+with the CLI workflow above. See the [WebUI guide](../../../webui/README.md) for
+the capabilities and configuration of the current interface.
 
 ### Outputs (Where to Find Results)
 

@@ -10,11 +10,8 @@ recursive-include ms_agent/agent_hub/default_configs *
 # Include projects
 recursive-include projects *
 
-# Include webui backend
-recursive-include webui/backend *.py
-
-# Include webui frontend dist (will be built during setup)
-recursive-include webui/frontend/dist *
+# The SSR WebUI is intentionally run from a Git source checkout. It is not
+# bundled into the framework's Python sdist/wheel by the minimal launcher.
 
 # Exclude development files
 global-exclude *.pyc

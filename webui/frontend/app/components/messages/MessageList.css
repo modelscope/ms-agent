@@ -1,0 +1,12 @@
+/* MessageList.css */
+/* Copy button on HISTORY replies: hidden until the bubble is hovered (the
+   latest reply keeps it always visible — no msgl-copy-hover class there).
+   Targets antd's .ant-bubble wrapper, unreachable via classNames prop. */
+.msgl-copy-hover {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.ant-bubble:hover .msgl-copy-hover,
+.msgl-copy-hover:focus-within {
+  opacity: 1;
+}

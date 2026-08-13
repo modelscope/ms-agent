@@ -1,0 +1,153 @@
+/* ================================================================
+ * Composer gradient border on focus
+ * ================================================================ */
+.composer-card {
+    position: relative;
+}
+
+.composer-card::before {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: 16px;
+    padding: 3px;
+    background: conic-gradient(from var(--gradient-angle, 0deg), #90DFE5, #A288FF, #90DFE5);
+    -webkit-mask:
+        linear-gradient(#fff 0 0) content-box,
+        linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+    animation: gradient-spin 3s linear infinite;
+}
+
+.composer-card:focus-within::before {
+    opacity: 1;
+}
+
+@property --gradient-angle {
+    syntax: '<angle>';
+    initial-value: 0deg;
+    inherits: false;
+}
+
+@keyframes gradient-spin {
+    to {
+        --gradient-angle: 360deg;
+    }
+}
+
+/* ================================================================
+ * Thinking state wrapper
+ * ================================================================ */
+.composer-thinking-wrapper {
+    /* New stacking context so the motion layer can sit at z-index:-1 —
+       above this element's own gradient background, below its content. */
+    isolation: isolate;
+    background:
+        linear-gradient(345deg, #C1C1FF -29%, rgba(193, 193, 255, 0) 33%),
+        linear-gradient(170deg, #00F0F3 -23%, rgba(255, 255, 255, 0) 19%),
+        #EFF2F9;
+}
+
+.dark .composer-thinking-wrapper {
+    background:
+        linear-gradient(345deg, rgba(98, 74, 255, 0.3) -29%, rgba(98, 74, 255, 0) 33%),
+        linear-gradient(170deg, rgba(0, 240, 243, 0.15) -23%, rgba(0, 240, 243, 0) 19%),
+        #1c1c2e;
+}
+
+/* ================================================================
+ * Live-turn ambient motion: six blurred color blobs drifting inside the
+ * thinking wrapper while a turn streams (Figma motion spec, 8s loop).
+ * Idle keeps the static gradient above — the layer only mounts while live.
+ * ================================================================ */
+.composer-motion-layer {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: 24px;
+    pointer-events: none;
+    z-index: -1;
+}
+
+.composer-motion-layer span {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 320px;
+    height: 240px;
+    border-radius: 50%;
+    filter: blur(60px);
+    will-change: transform;
+    animation-duration: 8s;
+    animation-timing-function: ease-in-out;
+    animation-iteration-count: infinite;
+}
+
+/* Palette mirrors the static gradient (cyan + violet family). */
+.composer-motion-layer span:nth-child(1) { background: rgba(0, 240, 243, 0.35); animation-name: composer-blob-1; }
+.composer-motion-layer span:nth-child(2) { background: rgba(193, 193, 255, 0.55); animation-name: composer-blob-2; }
+.composer-motion-layer span:nth-child(3) { background: rgba(162, 136, 255, 0.35); animation-name: composer-blob-3; }
+.composer-motion-layer span:nth-child(4) { background: rgba(0, 240, 243, 0.22); animation-name: composer-blob-4; }
+.composer-motion-layer span:nth-child(5) { background: rgba(193, 193, 255, 0.45); animation-name: composer-blob-5; }
+.composer-motion-layer span:nth-child(6) { background: rgba(144, 223, 229, 0.35); animation-name: composer-blob-6; }
+
+.dark .composer-motion-layer span { opacity: 0.45; }
+
+/* Keyframes transcribed from the Figma motion JSON (nodes 15:603..608):
+   4 waypoints per blob over ~8s, looping back to the start. The extra
+   translate(-50%, -50%) centers each blob on its waypoint. */
+@keyframes composer-blob-1 {
+    0%   { transform: translate(641px, 112px)  translate(-50%, -50%); }
+    25%  { transform: translate(700px, -72px)  translate(-50%, -50%); }
+    50%  { transform: translate(270px, -112px) translate(-50%, -50%); }
+    75%  { transform: translate(11px, 93px)    translate(-50%, -50%); }
+    100% { transform: translate(641px, 112px)  translate(-50%, -50%); }
+}
+
+@keyframes composer-blob-2 {
+    0%   { transform: translate(290px, -42px)  translate(-50%, -50%); }
+    25%  { transform: translate(-28px, -42px)  translate(-50%, -50%); }
+    50%  { transform: translate(122px, 98px)   translate(-50%, -50%); }
+    75%  { transform: translate(543px, 130px)  translate(-50%, -50%); }
+    100% { transform: translate(290px, -42px)  translate(-50%, -50%); }
+}
+
+@keyframes composer-blob-3 {
+    0%   { transform: translate(-125px, 113px) translate(-50%, -50%); }
+    25%  { transform: translate(293px, 113px)  translate(-50%, -50%); }
+    50%  { transform: translate(526px, 98px)   translate(-50%, -50%); }
+    75%  { transform: translate(295px, -71px)  translate(-50%, -50%); }
+    100% { transform: translate(-125px, 113px) translate(-50%, -50%); }
+}
+
+@keyframes composer-blob-4 {
+    0%   { transform: translate(-21px, -52px)  translate(-50%, -50%); }
+    25%  { transform: translate(-21px, 84px)   translate(-50%, -50%); }
+    50%  { transform: translate(-124px, -57px) translate(-50%, -50%); }
+    75%  { transform: translate(167px, -72px)  translate(-50%, -50%); }
+    100% { transform: translate(-21px, -52px)  translate(-50%, -50%); }
+}
+
+@keyframes composer-blob-5 {
+    0%   { transform: translate(116px, 53px)   translate(-50%, -50%); }
+    25%  { transform: translate(426px, 53px)   translate(-50%, -50%); }
+    50%  { transform: translate(635px, -74px)  translate(-50%, -50%); }
+    75%  { transform: translate(-32px, -119px) translate(-50%, -50%); }
+    100% { transform: translate(116px, 53px)   translate(-50%, -50%); }
+}
+
+@keyframes composer-blob-6 {
+    0%   { transform: translate(587px, -96px)  translate(-50%, -50%); }
+    25%  { transform: translate(260px, -96px)  translate(-50%, -50%); }
+    50%  { transform: translate(98px, 0px)     translate(-50%, -50%); }
+    75%  { transform: translate(568px, 89px)   translate(-50%, -50%); }
+    100% { transform: translate(587px, -96px)  translate(-50%, -50%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .composer-motion-layer span { animation: none; }
+}

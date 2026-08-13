@@ -1,0 +1,11 @@
+/* ModelSelector.css
+ * When a model item is hovered or selected, hide the divider directly above and
+ * below it so the highlight reads as a standalone rounded card. The dividers
+ * keep their space (opacity transition), so the layout never jumps.
+ */
+.msel-list button:hover+.msel-divider,
+.msel-list .msel-selected+.msel-divider,
+.msel-list .msel-divider:has(+ button:hover),
+.msel-list .msel-divider:has(+ .msel-selected) {
+    opacity: 0;
+}

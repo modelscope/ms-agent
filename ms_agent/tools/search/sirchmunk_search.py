@@ -8,10 +8,13 @@ Legacy top-level ``knowledge_search`` is still accepted for backward compatibili
 
 import asyncio
 import json
-from loguru import logger
 from omegaconf import DictConfig
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
+
+from ms_agent.utils.logger import get_logger
+
+logger = get_logger()
 
 
 def _paths_from_block(block: Any) -> List[str]:
