@@ -156,13 +156,13 @@ def test_new_format_profile_not_rebuilt(home):
 def test_call_me_roundtrip_on_template():
     t = builtin.PROFILE_TEMPLATE
     assert wf.get_call_me(t) == ''  # commented skeleton must not match
-    x = wf.set_call_me(t, 'Han Zhou')
-    assert wf.get_call_me(x) == 'Han Zhou'
+    x = wf.set_call_me(t, 'Alice')
+    assert wf.get_call_me(x) == 'Alice'
     r0, r1, r2 = wf.split_profile_regions(x)
-    assert '# About Me' in r1 and 'Call me: Han Zhou' in r1
+    assert '# About Me' in r1 and 'Call me: Alice' in r1
     # free region editing keeps the managed line
     y = wf.set_free_region(x, 'Mostly agent work.\n')
-    assert wf.get_call_me(y) == 'Han Zhou'
+    assert wf.get_call_me(y) == 'Alice'
     assert 'Mostly agent work.' in wf.get_free_region(y)
     # clearing removes the line
     z = wf.set_call_me(y, '')
