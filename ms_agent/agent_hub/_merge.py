@@ -57,13 +57,32 @@ class SectionMerger:
 
     @staticmethod
     def parse_sections(content: str) -> list[Section]:
-        """Split markdown into sections by ``## `` headings."""
+        """Split markdown into sections by ``## `` headings.
+
+        Comment-aware: a ``## `` line that falls INSIDE an HTML ``<!-- -->``
+        block is template guidance, not a real heading, so it must not open a
+        new section. ms-agent's AGENTS.md/PROFILE.md templates carry example
+        headings (``## Preferences`` etc.) inside their guidance comment; without
+        this guard the merger would treat the comment interior as content
+        sections and mangle the template header when folding user content in.
+        """
         lines = content.split('\n')
         sections: list[Section] = []
         current_title = ''
         current_lines: list[str] = []
+        in_comment = False
 
         for line in lines:
+            stripped = line.strip()
+            if in_comment:
+                current_lines.append(line)
+                if '-->' in stripped:
+                    in_comment = False
+                continue
+            if stripped.startswith('<!--') and '-->' not in stripped:
+                in_comment = True
+                current_lines.append(line)
+                continue
             if re.match(r'^## ', line):
                 sections.append(
                     Section(
@@ -429,14 +448,20 @@ PRODUCT_FILE_CLASSES = {
         'heartbeat': '',
     },
     'ms-agent': {
-        # Only persona + memory carry cross-framework semantics; the
-        # config.yaml/settings.json/agent.yaml/facts.json/skill.json files are
-        # ms-agent specific and preserved on same-framework sync only.
+        # SOUL/AGENTS/PROFILE are real editable Markdown and carry the
+        # cross-framework persona/instructions/profile semantics; SOUL and
+        # PROFILE are persona-like (portable), AGENTS is standing instructions
+        # (config), matching how the other frameworks classify them. The
+        # config.yaml/settings.json/agent.yaml/skills.json files are ms-agent
+        # private and preserved on same-framework sync only. Memory is not
+        # here (runtime keeps it project-level), so ms-agent carries none.
         'portable': frozenset([
-            'profile.md',
-            'MEMORY.md',
+            'SOUL.md',
+            'PROFILE.md',
         ]),
-        'config': frozenset([]),
+        'config': frozenset([
+            'AGENTS.md',
+        ]),
         'heartbeat': '',
     },
 }
@@ -458,9 +483,7 @@ _DEFAULT_FILE_CLASS = {
 PRODUCT_PRIVATE_FILES = {
     'hermes': frozenset(['config.yaml', 'hooks/*']),
     'ms-agent':
-    frozenset(
-        ['config.yaml', 'settings.json', 'agent.yaml', 'facts.json',
-         'skill.json']),
+    frozenset(['config.yaml', 'settings.json', 'agent.yaml', 'skills.json']),
     'qwenpaw': frozenset(['agent.json', 'skill.json']),
     'openhuman': frozenset(['config.toml']),
 }
@@ -487,7 +510,8 @@ SEMANTIC_GROUPS = [
         'openclaw': 'SOUL.md',
         'hermes': 'SOUL.md',
         'qwenpaw': 'SOUL.md',
-        'openhuman': 'SOUL.md'
+        'openhuman': 'SOUL.md',
+        'ms-agent': 'SOUL.md'
     },
     {
         'nanobot': 'USER.md',
@@ -499,7 +523,6 @@ SEMANTIC_GROUPS = [
         'nanobot': 'memory/MEMORY.md',
         'openclaw': 'MEMORY.md',
         'qwenpaw': 'MEMORY.md',
-        'ms-agent': 'MEMORY.md',
         'hermes': 'memories/MEMORY.md'
     },
     {
@@ -508,13 +531,14 @@ SEMANTIC_GROUPS = [
     },
     {
         'qwenpaw': 'PROFILE.md',
-        'ms-agent': 'profile.md'
+        'ms-agent': 'PROFILE.md'
     },
     {
         'nanobot': 'AGENTS.md',
         'openclaw': 'AGENTS.md',
         'qwenpaw': 'AGENTS.md',
-        'qoder': 'AGENTS.md'
+        'qoder': 'AGENTS.md',
+        'ms-agent': 'AGENTS.md'
     },
     {
         'nanobot': 'HEARTBEAT.md',
@@ -604,13 +628,13 @@ PRODUCT_KNOWN_FILES = {
     ]),
     'ms-agent':
     frozenset([
-        'profile.md',
-        'MEMORY.md',
-        'config.yaml',
+        'SOUL.md',
+        'AGENTS.md',
+        'PROFILE.md',
         'settings.json',
+        'config.yaml',
         'agent.yaml',
-        'facts.json',
-        'skill.json',
+        'skills.json',
     ]),
 }
 

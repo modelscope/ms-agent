@@ -1470,7 +1470,7 @@ class TestFrameworkUploadCoverage(unittest.TestCase):
     LAYOUTS = {
         "openclaw": {"SOUL.md": "# Soul\noc\n", "USER.md": "# User\noc\n"},
         "hermes": {"SOUL.md": "# Soul\nhm\n", "memories/USER.md": "# User\nhm\n"},
-        "ms-agent": {"profile.md": "# Profile\nms\n", "MEMORY.md": "# Memory\nms\n"},
+        "ms-agent": {"SOUL.md": "# Soul\nms\n", "PROFILE.md": "# Profile\nms\n"},
         "qwenpaw": {"SOUL.md": "# Soul\nqp\n", "PROFILE.md": "# Profile\nqp\n"},
     }
 
@@ -1511,8 +1511,8 @@ class TestFrameworkUploadCoverage(unittest.TestCase):
     def test_upload_ms_agent(self):
         client = self._upload("ms-agent", self.LAYOUTS["ms-agent"])
         self.assertEqual(client.created[0], ("u", "ms-agent-default", "ms-agent"))
-        self.assertIn("profile.md", client.uploaded_resources)
-        self.assertIn("MEMORY.md", client.uploaded_resources)
+        self.assertIn("SOUL.md", client.uploaded_resources)
+        self.assertIn("PROFILE.md", client.uploaded_resources)
 
     def test_upload_qwenpaw(self):
         client = self._upload("qwenpaw", self.LAYOUTS["qwenpaw"])
@@ -1712,11 +1712,11 @@ class _HermesStub(_RepoStub):
 
 
 class _MsAgentStub(_RepoStub):
-    """Serves an ms-agent single-agent repo (lowercase profile.md persona)."""
+    """Serves an ms-agent single-agent repo (SOUL.md / PROFILE.md prompt files)."""
 
     FRAMEWORK = "ms-agent"
-    STORE = {"profile.md": "# Profile\nms persona\n",
-             "MEMORY.md": "# Memory\nms memory\n"}
+    STORE = {"SOUL.md": "# Soul\nms persona\n",
+             "PROFILE.md": "# Profile\nms profile\n"}
 
     def __init__(self, *args, **kwargs):
         pass
@@ -1761,8 +1761,8 @@ class TestFrameworkDownloadCoverage(unittest.TestCase):
             endpoint="http://s", token="tok", username="u",
         )
         self.assertEqual(rc, 0)
-        self.assertEqual((self.out / "profile.md").read_text(), "# Profile\nms persona\n")
-        self.assertEqual((self.out / "MEMORY.md").read_text(), "# Memory\nms memory\n")
+        self.assertEqual((self.out / "SOUL.md").read_text(), "# Soul\nms persona\n")
+        self.assertEqual((self.out / "PROFILE.md").read_text(), "# Profile\nms profile\n")
 
 
 # ---------------------------------------------------------------------------

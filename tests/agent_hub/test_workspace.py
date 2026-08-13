@@ -230,8 +230,11 @@ class TestAllPathPrefix(unittest.TestCase):
 
 
 class TestMsAgentWorkspace(unittest.TestCase):
-    """ms-agent is single-agent: no {name} placeholder; collects persona/
-    memory/skills/config under ~/.ms_agent."""
+    """ms-agent is single-agent: no {name} placeholder; collects the editable
+    prompt files (SOUL.md/AGENTS.md/PROFILE.md), config and skills under the
+    global home (~/.ms_agent). Runtime-only artifacts -- the builtin sidecars
+    (.soul.builtin ...), *.bak backups, and project-level memory -- are not
+    part of the portable layout and must be skipped."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -244,19 +247,23 @@ class TestMsAgentWorkspace(unittest.TestCase):
         spec = FRAMEWORK_REGISTRY["ms-agent"](agent_name="default", local_dir=self.root)
         self.assertEqual(spec.product_name, "ms-agent")
         self.assertFalse(any("{name}" in p for p in spec.patterns))
-        (self.root / "profile.md").write_text("p")
-        (self.root / "MEMORY.md").write_text("m")
-        (self.root / "facts.json").write_text("{}")
+        (self.root / "SOUL.md").write_text("# Who You Are\np")
+        (self.root / "AGENTS.md").write_text("a")
+        (self.root / "PROFILE.md").write_text("p")
         (self.root / "settings.json").write_text("{}")
-        (self.root / "skill.json").write_text("{}")
+        (self.root / "skills.json").write_text("{}")
+        # runtime-only artifacts that must NOT be collected.
+        (self.root / ".soul.builtin").write_text("x")
+        (self.root / "SOUL.md.bak").write_text("x")
         (self.root / "random.txt").write_text("x")
         (self.root / "skills" / "foo").mkdir(parents=True)
         (self.root / "skills" / "foo" / "SKILL.md").write_text("s")
         got = spec.collect()
-        for f in ("profile.md", "MEMORY.md", "facts.json", "settings.json",
-                  "skill.json", "skills/foo/SKILL.md"):
+        for f in ("SOUL.md", "AGENTS.md", "PROFILE.md", "settings.json",
+                  "skills.json", "skills/foo/SKILL.md"):
             self.assertIn(f, got)
-        self.assertNotIn("random.txt", got)
+        for f in ("random.txt", ".soul.builtin", "SOUL.md.bak"):
+            self.assertNotIn(f, got)
 
 
 class TestQwenpawConfigRoot(unittest.TestCase):
@@ -529,6 +536,61 @@ class TestFailClosedUploadSanitize(unittest.TestCase):
             rc = cmd_upload("qwenpaw", name="default", local_dir=str(ws),
                             repo="owner/broken-demo")
             self.assertEqual(rc, 1)
+
+
+class TestMsAgentSkillsGovernance(unittest.TestCase):
+    """skills.json ``disabled`` is a machine-local safety switch, not content.
+
+    Sync must move only the ``sources`` inventory: a download must never flip
+    the local enable/disable state, and an upload must never publish it.
+    """
+
+    def _spec(self, root):
+        from ms_agent.agent_hub.frameworks.ms_agent import MsAgentWorkspace
+        return MsAgentWorkspace(agent_name="default", local_dir=root)
+
+    def test_inbound_preserves_local_disabled(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "skills.json").write_text(
+                json.dumps({"sources": ["old"], "disabled": ["danger-skill"]}))
+            incoming = json.dumps(
+                {"sources": ["new"], "disabled": []}).encode()
+            out = json.loads(self._spec(root).sanitize_inbound_file(
+                "skills.json", incoming))
+            # sources sync in, but the local safety switch is preserved.
+            self.assertEqual(out["sources"], ["new"])
+            self.assertEqual(out["disabled"], ["danger-skill"])
+
+    def test_inbound_no_local_file_drops_disabled(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)  # no local skills.json
+            incoming = json.dumps(
+                {"sources": ["x"], "disabled": ["remote-switch"]}).encode()
+            out = json.loads(self._spec(root).sanitize_inbound_file(
+                "skills.json", incoming))
+            # nothing local to preserve -> the remote switch is not honored.
+            self.assertNotIn("disabled", out)
+            self.assertEqual(out["sources"], ["x"])
+
+    def test_outbound_strips_disabled(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            payload = json.dumps(
+                {"sources": ["x"], "disabled": ["secret-off"]}).encode()
+            out = json.loads(self._spec(root).sanitize_outbound_file(
+                "skills.json", payload))
+            self.assertEqual(out["sources"], ["x"])
+            self.assertNotIn("disabled", out)
+
+    def test_malformed_skills_json_passes_through(self):
+        with tempfile.TemporaryDirectory() as td:
+            spec = self._spec(Path(td))
+            raw = b'{"sources": [,,,'
+            self.assertEqual(
+                spec.sanitize_inbound_file("skills.json", raw), raw)
+            self.assertEqual(
+                spec.sanitize_outbound_file("skills.json", raw), raw)
 
 
 class TestInstallRootProbing(unittest.TestCase):

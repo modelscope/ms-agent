@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from ms_agent.project.paths import global_home
+
 from .._workspace import (WorkspaceSpec, register_framework,
                           scrub_json_secrets, scrub_yaml_secrets)
 
@@ -13,18 +15,31 @@ from .._workspace import (WorkspaceSpec, register_framework,
 class MsAgentWorkspace(WorkspaceSpec):
     """Workspace spec for the ms-agent framework (single-agent install).
 
-    ms-agent keeps its persona, memory and skills under ``~/.ms_agent``:
+    ms-agent keeps its editable prompt files, config and skills under the
+    global home (``$MS_AGENT_HOME`` or ``~/.ms_agent``). The user-configurable
+    prompt content is now real on-disk Markdown, not config fields:
 
-    * **persona** -- a single ``profile.md`` augmented by injected
-      configuration (project-level ``config.yaml``, global ``settings.json``
-      and a user-specified ``agent.yaml``).
-    * **memory** -- ``MEMORY.md`` plus a structured ``facts.json``.
+    * **persona** -- ``SOUL.md`` (real default persona, injected as-is).
+    * **standing instructions** -- ``AGENTS.md`` (global; project-level
+      ``<work_dir>/AGENTS.md`` layers on top and is out of this home).
+    * **user profile** -- ``PROFILE.md`` (supersedes the old lowercase
+      ``profile.md``, which the runtime rebuilds into this on first read).
+    * **config** -- ``settings.json`` (switches / model / credentials) plus
+      legacy ``config.yaml`` / ``agent.yaml``; all secret-scrubbed.
     * **skills** -- ``skills/<name>/SKILL.md`` with a workspace-level
-      ``skill.json`` metadata index.
+      ``skills.json`` inventory (runtime name; the old ``skill.json`` never
+      existed on disk).
 
-    Only ``profile.md`` (persona) and ``MEMORY.md`` (memory) carry
-    cross-framework semantics; the YAML/JSON config and metadata files are
-    ms-agent specific and are preserved on same-framework sync only.
+    Only the three Markdown files (SOUL/AGENTS/PROFILE) carry cross-framework
+    semantics; the JSON/YAML config is ms-agent private and preserved on
+    same-framework sync only. Memory is NOT here: the runtime keeps it
+    project-level under ``<work_dir>/.ms_agent/memory/`` (no global memory by
+    design), so the global-home workspace this spec models carries none.
+
+    Machine bookkeeping never travels: the ``.soul.builtin`` /
+    ``.agents.builtin`` / ``.profile.builtin`` sidecars are dotfiles (skipped
+    by the collector), and ``*.bak`` rollups cannot match the exact-name
+    patterns below.
     """
 
     @property
@@ -33,22 +48,29 @@ class MsAgentWorkspace(WorkspaceSpec):
 
     @property
     def default_root(self) -> Path:
-        return Path.home() / '.ms_agent'
+        # Honor MS_AGENT_HOME (read dynamically) rather than hard-coding
+        # ~/.ms_agent, so a redirected home is collected/applied correctly.
+        return global_home()
 
     @property
     def patterns(self) -> list[str]:
         return [
-            # Persona + injected configuration
-            'profile.md',
-            'config.yaml',
+            # Editable prompt files (persona / instructions / profile)
+            'SOUL.md',
+            'AGENTS.md',
+            'PROFILE.md',
+            # Config (switches / model / credentials) -- secret-scrubbed
             'settings.json',
+            'config.yaml',
             'agent.yaml',
-            # Memory
-            'MEMORY.md',
-            'facts.json',
-            # Skills
-            'skill.json',
-            'skills/*/SKILL.md',
+            # Skills. fnmatch ``*`` spans ``/`` so ``skills/*`` recurses the
+            # whole skill tree -- SKILL.md plus its auxiliary files
+            # (references/, scripts/, assets/, ...), matching every other
+            # framework's skill pattern. A narrower ``skills/*/SKILL.md`` would
+            # drop those runtime dependencies both on collect and when this
+            # spec is the allowlist for an inbound convert.
+            'skills.json',
+            'skills/*',
         ]
 
     # ------------------------------------------------------------------
@@ -68,12 +90,15 @@ class MsAgentWorkspace(WorkspaceSpec):
     # cleaning on the upload path -- no separate outbound override is needed.
 
     def sanitize_inbound_file(self, rel_path: str, content: bytes) -> bytes:
-        """Blank machine-local secrets in ms-agent config files.
+        """Blank machine-local secrets, and keep sync from flipping skill switches.
 
         ``config.yaml`` / ``agent.yaml`` are scrubbed line-by-line (shared YAML
         scrubber, ``mcpServers`` env aware); ``settings.json`` is parsed and
-        scrubbed structurally. Every other file (and undecodable / malformed
-        content) passes through verbatim.
+        scrubbed structurally. ``skills.json`` keeps the *inventory* (``sources``)
+        but its ``disabled`` list is a machine-local safety switch, so an inbound
+        write must NOT overwrite the local one -- otherwise a download/restore
+        would silently re-enable skills the user turned off. Every other file
+        (and undecodable / malformed content) passes through verbatim.
         """
         if rel_path in ('config.yaml', 'agent.yaml'):
             try:
@@ -89,7 +114,39 @@ class MsAgentWorkspace(WorkspaceSpec):
             scrub_json_secrets(data)
             return json.dumps(
                 data, ensure_ascii=False, indent=2).encode('utf-8')
+        if rel_path == 'skills.json':
+            return self._preserve_local_skill_switches(content)
         return content
+
+    def _preserve_local_skill_switches(self, content: bytes) -> bytes:
+        """Carry the local ``disabled`` list into an inbound ``skills.json``.
+
+        The enable/disable state (``disabled``) is a per-machine safety switch
+        that must not travel; only the ``sources`` inventory syncs. If the
+        incoming JSON is malformed it passes through untouched (a broken file on
+        disk adds no exposure). A missing local file simply means no local
+        switches to preserve.
+        """
+        try:
+            incoming = json.loads(content)
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+            return content
+        if not isinstance(incoming, dict):
+            return content
+        local_path = self.workspace_root / 'skills.json'
+        local_disabled = None
+        try:
+            local = json.loads(local_path.read_text(encoding='utf-8'))
+            if isinstance(local, dict) and 'disabled' in local:
+                local_disabled = local['disabled']
+        except (OSError, json.JSONDecodeError, ValueError):
+            local_disabled = None
+        if local_disabled is not None:
+            incoming['disabled'] = local_disabled
+        else:
+            incoming.pop('disabled', None)
+        return json.dumps(
+            incoming, ensure_ascii=False, indent=2).encode('utf-8')
 
     def sanitize_outbound_file(self, rel_path: str, content: bytes) -> bytes:
         """Fail-closed upload sanitize for the secret-bearing config files.
@@ -99,7 +156,21 @@ class MsAgentWorkspace(WorkspaceSpec):
         that same pass-through would push the user's plaintext keys into the
         remote repo's git history. So a config file we cannot parse -- and
         therefore cannot verify as secret-free -- is refused here instead.
+
+        ``skills.json`` carries no secrets, but its ``disabled`` list is a
+        machine-local safety switch that must not be published; it is stripped
+        so only the ``sources`` inventory leaves the machine.
         """
+        if rel_path == 'skills.json':
+            try:
+                data = json.loads(content)
+            except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+                return content
+            if isinstance(data, dict):
+                data.pop('disabled', None)
+                return json.dumps(
+                    data, ensure_ascii=False, indent=2).encode('utf-8')
+            return content
         if rel_path == 'settings.json':
             try:
                 json.loads(content)
