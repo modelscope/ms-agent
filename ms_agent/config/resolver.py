@@ -146,6 +146,19 @@ class ConfigResolver:
         from ms_agent.config.config import Config
         merged = Config.fill_missing_fields(merged)
 
+        if effective_project_path:
+            # Mark that this resolve already merged the work-dir project patch
+            # so BaseAgent.__init__ doesn't merge it a second time. The double
+            # merge silently gave <project>/.ms_agent/config.yaml priority over
+            # every caller-side override applied between resolve() and agent
+            # construction (e.g. the WebUI's shaping).
+            try:
+                from omegaconf import open_dict
+                with open_dict(merged):
+                    merged._project_patch_applied = True
+            except Exception:
+                pass
+
         return merged
 
     def resolve_mcp(

@@ -4,6 +4,9 @@ include requirements.txt
 recursive-include requirements *.txt
 recursive-include ms_agent/ *.yaml
 
+# agent_hub cross-framework conversion templates (markdown, not yaml)
+recursive-include ms_agent/agent_hub/default_configs *
+
 # Include projects
 recursive-include projects *
 

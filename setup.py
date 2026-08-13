@@ -273,6 +273,10 @@ if __name__ == '__main__':
                 'projects/**/*',
                 'webui/backend/**/*',
                 'webui/frontend/dist/**/*',
+                # agent_hub conversion templates — without these in the wheel,
+                # get_defaults() returns {} and cross-framework convert
+                # silently degrades to a raw file copy.
+                'agent_hub/default_configs/**/*',
             ],
             '': ['*.h', '*.cpp', '*.cu'],
         },
