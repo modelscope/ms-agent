@@ -2506,10 +2506,16 @@ class LLMAgent(Agent):
                     # conversational truth. Advance the ingest ledger past it
                     # (sync, in-memory + small file write) so the next turn's
                     # delta does not sweep the partial content in either.
+                    # THIS ROUND ONLY -- the same slice `_persist_partial_round`
+                    # takes. Handing over the whole history would mark earlier
+                    # rounds as ingested too, including one a background ingest
+                    # is still writing (extraction takes seconds), which loses
+                    # it: the write finds an empty delta, or fails and is denied
+                    # its retry.
                     for _mem_tool in self.memory_tools:
                         if hasattr(_mem_tool, 'mark_ingested'):
                             try:
-                                _mem_tool.mark_ingested(messages)
+                                _mem_tool.mark_ingested(messages[pre_step_len:])
                             except Exception:  # noqa: E722 - never mask cancel
                                 pass
                     raise

@@ -6,12 +6,12 @@ lives inside the MemoryBackend implementation selected by configuration.
 
 What it DOES own is the write/read discipline around the backend:
 
-* **Serialization** — retrieval (``run``), ingestion (``add``) and flush all
-  take one asyncio lock per *store* (keyed by ``base_dir``), because embedded
+* **Serialization** — every access to the store (``run``, ``add``, ``search``,
+  ``flush``, teardown) takes one asyncio lock per *store*, because embedded
   vector stores (mem0 + local qdrant) have no internal locking at all and
   mem0 even fans out worker threads inside ``add``. Lock per store, not per
-  orchestrator: ``SharedMemoryManager`` may hand different orchestrator
-  instances the same directory.
+  orchestrator: a transient client (the WebUI's read path) may be on the same
+  directory.
 * **Background ingestion** — ``schedule_add`` takes the extraction-LLM +
   embedding cost (seconds) off the turn's critical path. Tasks are retained
   for ``flush_pending`` so a teardown cannot silently drop the last write.
@@ -36,6 +36,7 @@ import json
 import os
 import tempfile
 import time
+from dataclasses import fields
 from typing import Any, Dict, List, Optional, Set
 
 from ms_agent.llm.utils import Message
@@ -50,18 +51,36 @@ from .registry import backend_registry
 
 logger = get_logger()
 
-# One lock per storage directory. Never per orchestrator instance: two
-# orchestrators over the same path (possible through SharedMemoryManager's
-# llm-dependent cache key) must still serialize against each other.
-_STORE_LOCKS: Dict[str, asyncio.Lock] = {}
+# One lock per storage directory. Never per orchestrator instance: the HTTP
+# read path and any other transient client over the same path must serialize
+# against this orchestrator's writes.
+#
+# Keyed by (loop, path), not path alone: an asyncio.Lock binds itself to the
+# loop that first has to *wait* on it, and raises for good once a second loop
+# contends. A process that runs more than one loop over its lifetime -- the
+# inline `asyncio.run` ingest path below, a test suite calling asyncio.run per
+# case, a notebook -- would otherwise wedge on a lock belonging to a loop that
+# is already closed. Same shape as PermissionEnforcer._ask_lock_for_loop.
+# (Two loops alive at once over one store still get one lock each and would not
+# exclude each other; that is inherent to any per-loop scheme, and no such
+# caller exists -- embedded stores are single-client by construction.)
+_STORE_LOCKS: Dict[str, Any] = {}  # path -> (loop, lock)
 
 
 def _store_lock(base_dir: str) -> asyncio.Lock:
-    key = os.path.abspath(str(base_dir or '.'))
-    lock = _STORE_LOCKS.get(key)
-    if lock is None:
-        lock = _STORE_LOCKS.setdefault(key, asyncio.Lock())
-    return lock
+    path = os.path.abspath(str(base_dir or '.'))
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:  # sync caller: nothing to serialize against yet
+        loop = None
+    entry = _STORE_LOCKS.get(path)
+    # Identity of the loop object, not its id(): an id is reused after the loop
+    # is collected, which would hand back a lock bound to the dead one.
+    if entry is None or entry[0] is not loop:
+        lock = asyncio.Lock()
+        _STORE_LOCKS[path] = (loop, lock)
+        return lock
+    return entry[1]
 
 
 # Only conversational text is ingested (mirrors what backends extract from);
@@ -71,10 +90,34 @@ _INGEST_ROLES = ('user', 'assistant')
 _LEDGER_FILE = 'ingest_state.json'
 _LEDGER_MAX = 4096
 
+# Config fields the backend re-reads from ``mem_config`` on every call, so a
+# change to them can be applied by mutating the live config object. Everything
+# else decides which backend exists or which store it points at, and needs a
+# teardown (see ``MemoryOrchestrator.reconfigure``).
+_SOFT_FIELDS = ('recall_top_k', 'ingest_interval')
+
 
 def _content_hash(msg: Dict[str, Any]) -> str:
     raw = f"{msg.get('role', '')}\x1f{msg.get('content', '')}"
     return hashlib.sha256(raw.encode('utf-8')).hexdigest()[:16]
+
+
+def _ingestable_hashes(msg_dicts: List[Dict[str, Any]]) -> Set[str]:
+    return {
+        _content_hash(m)
+        for m in msg_dicts
+        if m.get('role') in _INGEST_ROLES and m.get('content')
+    }
+
+
+def _changed_fields(old: MemoryConfig, new: MemoryConfig) -> Set[str]:
+    # Field-by-field rather than ``asdict``: that deep-copies every value,
+    # and ``llm_config`` / ``backend_options`` can hold anything.
+    return {
+        f.name
+        for f in fields(old)
+        if getattr(old, f.name, None) != getattr(new, f.name, None)
+    }
 
 
 class MemoryOrchestrator(Memory):
@@ -96,8 +139,13 @@ class MemoryOrchestrator(Memory):
         self.mem_config = self._parse_config(config)
         self._backend: Optional[MemoryBackend] = None
         self._started = False
+        # Retired by close(): a closed orchestrator never reopens its store.
+        self._closed = False
         # Background ingestion bookkeeping (see module docstring).
         self._pending: Set[asyncio.Task] = set()
+        # Hashes a scheduled ingest has claimed but not yet written. The ledger
+        # may not advance past them from anywhere else (see mark_ingested).
+        self._inflight: Set[str] = set()
         self._turns_since_ingest = 0
         self._ledger: Optional[Set[str]] = None  # lazy-loaded from disk
         self._ledger_order: List[str] = []
@@ -133,7 +181,7 @@ class MemoryOrchestrator(Memory):
     # ------------------------------------------------------------------
 
     async def run(self, messages: List[Message]) -> List[Message]:
-        if not self.mem_config.enabled:
+        if not self.mem_config.enabled or self._closed:
             return messages
 
         # Retrieval must not overlap a write: the embedded stores underneath
@@ -157,8 +205,13 @@ class MemoryOrchestrator(Memory):
     async def recall_block(self, query: str) -> str:
         """Formatted recall for a NEW user turn; '' when the backend has no
         per-query recall (file backend) or memory is disabled. Same store
-        lock as run() — retrieval must not overlap a write."""
-        if not self.mem_config.enabled:
+        lock as run() — retrieval must not overlap a write.
+
+        Closed is terminal here too: this is a store access like any other,
+        and going through ``_ensure_started`` after the owner released the
+        store would retake the embedded store's file lock.
+        """
+        if not self.mem_config.enabled or self._closed:
             return ''
         async with _store_lock(self.mem_config.base_dir):
             backend = await self._ensure_started()
@@ -195,9 +248,16 @@ class MemoryOrchestrator(Memory):
             asyncio.run(self._ingest(msg_dicts, **kwargs))
             return None
         self._status.update(state='scheduled', error=None)
+        # Claim the messages NOW, synchronously. A task does not start until
+        # the loop gets around to it, and an interrupt landing in that gap
+        # would otherwise mark them as ingested before the write ever looked.
+        claimed = _ingestable_hashes(msg_dicts)
+        self._inflight |= claimed
         task = loop.create_task(self._ingest(msg_dicts, **kwargs))
         self._pending.add(task)
         task.add_done_callback(self._pending.discard)
+        task.add_done_callback(
+            lambda _t: self._inflight.difference_update(claimed))
         return task
 
     def _should_ingest(self) -> bool:
@@ -217,6 +277,16 @@ class MemoryOrchestrator(Memory):
         Never raises — a memory write must not break anything above it; the
         outcome lands in ``ingest_status`` instead.
         """
+        if self._closed:
+            # Scheduled before the teardown, woken after it. Writing now would
+            # reopen a store its owner has already released.
+            logger.debug('[orchestrator] ingest dropped: orchestrator closed')
+            return 0
+        # Also claimed here, not only in schedule_add: `add()` reaches this
+        # directly. Claiming twice is harmless — both releases drop the same
+        # hashes.
+        claimed = _ingestable_hashes(msg_dicts)
+        self._inflight |= claimed
         try:
             async with _store_lock(self.mem_config.base_dir):
                 backend = await self._ensure_started()
@@ -241,17 +311,25 @@ class MemoryOrchestrator(Memory):
                          f'persisted for this turn: {type(e).__name__}: {e}')
             self._set_status('error', error=f'{type(e).__name__}: {e}')
             return 0
+        finally:
+            self._inflight -= claimed
 
     def mark_ingested(self, messages: List[Message]) -> None:
         """Advance the ledger WITHOUT ingesting (interrupted turns): a
-        half-finished answer must not be swept into the next turn's delta."""
-        self._ledger_mark(
-            [
-                m for m in _messages_to_dicts(messages)
-                if m.get('role') in _INGEST_ROLES and m.get('content')
-            ],
-            persist=True,
-        )
+        half-finished answer must not be swept into the next turn's delta.
+
+        Pass ONLY the interrupted round's own messages. Anything a scheduled
+        ingest has already claimed is skipped regardless: marking a message
+        that is still being written would either make that write a no-op (the
+        delta comes out empty) or, if it fails, deny it the retry the ledger
+        exists to guarantee — either way the memory is silently lost.
+        """
+        dicts = [
+            m for m in _messages_to_dicts(messages)
+            if m.get('role') in _INGEST_ROLES and m.get('content')
+            and _content_hash(m) not in self._inflight
+        ]
+        self._ledger_mark(dicts, persist=True)
 
     async def flush_pending(self, timeout: float = 15.0) -> None:
         """Barrier: wait for scheduled ingests (teardown must not drop the
@@ -349,7 +427,7 @@ class MemoryOrchestrator(Memory):
     # ------------------------------------------------------------------
 
     async def flush(self, messages: List[Message]) -> None:
-        if not self.mem_config.enabled:
+        if not self.mem_config.enabled or self._closed:
             return
         async with _store_lock(self.mem_config.base_dir):
             backend = await self._ensure_started()
@@ -361,8 +439,14 @@ class MemoryOrchestrator(Memory):
     # ------------------------------------------------------------------
 
     async def search(self, query: str, limit: int = 10) -> List[MemoryEntry]:
-        backend = await self._ensure_started()
-        return await backend.search(query, limit)
+        if self._closed:
+            return []
+        # Under the store lock like every other access: an embedded store has
+        # no locking of its own, and this one used to be the single reader that
+        # could land in the middle of a background write.
+        async with _store_lock(self.mem_config.base_dir):
+            backend = await self._ensure_started()
+            return await backend.search(query, limit)
 
     # ------------------------------------------------------------------
     # Tool interface (called by the agent's ToolManager)
@@ -405,14 +489,76 @@ class MemoryOrchestrator(Memory):
     # Shutdown
     # ------------------------------------------------------------------
 
-    async def close(self) -> None:
-        # Drain scheduled writes first — closing under a pending ingest would
-        # either lose the write or race the backend teardown.
+    async def _shutdown_backend(self, retire: bool = False) -> None:
+        """Drain scheduled writes, then release the backend (and with it the
+        store's file lock). ``retire`` additionally makes the orchestrator
+        refuse to ever reopen the store; ``reconfigure`` leaves it False,
+        because everyone holding this instance must keep working with it.
+
+        Order matters. Draining comes FIRST: a write that was already
+        scheduled is part of what a teardown promises to persist. Retiring
+        comes right after, so a straggler past ``flush_pending``'s timeout
+        finds the door closed instead of going through ``_ensure_started``,
+        which would restart the backend and take the embedded store's file
+        lock again — after its owner believed it released.
+
+        Stragglers are deliberately NOT cancelled: a backend write runs in a
+        worker thread (mem0 extraction + embedding), so cancelling only
+        abandons the await while the thread keeps writing — and we would then
+        close the client under it. Waiting on the store lock below is what
+        actually makes the teardown safe.
+        """
         await self.flush_pending()
+        if retire:
+            self._closed = True
         if self._backend is not None and self._started:
             async with _store_lock(self.mem_config.base_dir):
                 await self._backend.close()
             self._started = False
+
+    async def close(self) -> None:
+        await self._shutdown_backend(retire=True)
+
+    # ------------------------------------------------------------------
+    # Reconfiguration
+    # ------------------------------------------------------------------
+
+    async def reconfigure(self, config: Any) -> bool:
+        """Adopt ``config`` on this live instance. Returns True when the
+        backend had to be torn down, False for a no-op or an in-place update.
+
+        Applied to the instance instead of by replacing it, because
+        ``SharedMemoryManager`` hands ONE instance per store to every agent
+        that asks: a replacement would leave earlier holders pointing at an
+        orchestrator whose store was closed under them, and two live
+        orchestrators over one embedded store is exactly the exclusive-lock
+        conflict that sharing exists to prevent. Mutating the shared object
+        updates every holder at once.
+        """
+        new_cfg = self._parse_config(config)
+        changed = _changed_fields(self.mem_config, new_cfg)
+        if not changed:
+            return False
+        if not changed - set(_SOFT_FIELDS):
+            # The live backend holds a reference to this very MemoryConfig, so
+            # writing the fields through reaches it without a teardown.
+            for field in _SOFT_FIELDS:
+                setattr(self.mem_config, field, getattr(new_cfg, field))
+            logger.info(f'[orchestrator] memory config updated in place: '
+                        f'{sorted(changed)}')
+            return False
+        logger.info(f'[orchestrator] memory config changed '
+                    f'({sorted(changed)}) -> rebuilding backend')
+        # Release the old store, but keep the instance usable — everyone
+        # holding it must keep working, now against the new configuration.
+        await self._shutdown_backend()
+        self._backend = None
+        if 'base_dir' in changed:
+            # A different store keeps a different ledger.
+            self._ledger = None
+            self._ledger_order = []
+        self.mem_config = new_cfg
+        return True
 
     # ------------------------------------------------------------------
     # Config parsing
