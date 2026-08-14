@@ -11,13 +11,13 @@ from openai.types.chat.chat_completion_message_tool_call import (
 from typing import Any, Dict, Generator, Iterable, List, Optional
 
 from ms_agent.llm import LLM
+from ms_agent.llm.thinking import create_with_thinking_fallback
 from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.utils import (MAX_CONTINUE_RUNS, assert_package_exist,
                             get_logger, retry)
 from ms_agent.utils.constants import get_service_config
 
 logger = get_logger()
-
 
 class _DashScopeResponsesTransport(httpx.HTTPTransport):
     """Rewrite /v1/responses -> /v1/chat/completions for DashScope proxy.
@@ -295,8 +295,11 @@ class OpenAI(LLM):
         if is_streaming and stream_options_config.get('include_usage', True):
             kwargs.setdefault('stream_options', {})['include_usage'] = True
 
-        return self.client.chat.completions.create(
-            model=self.model, messages=messages, tools=tools, **kwargs)
+        # Thinking is per-model and a refusal is a hard 400 (see llm/thinking.py).
+        return create_with_thinking_fallback(
+            lambda **kw: self.client.chat.completions.create(
+                model=self.model, messages=messages, tools=tools, **kw),
+            self.client, self.model, logger, **kwargs)
 
     @staticmethod
     def _extract_cache_info(usage_obj: Any) -> tuple:
