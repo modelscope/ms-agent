@@ -46,6 +46,24 @@ def _result_list(results: Any) -> List[Dict[str, Any]]:
     return list(results or [])
 
 
+# Extraction guidance we add to mem0's own, for one reason: retrieval. The
+# store is queried with the user's next message, so a memory kept in a language
+# the user does not write in has to survive a cross-lingual embedding hop — and
+# mem0 2.x's hybrid search also runs a BM25 leg, where cross-language lexical
+# overlap is simply zero. (Observed: Chinese questions returning nothing at all
+# against English-worded memories.)
+#
+# mem0 2.x treats `custom_instructions` as an EXTRA, highest-priority section
+# appended to its prompt — it does not replace the built-in one. (1.x's
+# `custom_fact_extraction_prompt`, which did replace it wholesale, no longer
+# exists in the config.) Overridable: an explicit `custom_instructions` in
+# `backend_options.mem0` wins.
+DEFAULT_CUSTOM_INSTRUCTIONS = (
+    'Write each memory in the SAME language and script the user used — do not '
+    'translate or transliterate it. Keep names, technical terms and product '
+    'names exactly as they appeared.')
+
+
 def _mem0_search(m0: Any, query: str, user_id: str, top_k: int = 10) -> Any:
     """mem0 2.x moved entity params into ``filters=``; 1.x uses kwargs."""
     try:
@@ -80,8 +98,10 @@ class Mem0Backend(BaseMemoryBackend):
     async def start(self, **kwargs: Any) -> None:
         try:
             from mem0 import Memory
-            mem0_cfg = self._config.backend_options.get('mem0', {})
-            self._mem0 = Memory.from_config(mem0_cfg) if mem0_cfg else Memory()
+            mem0_cfg = dict(self._config.backend_options.get('mem0', {}) or {})
+            mem0_cfg.setdefault('custom_instructions',
+                                DEFAULT_CUSTOM_INSTRUCTIONS)
+            self._mem0 = Memory.from_config(mem0_cfg)
             self._user_id = kwargs.get('user_id', self._config.user_id)
             logger.info('[mem0_backend] mem0 initialized')
         except Exception as e:
@@ -142,7 +162,10 @@ class Mem0Backend(BaseMemoryBackend):
         messages = list(messages)
         if messages and messages[0].get('role') == 'system':
             sys_msg = {**messages[0]}
-            block = f'\n\n<long-term-memory>\n{formatted}\n</long-term-memory>'
+            block = ('\n\n<long-term-memory>\n'
+                     '(Each entry is dated. When two entries conflict, the '
+                     'later one supersedes the earlier.)\n'
+                     f'{formatted}\n</long-term-memory>')
             sys_msg['content'] = (sys_msg.get('content') or '') + block
             messages[0] = sys_msg
 
@@ -192,7 +215,8 @@ class Mem0Backend(BaseMemoryBackend):
             return []
         try:
             results = _result_list(await _offload(_mem0_search, self._mem0,
-                                                  query, self._user_id))
+                                                  query, self._user_id,
+                                                  max(1, int(limit))))
             return [
                 MemoryEntry(
                     id=r.get('id', ''),
@@ -223,11 +247,21 @@ class Mem0Backend(BaseMemoryBackend):
 
     @staticmethod
     def _format_results(results: Any, top_k: int = 10) -> str:
+        """One bullet per memory, stamped with the day it was written.
+
+        mem0's extraction only ever ADDs (2.x has no update/delete pass), so a
+        superseded fact and the fact that replaced it both come back from the
+        same search. Undated, the model has nothing to prefer the newer one by;
+        dated, resolving the contradiction is at least possible at read time.
+        """
         lines = []
         for r in _result_list(results)[:top_k]:
             text = r.get('memory', r.get('text', ''))
-            if text:
-                lines.append(f'- {text}')
+            if not text:
+                continue
+            day = str(r.get('updated_at') or r.get('created_at') or '')[:10]
+            stamp = f'({day}) ' if len(day) == 10 else ''
+            lines.append(f'- {stamp}{text}')
         return '\n'.join(lines)
 
 
