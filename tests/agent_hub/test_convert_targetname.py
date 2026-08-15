@@ -926,5 +926,81 @@ class TestPrivateConfigDroppedOnConvert(unittest.TestCase):
             self.assertIn("GOLD-CFG", kept.read_text())
 
 
+class TestOpenhumanCuratedMemory(unittest.TestCase):
+    """``MEMORY.md`` is OpenHuman's curated long-term memory (injected every
+    session, maintained by the archivist sub-agent) and must map onto the other
+    products' MEMORY slot. Because a named agent's ``workspace_root`` already
+    resolves to ``personalities/<Profile>/``, the same pattern covers both the
+    workspace-level file and each Profile's own copy.
+    """
+
+    def _make_src(self, td: Path) -> Path:
+        src = td / "src"
+        (src / "personalities" / "researcher-2" / "skills" / "paper-hunt").mkdir(
+            parents=True)
+        (src / "SOUL.md").write_text("# Soul\nGLOBAL-PERSONA\n")
+        (src / "MEMORY.md").write_text("GLOBAL-MEMORY\n")
+        prof = src / "personalities" / "researcher-2"
+        (prof / "SOUL.md").write_text("# Soul\nPROFILE-PERSONA\n")
+        (prof / "MEMORY.md").write_text("PROFILE-MEMORY\n")
+        (prof / "skills" / "paper-hunt" / "SKILL.md").write_text("PROFILE-SKILL\n")
+        return src
+
+    def test_workspace_memory_travels_to_openclaw(self):
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            src = self._make_src(td)
+            out = td / "out"
+            rc = cmd_convert(
+                "openhuman", "openclaw",
+                from_name="default", target_name="default",
+                local_dir=str(src), out_dir=str(out))
+            self.assertEqual(rc, 0)
+            mem = out / "workspace" / "MEMORY.md"
+            self.assertTrue(mem.is_file())
+            self.assertIn("GLOBAL-MEMORY", mem.read_text())
+
+    def test_profile_memory_and_skills_travel_to_hermes(self):
+        """A Profile carries its *own* memory and skill tree, not the global
+        ones -- the per-Profile scope is what ``workspace_root`` selects.
+        """
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            src = self._make_src(td)
+            out = td / "out"
+            rc = cmd_convert(
+                "openhuman", "hermes",
+                from_name="researcher-2", target_name="default",
+                local_dir=str(src), out_dir=str(out))
+            self.assertEqual(rc, 0)
+            mem = out / "memories" / "MEMORY.md"
+            self.assertTrue(mem.is_file())
+            self.assertIn("PROFILE-MEMORY", mem.read_text())
+            self.assertNotIn("GLOBAL-MEMORY", mem.read_text())
+            skill = out / "skills" / "paper-hunt" / "SKILL.md"
+            self.assertTrue(skill.is_file())
+            self.assertEqual(skill.read_text(), "PROFILE-SKILL\n")
+
+    def test_memory_maps_back_from_hermes(self):
+        """Inbound direction: hermes ``memories/MEMORY.md`` lands on the
+        OpenHuman workspace root, not in a nested memory dir.
+        """
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            src = td / "hermes"
+            (src / "memories").mkdir(parents=True)
+            (src / "SOUL.md").write_text("# Soul\nH-PERSONA\n")
+            (src / "memories" / "MEMORY.md").write_text("H-MEMORY\n")
+            out = td / "out"
+            rc = cmd_convert(
+                "hermes", "openhuman",
+                from_name="default", target_name="default",
+                local_dir=str(src), out_dir=str(out))
+            self.assertEqual(rc, 0)
+            mem = out / "MEMORY.md"
+            self.assertTrue(mem.is_file())
+            self.assertIn("H-MEMORY", mem.read_text())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

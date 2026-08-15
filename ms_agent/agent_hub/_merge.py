@@ -431,9 +431,12 @@ PRODUCT_FILE_CLASSES = {
         # Per the official "move to a new PC" guide OpenHuman carries the
         # persona files SOUL/IDENTITY plus the HEARTBEAT task file; the
         # wiki/ vault is imported as-is (not a classified persona file).
+        # MEMORY.md is the curated long-term memory injected every session
+        # (the wiki mirrors the Memory Tree instead), so it travels too.
         'portable': frozenset([
             'SOUL.md',
             'IDENTITY.md',
+            'MEMORY.md',
         ]),
         'config': frozenset([
             'HEARTBEAT.md',
@@ -523,7 +526,8 @@ SEMANTIC_GROUPS = [
         'nanobot': 'memory/MEMORY.md',
         'openclaw': 'MEMORY.md',
         'qwenpaw': 'MEMORY.md',
-        'hermes': 'memories/MEMORY.md'
+        'hermes': 'memories/MEMORY.md',
+        'openhuman': 'MEMORY.md'
     },
     {
         'openclaw': 'IDENTITY.md',
@@ -621,6 +625,7 @@ PRODUCT_KNOWN_FILES = {
         'SOUL.md',
         'IDENTITY.md',
         'HEARTBEAT.md',
+        'MEMORY.md',
     ]),
     'qoder':
     frozenset([

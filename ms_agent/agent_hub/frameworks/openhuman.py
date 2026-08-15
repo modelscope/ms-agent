@@ -19,6 +19,14 @@ class OpenhumanWorkspace(WorkspaceSpec):
     ``SOUL.md`` / ``IDENTITY.md`` / ``HEARTBEAT.md`` and the ``config.toml``
     settings (models / providers / routing / autonomy).
 
+    ``MEMORY.md`` is the *curated* long-term memory: unlike the Memory Tree
+    (queried on demand via recall tools) it is injected into the system prompt
+    every session and maintained by the archivist sub-agent, which makes it the
+    direct counterpart of the other products' ``MEMORY.md``. The public
+    migration guide predates the feature and only lists the Memory Tree plus
+    the wiki mirror, so it is collected on the strength of the on-disk layout
+    rather than that document.
+
     On-disk layout: the app does NOT keep those files directly under
     ``~/.openhuman`` -- they live in a per-device user workspace
     ``~/.openhuman/users/<user-id>/workspace/``, where ``<user-id>`` (e.g.
@@ -106,10 +114,18 @@ class OpenhumanWorkspace(WorkspaceSpec):
     def patterns(self) -> list[str]:
         # fnmatch ``*`` spans ``/`` so ``wiki/*`` / ``skills/*`` recurse the
         # whole vault / skill tree.
+        #
+        # Every entry is relative to :attr:`workspace_root`, which already
+        # resolves to ``personalities/<Profile>/`` for a named agent. So this
+        # one list covers both scopes with no per-profile duplicates:
+        # ``MEMORY.md`` collects the workspace-level curated memory for
+        # ``default`` and ``personalities/<id>/MEMORY.md`` for a Profile, and
+        # ``skills/*`` likewise picks up a Profile's own skill tree.
         return [
             'SOUL.md',
             'IDENTITY.md',
             'HEARTBEAT.md',
+            'MEMORY.md',
             'config.toml',
             'wiki/*',
             'skills/*',
