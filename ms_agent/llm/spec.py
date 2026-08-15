@@ -220,6 +220,16 @@ class ProviderRegistry:
                 keywords=[],
                 capabilities=openai_caps,
             ),
+            ProviderSpec(
+                name='orcarouter',
+                display_name='OrcaRouter',
+                transport=TRANSPORT_OPENAI_COMPAT,
+                api_key_env=['ORCAROUTER_API_KEY'],
+                default_base_url='https://api.orcarouter.ai/v1',
+                base_url_env=['ORCAROUTER_BASE_URL'],
+                keywords=[],
+                capabilities=openai_caps,
+            ),
         ]
         for spec in builtins:
             self.register(spec)

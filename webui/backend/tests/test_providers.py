@@ -9,7 +9,7 @@ from ms_agent.llm.spec import get_registry
 
 _EXPECTED_BUILTINS = {
     "openai", "anthropic", "google", "modelscope", "zhipu",
-    "kimi", "deepseek", "dashscope", "minimax", "openrouter",
+    "kimi", "deepseek", "dashscope", "minimax", "openrouter", "orcarouter",
 }
 
 
