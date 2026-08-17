@@ -59,14 +59,23 @@ def test_effort_is_normalized_leniently(raw, expected):
     assert T.normalize_effort(raw) == expected
 
 
-def test_clamp_prefers_the_next_stronger_tier():
-    # DeepSeek/Zhipu/Kimi expose low/high/max: a request for medium should not
-    # quietly become low.
-    assert T.clamp_effort('medium', ('low', 'high', 'max')) == 'high'
-    # Nothing at or above the request -> the ceiling, so "max" caps instead of
-    # failing.
+def test_clamp_prefers_the_next_weaker_tier():
+    """An effort tier is a quality FLOOR, not a ceiling, so a clamp must never
+    land above the request — see zlxlabs/llm-compat#11, where clamping UP into a
+    support set's interior gap jumped three tiers and billed at the top one."""
+    assert T.clamp_effort('medium', ('low', 'high', 'max')) == 'low'
     assert T.clamp_effort('max', ('off', 'low', 'medium', 'high')) == 'high'
     assert T.clamp_effort('low', ('low', 'high', 'max')) == 'low'
+
+
+def test_a_thinking_tier_never_collapses_into_off():
+    """`off` is a different request, not the bottom rung. Clamping downward
+    must not turn "think a little" into "do not think"."""
+    assert T.clamp_effort('minimal', ('off', 'high')) == 'high'
+    assert T.clamp_effort('low', ('off', 'high')) == 'high'
+    # ...and asking to switch off where that is impossible lands on the weakest
+    # thinking tier, which is also the remedy Zhipu prescribes for GLM-5.3.
+    assert T.clamp_effort('off', ('low', 'high', 'max')) == 'low'
 
 
 def test_kimi_can_be_switched_off_after_all():
@@ -89,11 +98,11 @@ def test_boolean_endpoints_get_a_boolean():
 
 
 def test_dashscope_gets_both_knobs_because_they_do_different_jobs():
-    """Probed 2026-08-17: `reasoning_effort: high` ALONE leaves qwen-plus at
-    zero reasoning — only `enable_thinking` turns thinking on there — while
-    `reasoning_effort` is what actually sets depth on qwen3.8-max (none 0 →
-    low 78 → high 222 → xhigh 393 characters). Sending one without the other
-    silently loses half the control."""
+    """They cover disjoint sets of models on this host. `reasoning_effort: high`
+    ALONE leaves qwen-plus at zero reasoning — it does not support the effort
+    field, so only `enable_thinking` reaches it (probed 2026-08-17: 0 characters
+    vs 543 with the flag) — while qwen3.8-max is the one Qwen model that does
+    take an effort tier. Sending one without the other loses half the models."""
     got = T.plan('low', base_url='https://dashscope.aliyuncs.com/v1')
     assert got['params'] == {
         'extra_body': {
@@ -103,13 +112,18 @@ def test_dashscope_gets_both_knobs_because_they_do_different_jobs():
     }
 
 
-def test_dashscope_caps_at_xhigh_because_max_is_rejected():
-    """`max` is rejected outright — qwen3.7-plus answers 400 listing the valid
-    set — while `xhigh` is accepted by every qwen3.7/3.8 probed. DashScope is
-    the one endpoint whose vocabulary falls short of the full ladder."""
+def test_dashscope_drops_only_the_value_it_measurably_rejects():
+    """`max` is the one 400 on this host (qwen3.7-plus rejects it, qwen3.8-max
+    accepts all seven — each value probed individually 2026-08-18), and it is
+    documented as an alias of `xhigh`, which is where the downward clamp lands.
+    Every other rung reaches the endpoint untouched."""
     got = T.plan('max', base_url='https://dashscope.aliyuncs.com/v1')
     assert got['effective'] == 'xhigh'
     assert got['params']['reasoning_effort'] == 'xhigh'
+    for rung in ('minimal', 'low', 'medium', 'high', 'xhigh'):
+        sent = T.plan(rung, base_url='https://dashscope.aliyuncs.com/v1')
+        assert sent['effective'] == rung
+        assert sent['params']['reasoning_effort'] == rung
 
 
 def test_dashscope_off_stays_a_plain_boolean():

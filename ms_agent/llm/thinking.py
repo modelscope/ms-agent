@@ -3,52 +3,73 @@
 for models that refuse to be asked at all.
 
 Every vendor spells thinking differently and none of them spells it the same way
-for long. Probed against the official docs on 2026-08-17:
+for long. Per-model real tiers, from each vendor's own docs and cross-checked
+against opencode's model catalog (both agree line for line), 2026-08-18:
 
-===============  ==================================  ==================  =========
-endpoint         modern field                        tiers               default
-===============  ==================================  ==================  =========
-OpenAI           ``reasoning_effort``                none…xhigh          ``none``
-DeepSeek         ``reasoning_effort`` /              low/high/max        ON, high
-                 ``thinking: {type}``                (medium→high)
-Zhipu GLM 5.2+   ``reasoning_effort``                low/high/max        ``max``
-Moonshot Kimi 3  ``reasoning_effort``                low/high/max        ``max``
-MiniMax M3       ``thinking: {type}``                adaptive/disabled   ON via
-                                                                         OpenAI,
-                                                                         OFF via
-                                                                         Anthropic
-DashScope        ``enable_thinking`` AND             none…xhigh          per model
-                 ``reasoning_effort``; plus          (no ``max``)
-                 ``thinking_budget``, which the
-                 effort field CANNOT travel with
-ModelScope       ``enable_thinking`` (gateway) /     on/off              per model
-                 ``chat_template_kwargs``
-OpenRouter       ``reasoning: {effort|max_tokens}``  low/medium/high     inferred
-Anthropic        ``output_config.effort`` +          low…max             high
-                 ``thinking: {type: adaptive}``
-===============  ==================================  ==================  =========
+=================  ==================================  ====================  ========
+model / endpoint   modern field                        DISTINCT tiers        default
+=================  ==================================  ====================  ========
+xAI grok-4.5       ``reasoning_effort``                low/medium/high       high
+xAI grok-4.6       ``reasoning_effort``                + xhigh               high
+DeepSeek v4-*      ``reasoning_effort`` /              high/max              ON, high
+                   ``thinking: {type}``                (+low; med/xhigh→high)
+Zhipu glm-5.2      ``reasoning_effort``                high/max              ``max``
+Zhipu glm-5.3      ``reasoning_effort``                low/high/max          ``max``
+Zhipu glm-5/5.1    ``thinking: {type}`` only           — (no effort field)   ON
+Moonshot kimi-k3   ``reasoning_effort``                low/high/max          ``max``
+Moonshot kimi-k2.x ``thinking: {type}`` only           — (no effort field)   varies
+MiniMax M3         ``thinking: {type}``                adaptive/disabled     ON via
+                   (+ ``reasoning_split`` for the      (NOT a depth knob)    OpenAI,
+                   output format, not the depth)                             OFF via
+                                                                             Anthropic
+DashScope          ``enable_thinking`` AND, on         low/medium/xhigh      per model
+ qwen3.8-max       ``reasoning_effort``; the two       (high/max→xhigh,
+                   CANNOT travel with                  minimal→low)
+                   ``thinking_budget``
+DashScope other    ``enable_thinking`` only            — (no effort field)   per model
+ModelScope         ``enable_thinking`` (gateway) /     — (no effort field)   per model
+                   ``chat_template_kwargs``
+OpenRouter         ``reasoning: {effort|max_tokens}``  per model, published  inferred
+                                                       in ``/api/v1/models``
+Anthropic          ``output_config.effort`` +          low…max               high
+                   ``thinking: {type: adaptive}``
+=================  ==================================  ====================  ========
 
-Three things follow from that table, and they are the whole design:
+Four things follow, and they are the whole design:
 
 1. ``reasoning_effort`` is the de-facto standard. It is the name callers use
    here, so anyone who knows one vendor already knows this one — and it survives
    the OpenAI SDK's signature filter, unlike an invented name.
 
-2. The on/off switch is being retired. GLM-5.3 and Kimi K3 cannot stop thinking
-   at all (GLM-5.3 *fails* the request if you send the old
-   ``thinking: {type: disabled}``), and Anthropic deprecated
-   ``enabled + budget_tokens`` in favour of an effort level. So "off" is modelled
-   as the weakest rung of the ladder, the way OpenAI models it with ``none``.
-
-3. Defaults are per-MODEL and they move. On DashScope alone, qwen3.5 and later
+2. Defaults are per-MODEL and they move. On DashScope alone, qwen3.5 and later
    default thinking ON while qwen-plus/turbo/flash and qwen3-max default it OFF;
-   MiniMax M3 defaults it ON through the OpenAI-compatible API and OFF through
-   the Anthropic-compatible one — same model. Any table of defaults we wrote
-   would be wrong within a release. So we do not write one: ``auto`` sends
+   ``kimi-k2.6`` defaults OFF on Alibaba's deployment and ON on Moonshot's, same
+   name; MiniMax M3 defaults it ON through the OpenAI-compatible API and OFF
+   through the Anthropic-compatible one, same model. Any table of defaults we
+   wrote would be wrong within a release. So we do not write one: ``auto`` sends
    NOTHING and inherits whatever the vendor tuned, and the lowering table below
    is consulted ONLY when a caller asked for a specific tier. A bug in it can
    then only affect someone who explicitly configured thinking, who will see it
    immediately — rather than silently changing every request.
+
+3. **"Accepted" is not "distinct", and a wire enum is not a capability list.**
+   Two traps, both of which this module fell into once. OpenRouter's rejection
+   message lists its whole GATEWAY vocabulary, identically for every model, then
+   maps unsupported-but-valid tiers to the nearest one the model has — sending
+   ``max`` to grok-4.5 returns 200, not an error. And DeepSeek's ``/v1`` enum
+   went from five values to seven between 2026-07-27 and 2026-08-17 (``minimal``
+   flipped from a hard 400 to accepted, and the declaration order changed), so a
+   vocabulary derived from probing has a measured shelf life of about three
+   weeks. The table below therefore records only what an endpoint REJECTS, and
+   leaves each vendor's documented aliasing to the vendor.
+
+4. **The tier is a request, not a promise.** Measured in billed reasoning tokens
+   (3 samples per cell, 2026-08-18), the effect ranges from crisp to absent:
+   glm-5.2 moves monotonically and treats ``minimal`` as off (0 tokens, 3/3);
+   glm-5.1 does not move at all (it has no effort field); grok-4.5 through
+   OpenRouter shows no trend across six tiers; qwen3.8-max is non-monotonic.
+   So this module translates the knob faithfully and does not pretend to know
+   what the model will do with it.
 """
 from __future__ import annotations
 
@@ -129,8 +150,9 @@ _HOST_FAMILIES = (
     ('open.bigmodel.cn', 'zhipu'),
     ('bigmodel.cn', 'zhipu'),
     ('z.ai', 'zhipu'),
-    ('api.moonshot.cn', 'moonshot'),
-    ('platform.kimi.ai', 'moonshot'),
+    ('api.moonshot.cn', 'moonshot'),  # CN
+    ('api.moonshot.ai', 'moonshot'),  # international, per Moonshot's docs
+    ('api.kimi.com', 'moonshot'),
     ('api.minimax', 'minimax'),
     ('openrouter.ai', 'openrouter'),
     ('api.openai.com', 'openai'),
@@ -155,18 +177,31 @@ def endpoint_family(base_url: str, protocol: str = '') -> str:
 
 #: Tiers each family actually accepts, weakest to strongest. A request outside
 #: the set is clamped (see ``clamp_effort``).
+# What each family ACCEPTS without erroring — deliberately NOT "which tiers are
+# distinct behaviours there". Those are two different questions and only the
+# first one is ours: every vendor documents its own collapse (DashScope maps
+# `high`/`max` onto `xhigh` and `minimal` onto `low`; Zhipu maps `low`/`medium`
+# onto `high` and `xhigh` onto `max`; DeepSeek publishes a five-row table) and
+# applies it per MODEL, which a host-keyed table cannot express and should not
+# try to. So we only subtract values an endpoint is measured to REJECT, and let
+# the vendor alias the rest.
 _FAMILY_TIERS = {
-    # DashScope takes the ladder but REJECTS the top rung: qwen3.7-plus answers
-    # 400 for `max` while accepting `xhigh`, so `max` clamps down to it. The
-    # ladder is real there — qwen3.8-max reasoning is strictly monotonic in it
-    # (none 0, minimal 54, low 78, medium 152, high 222, xhigh 393 characters).
+    # `max` is the single measured rejection on this host: qwen3.7-plus answers
+    # 400 for it while accepting none/minimal/low/medium/high/xhigh, and
+    # qwen3.8-max accepts all seven (each value probed individually,
+    # 2026-08-18). Excluding it protects the qwen3.7 family and costs the one
+    # model that does take it nothing, because DashScope documents `max` as an
+    # alias of `xhigh` — exactly where the downward clamp lands. The canonical
+    # set for qwen3.8-max, the only Qwen with a real effort field, is
+    # low / medium / xhigh.
     'dashscope': ('off', 'minimal', 'low', 'medium', 'high', 'xhigh'),
     # No effort field at all: the switch is a boolean, so every "how hard"
-    # collapses onto "on".
+    # collapses onto "on". Corroborated for MiniMax M3 and the ModelScope-hosted
+    # Qwen3.5 family by opencode's model catalog, which lists them as `toggle`.
     'modelscope': ('off', 'high'),
     'minimax': ('off', 'high'),
     'anthropic': ('off', 'high'),
-    # Everyone else takes the whole vocabulary. Endpoints that do not validate
+    # Everyone else accepts the whole vocabulary. Endpoints that do not validate
     # it (glm-5.1, glm-5, every Kimi, MiniMax, ModelScope) ignore an unknown
     # value rather than failing, so passing a tier through costs nothing.
     'deepseek': EFFORT_TIERS,
@@ -214,20 +249,32 @@ def normalize_effort(raw: Any) -> Optional[str]:
 
 
 def clamp_effort(tier: str, supported: Tuple[str, ...]) -> str:
-    """Nearest tier the endpoint accepts, preferring the next STRONGER one.
+    """Nearest tier the endpoint accepts, preferring the next WEAKER one.
 
-    Asking for more than a model offers should cap at its ceiling rather than
-    fail; asking for less than it offers (``off`` on Kimi K3, which always
-    thinks) should land on its floor rather than be silently dropped.
+    Direction matters, and the intuitive choice is the wrong one. An effort tier
+    is a quality FLOOR the caller is willing to pay for, not a ceiling — so
+    landing above the request spends money they did not ask for. A published
+    post-mortem of the opposite choice (zlxlabs/llm-compat#11, merged
+    2026-08-05) describes exactly that: a request for the middle rung clamped
+    UP into a support set's interior gap, jumped three tiers, was billed at the
+    top tier, and said nothing louder than a log line.
+
+    ``off`` is not treated as the bottom of the ladder: it is a different
+    request, so a thinking tier never collapses into it. On an endpoint that
+    only has a switch, the weakest thinking tier is "on"; on one that cannot
+    stop thinking at all (Kimi K3 per Moonshot's FAQ), ``off`` lands on the
+    weakest tier — which is also the remedy Zhipu prescribes for GLM-5.3
+    ("change disabled to enabled and set reasoning_effort to low").
     """
     if tier in supported:
         return tier
+    thinking = [t for t in supported if t != 'off']
+    if not thinking:  # switch-only, and we were not asked to switch off
+        return supported[0]
+    ranked = sorted(thinking, key=lambda t: EFFORT_RANKS[t])
     want = EFFORT_RANKS[tier]
-    ranked = sorted(supported, key=lambda t: EFFORT_RANKS[t])
-    for candidate in ranked:
-        if EFFORT_RANKS[candidate] >= want:
-            return candidate
-    return ranked[-1]
+    weaker = [t for t in ranked if EFFORT_RANKS[t] <= want]
+    return weaker[-1] if weaker else ranked[0]
 
 
 def _merge_extra_body(params: Dict[str, Any], extra: Dict[str, Any]) -> None:
@@ -243,13 +290,20 @@ def lower_effort(tier: str, family: str) -> Dict[str, Any]:
     """
     params: Dict[str, Any] = {}
     if family == 'dashscope':
-        # BOTH knobs, because they do different jobs and only one of them is
-        # universal. `enable_thinking` is what actually turns thinking on for
-        # the models that default it off (qwen-plus: 0 characters of reasoning
-        # with `reasoning_effort: high` alone, 543 with the flag), while
-        # `reasoning_effort` is what sets the depth on the models that honour
-        # it (qwen3.8-max, and DeepSeek/GLM/Kimi served on this host). Models
-        # that only understand one of the two ignore the other.
+        # BOTH knobs, because they cover disjoint sets of models on this host.
+        # `enable_thinking` is the only lever for the many models that take no
+        # effort field (every Qwen except qwen3.8-max) and it is what turns
+        # thinking on for the ones that default it off (qwen-plus: 0 characters
+        # of reasoning from `reasoning_effort: high` alone, 543 with the flag —
+        # because qwen-plus does not support the effort field at all). Alibaba's
+        # own CLI and opencode both send the flag here for the same reason.
+        # Models that understand only one of the two ignore the other.
+        #
+        # Known imprecision, deliberate: DashScope also hosts GLM, DeepSeek and
+        # Kimi, whose switch dialect on this host is `thinking.enabled` /
+        # `thinking: {type}` rather than `enable_thinking`. Getting that right
+        # needs per-model branching on a host-keyed table; the flag is ignored
+        # rather than rejected there, so the cost is a no-op field, not an error.
         _merge_extra_body(params, {'enable_thinking': tier != 'off'})
         if tier != 'off':
             params[EFFORT_KEY] = tier
