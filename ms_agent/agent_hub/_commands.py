@@ -780,6 +780,20 @@ def cmd_download(
         print('\n[dry-run] nothing written.')
         return 0
 
+    # Back up whatever is on disk before overwriting it. Download is the most
+    # frequently used overwrite path, so it needs the same restore point that
+    # convert / restore / watch --pull already create; without it a download
+    # over a locally edited workspace was unrecoverable. The label follows the
+    # shared ``{fw}_{name}_{date}_{time}`` convention (all-scope: ``{fw}_...``)
+    # that ``backups -f <fw>`` parses, so this safety copy stays visible under
+    # the framework filter.
+    from ._sync import backup_local
+    if spec.collect():
+        backup_label = (
+            target_fw if local_name == ALL_AGENT_NAME else
+            f'{target_fw}_{local_name}')
+        display.meta('backup', backup_local(spec, backup_label))
+
     written = spec.apply(filtered)
     display.done(f'Wrote {len(written)} file(s) under {root}')
 

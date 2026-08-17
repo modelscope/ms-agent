@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import difflib
+import fnmatch
 import re
 from dataclasses import dataclass, field
 
@@ -56,13 +57,32 @@ class SectionMerger:
 
     @staticmethod
     def parse_sections(content: str) -> list[Section]:
-        """Split markdown into sections by ``## `` headings."""
+        """Split markdown into sections by ``## `` headings.
+
+        Comment-aware: a ``## `` line that falls INSIDE an HTML ``<!-- -->``
+        block is template guidance, not a real heading, so it must not open a
+        new section. ms-agent's AGENTS.md/PROFILE.md templates carry example
+        headings (``## Preferences`` etc.) inside their guidance comment; without
+        this guard the merger would treat the comment interior as content
+        sections and mangle the template header when folding user content in.
+        """
         lines = content.split('\n')
         sections: list[Section] = []
         current_title = ''
         current_lines: list[str] = []
+        in_comment = False
 
         for line in lines:
+            stripped = line.strip()
+            if in_comment:
+                current_lines.append(line)
+                if '-->' in stripped:
+                    in_comment = False
+                continue
+            if stripped.startswith('<!--') and '-->' not in stripped:
+                in_comment = True
+                current_lines.append(line)
+                continue
             if re.match(r'^## ', line):
                 sections.append(
                     Section(
@@ -411,9 +431,12 @@ PRODUCT_FILE_CLASSES = {
         # Per the official "move to a new PC" guide OpenHuman carries the
         # persona files SOUL/IDENTITY plus the HEARTBEAT task file; the
         # wiki/ vault is imported as-is (not a classified persona file).
+        # MEMORY.md is the curated long-term memory injected every session
+        # (the wiki mirrors the Memory Tree instead), so it travels too.
         'portable': frozenset([
             'SOUL.md',
             'IDENTITY.md',
+            'MEMORY.md',
         ]),
         'config': frozenset([
             'HEARTBEAT.md',
@@ -428,14 +451,20 @@ PRODUCT_FILE_CLASSES = {
         'heartbeat': '',
     },
     'ms-agent': {
-        # Only persona + memory carry cross-framework semantics; the
-        # config.yaml/settings.json/agent.yaml/facts.json/skill.json files are
-        # ms-agent specific and preserved on same-framework sync only.
+        # SOUL/AGENTS/PROFILE are real editable Markdown and carry the
+        # cross-framework persona/instructions/profile semantics; SOUL and
+        # PROFILE are persona-like (portable), AGENTS is standing instructions
+        # (config), matching how the other frameworks classify them. The
+        # config.yaml/settings.json/agent.yaml/skills.json files are ms-agent
+        # private and preserved on same-framework sync only. Memory is not
+        # here (runtime keeps it project-level), so ms-agent carries none.
         'portable': frozenset([
-            'profile.md',
-            'MEMORY.md',
+            'SOUL.md',
+            'PROFILE.md',
         ]),
-        'config': frozenset([]),
+        'config': frozenset([
+            'AGENTS.md',
+        ]),
         'heartbeat': '',
     },
 }
@@ -445,6 +474,35 @@ _DEFAULT_FILE_CLASS = {
     'config': frozenset(['AGENTS.md', 'HEARTBEAT.md', 'TOOLS.md']),
     'heartbeat': 'HEARTBEAT.md',
 }
+
+# Framework-private files: same NAME across frameworks but incompatible FORMAT
+# (e.g. hermes vs ms-agent ``config.yaml``, ms-agent vs qwenpaw ``skill.json``).
+# They have no cross-framework semantics, so on a convert they must be dropped
+# -- NOT carried over verbatim.  The normal safety net (a file with no target
+# pattern is filtered out downstream) fails exactly here, because the target
+# framework happens to declare an identically-named pattern and would load a
+# file it cannot parse.  Same-framework sync is unaffected (that path keeps
+# every file verbatim by design).
+PRODUCT_PRIVATE_FILES = {
+    'hermes': frozenset(['config.yaml', 'hooks/*']),
+    'ms-agent':
+    frozenset(['settings.json', 'skills.json',
+              'mcp.json']),
+    'qwenpaw': frozenset(['agent.json', 'skill.json']),
+    'openhuman': frozenset(['config.toml']),
+}
+
+
+def _is_private_file(product: str, path: str) -> bool:
+    """Whether *path* is a framework-private (non-portable) file of *product*.
+
+    Matches by fnmatch so glob entries like ``hooks/*`` cover their whole tree.
+    """
+    for pat in PRODUCT_PRIVATE_FILES.get(product, ()):
+        if path == pat or fnmatch.fnmatch(path, pat):
+            return True
+    return False
+
 
 _section_merger = SectionMerger()
 _heartbeat_merger = HeartbeatMerger()
@@ -456,20 +514,22 @@ SEMANTIC_GROUPS = [
         'openclaw': 'SOUL.md',
         'hermes': 'SOUL.md',
         'qwenpaw': 'SOUL.md',
-        'openhuman': 'SOUL.md'
+        'openhuman': 'SOUL.md',
+        'ms-agent': 'SOUL.md'
     },
     {
         'nanobot': 'USER.md',
         'openclaw': 'USER.md',
         'hermes': 'memories/USER.md',
-        'qwenpaw': 'memory/USER.md'
+        'qwenpaw': 'memory/USER.md',
+        'ms-agent': 'PROFILE.md'
     },
     {
         'nanobot': 'memory/MEMORY.md',
         'openclaw': 'MEMORY.md',
         'qwenpaw': 'MEMORY.md',
-        'ms-agent': 'MEMORY.md',
-        'hermes': 'memories/MEMORY.md'
+        'hermes': 'memories/MEMORY.md',
+        'openhuman': 'MEMORY.md'
     },
     {
         'openclaw': 'IDENTITY.md',
@@ -477,13 +537,13 @@ SEMANTIC_GROUPS = [
     },
     {
         'qwenpaw': 'PROFILE.md',
-        'ms-agent': 'profile.md'
     },
     {
         'nanobot': 'AGENTS.md',
         'openclaw': 'AGENTS.md',
         'qwenpaw': 'AGENTS.md',
-        'qoder': 'AGENTS.md'
+        'qoder': 'AGENTS.md',
+        'ms-agent': 'AGENTS.md'
     },
     {
         'nanobot': 'HEARTBEAT.md',
@@ -566,6 +626,7 @@ PRODUCT_KNOWN_FILES = {
         'SOUL.md',
         'IDENTITY.md',
         'HEARTBEAT.md',
+        'MEMORY.md',
     ]),
     'qoder':
     frozenset([
@@ -573,13 +634,12 @@ PRODUCT_KNOWN_FILES = {
     ]),
     'ms-agent':
     frozenset([
-        'profile.md',
-        'MEMORY.md',
-        'config.yaml',
+        'SOUL.md',
+        'AGENTS.md',
+        'PROFILE.md',
         'settings.json',
-        'agent.yaml',
-        'facts.json',
-        'skill.json',
+        'skills.json',
+        'mcp.json',
     ]),
 }
 
@@ -733,6 +793,22 @@ def merge_resources(
                     (f'Qoder command converted to skill (from {path})'
                      if path.startswith('commands/') else
                      f'Optional skill imported (from {path})'),
+                ))
+            continue
+
+        # Framework-private config/manifest with no cross-framework meaning
+        # (e.g. hermes vs ms-agent ``config.yaml``): on a convert it must be
+        # dropped rather than carried over, since the target framework may
+        # declare an identically-named file it cannot parse. Same-framework
+        # sync keeps everything, so only guard the cross-product path.
+        if is_cross_product and _is_private_file(source_product, path):
+            result.actions.append(
+                MergeAction(
+                    path=path,
+                    action='skip',
+                    detail=(f'{path} is {source_product}-private '
+                            f'(incompatible format on {target_product}), '
+                            f'dropped'),
                 ))
             continue
 
