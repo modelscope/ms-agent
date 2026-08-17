@@ -48,7 +48,7 @@ def test_anthropic_protocol_beats_the_host():
     ('', 'auto'),
     ('auto', 'auto'),
     ('  HIGH ', 'high'),
-    ('x-high', 'max'),
+    ('x-high', 'xhigh'),
     ('none', 'off'),
     ('disabled', 'off'),
     (True, 'high'),
@@ -69,12 +69,14 @@ def test_clamp_prefers_the_next_stronger_tier():
     assert T.clamp_effort('low', ('low', 'high', 'max')) == 'low'
 
 
-def test_off_clamps_up_on_models_that_cannot_stop_thinking():
-    """Kimi K3 always thinks and GLM-5.3 fails the request if you send the old
-    disable shape. Asking for "off" there should land on the floor tier, not be
-    dropped."""
-    assert T.plan('off', base_url='https://api.moonshot.cn/v1')['effective'] \
-        == 'low'
+def test_kimi_can_be_switched_off_after_all():
+    """The docs say Kimi K3 always thinks; the endpoint disagrees. Probed
+    2026-08-17, `reasoning_effort: none` yields ZERO characters of reasoning on
+    both k3 and k2.6, so "off" goes out as a real value rather than being
+    clamped up to the floor tier."""
+    got = T.plan('off', base_url='https://api.moonshot.cn/v1')
+    assert got['effective'] == 'off'
+    assert got['params'] == {'reasoning_effort': 'none'}
 
 
 # --------------------------------------------------------------------------- #
@@ -101,12 +103,13 @@ def test_dashscope_gets_both_knobs_because_they_do_different_jobs():
     }
 
 
-def test_dashscope_max_is_spelled_xhigh():
+def test_dashscope_caps_at_xhigh_because_max_is_rejected():
     """`max` is rejected outright — qwen3.7-plus answers 400 listing the valid
-    set — while `xhigh` is accepted by every qwen3.7/3.8 probed."""
+    set — while `xhigh` is accepted by every qwen3.7/3.8 probed. DashScope is
+    the one endpoint whose vocabulary falls short of the full ladder."""
     got = T.plan('max', base_url='https://dashscope.aliyuncs.com/v1')
+    assert got['effective'] == 'xhigh'
     assert got['params']['reasoning_effort'] == 'xhigh'
-    assert got['effective'] == 'max'
 
 
 def test_dashscope_off_stays_a_plain_boolean():
@@ -315,8 +318,9 @@ def test_transport_lowers_the_knob_onto_the_endpoint():
     tr._format_input_message = lambda m: m
 
     tr._call_llm([], None, reasoning_effort='medium')
-    # medium is not a DeepSeek tier; it clamps up to high rather than down.
-    assert rec.calls[0]['reasoning_effort'] == 'high'
+    # DeepSeek reports the full vocabulary when handed a bogus value, `medium`
+    # included, so the tier reaches it untouched.
+    assert rec.calls[0]['reasoning_effort'] == 'medium'
     assert 'extra_body' not in rec.calls[0]
 
 

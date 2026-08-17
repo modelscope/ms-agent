@@ -65,11 +65,27 @@ EFFORT_KEY = 'reasoning_effort'
 
 #: Canonical ladder, weakest to strongest. ``auto`` is not a rung — it means
 #: "no opinion", which is the default and is never sent anywhere.
-EFFORT_TIERS = ('off', 'low', 'medium', 'high', 'max')
+#:
+#: These are not our invention: every endpoint that VALIDATES the field reports
+#: the same seven values (probed 2026-08-17 by sending a bogus one and reading
+#: the error) — GLM-5.2 "none、minimal、low、medium、high、xhigh、max",
+#: OpenRouter "max|xhigh|high|medium|low|minimal|none", DeepSeek the same list,
+#: DashScope the same minus ``max``. Matching their vocabulary exactly means a
+#: value the user types usually reaches the model untouched, instead of being
+#: clamped onto a smaller set we made up.
+EFFORT_TIERS = ('off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max')
 
 #: Ranks for clamping a requested tier onto what an endpoint accepts. Gaps leave
-#: room for future rungs (a ``minimal: 15``) without renumbering.
-EFFORT_RANKS = {'off': 0, 'low': 20, 'medium': 30, 'high': 40, 'max': 70}
+#: room for rungs a vendor may add later without renumbering.
+EFFORT_RANKS = {
+    'off': 0,
+    'minimal': 10,
+    'low': 20,
+    'medium': 30,
+    'high': 40,
+    'xhigh': 60,
+    'max': 70,
+}
 
 _EFFORT_ALIASES = {
     'none': 'off',
@@ -77,9 +93,9 @@ _EFFORT_ALIASES = {
     'disable': 'off',
     'false': 'off',
     'no': 'off',
+    'min': 'minimal',
     'med': 'medium',
-    'xhigh': 'max',
-    'extrahigh': 'max',
+    'extrahigh': 'xhigh',
     'maximum': 'max',
     'true': 'high',
     'on': 'high',
@@ -140,35 +156,25 @@ def endpoint_family(base_url: str, protocol: str = '') -> str:
 #: Tiers each family actually accepts, weakest to strongest. A request outside
 #: the set is clamped (see ``clamp_effort``).
 _FAMILY_TIERS = {
-    # DashScope takes a real ladder — probed 2026-08-17 on qwen3.8-max, whose
-    # reasoning length is strictly monotonic in it: none 0, minimal 54, low 78,
-    # medium 152, high 222, xhigh 393 characters.
-    'dashscope': ('off', 'low', 'medium', 'high', 'max'),
-    # On/off only: the flag is a boolean, so every "how hard" collapses to "on".
+    # DashScope takes the ladder but REJECTS the top rung: qwen3.7-plus answers
+    # 400 for `max` while accepting `xhigh`, so `max` clamps down to it. The
+    # ladder is real there — qwen3.8-max reasoning is strictly monotonic in it
+    # (none 0, minimal 54, low 78, medium 152, high 222, xhigh 393 characters).
+    'dashscope': ('off', 'minimal', 'low', 'medium', 'high', 'xhigh'),
+    # No effort field at all: the switch is a boolean, so every "how hard"
+    # collapses onto "on".
     'modelscope': ('off', 'high'),
     'minimax': ('off', 'high'),
     'anthropic': ('off', 'high'),
-    # Real ladders. deepseek/zhipu can be switched off, just not through the
-    # effort field (their tiers are low/high/max) — see lower_effort.
-    'deepseek': ('off', 'low', 'high', 'max'),
-    'zhipu': ('off', 'low', 'high', 'max'),
-    # Kimi K3 always thinks, so "off" is deliberately absent and clamps up to
-    # the floor tier rather than sending a switch the model does not have.
-    'moonshot': ('low', 'high', 'max'),
-    'openrouter': ('off', 'low', 'medium', 'high'),
-    'openai': ('off', 'low', 'medium', 'high', 'max'),
-    'unknown': ('off', 'low', 'medium', 'high', 'max'),
-}
-
-#: Canonical tier -> the string this family actually spells it with. Only for
-#: the rungs whose names differ; everything else goes out as-is.
-_FAMILY_WIRE_EFFORT = {
-    # DashScope's ceiling is `xhigh`; `max` is REJECTED (qwen3.7-plus answers
-    # 400 "'reasoning_effort' must be one of: 'none', 'minimal', 'low',
-    # 'medium', ..."), while `xhigh` is accepted by every qwen3.7/3.8 probed.
-    'dashscope': {
-        'max': 'xhigh'
-    },
+    # Everyone else takes the whole vocabulary. Endpoints that do not validate
+    # it (glm-5.1, glm-5, every Kimi, MiniMax, ModelScope) ignore an unknown
+    # value rather than failing, so passing a tier through costs nothing.
+    'deepseek': EFFORT_TIERS,
+    'zhipu': EFFORT_TIERS,
+    'moonshot': EFFORT_TIERS,
+    'openrouter': EFFORT_TIERS,
+    'openai': EFFORT_TIERS,
+    'unknown': EFFORT_TIERS,
 }
 
 #: Extra raw keys a family understands, surfaced to users as an example of what
@@ -246,8 +252,7 @@ def lower_effort(tier: str, family: str) -> Dict[str, Any]:
         # that only understand one of the two ignore the other.
         _merge_extra_body(params, {'enable_thinking': tier != 'off'})
         if tier != 'off':
-            params[EFFORT_KEY] = _FAMILY_WIRE_EFFORT['dashscope'].get(
-                tier, tier)
+            params[EFFORT_KEY] = tier
     elif family in ('modelscope', 'anthropic'):
         # Boolean switch. On the Anthropic transport this is read back out and
         # turned into the Messages-API `thinking` block.
@@ -262,13 +267,21 @@ def lower_effort(tier: str, family: str) -> Dict[str, Any]:
             }})
     elif family in ('deepseek', 'zhipu'):
         if tier == 'off':
-            # Their `reasoning_effort` has no "none" rung; the shape that turns
-            # thinking off is the `thinking` object.
+            # NOT `reasoning_effort: none`, even though the newer models accept
+            # it: glm-5.1 and glm-5 do not validate the field and simply IGNORE
+            # it (probed 2026-08-17 — 896 and 986 characters of reasoning with
+            # `none` set). The `thinking` object is the only spelling every
+            # generation honours. If a model rejects it outright (GLM-5.3 no
+            # longer allows thinking to be disabled), the mandatory-thinking
+            # repair below strips the request rather than failing the turn.
             _merge_extra_body(params, {'thinking': {'type': 'disabled'}})
         else:
             params[EFFORT_KEY] = tier
     elif family == 'moonshot':
-        params[EFFORT_KEY] = tier  # 'off' was clamped up to 'low' already
+        # Kimi is the other way round: it honours `none` on both k3 and k2.6
+        # (0 characters of reasoning), so the effort field alone covers the
+        # whole range and no second shape is needed.
+        params[EFFORT_KEY] = 'none' if tier == 'off' else tier
     elif family == 'openrouter':
         # OpenRouter's own unified object; `enabled: false` is how it says off.
         _merge_extra_body(
