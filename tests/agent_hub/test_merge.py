@@ -267,10 +267,11 @@ class TestResolveTargetPath(unittest.TestCase):
         self.assertEqual(_resolve_target_path("nanobot", "memory/MEMORY.md", "openclaw"), "MEMORY.md")
 
     def test_cross_product_ms_agent_profile(self):
-        # ms-agent PROFILE.md <-> qwenpaw PROFILE.md (persona semantic group).
-        # ms-agent now uses the uppercase PROFILE.md name on both directions.
-        self.assertEqual(_resolve_target_path("ms-agent", "PROFILE.md", "qwenpaw"), "PROFILE.md")
-        self.assertEqual(_resolve_target_path("qwenpaw", "PROFILE.md", "ms-agent"), "PROFILE.md")
+        # ms-agent PROFILE.md -> qwenpaw maps to memory/USER.md (USER group).
+        # qwenpaw PROFILE.md -> ms-agent has no counterpart (narrow group),
+        # so it resolves to None (overflow into catch-all).
+        self.assertEqual(_resolve_target_path("ms-agent", "PROFILE.md", "qwenpaw"), "memory/USER.md")
+        self.assertIsNone(_resolve_target_path("qwenpaw", "PROFILE.md", "ms-agent"))
 
     def test_cross_product_ms_agent_no_memory_slot(self):
         # ms-agent has NO memory slot (memory is project-level at runtime, not

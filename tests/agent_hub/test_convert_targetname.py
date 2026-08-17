@@ -480,9 +480,9 @@ class TestFourFrameworkConvertMatrix(unittest.TestCase):
         self.assertEqual(rc, 0, f"{source_fw}->{target_fw} convert failed")
         return _read_all(build_spec(target_fw, "bot-a", str(out)).workspace_root)
 
-    def test_ms_agent_to_qwenpaw_persona_maps_to_profile(self):
+    def test_ms_agent_to_qwenpaw_persona_maps_to_user(self):
         """ms-agent (single-agent) -> qwenpaw (root-per-agent): PROFILE.md
-        identity lands in qwenpaw PROFILE.md (persona semantic group)."""
+        identity lands in qwenpaw memory/USER.md (USER semantic group)."""
         files = self._convert(
             {
                 "PROFILE.md": "---\nversion: 1\n---\n\n# About Me\n- Call me: MS_PERSONA_MARKER\n",
@@ -490,14 +490,15 @@ class TestFourFrameworkConvertMatrix(unittest.TestCase):
             },
             "ms-agent", "qwenpaw",
         )
-        self.assertIn("PROFILE.md", files)
-        self.assertIn("MS_PERSONA_MARKER", files["PROFILE.md"])
+        self.assertIn("memory/USER.md", files)
+        self.assertIn("MS_PERSONA_MARKER", files["memory/USER.md"])
         # skill carried over.
         self.assertIn("skills/write/SKILL.md", files)
 
-    def test_qwenpaw_to_ms_agent_profile_maps_to_uppercase(self):
-        """qwenpaw -> ms-agent: PROFILE.md identity stays in PROFILE.md (both
-        frameworks use the uppercase name)."""
+    def test_qwenpaw_to_ms_agent_profile_overflows_to_agents(self):
+        """qwenpaw -> ms-agent: qwenpaw's PROFILE.md is in its own narrow
+        semantic group (no ms-agent counterpart), so it overflows into the
+        catch-all AGENTS.md. The user content is preserved there."""
         files = self._convert(
             {
                 "SOUL.md": "# Soul\nQP soul.\n",
@@ -505,10 +506,9 @@ class TestFourFrameworkConvertMatrix(unittest.TestCase):
             },
             "qwenpaw", "ms-agent",
         )
-        self.assertIn("PROFILE.md", files)
-        self.assertIn("QP_PERSONA_MARKER", files["PROFILE.md"])
-        # ms-agent no longer uses a lowercase profile.md, and stays single-agent.
-        self.assertNotIn("profile.md", files)
+        self.assertIn("AGENTS.md", files)
+        self.assertIn("QP_PERSONA_MARKER", files["AGENTS.md"])
+        # ms-agent stays single-agent.
         self.assertFalse(any("bot-a" in p for p in files))
 
     def test_openclaw_to_hermes_identity_and_user(self):
@@ -909,19 +909,21 @@ class TestPrivateConfigDroppedOnConvert(unittest.TestCase):
                     "skills/Daily-AI-News/scripts/requirements.txt"):
                 self.assertIn(expected, rels)
 
-    def test_same_framework_keeps_config_yaml(self):
+    def test_same_framework_keeps_settings_json(self):
+        """ms-agent → ms-agent: private config (settings.json) is kept on a
+        same-framework convert (it's only dropped cross-framework)."""
         with tempfile.TemporaryDirectory() as td:
             src = Path(td) / "src"
             src.mkdir()
-            (src / "profile.md").write_text("# Profile\n")
-            (src / "config.yaml").write_text("llm:\n  model: GOLD-CFG\n")
+            (src / "SOUL.md").write_text("# Soul\n")
+            (src / "settings.json").write_text('{"model": "GOLD-CFG"}')
             out = Path(td) / "out"
             rc = cmd_convert(
                 "ms-agent", "ms-agent",
                 from_name="default", target_name="default",
                 local_dir=str(src), out_dir=str(out))
             self.assertEqual(rc, 0)
-            kept = out / "config.yaml"
+            kept = out / "settings.json"
             self.assertTrue(kept.is_file())
             self.assertIn("GOLD-CFG", kept.read_text())
 

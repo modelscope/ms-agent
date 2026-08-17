@@ -1622,38 +1622,44 @@ class TestUploadSanitization(unittest.TestCase):
         self.assertEqual(pushed["id"], "default")
 
     @mock.patch("ms_agent.agent_hub._commands.AgentApi", _StubClient)
-    def test_upload_scrubs_ms_agent_yaml_secrets(self):
-        """ms-agent agent.yaml/config.yaml llm.*_api_key + mcpServers env are
-        blanked on push; non-secret structure survives."""
-        agent_yaml = (
-            "llm:\n"
-            "  service: modelscope\n"
-            "  model: Qwen/Qwen3-235B-A22B-Instruct-2507\n"
-            "  modelscope_api_key: ms-LEAKME111\n"
-            "mcpServers:\n"
-            "  fetch:\n"
-            "    command: fetch-server\n"
-            "    env:\n"
-            "      FETCH_TOKEN: env-LEAKME222\n"
-        )
+    def test_upload_scrubs_ms_agent_mcp_json_secrets(self):
+        """ms-agent mcp.json server ``env`` blocks are blanked on push; the
+        non-secret server definition (command / args) survives.
+
+        ``mcp.json`` is where ms-agent concentrates plaintext MCP keys. The
+        legacy ``agent.yaml`` / ``config.yaml`` are NOT collected: the former is
+        package-internal and the latter project-level, so neither exists under
+        the global home this spec models.
+        """
+        import json
+        mcp = json.dumps({
+            "mcpServers": {
+                "fetch": {
+                    "command": "fetch-server",
+                    "args": ["--port", "8080"],
+                    "env": {"FETCH_TOKEN": "env-LEAKME222"},
+                }
+            }
+        })
         root = self._write_ws(
             "ms-agent",
-            {"profile.md": "# Profile\ncustom\n", "agent.yaml": agent_yaml})
+            {"SOUL.md": "# Soul\ncustom\n", "mcp.json": mcp})
         rc = cmd_upload(
             framework="ms-agent", name=None, local_dir=str(root),
             endpoint="http://s", token="tok", username="u",
         )
         self.assertEqual(rc, 0)
         client = _StubClient.instances[0]
-        self.assertIn("agent.yaml", client.uploaded_resources)
-        pushed = client.uploaded_resources["agent.yaml"].decode("utf-8")
-        # Both the llm api_key and the mcpServers env secret are gone.
-        self.assertNotIn("ms-LEAKME111", pushed)
+        self.assertIn("mcp.json", client.uploaded_resources)
+        pushed = client.uploaded_resources["mcp.json"].decode("utf-8")
+        # The env secret is gone.
         self.assertNotIn("env-LEAKME222", pushed)
         # Non-secret structure / values preserved.
-        self.assertIn("service: modelscope", pushed)
-        self.assertIn("modelscope_api_key:", pushed)
-        self.assertIn("mcpServers:", pushed)
+        data = json.loads(pushed)
+        server = data["mcpServers"]["fetch"]
+        self.assertEqual(server["command"], "fetch-server")
+        self.assertEqual(server["args"], ["--port", "8080"])
+        self.assertEqual(server["env"]["FETCH_TOKEN"], "")
 
     @mock.patch("ms_agent.agent_hub._commands.AgentApi", _StubClient)
     def test_upload_scrubs_ms_agent_settings_json_secrets(self):
@@ -1763,6 +1769,54 @@ class TestFrameworkDownloadCoverage(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual((self.out / "SOUL.md").read_text(), "# Soul\nms persona\n")
         self.assertEqual((self.out / "PROFILE.md").read_text(), "# Profile\nms profile\n")
+
+    @mock.patch("ms_agent.agent_hub._commands.AgentApi", _MsAgentStub)
+    def test_download_backs_up_existing_files(self):
+        """Download overwrites in place, so it must leave a restore point first
+        -- the same safety net convert / restore / watch --pull provide. The
+        backup zip has to hold the PRE-download content, and be named with the
+        shared ``{fw}_{name}_...`` convention so ``backups -f <fw>`` finds it.
+        """
+        import zipfile
+        from ms_agent.agent_hub._cache import cache_dir
+        self.out.mkdir(parents=True)
+        (self.out / "SOUL.md").write_text("# Soul\nLOCAL-EDIT-KEEPME\n")
+        before = set(cache_dir().glob("ms-agent_*.zip"))
+
+        rc = cmd_download(
+            framework="ms-agent", repo="msa", local_dir=str(self.out),
+            endpoint="http://s", token="tok", username="u",
+        )
+        self.assertEqual(rc, 0)
+        # Remote content won.
+        self.assertEqual(
+            (self.out / "SOUL.md").read_text(), "# Soul\nms persona\n")
+        # ...but the overwritten local edit is recoverable from the new backup.
+        new_zips = set(cache_dir().glob("ms-agent_*.zip")) - before
+        self.assertTrue(new_zips, "download created no backup zip")
+        zip_path = new_zips.pop()
+        try:
+            with zipfile.ZipFile(zip_path) as zf:
+                saved = zf.read("SOUL.md").decode("utf-8")
+            self.assertIn("LOCAL-EDIT-KEEPME", saved)
+        finally:
+            zip_path.unlink(missing_ok=True)
+
+    @mock.patch("ms_agent.agent_hub._commands.AgentApi", _MsAgentStub)
+    def test_download_into_empty_dir_skips_backup(self):
+        """Nothing on disk means nothing to lose: a first-time download must not
+        litter the cache with an empty restore point.
+        """
+        from ms_agent.agent_hub._cache import cache_dir
+        before = set(cache_dir().glob("ms-agent_*.zip"))
+        rc = cmd_download(
+            framework="ms-agent", repo="msa", local_dir=str(self.out),
+            endpoint="http://s", token="tok", username="u",
+        )
+        self.assertEqual(rc, 0)
+        self.assertFalse(
+            set(cache_dir().glob("ms-agent_*.zip")) - before,
+            "backup created for an empty workspace")
 
 
 # ---------------------------------------------------------------------------

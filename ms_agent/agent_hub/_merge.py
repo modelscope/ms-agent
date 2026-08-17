@@ -486,7 +486,8 @@ _DEFAULT_FILE_CLASS = {
 PRODUCT_PRIVATE_FILES = {
     'hermes': frozenset(['config.yaml', 'hooks/*']),
     'ms-agent':
-    frozenset(['config.yaml', 'settings.json', 'agent.yaml', 'skills.json']),
+    frozenset(['settings.json', 'skills.json',
+              'mcp.json']),
     'qwenpaw': frozenset(['agent.json', 'skill.json']),
     'openhuman': frozenset(['config.toml']),
 }
@@ -520,7 +521,8 @@ SEMANTIC_GROUPS = [
         'nanobot': 'USER.md',
         'openclaw': 'USER.md',
         'hermes': 'memories/USER.md',
-        'qwenpaw': 'memory/USER.md'
+        'qwenpaw': 'memory/USER.md',
+        'ms-agent': 'PROFILE.md'
     },
     {
         'nanobot': 'memory/MEMORY.md',
@@ -535,7 +537,6 @@ SEMANTIC_GROUPS = [
     },
     {
         'qwenpaw': 'PROFILE.md',
-        'ms-agent': 'PROFILE.md'
     },
     {
         'nanobot': 'AGENTS.md',
@@ -637,9 +638,8 @@ PRODUCT_KNOWN_FILES = {
         'AGENTS.md',
         'PROFILE.md',
         'settings.json',
-        'config.yaml',
-        'agent.yaml',
         'skills.json',
+        'mcp.json',
     ]),
 }
 

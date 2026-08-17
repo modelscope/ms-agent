@@ -9,7 +9,7 @@ from typing import Any
 from ms_agent.project.paths import global_home
 
 from .._workspace import (WorkspaceSpec, register_framework,
-                          scrub_json_secrets, scrub_yaml_secrets)
+                          scrub_json_secrets)
 
 
 class MsAgentWorkspace(WorkspaceSpec):
@@ -24,8 +24,11 @@ class MsAgentWorkspace(WorkspaceSpec):
       ``<work_dir>/AGENTS.md`` layers on top and is out of this home).
     * **user profile** -- ``PROFILE.md`` (supersedes the old lowercase
       ``profile.md``, which the runtime rebuilds into this on first read).
-    * **config** -- ``settings.json`` (switches / model / credentials) plus
-      legacy ``config.yaml`` / ``agent.yaml``; all secret-scrubbed.
+    * **config** -- ``settings.json`` (switches / model / credentials) and
+      ``mcp.json`` (MCP server definitions whose ``env`` blocks carry API
+      keys); both are secret-scrubbed. Legacy ``config.yaml`` / ``agent.yaml``
+      are project-level and package-internal respectively -- they do NOT live
+      under the global home and are not collected.
     * **skills** -- ``skills/<name>/SKILL.md`` with a workspace-level
       ``skills.json`` inventory (runtime name; the old ``skill.json`` never
       existed on disk).
@@ -59,10 +62,13 @@ class MsAgentWorkspace(WorkspaceSpec):
             'SOUL.md',
             'AGENTS.md',
             'PROFILE.md',
-            # Config (switches / model / credentials) -- secret-scrubbed
+            # Config (switches / model / credentials) -- secret-scrubbed.
+            # Only settings.json and mcp.json live under the global home;
+            # config.yaml is project-level (<work_dir>/.ms_agent/config.yaml)
+            # and agent.yaml is the package-internal framework default -- neither
+            # exists at the global root, so they are NOT collected here.
             'settings.json',
-            'config.yaml',
-            'agent.yaml',
+            'mcp.json',
             # Skills. fnmatch ``*`` spans ``/`` so ``skills/*`` recurses the
             # whole skill tree -- SKILL.md plus its auxiliary files
             # (references/, scripts/, assets/, ...), matching every other
@@ -78,10 +84,10 @@ class MsAgentWorkspace(WorkspaceSpec):
     # ------------------------------------------------------------------
     #
     # ms-agent injects model / provider credentials into its config files:
-    # ``agent.yaml`` and ``config.yaml`` carry ``llm.*_api_key`` (and may hold
-    # an ``mcpServers.*.env`` secret bag), while ``settings.json`` is the JSON
-    # MCP-server file whose ``env`` blocks hold arbitrary API keys. All three
-    # are collected by ``patterns`` above, so they are stripped of secrets on
+    # ``settings.json`` holds provider switches / keys (and may carry an
+    # ``mcpServers.*.env`` secret bag), and ``mcp.json`` is the primary
+    # MCP-server file whose ``env`` blocks hold arbitrary API keys. Both are
+    # collected by ``patterns`` above, so they are stripped of secrets on
     # both the inbound and outbound path -- a user's keys never reach the
     # remote repo / its git history, and a remote key never lands on disk.
     #
@@ -92,21 +98,15 @@ class MsAgentWorkspace(WorkspaceSpec):
     def sanitize_inbound_file(self, rel_path: str, content: bytes) -> bytes:
         """Blank machine-local secrets, and keep sync from flipping skill switches.
 
-        ``config.yaml`` / ``agent.yaml`` are scrubbed line-by-line (shared YAML
-        scrubber, ``mcpServers`` env aware); ``settings.json`` is parsed and
-        scrubbed structurally. ``skills.json`` keeps the *inventory* (``sources``)
+        ``settings.json`` and ``mcp.json`` are parsed and scrubbed structurally
+        (``env`` blocks blanked, secret-suffix keys blanked).
+        ``skills.json`` keeps the *inventory* (``sources``)
         but its ``disabled`` list is a machine-local safety switch, so an inbound
         write must NOT overwrite the local one -- otherwise a download/restore
         would silently re-enable skills the user turned off. Every other file
         (and undecodable / malformed content) passes through verbatim.
         """
-        if rel_path in ('config.yaml', 'agent.yaml'):
-            try:
-                text = content.decode('utf-8')
-            except UnicodeDecodeError:
-                return content
-            return scrub_yaml_secrets(text).encode('utf-8')
-        if rel_path == 'settings.json':
+        if rel_path in ('settings.json', 'mcp.json'):
             try:
                 data: Any = json.loads(content)
             except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
@@ -171,7 +171,7 @@ class MsAgentWorkspace(WorkspaceSpec):
                 return json.dumps(
                     data, ensure_ascii=False, indent=2).encode('utf-8')
             return content
-        if rel_path == 'settings.json':
+        if rel_path in ('settings.json', 'mcp.json'):
             try:
                 json.loads(content)
             except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
@@ -179,14 +179,6 @@ class MsAgentWorkspace(WorkspaceSpec):
                     f'{rel_path} is not valid JSON; cannot verify it is free '
                     f'of secrets -- refusing to upload it. Fix the file and '
                     f'retry.')
-        elif rel_path in ('config.yaml', 'agent.yaml'):
-            try:
-                content.decode('utf-8')
-            except UnicodeDecodeError:
-                raise ValueError(
-                    f'{rel_path} is not valid UTF-8; cannot verify it is '
-                    f'free of secrets -- refusing to upload it. Fix the file '
-                    f'and retry.')
         return self.sanitize_inbound_file(rel_path, content)
 
 

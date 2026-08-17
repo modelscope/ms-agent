@@ -732,6 +732,56 @@ class TestUploadDownload(unittest.TestCase):
         self.assertTrue(qwenpaw.supports_individual_watch)
         self.assertTrue(openclaw.supports_individual_watch)
 
+    # -----------------------------------------------------------------------
+    # 31. Upload ms-agent mcp_servers.json: secrets scrubbed on server
+    # -----------------------------------------------------------------------
+    def test_31_upload_ms_agent_mcp_scrubs_env(self):
+        """Upload an ms-agent workspace containing mcp.json whose
+        ``env`` block holds a secret API key. Verify that the file reaches the
+        server with the env values blanked (scrub_json_secrets).
+        """
+        import json
+        skip_if_server_rejects("ms-agent")
+        agent_name = f"{AGENT_PREFIX}-mcp"
+        mcp = {
+            "mcpServers": {
+                "weather": {
+                    "command": "npx",
+                    "args": ["-y", "weather-mcp"],
+                    "env": {"WEATHER_API_KEY": "sk-secret-123"},
+                }
+            }
+        }
+        files = {
+            "SOUL.md": "# Soul\nMCP test agent.\n",
+            "mcp.json": json.dumps(mcp, indent=2),
+        }
+        local = self._create_local_root("ms-agent", agent_name, files)
+        try:
+            rc = cmd_upload(
+                framework="ms-agent", name=agent_name, local_dir=local,
+                endpoint=SERVER, token=TOKEN, username=self.username,
+            )
+            self.assertEqual(rc, 0)
+        finally:
+            self._cleanup_dir(local)
+
+        _wait(5)
+
+        repo = _repo_name("ms-agent", agent_name)
+        server_files = set(self.client.list_repo_files(self.username, repo))
+        self.assertIn("mcp.json", server_files)
+
+        remote_content = self.client.download_repo_file(
+            self.username, repo, "mcp.json")
+        remote_mcp = json.loads(remote_content)
+        env = remote_mcp["mcpServers"]["weather"]["env"]
+        # Secret must be blanked
+        self.assertEqual(env["WEATHER_API_KEY"], "",
+                         "env secret was NOT scrubbed on upload")
+        # Non-secret structure preserved
+        self.assertEqual(remote_mcp["mcpServers"]["weather"]["command"], "npx")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
