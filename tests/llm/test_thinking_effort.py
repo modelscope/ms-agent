@@ -81,9 +81,67 @@ def test_off_clamps_up_on_models_that_cannot_stop_thinking():
 # Lowering
 # --------------------------------------------------------------------------- #
 def test_boolean_endpoints_get_a_boolean():
-    got = T.plan('max', base_url='https://dashscope.aliyuncs.com/v1')
+    got = T.plan('max', base_url='https://api-inference.modelscope.cn/v1')
     assert got['params'] == {'extra_body': {'enable_thinking': True}}
     assert got['effective'] == 'high'  # the ladder collapses to on/off here
+
+
+def test_dashscope_gets_both_knobs_because_they_do_different_jobs():
+    """Probed 2026-08-17: `reasoning_effort: high` ALONE leaves qwen-plus at
+    zero reasoning — only `enable_thinking` turns thinking on there — while
+    `reasoning_effort` is what actually sets depth on qwen3.8-max (none 0 →
+    low 78 → high 222 → xhigh 393 characters). Sending one without the other
+    silently loses half the control."""
+    got = T.plan('low', base_url='https://dashscope.aliyuncs.com/v1')
+    assert got['params'] == {
+        'extra_body': {
+            'enable_thinking': True
+        },
+        'reasoning_effort': 'low',
+    }
+
+
+def test_dashscope_max_is_spelled_xhigh():
+    """`max` is rejected outright — qwen3.7-plus answers 400 listing the valid
+    set — while `xhigh` is accepted by every qwen3.7/3.8 probed."""
+    got = T.plan('max', base_url='https://dashscope.aliyuncs.com/v1')
+    assert got['params']['reasoning_effort'] == 'xhigh'
+    assert got['effective'] == 'max'
+
+
+def test_dashscope_off_stays_a_plain_boolean():
+    """The models that refuse every effort value (qwen-vl-*) still accept
+    `enable_thinking: false`, so "off" must not go out as an effort tier."""
+    got = T.plan('off', base_url='https://dashscope.aliyuncs.com/v1')
+    assert got['params'] == {'extra_body': {'enable_thinking': False}}
+
+
+def test_a_hand_written_thinking_budget_suppresses_our_effort():
+    """DashScope 400s on the pair ("'reasoning_effort' and 'thinking_budget'
+    cannot be set simultaneously") — and thinking_budget is exactly what the
+    settings hint invites people to add, so the two suggestions would collide.
+    The hand-written key wins; only our effort is dropped, not the switch."""
+    out = T.apply_effort(
+        {
+            'reasoning_effort': 'high',
+            'extra_body': {
+                'thinking_budget': 2048
+            }
+        },
+        base_url='https://dashscope.aliyuncs.com/v1')
+    assert out == {
+        'extra_body': {
+            'thinking_budget': 2048,
+            'enable_thinking': True
+        }
+    }
+    # The preview the settings page renders has to agree with that.
+    shown = T.plan('high',
+                   base_url='https://dashscope.aliyuncs.com/v1',
+                   existing={'extra_body': {
+                       'thinking_budget': 2048
+                   }})
+    assert 'reasoning_effort' not in shown['params']
 
 
 def test_ladder_endpoints_get_a_tier():
@@ -273,3 +331,40 @@ def test_the_knob_is_not_an_anthropic_parameter():
         anthropic.Anthropic(api_key='x').messages.create).parameters
     assert 'reasoning_effort' not in params
     assert 'extra_body' in params  # ...but the shape we lower into survives
+
+
+def test_a_refused_tier_falls_all_the_way_back():
+    """qwen-vl-max rejects every effort value (DashScope converts the tier into
+    a thinking_budget, which that model has no room for). The fallback has to
+    strip the tier as well as the switch, or the retry repeats the 400."""
+    from ms_agent.llm.transport import openai_compat as TC
+
+    class _Refuser(_Recorder):
+
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            asked = (kwargs.get('reasoning_effort')
+                     or (kwargs.get('extra_body') or {}).get('enable_thinking'))
+            if asked:
+                raise RuntimeError(
+                    'Error code: 400 - The thinking_budget parameter must be a '
+                    'positive integer and not greater than 0')
+            return 'completion'
+
+    rec = _Refuser()
+    tr = TC.OpenAICompatTransport.__new__(TC.OpenAICompatTransport)
+    tr.client = _fake_client(rec, 'https://dashscope.aliyuncs.com/v1')
+    tr.model = 'qwen-vl-max'
+    tr.args = {}
+    tr._format_input_message = lambda m: m
+
+    T.MODELS_REFUSING_THINKING.clear()
+    try:
+        out = tr._call_llm([], None, reasoning_effort='high')
+    finally:
+        T.MODELS_REFUSING_THINKING.clear()
+
+    assert out == 'completion'
+    assert rec.calls[0]['reasoning_effort'] == 'high'
+    assert 'reasoning_effort' not in rec.calls[1]
+    assert rec.calls[1]['extra_body'] == {'enable_thinking': False}

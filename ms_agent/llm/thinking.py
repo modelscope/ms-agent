@@ -17,8 +17,10 @@ MiniMax M3       ``thinking: {type}``                adaptive/disabled   ON via
                                                                          OpenAI,
                                                                          OFF via
                                                                          Anthropic
-DashScope        ``enable_thinking``,                on/off              per model
-                 ``thinking_budget`` (1..32768)
+DashScope        ``enable_thinking`` AND             none…xhigh          per model
+                 ``reasoning_effort``; plus          (no ``max``)
+                 ``thinking_budget``, which the
+                 effort field CANNOT travel with
 ModelScope       ``enable_thinking`` (gateway) /     on/off              per model
                  ``chat_template_kwargs``
 OpenRouter       ``reasoning: {effort|max_tokens}``  low/medium/high     inferred
@@ -131,8 +133,11 @@ def endpoint_family(base_url: str, protocol: str = '') -> str:
 #: Tiers each family actually accepts, weakest to strongest. A request outside
 #: the set is clamped (see ``clamp_effort``).
 _FAMILY_TIERS = {
+    # DashScope takes a real ladder — probed 2026-08-17 on qwen3.8-max, whose
+    # reasoning length is strictly monotonic in it: none 0, minimal 54, low 78,
+    # medium 152, high 222, xhigh 393 characters.
+    'dashscope': ('off', 'low', 'medium', 'high', 'max'),
     # On/off only: the flag is a boolean, so every "how hard" collapses to "on".
-    'dashscope': ('off', 'high'),
     'modelscope': ('off', 'high'),
     'minimax': ('off', 'high'),
     'anthropic': ('off', 'high'),
@@ -148,6 +153,17 @@ _FAMILY_TIERS = {
     'unknown': ('off', 'low', 'medium', 'high', 'max'),
 }
 
+#: Canonical tier -> the string this family actually spells it with. Only for
+#: the rungs whose names differ; everything else goes out as-is.
+_FAMILY_WIRE_EFFORT = {
+    # DashScope's ceiling is `xhigh`; `max` is REJECTED (qwen3.7-plus answers
+    # 400 "'reasoning_effort' must be one of: 'none', 'minimal', 'low',
+    # 'medium', ..."), while `xhigh` is accepted by every qwen3.7/3.8 probed.
+    'dashscope': {
+        'max': 'xhigh'
+    },
+}
+
 #: Extra raw keys a family understands, surfaced to users as an example of what
 #: they may add by hand. We never send these ourselves — their defaults are
 #: vendor-tuned and would be one more thing to keep in sync.
@@ -157,6 +173,12 @@ FAMILY_EXTRA_HINTS = {
     'openrouter': 'reasoning.max_tokens',
     'anthropic': 'thinking_budget',
 }
+
+#: Raw keys that cannot travel with our lowered ``reasoning_effort``. DashScope
+#: rejects the pair outright ("'reasoning_effort' and 'thinking_budget' cannot
+#: be set simultaneously") — and ``thinking_budget`` is precisely what we invite
+#: people to add by hand above, so the two suggestions would collide.
+_EFFORT_CONFLICTS = ('thinking_budget', )
 
 
 def normalize_effort(raw: Any) -> Optional[str]:
@@ -207,7 +229,19 @@ def lower_effort(tier: str, family: str) -> Dict[str, Any]:
     ``tier`` must already be clamped to what the family supports.
     """
     params: Dict[str, Any] = {}
-    if family in ('dashscope', 'modelscope', 'anthropic'):
+    if family == 'dashscope':
+        # BOTH knobs, because they do different jobs and only one of them is
+        # universal. `enable_thinking` is what actually turns thinking on for
+        # the models that default it off (qwen-plus: 0 characters of reasoning
+        # with `reasoning_effort: high` alone, 543 with the flag), while
+        # `reasoning_effort` is what sets the depth on the models that honour
+        # it (qwen3.8-max, and DeepSeek/GLM/Kimi served on this host). Models
+        # that only understand one of the two ignore the other.
+        _merge_extra_body(params, {'enable_thinking': tier != 'off'})
+        if tier != 'off':
+            params[EFFORT_KEY] = _FAMILY_WIRE_EFFORT['dashscope'].get(
+                tier, tier)
+    elif family in ('modelscope', 'anthropic'):
         # Boolean switch. On the Anthropic transport this is read back out and
         # turned into the Messages-API `thinking` block.
         _merge_extra_body(params, {'enable_thinking': tier != 'off'})
@@ -260,12 +294,47 @@ def auto_params(family: str) -> Dict[str, Any]:
     return {}
 
 
-def plan(effort: Any, *, base_url: str = '', protocol: str = '') -> dict:
+def _drop_conflicts(params: Dict[str, Any],
+                    existing: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Yield to whatever the caller wrote by hand.
+
+    Two degrees of yielding, because the raw keys mean different things:
+
+    * A **switch** key (``enable_thinking``, ``thinking``, ``reasoning``) means
+      the caller is driving thinking themselves, so we contribute NOTHING —
+      adding a tier next to their ``enable_thinking: false`` would ask for a
+      depth and a shutdown in the same request.
+    * ``thinking_budget`` is only a depth, so the switch may still go out; but
+      our effort must not, because DashScope rejects that exact pair
+      ("'reasoning_effort' and 'thinking_budget' cannot be set simultaneously")
+      — and ``thinking_budget`` is precisely what the settings hint invites
+      people to add by hand, so the two suggestions would collide.
+    """
+    if not params or not isinstance(existing, dict):
+        return params
+    extra = existing.get('extra_body')
+    present = set(existing) | (set(extra) if isinstance(extra, dict) else set())
+    switches = set(THINKING_PARAM_KEYS) - {EFFORT_KEY} - set(_EFFORT_CONFLICTS)
+    if present & switches:
+        return {}
+    if present.isdisjoint(_EFFORT_CONFLICTS):
+        return params
+    return {k: v for k, v in params.items() if k != EFFORT_KEY}
+
+
+def plan(effort: Any,
+         *,
+         base_url: str = '',
+         protocol: str = '',
+         existing: Optional[Dict[str, Any]] = None) -> dict:
     """Resolve a canonical effort into a wire plan, without sending anything.
 
     Returns ``{'family', 'requested', 'effective', 'params', 'extra_hint'}``.
-    ``effective`` is the clamped tier, or ``'auto'``. Shared by the transports
-    and by the WebUI, so what the settings page shows is what actually ships.
+    ``effective`` is the clamped tier, or ``'auto'``. ``existing`` is the
+    request (or stored params) the plan will be merged into, so conflicting raw
+    keys are honoured here rather than discovered on the wire. Shared by the
+    transports and by the WebUI, so what the settings page shows is what
+    actually ships.
     """
     family = endpoint_family(base_url, protocol)
     requested = normalize_effort(effort)
@@ -276,7 +345,7 @@ def plan(effort: Any, *, base_url: str = '', protocol: str = '') -> dict:
             'family': family,
             'requested': 'auto',
             'effective': 'auto',
-            'params': auto_params(family),
+            'params': _drop_conflicts(auto_params(family), existing),
             'extra_hint': FAMILY_EXTRA_HINTS.get(family, ''),
         }
     effective = clamp_effort(requested, _FAMILY_TIERS.get(family,
@@ -285,7 +354,7 @@ def plan(effort: Any, *, base_url: str = '', protocol: str = '') -> dict:
         'family': family,
         'requested': requested,
         'effective': effective,
-        'params': lower_effort(effective, family),
+        'params': _drop_conflicts(lower_effort(effective, family), existing),
         'extra_hint': FAMILY_EXTRA_HINTS.get(family, ''),
     }
 
@@ -304,7 +373,11 @@ def apply_effort(kwargs: Dict[str, Any], *, base_url: str,
     the raw form is the escape hatch and a user who reached for it means it.
     """
     effort = kwargs.get(EFFORT_KEY, 'auto')
-    resolved = plan(effort, base_url=base_url, protocol=protocol)
+    resolved = plan(effort,
+                    base_url=base_url,
+                    protocol=protocol,
+                    existing={k: v
+                              for k, v in kwargs.items() if k != EFFORT_KEY})
     if EFFORT_KEY not in kwargs and not resolved['params']:
         return kwargs  # nothing to say and nothing to strip
     out = dict(kwargs)
