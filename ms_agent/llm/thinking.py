@@ -89,6 +89,13 @@ _EFFORT_ALIASES = {
 #: ``(base_url, model)`` pairs observed to refuse the thinking parameters.
 MODELS_REFUSING_THINKING: set = set()
 
+#: ``(base_url, model)`` pairs that refuse to STOP thinking. The opposite
+#: complaint, and it needs the opposite repair — OpenRouter answers
+#: "Reasoning is mandatory for this endpoint and cannot be disabled" for
+#: x-ai/grok-4.5, and healing that by forcing thinking off (the other set's
+#: repair) both misses the point and poisons every later request for the model.
+MODELS_REQUIRING_THINKING: set = set()
+
 
 # --------------------------------------------------------------------------- #
 # Endpoint families
@@ -402,15 +409,85 @@ def model_key(client: Any, model: str) -> tuple:
     return (str(getattr(client, 'base_url', '')), model)
 
 
-def is_thinking_refusal(exc: Exception) -> bool:
-    """A 400 that names the thinking parameters — not any other bad request."""
+def _is_bad_request(exc: Exception) -> bool:
     status = getattr(exc, 'status_code', None)
     if status is not None and status != 400:
         return False
-    text = str(exc).lower()
-    if status != 400 and '400' not in text:
+    return status == 400 or '400' in str(exc)
+
+
+#: Phrases an endpoint uses to say thinking is not optional here.
+_MANDATORY_MARKERS = ('mandatory', 'cannot be disabled', 'can not be disabled',
+                      'must be enabled', 'cannot be turned off')
+
+
+def is_thinking_refusal(exc: Exception) -> bool:
+    """A 400 that names the thinking parameters — not any other bad request."""
+    if not _is_bad_request(exc):
         return False
+    text = str(exc).lower()
     return any(k in text for k in THINKING_PARAM_KEYS)
+
+
+def is_thinking_mandatory(exc: Exception) -> bool:
+    """A 400 complaining that thinking may not be switched OFF.
+
+    Checked before :func:`is_thinking_refusal`, which it would otherwise match
+    (the message names ``reasoning``) and be repaired backwards.
+    """
+    if not _is_bad_request(exc):
+        return False
+    text = str(exc).lower()
+    if not any(k in text for k in THINKING_PARAM_KEYS):
+        return False
+    return any(marker in text for marker in _MANDATORY_MARKERS)
+
+
+def asks_to_disable(kwargs: Dict[str, Any]) -> bool:
+    """Whether this request is telling the model NOT to think.
+
+    Every family spells "off" differently (see :func:`lower_effort`), and a
+    model that merely refuses to be switched off must still be allowed to
+    receive a positive tier — so the memo has to know which kind of request it
+    is looking at rather than blanking them all.
+    """
+    extra = kwargs.get('extra_body')
+    extra = extra if isinstance(extra, dict) else {}
+    if extra.get('enable_thinking') is False or kwargs.get(
+            'enable_thinking') is False:
+        return True
+    for source in (extra, kwargs):
+        thinking = source.get('thinking')
+        if isinstance(thinking, dict) and thinking.get('type') == 'disabled':
+            return True
+        reasoning = source.get('reasoning')
+        if isinstance(reasoning, dict) and reasoning.get('enabled') is False:
+            return True
+    return kwargs.get(EFFORT_KEY) in ('none', 'off')
+
+
+def strip_thinking(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    """``kwargs`` with every thinking parameter REMOVED, saying nothing at all.
+
+    The repair for an endpoint that insists on thinking: stop asking it to
+    stop. Returns the SAME object when there was nothing to strip.
+    """
+    extra = kwargs.get('extra_body')
+    in_extra = isinstance(extra, dict) and any(k in extra
+                                               for k in THINKING_PARAM_KEYS)
+    if not in_extra and not any(k in kwargs for k in THINKING_PARAM_KEYS):
+        return kwargs
+    cleaned = {k: v for k, v in kwargs.items() if k not in THINKING_PARAM_KEYS}
+    if in_extra:
+        pruned = {
+            k: v
+            for k, v in extra.items() if k not in THINKING_PARAM_KEYS
+        }
+        if pruned:
+            cleaned['extra_body'] = pruned
+        else:
+            cleaned.pop('extra_body', None)
+    return cleaned
 
 
 def without_thinking(kwargs: Dict[str, Any]) -> Dict[str, Any]:
@@ -458,9 +535,25 @@ def create_with_thinking_fallback(create, client, model: str, logger,
     key = model_key(client, model)
     if key in MODELS_REFUSING_THINKING:
         kwargs = without_thinking(kwargs)
+    elif key in MODELS_REQUIRING_THINKING and asks_to_disable(kwargs):
+        # Only the "off" request is doomed here; a positive tier still goes out
+        # normally, so this model is not blacklisted the way a refuser is.
+        kwargs = strip_thinking(kwargs)
     try:
         return create(**kwargs)
     except Exception as e:
+        # Order matters: "reasoning is mandatory" also names a thinking
+        # parameter, so refusal would claim it and repair it backwards.
+        if is_thinking_mandatory(e):
+            retry_kwargs = strip_thinking(kwargs)
+            if retry_kwargs is kwargs:
+                raise
+            MODELS_REQUIRING_THINKING.add(key)
+            logger.warning(
+                f'{model} does not allow thinking to be switched off; '
+                f'retrying without any thinking parameter (it stays that way '
+                f'for this model): {e}')
+            return create(**retry_kwargs)
         if not is_thinking_refusal(e):
             raise
         retry_kwargs = without_thinking(kwargs)

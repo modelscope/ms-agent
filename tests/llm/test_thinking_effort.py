@@ -368,3 +368,130 @@ def test_a_refused_tier_falls_all_the_way_back():
     assert rec.calls[0]['reasoning_effort'] == 'high'
     assert 'reasoning_effort' not in rec.calls[1]
     assert rec.calls[1]['extra_body'] == {'enable_thinking': False}
+
+
+# --------------------------------------------------------------------------- #
+# Bugs the unit tests missed and a live matrix caught
+# --------------------------------------------------------------------------- #
+def test_lowering_twice_would_destroy_the_tier():
+    """Documents WHY each transport lowers exactly once.
+
+    The canonical key and DashScope's wire key are both `reasoning_effort`, so
+    the operation is not idempotent: a second pass reads the `enable_thinking`
+    the first pass added as "the caller is driving thinking by hand" and stands
+    down — deleting the tier we ourselves just set. Two call sites were doing
+    this, which silently reduced every DashScope request back to a bare switch.
+    """
+    base = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+    once = T.apply_effort({'reasoning_effort': 'low'}, base_url=base)
+    assert once['reasoning_effort'] == 'low'
+    assert 'reasoning_effort' not in T.apply_effort(once, base_url=base)
+
+
+def test_generate_sends_the_tier_all_the_way_to_the_client():
+    """The end-to-end shape, through `generate()` and its signature filter —
+    the level the double-lowering bug lived at and a `_call_llm` test could not
+    see."""
+    from ms_agent.llm.transport import openai_compat as TC
+
+    class _SigRecorder(_Recorder):
+        """`generate()` filters kwargs against create()'s SIGNATURE, so a stub
+        taking bare **kwargs would drop every argument — including `stream` —
+        and quietly test nothing."""
+
+        def create(self,
+                   *,
+                   model=None,
+                   messages=None,
+                   tools=None,
+                   stream=None,
+                   max_tokens=None,
+                   extra_body=None,
+                   reasoning_effort=None,
+                   **kw):
+            self.calls.append({
+                'extra_body': extra_body,
+                'reasoning_effort': reasoning_effort,
+                'stream': stream,
+            })
+            return 'completion'
+
+    rec = _SigRecorder()
+    tr = TC.OpenAICompatTransport.__new__(TC.OpenAICompatTransport)
+    tr.client = _fake_client(
+        rec, 'https://dashscope.aliyuncs.com/compatible-mode/v1')
+    tr.model = 'qwen3.8-max'
+    tr.args = {'reasoning_effort': 'max'}
+    tr.max_continue_runs = 1
+    tr._strip_reasoning_tags = False
+    tr._format_input_message = lambda m: m
+    tr.format_tools = lambda t: None
+
+    # Only what reached the client matters here; the stub cannot satisfy the
+    # response-shaping that follows.
+    try:
+        tr.generate([])
+    except Exception:
+        pass
+    assert rec.calls[0]['reasoning_effort'] == 'xhigh'
+    assert rec.calls[0]['extra_body'] == {'enable_thinking': True}
+
+
+def test_mandatory_thinking_is_repaired_forwards_not_backwards():
+    """OpenRouter answers "Reasoning is mandatory for this endpoint and cannot
+    be disabled" for x-ai/grok-4.5. That names a thinking parameter, so the
+    refusal path used to claim it and "repair" it by forcing thinking OFF —
+    the exact opposite — and then remembered the model, degrading every later
+    request in the session."""
+    from ms_agent.llm.transport import openai_compat as TC
+
+    class _Mandatory(_Recorder):
+
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            reasoning = (kwargs.get('extra_body') or {}).get('reasoning') or {}
+            if reasoning.get('enabled') is False:
+                raise RuntimeError(
+                    'Error code: 400 - Reasoning is mandatory for this '
+                    'endpoint and cannot be disabled.')
+            return 'completion'
+
+    rec = _Mandatory()
+    tr = TC.OpenAICompatTransport.__new__(TC.OpenAICompatTransport)
+    tr.client = _fake_client(rec, 'https://openrouter.ai/api/v1')
+    tr.model = 'x-ai/grok-4.5'
+    tr.args = {}
+    tr._format_input_message = lambda m: m
+
+    T.MODELS_REFUSING_THINKING.clear()
+    T.MODELS_REQUIRING_THINKING.clear()
+    try:
+        assert tr._call_llm([], None, reasoning_effort='off') == 'completion'
+        # Repaired by saying nothing, not by forcing the switch the other way.
+        assert 'extra_body' not in rec.calls[1]
+        assert 'reasoning_effort' not in rec.calls[1]
+        # ...and the model is not blacklisted, so a later tier still works.
+        assert T.model_key(tr.client, tr.model) not in T.MODELS_REFUSING_THINKING
+        tr._call_llm([], None, reasoning_effort='high')
+        assert rec.calls[2]['extra_body'] == {'reasoning': {'effort': 'high'}}
+    finally:
+        T.MODELS_REFUSING_THINKING.clear()
+        T.MODELS_REQUIRING_THINKING.clear()
+
+
+def test_openrouter_style_reasoning_field_is_read():
+    """OpenRouter normalizes every upstream's reasoning into `reasoning`, not
+    `reasoning_content`. Reading only the latter made every model proxied
+    through it look like it never thought."""
+    from ms_agent.llm.transport.openai_compat import _reasoning_of
+
+    ns = type('NS', (), {})
+    delta = ns()
+    delta.reasoning = 'thought about it'
+    assert _reasoning_of(delta) == 'thought about it'
+
+    both = ns()
+    both.reasoning_content = 'native'
+    both.reasoning = 'proxied'
+    assert _reasoning_of(both) == 'native'  # the native field wins
+    assert _reasoning_of(ns()) == ''

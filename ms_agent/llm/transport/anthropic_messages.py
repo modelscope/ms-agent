@@ -170,11 +170,9 @@ class AnthropicMessagesTransport(Transport):
             system = formatted_messages[0]['content']
             formatted_messages = formatted_messages[1:]
 
-        # The canonical `reasoning_effort` becomes extra_body.enable_thinking on
-        # this protocol (see llm/thinking.py); resolve it before reading that
-        # flag, and so an unknown key never reaches the Messages API through the
-        # `params.update(kwargs)` below.
-        kwargs = apply_effort(kwargs, base_url='', protocol='anthropic')
+        # Already lowered in `generate()` — it has to happen before the
+        # signature filter there, and doing it twice is destructive (see the
+        # note in transport/openai_compat.py).
         max_tokens = kwargs.pop('max_tokens', 16000)
         extra_body = kwargs.get('extra_body', {})
         enable_thinking = extra_body.get('enable_thinking', False)

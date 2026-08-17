@@ -29,6 +29,21 @@ from ms_agent.utils import MAX_CONTINUE_RUNS, assert_package_exist, get_logger
 
 logger = get_logger()
 
+#: Field names carrying the model's reasoning, in preference order. Most
+#: OpenAI-compatible vendors use ``reasoning_content`` (DashScope, ModelScope,
+#: Zhipu, DeepSeek); OpenRouter normalizes everything it proxies into
+#: ``reasoning`` instead, so reading only the first name made every model
+#: routed through it look like it never thought.
+_REASONING_FIELDS = ('reasoning_content', 'reasoning')
+
+
+def _reasoning_of(delta_or_message: Any) -> str:
+    for field in _REASONING_FIELDS:
+        value = getattr(delta_or_message, field, None)
+        if value:
+            return value
+    return ''
+
 
 class OpenAICompatTransport(Transport):
     # Fields forwarded to the API. Includes continue-gen flags (partial/prefix)
@@ -249,9 +264,14 @@ class OpenAICompatTransport(Transport):
         args = self.args.copy()
         args.update(kwargs)
         stream = args.get('stream', False)
-        # Lower the canonical knob before the signature filter, so continuation
-        # calls reuse the resolved wire params rather than re-resolving.
-        args = apply_effort(args, base_url=self.base_url)
+        # NOT lowered here — `_call_llm` does it, exactly once per request.
+        # Lowering twice is destructive rather than idempotent: the canonical
+        # key and DashScope's wire key are both spelled `reasoning_effort`, so a
+        # second pass reads the `enable_thinking` the first pass just added as
+        # "the caller is driving thinking by hand" and stands down, deleting our
+        # own tier. `reasoning_effort` is a real OpenAI parameter, so it survives
+        # the filter below and reaches `_call_llm` intact; continuation calls
+        # re-lower from the same canonical value.
         args = {key: value for key, value in args.items() if key in parameters}
 
         # Format tools once and thread the formatted list through the
@@ -519,8 +539,7 @@ class OpenAICompatTransport(Transport):
         content = ''
         if completion_chunk.choices and completion_chunk.choices[0].delta:
             content = completion_chunk.choices[0].delta.content
-            reasoning_content = getattr(completion_chunk.choices[0].delta,
-                                        'reasoning_content', '')
+            reasoning_content = _reasoning_of(completion_chunk.choices[0].delta)
             if completion_chunk.choices[0].delta.tool_calls:
                 func = completion_chunk.choices[0].delta.tool_calls
                 tool_calls = [
@@ -550,11 +569,7 @@ class OpenAICompatTransport(Transport):
     @staticmethod
     def _format_output_message(completion) -> Message:
         content = completion.choices[0].message.content or ''
-        if hasattr(completion.choices[0].message, 'reasoning_content'):
-            reasoning_content = completion.choices[
-                0].message.reasoning_content or ''
-        else:
-            reasoning_content = ''
+        reasoning_content = _reasoning_of(completion.choices[0].message)
         tool_calls = None
         if completion.choices[0].message.tool_calls:
             tool_calls = [
