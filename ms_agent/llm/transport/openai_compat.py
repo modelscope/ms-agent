@@ -22,7 +22,7 @@ import inspect
 from copy import deepcopy
 from typing import Any, Dict, Generator, Iterable, List, Optional, Union
 
-from ms_agent.llm.thinking import create_with_thinking_fallback
+from ms_agent.llm.thinking import apply_effort, create_with_thinking_fallback
 from ms_agent.llm.transport.base import Transport
 from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.utils import MAX_CONTINUE_RUNS, assert_package_exist, get_logger
@@ -249,6 +249,9 @@ class OpenAICompatTransport(Transport):
         args = self.args.copy()
         args.update(kwargs)
         stream = args.get('stream', False)
+        # Lower the canonical knob before the signature filter, so continuation
+        # calls reuse the resolved wire params rather than re-resolving.
+        args = apply_effort(args, base_url=self.base_url)
         args = {key: value for key, value in args.items() if key in parameters}
 
         # Format tools once and thread the formatted list through the
@@ -340,7 +343,12 @@ class OpenAICompatTransport(Transport):
         stream_options_config = self.args.get('stream_options', {})
         if is_streaming and stream_options_config.get('include_usage', True):
             kwargs.setdefault('stream_options', {})['include_usage'] = True
-        # Thinking is per-model and a refusal is a hard 400 (see llm/thinking.py).
+        # `reasoning_effort` is the one knob callers set; each endpoint spells it
+        # differently, so lower it here — as late as possible, when the base_url
+        # that decides the spelling is known. Thinking is also per-model and a
+        # refusal is a hard 400. Both live in llm/thinking.py.
+        kwargs = apply_effort(
+            kwargs, base_url=str(getattr(self.client, 'base_url', '')))
         return create_with_thinking_fallback(
             lambda **kw: self.client.chat.completions.create(
                 model=self.model, messages=messages, tools=tools, **kw),

@@ -15,6 +15,7 @@ import inspect
 import json
 from typing import Any, Dict, Generator, Iterator, List, Optional, Union
 
+from ms_agent.llm.thinking import apply_effort
 from ms_agent.llm.transport.base import Transport
 from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.utils import assert_package_exist
@@ -169,6 +170,11 @@ class AnthropicMessagesTransport(Transport):
             system = formatted_messages[0]['content']
             formatted_messages = formatted_messages[1:]
 
+        # The canonical `reasoning_effort` becomes extra_body.enable_thinking on
+        # this protocol (see llm/thinking.py); resolve it before reading that
+        # flag, and so an unknown key never reaches the Messages API through the
+        # `params.update(kwargs)` below.
+        kwargs = apply_effort(kwargs, base_url='', protocol='anthropic')
         max_tokens = kwargs.pop('max_tokens', 16000)
         extra_body = kwargs.get('extra_body', {})
         enable_thinking = extra_body.get('enable_thinking', False)
@@ -203,6 +209,11 @@ class AnthropicMessagesTransport(Transport):
         args = self.args.copy()
         args.update(kwargs)
         stream = args.pop('stream', False)
+
+        # Before the signature filter: `reasoning_effort` is not a Messages API
+        # parameter, so filtering first would drop the knob instead of lowering
+        # it into this protocol's `thinking` block.
+        args = apply_effort(args, base_url='', protocol='anthropic')
 
         sig_params = inspect.signature(self.client.messages.create).parameters
         filtered_args = {k: v for k, v in args.items() if k in sig_params}

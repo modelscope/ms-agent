@@ -11,7 +11,7 @@ from openai.types.chat.chat_completion_message_tool_call import (
 from typing import Any, Dict, Generator, Iterable, List, Optional
 
 from ms_agent.llm import LLM
-from ms_agent.llm.thinking import create_with_thinking_fallback
+from ms_agent.llm.thinking import apply_effort, create_with_thinking_fallback
 from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.utils import (MAX_CONTINUE_RUNS, assert_package_exist,
                             get_logger, retry)
@@ -251,6 +251,12 @@ class OpenAI(LLM):
 
         if not stream:
             args.pop('stream_options', None)
+
+        # Lower the canonical knob first: the Responses path below reads
+        # `reasoning_effort` straight into `reasoning.effort`, so it must see a
+        # real OpenAI tier rather than a canonical `auto`/`off`.
+        args = apply_effort(
+            args, base_url=str(getattr(self.client, 'base_url', '')))
 
         if self._use_responses_api:
             if stream:
