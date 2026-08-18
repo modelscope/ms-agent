@@ -327,11 +327,19 @@ def placeholder_for(ref: ImageRef, reason: str = '') -> str:
 
 
 #: Reason strings, kept here so the wording is identical across transports.
+#: Both spell out that any earlier image descriptions in the conversation came
+#: from a model that could see the pictures. Without that sentence, a model
+#: switched in mid-session sees "not shown" placeholders NEXT TO confident
+#: assistant answers about the same images, resolves the contradiction as "so I
+#: did see them after all", and claims present-tense sight (measured on
+#: qwen3.7-max: it answered 能看到 and repeated its predecessor's reading).
 REASON_DISABLED = (
-    'Image understanding is not enabled for the current model. '
-    'Tell the user they can turn on "image understanding" for '
-    'this model in Settings → Models, or switch to a model that '
-    'supports it.')
+    'Image understanding is not enabled for the current model, so you cannot '
+    'see this image now. Earlier replies in this conversation that describe '
+    'it were written while a vision-capable model was active: treat them as '
+    'reliable history, but do not claim to see the image yourself. Tell the '
+    'user they can turn on "image understanding" for this model in '
+    'Settings → Models, or switch to a model that supports it.')
 REASON_UNREADABLE = ('The file could not be read or decoded as an image.')
 
 
@@ -473,9 +481,11 @@ def has_image_blocks(content: Any) -> bool:
 #: Measured before this text existed, qwen3.7-max answered exactly that.
 REASON_REFUSED = (
     'not visible: this model rejected image input. The file was uploaded and is '
-    'in the workspace under the name shown above. Tell the user this model '
-    'cannot view images, and that they can enable "image understanding" for it '
-    'in Settings → Models or switch to a model that supports vision.')
+    'in the workspace under the name shown above. Any earlier replies that '
+    'describe this image came from a model that could see it. Tell the user '
+    'this model cannot view images, and that they can enable "image '
+    'understanding" for it in Settings → Models or switch to a model that '
+    'supports vision.')
 
 
 def strip_image_blocks(content: Any) -> Any:
