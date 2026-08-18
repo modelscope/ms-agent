@@ -10,9 +10,10 @@ from openai.types.chat.chat_completion_message_tool_call import (
     ChatCompletionMessageToolCall, Function)
 from typing import Any, Dict, Generator, Iterable, List, Optional
 
-from ms_agent.llm import LLM
+from ms_agent.llm import LLM, multimodal
 from ms_agent.llm.thinking import apply_effort, create_with_thinking_fallback
 from ms_agent.llm.utils import Message, Tool, ToolCall
+from ms_agent.llm.vision import create_with_vision_fallback
 from ms_agent.utils import (MAX_CONTINUE_RUNS, assert_package_exist,
                             get_logger, retry)
 from ms_agent.utils.constants import get_service_config
@@ -97,6 +98,20 @@ class OpenAI(LLM):
                 float(_read_timeout), connect=float(_connect_timeout)),
         )
         self.base_url = base_url or ''
+
+        # Image attachments (legacy non-router path). Resolution mirrors the
+        # router's: an explicit per-model switch wins, else the service's
+        # declared capability, else runtime learning from a refusal.
+        from ms_agent.llm.spec import get_registry
+        from ms_agent.llm.vision import resolve_supports_vision
+        self._vision = multimodal.VisionOptions.from_config(config)
+        _service = getattr(config.llm, 'service', None)
+        self._vision_supported = resolve_supports_vision(
+            config,
+            spec=get_registry().get(_service)
+            or get_registry().resolve_by_model(self.model),
+            model=self.model,
+            base_url=self.base_url)
         self.args: Dict = OmegaConf.to_container(
             getattr(config, 'generation_config', DictConfig({})))
 
@@ -302,10 +317,23 @@ class OpenAI(LLM):
             kwargs.setdefault('stream_options', {})['include_usage'] = True
 
         # Thinking is per-model and a refusal is a hard 400 (see llm/thinking.py).
-        return create_with_thinking_fallback(
-            lambda **kw: self.client.chat.completions.create(
-                model=self.model, messages=messages, tools=tools, **kw),
-            self.client, self.model, logger, **kwargs)
+        # Image content is a per-model hard 400 on text-only models; retry once
+        # with the images folded into text and remember the model. Composes with
+        # the thinking fallback (each retries for its own reason).
+        sent_images = any(
+            multimodal.has_image_blocks(m.get('content'))
+            for m in messages if isinstance(m, dict))
+        return create_with_vision_fallback(
+            lambda messages, **kw: create_with_thinking_fallback(
+                lambda **kw2: self.client.chat.completions.create(
+                    model=self.model, messages=messages, tools=tools, **kw2),
+                self.client, self.model, logger, **kw),
+            base_url=getattr(self.client, 'base_url', ''),
+            model=self.model,
+            messages=messages,
+            sent_images=sent_images,
+            logger_=logger,
+            **kwargs)
 
     @staticmethod
     def _extract_cache_info(usage_obj: Any) -> tuple:
@@ -1039,6 +1067,9 @@ class OpenAI(LLM):
 
         openai_messages = []
         for idx, message in enumerate(messages):
+            # Read image refs BEFORE to_dict_clean(), which strips them.
+            attachments = (message.attachments if isinstance(message, Message)
+                           else message.get('attachments')) or []
             if isinstance(message, Message):
                 # Only strip string content, keep list content as-is for multimodal
                 if isinstance(message.content, str):
@@ -1046,11 +1077,25 @@ class OpenAI(LLM):
                 message = message.to_dict_clean()
             else:
                 message = dict(message)
+                message.pop('attachments', None)
 
             content = message.get('content', '')
             # Only strip string content, multimodal content (list) should be kept as-is
             if isinstance(content, str):
                 content = content.strip()
+
+            # Image refs -> native image_url blocks. A turn with no attachments
+            # returns the same plain string, so text-only requests are unchanged.
+            # Not for a tool message: the Chat Completions SCHEMA allows
+            # only text parts in `role: "tool"`, so its images go to the
+            # synthetic user turn appended after it (below). Five compatible
+            # providers were measured to accept inline image parts here anyway,
+            # but hoisting is valid under the schema AND under all of them — see
+            # multimodal.TOOL_MEDIA_PROMPT for the full measurement.
+            if attachments and message.get('role') != 'tool':
+                content = multimodal.openai_content(
+                    content, attachments, self._vision,
+                    vision_supported=self._vision_supported)
 
             # Apply prefix cache structured content transformation
             # Only for string content, multimodal content is already structured
@@ -1083,5 +1128,14 @@ class OpenAI(LLM):
                 formatted_message['content'] = None
 
             openai_messages.append(formatted_message)
+
+            # Tool-result images: same hoist as OpenAICompatTransport (the
+            # Chat Completions schema restricts a tool message to text parts).
+            if attachments and message.get('role') == 'tool':
+                media = multimodal.openai_tool_media_message(
+                    attachments, self._vision,
+                    vision_supported=self._vision_supported)
+                if media is not None:
+                    openai_messages.append(media)
 
         return openai_messages

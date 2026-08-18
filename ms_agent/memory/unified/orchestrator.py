@@ -46,7 +46,7 @@ from ms_agent.memory.base import Memory
 from ms_agent.session.context_assembler import _dicts_to_messages
 from ms_agent.utils.logger import get_logger
 from .config import MemoryConfig
-from .protocols import (RECALL_BLOCK_MARKER, MemoryBackend, MemoryEntry)
+from .protocols import RECALL_BLOCK_MARKER, MemoryBackend, MemoryEntry
 from .registry import backend_registry
 
 logger = get_logger()
@@ -617,6 +617,12 @@ def _messages_to_dicts(messages: List[Message]) -> List[Dict[str, Any]]:
                 d['reasoning_content'] = m.reasoning_content
             if m.reasoning_signature:
                 d['reasoning_signature'] = m.reasoning_signature
+            # Image refs: this round-trip is the live LLM context, so a field
+            # dropped here is dropped from what the model sees this turn — not
+            # merely from storage (see the docstring above). Must mirror
+            # ``_dicts_to_messages``.
+            if getattr(m, 'attachments', None):
+                d['attachments'] = m.attachments
             result.append(d)
         else:
             result.append({'role': 'user', 'content': str(m)})

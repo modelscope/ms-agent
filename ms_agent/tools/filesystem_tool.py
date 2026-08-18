@@ -194,7 +194,10 @@ class FileSystemTool(ToolBase):
                     ('Read the content of one or more files.\n\n'
                      '- `paths`: list of relative file paths to read (preferred).\n'
                      '- `path`: single relative file path (alias when the model passes one file).\n'
-                     '- For image files (png/jpg/jpeg/gif/webp), returns base64-encoded content.\n'
+                     '- Image files (png/jpg/jpeg/gif/webp) are returned AS IMAGES, attached to\n'
+                     '  the result — look at them directly. They are not readable as text, and\n'
+                     '  `offset`/`limit` do not apply. If you cannot see an attached image, the\n'
+                     '  current model has image understanding disabled.\n'
                      '- `offset`: line number to start reading from (1-based). '
                      'Only effective when paths has exactly one element. Omit to read from the beginning.\n'
                      '- `limit`: number of lines to read. '
@@ -820,6 +823,10 @@ class FileSystemTool(ToolBase):
             return await self._read_files_abbreviated(paths)
 
         results = {}
+        # Structured image references collected while walking the paths. Returned
+        # alongside the text so the transports can put the pixels in the image
+        # channel instead of stringifying them into the text one.
+        image_refs: list = []
         use_line_range = len(paths) == 1 and (offset is not None
                                               or limit is not None)
 
@@ -836,13 +843,36 @@ class FileSystemTool(ToolBase):
 
                 # --- Image files ---
                 if ext in self.IMAGE_EXTENSIONS:
-                    with open(target_path_real, 'rb') as f:
-                        raw = f.read()
+                    # Two channels, and the bytes belong in the other one. This
+                    # dict is JSON-serialized into the tool message's TEXT
+                    # content, so returning base64 here put the image where a
+                    # model cannot decode it: tens of thousands of tokens of
+                    # literal characters, zero comprehension, and an inflated
+                    # context estimate that re-fires compaction every round
+                    # (see session/strategies/tool_pruner).
+                    #
+                    # So: a short status in the text, and a structured reference
+                    # collected below into ``attachments``, which the transports
+                    # expand into a real image block. The model genuinely sees
+                    # the file it asked to read.
                     media_type = f'image/{ext}' if ext != 'jpg' else 'image/jpeg'
+                    size = os.path.getsize(target_path_real)
+                    image_refs.append({
+                        'type': 'image',
+                        'path': path,
+                        'media_type': media_type,
+                        'label': f'Image: {os.path.basename(path)}',
+                    })
                     results[path] = {
                         'type': 'image',
                         'media_type': media_type,
-                        'base64': base64.b64encode(raw).decode('ascii'),
+                        'bytes': size,
+                        'shown_as_image': True,
+                        'message':
+                        (f'This {media_type} image ({size} bytes) is attached to '
+                         'this result as an image, so look at it directly; it '
+                         'cannot be read as text. If you cannot see it, the '
+                         'current model has image understanding disabled.'),
                     }
                     continue
 
@@ -909,7 +939,13 @@ class FileSystemTool(ToolBase):
                 results[path] = f'Read file <{path}> failed: FileNotFound'
             except Exception as e:
                 results[path] = f'Read file <{path}> failed, error: ' + str(e)
-        return json.dumps(results, indent=2, ensure_ascii=False)
+        text = json.dumps(results, indent=2, ensure_ascii=False)
+        if image_refs:
+            # Dict form so the agent's ToolResult picks up ``attachments`` and
+            # carries the pixels to the image channel. A read with no images
+            # returns the same plain string as before, so nothing else moves.
+            return {'result': text, 'attachments': image_refs}
+        return text
 
     async def _read_files_abbreviated(self, paths: list[str]) -> str:
         results = {}

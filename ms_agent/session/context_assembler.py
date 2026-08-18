@@ -214,6 +214,11 @@ def _dicts_to_messages(dicts: List[Dict[str, Any]]) -> List[Message]:
                     # replays them — required for its thinking-mode tool follow-ups.
                     reasoning_content=d.get('reasoning_content', '') or '',
                     reasoning_signature=d.get('reasoning_signature', '') or '',
+                    # Image refs attached to a user turn. This runs on EVERY
+                    # round (the live context is reassembled from the log), so
+                    # omitting them here would make images visible on the turn
+                    # they were sent and invisible from the next round on.
+                    attachments=d.get('attachments') or [],
                 ))
         else:
             result.append(Message(role='user', content=str(d)))

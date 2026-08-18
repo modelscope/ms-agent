@@ -31,8 +31,13 @@ from .utils import Message, Tool
 logger = get_logger()
 
 
-def _build_transport(spec: ProviderSpec, model: str, api_key: Optional[str],
-                     base_url: str, gen_config: dict) -> Transport:
+def _build_transport(spec: ProviderSpec,
+                     model: str,
+                     api_key: Optional[str],
+                     base_url: str,
+                     gen_config: dict,
+                     vision: Optional['VisionOptions'] = None,
+                     vision_supported: bool = True) -> Transport:
     if spec.transport == TRANSPORT_ANTHROPIC_MESSAGES:
         from .transport.anthropic_messages import AnthropicMessagesTransport
         return AnthropicMessagesTransport(
@@ -40,6 +45,8 @@ def _build_transport(spec: ProviderSpec, model: str, api_key: Optional[str],
             api_key=api_key,
             base_url=base_url,
             generation_config=gen_config,
+            vision=vision,
+            vision_supported=vision_supported,
         )
     if spec.transport == TRANSPORT_OPENAI_COMPAT:
         from .transport.openai_compat import OpenAICompatTransport
@@ -51,6 +58,8 @@ def _build_transport(spec: ProviderSpec, model: str, api_key: Optional[str],
             continue_gen_mode=spec.continue_gen_mode,
             continue_gen_stop=spec.continue_gen_stop,
             strip_reasoning_tags=spec.strip_reasoning_tags,
+            vision=vision,
+            vision_supported=vision_supported,
         )
     raise ValueError(f'Unknown transport: {spec.transport}')
 
@@ -154,6 +163,16 @@ class ProviderRouter:
             getattr(config, 'generation_config', DictConfig({})))
         gen_config = {**spec.default_generation_config, **(gen_config or {})}
 
-        transport = _build_transport(spec, model, api_key, base_url,
-                                     gen_config)
+        # Image attachments: encode options + whether this model may be shown
+        # pixels. Resolved here (the one place that has spec, model and base_url
+        # together) rather than inside the transports.
+        from .multimodal import VisionOptions
+        from .vision import resolve_supports_vision
+        vision = VisionOptions.from_config(config)
+        vision_supported = resolve_supports_vision(
+            config, spec=spec, model=model, base_url=base_url)
+
+        transport = _build_transport(spec, model, api_key, base_url, gen_config,
+                                     vision=vision,
+                                     vision_supported=vision_supported)
         return LLMProvider(config=config, spec=spec, transport=transport)

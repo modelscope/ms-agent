@@ -20,6 +20,7 @@ from ms_agent.tools.base import ToolBase
 from ms_agent.tools.code import CodeExecutionTool, LocalCodeExecutionTool
 from ms_agent.tools.filesystem_tool import FileSystemTool
 from ms_agent.tools.image_generator import ImageGenerator
+from ms_agent.tools.image_reader_tool import ImageReaderTool
 
 try:
     from ms_agent.tools.mcp_client import MCPClient
@@ -144,6 +145,18 @@ class ToolManager:
         if hasattr(config, 'tools') and hasattr(config.tools,
                                                 'video_generator'):
             self.extra_tools.append(VideoGenerator(config))
+        # image_reader is registered ONLY when an auxiliary vision model is
+        # configured: without one the tool can do nothing, and an always-present
+        # tool the model may call and always fail is worse than no tool at all.
+        if _tool_on(config, 'image_reader'):
+            from ms_agent.tools.image_reader_tool import auxiliary_config
+
+            if auxiliary_config(config):
+                self.extra_tools.append(ImageReaderTool(config))
+            else:
+                logger.info(
+                    'tools.image_reader is enabled but '
+                    'llm.vision.auxiliary.model is unset; not registering it')
         if _tool_on(config, 'file_system'):
             self.extra_tools.append(
                 FileSystemTool(
