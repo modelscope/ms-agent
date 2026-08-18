@@ -349,6 +349,31 @@ def lower_effort(tier: str, family: str) -> Dict[str, Any]:
     return params
 
 
+def output_format_params(family: str) -> Dict[str, Any]:
+    """Params about WHERE the reasoning is delivered, not how much of it to do.
+
+    Separate from the effort ladder on purpose: this asks nothing about how hard
+    to think, so it applies even under ``auto``, where we deliberately say
+    nothing about depth.
+
+    MiniMax is the only family that needs it. Its OpenAI-compatible endpoint
+    inlines the reasoning into the answer as ``<think>…</think>`` (its docs call
+    that the native format) and offers ``reasoning_split`` to deliver it in
+    ``reasoning_content`` instead — which its docs "strongly recommend", and
+    which is the only shape it reads back: probed 2026-08-18, replaying a
+    separate ``reasoning_content`` in NATIVE mode behaves exactly like
+    discarding the thinking, because the field is not part of that format.
+    Verified on M3, M2.7 and M2.5: no error, reasoning moves out of ``content``.
+
+    Host-gated by construction — third-party hosts of the same weights reject
+    the parameter outright (NVIDIA NIM: "Unsupported parameter(s):
+    'reasoning_split'"), and they are a different family here.
+    """
+    if family == 'minimax':
+        return {'extra_body': {'reasoning_split': True}}
+    return {}
+
+
 def auto_params(family: str) -> Dict[str, Any]:
     """What ``auto`` sends. Almost always nothing — see the module docstring.
 
@@ -415,20 +440,23 @@ def plan(effort: Any,
     if requested is None:
         requested = 'auto'
     if requested == 'auto':
-        return {
-            'family': family,
-            'requested': 'auto',
-            'effective': 'auto',
-            'params': _drop_conflicts(auto_params(family), existing),
-            'extra_hint': FAMILY_EXTRA_HINTS.get(family, ''),
-        }
-    effective = clamp_effort(requested, _FAMILY_TIERS.get(family,
-                                                          _FAMILY_TIERS['unknown']))
+        effective, wire = 'auto', auto_params(family)
+    else:
+        effective = clamp_effort(
+            requested, _FAMILY_TIERS.get(family, _FAMILY_TIERS['unknown']))
+        wire = lower_effort(effective, family)
+    # Where the reasoning is delivered is a separate question from how much of
+    # it to do, so it survives `auto` and rides along with every tier.
+    for key, value in output_format_params(family).items():
+        if key == 'extra_body':
+            _merge_extra_body(wire, value)
+        else:
+            wire.setdefault(key, value)
     return {
         'family': family,
         'requested': requested,
         'effective': effective,
-        'params': _drop_conflicts(lower_effort(effective, family), existing),
+        'params': _drop_conflicts(wire, existing),
         'extra_hint': FAMILY_EXTRA_HINTS.get(family, ''),
     }
 

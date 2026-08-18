@@ -179,14 +179,29 @@ def test_openai_off_is_the_none_tier():
 
 
 def test_minimax_on_means_adaptive():
+    """`adaptive`, not `enabled` — MiniMax's enum is exactly
+    ``["disabled", "adaptive"]`` and `enabled` appears nowhere in its docs."""
     got = T.plan('high', base_url='https://api.minimaxi.com/v1')
-    assert got['params'] == {
-        'extra_body': {
-            'thinking': {
-                'type': 'adaptive'
-            }
-        }
-    }
+    assert got['params']['extra_body']['thinking'] == {'type': 'adaptive'}
+
+
+def test_minimax_always_asks_for_the_reasoning_to_be_split_out():
+    """Its native format inlines reasoning into the answer as `<think>…</think>`
+    and does not read a separate `reasoning_content` back — so replaying one, as
+    we do, is a no-op there (probed 2026-08-18: identical to discarding it).
+    `reasoning_split` is the format its docs recommend and the only one where
+    our replay shape means anything. It says nothing about depth, so it rides
+    along with `auto` and with every tier — including `off`, where there is
+    simply no reasoning to split."""
+    for effort in ('auto', 'off', 'low', 'max'):
+        got = T.plan(effort, base_url='https://api.minimaxi.com/v1')
+        assert got['params']['extra_body']['reasoning_split'] is True
+
+    # Nobody else gets it: third-party hosts of the same weights reject the
+    # parameter outright, and they are a different family here.
+    for base in ('https://api-inference.modelscope.cn/v1',
+                 'https://openrouter.ai/api/v1'):
+        assert 'reasoning_split' not in str(T.plan('auto', base_url=base))
 
 
 def test_openrouter_uses_its_own_unified_object():
