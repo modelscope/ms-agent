@@ -82,3 +82,43 @@ class TestMatchWithContent:
             {'path': ['/tmp/a', '/tmp/b']},
         )
         assert isinstance(result, bool)
+
+
+class TestBareCommandVariant:
+    """``<cmd> *`` means "that command with any arguments" — and with NONE is a
+    case of that. fnmatch wants the space plus a character, so bare ``curl``
+    slipped past the very ask rule written to gate it, and a remembered
+    ``whoami *`` failed to match the ``whoami`` it was generated from."""
+
+    TOOL = 'code_executor---shell_executor'
+
+    def _m(self, pattern: str, command: str) -> bool:
+        return PermissionMatcher().match_with_content(
+            f'{self.TOOL}:{pattern}', self.TOOL, {'command': command})
+
+    def test_argument_less_command_matches(self):
+        assert self._m('whoami *', 'whoami')
+        assert self._m('curl *', 'curl')
+
+    def test_command_with_arguments_still_matches(self):
+        assert self._m('whoami *', 'whoami --version')
+        assert self._m('curl *', 'curl https://example.com')
+
+    def test_does_not_match_a_longer_command_name(self):
+        assert not self._m('ls *', 'lsof')
+
+    def test_applies_per_alternative(self):
+        assert self._m('ls *|cat *', 'cat')
+        assert not self._m('ls *|cat *', 'rm')
+
+    def test_leaves_non_space_star_patterns_alone(self):
+        # `dd if=*` / `rm -rf /*`: the trailing component is meaningful, not an
+        # optional argument list, so the bare command must NOT match.
+        assert self._m('dd if=*', 'dd if=/dev/zero')
+        assert not self._m('dd if=*', 'dd')
+        assert not self._m('rm -rf /*', 'rm')
+
+    def test_path_patterns_unaffected(self):
+        assert not PermissionMatcher().match_with_content(
+            'file_system---read_file:~/.ssh/*', 'file_system---read_file',
+            {'path': '~/.ssh'})

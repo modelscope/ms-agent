@@ -37,6 +37,27 @@ def _extract_content(tool_name: str, tool_args: dict[str, Any]) -> str | None:
     return str(val) if val is not None else None
 
 
+def _with_bare_command_variants(content_pattern: str) -> str:
+    """Add an argument-less variant for every ``<cmd> *`` alternative.
+
+    ``curl *`` means "the curl command with any arguments" — and running it with
+    NONE is a case of that. fnmatch disagrees: it wants the space and at least
+    one character after it, so bare ``curl`` slipped past a rule written to gate
+    exactly that, and a remembered ``whoami *`` failed to match the very
+    ``whoami`` it was generated from.
+
+    Only the space-star idiom of shell commands is extended. Path patterns end
+    in ``/*`` (``~/.ssh/*``) or ``=*`` (``dd if=*``) and are left alone — there
+    the trailing component is meaningful, not an optional argument list.
+    """
+    alts = [a.strip() for a in content_pattern.split('|')]
+    out = list(alts)
+    for alt in alts:
+        if alt.endswith(' *'):
+            out.append(alt[:-2].rstrip())
+    return '|'.join(p for p in out if p)
+
+
 class PermissionMatcher:
     """Wildcard matcher for permission rules, shared by both SafetyGuard and PermissionEnforcer."""
 
@@ -77,4 +98,4 @@ class PermissionMatcher:
         if content is None:
             return False
 
-        return self.match(content_pattern, content)
+        return self.match(_with_bare_command_variants(content_pattern), content)
