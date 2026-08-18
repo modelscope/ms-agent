@@ -34,6 +34,16 @@ class InputSource(Protocol):
     async def read_prompt(self, prompt: str = '>>> ') -> str:
         ...
 
+    # Optional: sources that can carry non-text parts (a WebUI composer with
+    # image attachments) also implement
+    #
+    #     def take_attachments(self) -> list[dict]: ...
+    #
+    # returning the parts belonging to the prompt just read and clearing them.
+    # It is intentionally NOT part of this Protocol's required surface so every
+    # existing text-only source stays conformant; ``InteractiveSession``
+    # feature-detects it.
+
 
 class StdinInputSource:
     """Default input source: blocking ``input()`` off the event loop.

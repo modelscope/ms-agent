@@ -20,6 +20,8 @@ from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback, callbacks_mapping
 from ms_agent.knowledge_search import SirchmunkSearch
 from ms_agent.llm.llm import LLM
+from ms_agent.llm.message_text import (append_text, flatten_message_text,
+                                       prepend_text)
 from ms_agent.llm.utils import Message, ToolResult
 from ms_agent.memory import Memory, get_memory_meta_safe, memory_mapping
 from ms_agent.memory.memory_manager import SharedMemoryManager
@@ -314,6 +316,13 @@ class LLMAgent(Agent):
         # the terminal — the enabling seam for the native (route-A) lifecycle.
         # When None, the legacy sync console_io / input() path is used.
         self._input_source = kwargs.get('input_source', None)
+
+        # Attachments belonging to the FIRST user turn, parked between the
+        # interactive read in run_loop and create_messages (whose input is a
+        # bare string). Cleared as soon as create_messages consumes them, so a
+        # later turn can never inherit the first turn's images. Mid-conversation
+        # turns bypass this entirely — InputCallback builds their Message.
+        self._pending_attachments: List[Dict[str, Any]] = []
 
         # Personalization (lazy-loaded in _build_personalization_section)
         self._profile_manager = ProfileManager()
@@ -665,7 +674,7 @@ class LLMAgent(Agent):
         self.log_output(f'Agent {self.tag} task beginning.')
         if self.resolve_enable_snapshots(self.config):
             _user_content = next(
-                ((getattr(m, 'content', '') or '')[:80]
+                (flatten_message_text(getattr(m, 'content', ''))[:80]
                  for m in messages if getattr(m, 'role', '') == 'user'),
                 '',
             )
@@ -759,6 +768,10 @@ class LLMAgent(Agent):
                 tool_detail=tool_call_result_format.tool_detail,
                 hook_attachments=tool_call_result_format.hook_attachments,
                 is_error=tool_call_result_format.is_error,
+                # Images the tool produced. Carried on the tool Message so the
+                # transports can put them in the IMAGE channel; the text channel
+                # keeps only the short status.
+                attachments=tool_call_result_format.attachments,
             )
 
             if _new_message.tool_call_id is None:
@@ -1245,8 +1258,17 @@ class LLMAgent(Agent):
             ), f'inputs can be either a list or a string, but current is {type(messages)}'
             messages = [
                 Message(role='system', content=''),
-                Message(role='user', content=messages or self.query),
+                Message(
+                    role='user',
+                    content=messages or self.query,
+                    # Attachments for the FIRST turn. The interactive read that
+                    # produced this prompt happens in run_loop, which stashes
+                    # them here — the string-in signature cannot carry them, and
+                    # a session's first message is exactly when a user attaches
+                    # something.
+                    attachments=self._pending_attachments or []),
             ]
+        self._pending_attachments = []
 
         messages[0].content = self._build_system_content()
 
@@ -1437,8 +1459,11 @@ class LLMAgent(Agent):
         last = messages[-1]
         if getattr(last, 'role', None) != 'user':
             return
-        content = last.content
-        if not isinstance(content, str):
+        # Read the text out of whatever shape the content is in, rather than
+        # bailing on a block list: a multimodal turn that silently got no memory
+        # recall is a far worse outcome than one whose query came from its text.
+        content = flatten_message_text(last.content)
+        if not content:
             return
         # The turn may already carry other <system-reminder> blocks (skill
         # update notice prefixed by the host, prompt-files update notice) —
@@ -1462,7 +1487,9 @@ class LLMAgent(Agent):
             if block:
                 if block in content:
                     return  # marker-less backend, identical block attached
-                last.content = f'{last.content}\n\n{block}'
+                # append_text keeps the shape: a str grows, a block list gains a
+                # trailing text block (concatenating onto a list would raise).
+                last.content = append_text(last.content, block)
                 return
 
     # ── prompt-files update notices (hot-reload perception) ──────────────
@@ -1535,8 +1562,7 @@ class LLMAgent(Agent):
         if not messages:
             return None
         last = messages[-1]
-        if getattr(last, 'role', None) != 'user' or not isinstance(
-                last.content, str):
+        if getattr(last, 'role', None) != 'user':
             return None
 
         baseline = self._prompt_surface
@@ -1559,7 +1585,10 @@ class LLMAgent(Agent):
             return None
 
         notice = workspace_files.render_update_notice(changed)
-        last.content = f'{notice}\n\n{last.content}'
+        # Shape-preserving prepend; on a block list the notice becomes the first
+        # text block, which also matches the providers' label-before-payload
+        # preference.
+        last.content = prepend_text(last.content, notice)
         return lambda: self._commit_prompt_surface(current)
 
     async def condense_memory(self, messages: List[Message]) -> List[Message]:
@@ -2222,6 +2251,12 @@ class LLMAgent(Agent):
         d: Dict[str, Any] = {'role': msg.role, 'content': msg.content or ''}
         if msg.tool_calls:
             d['tool_calls'] = msg.tool_calls
+        # Image refs must survive to disk: the SessionLog is the source of truth
+        # a resumed session rebuilds context from, so dropping them here means
+        # attached images vanish on reload (and on every context reassembly).
+        # They are references, not bytes — cheap to persist.
+        if getattr(msg, 'attachments', None):
+            d['attachments'] = msg.attachments
         if hasattr(msg, 'tool_call_id') and msg.tool_call_id:
             d['tool_call_id'] = msg.tool_call_id
         if hasattr(msg, 'name') and msg.name:
@@ -2369,6 +2404,10 @@ class LLMAgent(Agent):
                             await self.cleanup_tools()
                             return
                         messages = turn.text
+                        # create_messages() below builds the user Message from
+                        # this string, so hand the turn's attachments over
+                        # out-of-band rather than widening that signature.
+                        self._pending_attachments = turn.attachments
                 else:
                     # Non-interactive with no task: accept piped stdin as the
                     # query; otherwise fail clearly instead of blocking input().

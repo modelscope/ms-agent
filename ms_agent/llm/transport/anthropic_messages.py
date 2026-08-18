@@ -15,9 +15,11 @@ import inspect
 import json
 from typing import Any, Dict, Generator, Iterator, List, Optional, Union
 
+from ms_agent.llm import multimodal
 from ms_agent.llm.thinking import apply_effort
 from ms_agent.llm.transport.base import Transport
 from ms_agent.llm.utils import Message, Tool, ToolCall
+from ms_agent.llm.vision import create_with_vision_fallback
 from ms_agent.utils import assert_package_exist
 
 
@@ -29,12 +31,19 @@ class AnthropicMessagesTransport(Transport):
         api_key: Optional[str],
         base_url: str,
         generation_config: Optional[Dict] = None,
+        vision: Optional['multimodal.VisionOptions'] = None,
+        vision_supported: bool = True,
     ):
         assert_package_exist('anthropic', 'anthropic')
         import anthropic
 
         if not api_key:
             raise ValueError('Anthropic API key is required.')
+
+        # See OpenAICompatTransport for why these are explicit params rather
+        # than generation_config keys.
+        self._vision = vision or multimodal.VisionOptions()
+        self._vision_supported = bool(vision_supported)
 
         self.model = model
         self.client = anthropic.Anthropic(api_key=api_key, base_url=base_url)
@@ -84,6 +93,55 @@ class AnthropicMessagesTransport(Transport):
                 return {}
         return value if value is not None else {}
 
+    @staticmethod
+    def _blocks_from_structured(content: List[Any]) -> List[Dict[str, Any]]:
+        """Translate an OpenAI-shaped content array to Anthropic blocks.
+
+        Only reachable when a caller hands us structured content directly; our
+        own attachment path builds Anthropic blocks natively. Unknown block
+        kinds degrade to their text payload rather than being dropped silently.
+        """
+        out: List[Dict[str, Any]] = []
+        for item in content:
+            if not isinstance(item, dict):
+                out.append({'type': 'text', 'text': str(item)})
+                continue
+            kind = item.get('type')
+            if kind == 'text':
+                text = str(item.get('text') or '')
+                if text:
+                    out.append({'type': 'text', 'text': text})
+            elif kind == 'image':  # already Anthropic-shaped
+                out.append(item)
+            elif kind in ('image_url', 'input_image'):
+                url = item.get('image_url')
+                url = url.get('url') if isinstance(url, dict) else url
+                url = str(url or '')
+                if url.startswith('data:') and ',' in url:
+                    header, data = url.split(',', 1)
+                    media_type = header[5:].split(';')[0] or 'image/png'
+                    out.append({
+                        'type': 'image',
+                        'source': {
+                            'type': 'base64',
+                            'media_type': media_type,
+                            'data': data,
+                        },
+                    })
+                elif url:
+                    out.append({
+                        'type': 'image',
+                        'source': {
+                            'type': 'url',
+                            'url': url
+                        },
+                    })
+            else:
+                text = str(item.get('text') or '')
+                if text:
+                    out.append({'type': 'text', 'text': text})
+        return out
+
     def _format_input_message(self,
                               messages: List[Message]) -> List[Dict[str, Any]]:
         formatted_messages = []
@@ -107,7 +165,26 @@ class AnthropicMessagesTransport(Transport):
                 if signature:
                     thinking_block['signature'] = signature
                 content.append(thinking_block)
-            if msg.content:
+            attachments = getattr(msg, 'attachments', None) or []
+            if attachments and msg.role == 'user':
+                # Image refs -> native image blocks (image-then-text, each
+                # introduced by its own "Image N: <file>" label).
+                built = multimodal.anthropic_content(
+                    msg.content if isinstance(msg.content, str) else '',
+                    attachments,
+                    self._vision,
+                    vision_supported=self._vision_supported)
+                if isinstance(built, list):
+                    content.extend(built)
+                elif built:
+                    content.append({'type': 'text', 'text': str(built)})
+            elif isinstance(msg.content, list):
+                # Already-structured content (an image_url list handed in by an
+                # SDK caller, or our own blocks on a replayed turn). Passing it
+                # to _as_text would JSON-serialize the whole array into ONE text
+                # block, silently destroying every image; convert instead.
+                content.extend(self._blocks_from_structured(msg.content))
+            elif msg.content:
                 content.append({
                     'type': 'text',
                     'text': self._as_text(msg.content)
@@ -130,10 +207,24 @@ class AnthropicMessagesTransport(Transport):
             if msg.role == 'tool':
                 tool_use_id = msg.tool_call_id or (pending_tool_ids.pop(0)
                                                    if pending_tool_ids else '')
+                # This protocol DOES allow image blocks inside tool_result, so a
+                # tool's images stay attached to the call that produced them —
+                # better than the hoist the OpenAI transports are forced into,
+                # because the association survives regardless of message order.
+                result_content: Any = self._as_text(msg.content)
+                image_blocks = multimodal.anthropic_tool_result_blocks(
+                    attachments,
+                    self._vision,
+                    vision_supported=self._vision_supported)
+                if image_blocks:
+                    text = result_content
+                    result_content = [*image_blocks]
+                    if text:
+                        result_content.append({'type': 'text', 'text': text})
                 result_block = {
                     'type': 'tool_result',
                     'tool_use_id': tool_use_id,
-                    'content': self._as_text(msg.content),
+                    'content': result_content,
                 }
                 # Anthropic requires ALL tool_results for one assistant turn's
                 # tool_use blocks in the SINGLE user message immediately after it.
@@ -193,9 +284,39 @@ class AnthropicMessagesTransport(Transport):
             params['tools'] = tools
         params.update(kwargs)
 
-        if stream:
-            return self.client.messages.stream(**params)
-        return self.client.messages.create(**params)
+        # Same per-model hard-400 hazard as the OpenAI-family transports: a model
+        # that cannot accept images rejects the whole request rather than
+        # ignoring the blocks. Retry once with the images folded into text and
+        # remember the model. Symmetric with OpenAICompatTransport so behaviour
+        # does not depend on which protocol a gateway happens to speak.
+        sent_images = any(
+            multimodal.has_image_blocks(m.get('content'))
+            for m in formatted_messages if isinstance(m, dict))
+
+        def _create(messages, **kw):
+            call = dict(kw)
+            call['messages'] = messages
+            # `model` is a named parameter of create_with_vision_fallback (it
+            # keys the per-model refusal memo), so it is consumed there rather
+            # than forwarded — the API call has to name it again itself.
+            call['model'] = self.model
+            if stream:
+                return self.client.messages.stream(**call)
+            return self.client.messages.create(**call)
+
+        # Everything except `model` and `messages`, which the wrapper takes as
+        # named arguments; leaving either in `params` would collide with them.
+        rest = {
+            k: v
+            for k, v in params.items() if k not in ('model', 'messages')
+        }
+        return create_with_vision_fallback(
+            _create,
+            base_url=getattr(self.client, 'base_url', ''),
+            model=self.model,
+            messages=params['messages'],
+            sent_images=sent_images,
+            **rest)
 
     def generate(
         self,

@@ -58,4 +58,8 @@ class InputCallback(Callback):
             runtime.should_stop = True
             return
         runtime.should_stop = False
-        messages.append(Message(role='user', content=turn.text))
+        messages.append(
+            Message(
+                role='user',
+                content=turn.text,
+                attachments=turn.attachments))

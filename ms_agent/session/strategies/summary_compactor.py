@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional, Tuple
 
+from ms_agent.llm import multimodal
+from ms_agent.llm.message_text import flatten_message_text
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
@@ -41,13 +43,16 @@ def _estimate_tokens(text: str) -> int:
 
 
 def _estimate_message_tokens(msg: Dict[str, Any]) -> int:
-    """Heuristic token count from message body (no API usage fields)."""
+    """Heuristic token count from message body (no API usage fields).
+
+    Image blocks are charged a flat per-image cost rather than having their
+    base64 measured as text — see the twin in ``tool_pruner`` for the numbers and
+    for why over-counting here does not self-correct.
+    """
     total = 0
     content = msg.get('content', '')
     if content:
-        if not isinstance(content, str):
-            content = json.dumps(content, ensure_ascii=False)
-        total += _estimate_tokens(content)
+        total += multimodal.estimate_content_tokens(content, _estimate_tokens)
     tc = msg.get('tool_calls')
     if tc:
         total += _estimate_tokens(json.dumps(tc))
@@ -158,8 +163,11 @@ class SummaryCompactor:
         conv_parts: List[str] = []
         for msg in messages:
             role = msg.get('role', '?').upper()
-            content = msg.get('content', '')
-            if isinstance(content, str) and content:
+            # Reduce a block list to its text instead of skipping the message:
+            # a turn dropped here is invisible to the summary that decides what
+            # survives compaction.
+            content = flatten_message_text(msg.get('content', ''))
+            if content:
                 conv_parts.append(f'{role}: {content[:char_limit]}')
 
         conversation = '\n'.join(conv_parts)
