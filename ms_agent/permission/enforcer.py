@@ -14,7 +14,7 @@ from typing import Any, Literal
 from .config import PermissionConfig
 from .handler import (AutoPermissionHandler, PermissionAction,
                       PermissionHandler, PermissionResponse)
-from .matcher import PermissionMatcher
+from .matcher import CONTENT_SEP, PermissionMatcher
 from .memory import PermissionMemory
 from .suggestions import generate_suggestions
 
@@ -84,6 +84,15 @@ class PermissionEnforcer:
                 return None
             return await self._handler.ask(**kwargs)
 
+    def _can_ask_human(self) -> bool:
+        """Whether a real person can actually answer a prompt right now.
+
+        ``AutoPermissionHandler`` is the stand-in used headlessly and it always
+        answers "allow", so treating it as an asker would turn every ask rule
+        into a no-op.
+        """
+        return not isinstance(self._handler, AutoPermissionHandler)
+
     def _handler_accepts(self, param: str) -> bool:
         try:
             sig = inspect.signature(self._handler.ask)
@@ -127,19 +136,41 @@ class PermissionEnforcer:
             )
             return self._process_response(response, tool_name, tool_args)
 
+        # 1b. Ask rules → confirm, in EVERY mode. Until now this config existed
+        # but only the hook path consulted it, so an ask rule was silently
+        # inert on the ordinary route. It outranks the mode and the whitelist —
+        # that is the whole point of "ask even under full access" — but not the
+        # user's own remembered answer below, so consenting once still sticks.
+        ask_rule = next(
+            (p for p in self._config.ask_rules
+             if self._matcher.match_with_content(p, tool_name, tool_args)),
+            None,
+        )
+        if ask_rule and not self._can_ask_human():
+            # Headless (AutoPermissionHandler allows everything): there is
+            # nobody to confirm, and silently running the thing an ask rule was
+            # written to gate would be worse than refusing.
+            return PermissionDecision(
+                action='deny',
+                reason=(f'Ask rule matched: {ask_rule}; no interactive '
+                        'handler is attached to confirm it'),
+            )
+
         # 2. Auto / strict mode → allow (safety handled by SafetyGuard + ask_resolver)
-        if self._config.mode in ('auto', 'strict'):
+        if self._config.mode in ('auto', 'strict') and not ask_rule:
             return PermissionDecision(
                 action='allow',
                 reason=f'{self._config.mode.capitalize()} mode')
 
         # 3. Whitelist → allow
-        for pattern in self._config.whitelist:
-            if self._matcher.match_with_content(pattern, tool_name, tool_args):
-                return PermissionDecision(
-                    action='allow',
-                    reason=f'Allowed by whitelist rule: {pattern}',
-                )
+        if not ask_rule:
+            for pattern in self._config.whitelist:
+                if self._matcher.match_with_content(pattern, tool_name,
+                                                    tool_args):
+                    return PermissionDecision(
+                        action='allow',
+                        reason=f'Allowed by whitelist rule: {pattern}',
+                    )
 
         # 4. Memory (session + persistent) → allow
         if self._memory.matches(tool_name, tool_args):
@@ -160,6 +191,24 @@ class PermissionEnforcer:
 
         return self._process_response(response, tool_name, tool_args)
 
+    def _remember_pattern(self, response: PermissionResponse, tool_name: str,
+                          tool_args: dict[str, Any]) -> str:
+        """What to remember when the caller named no pattern of its own.
+
+        The bare tool name means "allow this TOOL" — for the shell that is
+        every future command, so approving ``ls -la`` once silently handed over
+        unrestricted shell access. Prefer instead the most specific generated
+        suggestion that is no broader than the tool itself (``<tool>:ls *``);
+        a suggestion that WIDENS the scope (``<server>---*``) is not a fallback
+        anyone asked for.
+        """
+        if response.pattern:
+            return response.pattern
+        for s in generate_suggestions(tool_name, tool_args):
+            if s == tool_name or s.startswith(f'{tool_name}{CONTENT_SEP}'):
+                return s
+        return tool_name
+
     def _process_response(
         self,
         response: PermissionResponse | None,
@@ -179,7 +228,7 @@ class PermissionEnforcer:
                 action='allow', reason='User allowed once')
 
         if response.action == PermissionAction.ALLOW_SESSION:
-            pattern = response.pattern or tool_name
+            pattern = self._remember_pattern(response, tool_name, tool_args)
             self._memory.add_session(pattern)
             return PermissionDecision(
                 action='allow',
@@ -187,7 +236,7 @@ class PermissionEnforcer:
             )
 
         if response.action == PermissionAction.ALLOW_ALWAYS:
-            pattern = response.pattern or tool_name
+            pattern = self._remember_pattern(response, tool_name, tool_args)
             self._memory.add(pattern, scope='project', source='user')
             return PermissionDecision(
                 action='allow',

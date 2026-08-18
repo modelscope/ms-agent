@@ -285,21 +285,45 @@ class TestWorkspaceRoot:
         assert r.action == 'deny'
 
 
-class TestDefaultBlacklist:
-    """PermissionConfig includes default network command blacklist."""
+class TestDefaultNetworkRules:
+    """Network-egress commands are CONFIRMED by default, not refused.
 
-    def test_default_blacklist_contains_curl(self):
+    They used to be default BLACKLIST entries, which nothing can override — so
+    an agent asked to fetch a URL reported it had been blocked and the user had
+    no way to permit it, in any mode. They are ask rules now, and the blacklist
+    ships empty: it is the wrong tool for "risky, ask first"."""
+
+    def test_curl_is_an_ask_rule_not_a_blacklist_entry(self):
         from ms_agent.permission.config import PermissionConfig
-        config = PermissionConfig()
-        assert any('curl' in p for p in config.blacklist)
+        config = PermissionConfig.from_dict({})
+        assert any('curl' in p for p in config.ask_rules)
+        assert not any('curl' in p for p in config.blacklist)
 
-    def test_default_blacklist_contains_wget(self):
+    def test_wget_is_an_ask_rule(self):
         from ms_agent.permission.config import PermissionConfig
-        config = PermissionConfig()
-        assert any('wget' in p for p in config.blacklist)
+        config = PermissionConfig.from_dict({})
+        assert any('wget' in p for p in config.ask_rules)
 
-    def test_user_blacklist_merged(self):
+    def test_default_blacklist_is_empty(self):
+        from ms_agent.permission.config import PermissionConfig
+        assert PermissionConfig().blacklist == ()
+
+    def test_user_blacklist_kept_alongside_default_ask_rules(self):
         from ms_agent.permission.config import PermissionConfig
         config = PermissionConfig.from_dict({'blacklist': ['custom---tool']})
-        assert any('curl' in p for p in config.blacklist)
-        assert 'custom---tool' in config.blacklist
+        assert config.blacklist == ('custom---tool', )
+        assert any('curl' in p for p in config.ask_rules)
+
+    def test_user_ask_rules_merged_with_defaults(self):
+        from ms_agent.permission.config import PermissionConfig
+        config = PermissionConfig.from_dict({'ask_rules': ['custom---tool']})
+        assert 'custom---tool' in config.ask_rules
+        assert any('curl' in p for p in config.ask_rules)
+
+    def test_allow_network_drops_the_default_ask_rules(self):
+        from ms_agent.permission.config import PermissionConfig
+        config = PermissionConfig.from_dict({
+            'allow_network': True,
+            'ask_rules': ['custom---tool'],
+        })
+        assert config.ask_rules == ('custom---tool', )

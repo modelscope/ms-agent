@@ -88,7 +88,18 @@ class SafetyConfig:
         )
 
 
-_DEFAULT_BLACKLIST: tuple[str, ...] = (
+#: Nothing by default. A blacklist entry can never be overridden — not by the
+#: mode, not by a whitelist, not by the user answering a prompt — so it is the
+#: wrong tool for "risky, ask first". The network-egress commands below used to
+#: live here and were simply unusable: an agent asked to run ``curl`` reported
+#: that it had been blocked and there was no way for the user to permit it.
+_DEFAULT_BLACKLIST: tuple[str, ...] = ()
+
+#: Commands that must be CONFIRMED rather than refused. Unlike the mode-level
+#: default these hold in every mode, including full-access: reaching the network
+#: or another host is worth one deliberate click even from a user who has
+#: otherwise waved the agent through. ``allow_network: true`` drops them.
+_DEFAULT_ASK_RULES: tuple[str, ...] = (
     'code_executor---shell_executor:curl *',
     'code_executor---shell_executor:wget *',
     'code_executor---shell_executor:ssh *',
@@ -105,7 +116,10 @@ class PermissionConfig:
     mode: Literal['auto', 'strict', 'interactive'] = 'auto'
     whitelist: tuple[str, ...] = ()
     blacklist: tuple[str, ...] = _DEFAULT_BLACKLIST
-    ask_rules: tuple[str, ...] = ()
+    # Defaulted here as well as in from_dict: a config with no ``permission``
+    # section at all takes the early return below, and the network commands
+    # must still be confirmed there.
+    ask_rules: tuple[str, ...] = _DEFAULT_ASK_RULES
     safety: SafetyConfig = SafetyConfig()
 
     @classmethod
@@ -119,18 +133,19 @@ class PermissionConfig:
         _MODE_ALIASES = {'restricted': 'interactive'}
         mode = _MODE_ALIASES.get(raw_mode, raw_mode)
         whitelist = tuple(d.get('whitelist', ()))
-        ask_rules = tuple(d.get('ask_rules', ()))
+        user_ask_rules = tuple(d.get('ask_rules', ()))
         user_blacklist = tuple(d.get('blacklist', ()))
-        # The default blacklist blocks network-egress shell commands
-        # (curl/wget/ssh/...). ``allow_network: true`` (or legacy
-        # ``no_default_blacklist``) opts out of that secure default; the
-        # user's own blacklist entries still apply.
+        # Network-egress shell commands (curl/wget/ssh/...) are confirmed, not
+        # refused. ``allow_network: true`` (or legacy ``no_default_blacklist``)
+        # opts out of that confirmation; the user's own rules still apply.
         allow_network = bool(
             d.get('allow_network', False)
             or d.get('no_default_blacklist', False))
-        base_blacklist = () if allow_network else _DEFAULT_BLACKLIST
-        blacklist = base_blacklist + tuple(
-            p for p in user_blacklist if p not in base_blacklist)
+        base_ask = () if allow_network else _DEFAULT_ASK_RULES
+        ask_rules = base_ask + tuple(
+            p for p in user_ask_rules if p not in base_ask)
+        blacklist = _DEFAULT_BLACKLIST + tuple(
+            p for p in user_blacklist if p not in _DEFAULT_BLACKLIST)
 
         safety_raw = d.get('safety_rules', {})
         # Merge directory configs from top level into safety config
