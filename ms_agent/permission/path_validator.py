@@ -14,6 +14,10 @@ _CONSECUTIVE_SLASHES = re.compile(r'[/\\]+')
 _WINDOWS_DRIVE_ROOT = re.compile(r'^[A-Za-z]:/?$')
 _WINDOWS_DRIVE_CHILD = re.compile(r'^[A-Za-z]:/[^/]+$')
 _ROOT_CHILD = re.compile(r'^/[^/]+$')
+#: A dangerous-removal entry that is nothing but separators and stars (``*``,
+#: ``/*``). Meaningful as a literal argument, useless as a glob: fnmatch's ``*``
+#: crosses ``/``, so such an entry matches every path in existence.
+_WILDCARD_ONLY = re.compile(r'^[/\\*]+$')
 
 
 @dataclass(frozen=True)
@@ -182,35 +186,44 @@ def is_dangerous_removal_path(
 
     ``extra_patterns`` are configurable (``safety_rules.dangerous_removal_paths``):
     each is expanded (``~``) and matched against the normalized path both
-    literally and as an fnmatch glob (REVIEW P1-8)."""
+    literally and as an fnmatch glob (REVIEW P1-8).
+
+    A wildcard-ONLY pattern (``*``, ``/*``) is compared literally and never as a
+    glob. Those entries exist to catch the user typing ``rm *`` — the argument
+    itself — but ``fnmatch(anything, '*')`` is unconditionally true, so as globs
+    they made EVERY path dangerous and no ``rm`` could run at all, not even
+    ``rm build/out.txt``. The literal comparison (plus the fixed checks below)
+    still catches what they were written for."""
     import fnmatch
-    normalized = _CONSECUTIVE_SLASHES.sub('/', path)
-    if normalized.endswith('/') and len(normalized) > 1:
-        normalized = normalized.rstrip('/')
+
+    def _norm(raw: str) -> str:
+        out = _CONSECUTIVE_SLASHES.sub('/', raw)
+        return out.rstrip('/') if out.endswith('/') and len(out) > 1 else out
+
+    # Judge the argument both AS WRITTEN (`~`, `*` — what the user typed, and
+    # what the pattern list is phrased in) and EXPANDED (`/Users/me` — what rm
+    # would actually delete). Checking only the written form let `rm ~` through.
+    candidates = {_norm(path), _norm(os.path.expanduser(path))}
 
     for pat in extra_patterns or ():
-        pat_expanded = _CONSECUTIVE_SLASHES.sub('/',
-                                                os.path.expanduser(str(pat)))
-        if (normalized == pat_expanded.rstrip('/')
-                or fnmatch.fnmatch(normalized, pat_expanded)):
+        raw = _norm(str(pat))
+        expanded = _norm(os.path.expanduser(str(pat)))
+        if candidates & {raw, expanded}:
+            return True
+        if _WILDCARD_ONLY.match(expanded):
+            continue
+        if any(fnmatch.fnmatch(c, expanded) for c in candidates):
             return True
 
-    if normalized == '*':
-        return True
-    if normalized.endswith('/*') or normalized.endswith('\\*'):
-        return True
-    if normalized == '/':
-        return True
-
     home = os.path.expanduser('~').replace('\\', '/')
-    if normalized == home:
-        return True
-
-    if _ROOT_CHILD.match(normalized):
-        return True
-    if _WINDOWS_DRIVE_ROOT.match(normalized):
-        return True
-    if _WINDOWS_DRIVE_CHILD.match(normalized):
-        return True
+    for normalized in candidates:
+        if normalized == '*' or normalized.endswith(('/*', '\\*')):
+            return True
+        if normalized == '/' or normalized == home:
+            return True
+        if (_ROOT_CHILD.match(normalized)
+                or _WINDOWS_DRIVE_ROOT.match(normalized)
+                or _WINDOWS_DRIVE_CHILD.match(normalized)):
+            return True
 
     return False

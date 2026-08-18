@@ -327,3 +327,44 @@ class TestDefaultNetworkRules:
             'ask_rules': ['custom---tool'],
         })
         assert config.ask_rules == ('custom---tool', )
+
+
+class TestOrdinaryRemovalReachesTheAsk:
+    """`rm` must be CONFIRMED, not refused. SafetyGuard is the non-bypassable
+    inner layer, so a denial there cannot be overridden by the mode or by the
+    user answering a prompt — and the default `dangerous_removal_paths` list
+    made every single path "dangerous", so `rm build/out.txt` was flatly
+    refused and no removal was possible at all."""
+
+    @staticmethod
+    def _guard(tmp_path):
+        from ms_agent.permission.config import SafetyConfig
+        from ms_agent.permission.safety import SafetyGuard
+        return SafetyGuard(
+            SafetyConfig(),
+            allowed_dirs=[str(tmp_path)],
+            workspace_root=str(tmp_path),
+        )
+
+    @pytest.mark.parametrize('command', [
+        'rm probe.txt',
+        'rm -rf build',
+        'rm ./dist/bundle.js',
+    ])
+    def test_ordinary_removal_allowed_through_to_the_ask(self, tmp_path, command):
+        d = self._guard(tmp_path).check('code_executor---shell_executor',
+                                        {'command': command})
+        assert d.action == 'allow', d.reason
+
+    @pytest.mark.parametrize('command', [
+        'rm -rf /',
+        'rm -rf /*',
+        'rm *',
+        'rm ~',
+        'rm -rf /etc',
+        'rm /usr',
+    ])
+    def test_dangerous_removal_still_refused(self, tmp_path, command):
+        d = self._guard(tmp_path).check('code_executor---shell_executor',
+                                        {'command': command})
+        assert d.action == 'deny', d.reason
