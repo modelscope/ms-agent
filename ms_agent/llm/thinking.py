@@ -229,6 +229,25 @@ FAMILY_EXTRA_HINTS = {
 _EFFORT_CONFLICTS = ('thinking_budget', )
 
 
+def offered_tiers(family: str) -> Tuple[str, ...]:
+    """The tiers worth OFFERING for this endpoint, weakest to strongest.
+
+    Not the same list as ``_FAMILY_TIERS``, which answers "what will this
+    endpoint accept" — a question about avoiding 400s. This one answers "what is
+    worth showing a person", and on a switch-only endpoint that is two entries,
+    not eight. Listing a ladder where none exists is the UI promising control
+    the model does not have.
+    """
+    supported = _FAMILY_TIERS.get(family, _FAMILY_TIERS['unknown'])
+    thinking = [t for t in supported if t != 'off']
+    if len(thinking) <= 1:  # a switch, however many rungs we may send it
+        # `on` is an alias of the single thinking tier, and it is the honest
+        # word for a knob with two positions.
+        return ('auto', 'off', 'on')
+    return ('auto', ) + tuple(
+        sorted(supported, key=lambda t: EFFORT_RANKS[t]))
+
+
 def normalize_effort(raw: Any) -> Optional[str]:
     """Free-form input -> a canonical tier, ``'auto'``, or ``None`` if garbage.
 

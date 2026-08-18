@@ -528,3 +528,24 @@ def test_openrouter_style_reasoning_field_is_read():
     both.reasoning = 'proxied'
     assert _reasoning_of(both) == 'native'  # the native field wins
     assert _reasoning_of(ns()) == ''
+
+
+def test_a_switch_only_endpoint_is_not_offered_a_ladder():
+    """What we ACCEPT and what we OFFER are different questions. ModelScope's
+    gateway and MiniMax have a boolean, so listing eight rungs in the settings
+    dialog would promise control the model does not have."""
+    assert T.offered_tiers('modelscope') == ('auto', 'off', 'on')
+    assert T.offered_tiers('minimax') == ('auto', 'off', 'on')
+    assert T.offered_tiers('anthropic') == ('auto', 'off', 'on')
+    # `on` is an alias of the single thinking tier, so it round-trips.
+    assert T.normalize_effort('on') == 'high'
+    assert T.plan('on', base_url='https://api-inference.modelscope.cn/v1')[
+        'params'] == {'extra_body': {'enable_thinking': True}}
+
+
+def test_a_real_ladder_is_offered_in_full():
+    assert T.offered_tiers('zhipu') == ('auto', 'off', 'minimal', 'low',
+                                        'medium', 'high', 'xhigh', 'max')
+    # ...minus the rung DashScope rejects.
+    assert 'max' not in T.offered_tiers('dashscope')
+    assert 'xhigh' in T.offered_tiers('dashscope')
