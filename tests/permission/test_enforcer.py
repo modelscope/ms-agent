@@ -336,49 +336,67 @@ class TestNetworkCommandsAsk:
         assert r.action == 'allow'
         assert Probe.asked == 0
 
-
 class TestRememberedPatternBreadth:
-    """A caller that names no pattern used to have the BARE TOOL NAME
-    remembered — for the shell that is every future command, so approving
-    `ls -la` once handed over unrestricted shell access."""
+    """`allow_always` remembering the approval at PROJECT scope is BY DESIGN —
+    the user asked for "从此放行". What was wrong is WHAT got remembered: with no
+    pattern supplied the bare TOOL NAME was stored, and for the shell that means
+    every future command, so approving `ls -la` once permanently released the
+    entire shell — which is what made it look like the whole project had been
+    switched to full access."""
+
+    class _PatternlessAlways:
+        """A UI that answers the ask without naming a pattern — what the WebUI
+        authorization card sends."""
+
+        async def ask(self, tool_name, tool_args, context, suggestions=None):
+            return PermissionResponse(action=PermissionAction.ALLOW_ALWAYS)
 
     @pytest.mark.asyncio
     async def test_shell_remembers_the_command_not_the_whole_tool(self, tmp_path):
-        class PatternlessSession:
-            async def ask(self, tool_name, tool_args, context, suggestions=None):
-                return PermissionResponse(action=PermissionAction.ALLOW_SESSION)
-
         memory = PermissionMemory(project_path=tmp_path)
         enforcer = PermissionEnforcer(
             config=_interactive_config(),
-            handler=PatternlessSession(),
+            handler=self._PatternlessAlways(),
             memory=memory,
         )
         r = await enforcer.check('code_executor---shell_executor',
                                  {'command': 'ls -la'})
         assert r.action == 'allow'
-        # Same command family: remembered.
+        # The approved command, remembered — including with no arguments at all.
         assert memory.matches('code_executor---shell_executor',
                               {'command': 'ls /tmp'})
-        # Including with no arguments at all.
         assert memory.matches('code_executor---shell_executor',
                               {'command': 'ls'})
-        # A different command is NOT covered by approving `ls`.
+        # A DIFFERENT command is not covered by having approved `ls`.
         assert not memory.matches('code_executor---shell_executor',
                                   {'command': 'rm -rf build'})
+
+    @pytest.mark.asyncio
+    async def test_the_narrow_pattern_persists_to_the_project(self, tmp_path):
+        """The approval outliving the conversation is the FEATURE; only its
+        reach across commands was ever too wide."""
+        enforcer = PermissionEnforcer(
+            config=_interactive_config(),
+            handler=self._PatternlessAlways(),
+            memory=PermissionMemory(project_path=tmp_path),
+        )
+        await enforcer.check('code_executor---shell_executor',
+                             {'command': 'ls -la'})
+        # A fresh memory — i.e. a new conversation — reads the same file back.
+        reloaded = PermissionMemory(project_path=tmp_path)
+        assert reloaded.matches('code_executor---shell_executor',
+                                {'command': 'ls -la'})
+        assert not reloaded.matches('code_executor---shell_executor',
+                                    {'command': 'curl https://example.com'})
 
     @pytest.mark.asyncio
     async def test_argument_less_command_remembers_itself(self, tmp_path):
         """Approving bare `whoami` must cover `whoami` — the remembered pattern
         used not to match the very command it was generated from."""
-        class PatternlessSession:
-            async def ask(self, tool_name, tool_args, context, suggestions=None):
-                return PermissionResponse(action=PermissionAction.ALLOW_SESSION)
-
         memory = PermissionMemory(project_path=tmp_path)
         enforcer = PermissionEnforcer(
             config=_interactive_config(),
-            handler=PatternlessSession(),
+            handler=self._PatternlessAlways(),
             memory=memory,
         )
         await enforcer.check('code_executor---shell_executor',
@@ -390,16 +408,35 @@ class TestRememberedPatternBreadth:
     async def test_fallback_never_widens_past_the_tool(self, tmp_path):
         """`web_search` suggests a server-wide `web_search---*`; a FALLBACK must
         not be broader than the tool the user actually approved."""
-        class PatternlessSession:
-            async def ask(self, tool_name, tool_args, context, suggestions=None):
-                return PermissionResponse(action=PermissionAction.ALLOW_SESSION)
-
         memory = PermissionMemory(project_path=tmp_path)
         enforcer = PermissionEnforcer(
             config=_interactive_config(),
-            handler=PatternlessSession(),
+            handler=self._PatternlessAlways(),
             memory=memory,
         )
         await enforcer.check('web_search---search', {'query': 'x'})
         assert memory.matches('web_search---search', {'query': 'y'})
         assert not memory.matches('web_search---fetch_page', {'url': 'z'})
+
+    @pytest.mark.asyncio
+    async def test_a_caller_supplied_pattern_still_wins(self, tmp_path):
+        """A UI that DOES put the suggestion list in front of the user (the TUI)
+        keeps deciding the breadth itself — the fallback only fills a gap."""
+
+        class Chooses:
+            async def ask(self, tool_name, tool_args, context, suggestions=None):
+                return PermissionResponse(
+                    action=PermissionAction.ALLOW_ALWAYS,
+                    pattern='code_executor---shell_executor',
+                )
+
+        memory = PermissionMemory(project_path=tmp_path)
+        enforcer = PermissionEnforcer(
+            config=_interactive_config(),
+            handler=Chooses(),
+            memory=memory,
+        )
+        await enforcer.check('code_executor---shell_executor',
+                             {'command': 'ls -la'})
+        assert memory.matches('code_executor---shell_executor',
+                              {'command': 'rm -rf build'})
