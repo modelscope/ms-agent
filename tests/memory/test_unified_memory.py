@@ -1677,9 +1677,18 @@ class TestMem0BackendInternals:
             loop.close()
 
     def test_start_without_mem0_package(self):
+        # Simulate the absence for real: `sys.modules['mem0'] = None` makes
+        # `from mem0 import Memory` raise ImportError regardless of what is
+        # installed. Without this the test only passed by luck — on a machine
+        # WITH mem0, the outcome depended on whether `Memory.from_config`
+        # happened to find working credentials that earlier LLM-backed tests
+        # had exported into os.environ, which made it order-flaky.
+        import sys
+        from unittest.mock import patch
         loop = asyncio.new_event_loop()
         try:
-            loop.run_until_complete(self.backend.start())
+            with patch.dict(sys.modules, {'mem0': None}):
+                loop.run_until_complete(self.backend.start())
             assert self.backend._mem0 is None
         finally:
             loop.close()
