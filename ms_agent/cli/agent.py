@@ -385,14 +385,13 @@ class AgentCMD(CLICommand):
                 raise SystemExit(1)
             try:
                 openapi = OpenAPIClient(config=config)
-                user_data = openapi.get_current_user()
-                if not user_data:
+                username = openapi.get_current_username()
+                if not username:
                     print(
-                        'Error: failed to resolve current user: empty response from server.',
+                        'Error: failed to resolve current user: server did not '
+                        'return a username.',
                         file=sys.stderr)
                     raise SystemExit(1)
-                username = user_data.get('username') or user_data.get(
-                    'Username') or ''
             except SystemExit:
                 raise
             except Exception as e:
@@ -414,9 +413,7 @@ class AgentCMD(CLICommand):
                 from modelscope_hub._openapi import OpenAPIClient
                 try:
                     openapi = OpenAPIClient(config=config)
-                    user_data = openapi.get_current_user()
-                    username = user_data.get('username') or user_data.get(
-                        'Username') or ''
+                    username = openapi.get_current_username()
                 except Exception:
                     pass
 

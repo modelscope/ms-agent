@@ -17,7 +17,15 @@ class NanobotWorkspace(WorkspaceSpec):
     append-only event log ``memory/history.jsonl`` (the legacy ``HISTORY.md``
     was replaced by the JSONL log).  Sub-agents run as background sessions
     (no on-disk per-agent files), so this is single-agent.
+
+    Note that the install root and the data root differ by one level: the
+    files sit in ``workspace/``, not directly under ``~/.nanobot``.  Declaring
+    ``_ROOT_SUBDIRS`` lets a ``--local_dir`` pointing at the install root be
+    accepted too, which otherwise failed with "no nanobot files found".
     """
+
+    # ``.nanobot`` (install root) -> ``.nanobot/workspace`` (data root).
+    _ROOT_SUBDIRS = ('workspace', )
 
     @property
     def product_name(self) -> str:

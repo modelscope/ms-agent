@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from ms_agent.agent_hub import FRAMEWORK_REGISTRY
-from ms_agent.agent_hub._commands import build_spec
+from ms_agent.agent_hub._commands import build_spec, cmd_convert
 from ms_agent.agent_hub.frameworks.nanobot import NanobotWorkspace
 from ms_agent.agent_hub.frameworks.qoder import QoderWorkspace
 from ms_agent.agent_hub.frameworks.qwenpaw import QwenpawWorkspace
@@ -230,8 +230,11 @@ class TestAllPathPrefix(unittest.TestCase):
 
 
 class TestMsAgentWorkspace(unittest.TestCase):
-    """ms-agent is single-agent: no {name} placeholder; collects persona/
-    memory/skills/config under ~/.ms_agent."""
+    """ms-agent is single-agent: no {name} placeholder; collects the editable
+    prompt files (SOUL.md/AGENTS.md/PROFILE.md), config and skills under the
+    global home (~/.ms_agent). Runtime-only artifacts -- the builtin sidecars
+    (.soul.builtin ...), *.bak backups, and project-level memory -- are not
+    part of the portable layout and must be skipped."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -244,19 +247,23 @@ class TestMsAgentWorkspace(unittest.TestCase):
         spec = FRAMEWORK_REGISTRY["ms-agent"](agent_name="default", local_dir=self.root)
         self.assertEqual(spec.product_name, "ms-agent")
         self.assertFalse(any("{name}" in p for p in spec.patterns))
-        (self.root / "profile.md").write_text("p")
-        (self.root / "MEMORY.md").write_text("m")
-        (self.root / "facts.json").write_text("{}")
+        (self.root / "SOUL.md").write_text("# Who You Are\np")
+        (self.root / "AGENTS.md").write_text("a")
+        (self.root / "PROFILE.md").write_text("p")
         (self.root / "settings.json").write_text("{}")
-        (self.root / "skill.json").write_text("{}")
+        (self.root / "skills.json").write_text("{}")
+        # runtime-only artifacts that must NOT be collected.
+        (self.root / ".soul.builtin").write_text("x")
+        (self.root / "SOUL.md.bak").write_text("x")
         (self.root / "random.txt").write_text("x")
         (self.root / "skills" / "foo").mkdir(parents=True)
         (self.root / "skills" / "foo" / "SKILL.md").write_text("s")
         got = spec.collect()
-        for f in ("profile.md", "MEMORY.md", "facts.json", "settings.json",
-                  "skill.json", "skills/foo/SKILL.md"):
+        for f in ("SOUL.md", "AGENTS.md", "PROFILE.md", "settings.json",
+                  "skills.json", "skills/foo/SKILL.md"):
             self.assertIn(f, got)
-        self.assertNotIn("random.txt", got)
+        for f in ("random.txt", ".soul.builtin", "SOUL.md.bak"):
+            self.assertNotIn(f, got)
 
 
 class TestQwenpawConfigRoot(unittest.TestCase):
@@ -529,6 +536,135 @@ class TestFailClosedUploadSanitize(unittest.TestCase):
             rc = cmd_upload("qwenpaw", name="default", local_dir=str(ws),
                             repo="owner/broken-demo")
             self.assertEqual(rc, 1)
+
+
+class TestMsAgentSkillsGovernance(unittest.TestCase):
+    """skills.json ``disabled`` is a machine-local safety switch, not content.
+
+    Sync must move only the ``sources`` inventory: a download must never flip
+    the local enable/disable state, and an upload must never publish it.
+    """
+
+    def _spec(self, root):
+        from ms_agent.agent_hub.frameworks.ms_agent import MsAgentWorkspace
+        return MsAgentWorkspace(agent_name="default", local_dir=root)
+
+    def test_inbound_preserves_local_disabled(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "skills.json").write_text(
+                json.dumps({"sources": ["old"], "disabled": ["danger-skill"]}))
+            incoming = json.dumps(
+                {"sources": ["new"], "disabled": []}).encode()
+            out = json.loads(self._spec(root).sanitize_inbound_file(
+                "skills.json", incoming))
+            # sources sync in, but the local safety switch is preserved.
+            self.assertEqual(out["sources"], ["new"])
+            self.assertEqual(out["disabled"], ["danger-skill"])
+
+    def test_inbound_no_local_file_drops_disabled(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)  # no local skills.json
+            incoming = json.dumps(
+                {"sources": ["x"], "disabled": ["remote-switch"]}).encode()
+            out = json.loads(self._spec(root).sanitize_inbound_file(
+                "skills.json", incoming))
+            # nothing local to preserve -> the remote switch is not honored.
+            self.assertNotIn("disabled", out)
+            self.assertEqual(out["sources"], ["x"])
+
+    def test_outbound_strips_disabled(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            payload = json.dumps(
+                {"sources": ["x"], "disabled": ["secret-off"]}).encode()
+            out = json.loads(self._spec(root).sanitize_outbound_file(
+                "skills.json", payload))
+            self.assertEqual(out["sources"], ["x"])
+            self.assertNotIn("disabled", out)
+
+    def test_malformed_skills_json_passes_through(self):
+        with tempfile.TemporaryDirectory() as td:
+            spec = self._spec(Path(td))
+            raw = b'{"sources": [,,,'
+            self.assertEqual(
+                spec.sanitize_inbound_file("skills.json", raw), raw)
+            self.assertEqual(
+                spec.sanitize_outbound_file("skills.json", raw), raw)
+
+
+class TestInstallRootProbing(unittest.TestCase):
+    """``--local_dir`` may point at the install root, not just the data root.
+
+    Nanobot keeps its files in ``.nanobot/workspace/``, so passing the natural
+    ``.nanobot`` used to abort with "no nanobot files found" (users had to
+    guess the extra level). ``_ROOT_SUBDIRS`` now normalizes it. The probe is
+    deliberately conservative -- it descends only into a declared sub-path
+    that already exists, and never when the given dir holds files itself --
+    because this same path is the WRITE target for download/convert.
+    """
+
+    def _make_install(self, td, name=".nanobot"):
+        root = Path(td) / name
+        ws = root / "workspace"
+        ws.mkdir(parents=True)
+        (ws / "AGENTS.md").write_text("# Agents\n")
+        (ws / "SOUL.md").write_text("# Soul\nGOLD-SOUL\n")
+        return root, ws
+
+    def test_install_root_resolves_to_workspace(self):
+        with tempfile.TemporaryDirectory() as td:
+            root, ws = self._make_install(td)
+            spec = build_spec("nanobot", "default", str(root))
+            self.assertEqual(spec.root, ws)
+            self.assertEqual(len(spec.collect_bytes()), 2)
+
+    def test_data_root_still_works_unchanged(self):
+        with tempfile.TemporaryDirectory() as td:
+            _root, ws = self._make_install(td)
+            spec = build_spec("nanobot", "default", str(ws))
+            self.assertEqual(spec.root, ws)
+            self.assertEqual(len(spec.collect_bytes()), 2)
+
+    def test_own_files_win_over_a_nested_subdir(self):
+        """A dir holding files IS the data root, even with a ``workspace/``."""
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td) / "both"
+            (base / "workspace").mkdir(parents=True)
+            (base / "SOUL.md").write_text("# top\n")
+            spec = build_spec("nanobot", "default", str(base))
+            self.assertEqual(spec.root, base)
+
+    def test_empty_dir_is_not_redirected(self):
+        """A fresh out-dir must not be silently relocated into ``workspace/``."""
+        with tempfile.TemporaryDirectory() as td:
+            empty = Path(td) / "fresh-out"
+            empty.mkdir()
+            spec = build_spec("nanobot", "default", str(empty))
+            self.assertEqual(spec.root, empty)
+
+    def test_convert_accepts_install_root(self):
+        with tempfile.TemporaryDirectory() as td:
+            root, _ws = self._make_install(td)
+            out = Path(td) / "out"
+            rc = cmd_convert(
+                "nanobot", "ms-agent",
+                from_name="default", target_name="default",
+                local_dir=str(root), out_dir=str(out))
+            self.assertEqual(rc, 0)
+            hits = [
+                p for p in out.rglob("*")
+                if p.is_file() and "GOLD-SOUL" in p.read_text()
+            ]
+            self.assertEqual(len(hits), 1, f"persona lost: {hits}")
+
+    def test_frameworks_without_subdirs_are_untouched(self):
+        with tempfile.TemporaryDirectory() as td:
+            for fw in ("qoder", "hermes", "ms-agent", "openclaw", "qwenpaw"):
+                given = Path(td) / fw
+                given.mkdir()
+                spec = build_spec(fw, "default", str(given))
+                self.assertEqual(spec.root, given, f"{fw} root changed")
 
 
 if __name__ == "__main__":

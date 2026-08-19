@@ -28,6 +28,8 @@ from modelscope_hub.errors import APIError
 from ms_agent.agent_hub._defaults import get_defaults
 from ms_agent.agent_hub._merge import merge_resources
 
+from . import skip_if_server_rejects
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
@@ -168,8 +170,7 @@ class TestClientIntegration(unittest.TestCase):
         # Resolve the repo owner once per class so every test is self-sufficient
         # and does not depend on test_01 running first to populate username.
         if TOKEN:
-            user_data = cls.client._openapi.get_current_user()
-            cls.username = user_data.get("username") or user_data.get("Username") or ""
+            cls.username = cls.client._openapi.get_current_username()
 
     def setUp(self):
         """Throttle between tests to avoid 429 rate limiting."""
@@ -207,6 +208,7 @@ class TestClientIntegration(unittest.TestCase):
     # 03. Upload + Create (nanobot — richest file set)
     # -----------------------------------------------------------------------
     def test_06_upload_and_create(self):
+        skip_if_server_rejects("nanobot")
         from ms_agent.agent_hub._sync import push_resources
         _log_429(push_resources, self.client, self.username, AGENT_NAME, "nanobot", _to_bytes(NANOBOT_FILES))
         self.assertTrue(self.client.check_repo(self.username, AGENT_NAME))
@@ -215,6 +217,7 @@ class TestClientIntegration(unittest.TestCase):
     # 04. Repeated upload (idempotent upsert)
     # -----------------------------------------------------------------------
     def test_07_repeated_upload(self):
+        skip_if_server_rejects("nanobot")
         from ms_agent.agent_hub._sync import push_resources
         _wait_server(3)
         for i in range(2):
@@ -225,6 +228,7 @@ class TestClientIntegration(unittest.TestCase):
     # 05. Modify and re-upload
     # -----------------------------------------------------------------------
     def test_08_modify_and_reupload(self):
+        skip_if_server_rejects("nanobot")
         from ms_agent.agent_hub._sync import push_resources
         modified = dict(NANOBOT_FILES)
         modified["SOUL.md"] += "\n## Custom Section\nUser added this.\n"
@@ -235,6 +239,7 @@ class TestClientIntegration(unittest.TestCase):
     # 06. List files
     # -----------------------------------------------------------------------
     def test_09_list_files(self):
+        skip_if_server_rejects("nanobot")
         _wait_server(5)
         files = []
         for attempt in range(5):
@@ -259,6 +264,7 @@ class TestClientIntegration(unittest.TestCase):
     # 07. Download files
     # -----------------------------------------------------------------------
     def test_11_download_files(self):
+        skip_if_server_rejects("nanobot")
         self.assertTrue(self.file_list, "file_list should be populated by test_09")
         for fp in self.file_list:
             content = self.client.download_repo_file(self.username, AGENT_NAME, fp)
@@ -281,6 +287,7 @@ class TestClientIntegration(unittest.TestCase):
     # 08. Repeated download (idempotent)
     # -----------------------------------------------------------------------
     def test_14_repeated_download(self):
+        skip_if_server_rejects("nanobot")
         self.assertTrue(self.file_list)
         target = self.file_list[0]
         c1 = self.client.download_repo_file(self.username, AGENT_NAME, target)
@@ -291,6 +298,7 @@ class TestClientIntegration(unittest.TestCase):
     # 09. E2E roundtrip
     # -----------------------------------------------------------------------
     def test_15_e2e_roundtrip(self):
+        skip_if_server_rejects("nanobot")
         from ms_agent.agent_hub._sync import push_resources
         _log_429(push_resources, self.client, self.username, AGENT_NAME, "nanobot", _to_bytes(NANOBOT_FILES))
         _wait_server(5)
@@ -316,6 +324,7 @@ class TestClientIntegration(unittest.TestCase):
         from ms_agent.agent_hub._sync import push_resources
         for fw, files in ALL_FRAMEWORK_FILES.items():
             with self.subTest(framework=fw):
+                skip_if_server_rejects(fw)
                 agent = f"{AGENT_NAME}-{fw}"
                 try:
                     _log_429(push_resources, self.client, self.username, agent, fw, _to_bytes(files))
@@ -330,6 +339,7 @@ class TestClientIntegration(unittest.TestCase):
         from ms_agent.agent_hub._sync import push_resources
         for source_fw, target_fw in CONVERT_PAIRS:
             with self.subTest(pair=f"{source_fw}->{target_fw}"):
+                skip_if_server_rejects(source_fw, target_fw)
                 source_files = ALL_FRAMEWORK_FILES[source_fw]
                 agent = f"{AGENT_NAME}-conv-{source_fw}"
 
@@ -389,6 +399,7 @@ class TestClientIntegration(unittest.TestCase):
     # 13. Edge: large file
     # -----------------------------------------------------------------------
     def test_19_large_file(self):
+        skip_if_server_rejects("nanobot")
         from ms_agent.agent_hub._sync import push_resources
         large_content = "x" * (500 * 1024)
         files = {"SOUL.md": b"# Soul\nLarge file test.\n", "data/large.txt": large_content.encode("utf-8")}
@@ -398,6 +409,7 @@ class TestClientIntegration(unittest.TestCase):
     # 14. Edge: special characters in path
     # -----------------------------------------------------------------------
     def test_20_special_chars_path(self):
+        skip_if_server_rejects("nanobot")
         from ms_agent.agent_hub._sync import push_resources
         files = {
             "SOUL.md": b"# Soul\nSpecial chars test.\n",
@@ -410,6 +422,7 @@ class TestClientIntegration(unittest.TestCase):
     # 15. Edge: visibility variants
     # -----------------------------------------------------------------------
     def test_21_visibility_variants(self):
+        skip_if_server_rejects("qoder")
         from ms_agent.agent_hub._sync import push_resources
         for vis in ["public", "private"]:
             with self.subTest(visibility=vis):
@@ -421,6 +434,7 @@ class TestClientIntegration(unittest.TestCase):
     # 16. Edge: upload then immediate download
     # -----------------------------------------------------------------------
     def test_22_immediate_download(self):
+        skip_if_server_rejects("qoder")
         from ms_agent.agent_hub._sync import push_resources
         files = {"SOUL.md": b"# Soul\nImmediate download test.\n", "README.md": b"# README\n"}
         _log_429(push_resources, self.client, self.username, AGENT_NAME, "qoder", files)
@@ -443,6 +457,7 @@ class TestClientIntegration(unittest.TestCase):
 
         for fw, markers in framework_markers.items():
             with self.subTest(framework=fw):
+                skip_if_server_rejects(fw)
                 files = ALL_FRAMEWORK_FILES[fw]
                 agent = f"{AGENT_NAME}-struct-{fw}"
 

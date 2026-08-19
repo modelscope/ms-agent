@@ -42,6 +42,25 @@ class TestSectionMergerParse(unittest.TestCase):
         self.assertEqual(len(sections), 1)
         self.assertEqual(sections[0].title, "")
 
+    def test_parse_ignores_headings_inside_html_comment(self):
+        # ms-agent's PROFILE/AGENTS templates carry example ``## `` headings
+        # INSIDE an <!-- guidance --> block. Those are not real sections; the
+        # whole comment must stay in one preamble section so the template
+        # header is never mangled when user content is folded in.
+        content = (
+            "---\nversion: 1\n---\n\n"
+            "<!--\n# About Me\n## Preferences\n## Context\n-->\n"
+            "## Real Section\nreal body")
+        sections = self.merger.parse_sections(content)
+        titles = [s.title for s in sections]
+        self.assertIn("## Real Section", titles)
+        self.assertNotIn("## Preferences", titles)
+        self.assertNotIn("## Context", titles)
+        # round-trip keeps the commented headings verbatim inside the preamble.
+        restored = self.merger.sections_to_content(sections)
+        self.assertIn("<!--", restored)
+        self.assertIn("## Preferences", restored)
+
 
 class TestSectionMergerDiff(unittest.TestCase):
     def setUp(self):
@@ -248,14 +267,19 @@ class TestResolveTargetPath(unittest.TestCase):
         self.assertEqual(_resolve_target_path("nanobot", "memory/MEMORY.md", "openclaw"), "MEMORY.md")
 
     def test_cross_product_ms_agent_profile(self):
-        # ms-agent profile.md <-> qwenpaw PROFILE.md (persona semantic group)
-        self.assertEqual(_resolve_target_path("ms-agent", "profile.md", "qwenpaw"), "PROFILE.md")
-        self.assertEqual(_resolve_target_path("qwenpaw", "PROFILE.md", "ms-agent"), "profile.md")
+        # ms-agent PROFILE.md -> qwenpaw maps to memory/USER.md (USER group).
+        # qwenpaw PROFILE.md -> ms-agent has no counterpart (narrow group),
+        # so it resolves to None (overflow into catch-all).
+        self.assertEqual(_resolve_target_path("ms-agent", "PROFILE.md", "qwenpaw"), "memory/USER.md")
+        self.assertIsNone(_resolve_target_path("qwenpaw", "PROFILE.md", "ms-agent"))
 
-    def test_cross_product_ms_agent_memory(self):
-        self.assertEqual(_resolve_target_path("ms-agent", "MEMORY.md", "openclaw"), "MEMORY.md")
-        self.assertEqual(_resolve_target_path("openclaw", "MEMORY.md", "ms-agent"), "MEMORY.md")
-        self.assertEqual(_resolve_target_path("ms-agent", "MEMORY.md", "nanobot"), "memory/MEMORY.md")
+    def test_cross_product_ms_agent_no_memory_slot(self):
+        # ms-agent has NO memory slot (memory is project-level at runtime, not
+        # part of the global home layout). An inbound MEMORY.md therefore has no
+        # semantic target and returns None, letting the merger fold it into the
+        # catch-all instructions file instead of writing a dead MEMORY.md.
+        self.assertIsNone(_resolve_target_path("openclaw", "MEMORY.md", "ms-agent"))
+        self.assertIsNone(_resolve_target_path("nanobot", "memory/MEMORY.md", "ms-agent"))
 
     def test_cross_product_no_mapping_passthrough(self):
         result = _resolve_target_path("nanobot", "skills/my-skill/SKILL.md", "openclaw")

@@ -21,6 +21,7 @@ Scenarios covered:
 Usage:
     python -m pytest tests/agent/test_watch_sync.py -v
 """
+import json
 import multiprocessing
 import os
 import shutil
@@ -42,6 +43,8 @@ from ms_agent.agent_hub._workspace import (
     ALL_AGENT_NAME,
     FRAMEWORK_REGISTRY,
 )
+
+from . import skip_if_server_rejects
 
 # ---------------------------------------------------------------------------
 # Config
@@ -85,8 +88,7 @@ def _watch_process_target(
     spec_cls = FRAMEWORK_REGISTRY[framework]
     spec = spec_cls(agent_name=agent_name, local_dir=Path(local_dir))
     client = AgentApi(server, token)
-    user_data = client._openapi.get_current_user()
-    username = user_data.get("username") or user_data.get("Username") or ""
+    username = client._openapi.get_current_username()
 
     watch_loop(spec, client, username, repo_name, framework, interval=interval, push_only=push_only)
 
@@ -115,8 +117,7 @@ class TestWatchSync(unittest.TestCase):
         from modelscope_hub.config import set_default_config
         set_default_config(None)
         cls.client = AgentApi(SERVER, TOKEN)
-        user_data = cls.client._openapi.get_current_user()
-        cls.username = user_data.get("username") or user_data.get("Username") or ""
+        cls.username = cls.client._openapi.get_current_username()
         assert cls.username, "login failed"
         print(f"    Logged in as {cls.username}")
 
@@ -163,6 +164,7 @@ class TestWatchSync(unittest.TestCase):
         that files already on the remote are updated and files removed from
         the set are deleted on the remote.
         """
+        skip_if_server_rejects(framework)
         from ms_agent.agent_hub._sync import push_resources, push_incremental
         byte_files = {
             k: (v.encode("utf-8") if isinstance(v, str) else v)
@@ -194,6 +196,7 @@ class TestWatchSync(unittest.TestCase):
 
     def _start_watch(self, framework: str, agent_name: str, local_dir: str, repo_name: str, push_only: bool = True) -> multiprocessing.Process:
         """Start a watch_loop in a child process, return the Process."""
+        skip_if_server_rejects(framework)
         p = multiprocessing.Process(
             target=_watch_process_target,
             args=(SERVER, TOKEN, self._data_dir, framework, agent_name, local_dir, repo_name, WATCH_INTERVAL, push_only),
@@ -388,6 +391,66 @@ class TestWatchSync(unittest.TestCase):
             self._cleanup(local_dir)
 
     # -----------------------------------------------------------------------
+    # 04b. ms-agent individual watch: prompt files push, MCP secrets scrubbed
+    # -----------------------------------------------------------------------
+    def test_04b_ms_agent_watch_pushes_and_scrubs_mcp(self):
+        """ms-agent (single-agent) watch pushes edits to its prompt files, and
+        the per-file outbound sanitize runs on the watch path too: an API key
+        added to ``mcp.json`` must never reach the remote (its ``env`` values
+        are blanked), while the non-secret server definition survives.
+        """
+        repo_name = f"{AGENT_PREFIX}-msagent-ind"
+        mcp = json.dumps({
+            "mcpServers": {
+                "fetch": {
+                    "command": "fetch-server",
+                    "env": {"FETCH_TOKEN": "tok-LEAKME"},
+                }
+            }
+        })
+        files = {
+            "SOUL.md": "# Soul\nMy ms-agent identity.\n",
+            "PROFILE.md": "# About Me\n- Call me: Ada\n",
+            "mcp.json": mcp,
+        }
+        local_dir = self._create_local_root("ms-agent", repo_name, files)
+        ws = build_spec("ms-agent", repo_name, local_dir).workspace_root
+        proc = None
+        try:
+            proc = self._start_watch(
+                "ms-agent", repo_name, local_dir, repo_name)
+
+            self._eventually(
+                lambda: "SOUL.md" in self.client.list_repo_files(
+                    self.username, repo_name),
+                desc="SOUL.md pushed to remote")
+
+            (ws / "PROFILE.md").write_text(
+                "# About Me\n- Call me: Ada\n- Prefers concise answers.\n",
+                encoding="utf-8")
+
+            self._eventually(
+                lambda: "concise answers" in self.client.download_repo_file(
+                    self.username, repo_name, "PROFILE.md"),
+                desc="PROFILE.md update pushed to remote")
+
+            # mcp.json travels, but stripped of its secret.
+            self._eventually(
+                lambda: "mcp.json" in self.client.list_repo_files(
+                    self.username, repo_name),
+                desc="mcp.json pushed to remote")
+            remote_mcp = json.loads(self.client.download_repo_file(
+                self.username, repo_name, "mcp.json"))
+            server = remote_mcp["mcpServers"]["fetch"]
+            self.assertEqual(server["env"]["FETCH_TOKEN"], "",
+                             "watch pushed an unscrubbed MCP secret")
+            self.assertEqual(server["command"], "fetch-server")
+        finally:
+            if proc:
+                self._stop_watch(proc)
+            self._cleanup(local_dir)
+
+    # -----------------------------------------------------------------------
     # 05. Conflict: both sides changed -> remote wins (push_only=False)
     # -----------------------------------------------------------------------
     def test_05_conflict_remote_wins(self):
@@ -567,11 +630,13 @@ class TestWatchSync(unittest.TestCase):
                 sf.unlink()
 
             proc = self._start_watch("qwenpaw", repo_name, local_dir, repo_name)
-            self._wait_cycles(2)
 
-            remote = self.client.list_repo_files(self.username, repo_name)
-            self.assertIn("SOUL.md", remote)
-            self.assertIn("PROFILE.md", remote)
+            # A freshly created repo can still be materializing, so poll instead
+            # of reading once after a fixed sleep (see ``_eventually``).
+            self._eventually(
+                lambda: {"SOUL.md", "PROFILE.md"}.issubset(
+                    set(self.client.list_repo_files(self.username, repo_name))),
+                desc="all local files pushed on first sync")
         finally:
             if proc:
                 self._stop_watch(proc)

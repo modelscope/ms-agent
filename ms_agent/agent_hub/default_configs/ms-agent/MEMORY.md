@@ -1,7 +1,0 @@
-# Memory
-
-## Facts
-
-## Preferences
-
-## History

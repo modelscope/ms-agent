@@ -1,6 +1,29 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 # Copyright (c) Alibaba, Inc. and its affiliates.
 """Shared helpers for agent tests."""
+import unittest
+
+
+def skip_if_server_rejects(*frameworks):
+    """Skip the current test when the server will not create repos for *frameworks*.
+
+    Repo creation is gated server-side to the same set the CLI exposes by
+    default; anything else comes back as ``invalid framework, must be one of:
+    ms-agent, qwenpaw`` and no repo is created, so the test would go on to fail
+    on an unrelated 404 ("project not found") that says nothing about the real
+    cause. ``TRY_EXP_FRAMEWORKS`` only lifts the client-side gate, never this
+    one, so these cases cannot pass online no matter how they are configured.
+
+    The gated frameworks stay fully covered offline, and these skips disappear
+    on their own once the server accepts more frameworks.
+    """
+    from ms_agent.agent_hub._commands import STABLE_FRAMEWORKS
+    rejected = sorted(set(frameworks) - set(STABLE_FRAMEWORKS))
+    if rejected:
+        raise unittest.SkipTest(
+            f"server only creates agent repos for "
+            f"{', '.join(sorted(STABLE_FRAMEWORKS))}; "
+            f"cannot exercise {', '.join(rejected)} online")
 
 
 def delete_matching_repos(client, owner, substrings, *, page_size=100, max_pages=50):
