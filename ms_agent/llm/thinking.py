@@ -643,9 +643,15 @@ def create_with_thinking_fallback(create, client, model: str, logger,
     """Call ``create(**kwargs)``, retrying once with thinking off on a refusal.
 
     ``create`` must be the completions factory itself; it is called with the
-    (possibly cleaned) kwargs. Streaming is covered because the OpenAI client
-    performs the request — and raises — before it returns an iterator.
+    (possibly cleaned) kwargs.
+
+    Streaming is covered in BOTH shapes: clients that issue the request eagerly
+    raise out of ``create`` itself, and gateways that answer 200 before
+    rejecting the parameters raise on the first chunk — see
+    ``llm/stream_retry.py`` for why only that first chunk is guarded.
     """
+    from ms_agent.llm.stream_retry import retry_on_first_chunk
+
     key = model_key(client, model)
     if key in MODELS_REFUSING_THINKING:
         kwargs = without_thinking(kwargs)
@@ -653,15 +659,15 @@ def create_with_thinking_fallback(create, client, model: str, logger,
         # Only the "off" request is doomed here; a positive tier still goes out
         # normally, so this model is not blacklisted the way a refuser is.
         kwargs = strip_thinking(kwargs)
-    try:
-        return create(**kwargs)
-    except Exception as e:
+
+    def _repair(e: BaseException) -> Any:
+        """Repair-and-retry, shared by the eager and first-chunk paths."""
         # Order matters: "reasoning is mandatory" also names a thinking
         # parameter, so refusal would claim it and repair it backwards.
         if is_thinking_mandatory(e):
             retry_kwargs = strip_thinking(kwargs)
             if retry_kwargs is kwargs:
-                raise
+                raise e
             MODELS_REQUIRING_THINKING.add(key)
             logger.warning(
                 f'{model} does not allow thinking to be switched off; '
@@ -669,12 +675,18 @@ def create_with_thinking_fallback(create, client, model: str, logger,
                 f'for this model): {e}')
             return create(**retry_kwargs)
         if not is_thinking_refusal(e):
-            raise
+            raise e
         retry_kwargs = without_thinking(kwargs)
         if retry_kwargs is kwargs:  # we asked for no thinking; not our 400
-            raise
+            raise e
         MODELS_REFUSING_THINKING.add(key)
         logger.warning(
             f'{model} rejected the thinking parameters; retrying with '
             f'thinking off (it stays off for this model): {e}')
         return create(**retry_kwargs)
+
+    try:
+        result = create(**kwargs)
+    except Exception as e:
+        return _repair(e)
+    return retry_on_first_chunk(result, _repair)

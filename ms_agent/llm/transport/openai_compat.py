@@ -27,6 +27,7 @@ from ms_agent.llm.thinking import apply_effort, create_with_thinking_fallback
 from ms_agent.llm.transport.base import Transport
 from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.llm.vision import create_with_vision_fallback
+from ms_agent.llm.vision import disabled_reason as vision_disabled_reason
 from ms_agent.utils import MAX_CONTINUE_RUNS, assert_package_exist, get_logger
 
 logger = get_logger()
@@ -236,8 +237,12 @@ class OpenAICompatTransport(Transport):
             # multimodal.TOOL_MEDIA_PROMPT for the full measurement.
             if attachments and message.get('role') != 'tool':
                 content = multimodal.openai_content(
-                    content, attachments, self._vision,
-                    vision_supported=self._vision_supported)
+                    content,
+                    attachments,
+                    self._vision,
+                    vision_supported=self._vision_supported,
+                    disabled_reason=vision_disabled_reason(
+                        getattr(self.client, 'base_url', ''), self.model))
 
             if cache_indice is not None and idx == cache_indice:
                 content = self._to_structured_content(

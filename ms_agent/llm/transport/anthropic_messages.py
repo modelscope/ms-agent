@@ -16,11 +16,14 @@ import json
 from typing import Any, Dict, Generator, Iterator, List, Optional, Union
 
 from ms_agent.llm import multimodal
-from ms_agent.llm.thinking import apply_effort
+from ms_agent.llm.thinking import apply_effort, create_with_thinking_fallback
 from ms_agent.llm.transport.base import Transport
 from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.llm.vision import create_with_vision_fallback
-from ms_agent.utils import assert_package_exist
+from ms_agent.llm.vision import disabled_reason as vision_disabled_reason
+from ms_agent.utils import assert_package_exist, get_logger
+
+logger = get_logger()
 
 
 class AnthropicMessagesTransport(Transport):
@@ -173,7 +176,9 @@ class AnthropicMessagesTransport(Transport):
                     msg.content if isinstance(msg.content, str) else '',
                     attachments,
                     self._vision,
-                    vision_supported=self._vision_supported)
+                    vision_supported=self._vision_supported,
+                    disabled_reason=vision_disabled_reason(
+                        getattr(self.client, 'base_url', ''), self.model))
                 if isinstance(built, list):
                     content.extend(built)
                 elif built:
@@ -293,7 +298,7 @@ class AnthropicMessagesTransport(Transport):
             multimodal.has_image_blocks(m.get('content'))
             for m in formatted_messages if isinstance(m, dict))
 
-        def _create(messages, **kw):
+        def _send(messages, **kw):
             call = dict(kw)
             call['messages'] = messages
             # `model` is a named parameter of create_with_vision_fallback (it
@@ -303,6 +308,20 @@ class AnthropicMessagesTransport(Transport):
             if stream:
                 return self.client.messages.stream(**call)
             return self.client.messages.create(**call)
+
+        # Thinking is the OTHER per-model hard-400, and this transport used to
+        # be the one family without the repair: a Messages-API gateway fronting
+        # a model that cannot think rejected the `thinking` block outright and
+        # the error went straight to the user. Nested INSIDE the vision
+        # fallback, exactly as in the OpenAI-family transports, so the two
+        # retries compose instead of masking each other.
+        def _create(messages, **kw):
+            return create_with_thinking_fallback(
+                lambda **kw2: _send(messages, **kw2),
+                self.client,
+                self.model,
+                logger,
+                **kw)
 
         # Everything except `model` and `messages`, which the wrapper takes as
         # named arguments; leaving either in `params` would collide with them.
@@ -316,6 +335,7 @@ class AnthropicMessagesTransport(Transport):
             model=self.model,
             messages=params['messages'],
             sent_images=sent_images,
+            logger_=logger,
             **rest)
 
     def generate(

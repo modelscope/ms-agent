@@ -82,7 +82,18 @@ def resolve_mcp_config(
                 for k, v in entry.items() if k not in _MCP_META
             }
     except Exception:
-        pass
+        # Everything above is one try, so a single malformed mcp.json silently
+        # became "this agent has no MCP servers at all" — indistinguishable
+        # from "none configured", and the hardest possible shape to diagnose
+        # from the outside. Still non-fatal (a broken file must not stop the
+        # agent), but no longer invisible.
+        from ms_agent.utils import get_logger
+        get_logger().warning(
+            'could not read the managed MCP configuration (global=%s, '
+            'project=%s); continuing with no MCP servers from it',
+            global_home,
+            work_dir,
+            exc_info=True)
     # Explicit --mcp-server-file wins last (same-name replace).
     if explicit_file and os.path.isfile(explicit_file):
         try:

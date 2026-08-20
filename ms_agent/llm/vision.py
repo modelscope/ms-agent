@@ -3,15 +3,29 @@
 
 Two halves:
 
-**Resolution** — whether to attach pixels at all, decided per model, strongest
-signal first:
+**Resolution** — whether to attach pixels at all. Two states only, and the
+default is OFF:
 
 1. an explicit per-model setting (the "image understanding" switch in the model
-   form) — the user's own statement, always wins;
-2. the provider's declared ``vision`` capability — a coarse default for models
-   nobody has classified yet;
-3. a model observed to REFUSE images earlier in this process — vetoes both of
-   the above, because a refusal is ground truth.
+   form) — the user's own statement, and the only thing that turns images ON;
+2. a model observed to REFUSE images earlier in this process vetoes it, because
+   a refusal is ground truth.
+
+Deliberately NOT consulted: the provider's declared ``vision`` capability.
+Vision is a property of the MODEL, not of the endpoint — ModelScope serves
+``Qwen3-VL-8B-Instruct`` and the text-only ``Qwen3-235B-A22B`` through one
+provider entry, so a provider-level flag says yes to both. It used to be the
+middle tier here, and because nine of ten registry entries declare ``vision``
+it made "nobody has said" mean "send images", i.e. the switch's OFF position
+described a state the runtime never actually used. ``ProviderCapability.VISION``
+still exists and is still correct about what the *protocol* accepts; it is just
+not evidence about a particular model's eyesight.
+
+Whether a model can really see is therefore the user's call. There is no
+probing: a model that accepts image blocks with HTTP 200 and cannot read them
+(measured: zhipu glm-5.x, MiniMax-M2.7, and ModelScope's Qwen3-235B-A22B, which
+answered with an invented string) is indistinguishable at runtime from one that
+can.
 
 **Self-healing** — a provider that cannot see images rejects the whole request
 with a hard 400, which would otherwise make such a model unusable the moment a
@@ -42,11 +56,12 @@ logger = get_logger()
 #: ``(base_url, model)`` pairs observed to reject image content.
 MODELS_REFUSING_IMAGES: Set[Tuple[str, str]] = set()
 
-#: Callables notified the first time a model is learned to refuse images.
-#: A host (the WebUI) registers one so the discovery can be written back to
-#: wherever the user configured the model — otherwise the knowledge dies with
-#: the process and every restart pays the same rejected request again, while the
-#: "image understanding" switch keeps claiming the model supports it.
+#: Callables notified the first time a model is learned to refuse images, so a
+#: host (the WebUI) can TELL THE USER. Deliberately not a write-back hook: the
+#: switch is the user's statement about their own model, and silently rewriting
+#: it would both contradict them and hide the reason. The memo below keeps the
+#: session from paying the failed round-trip twice; making it permanent is the
+#: user's decision to make in the model form.
 _OBSERVERS: List[Any] = []
 
 
@@ -54,7 +69,7 @@ def register_refusal_observer(fn) -> None:
     """Register ``fn(base_url, model)``, called once per newly-learned refusal.
 
     Idempotent per callable, so repeated setup (a WebUI reload) cannot stack
-    duplicate write-backs. Observer exceptions are swallowed: learning that a
+    duplicate notifications. Observer exceptions are swallowed: learning that a
     model refuses images must never be able to fail the turn that discovered it.
     """
     if fn not in _OBSERVERS:
@@ -80,6 +95,18 @@ def note_refusal(base_url: Any, model: str) -> None:
 
 def known_refuser(base_url: Any, model: str) -> bool:
     return model_key(base_url, model) in MODELS_REFUSING_IMAGES
+
+
+def disabled_reason(base_url: Any = '', model: str = '') -> str:
+    """Why this turn's images are text placeholders, for the model to relay.
+
+    A model whose switch is off should be told to turn it on; a model whose
+    switch is ON but whose endpoint rejected the images must NOT be, or it
+    sends the user back to a box they already ticked.
+    """
+    if model and known_refuser(base_url, model):
+        return multimodal.REASON_REJECTED
+    return multimodal.REASON_DISABLED
 
 
 def _status_of(exc: Exception) -> Optional[int]:
@@ -154,21 +181,58 @@ def create_with_vision_fallback(create,
     """Call ``create(messages=..., **kwargs)``, retrying once without images.
 
     ``create`` must accept ``messages`` as a keyword so the retry can hand it a
-    rewritten list. Streaming is covered: the client performs the request — and
-    raises — before it returns an iterator.
+    rewritten list.
+
+    Streaming is covered in BOTH shapes: clients that issue the request eagerly
+    raise out of ``create`` itself, and gateways that answer 200 before
+    rejecting the image blocks raise on the first chunk (see
+    ``llm/stream_retry.py``).
     """
+    from ms_agent.llm.stream_retry import retry_on_first_chunk
+
     log = logger_ or logger
     if sent_images and known_refuser(base_url, model):
         messages, _ = strip_images_from_messages(messages)
         sent_images = False
-    try:
-        return create(messages=messages, **kwargs)
-    except Exception as exc:
+
+    def _remember() -> None:
+        note_refusal(base_url, model)
+        log.warning(
+            'images stay off for %s for the rest of this process (the '
+            'image-less retry succeeded)', model)
+
+    def _confirm(result: Any, original: BaseException) -> Any:
+        """Blacklist only once the image-less attempt actually produces output.
+
+        For a non-streaming call "returned" already means "succeeded". For a
+        stream it does not: the replacement can still fail on its own first
+        chunk, and treating that as proof would blacklist a model whose real
+        problem was something else entirely.
+        """
+        if not hasattr(result, '__next__'):
+            _remember()
+            return result
+
+        def _guarded():
+            try:
+                first = next(result)
+            except StopIteration:
+                _remember()  # empty, but the endpoint accepted it
+                return
+            except Exception:
+                raise original from None  # the images were not the cause
+            _remember()
+            yield first
+            yield from result
+
+        return _guarded()
+
+    def _repair(exc: BaseException) -> Any:
         if not is_image_refusal(exc, sent_images):
-            raise
+            raise exc
         retry_messages, changed = strip_images_from_messages(messages)
         if not changed:
-            raise
+            raise exc
         log.warning(
             '%s returned 400 on a request carrying images; retrying once with '
             'the images replaced by text: %s', model, exc)
@@ -184,14 +248,13 @@ def create_with_vision_fallback(create,
             # rest of the process. Measured on ModelScope, whose "Model id ...
             # has no provider supported" is exactly this shape.
             raise exc from None
-        # The image-less retry succeeded, so the images were the problem. THIS
-        # is the only sound moment to remember it — the status code alone cannot
-        # tell an image refusal from any other 400.
-        note_refusal(base_url, model)
-        log.warning(
-            'images stay off for %s for the rest of this process (the '
-            'image-less retry succeeded)', model)
-        return result
+        return _confirm(result, exc)
+
+    try:
+        result = create(messages=messages, **kwargs)
+    except Exception as exc:
+        return _repair(exc)
+    return retry_on_first_chunk(result, _repair)
 
 
 def resolve_supports_vision(config: Any,
@@ -200,35 +263,20 @@ def resolve_supports_vision(config: Any,
                             base_url: Any = '') -> bool:
     """Whether to attach pixels for this model. See the module docstring.
 
-    ``config.llm.supports_vision`` is the explicit per-model switch. It is
-    read as a TRI-STATE: absent/None means "nobody has said", which falls
-    through to the provider capability and then to runtime learning. That is
-    better than a hard default in either direction — a hard ``False`` would make
-    a capable model silently ignore attachments until someone ticks a box, and a
-    hard ``True`` would make every text-only model burn a 400 on first use.
+    ``config.llm.supports_vision`` is the explicit per-model switch and the only
+    thing that turns images on; unset means OFF. ``spec`` is accepted and ignored
+    (kept so existing callers need no edit): a provider's declared ``vision``
+    capability describes the protocol, not the model behind it.
     """
     if model and known_refuser(base_url, model):
-        return False  # observed truth beats every declaration
+        return False  # observed truth beats the switch
 
     llm = getattr(config, 'llm', None) if config is not None else None
-    explicit = None
     if llm is not None:
         for name in ('supports_vision', 'vision_supported'):
             value = getattr(llm, name, None)
             if value is not None:
-                explicit = value
-                break
-    if explicit is not None:
-        return _as_bool(explicit)
-
-    if spec is not None:
-        caps = getattr(spec, 'capabilities', None)
-        if caps is not None:
-            try:
-                from ms_agent.llm.types import ProviderCapability
-                return bool(caps.supports(ProviderCapability.VISION))
-            except Exception:
-                pass
+                return _as_bool(value)
     return False
 
 
