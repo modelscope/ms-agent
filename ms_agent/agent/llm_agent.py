@@ -46,7 +46,8 @@ from ms_agent.ui.events import (ContentDelta, ContentEnd, ContextCompacted,
                                 ErrorRaised, PlanEntry, PlanUpdated,
                                 ReasoningDelta, ReasoningEnded,
                                 ReasoningStarted, ToolCallCompleted,
-                                ToolCallStarted, TurnCompleted, UsageInfo)
+                                ToolCallComposing, ToolCallStarted,
+                                TurnCompleted, UsageInfo)
 from ms_agent.utils import (async_retry, is_retryable_error, read_history,
                             save_history)
 from ms_agent.utils.constants import DEFAULT_TAG, DEFAULT_USER
@@ -1135,6 +1136,38 @@ class LLMAgent(Agent):
         else:
             sys.stdout.write('\n')
 
+    #: Bytes of tool-call arguments between two ``ToolCallComposing`` events.
+    #: Small enough that a multi-file write reports progress several times a
+    #: second, large enough that a short call emits once and stops.
+    _COMPOSING_STEP = 256
+
+    def _emit_tool_composing(self, message, announced: Dict[int, int]) -> None:
+        """Report tool calls the model is still writing.
+
+        Streaming hands us the assistant message repeatedly, with each tool
+        call's ``arguments`` growing chunk by chunk. Nothing has run yet — this
+        is purely so the UI can say "preparing write_file…" instead of showing
+        nothing at all while a large call is transmitted.
+
+        Silent for a UI-less run (no event sink), and throttled so short calls
+        emit once rather than once per chunk.
+        """
+        if self._event_sink is None:
+            return
+        for index, call in enumerate(getattr(message, 'tool_calls', None) or []):
+            if not isinstance(call, dict):
+                continue
+            name = str(call.get('tool_name') or '')
+            if not name:
+                continue  # the name always precedes the arguments; wait for it
+            size = len(str(call.get('arguments') or ''))
+            last = announced.get(index)
+            if last is not None and size - last < self._COMPOSING_STEP:
+                continue
+            announced[index] = size
+            self._event_sink.emit(
+                ToolCallComposing(index=index, name=name, arguments_len=size))
+
     @staticmethod
     def _extract_plan_from_tool_result(msg):
         """Parse a todo / split_task tool result into a list of PlanEntry, or
@@ -1909,6 +1942,10 @@ class LLMAgent(Agent):
                 _response_message = None
                 _printed_reasoning_header = False
                 _printed_reasoning_footer = False
+                # index -> arguments length already announced, so a long tool
+                # call reports progress instead of going silent (see
+                # ui.events.ToolCallComposing).
+                _composing: Dict[int, int] = {}
                 _gen = self.llm.generate(messages, tools=tools)
                 _loop = asyncio.get_running_loop()
                 _NO_MORE = object()
@@ -1957,6 +1994,7 @@ class LLMAgent(Agent):
                                 _printed_reasoning_footer = True
                             self._emit_content(new_content)
                         _content = _response_message.content
+                        self._emit_tool_composing(_response_message, _composing)
                         messages[-1] = _response_message
                         yield messages
                 finally:

@@ -333,13 +333,27 @@ def placeholder_for(ref: ImageRef, reason: str = '') -> str:
 #: assistant answers about the same images, resolves the contradiction as "so I
 #: did see them after all", and claims present-tense sight (measured on
 #: qwen3.7-max: it answered 能看到 and repeated its predecessor's reading).
+#: The shared middle sentence: what to do about earlier descriptions.
+_HISTORY_NOTE = (
+    'Earlier replies in this conversation that describe it were written while '
+    'a vision-capable model was active: treat them as reliable history, but do '
+    'not claim to see the image yourself.')
+
+#: The switch is off (the default). The remedy is to turn it on.
 REASON_DISABLED = (
     'Image understanding is not enabled for the current model, so you cannot '
-    'see this image now. Earlier replies in this conversation that describe '
-    'it were written while a vision-capable model was active: treat them as '
-    'reliable history, but do not claim to see the image yourself. Tell the '
-    'user they can turn on "image understanding" for this model in '
-    'Settings → Models, or switch to a model that supports it.')
+    f'see this image now. {_HISTORY_NOTE} Tell the user they can turn on '
+    '"image understanding" for this model in Settings → Models, or switch to a '
+    'model that supports it.')
+
+#: The switch is ON but the endpoint rejected the image. Telling this user to
+#: "enable image understanding" would point at a box they already ticked, so
+#: this wording names the real situation and offers the remedy that is left.
+REASON_REJECTED = (
+    'This model rejected image input, so you cannot see this image even though '
+    f'image understanding is enabled for it. {_HISTORY_NOTE} Tell the user this '
+    'model cannot accept images and that they should switch to one that can.')
+
 REASON_UNREADABLE = ('The file could not be read or decoded as an image.')
 
 
@@ -366,19 +380,25 @@ def _degrade(text: str, refs: Sequence[ImageRef], reason: str) -> str:
 def openai_content(text: Any,
                    attachments: Optional[Sequence[Dict[str, Any]]],
                    opts: VisionOptions,
-                   vision_supported: bool = True) -> Any:
+                   vision_supported: bool = True,
+                   disabled_reason: str = REASON_DISABLED) -> Any:
     """Content for an OpenAI-compatible (Chat Completions) user message.
 
     Returns a plain string when there is nothing to attach — keeping the
     overwhelmingly common text-only request byte-identical to before, which also
     means prefix caching is unaffected.
+
+    ``disabled_reason`` lets the caller say WHY the pixels are absent: the
+    default blames the switch, and a transport that knows the endpoint rejected
+    this model's images passes :data:`REASON_REJECTED` instead, so the model
+    never tells a user to enable something they already enabled.
     """
     refs = image_refs(attachments, opts)
     if not refs:
         return text
     if not (opts.enabled and vision_supported):
         return _degrade(
-            text if isinstance(text, str) else '', refs, REASON_DISABLED)
+            text if isinstance(text, str) else '', refs, disabled_reason)
 
     blocks: List[Dict[str, Any]] = []
     unreadable: List[ImageRef] = []
@@ -412,7 +432,8 @@ def openai_content(text: Any,
 def anthropic_content(text: Any,
                       attachments: Optional[Sequence[Dict[str, Any]]],
                       opts: VisionOptions,
-                      vision_supported: bool = True) -> Any:
+                      vision_supported: bool = True,
+                      disabled_reason: str = REASON_DISABLED) -> Any:
     """Content blocks for an Anthropic Messages user message.
 
     Same contract as :func:`openai_content`; only the block shape differs
@@ -423,7 +444,7 @@ def anthropic_content(text: Any,
         return text
     if not (opts.enabled and vision_supported):
         return _degrade(
-            text if isinstance(text, str) else '', refs, REASON_DISABLED)
+            text if isinstance(text, str) else '', refs, disabled_reason)
 
     blocks: List[Dict[str, Any]] = []
     unreadable: List[ImageRef] = []

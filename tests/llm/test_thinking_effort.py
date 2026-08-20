@@ -549,3 +549,90 @@ def test_a_real_ladder_is_offered_in_full():
     # ...minus the rung DashScope rejects.
     assert 'max' not in T.offered_tiers('dashscope')
     assert 'xhigh' in T.offered_tiers('dashscope')
+
+
+# --------------------------------------------------------------------------- #
+# Rejections that arrive on the first chunk, not out of create()
+# --------------------------------------------------------------------------- #
+class _Boom400(Exception):
+    """An Aliyun-family gateway answering 200 and then rejecting the params."""
+
+    MSG = ('<400> InternalError.Algo.InvalidParameter: The thinking_budget '
+           'parameter must be a positive integer and not greater than 0')
+
+    def __init__(self, msg=MSG):
+        super().__init__(msg)
+        self.status_code = 400
+
+
+class _Log:
+
+    def warning(self, *a, **k):
+        pass
+
+
+def _streaming_factory(reject_thinking=True):
+    """Returns fine, fails only while the first chunk is read."""
+    seen = []
+
+    def create(**kw):
+        extra = kw.get('extra_body') or {}
+        asking = bool(extra.get('thinking_budget')) and not T.asks_to_disable(kw)
+        seen.append(asking)
+
+        def gen():
+            if asking and reject_thinking:
+                raise _Boom400()
+            yield 'chunk-1'
+            yield 'chunk-2'
+
+        return gen()
+
+    return create, seen
+
+
+def test_stream_time_thinking_refusal_is_repaired():
+    """Regression: `thinking_budget` rejected mid-stream used to bypass the
+    fallback completely — no retry, no memo, raw 400 shown to the user."""
+    T.MODELS_REFUSING_THINKING.clear()
+    create, seen = _streaming_factory()
+    stream = T.create_with_thinking_fallback(
+        create, client=None, model='stream-model', logger=_Log(),
+        extra_body={'thinking_budget': 4096})
+    assert list(stream) == ['chunk-1', 'chunk-2']
+    assert seen == [True, False]          # asked, then repaired
+    assert any(k[1] == 'stream-model' for k in T.MODELS_REFUSING_THINKING)
+    T.MODELS_REFUSING_THINKING.clear()
+
+
+def test_stream_failure_after_first_chunk_is_not_retried():
+    calls = []
+
+    def create(**kw):
+        calls.append(kw)
+
+        def gen():
+            yield 'chunk-1'
+            raise _Boom400()
+
+        return gen()
+
+    T.MODELS_REFUSING_THINKING.clear()
+    stream = T.create_with_thinking_fallback(
+        create, client=None, model='late-model', logger=_Log(),
+        extra_body={'thinking_budget': 4096})
+    got = []
+    with pytest.raises(_Boom400):
+        for item in stream:
+            got.append(item)
+    assert got == ['chunk-1']
+    assert len(calls) == 1                 # already rendered; no restart
+    T.MODELS_REFUSING_THINKING.clear()
+
+
+def test_non_stream_result_is_passed_through_untouched():
+    def create(**kw):
+        return 'completion'
+
+    assert T.create_with_thinking_fallback(
+        create, client=None, model='plain', logger=_Log()) == 'completion'

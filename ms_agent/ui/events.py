@@ -136,6 +136,28 @@ class ReasoningEnded(AgentEvent):
 
 
 @dataclass(frozen=True)
+class ToolCallComposing(AgentEvent):
+    """The model is still WRITING a tool call; nothing runs yet.
+
+    Between the last ``content_delta`` and the first ``tool_call_started`` the
+    model streams the call's arguments, and until this event existed that window
+    produced no events at all. It is imperceptible for a small call and very
+    visible for a large one: measured at ~67 s of blank UI for one round that
+    wrote five long files, because every file's whole body travels inside the
+    arguments.
+
+    The tool NAME arrives before its arguments do, so this can say what is being
+    prepared. ``arguments_len`` is the bytes accumulated so far — enough to show
+    progress, and deliberately not the payload itself, which is often huge and
+    is delivered in full by ``tool_call_started`` anyway.
+    """
+    EVENT_TYPE: ClassVar[str] = 'tool_call_composing'
+    index: int = 0
+    name: str = ''
+    arguments_len: int = 0
+
+
+@dataclass(frozen=True)
 class ToolCallStarted(AgentEvent):
     """A tool call is about to execute."""
     EVENT_TYPE: ClassVar[str] = 'tool_call_started'

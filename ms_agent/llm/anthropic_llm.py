@@ -5,9 +5,12 @@ from omegaconf import DictConfig, OmegaConf
 from typing import Any, Dict, Generator, Iterator, List, Optional, Union
 
 from ms_agent.llm import LLM
+from ms_agent.llm.thinking import create_with_thinking_fallback
 from ms_agent.llm.utils import Message, Tool, ToolCall
-from ms_agent.utils import assert_package_exist, retry
+from ms_agent.utils import assert_package_exist, get_logger, retry
 from ms_agent.utils.constants import get_service_config
+
+logger = get_logger()
 
 
 class _SSEEventInjector(httpx.SyncByteStream):
@@ -278,10 +281,20 @@ class Anthropic(LLM):
             kwargs['extra_body'] = extra_body
         params.update(kwargs)
 
-        if stream:
-            return self.client.messages.stream(**params)
-        else:
-            return self.client.messages.create(**params)
+        def _send(**call):
+            call.setdefault('model', self.model)
+            if stream:
+                return self.client.messages.stream(**call)
+            return self.client.messages.create(**call)
+
+        # This legacy engine owned no repair at all: a model that cannot think
+        # rejected the `thinking` block with a hard 400 and the error went
+        # straight to the caller, while the transport port of this same engine
+        # recovered. Bring it in line — `model` is passed through `_send` so it
+        # cannot collide with the wrapper's own named argument.
+        rest = {k: v for k, v in params.items() if k != 'model'}
+        return create_with_thinking_fallback(_send, self.client, self.model,
+                                             logger, **rest)
 
     @retry(max_attempts=LLM.retry_count, delay=3.0)
     def generate(self,

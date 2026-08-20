@@ -14,6 +14,7 @@ from ms_agent.llm import LLM, multimodal
 from ms_agent.llm.thinking import apply_effort, create_with_thinking_fallback
 from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.llm.vision import create_with_vision_fallback
+from ms_agent.llm.vision import disabled_reason as vision_disabled_reason
 from ms_agent.utils import (MAX_CONTINUE_RUNS, assert_package_exist,
                             get_logger, retry)
 from ms_agent.utils.constants import get_service_config
@@ -907,9 +908,16 @@ class OpenAI(LLM):
         if resp_tools:
             kwargs['tools'] = resp_tools
 
-        response = self._responses_client.responses.create(
-            model=self.model,
-            input=input_items,
+        # Same per-model hard-400 as the Chat Completions branch: a model that
+        # cannot think rejects the reasoning parameters outright. This branch
+        # used to lower the knob (`apply_effort`) without owning the repair, so
+        # the refusal reached the caller raw.
+        response = create_with_thinking_fallback(
+            lambda **kw: self._responses_client.responses.create(
+                model=self.model, input=input_items, **kw),
+            self._responses_client,
+            self.model,
+            logger,
             **kwargs,
         )
         text = getattr(response, 'output_text', '') or ''
@@ -959,9 +967,12 @@ class OpenAI(LLM):
         if resp_tools:
             kwargs['tools'] = resp_tools
 
-        stream = self._responses_client.responses.create(
-            model=self.model,
-            input=input_items,
+        stream = create_with_thinking_fallback(
+            lambda **kw: self._responses_client.responses.create(
+                model=self.model, input=input_items, **kw),
+            self._responses_client,
+            self.model,
+            logger,
             stream=True,
             **kwargs,
         )
@@ -1094,8 +1105,12 @@ class OpenAI(LLM):
             # multimodal.TOOL_MEDIA_PROMPT for the full measurement.
             if attachments and message.get('role') != 'tool':
                 content = multimodal.openai_content(
-                    content, attachments, self._vision,
-                    vision_supported=self._vision_supported)
+                    content,
+                    attachments,
+                    self._vision,
+                    vision_supported=self._vision_supported,
+                    disabled_reason=vision_disabled_reason(
+                        self.base_url, self.model))
 
             # Apply prefix cache structured content transformation
             # Only for string content, multimodal content is already structured
