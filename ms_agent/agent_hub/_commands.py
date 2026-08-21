@@ -30,6 +30,40 @@ logger = get_logger()
 # ---------------------------------------------------------------------------
 
 
+def _print_openhuman_next_steps(root) -> None:
+    """After a successful convert/download, remind the user that the result is
+    not yet usable: openhuman discovers agents only through the
+    ``workspace/agents/<id>.toml`` registry, which we deliberately do not
+    generate, so they must create it by hand.
+
+    Uses ``Logger.info`` rather than ``display``/``print`` per the tech lead's
+    requirement.
+    """
+    agents_dir = f'{root}/agents'
+    logger.info(
+        '转换/下载已完成，但当前还不能直接使用（若尚未注册）。OpenHuman 只通过 '
+        'workspace/agents/<agent-id>.toml 注册表发现智能体，本次仅写入了 persona/skill 文件。\n'
+        '请手动完成：\n'
+        f'  1) 在 {agents_dir}/ 下手动创建 <agent-id>.toml，包含 id / when_to_use / '
+        'system_prompt.inline（粘贴 SOUL.md 内容）/ model.exact="inherit"；id 仅限字母、数字、"_"、"-"。\n'
+        '  2) UI「设置 → 智能体 → 新建智能体」，id / model / 工具白名单与 TOML 保持一致。\n'
+        '  3) UI「设置 → 智能体配置 → 新建配置」，base agent id 填同一个 id。\n'
+        '  4) 新建一个对话即可使用。'
+    )
+    logger.info(
+        'Conversion/download finished, but the agent is NOT usable yet '
+        '(if you have not registered it). OpenHuman discovers agents only via the '
+        'workspace/agents/<agent-id>.toml registry; this run wrote persona/skill files only.\n'
+        'Manual steps:\n'
+        f'  1) Create {agents_dir}/<agent-id>.toml with: id / when_to_use / '
+        'system_prompt.inline (paste the SOUL.md content) / model.exact="inherit"; '
+        'id may contain only letters, digits, "_", "-".\n'
+        '  2) UI "Settings → Agents → New Agent": keep id / model / tool allowlist consistent with the TOML.\n'
+        '  3) UI "Settings → Agent Config → New Config": set base agent id to the same id.\n'
+        '  4) Start a new conversation.'
+    )
+
+
 def _fail(message: str) -> int:
     """Print an error and return exit code 1."""
     print(f'Error: {message}', file=sys.stderr)
@@ -796,6 +830,8 @@ def cmd_download(
 
     written = spec.apply(filtered)
     display.done(f'Wrote {len(written)} file(s) under {root}')
+    if target_fw == 'openhuman' and written:
+        _print_openhuman_next_steps(root)
 
     # Download is overwrite/add-only and never deletes local files. The remote
     # holds only the user's customized content (unchanged framework defaults are
@@ -1049,6 +1085,8 @@ def convert_workspace(
 
     written = dst_spec.apply(effective)
     display.done(f'Wrote {len(written)} file(s) under {dst_root}')
+    if target_fw == 'openhuman':
+        _print_openhuman_next_steps(dst_root)
     return 0
 
 
