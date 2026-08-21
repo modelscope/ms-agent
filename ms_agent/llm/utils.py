@@ -107,6 +107,30 @@ class Message:
     # the model provider (the model still sees the failure via ``content``).
     is_error: bool = False
 
+    # Non-text parts riding alongside ``content`` — today only images. Ordered:
+    # entry i is "Image i+1" to the model, and the UI must show its chips in the
+    # same order or "the second image" points at the wrong one.
+    #
+    # Each entry is a REFERENCE, not bytes:
+    #     {'type': 'image', 'path': 'user_files/a.png',
+    #      'media_type': 'image/png', 'label': 'Image 1: a.png'}
+    #
+    # Deliberately NOT folded into ``content``: this framework has ~40 call
+    # sites that read a user message's ``content`` expecting a string (memory
+    # extraction, full-text indexing, session auto-naming, summary compaction,
+    # snapshot labels, hook prompt extraction). None of them wants to know how
+    # many images there are, and none of them would crash loudly if handed a
+    # block list — they would silently store a Python repr or skip the turn.
+    # Keeping ``content`` a str keeps all of them correct for free; the
+    # transports expand these refs into provider-native blocks at the wire.
+    #
+    # Storing a reference rather than base64 is what lets the same log be
+    # re-encoded per provider (Anthropic 1568px/2576px tiers, DashScope not
+    # accepting GIF) and lets a session survive a model switch: swap to a
+    # text-only model and the refs degrade to text placeholders; swap back and
+    # the images are visible again.
+    attachments: List[Dict[str, Any]] = field(default_factory=list)
+
     def to_dict(self):
         return asdict(self)
 
@@ -139,6 +163,13 @@ class Message:
             'searching_detail',
             'search_result',
             '_responses_output_items',
+            # Image refs are the transports' input, never wire output: each
+            # provider adapter reads ``message.attachments`` BEFORE calling this
+            # and folds them into provider-native content blocks. Leaving them
+            # in would ship a bare {'type':'image','path':...} to the endpoint.
+            # This entry is load-bearing: to_dict_clean() keeps every truthy
+            # field not listed here, so omitting it leaks the refs.
+            'attachments',
         ]
         return {
             key: value
@@ -161,6 +192,12 @@ class ToolResult:
     tool_detail: Optional[str] = None
     hook_attachments: List[Any] = field(default_factory=list)
     is_error: bool = False
+    #: Non-text parts the tool produced (images), same reference shape as
+    #: ``Message.attachments``. ``text`` still carries a short human/model
+    #: readable status; these carry the pixels. Splitting them is the point: a
+    #: tool that put base64 into ``text`` was writing into the one channel a
+    #: model cannot decode.
+    attachments: List[Dict[str, Any]] = field(default_factory=list)
 
     @staticmethod
     def from_raw(raw):
@@ -177,6 +214,7 @@ class ToolResult:
                 tool_detail=None if td is None else str(td),
                 hook_attachments=raw.get('hook_attachments', []),
                 is_error=bool(raw.get('is_error', False)),
+                attachments=raw.get('attachments', []) or [],
                 extra={
                     k: v
                     for k, v in raw.items() if k not in [
@@ -186,6 +224,7 @@ class ToolResult:
                         'tool_detail',
                         'hook_attachments',
                         'is_error',
+                        'attachments',
                     ]
                 })
         raise TypeError('tool_call_result must be str or dict')

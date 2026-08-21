@@ -11,8 +11,8 @@ rather than duplicated per call site.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, List, Optional
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 from ms_agent.command.router import CommandRouter
 from ms_agent.command.types import CommandContext, CommandResultType
@@ -28,6 +28,10 @@ class InteractiveTurn:
 
     action: str
     text: Optional[str] = None
+    #: Non-text parts the input source attached to this turn (images). Stays
+    #: separate from ``text`` all the way to ``Message.attachments`` — a CLI
+    #: never sets it, a WebUI composer does.
+    attachments: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class InteractiveSession:
@@ -48,6 +52,26 @@ class InteractiveSession:
         # Notice so a TUI renders it on the same channel as everything else.
         # When None, plain print() is used (CLI).
         self._event_sink = event_sink
+
+    def _take_attachments(self) -> List[Dict[str, Any]]:
+        """Non-text parts the input source queued for the prompt just read.
+
+        Optional protocol method: a plain CLI/TUI has no attachments and does
+        not implement it, so this returns ``[]`` and nothing downstream changes.
+        Called immediately after ``read_prompt`` returns, so the attachments and
+        the text belong to the same submission — hence "take": the source hands
+        them over once and clears them.
+        """
+        source = self._input_source
+        if source is None:
+            return []
+        take = getattr(source, 'take_attachments', None)
+        if take is None:
+            return []
+        try:
+            return list(take() or [])
+        except Exception:  # an input source must never break the turn
+            return []
 
     async def run_turn(
         self,
@@ -84,7 +108,10 @@ class InteractiveSession:
                 if self._event_sink is not None:
                     from ms_agent.ui.events import UserMessage
                     self._event_sink.emit(UserMessage(text=query))
-                return InteractiveTurn(action='submit', text=query)
+                return InteractiveTurn(
+                    action='submit',
+                    text=query,
+                    attachments=self._take_attachments())
 
             cmd_name, args = self._router.parse_input(query)
             ctx = CommandContext(

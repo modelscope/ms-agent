@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional, Tuple
 
+from ms_agent.llm import multimodal
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
@@ -25,13 +26,25 @@ def _estimate_tokens(text: str) -> int:
 
 
 def _estimate_message_tokens(msg: Dict[str, Any]) -> int:
-    """Heuristic token count from message body (no API usage fields)."""
+    """Heuristic token count from message body (no API usage fields).
+
+    Structured content is walked block-by-block, and an image block is charged a
+    flat per-image cost instead of having its payload measured as text. The
+    providers bill images by pixel dimensions (Anthropic ``⌈w/28⌉ × ⌈h/28⌉``;
+    DashScope returns the real figure as ``prompt_tokens_details.image_tokens``),
+    which has nothing to do with how long the base64 happens to be.
+
+    Measured on DashScope with a 900x320 PNG: 282 real image tokens versus 7,293
+    from counting base64 characters — a 26x over-count on a 22 KB image. A 2 MiB
+    PNG estimates at ~699k tokens against a ~108k usable budget, which does not
+    merely mis-trigger compaction once: the offending message is the last visible
+    one, so the compactor re-appends it, the estimate never drops, and every
+    subsequent round pays for another summary LLM call.
+    """
     total = 0
     content = msg.get('content', '')
     if content:
-        if not isinstance(content, str):
-            content = json.dumps(content, ensure_ascii=False)
-        total += _estimate_tokens(content)
+        total += multimodal.estimate_content_tokens(content, _estimate_tokens)
     tool_calls = msg.get('tool_calls')
     if tool_calls:
         total += _estimate_tokens(json.dumps(tool_calls))

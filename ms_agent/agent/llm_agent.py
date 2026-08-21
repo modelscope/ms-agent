@@ -20,6 +20,8 @@ from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback, callbacks_mapping
 from ms_agent.knowledge_search import SirchmunkSearch
 from ms_agent.llm.llm import LLM
+from ms_agent.llm.message_text import (append_text, flatten_message_text,
+                                       prepend_text)
 from ms_agent.llm.utils import Message, ToolResult
 from ms_agent.memory import Memory, get_memory_meta_safe, memory_mapping
 from ms_agent.memory.memory_manager import SharedMemoryManager
@@ -44,7 +46,8 @@ from ms_agent.ui.events import (ContentDelta, ContentEnd, ContextCompacted,
                                 ErrorRaised, PlanEntry, PlanUpdated,
                                 ReasoningDelta, ReasoningEnded,
                                 ReasoningStarted, ToolCallCompleted,
-                                ToolCallStarted, TurnCompleted, UsageInfo)
+                                ToolCallComposing, ToolCallStarted,
+                                TurnCompleted, UsageInfo)
 from ms_agent.utils import (async_retry, is_retryable_error, read_history,
                             save_history)
 from ms_agent.utils.constants import DEFAULT_TAG, DEFAULT_USER
@@ -314,6 +317,13 @@ class LLMAgent(Agent):
         # the terminal — the enabling seam for the native (route-A) lifecycle.
         # When None, the legacy sync console_io / input() path is used.
         self._input_source = kwargs.get('input_source', None)
+
+        # Attachments belonging to the FIRST user turn, parked between the
+        # interactive read in run_loop and create_messages (whose input is a
+        # bare string). Cleared as soon as create_messages consumes them, so a
+        # later turn can never inherit the first turn's images. Mid-conversation
+        # turns bypass this entirely — InputCallback builds their Message.
+        self._pending_attachments: List[Dict[str, Any]] = []
 
         # Personalization (lazy-loaded in _build_personalization_section)
         self._profile_manager = ProfileManager()
@@ -665,7 +675,7 @@ class LLMAgent(Agent):
         self.log_output(f'Agent {self.tag} task beginning.')
         if self.resolve_enable_snapshots(self.config):
             _user_content = next(
-                ((getattr(m, 'content', '') or '')[:80]
+                (flatten_message_text(getattr(m, 'content', ''))[:80]
                  for m in messages if getattr(m, 'role', '') == 'user'),
                 '',
             )
@@ -759,6 +769,10 @@ class LLMAgent(Agent):
                 tool_detail=tool_call_result_format.tool_detail,
                 hook_attachments=tool_call_result_format.hook_attachments,
                 is_error=tool_call_result_format.is_error,
+                # Images the tool produced. Carried on the tool Message so the
+                # transports can put them in the IMAGE channel; the text channel
+                # keeps only the short status.
+                attachments=tool_call_result_format.attachments,
             )
 
             if _new_message.tool_call_id is None:
@@ -1122,6 +1136,38 @@ class LLMAgent(Agent):
         else:
             sys.stdout.write('\n')
 
+    #: Bytes of tool-call arguments between two ``ToolCallComposing`` events.
+    #: Small enough that a multi-file write reports progress several times a
+    #: second, large enough that a short call emits once and stops.
+    _COMPOSING_STEP = 256
+
+    def _emit_tool_composing(self, message, announced: Dict[int, int]) -> None:
+        """Report tool calls the model is still writing.
+
+        Streaming hands us the assistant message repeatedly, with each tool
+        call's ``arguments`` growing chunk by chunk. Nothing has run yet — this
+        is purely so the UI can say "preparing write_file…" instead of showing
+        nothing at all while a large call is transmitted.
+
+        Silent for a UI-less run (no event sink), and throttled so short calls
+        emit once rather than once per chunk.
+        """
+        if self._event_sink is None:
+            return
+        for index, call in enumerate(getattr(message, 'tool_calls', None) or []):
+            if not isinstance(call, dict):
+                continue
+            name = str(call.get('tool_name') or '')
+            if not name:
+                continue  # the name always precedes the arguments; wait for it
+            size = len(str(call.get('arguments') or ''))
+            last = announced.get(index)
+            if last is not None and size - last < self._COMPOSING_STEP:
+                continue
+            announced[index] = size
+            self._event_sink.emit(
+                ToolCallComposing(index=index, name=name, arguments_len=size))
+
     @staticmethod
     def _extract_plan_from_tool_result(msg):
         """Parse a todo / split_task tool result into a list of PlanEntry, or
@@ -1245,8 +1291,17 @@ class LLMAgent(Agent):
             ), f'inputs can be either a list or a string, but current is {type(messages)}'
             messages = [
                 Message(role='system', content=''),
-                Message(role='user', content=messages or self.query),
+                Message(
+                    role='user',
+                    content=messages or self.query,
+                    # Attachments for the FIRST turn. The interactive read that
+                    # produced this prompt happens in run_loop, which stashes
+                    # them here — the string-in signature cannot carry them, and
+                    # a session's first message is exactly when a user attaches
+                    # something.
+                    attachments=self._pending_attachments or []),
             ]
+        self._pending_attachments = []
 
         messages[0].content = self._build_system_content()
 
@@ -1437,8 +1492,11 @@ class LLMAgent(Agent):
         last = messages[-1]
         if getattr(last, 'role', None) != 'user':
             return
-        content = last.content
-        if not isinstance(content, str):
+        # Read the text out of whatever shape the content is in, rather than
+        # bailing on a block list: a multimodal turn that silently got no memory
+        # recall is a far worse outcome than one whose query came from its text.
+        content = flatten_message_text(last.content)
+        if not content:
             return
         # The turn may already carry other <system-reminder> blocks (skill
         # update notice prefixed by the host, prompt-files update notice) —
@@ -1462,7 +1520,9 @@ class LLMAgent(Agent):
             if block:
                 if block in content:
                     return  # marker-less backend, identical block attached
-                last.content = f'{last.content}\n\n{block}'
+                # append_text keeps the shape: a str grows, a block list gains a
+                # trailing text block (concatenating onto a list would raise).
+                last.content = append_text(last.content, block)
                 return
 
     # ── prompt-files update notices (hot-reload perception) ──────────────
@@ -1535,8 +1595,7 @@ class LLMAgent(Agent):
         if not messages:
             return None
         last = messages[-1]
-        if getattr(last, 'role', None) != 'user' or not isinstance(
-                last.content, str):
+        if getattr(last, 'role', None) != 'user':
             return None
 
         baseline = self._prompt_surface
@@ -1559,7 +1618,10 @@ class LLMAgent(Agent):
             return None
 
         notice = workspace_files.render_update_notice(changed)
-        last.content = f'{notice}\n\n{last.content}'
+        # Shape-preserving prepend; on a block list the notice becomes the first
+        # text block, which also matches the providers' label-before-payload
+        # preference.
+        last.content = prepend_text(last.content, notice)
         return lambda: self._commit_prompt_surface(current)
 
     async def condense_memory(self, messages: List[Message]) -> List[Message]:
@@ -1880,6 +1942,10 @@ class LLMAgent(Agent):
                 _response_message = None
                 _printed_reasoning_header = False
                 _printed_reasoning_footer = False
+                # index -> arguments length already announced, so a long tool
+                # call reports progress instead of going silent (see
+                # ui.events.ToolCallComposing).
+                _composing: Dict[int, int] = {}
                 _gen = self.llm.generate(messages, tools=tools)
                 _loop = asyncio.get_running_loop()
                 _NO_MORE = object()
@@ -1928,6 +1994,7 @@ class LLMAgent(Agent):
                                 _printed_reasoning_footer = True
                             self._emit_content(new_content)
                         _content = _response_message.content
+                        self._emit_tool_composing(_response_message, _composing)
                         messages[-1] = _response_message
                         yield messages
                 finally:
@@ -2222,6 +2289,12 @@ class LLMAgent(Agent):
         d: Dict[str, Any] = {'role': msg.role, 'content': msg.content or ''}
         if msg.tool_calls:
             d['tool_calls'] = msg.tool_calls
+        # Image refs must survive to disk: the SessionLog is the source of truth
+        # a resumed session rebuilds context from, so dropping them here means
+        # attached images vanish on reload (and on every context reassembly).
+        # They are references, not bytes — cheap to persist.
+        if getattr(msg, 'attachments', None):
+            d['attachments'] = msg.attachments
         if hasattr(msg, 'tool_call_id') and msg.tool_call_id:
             d['tool_call_id'] = msg.tool_call_id
         if hasattr(msg, 'name') and msg.name:
@@ -2369,6 +2442,10 @@ class LLMAgent(Agent):
                             await self.cleanup_tools()
                             return
                         messages = turn.text
+                        # create_messages() below builds the user Message from
+                        # this string, so hand the turn's attachments over
+                        # out-of-band rather than widening that signature.
+                        self._pending_attachments = turn.attachments
                 else:
                     # Non-interactive with no task: accept piped stdin as the
                     # query; otherwise fail clearly instead of blocking input().
@@ -2506,10 +2583,16 @@ class LLMAgent(Agent):
                     # conversational truth. Advance the ingest ledger past it
                     # (sync, in-memory + small file write) so the next turn's
                     # delta does not sweep the partial content in either.
+                    # THIS ROUND ONLY -- the same slice `_persist_partial_round`
+                    # takes. Handing over the whole history would mark earlier
+                    # rounds as ingested too, including one a background ingest
+                    # is still writing (extraction takes seconds), which loses
+                    # it: the write finds an empty delta, or fails and is denied
+                    # its retry.
                     for _mem_tool in self.memory_tools:
                         if hasattr(_mem_tool, 'mark_ingested'):
                             try:
-                                _mem_tool.mark_ingested(messages)
+                                _mem_tool.mark_ingested(messages[pre_step_len:])
                             except Exception:  # noqa: E722 - never mask cancel
                                 pass
                     raise

@@ -22,11 +22,30 @@ import inspect
 from copy import deepcopy
 from typing import Any, Dict, Generator, Iterable, List, Optional, Union
 
+from ms_agent.llm import multimodal
+from ms_agent.llm.thinking import apply_effort, create_with_thinking_fallback
 from ms_agent.llm.transport.base import Transport
 from ms_agent.llm.utils import Message, Tool, ToolCall
+from ms_agent.llm.vision import create_with_vision_fallback
+from ms_agent.llm.vision import disabled_reason as vision_disabled_reason
 from ms_agent.utils import MAX_CONTINUE_RUNS, assert_package_exist, get_logger
 
 logger = get_logger()
+
+#: Field names carrying the model's reasoning, in preference order. Most
+#: OpenAI-compatible vendors use ``reasoning_content`` (DashScope, ModelScope,
+#: Zhipu, DeepSeek); OpenRouter normalizes everything it proxies into
+#: ``reasoning`` instead, so reading only the first name made every model
+#: routed through it look like it never thought.
+_REASONING_FIELDS = ('reasoning_content', 'reasoning')
+
+
+def _reasoning_of(delta_or_message: Any) -> str:
+    for field in _REASONING_FIELDS:
+        value = getattr(delta_or_message, field, None)
+        if value:
+            return value
+    return ''
 
 
 class OpenAICompatTransport(Transport):
@@ -49,9 +68,20 @@ class OpenAICompatTransport(Transport):
         continue_gen_stop: Optional[List[str]] = None,
         max_continue_runs: Optional[int] = None,
         strip_reasoning_tags: bool = False,
+        vision: Optional['multimodal.VisionOptions'] = None,
+        vision_supported: bool = True,
     ):
         assert_package_exist('openai')
         import openai
+
+        # Image-attachment handling. Passed explicitly rather than via
+        # generation_config because that dict is forwarded wholesale as API
+        # kwargs (`self._call_llm(..., **args)`), so a private key in it would
+        # be sent to the endpoint and rejected.
+        self._vision = vision or multimodal.VisionOptions()
+        # Whether THIS model accepts images. Resolved by the caller from the
+        # per-model capability flag; False degrades attachments to text.
+        self._vision_supported = bool(vision_supported)
 
         self.model = model
         self.base_url = self._normalize_base_url(base_url)
@@ -180,16 +210,39 @@ class OpenAICompatTransport(Transport):
         # disappears from the dict entirely rather than arriving as None.
         pending_tool_ids: List[str] = []
         for idx, message in enumerate(messages):
+            # Image refs must be read BEFORE to_dict_clean(), which strips them
+            # (they are this method's input, never wire output).
+            attachments = (message.attachments if isinstance(message, Message)
+                           else message.get('attachments')) or []
             if isinstance(message, Message):
                 if isinstance(message.content, str):
                     message.content = message.content.strip()
                 message = message.to_dict_clean()
             else:
                 message = dict(message)
+                message.pop('attachments', None)
 
             content = message.get('content', '')
             if isinstance(content, str):
                 content = content.strip()
+
+            # Expand image refs into native blocks. Text-only turns come back
+            # as the same plain string, so nothing changes for them (prefix
+            # caching included).
+            # Not for a tool message: the Chat Completions SCHEMA allows
+            # only text parts in `role: "tool"`, so its images go to the
+            # synthetic user turn appended after it (below). Five compatible
+            # providers were measured to accept inline image parts here anyway,
+            # but hoisting is valid under the schema AND under all of them — see
+            # multimodal.TOOL_MEDIA_PROMPT for the full measurement.
+            if attachments and message.get('role') != 'tool':
+                content = multimodal.openai_content(
+                    content,
+                    attachments,
+                    self._vision,
+                    vision_supported=self._vision_supported,
+                    disabled_reason=vision_disabled_reason(
+                        getattr(self.client, 'base_url', ''), self.model))
 
             if cache_indice is not None and idx == cache_indice:
                 content = self._to_structured_content(
@@ -231,6 +284,17 @@ class OpenAICompatTransport(Transport):
                         'will likely reject this request')
 
             openai_messages.append(formatted_message)
+
+            # A tool result's images ride on a synthetic user turn right
+            # after it, because the Chat Completions schema restricts a tool
+            # message to text parts (see multimodal.TOOL_MEDIA_PROMPT).
+            if attachments and role == 'tool':
+                media = multimodal.openai_tool_media_message(
+                    attachments,
+                    self._vision,
+                    vision_supported=self._vision_supported)
+                if media is not None:
+                    openai_messages.append(media)
         return openai_messages
 
     # ------------------------------------------------------------------ #
@@ -248,6 +312,14 @@ class OpenAICompatTransport(Transport):
         args = self.args.copy()
         args.update(kwargs)
         stream = args.get('stream', False)
+        # NOT lowered here — `_call_llm` does it, exactly once per request.
+        # Lowering twice is destructive rather than idempotent: the canonical
+        # key and DashScope's wire key are both spelled `reasoning_effort`, so a
+        # second pass reads the `enable_thinking` the first pass just added as
+        # "the caller is driving thinking by hand" and stands down, deleting our
+        # own tier. `reasoning_effort` is a real OpenAI parameter, so it survives
+        # the filter below and reaches `_call_llm` intact; continuation calls
+        # re-lower from the same canonical value.
         args = {key: value for key, value in args.items() if key in parameters}
 
         # Format tools once and thread the formatted list through the
@@ -339,8 +411,33 @@ class OpenAICompatTransport(Transport):
         stream_options_config = self.args.get('stream_options', {})
         if is_streaming and stream_options_config.get('include_usage', True):
             kwargs.setdefault('stream_options', {})['include_usage'] = True
-        return self.client.chat.completions.create(
-            model=self.model, messages=messages, tools=tools, **kwargs)
+        # `reasoning_effort` is the one knob callers set; each endpoint spells it
+        # differently, so lower it here — as late as possible, when the base_url
+        # that decides the spelling is known. Thinking is also per-model and a
+        # refusal is a hard 400. Both live in llm/thinking.py.
+        kwargs = apply_effort(
+            kwargs, base_url=str(getattr(self.client, 'base_url', '')))
+
+        # Image content is the other per-model hard-400: a text-only model
+        # rejects the whole request rather than ignoring the image blocks, which
+        # would make it unusable the moment a user attaches a file. Retry once
+        # with the images folded into text, and remember the model. Wrapped
+        # OUTSIDE the thinking fallback so the two compose: a request can be
+        # retried for thinking and, independently, for images.
+        sent_images = any(
+            multimodal.has_image_blocks(m.get('content'))
+            for m in messages if isinstance(m, dict))
+        return create_with_vision_fallback(
+            lambda messages, **kw: create_with_thinking_fallback(
+                lambda **kw2: self.client.chat.completions.create(
+                    model=self.model, messages=messages, tools=tools, **kw2),
+                self.client, self.model, logger, **kw),
+            base_url=getattr(self.client, 'base_url', ''),
+            model=self.model,
+            messages=messages,
+            sent_images=sent_images,
+            logger_=logger,
+            **kwargs)
 
     # ------------------------------------------------------------------ #
     # usage
@@ -507,8 +604,7 @@ class OpenAICompatTransport(Transport):
         content = ''
         if completion_chunk.choices and completion_chunk.choices[0].delta:
             content = completion_chunk.choices[0].delta.content
-            reasoning_content = getattr(completion_chunk.choices[0].delta,
-                                        'reasoning_content', '')
+            reasoning_content = _reasoning_of(completion_chunk.choices[0].delta)
             if completion_chunk.choices[0].delta.tool_calls:
                 func = completion_chunk.choices[0].delta.tool_calls
                 tool_calls = [
@@ -538,11 +634,7 @@ class OpenAICompatTransport(Transport):
     @staticmethod
     def _format_output_message(completion) -> Message:
         content = completion.choices[0].message.content or ''
-        if hasattr(completion.choices[0].message, 'reasoning_content'):
-            reasoning_content = completion.choices[
-                0].message.reasoning_content or ''
-        else:
-            reasoning_content = ''
+        reasoning_content = _reasoning_of(completion.choices[0].message)
         tool_calls = None
         if completion.choices[0].message.tool_calls:
             tool_calls = [

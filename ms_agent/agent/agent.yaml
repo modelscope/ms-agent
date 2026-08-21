@@ -4,6 +4,50 @@ llm:
   modelscope_api_key:
   modelscope_base_url: https://api-inference.modelscope.cn/v1
 
+  # Whether THIS model may be shown image attachments. Left unset on purpose:
+  # it is read as a tri-state, so absent means "nobody has said", which falls
+  # back to the provider's declared capability and then to runtime learning
+  # (a model that rejects an image is remembered and never shown one again).
+  # A hard default either way is worse — false makes a capable model silently
+  # ignore attachments, true burns a 400 on every text-only model's first use.
+  # supports_vision: true
+
+  # Image encoding, applied at the wire boundary (ms_agent/llm/multimodal.py).
+  vision:
+    enabled: true
+    # Long-edge cap. 2560 sits inside DashScope's recommended range and at
+    # Anthropic's high-resolution tier while cutting a 4K upload ~4x. NOT 1568
+    # (Anthropic's standard tier): it downsamples rather than rejecting, so
+    # forcing that would throw away resolution the newer tier can use.
+    max_edge: 2560
+    # Hard ceiling on the base64 STRING length — DashScope's 10 MB limit is
+    # expressed that way; 8 MB leaves headroom.
+    max_bytes: 8388608
+    # OpenAI-family `detail`. 'low' is an explicit cost lever, not a default.
+    detail: auto
+    # GIF/BMP/TIFF/HEIC -> PNG first frame. DashScope's vision docs do not list
+    # GIF, so transcoding gives one answer that works on every provider.
+    transcode: true
+    # Keep only the most recent N images in context (0 = unlimited).
+    max_images: 0
+
+    # OPTIONAL escape hatch for a model that cannot see images at all: a
+    # separately configured VISION model that describes an image as text, which
+    # the main model then reasons over. Lossy by construction, so it is the
+    # fallback, never the preferred path — when the main model can see images the
+    # transports show it the real pixels and this is not used.
+    #
+    # Unset by default. The `image_reader` tool is registered ONLY when a
+    # `model` is present here, because a tool that can only ever fail is worse
+    # than no tool at all. Enabling it also needs `tools.image_reader` below.
+    #
+    # auxiliary:
+    #   service: dashscope
+    #   model: qwen3.8-max        # must be a model that CAN see images
+    #   api_key:                  # optional; falls back to env / provider spec
+    #   base_url:                 # optional; same
+    #   protocol: openai          # optional; 'anthropic' for that wire format
+
 generation_config:
   temperature: 0.3
   top_k: 20
@@ -36,6 +80,12 @@ tools:
       - edit_file
       - grep
       - glob
+  # Ask a separately configured vision model to describe an image, for a main
+  # model that cannot see one. Needs `llm.vision.auxiliary.model` set above;
+  # without it the tool is not registered. `mcp: false` marks it a built-in —
+  # every `tools.<name>` without that flag is treated as an MCP server.
+  # image_reader:
+  #   mcp: false
   code_executor:
     mcp: false
     implementation: python_env

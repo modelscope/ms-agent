@@ -17,7 +17,12 @@ class SharedMemoryManager:
     @classmethod
     async def get_shared_memory(cls, config: DictConfig,
                                 mem_instance_type: str) -> Memory:
-        """Get or create a shared memory instance based on configuration."""
+        """Get or create the shared memory instance for this config's store.
+
+        An existing instance is reconfigured in place when the incoming config
+        differs, so the caller always gets an instance that matches what it
+        asked for.
+        """
         node = getattr(config.memory, mem_instance_type, OmegaConf.create({}))
         # unified_memory namespaces the user under `namespace.user_id`;
         # legacy memories keep a top-level `user_id`. Honor both.
@@ -31,18 +36,37 @@ class SharedMemoryManager:
         path: str = getattr(node, 'path', None) or getattr(
             config, 'output_dir', None) or DEFAULT_OUTPUT_DIR
         path = os.path.abspath(os.path.expanduser(str(path)))
-        llm_str: str = getattr(config.llm, 'model', 'default_model')
 
-        key = f'{mem_instance_type}_{user_id}_{llm_str}_{path}'
+        # One instance per (memory type, user, store) — deliberately NOT
+        # keyed by the agent's model. Embedded stores (mem0 + local qdrant)
+        # take an exclusive file lock, so a second instance on the same path
+        # cannot open the store at all: keying by model meant that switching
+        # models with a store already open silently disabled memory for the
+        # new agent. A configuration change is handled by reconfiguring the
+        # live instance below, not by keeping two of them.
+        key = f'{mem_instance_type}_{user_id}_{path}'
 
-        if key not in cls._instances:
+        instance = cls._instances.get(key)
+        if instance is None:
             logger.info(f'Creating new shared memory instance for key: {key}')
-            cls._instances[key] = memory_mapping[mem_instance_type](config)
-        else:
-            logger.info(
-                f'Reusing existing shared memory instance for key: {key}')
+            instance = memory_mapping[mem_instance_type](config)
+            cls._instances[key] = instance
+            return instance
 
-        return cls._instances[key]
+        logger.info(f'Reusing existing shared memory instance for key: {key}')
+        # The cached instance was built from whatever config the FIRST agent
+        # had. Later agents may carry a changed one (the user edited the
+        # project's memory models, recall size, ...), and silently serving the
+        # old config is indistinguishable from "the setting does nothing".
+        reconfigure = getattr(instance, 'reconfigure', None)
+        if reconfigure is not None:
+            try:
+                await reconfigure(config)
+            except Exception as e:  # noqa: BLE001 - never fail agent startup
+                logger.warning(
+                    f'Reconfiguring shared memory {key} failed, keeping the '
+                    f'existing configuration: {e}')
+        return instance
 
     @classmethod
     async def close_matching(cls, base_dir: str) -> int:

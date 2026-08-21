@@ -100,8 +100,16 @@ def condense_hook_attachments_for_llm(
 
 
 def extract_latest_user_prompt(messages: list[Message]) -> str:
+    """The latest user turn's text, for hooks that inspect what was asked.
+
+    A block list is reduced to its text rather than ``str()``-ed: a hook that
+    matches on the prompt would otherwise be handed a Python repr and silently
+    stop matching (and UserPromptSubmit echoes this value back into the
+    conversation on a block, so the repr would become visible).
+    """
+    from ms_agent.llm.message_text import flatten_message_text
+
     for msg in reversed(messages):
         if msg.role == 'user':
-            return msg.content if isinstance(msg.content, str) else str(
-                msg.content)
+            return flatten_message_text(msg.content)
     return ''

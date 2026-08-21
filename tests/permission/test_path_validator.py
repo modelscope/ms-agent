@@ -195,3 +195,53 @@ class TestGetGlobBaseDirectory:
 
     def test_root_glob(self):
         assert get_glob_base_directory('/*') == '/'
+
+
+class TestDangerousRemovalWithConfiguredPatterns:
+    """The same check as above, but WITH the patterns production actually
+    configures. The default list starts with ``*``, and fnmatch's ``*`` crosses
+    ``/`` — so every path came back "dangerous" and NO removal was possible:
+    `rm build/out.txt` was refused by the non-bypassable safety layer, in every
+    mode, with nothing the user could do about it. The tests above never caught
+    it because they pass no patterns at all."""
+
+    @staticmethod
+    def _patterns():
+        from ms_agent.permission.config import SafetyConfig
+        return SafetyConfig().dangerous_removal_paths
+
+    @pytest.mark.parametrize('path', [
+        'build/out.txt',
+        'a.log',
+        './tmp/x',
+        'dist/',
+        os.path.join(os.path.expanduser('~'), 'proj/build/x.o'),
+        '~/proj/build/x.o',
+    ])
+    def test_ordinary_removals_are_allowed(self, path):
+        assert not is_dangerous_removal_path(path, self._patterns())
+
+    @pytest.mark.parametrize('path', [
+        '*',
+        '/*',
+        '/',
+        '/etc',
+        '/usr',
+        'build/*',
+    ])
+    def test_dangerous_removals_still_refused(self, path):
+        assert is_dangerous_removal_path(path, self._patterns())
+
+    @pytest.mark.parametrize('path', ['~', '~/'])
+    def test_literal_home_refused(self, path):
+        """`rm ~` is judged on both the written form and the expanded one. It
+        used to be caught only by the match-everything accident above."""
+        assert is_dangerous_removal_path(path, self._patterns())
+
+    def test_a_real_glob_pattern_still_globs(self):
+        """Only a separators-and-stars entry is literal-only; a pattern with an
+        actual path in it keeps working as a glob."""
+        assert is_dangerous_removal_path('/opt/data/db',
+                                         ('/opt/data/*', ))
+        assert not is_dangerous_removal_path('/opt/other/db',
+                                            ('/opt/data/*', ))
