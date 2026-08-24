@@ -814,6 +814,8 @@ def _file_per_agent_identity_path(dst_spec: WorkspaceSpec) -> str | None:
     agent name so converted persona content can be routed into that file.
     Returns ``None`` when the layout has no single ``{name}`` file pattern.
     """
+    if dst_spec.product_name == 'qoder':
+        return None
     name = dst_spec.agent_name or DEFAULT_AGENT_NAME
     for pattern in dst_spec.patterns:
         # Only single-file placeholders (no wildcard) identify the persona file;
