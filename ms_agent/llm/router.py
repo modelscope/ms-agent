@@ -166,9 +166,16 @@ class ProviderRouter:
         # Image attachments: encode options + whether this model may be shown
         # pixels. Resolved here (the one place that has spec, model and base_url
         # together) rather than inside the transports.
+        from dataclasses import replace as _replace
+
         from .multimodal import VisionOptions
-        from .vision import resolve_supports_vision
+        from .vision import resolve_max_edge, resolve_supports_vision
         vision = VisionOptions.from_config(config)
+        # A provider that documents a HIGHER ceiling than the shared safe
+        # default gets to use it. The table can only widen (see spec.py), so a
+        # provider we have not catalogued simply encodes at the default.
+        vision = _replace(
+            vision, max_edge=resolve_max_edge(spec, vision.max_edge))
         vision_supported = resolve_supports_vision(
             config, spec=spec, model=model, base_url=base_url)
 

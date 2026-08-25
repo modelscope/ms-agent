@@ -52,6 +52,16 @@ class ProviderSpec:
     strip_reasoning_tags: bool = False
     # Generation-config defaults merged under the user's config.
     default_generation_config: Dict = field(default_factory=dict)
+    # Long-edge ceiling this endpoint accepts for inline images, when it is
+    # known to be HIGHER than the safe default (multimodal.VisionOptions.
+    # max_edge = 2048, the value every measured endpoint accepts).
+    #
+    # This table may only ever WIDEN the limit. That asymmetry is deliberate:
+    # a missing or stale entry costs a little resolution, while a table that
+    # could narrow it would turn "we forgot to update a provider" into failed
+    # requests — which is exactly the outage this whole area is recovering
+    # from. 0 means "use the default".
+    max_image_edge: int = 0
 
 
 class ProviderRegistry:
@@ -126,6 +136,11 @@ class ProviderRegistry:
                 base_url_env=['ANTHROPIC_BASE_URL'],
                 keywords=['claude-'],
                 capabilities=anthropic_caps,
+                # Anthropic DOWNSAMPLES oversized images instead of rejecting
+                # them, and Claude 4.7+ has a 2576 px high-resolution tier.
+                # Capping at the shared 2048 default would throw that tier's
+                # resolution away for nothing.
+                max_image_edge=2576,
             ),
             ProviderSpec(
                 name='google',

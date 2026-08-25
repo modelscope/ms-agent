@@ -1,149 +1,106 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
-"""Which models can be shown an image, and what to do when we guess wrong.
+"""Whether to attach pixels, and what to do when the endpoint says no.
 
-Two halves:
+Two halves.
 
-**Resolution** — whether to attach pixels at all. Two states only, and the
-default is OFF:
+**Resolution** — one state, default OFF: the per-model "image understanding"
+switch. Nothing else. There is deliberately no memory of models observed to
+refuse images, and no write-back of the switch.
 
-1. an explicit per-model setting (the "image understanding" switch in the model
-   form) — the user's own statement, and the only thing that turns images ON;
-2. a model observed to REFUSE images earlier in this process vetoes it, because
-   a refusal is ground truth.
+An earlier version cached refusals so a conversation would stop paying for a
+request it expected to fail. It cost a TTL, four invalidation hooks, a retry
+endpoint and a UI affordance, and it introduced a failure mode of its own: a
+cache is a second opinion about the user's own configuration, and when the two
+disagreed the user had no way to see it. The switch is the user's statement
+about their model; if it is wrong they find out from the reply and change it.
+The price of that simplicity is one failed round-trip per turn on a model the
+user has mis-declared — bounded, self-evident, and theirs to fix.
 
 Deliberately NOT consulted: the provider's declared ``vision`` capability.
 Vision is a property of the MODEL, not of the endpoint — ModelScope serves
 ``Qwen3-VL-8B-Instruct`` and the text-only ``Qwen3-235B-A22B`` through one
-provider entry, so a provider-level flag says yes to both. It used to be the
-middle tier here, and because nine of ten registry entries declare ``vision``
-it made "nobody has said" mean "send images", i.e. the switch's OFF position
-described a state the runtime never actually used. ``ProviderCapability.VISION``
-still exists and is still correct about what the *protocol* accepts; it is just
-not evidence about a particular model's eyesight.
+provider entry, so a provider-level flag says yes to both.
 
-Whether a model can really see is therefore the user's call. There is no
-probing: a model that accepts image blocks with HTTP 200 and cannot read them
-(measured: zhipu glm-5.x, MiniMax-M2.7, and ModelScope's Qwen3-235B-A22B, which
-answered with an invented string) is indistinguishable at runtime from one that
-can.
+**Recovery** — a ladder, not a single move. The old code had exactly one
+response to any failure that touched images: throw the pictures away and
+remember the model as blind. That conflated three unrelated problems, and the
+cheapest one to fix — an image a few hundred pixels too wide — was being
+"solved" by permanently disabling a healthy model.
 
-**Self-healing** — a provider that cannot see images rejects the whole request
-with a hard 400, which would otherwise make such a model unusable the moment a
-user attaches a file. So the request is retried once with the images replaced by
-text, and the model is remembered so a session pays that round-trip at most once.
+The ladder is driven by :func:`ms_agent.llm.image_errors.classify`:
 
-The refusal detector deliberately does **no keyword matching**. Measured against
-DashScope (2026-08), a text-only model given an ``image_url`` block answers::
+===================  ===========================================
+diagnosis            moves, in order
+===================  ===========================================
+TOO_LARGE            re-encode smaller (stated limit, then /2) …
+SHAPE_REJECTED       keep only the newest image …
+MODEL_NO_VISION      drop images
+UNKNOWN              drop images
+NOT_IMAGE_RELATED    (none — re-raise untouched)
+===================  ===========================================
 
-    <400> InternalError.Algo.InvalidParameter: The provided messages input is
-    invalid. The error info is [Unexpected item type in content.]
+Rows that end in "…" fall through to dropping images if their own moves are
+exhausted. The class still matters after the fact: it decides which sentence
+the turn reports (a size complaint and a refusal are different problems with
+different remedies), which is all it is used for now.
 
-— which names neither "image" nor "multimodal" nor "vision". Any keyword list
-built from a vendor's current phrasing is a guess that goes stale. What we *do*
-know for certain is whether the request we just sent carried image blocks; that
-fact plus a 400 is the attribution. Mirrors ``llm/thinking.py``, which exists
-because a hand-maintained model blocklist was wrong twice before it.
+Streaming is covered in both shapes: clients that issue the request eagerly
+raise out of ``create`` itself, and gateways that answer 200 and then fail
+inside the stream raise on the first chunk (``llm/stream_retry.py``).
 """
 from __future__ import annotations
 
-from typing import Any, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 from ms_agent.llm import multimodal
+from ms_agent.llm.image_errors import (ImageFailure, classify, edge_ladder,
+                                       status_of)
 from ms_agent.utils import get_logger
 
 logger = get_logger()
 
-#: ``(base_url, model)`` pairs observed to reject image content.
-MODELS_REFUSING_IMAGES: Set[Tuple[str, str]] = set()
-
-#: Callables notified the first time a model is learned to refuse images, so a
-#: host (the WebUI) can TELL THE USER. Deliberately not a write-back hook: the
-#: switch is the user's statement about their own model, and silently rewriting
-#: it would both contradict them and hide the reason. The memo below keeps the
-#: session from paying the failed round-trip twice; making it permanent is the
-#: user's decision to make in the model form.
-_OBSERVERS: List[Any] = []
+#: Machine codes for why this turn's pixels are absent. They are codes, not
+#: prose: the sentence a model or a user sees is rendered from one of these at
+#: the point of use, so there is exactly one place to change the wording and no
+#: way for two layers to describe the same state differently.
+REASON_SWITCH_OFF = 'switch_off'
+REASON_ENDPOINT_REJECTED = 'endpoint_rejected'
 
 
-def register_refusal_observer(fn) -> None:
-    """Register ``fn(base_url, model)``, called once per newly-learned refusal.
+def _degrade_code(failure: ImageFailure) -> str:
+    """Failure class -> the code the user-facing surfaces render.
 
-    Idempotent per callable, so repeated setup (a WebUI reload) cannot stack
-    duplicate notifications. Observer exceptions are swallowed: learning that a
-    model refuses images must never be able to fail the turn that discovered it.
+    Only a capability refusal is described as the endpoint refusing images. A
+    payload we could not make small enough, or a batch shape the endpoint would
+    not take, are different sentences with different remedies — and, unlike a
+    refusal, neither is something a "try again" button can undo.
     """
-    if fn not in _OBSERVERS:
-        _OBSERVERS.append(fn)
+    return {
+        ImageFailure.TOO_LARGE: multimodal.REASON_TOO_LARGE,
+        ImageFailure.SHAPE_REJECTED: multimodal.REASON_SHAPE_REJECTED,
+    }.get(failure, REASON_ENDPOINT_REJECTED)
 
 
-def model_key(base_url: Any, model: str) -> Tuple[str, str]:
-    return (str(base_url or ''), str(model or ''))
+def delivery_reason(base_url: Any = '', model: str = '') -> str:
+    """Machine code for why pixels are absent at FORMAT time.
 
-
-def note_refusal(base_url: Any, model: str) -> None:
-    key = model_key(base_url, model)
-    first_time = key not in MODELS_REFUSING_IMAGES
-    MODELS_REFUSING_IMAGES.add(key)
-    if not first_time:
-        return
-    for observer in list(_OBSERVERS):
-        try:
-            observer(key[0], key[1])
-        except Exception as exc:  # never fail the turn over bookkeeping
-            logger.warning('[vision] refusal observer failed: %s', exc)
-
-
-def known_refuser(base_url: Any, model: str) -> bool:
-    return model_key(base_url, model) in MODELS_REFUSING_IMAGES
-
-
-def disabled_reason(base_url: Any = '', model: str = '') -> str:
-    """Why this turn's images are text placeholders, for the model to relay.
-
-    A model whose switch is off should be told to turn it on; a model whose
-    switch is ON but whose endpoint rejected the images must NOT be, or it
-    sends the user back to a box they already ticked.
+    Only one thing can be true this early: the switch is off. A refusal is
+    discovered later, by the endpoint, and reported through ``on_degrade``.
+    (Arguments kept for the transports' call shape.)
     """
-    if model and known_refuser(base_url, model):
-        return multimodal.REASON_REJECTED
-    return multimodal.REASON_DISABLED
-
-
-def _status_of(exc: Exception) -> Optional[int]:
-    status = getattr(exc, 'status_code', None)
-    if status is None:
-        response = getattr(exc, 'response', None)
-        status = getattr(response, 'status_code', None)
-    try:
-        return int(status) if status is not None else None
-    except (TypeError, ValueError):
-        return None
+    return REASON_SWITCH_OFF
 
 
 def is_image_refusal(exc: Exception, sent_images: bool) -> bool:
-    """True when a 400 is attributable to the images in THIS request.
+    """Back-compat shim: is this failure attributable to the images at all?
 
-    ``sent_images`` is the whole detector: we know what we put on the wire, and
-    guessing the vendor's wording does not work (see the module docstring).
-
-    This is deliberately a WIDE net — it says "worth one retry", not "definitely
-    the images". Measured across seven providers, a 400 on an image-carrying
-    request also covers model-not-found ("Model id ... has no provider
-    supported" on ModelScope), auth failures and content filters. The
-    discrimination therefore happens in ``create_with_vision_fallback``, which
-    only blacklists the model when the image-less retry actually SUCCEEDS; a 400
-    that persists without images is re-raised untouched and teaches us nothing.
-
-    So the cost of a false positive is exactly one extra round-trip, and it can
-    never mask the real error or wrongly disable images on a capable model.
+    Kept because external callers and tests use it. The real decision now lives
+    in :func:`ms_agent.llm.image_errors.classify`, which additionally says WHICH
+    kind of image problem it was — the distinction that keeps a size complaint
+    from being recorded as blindness.
     """
-    if not sent_images:
-        return False  # a 400 with no images in it is somebody else's problem
-    status = _status_of(exc)
-    if status is not None:
-        return status == 400
-    # Some SDK wrappers lose the status; fall back to the textual marker.
-    return '400' in str(exc)
+    return classify(
+        exc, sent_images=sent_images).failure is not ImageFailure.NOT_IMAGE_RELATED
 
 
 def strip_images_from_messages(messages: Any) -> Tuple[Any, bool]:
@@ -170,85 +127,110 @@ def strip_images_from_messages(messages: Any) -> Tuple[Any, bool]:
     return out, changed
 
 
-def create_with_vision_fallback(create,
+def _materialize(result: Any) -> Tuple[Any, bool]:
+    """Resolve a candidate far enough to know it works.
+
+    ``(result, produced_output)``. For a stream that means pulling the first
+    chunk here, inside the error path, and re-attaching it — a gateway that
+    answers 200 and then fails mid-stream must not be mistaken for a success.
+    Raises whatever the attempt raises.
+    """
+    if not hasattr(result, '__next__'):
+        return result, True
+    try:
+        first = next(result)
+    except StopIteration:
+        return iter(()), False  # accepted, but said nothing
+
+    def _rejoined() -> Iterator[Any]:
+        yield first
+        yield from result
+
+    return _rejoined(), True
+
+
+def create_with_vision_fallback(create: Callable[..., Any],
                                 *,
                                 base_url: Any,
                                 model: str,
                                 messages: Any,
                                 sent_images: bool,
-                                logger_=None,
+                                max_edge: int = 0,
+                                on_degrade: Optional[Callable[[str], None]] = None,
+                                logger_: Any = None,
                                 **kwargs) -> Any:
-    """Call ``create(messages=..., **kwargs)``, retrying once without images.
+    """Call ``create(messages=..., **kwargs)``, recovering along the ladder.
 
-    ``create`` must accept ``messages`` as a keyword so the retry can hand it a
-    rewritten list.
+    ``create`` must accept ``messages`` as a keyword so each rung can hand it a
+    rewritten list. ``max_edge`` is the long edge the payload was encoded at, so
+    a size complaint can be answered with a real reduction.
 
-    Streaming is covered in BOTH shapes: clients that issue the request eagerly
-    raise out of ``create`` itself, and gateways that answer 200 before
-    rejecting the image blocks raise on the first chunk (see
-    ``llm/stream_retry.py``).
+    ``on_degrade(reason)`` is called when recovery ends with images NOT reaching
+    the model. Without it the record built at format time would still read
+    "delivered" for a request the endpoint went on to refuse — and that record
+    is what the user's badge and notice are drawn from, so it would confidently
+    show the wrong thing in precisely the case it exists for.
     """
     from ms_agent.llm.stream_retry import retry_on_first_chunk
 
     log = logger_ or logger
-    if sent_images and known_refuser(base_url, model):
-        messages, _ = strip_images_from_messages(messages)
-        sent_images = False
+    current_edge = max_edge or multimodal.VisionOptions.max_edge
 
-    def _remember() -> None:
-        note_refusal(base_url, model)
-        log.warning(
-            'images stay off for %s for the rest of this process (the '
-            'image-less retry succeeded)', model)
-
-    def _confirm(result: Any, original: BaseException) -> Any:
-        """Blacklist only once the image-less attempt actually produces output.
-
-        For a non-streaming call "returned" already means "succeeded". For a
-        stream it does not: the replacement can still fail on its own first
-        chunk, and treating that as proof would blacklist a model whose real
-        problem was something else entirely.
-        """
-        if not hasattr(result, '__next__'):
-            _remember()
-            return result
-
-        def _guarded():
+    def _degraded(reason: str) -> None:
+        if on_degrade is not None:
             try:
-                first = next(result)
-            except StopIteration:
-                _remember()  # empty, but the endpoint accepted it
-                return
-            except Exception:
-                raise original from None  # the images were not the cause
-            _remember()
-            yield first
-            yield from result
+                on_degrade(reason)
+            except Exception as exc:  # noqa: BLE001 — reporting must not fail a turn
+                log.warning('[vision] delivery report failed: %s', exc)
 
-        return _guarded()
+    def _moves(diag) -> List[Tuple[str, Any]]:
+        """Ordered recovery attempts for a diagnosis."""
+        if diag.failure is ImageFailure.TOO_LARGE:
+            return [('shrink', edge)
+                    for edge in edge_ladder(diag.max_edge, current_edge)
+                    ] + [('strip', None)]
+        if diag.failure is ImageFailure.SHAPE_REJECTED:
+            return [('keep_last', 1), ('strip', None)]
+        return [('strip', None)]
+
+    def _apply(move: str, arg: Any) -> Tuple[Any, bool]:
+        if move == 'shrink':
+            return multimodal.shrink_images_in_messages(messages, int(arg))
+        if move == 'keep_last':
+            return multimodal.drop_images_in_messages(messages, int(arg))
+        return strip_images_from_messages(messages)
 
     def _repair(exc: BaseException) -> Any:
-        if not is_image_refusal(exc, sent_images):
+        diag = classify(exc, sent_images=sent_images)
+        if diag.failure is ImageFailure.NOT_IMAGE_RELATED:
             raise exc
-        retry_messages, changed = strip_images_from_messages(messages)
-        if not changed:
-            raise exc
+
         log.warning(
-            '%s returned 400 on a request carrying images; retrying once with '
-            'the images replaced by text: %s', model, exc)
-        try:
-            result = create(messages=retry_messages, **kwargs)
-        except Exception:
-            # Removing the images did NOT help, so they were not the cause —
-            # this was a model-not-found / auth / content-filter 400 that merely
-            # happened to ride on a turn with an attachment. Re-raise the
-            # ORIGINAL error (it describes the real problem) and, crucially, do
-            # not blacklist the model: marking a vision-capable model as
-            # image-refusing here would silently stop sending it images for the
-            # rest of the process. Measured on ModelScope, whose "Model id ...
-            # has no provider supported" is exactly this shape.
-            raise exc from None
-        return _confirm(result, exc)
+            '%s failed on a request carrying images (%s: %s); recovering: %s',
+            model, diag.failure.value, diag.detail,
+            ' -> '.join(m for m, _ in _moves(diag)))
+
+        for move, arg in _moves(diag):
+            candidate, changed = _apply(move, arg)
+            if not changed:
+                continue
+            try:
+                result, produced = _materialize(
+                    create(messages=candidate, **kwargs))
+            except Exception as retry_exc:  # noqa: BLE001
+                log.debug('[vision] recovery move %r did not help: %s', move,
+                          retry_exc)
+                continue
+            if move == 'strip':
+                _degraded(_degrade_code(diag.failure))
+            elif move == 'keep_last':
+                _degraded(multimodal.REASON_SHAPE_REJECTED)
+            return result
+
+        # Nothing on the ladder worked, so the images were not the cause (or not
+        # the only one). The original error describes the real problem; a
+        # recovery attempt's own failure would only obscure it.
+        raise exc from None
 
     try:
         result = create(messages=messages, **kwargs)
@@ -268,9 +250,6 @@ def resolve_supports_vision(config: Any,
     (kept so existing callers need no edit): a provider's declared ``vision``
     capability describes the protocol, not the model behind it.
     """
-    if model and known_refuser(base_url, model):
-        return False  # observed truth beats the switch
-
     llm = getattr(config, 'llm', None) if config is not None else None
     if llm is not None:
         for name in ('supports_vision', 'vision_supported'):
@@ -278,6 +257,19 @@ def resolve_supports_vision(config: Any,
             if value is not None:
                 return _as_bool(value)
     return False
+
+
+def resolve_max_edge(spec: Any, configured: int = 0) -> int:
+    """Long edge to encode at: the safe default unless a provider raises it.
+
+    ``configured`` (an explicit ``llm.vision.max_edge``) always wins — a user
+    who set a number meant it.
+    """
+    default = multimodal.VisionOptions.max_edge
+    if configured and configured != default:
+        return configured
+    declared = int(getattr(spec, 'max_image_edge', 0) or 0)
+    return max(default, declared) if declared else default
 
 
 def _as_bool(value: Any) -> bool:
@@ -292,3 +284,23 @@ def _as_bool(value: Any) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in ('1', 'true', 'yes', 'on', 'y')
     return bool(value)
+
+
+# Retained for callers that imported it directly. New code should use
+# ``delivery_reason`` (machine codes) instead of prose.
+def disabled_reason(base_url: Any = '', model: str = '') -> str:
+    return delivery_reason(base_url, model)
+
+
+__all__ = [
+    'REASON_SWITCH_OFF',
+    'REASON_ENDPOINT_REJECTED',
+    'delivery_reason',
+    'disabled_reason',
+    'is_image_refusal',
+    'strip_images_from_messages',
+    'create_with_vision_fallback',
+    'resolve_supports_vision',
+    'resolve_max_edge',
+    'status_of',
+]

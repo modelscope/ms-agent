@@ -158,6 +158,27 @@ class ToolCallComposing(AgentEvent):
 
 
 @dataclass(frozen=True)
+class ImageDelivered(AgentEvent):
+    """What actually happened to one attached image on this request.
+
+    The state this area was missing. "Did the picture reach the model?" was
+    knowable only inside the transport, was never written down, and was never
+    shown — so when a model said "I cannot see the image", nobody, including the
+    user, could tell whether the switch was off, the endpoint had refused, or the
+    model was simply making things up. Every one of those has a different remedy.
+
+    ``reason`` is a machine code (``llm/vision.py``'s ``REASON_*``), so the host
+    renders its own sentence instead of relaying one the model improvised.
+    """
+    EVENT_TYPE: ClassVar[str] = 'image_delivered'
+    index: int = 0
+    path: str = ''
+    filename: str = ''
+    state: str = ''  # delivered | degraded | unreadable
+    reason: str = ''
+
+
+@dataclass(frozen=True)
 class ToolCallStarted(AgentEvent):
     """A tool call is about to execute."""
     EVENT_TYPE: ClassVar[str] = 'tool_call_started'
