@@ -555,6 +555,8 @@ def push_mirror(
             visibility=visibility)
         return
 
+    _verify_visibility_or_abort(client, username, name, visibility)
+
     remote_sha_map = {f.path: f.sha256 for f in remote_files}
     remote_paths = set(remote_sha_map.keys())
     remote_lfs_paths = {f.path for f in remote_files if f.is_lfs}
