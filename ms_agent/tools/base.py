@@ -29,19 +29,6 @@ class ToolBase:
         self.output_dir = getattr(self.config, 'output_dir',
                                   DEFAULT_OUTPUT_DIR)
 
-    # ---------------------------------------------------------------- output
-    # Oversized tool output has to be bounded or it eats the context window,
-    # but the generic way to bound it — keep the head and the tail, splice a
-    # notice into the middle — assumes the payload is prose. Applied to a tool
-    # that answers in JSON it lands inside a string literal and the result stops
-    # parsing: measured on web_search, an 84k-char payload reached the model as
-    # invalid JSON, so the model saw neither the results nor an error.
-    #
-    # A tool that already bounds itself therefore needs a way to say so. Same
-    # protocol as qwen-code's `Tool.maxOutputChars` / `truncateKeep` (which in
-    # turn mirrors Claude Code's per-tool `maxResultSizeChars`): the DEFAULT is
-    # unchanged behaviour, and a tool opts in.
-
     @property
     def max_output_chars(self) -> Optional[float]:
         """Model-facing character budget for this tool's output.
