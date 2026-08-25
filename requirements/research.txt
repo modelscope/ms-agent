@@ -14,4 +14,3 @@ Pillow
 python-dotenv
 requests
 rich
-socksio
