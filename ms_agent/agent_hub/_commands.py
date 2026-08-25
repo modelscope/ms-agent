@@ -1116,7 +1116,14 @@ def cmd_convert(
         if err:
             return _fail(err)
 
-    src_name = from_name or DEFAULT_AGENT_NAME
+    if from_name:
+        src_name = from_name
+    else:
+        # An omitted --from-name asks the framework which agent it should
+        # convert: frameworks with an "active" sub-agent notion (openhuman's
+        # activeProfileId) return it, everything else returns ``default``.
+        src_name = build_spec(source_fw, DEFAULT_AGENT_NAME,
+                              local_dir).resolve_default_agent_name()
     dst_name = target_name or src_name
     src_spec = build_spec(source_fw, src_name, local_dir)
     dst_spec = build_spec(target_fw, dst_name, out_dir)

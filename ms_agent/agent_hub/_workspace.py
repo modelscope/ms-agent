@@ -479,6 +479,18 @@ class WorkspaceSpec(ABC):
         """
         return [DEFAULT_AGENT_NAME]
 
+    def resolve_default_agent_name(self) -> str:
+        """Which agent an omitted ``--name`` should operate on.
+
+        Default: the ``default`` agent.  Frameworks that keep a notion of an
+        *active* sub-agent (e.g. openhuman's ``activeProfileId``) override
+        this so a name-less convert picks the persona the user is actually
+        working with instead of the bare default.  Must never raise: an
+        absent / unreadable active-agent marker falls back to
+        ``DEFAULT_AGENT_NAME``.
+        """
+        return DEFAULT_AGENT_NAME
+
     def _list_agents_from_dir(self, agents_dir: Path) -> list[str]:
         """List agents from a directory, prepending DEFAULT if not present."""
         agents = _list_agent_files(agents_dir)

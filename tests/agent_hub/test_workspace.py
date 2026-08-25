@@ -336,7 +336,10 @@ class TestOpenhumanUserWorkspace(unittest.TestCase):
         alice = build_spec("openhuman", "Alice", str(self.root))
         self.assertEqual(alice.workspace_root,
                          self.ws / "personalities" / "Alice")
-        self.assertEqual(sorted(alice.collect_bytes()), ["SOUL.md"])
+        # Alice lacks IDENTITY.md, so the workspace-level copy falls back in
+        # (app lookup order: Profile file > workspace-level default).
+        self.assertEqual(sorted(alice.collect_bytes()),
+                         ["IDENTITY.md", "SOUL.md"])
 
     def test_all_mode_prefixes_profile_dirs(self):
         spec = build_spec("openhuman", "all", str(self.root))
@@ -357,6 +360,106 @@ class TestOpenhumanUserWorkspace(unittest.TestCase):
         fresh.mkdir()
         spec = build_spec("openhuman", "default", str(fresh))
         self.assertEqual(spec.collect_bytes(), {})
+
+
+class TestOpenhumanActiveProfile(unittest.TestCase):
+    """an omitted --from-name must convert the ACTIVE profile
+    (``agent_profiles.json`` ``activeProfileId``), not the workspace-level
+    fallback persona, and a Profile without its own MEMORY.md must fall back
+    to the workspace-level one -- otherwise converting an openhuman install
+    loses the active persona's memory.
+    """
+
+    USER_ID = "local-u-x"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name) / ".openhuman"
+        self.ws = self.root / "users" / self.USER_ID / "workspace"
+        librarian = self.ws / "personalities" / "to-ms-librarian"
+        librarian.mkdir(parents=True)
+        (self.ws / "personalities" / "idle").mkdir()
+        # Workspace-level fallback persona + curated memory.
+        (self.ws / "SOUL.md").write_text("# fallback soul\n")
+        (self.ws / "IDENTITY.md").write_text("# id\n")
+        (self.ws / "MEMORY.md").write_text("# workspace memory\n")
+        # Active profile carries its own SOUL but NOT its own MEMORY.
+        (librarian / "SOUL.md").write_text("# librarian soul\n")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _write_profiles(self, content):
+        (self.ws / "agent_profiles.json").write_text(content)
+
+    def test_omitted_name_selects_active_profile(self):
+        self._write_profiles(json.dumps({"activeProfileId": "to-ms-librarian"}))
+        spec = build_spec("openhuman", "default", str(self.root))
+        self.assertEqual(spec.resolve_default_agent_name(), "to-ms-librarian")
+
+    def test_no_profiles_json_falls_back_to_default(self):
+        spec = build_spec("openhuman", "default", str(self.root))
+        self.assertEqual(spec.resolve_default_agent_name(), "default")
+
+    def test_malformed_profiles_json_falls_back_to_default(self):
+        self._write_profiles("{not json")
+        spec = build_spec("openhuman", "default", str(self.root))
+        self.assertEqual(spec.resolve_default_agent_name(), "default")
+
+    def test_unknown_profile_id_falls_back_to_default(self):
+        self._write_profiles(json.dumps({"activeProfileId": "ghost"}))
+        spec = build_spec("openhuman", "default", str(self.root))
+        self.assertEqual(spec.resolve_default_agent_name(), "default")
+
+    def test_empty_profile_id_falls_back_to_default(self):
+        self._write_profiles(json.dumps({"activeProfileId": "  "}))
+        spec = build_spec("openhuman", "default", str(self.root))
+        self.assertEqual(spec.resolve_default_agent_name(), "default")
+
+    def test_profile_memory_falls_back_to_workspace_level(self):
+        spec = build_spec("openhuman", "to-ms-librarian", str(self.root))
+        files = spec.collect()
+        # Profile's own SOUL wins over the workspace-level one ...
+        self.assertEqual(files["SOUL.md"], "# librarian soul\n")
+        # ... while the missing persona files fall back to workspace copies.
+        self.assertEqual(files["MEMORY.md"], "# workspace memory\n")
+        self.assertEqual(files["IDENTITY.md"], "# id\n")
+        self.assertNotIn("config.toml", files)
+        self.assertNotIn("wiki/note.md", files)
+
+    def test_profile_file_always_wins_over_workspace_fallback(self):
+        (self.ws / "personalities" / "to-ms-librarian" /
+         "MEMORY.md").write_text("# profile memory\n")
+        spec = build_spec("openhuman", "to-ms-librarian", str(self.root))
+        self.assertEqual(spec.collect()["MEMORY.md"], "# profile memory\n")
+
+    def test_missing_memory_everywhere_is_silent(self):
+        (self.ws / "MEMORY.md").unlink()
+        spec = build_spec("openhuman", "to-ms-librarian", str(self.root))
+        self.assertNotIn("MEMORY.md", spec.collect())
+
+    def test_all_mode_stays_bare_per_profile(self):
+        spec = build_spec("openhuman", "all", str(self.root))
+        # No workspace-level duplication leaks into the per-profile repos.
+        self.assertEqual(sorted(spec.collect()),
+                         ["to-ms-librarian/SOUL.md"])
+
+    def test_convert_without_name_uses_active_profile(self):
+        """cmd_convert auto-selects the active profile end to end."""
+        self._write_profiles(json.dumps({"activeProfileId": "to-ms-librarian"}))
+        out_dir = Path(self.tmp.name) / "out"
+        rc = cmd_convert(
+            "openhuman", "nanobot", None, None, str(self.root), str(out_dir))
+        self.assertEqual(rc, 0)
+        # The ACTIVE profile's own SOUL (not the workspace-level fallback
+        # persona) must be the converted persona ...
+        self.assertIn("# librarian soul",
+                      (out_dir / "SOUL.md").read_text(encoding="utf-8"))
+        # ... and the workspace-level MEMORY falls back into the target's
+        # memory slot instead of being lost (BUG-0825).
+        memory = (out_dir / "memory" / "MEMORY.md").read_text(
+            encoding="utf-8")
+        self.assertIn("# workspace memory", memory)
 
 
 class TestQwenpawAgentJsonSecrets(unittest.TestCase):
