@@ -40,10 +40,16 @@ def _print_openhuman_next_steps(root) -> None:
     requirement.
     """
     agents_dir = f'{root}/agents'
+    doc = ('https://github.com/tinyhumansai/openhuman/blob/main/'
+           'gitbooks/developing/architecture/agent-harness.md')
+    example = ('https://github.com/tinyhumansai/openhuman/blob/main/'
+               'src/openhuman/agent/registry/agents/researcher/agent.toml')
     logger.info(
         '转换/下载已完成，但当前还不能直接使用（若尚未注册）。OpenHuman 只通过 '
         'workspace/agents/<agent-id>.toml 注册表发现智能体，本次仅写入了 persona/skill 文件。\n'
         '请手动完成：\n'
+        '  官方文档（如何构建 agent.toml）：' + doc + '\n'
+        '  官方示例（researcher/agent.toml）：' + example + '\n'
         f'  1) 在 {agents_dir}/ 下手动创建 <agent-id>.toml，包含 id / when_to_use / '
         'system_prompt.inline（粘贴 SOUL.md 内容）/ model.exact="inherit"；id 仅限字母、数字、"_"、"-"。\n'
         '  2) UI「设置 → 智能体 → 新建智能体」，id / model / 工具白名单与 TOML 保持一致。\n'
@@ -55,6 +61,8 @@ def _print_openhuman_next_steps(root) -> None:
         '(if you have not registered it). OpenHuman discovers agents only via the '
         'workspace/agents/<agent-id>.toml registry; this run wrote persona/skill files only.\n'
         'Manual steps:\n'
+        '  Official docs (how to build agent.toml): ' + doc + '\n'
+        '  Official example (researcher/agent.toml): ' + example + '\n'
         f'  1) Create {agents_dir}/<agent-id>.toml with: id / when_to_use / '
         'system_prompt.inline (paste the SOUL.md content) / model.exact="inherit"; '
         'id may contain only letters, digits, "_", "-".\n'
