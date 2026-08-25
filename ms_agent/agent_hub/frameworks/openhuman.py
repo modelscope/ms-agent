@@ -2,11 +2,16 @@
 """OpenHuman workspace specification (single-agent install)."""
 from __future__ import annotations
 
+import copy
+import json
 import re
 from pathlib import Path
 
+from ms_agent.utils.logger import get_logger
 from .._workspace import (DEFAULT_AGENT_NAME, WorkspaceSpec, is_secret_key,
                           register_framework)
+
+logger = get_logger()
 
 
 class OpenhumanWorkspace(WorkspaceSpec):
@@ -52,6 +57,15 @@ class OpenhumanWorkspace(WorkspaceSpec):
     _USERS_DIRNAME = 'users'
     _WORKSPACE_DIRNAME = 'workspace'
     _PROFILES_DIRNAME = 'personalities'
+    _PROFILES_JSON_FILENAME = 'agent_profiles.json'
+
+    # Persona files that fall back to the workspace-level copy when a Profile
+    # does not carry its own -- the app's own lookup order (Profile file >
+    # workspace-level default). Deliberately limited to these four:
+    # ``config.toml`` is machine-local, and ``wiki/`` / ``skills/`` are large
+    # trees whose per-profile duplication would bloat upload/sync.
+    _WORKSPACE_FALLBACK_FILES = frozenset(
+        ['SOUL.md', 'IDENTITY.md', 'HEARTBEAT.md', 'MEMORY.md'])
 
     @property
     def product_name(self) -> str:
@@ -159,6 +173,79 @@ class OpenhumanWorkspace(WorkspaceSpec):
         if DEFAULT_AGENT_NAME not in agents:
             agents = [DEFAULT_AGENT_NAME] + agents
         return agents
+
+    # ------------------------------------------------------------------
+    # Active-profile auto-selection
+    # ------------------------------------------------------------------
+
+    def resolve_default_agent_name(self) -> str:
+        """Omitted ``--name`` selects the ACTIVE profile, not bare ``default``.
+
+        The app keeps the currently selected persona in
+        ``agent_profiles.json`` (``activeProfileId``); converting without an
+        explicit name should migrate that persona, matching what the user
+        sees in the app. Strictly best-effort: a missing / malformed marker
+        or an id whose directory does not exist falls back to ``default``
+        (the workspace-level persona) without raising.
+        """
+        active = self._active_profile_id()
+        if active and active in self.list_agents():
+            return active
+        return DEFAULT_AGENT_NAME
+
+    def _active_profile_id(self) -> str | None:
+        """Read ``activeProfileId`` from ``agent_profiles.json`` (best effort).
+
+        Returns ``None`` on any failure (file absent, unreadable, not JSON,
+        unexpected shape) -- callers treat that as "no active profile".
+        """
+        path = self.root / self._PROFILES_JSON_FILENAME
+        try:
+            data = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, UnicodeDecodeError, ValueError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        active = data.get('activeProfileId')
+        if not isinstance(active, str) or not active.strip():
+            return None
+        return active.strip()
+
+    # ------------------------------------------------------------------
+    # Workspace-level persona fallback for Profile agents
+    # ------------------------------------------------------------------
+
+    def collect(self) -> dict[str, str]:
+        return self._with_workspace_fallbacks(super().collect(), text=True)
+
+    def collect_bytes(self) -> dict[str, bytes]:
+        return self._with_workspace_fallbacks(super().collect_bytes(),
+                                              text=False)
+
+    def _with_workspace_fallbacks(self, resources: dict,
+                                  *, text: bool) -> dict:
+        """Fill missing Profile files from the workspace-level copies.
+
+        A Profile that lacks e.g. ``MEMORY.md`` runs with the workspace-level
+        one at runtime (app lookup order), so a converted agent must get it
+        too: missing files in :data:`_WORKSPACE_FALLBACK_FILES` are taken
+        from the workspace root when present there. Files the Profile already
+        has always win; all-mode is exempt (each Profile mirrors to its own
+        repo and workspace files would duplicate across every Profile).
+        """
+        if self._is_all() or self.workspace_root == self.root:
+            return resources
+        workspace_spec = copy.copy(self)
+        workspace_spec.agent_name = DEFAULT_AGENT_NAME
+        for rel, f in workspace_spec._walk_matched():
+            if rel not in self._WORKSPACE_FALLBACK_FILES or rel in resources:
+                continue
+            try:
+                resources[rel] = (f.read_text(encoding='utf-8')
+                                  if text else f.read_bytes())
+            except (OSError, UnicodeDecodeError) as e:
+                logger.warning('Skip workspace fallback %s: %s', f, e)
+        return resources
 
     # ------------------------------------------------------------------
     # config.toml secret sanitization (inbound + outbound)
