@@ -45,6 +45,40 @@ TOOL_CALL_TIMEOUT_MAX = int(os.getenv('TOOL_CALL_TIMEOUT_MAX', 600))
 MAX_CONCURRENT_TOOLS = int(os.getenv('MAX_CONCURRENT_TOOLS', 20))
 
 
+def _truncate_tool_output(response: str, tool_ins: Any) -> str:
+    """Bound one tool result, honouring what the tool declared about itself.
+
+    The global cap exists so a runaway result cannot eat the context window.
+    But cutting a payload in half and splicing a notice into the gap assumes
+    prose: done to JSON it lands inside a string literal and the whole result
+    stops parsing, so the model gets neither the data nor an error. Tools that
+    bound themselves therefore opt out (or set their own budget) via
+    ``ToolBase.max_output_chars``; everything else keeps the previous
+    behaviour exactly.
+    """
+    budget = getattr(tool_ins, 'max_output_chars', None)
+    if budget is None:
+        budget = int(os.getenv('MAX_TOOL_OUTPUT_LEN', 20000))
+    if budget == math.inf:  # self-managed: the tool guarantees its own bound
+        return response
+    budget = int(budget)
+    if budget <= 0 or len(response) <= budget:
+        return response
+
+    keep = str(getattr(tool_ins, 'truncate_keep', 'both') or 'both')
+    notice = (
+        f'\n\n...[SYSTEM: Output truncated, {len(response)} chars total, '
+        f'showing {{shown}}]...\n\n')
+    if keep == 'head':
+        return response[:budget] + notice.format(shown=f'first {budget} chars')
+    if keep == 'tail':
+        return notice.format(shown=f'last {budget} chars') + response[-budget:]
+    half = budget // 2
+    return (response[:half]
+            + notice.format(shown=f'first and last {half} chars')
+            + response[-half:])
+
+
 def _tool_on(config, name: str) -> bool:
     """Whether a builtin tool should load: its ``tools.<name>`` key is present AND
     not explicitly disabled via ``tools.<name>.enabled: false``. Default
@@ -653,14 +687,11 @@ class ToolManager:
                         tool_args=call_args),
                     timeout=wait_sec)
 
-                # Truncate excessively long tool outputs to prevent context window explosion
-                max_len = int(os.getenv('MAX_TOOL_OUTPUT_LEN', 20000))
-                if isinstance(response, str) and len(response) > max_len:
-                    half = max_len // 2
-                    trunc_notice = (
-                        f'\n\n...[SYSTEM: Output truncated, {len(response)} chars total, '
-                        f'showing first and last {half} chars]...\n\n')
-                    response = response[:half] + trunc_notice + response[-half:]
+                # Truncate excessively long tool outputs to prevent context
+                # window explosion — unless the tool declared its own budget or
+                # said it bounds itself (see ToolBase.max_output_chars).
+                if isinstance(response, str):
+                    response = _truncate_tool_output(response, tool_ins)
 
                 if (self.mcp_success_handler is not None
                         and tool_ins is self.servers):

@@ -257,6 +257,9 @@ class _StubClient:
     # simulate the server ignoring a private request.
     preset_repo_info = {}
 
+    # Per-path remote sha256 from list_repo_files_detail, to simulate incremental/up-to-date remotes.
+    preset_remote_sha = {}
+
     def __init__(self, *args, **kwargs):
         self.created = []
         self.created_visibility = []
@@ -295,6 +298,17 @@ class _StubClient:
                 self.uploaded_resources[a["path"]] = base64.b64decode(a["content"])
         return {"success": True}
 
+    def list_repo_files_detail(self, path, name, revision="master"):
+        from ms_agent.agent_hub._sync import sha256_content
+        shas = type(self).preset_remote_sha
+        return [
+            RemoteFileInfo(
+                path=p,
+                sha256=shas.get(p, sha256_content(("stub:" + p).encode())),
+                is_lfs=False,
+            ) for p in type(self).preset_remote
+        ]
+
     def upload_lfs_file(self, path, name, file_path, content, **kwargs):
         self.lfs_uploads.append((file_path, content))
         if self.uploaded_resources is None:
@@ -313,6 +327,9 @@ class TestUploadCmd(unittest.TestCase):
         (self.root / "skills" / "test-skill").mkdir(parents=True)
         (self.root / "skills" / "test-skill" / "SKILL.md").write_text("skill")
         _StubClient.instances = []
+        _StubClient.preset_remote = []
+        _StubClient.preset_repo_info = {}
+        _StubClient.preset_remote_sha = {}
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -410,6 +427,55 @@ class TestUploadCmd(unittest.TestCase):
         )
         self.assertEqual(rc, 0)
         self.assertIsNotNone(_StubClient.instances[0].uploaded_resources)
+
+    @mock.patch("ms_agent.agent_hub._commands.AgentApi", _StubClient)
+    def test_private_request_existing_public_repo_aborts_before_upload(self):
+        """Existing public repo + private request -> abort before any upload."""
+        _StubClient.preset_repo_info = {"private": False}
+        _StubClient.preset_remote = ["AGENTS.md", "agents/reviewer.md"]
+        try:
+            rc = cmd_upload(
+                framework="qoder", name="reviewer",
+                local_dir=str(self.root),
+                endpoint="http://s", token="tok", username="u",
+                visibility="private",
+            )
+        finally:
+            _StubClient.preset_repo_info = {}
+            _StubClient.preset_remote = []
+            _StubClient.preset_remote_sha = {}
+        self.assertEqual(rc, 1)  # non-zero: the failure is observable on CLI
+        client = _StubClient.instances[0]
+        # No content was pushed after the visibility mismatch.
+        self.assertIsNone(client.uploaded_resources)
+
+    @mock.patch("ms_agent.agent_hub._commands.AgentApi", _StubClient)
+    def test_private_request_existing_public_repo_aborts_even_when_up_to_date(
+            self):
+        """In-sync remote still aborts: guard runs before the up-to-date early return."""
+        from ms_agent.agent_hub._sync import sha256_content
+        _StubClient.preset_repo_info = {"private": False}
+        _StubClient.preset_remote = ["AGENTS.md", "agents/reviewer.md"]
+        _StubClient.preset_remote_sha = {
+            "AGENTS.md":
+            sha256_content((self.root / "AGENTS.md").read_bytes()),
+            "agents/reviewer.md":
+            sha256_content((self.root / "agents" / "reviewer.md").read_bytes()),
+        }
+        try:
+            rc = cmd_upload(
+                framework="qoder", name="reviewer",
+                local_dir=str(self.root),
+                endpoint="http://s", token="tok", username="u",
+                visibility="private",
+            )
+        finally:
+            _StubClient.preset_repo_info = {}
+            _StubClient.preset_remote = []
+            _StubClient.preset_remote_sha = {}
+        self.assertEqual(rc, 1)  # non-zero: the failure is observable on CLI
+        # No content was pushed despite the remote already being in sync.
+        self.assertIsNone(_StubClient.instances[0].uploaded_resources)
 
     @mock.patch("ms_agent.agent_hub._commands.AgentApi", _StubClient)
     def test_full_upload_prunes_stale_remote_in_scope(self):

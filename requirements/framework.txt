@@ -17,4 +17,5 @@ pytz
 pyyaml
 requests
 rich
+socksio
 typing_extensions

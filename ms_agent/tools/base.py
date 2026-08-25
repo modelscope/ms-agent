@@ -1,9 +1,19 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+import math
 from abc import abstractmethod
 from omegaconf import DictConfig
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR
+
+#: Return this from :attr:`ToolBase.max_output_chars` to declare that a tool
+#: bounds its own output and must never be cut by the generic truncator.
+SELF_MANAGED_OUTPUT = math.inf
+
+#: Where to keep text from when an oversized output IS cut generically.
+TRUNCATE_KEEP_HEAD = 'head'
+TRUNCATE_KEEP_TAIL = 'tail'
+TRUNCATE_KEEP_BOTH = 'both'
 
 
 class ToolBase:
@@ -18,6 +28,30 @@ class ToolBase:
         self.include_functions = []
         self.output_dir = getattr(self.config, 'output_dir',
                                   DEFAULT_OUTPUT_DIR)
+
+    @property
+    def max_output_chars(self) -> Optional[float]:
+        """Model-facing character budget for this tool's output.
+
+        * ``None`` (default) — use the global ``MAX_TOOL_OUTPUT_LEN``.
+        * :data:`SELF_MANAGED_OUTPUT` — the tool guarantees its own bound
+          (paging, spilling to disk, …); never truncate it generically.
+        * a number — this tool's own budget, used instead of the global one.
+
+        Override in a subclass to opt in. Declaring a budget is a promise about
+        SHAPE as much as size: a tool that returns structured data should keep
+        itself under budget so the generic cut never has to run.
+        """
+        return None
+
+    @property
+    def truncate_keep(self) -> str:
+        """Which end survives when this tool's output IS cut generically.
+
+        ``'head'`` (a command's first output is the useful part), ``'tail'``
+        (a long run whose verdict is last), or ``'both'`` (default).
+        """
+        return TRUNCATE_KEEP_BOTH
 
     def exclude_func(self, tool_config: DictConfig):
         if tool_config is not None:
