@@ -33,9 +33,10 @@ class _Err(Exception):
 class TestTheOutage(unittest.TestCase):
     """ModelScope Qwen3-VL rejecting an oversized image, 2026-08-21."""
 
+    # Verbatim apart from the request id, which is dropped: it identifies one
+    # call on one account and proves nothing the message does not.
     MESSAGE = ("Error code: 400 - {'error': {'message': 'input size exceed "
-               "limit 2048x2048,current input:(1183,2560)', 'request_id': "
-               "'53de5cfc-6ed1-42ac-ac6f-221b130a11db'}}")
+               "limit 2048x2048,current input:(1183,2560)'}}")
 
     def test_size_complaint_is_never_a_capability_verdict(self):
         diag = classify(_Err(400, self.MESSAGE), sent_images=True)
