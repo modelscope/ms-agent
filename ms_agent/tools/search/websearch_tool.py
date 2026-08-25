@@ -977,6 +977,52 @@ class WebSearchTool(ToolBase):
         tasks = [_bounded_fetch(url) for url in urls]
         return await asyncio.gather(*tasks)
 
+    @staticmethod
+    def _search_error_payload(engine_type: str,
+                              exc: Exception) -> Dict[str, Any]:
+        """A failed search, described so the MODEL can act on it.
+
+        The distinction that matters is "retry later / tell the user to add a
+        key" versus "this is broken" — a bare stringified exception leaves the
+        model to guess, and it usually guesses "no results". Tavily's keyless
+        tier makes the quota case routine, so it gets an explicit remedy.
+        """
+        payload: Dict[str, Any] = {
+            'engine': engine_type,
+            'message': str(exc),
+        }
+        status = getattr(exc, 'status', None)
+        code = getattr(exc, 'code', '') or ''
+        retry_after = getattr(exc, 'retry_after', None)
+        if status is not None:
+            payload['http_status'] = status
+        if code:
+            payload['provider_code'] = code
+        if retry_after is not None:
+            payload['retry_after_seconds'] = retry_after
+
+        if getattr(exc, 'is_quota', False):
+            payload['kind'] = 'quota_exceeded'
+            wait = (f' Retry in about {retry_after}s'
+                    if retry_after is not None else ' Retry shortly')
+            payload['remedy'] = (
+                f'The {engine_type} free/keyless quota is exhausted.{wait}, or '
+                f'tell the user they can remove the limit by adding a '
+                f'{engine_type} API key in Settings -> Search. Do NOT report '
+                f'this as "no results found" — the search never ran.')
+        elif getattr(exc, 'is_auth', False):
+            payload['kind'] = 'auth_failed'
+            payload['remedy'] = (
+                f'The configured {engine_type} API key was rejected. Tell the '
+                f'user to check or replace it in Settings -> Search.')
+        else:
+            payload['kind'] = 'search_failed'
+            payload['remedy'] = (
+                f'The {engine_type} search request did not complete. It may be '
+                f'a transient network problem — retrying once is reasonable; '
+                f'do not present this as an empty result set.')
+        return payload
+
     def _do_search(
         self, engine_type: str, engine: SearchEngine,
         engine_cls: Type[SearchEngine],
@@ -1005,8 +1051,17 @@ class WebSearchTool(ToolBase):
                 extra = result.extra_response_fields()
             return rows, extra
         except Exception as e:
+            # Reported, never swallowed. Returning ([], {}) here made every
+            # failure — expired key, rate limit, DNS outage — reach the model as
+            # "No search results found.", so it would tell the user their query
+            # matched nothing and move on. With the keyless Tavily tier that is
+            # actively harmful: running out of quota is an ordinary event whose
+            # fix (add an API key) only the user can apply, and they never heard
+            # about it. `extra` carries the diagnosis to _execute_search.
             logger.error(f'Search failed ({engine_type}): {e}')
-            return [], {}
+            return [], {
+                '__error__': self._search_error_payload(engine_type, e)
+            }
 
     async def _execute_search(self, engine_type: str,
                               tool_args: Dict[str, Any]) -> str:
@@ -1059,6 +1114,22 @@ class WebSearchTool(ToolBase):
         search_results, tavily_extra = await loop.run_in_executor(
             self._executor, self._do_search, engine_type, engine, engine_cls,
             tool_args)
+
+        # A failed search and a search that matched nothing are different facts
+        # and must not share a response shape (see _search_error_payload).
+        failure = (tavily_extra or {}).pop('__error__', None)
+        if failure:
+            out_error: Dict[str, Any] = {
+                'status': 'error',
+                'query': query,
+                'engine': engine_type,
+                'count': 0,
+                'results': [],
+                **failure,
+            }
+            if tavily_extra:
+                out_error.update(tavily_extra)
+            return _json_dumps(out_error)
 
         if not search_results:
             out_empty: Dict[str, Any] = {

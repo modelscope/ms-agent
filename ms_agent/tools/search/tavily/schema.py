@@ -33,7 +33,6 @@ class TavilySearchRequest:
     def to_api_body(self, api_key: str) -> Dict[str, Any]:
         n = max(0, min(20, int(self.max_results)))
         body: Dict[str, Any] = {
-            'api_key': api_key,
             'query': self.query,
             'max_results': n,
             'search_depth': self.search_depth,
@@ -64,6 +63,13 @@ class TavilySearchRequest:
             body['exclude_domains'] = list(self.exclude_domains)[:150]
         if self.country:
             body['country'] = self.country
+        # Sent LAST and only when non-empty. Keyless mode (the
+        # X-Tavily-Access-Mode header) is overridden by any api_key present in
+        # the body: measured 2026-08-20, an empty string is tolerated but a
+        # non-empty one is validated and a bogus value 401s. Omitting the field
+        # entirely is the only shape that is unambiguous in both modes.
+        if api_key:
+            body['api_key'] = api_key
         return body
 
 
