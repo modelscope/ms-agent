@@ -32,11 +32,9 @@ class TavilyExtractFetcher:
         include_favicon: bool = False,
         include_usage: bool = False,
     ):
-        key = api_key or os.getenv('TAVILY_API_KEY')
-        if not key:
-            raise ValueError(
-                'TAVILY_API_KEY required for tavily_extract fetcher')
-        self._api_key = key
+        # Keyless is a supported mode here too (Tavily serves /extract without
+        # credentials under the same header as /search); see tavily/search.py.
+        self._api_key = api_key or os.getenv('TAVILY_API_KEY') or ''
         self._extract_depth = extract_depth
         self._format = format
         self._timeout = max(1.0, min(60.0, float(timeout)))
@@ -52,7 +50,6 @@ class TavilyExtractFetcher:
         Extract one URL. Optional ``query`` enables chunk reranking (more relevant raw_content).
         """
         body: Dict[str, Any] = {
-            'api_key': self._api_key,
             'urls': [url],
             'extract_depth': self._extract_depth,
             'format': self._format,
@@ -64,10 +61,18 @@ class TavilyExtractFetcher:
         if query:
             body['query'] = query
             body['chunks_per_source'] = self._chunks_per_source
+        # Omitted when empty: any api_key in the body overrides the keyless
+        # header (see TavilySearchRequest.to_api_body).
+        if self._api_key:
+            body['api_key'] = self._api_key
 
         try:
+            from ms_agent.tools.search.tavily.search import KEYLESS_HEADER
             data = post_json(
-                TAVILY_EXTRACT_URL, body, timeout=self._timeout + 30.0)
+                TAVILY_EXTRACT_URL,
+                body,
+                timeout=self._timeout + 30.0,
+                headers=(dict(KEYLESS_HEADER) if not self._api_key else {}))
         except Exception as e:
             logger.warning(f'Tavily extract failed for {url[:80]}: {e}')
             return '', {

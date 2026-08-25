@@ -15,6 +15,16 @@ logger = get_logger()
 
 TAVILY_SEARCH_URL = 'https://api.tavily.com/search'
 
+#: Tavily serves /search and /extract without credentials when this header is
+#: present (https://docs.tavily.com/documentation/keyless). Responses are
+#: identical to keyed ones — same parameters, same result shape — but the quota
+#: is a small sliding hourly bucket rather than the free tier's monthly credits.
+#: Measured 2026-08-20: refill is roughly one request per 60-90s, and exhaustion
+#: is a clean HTTP 429 (`error.code: hourly_cap_reached`) carrying Retry-After.
+#: It exists so the framework works on first run with nothing configured; a key
+#: always takes precedence when one is available.
+KEYLESS_HEADER = {'X-Tavily-Access-Mode': 'keyless'}
+
 
 class TavilySearch(SearchEngine):
     """
@@ -32,24 +42,36 @@ class TavilySearch(SearchEngine):
         api_key: Optional[str] = None,
         request_timeout: float = 120.0,
     ):
-        key = api_key or os.getenv('TAVILY_API_KEY')
-        if not key:
-            raise ValueError(
-                'TAVILY_API_KEY must be set in environment or web_search.tavily_api_key'
-            )
-        self._api_key = key
+        # No key is a supported mode, not an error: without one we fall back to
+        # Tavily's keyless tier so a fresh install can search out of the box.
+        # Constructing this used to raise, which WebSearchTool.connect() caught
+        # and turned into "engine unavailable" — the reason an unconfigured
+        # framework silently had no web search at all.
+        self._api_key = api_key or os.getenv('TAVILY_API_KEY') or ''
         self._request_timeout = float(request_timeout)
+
+    @property
+    def keyless(self) -> bool:
+        return not self._api_key
+
+    def _headers(self) -> dict:
+        return dict(KEYLESS_HEADER) if self.keyless else {}
 
     def search(self,
                search_request: TavilySearchRequest) -> TavilySearchResult:
         body = search_request.to_api_body(self._api_key)
-        try:
-            data = post_json(
-                TAVILY_SEARCH_URL, body, timeout=self._request_timeout)
-        except Exception as e:
-            raise RuntimeError(f'Tavily search failed: {e}') from e
+        # Deliberately unguarded: TavilyHTTPError carries the quota/auth fields
+        # the tool layer needs to tell the agent WHY a search failed. This used
+        # to be wrapped in a bare RuntimeError, which erased them.
+        data = post_json(
+            TAVILY_SEARCH_URL,
+            body,
+            timeout=self._request_timeout,
+            headers=self._headers())
         safe_args = {k: v for k, v in body.items() if k != 'api_key'}
-        safe_args['api_key'] = '<redacted>'
+        if self._api_key:
+            safe_args['api_key'] = '<redacted>'
+        safe_args['access_mode'] = 'keyless' if self.keyless else 'api_key'
         return TavilySearchResult(
             query=search_request.query,
             arguments=safe_args,
