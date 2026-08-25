@@ -25,6 +25,17 @@ logger = get_logger()
 
 MAX_FETCH_CHARS = int(os.getenv('MAX_FETCH_CHARS', 100000))
 
+#: Model-facing budget for one web_search result payload. Matches the historical
+#: global tool-output cap, so what reaches the context is the same size it always
+#: was — the difference is that it now arrives as valid JSON (spill trims the
+#: bodies) instead of being bisected by the generic truncator.
+DEFAULT_SEARCH_OUTPUT_CHARS = int(
+    os.getenv('WEB_SEARCH_MAX_OUTPUT_CHARS', 20000))
+
+#: Room reserved inside the budget for everything spill does NOT count: urls,
+#: titles, scores, the spill digest, and JSON syntax/indentation.
+SEARCH_JSON_OVERHEAD = 6000
+
 
 def default_per_url_fetch_timeout_s(
     fetch_timeout: float,
@@ -617,13 +628,30 @@ class WebSearchTool(ToolBase):
             getattr(tool_cfg, 'summarization_timeout', 90.0)
             or 90.0) if tool_cfg else 90.0
 
+        # This tool's model-facing budget, declared to the generic truncator via
+        # `max_output_chars` below. It is ONE knob: spill aims under it, and the
+        # final serialization is checked against it, so the JSON the model gets
+        # is always both bounded and parseable.
+        self._max_output_chars = int(
+            getattr(tool_cfg, 'max_output_chars', DEFAULT_SEARCH_OUTPUT_CHARS)
+            or DEFAULT_SEARCH_OUTPUT_CHARS) if tool_cfg else (
+                DEFAULT_SEARCH_OUTPUT_CHARS)
+
         # Large payload spill (write bodies to disk; keep JSON small)
         self._spill_enabled = bool(
             getattr(tool_cfg, 'spill_large_results',
                     True)) if tool_cfg else True
+        # Derived from the budget, not an independent number. It used to default
+        # to 120000 while the generic truncator cut at 20000, so every payload
+        # between those two was left whole by spill and then bisected into
+        # invalid JSON — the mechanism meant to protect the payload never ran.
+        # The gap is the room the non-content fields need (urls, titles, scores,
+        # JSON syntax), which spill does not count.
+        _spill_default = max(2000,
+                             self._max_output_chars - SEARCH_JSON_OVERHEAD)
         self._spill_max_inline_chars = int(
-            getattr(tool_cfg, 'spill_max_inline_chars', 120000)
-            or 120000) if tool_cfg else 120000
+            getattr(tool_cfg, 'spill_max_inline_chars', _spill_default)
+            or _spill_default) if tool_cfg else _spill_default
         self._spill_subdir = str(
             getattr(tool_cfg, 'spill_subdir', '.ms_agent/web_search')
             or '.ms_agent/web_search') if tool_cfg else '.ms_agent/web_search'
@@ -658,6 +686,65 @@ class WebSearchTool(ToolBase):
             'cache_creation_input_tokens': 0,
         }
         self._summary_usage_model: str = ''
+
+    @property
+    def max_output_chars(self) -> int:
+        """This tool's own budget (see ToolBase.max_output_chars).
+
+        Declared rather than inherited because the generic cut is destructive
+        here: the payload is JSON, and a notice spliced into its middle makes it
+        unparseable. `_bounded_json` below keeps every response under this
+        number, so in practice the generic path never has to run.
+        """
+        return self._max_output_chars
+
+    def _bounded_json(self, response: Dict[str, Any]) -> str:
+        """Serialize a search response, guaranteed under budget AND valid JSON.
+
+        Spill normally gets there first by moving bodies to disk. This is the
+        backstop for what spill cannot help with — a hundred results whose
+        previews alone overflow, or a run with no ``output_dir`` to spill into.
+        It sheds content in order of dispensability (previews, then whole rows)
+        and re-serializes each time, so the result is always parseable; the
+        alternative, letting the generic truncator cut it, is not.
+        """
+        out = _json_dumps(response)
+        budget = self._max_output_chars
+        if len(out) <= budget:
+            return out
+
+        rows = response.get('results')
+        if not isinstance(rows, list) or not rows:
+            return out  # nothing to shed; caller's budget declaration handles it
+
+        # 1) Drop the bulky per-row text, keeping the evidence (url/title).
+        trimmed = []
+        for row in rows:
+            r = dict(row) if isinstance(row, dict) else {'value': row}
+            for field in ('content', 'summary', 'abstract', 'chunks'):
+                if r.get(field):
+                    r[field] = ''
+                    r['content_note'] = (
+                        'Body omitted to stay within the tool output budget; '
+                        'open the url, or read content_path if present.')
+            trimmed.append(r)
+        response = {**response, 'results': trimmed, 'body_omitted': True}
+        out = _json_dumps(response)
+        if len(out) <= budget:
+            return out
+
+        # 2) Still over: keep fewer rows, and say how many were dropped.
+        keep = len(trimmed)
+        while keep > 1 and len(out) > budget:
+            keep = max(1, keep // 2)
+            response = {
+                **response,
+                'results': trimmed[:keep],
+                'count': keep,
+                'results_omitted': len(trimmed) - keep,
+            }
+            out = _json_dumps(response)
+        return out
 
     async def connect(self) -> None:
         """Initialize search engines and content fetcher."""
@@ -1470,7 +1557,8 @@ class WebSearchTool(ToolBase):
                         f'web_search spill failed (returning full inline JSON): {e}'
                     )
 
-        return _json_dumps(response)
+        # Bounded here, not by the generic truncator: this payload is JSON.
+        return self._bounded_json(response)
 
     async def fetch_page(self, url: str) -> str:
         """Fetch and parse a single web page."""
