@@ -5,7 +5,8 @@ import tempfile
 
 import pytest
 
-from ms_agent.permission.shell_validator import ShellPathValidator
+from ms_agent.permission.shell_validator import (PathSafetyConfig,
+                                                 ShellPathValidator)
 
 
 @pytest.fixture
@@ -97,6 +98,60 @@ class TestRedirects:
     def test_redirect_with_variable(self, validator):
         r = validator.check('echo hello > $HOME/file')
         assert r.action == 'deny'
+
+
+class TestRedirectCwdTracking:
+    """Relative redirect targets must resolve against the cd-tracked cwd.
+
+    The shell resolves ``>`` targets against the current working directory,
+    so a compound command like ``cd sub && echo x > ../f`` writes to
+    ``<cwd>/sub/../f``. Validating the target against the workspace root
+    instead disagrees with what actually happens on disk in both directions.
+    """
+
+    @pytest.fixture
+    def layout(self, tmp_path):
+        work = tmp_path / 'a' / 'b' / 'work'
+        work2 = tmp_path / 'a' / 'b' / 'work2'
+        cache = tmp_path / 'cache'
+        for p in (work / 'sub', work2, cache):
+            p.mkdir(parents=True)
+        allowed = (str(work), str(work2), str(cache))
+        validator = ShellPathValidator(
+            allowed_dirs=list(allowed),
+            safety_config=PathSafetyConfig(
+                allowed_directories=allowed, workspace_root=str(work)),
+        )
+        return validator, work, work2, cache
+
+    def test_relative_redirect_after_cd_into_subdir(self, layout):
+        """``cd work/sub && echo x > ../f`` writes work/f — inside allowed."""
+        validator, work, _, _ = layout
+        r = validator.check(f'cd {work}/sub && echo x > ../f')
+        assert r.action == 'allow'
+
+    def test_relative_redirect_escaping_after_cd(self, layout):
+        """``cd cache && echo x > ../work2/f`` writes outside allowed dirs.
+
+        Resolved against the workspace root the target would look like
+        ``work/../work2/f`` (an allowed directory), but the shell writes to
+        ``cache/../work2/f``, which is not allowed.
+        """
+        validator, _, _, cache = layout
+        r = validator.check(f'cd {cache} && echo x > ../work2/f')
+        assert r.action != 'allow'
+
+    def test_redirect_without_cd_uses_workspace_root(self, layout):
+        validator, _, _, _ = layout
+        r = validator.check('echo x > f')
+        assert r.action == 'allow'
+
+    def test_redirect_matches_argument_path_validation(self, layout):
+        """Redirects and ordinary path arguments must agree on the cwd."""
+        validator, work, _, _ = layout
+        rm = validator.check(f'cd {work}/sub && rm ../f')
+        redirect = validator.check(f'cd {work}/sub && echo x > ../f')
+        assert rm.action == redirect.action == 'allow'
 
 
 class TestProcessSubstitution:

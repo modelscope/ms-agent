@@ -126,8 +126,12 @@ class ShellPathValidator:
             if not tokens:
                 continue
 
-            # 3. Check output redirections on the raw sub-command string
-            redirect_result = self._check_redirects(sub_cmd)
+            # 3. Check output redirections on the raw sub-command string.
+            # Resolve relative targets against the cd-tracked cwd, matching
+            # how the shell itself resolves them. Note this runs before the
+            # `cd` below updates _current_cwd, which is also what the shell
+            # does for a command like `cd foo > log`.
+            redirect_result = self._check_redirects(sub_cmd, cwd=_current_cwd)
             if redirect_result.action != 'allow':
                 return redirect_result
 
@@ -325,7 +329,11 @@ class ShellPathValidator:
         return SafetyDecision(
             action='allow', reason=f'{cmd_name}: all paths validated')
 
-    def _check_redirects(self, sub_cmd: str) -> SafetyDecision:
+    def _check_redirects(self,
+                         sub_cmd: str,
+                         *,
+                         cwd: str | None = None) -> SafetyDecision:
+        effective_cwd = cwd or self._workspace_root
         for match in _REDIRECT_PATTERN.finditer(sub_cmd):
             target = match.group(1)
             if _FD_REDIRECT.match(target):
@@ -341,7 +349,7 @@ class ShellPathValidator:
 
             result = validate_path(
                 target,
-                self._workspace_root,
+                effective_cwd,
                 self._allowed_dirs,
                 'create',
                 read_only_dirs=self._read_only_dirs,
