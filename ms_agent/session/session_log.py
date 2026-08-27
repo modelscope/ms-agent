@@ -201,6 +201,24 @@ class SessionLog:
         self._update_meta('last_consolidated', value)
 
     @property
+    def active_model(self) -> str:
+        """The model that answered the most recent turn, or ''.
+
+        Kept so the next turn can tell whether it is running on a DIFFERENT
+        model — a fact the conversation otherwise contains no trace of, and one
+        the model badly needs. Measured without it: after a switch from a
+        vision model to a text-only one, the model concluded that its own
+        earlier (correct) description of an image had been a hallucination,
+        because the only new information it had was that the image was now
+        absent.
+        """
+        return str(self._read_meta().get('active_model', '') or '')
+
+    @active_model.setter
+    def active_model(self, value: str) -> None:
+        self._update_meta('active_model', str(value or ''))
+
+    @property
     def round(self) -> int:
         """The last persisted agent-loop round (for resume)."""
         return self._read_meta().get('round', 0)
@@ -225,6 +243,16 @@ class SessionLog:
                 record = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            if record.get('_type') == 'image_delivery':
+                # Not a message — a note about one. The turn's row is written
+                # before the request goes out, so what became of its images is
+                # only knowable afterwards; rather than rewriting an append-only
+                # log, the outcome arrives as its own record and is folded back
+                # onto the attachment here. Every reader downstream (context
+                # assembly, history replay) then sees it as an ordinary field
+                # and needs to know nothing about this.
+                _merge_image_delivery(msgs, record)
+                continue
             if record.get('_type') in ('metadata', 'compaction_event', 'error',
                                        'permission', 'skill_invocation',
                                        'loop_end'):
@@ -236,6 +264,24 @@ class SessionLog:
             max_seq = max(m.get('seq', 0) for m in msgs)
             self._seq = max(self._seq, max_seq + 1)
         return msgs
+
+    def record_image_delivery(self, entries: List[Dict[str, Any]]) -> None:
+        """Record what became of a turn's images.
+
+        Written once per turn, after the request has been answered, because
+        that is the earliest moment the answer is known. Kept out of the message
+        stream (it is not something anyone said) and folded back onto the
+        attachment by :meth:`get_all_messages`.
+        """
+        if not entries:
+            return
+        self._append_line({
+            '_type': 'image_delivery',
+            'seq': self._next_seq(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'entries': entries,
+        })
+        self._messages = None  # force a reload so the merge is applied
 
     def get_visible_messages(self) -> List[Dict[str, Any]]:
         """Messages whose ``seq >= last_consolidated`` (the LLM window).
@@ -501,3 +547,42 @@ class SessionLog:
             f.write(json.dumps(record, ensure_ascii=False) + '\n')
             f.flush()
             os.fsync(f.fileno())
+
+
+def _merge_image_delivery(msgs: List[Dict[str, Any]],
+                          record: Dict[str, Any]) -> None:
+    """Fold an ``image_delivery`` record back onto the turn it describes.
+
+    Matches by workspace path against the most recent user row that carries
+    attachments. A path that no longer appears (an edited or compacted history)
+    is dropped: an outcome with nothing to attach to is not worth inventing a
+    home for.
+
+    ``delivered`` is terminal — a later record cannot downgrade it. The field
+    answers "has the model ever received this picture", and a model that has
+    seen something does not stop having seen it because a later turn ran on a
+    different model.
+    """
+    entries = record.get('entries') or []
+    if not entries:
+        return
+    by_path = {
+        str(e.get('path') or ''): str(e.get('state') or '')
+        for e in entries if isinstance(e, dict)
+    }
+    for row in reversed(msgs):
+        attachments = row.get('attachments') if isinstance(row, dict) else None
+        if not attachments:
+            continue
+        touched = False
+        for attachment in attachments:
+            if not isinstance(attachment, dict):
+                continue
+            if attachment.get('delivery') == 'delivered':
+                continue  # once the model has seen it, nothing un-sees it
+            state = by_path.get(str(attachment.get('path') or ''))
+            if state:
+                attachment['delivery'] = state
+                touched = True
+        if touched:
+            return

@@ -19,6 +19,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
 from ms_agent.agent.runtime import Runtime
 from ms_agent.callbacks import Callback, callbacks_mapping
 from ms_agent.knowledge_search import SirchmunkSearch
+from ms_agent.llm import multimodal
 from ms_agent.llm.llm import LLM
 from ms_agent.llm.message_text import (append_text, flatten_message_text,
                                        prepend_text)
@@ -32,6 +33,9 @@ from ms_agent.project.paths import global_home
 from ms_agent.prompting import workspace_files
 from ms_agent.prompting.builtin import (BASE_AGENT_PROMPT, LIVE_FILES_HINT,
                                         MEMORY_TOOL_GUIDANCE)
+from ms_agent.llm.vision import _as_bool
+from ms_agent.prompting.model_switch import (capability_signature,
+                                             render_capability_change_notice)
 from ms_agent.rag.base import RAG
 from ms_agent.rag.utils import rag_mapping
 from ms_agent.session import ContextAssembler, SessionLog
@@ -43,8 +47,8 @@ from ms_agent.skill.search import SkillSearchEngine
 from ms_agent.skill.skill_tools import SkillToolSet
 from ms_agent.tools import ToolManager
 from ms_agent.ui.events import (ContentDelta, ContentEnd, ContextCompacted,
-                                ErrorRaised, PlanEntry, PlanUpdated,
-                                ReasoningDelta, ReasoningEnded,
+                                ErrorRaised, ImageDelivered, PlanEntry,
+                                PlanUpdated, ReasoningDelta, ReasoningEnded,
                                 ReasoningStarted, ToolCallCompleted,
                                 ToolCallComposing, ToolCallStarted,
                                 TurnCompleted, UsageInfo)
@@ -1210,6 +1214,69 @@ class LLMAgent(Agent):
             self._event_sink.emit(
                 ToolCallComposing(index=index, name=name, arguments_len=size))
 
+    def _record_image_deliveries(self, messages: List[Message]) -> None:
+        """Publish and persist this request's per-image outcome.
+
+        The transport computes it while formatting (``_last_deliveries``); this
+        forwards it to the UI and writes it once onto the attachment that
+        produced it.
+
+        **The record only ever moves forward.** It answers "has the model ever
+        received this picture in this conversation", not "what happened on the
+        turn it was attached to". The difference is not academic: an image sent
+        while the switch was off and shown later when it was on kept a permanent
+        "degraded", so a text-only model arriving afterwards was told the picture
+        had never been seen — and RETRACTED a correct description of it as a
+        hallucination (measured). Once seen is seen.
+
+        Reached defensively: the LLM object may be a legacy engine, a router
+        provider or a test double, and none of them should be able to break a
+        turn by not having images.
+        """
+        source = self.llm
+        for attr in ('transport', '_transport'):
+            inner = getattr(source, attr, None)
+            if inner is not None and hasattr(inner, '_last_deliveries'):
+                source = inner
+                break
+        deliveries = getattr(source, '_last_deliveries', None) or []
+        if not deliveries:
+            return
+
+        by_path = {}
+        for delivery in deliveries:
+            by_path.setdefault(getattr(delivery, 'path', ''), delivery)
+        for message in messages:
+            for attachment in getattr(message, 'attachments', None) or []:
+                if not isinstance(attachment, dict):
+                    continue
+                if attachment.get('delivery') == multimodal.DELIVERED:
+                    continue  # already seen; nothing can un-see it
+                delivery = by_path.get(str(attachment.get('path') or ''))
+                if delivery is not None:
+                    attachment['delivery'] = getattr(delivery, 'state', '')
+
+        if self.session_log is not None:
+            try:
+                self.session_log.record_image_delivery([{
+                    'path': getattr(d, 'path', ''),
+                    'state': getattr(d, 'state', ''),
+                    'reason': getattr(d, 'reason', ''),
+                } for d in deliveries])
+            except Exception:  # noqa: BLE001 — bookkeeping must not fail a turn
+                logger.warning('persist image delivery failed', exc_info=True)
+
+        if self._event_sink is None:
+            return
+        for delivery in deliveries:
+            self._event_sink.emit(
+                ImageDelivered(
+                    index=getattr(delivery, 'index', 0),
+                    path=getattr(delivery, 'path', ''),
+                    filename=getattr(delivery, 'filename', ''),
+                    state=getattr(delivery, 'state', ''),
+                    reason=getattr(delivery, 'reason', '')))
+
     @staticmethod
     def _extract_plan_from_tool_result(msg):
         """Parse a todo / split_task tool result into a list of PlanEntry, or
@@ -1666,6 +1733,47 @@ class LLMAgent(Agent):
         last.content = prepend_text(last.content, notice)
         return lambda: self._commit_prompt_surface(current)
 
+    def _capability_signature(self) -> str:
+        """Who is answering, and whether they may be shown pictures."""
+        llm = getattr(self.config, 'llm', None)
+        return capability_signature(
+            str(getattr(llm, 'model', '') or ''),
+            _as_bool(getattr(llm, 'supports_vision', None)))
+
+    def _attach_model_switch_notice(self, messages: List[Message]):
+        """Prefix a durable notice to a NEW user turn when capabilities changed.
+
+        Returns a commit callable to invoke AFTER the turn is persisted (so an
+        interrupted turn re-fires rather than silently dropping the notice), or
+        None when nothing was attached. Same contract as
+        :meth:`_attach_prompt_update_notice`.
+
+        Fires only on a real user turn — a tool round is not a moment the user
+        changed anything, and announcing it there would spend context on
+        nothing.
+        """
+        if self.session_log is None or not messages:
+            return None
+        last = messages[-1]
+        if getattr(last, 'role', None) != 'user':
+            return None
+        current = self._capability_signature()
+        previous = self.session_log.active_model
+        if previous == current:
+            return None
+
+        def _commit() -> None:
+            self.session_log.active_model = current
+
+        notice = render_capability_change_notice(previous, current)
+        if notice is None:
+            # First turn of a session, or a change in something this notice does
+            # not speak for: record the baseline, say nothing.
+            _commit()
+            return None
+        last.content = prepend_text(last.content, notice)
+        return _commit
+
     async def condense_memory(self, messages: List[Message]) -> List[Message]:
         """Inject long-term memory context into the message list.
 
@@ -1988,6 +2096,7 @@ class LLMAgent(Agent):
                 # call reports progress instead of going silent (see
                 # ui.events.ToolCallComposing).
                 _composing: Dict[int, int] = {}
+                _reported_images = False
                 _gen = self.llm.generate(messages, tools=tools)
                 _loop = asyncio.get_running_loop()
                 _NO_MORE = object()
@@ -2037,9 +2146,23 @@ class LLMAgent(Agent):
                             self._emit_content(new_content)
                         _content = _response_message.content
                         self._emit_tool_composing(_response_message, _composing)
+                        if not _reported_images:
+                            # After the first chunk, not before it: the payload's
+                            # delivery record is written while formatting, and a
+                            # gateway that answers 200 and then refuses the
+                            # images is only discovered once the stream starts.
+                            # Reporting earlier would confidently say "delivered"
+                            # for exactly the requests that were not.
+                            self._record_image_deliveries(messages)
+                            _reported_images = True
                         messages[-1] = _response_message
                         yield messages
                 finally:
+                    if not _reported_images:
+                        # A turn that produced nothing still attached images, and
+                        # what became of them is still worth saying.
+                        self._record_image_deliveries(messages)
+                        _reported_images = True
                     # Turn abandoned mid-stream (client disconnect / stop): ask
                     # the provider to close the live upstream response so the
                     # server stops generating, instead of leaving it to run to
@@ -2569,6 +2692,11 @@ class LLMAgent(Agent):
                 if self.session_log is not None:
                     for msg in messages:
                         self.session_log.append(self._msg_to_dict(msg))
+                    # Baseline the model here, not on the second turn: a switch
+                    # made between turn 1 and turn 2 is exactly the case the
+                    # notice exists for, and recording late would miss it.
+                    self.session_log.active_model = (
+                        self._capability_signature())
 
             for message in messages:
                 if message.role != 'system':
@@ -2674,9 +2802,11 @@ class LLMAgent(Agent):
                 # (prompt-files drift, prefixed), then recall (appended; its
                 # query strips reminder blocks so notices never pollute it).
                 commit_surface = None
+                commit_model = None
                 if len(messages) > step_end_len:
                     commit_surface = self._attach_prompt_update_notice(
                         messages)
+                    commit_model = self._attach_model_switch_notice(messages)
                     await self._attach_memory_recall(messages)
                 self.runtime.round += 1
 
@@ -2691,6 +2821,8 @@ class LLMAgent(Agent):
                     # interrupted persist re-fires it next time (over-notify,
                     # never silent-drop).
                     commit_surface()
+                if commit_model is not None:
+                    commit_model()
 
                 self.save_history(messages)
 

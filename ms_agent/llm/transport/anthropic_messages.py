@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import inspect
 import json
+from dataclasses import replace
 from typing import Any, Dict, Generator, Iterator, List, Optional, Union
 
 from ms_agent.llm import multimodal
@@ -20,7 +21,7 @@ from ms_agent.llm.thinking import apply_effort, create_with_thinking_fallback
 from ms_agent.llm.transport.base import Transport
 from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.llm.vision import create_with_vision_fallback
-from ms_agent.llm.vision import disabled_reason as vision_disabled_reason
+from ms_agent.llm.vision import delivery_reason as vision_delivery_reason
 from ms_agent.utils import assert_package_exist, get_logger
 
 logger = get_logger()
@@ -47,6 +48,8 @@ class AnthropicMessagesTransport(Transport):
         # than generation_config keys.
         self._vision = vision or multimodal.VisionOptions()
         self._vision_supported = bool(vision_supported)
+        # What happened to each image on the most recently formatted request.
+        self._last_deliveries: List[multimodal.ImageDelivery] = []
 
         self.model = model
         self.client = anthropic.Anthropic(api_key=api_key, base_url=base_url)
@@ -154,6 +157,10 @@ class AnthropicMessagesTransport(Transport):
         # backfilled (it is present once persisted), so fall back to matching by
         # order — a null tool_use_id is rejected by the Messages API.
         pending_tool_ids: List[str] = []
+        # One ordinal per PICTURE for the whole request; see
+        # multimodal.image_index.
+        numbering: Dict[str, int] = {}
+        deliveries: List[multimodal.ImageDelivery] = []
         for msg in messages:
             content = []
             # Replay the assistant's thinking block (first, before text/tool_use)
@@ -172,13 +179,19 @@ class AnthropicMessagesTransport(Transport):
             if attachments and msg.role == 'user':
                 # Image refs -> native image blocks (image-then-text, each
                 # introduced by its own "Image N: <file>" label).
-                built = multimodal.anthropic_content(
+                built, planned = multimodal.anthropic_content(
                     msg.content if isinstance(msg.content, str) else '',
                     attachments,
                     self._vision,
-                    vision_supported=self._vision_supported,
-                    disabled_reason=vision_disabled_reason(
-                        getattr(self.client, 'base_url', ''), self.model))
+                    vision_supported=self._images_allowed(),
+                    reason=vision_delivery_reason(
+                        getattr(self.client, 'base_url', ''), self.model),
+                    numbering=numbering,
+                    priors=[
+                        str((a or {}).get('delivery') or '')
+                        for a in attachments if isinstance(a, dict)
+                    ])
+                deliveries.extend(planned)
                 if isinstance(built, list):
                     content.extend(built)
                 elif built:
@@ -217,10 +230,18 @@ class AnthropicMessagesTransport(Transport):
                 # better than the hoist the OpenAI transports are forced into,
                 # because the association survives regardless of message order.
                 result_content: Any = self._as_text(msg.content)
+                if multimodal.tool_media_withheld(attachments, self._vision,
+                                                  self._images_allowed()):
+                    # See the OpenAI transport: the tool's own text would
+                    # otherwise be the last word on images this request drops.
+                    result_content = '\n'.join(
+                        filter(None,
+                               [result_content, multimodal.TOOL_MEDIA_WITHHELD]))
                 image_blocks = multimodal.anthropic_tool_result_blocks(
                     attachments,
                     self._vision,
-                    vision_supported=self._vision_supported)
+                    vision_supported=self._images_allowed(),
+                    numbering=numbering)
                 if image_blocks:
                     text = result_content
                     result_content = [*image_blocks]
@@ -251,7 +272,29 @@ class AnthropicMessagesTransport(Transport):
                     })
                 continue
             formatted_messages.append({'role': msg.role, 'content': content})
+        self._last_deliveries = deliveries
         return formatted_messages
+
+    def _images_allowed(self) -> bool:
+        """Whether to encode pixels at all for this request.
+
+        The per-model switch, and nothing else. There is deliberately no memory
+        of past refusals to consult — see ``llm/vision.py`` for why.
+        """
+        return bool(self._vision_supported)
+
+    def _mark_images_degraded(self, reason: str) -> None:
+        """Correct this request's delivery record after recovery dropped images.
+
+        The record is built while formatting, i.e. before the endpoint has had a
+        chance to object, so left alone it would say "delivered" for exactly the
+        requests the user most needs told about.
+        """
+        self._last_deliveries = [
+            d if d.state != multimodal.DELIVERED else replace(
+                d, state=multimodal.DEGRADED, reason=reason)
+            for d in self._last_deliveries
+        ]
 
     def _call_llm(self,
                   messages: List[Message],
@@ -335,6 +378,9 @@ class AnthropicMessagesTransport(Transport):
             model=self.model,
             messages=params['messages'],
             sent_images=sent_images,
+            max_edge=getattr(
+                getattr(self, '_vision', None), 'max_edge', 0),
+            on_degrade=self._mark_images_degraded,
             logger_=logger,
             **rest)
 

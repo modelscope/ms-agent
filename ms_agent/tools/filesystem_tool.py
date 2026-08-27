@@ -112,6 +112,7 @@ class FileSystemTool(ToolBase):
             ]
         self._ws = WorkspaceContext.from_config(config)
         self.output_dir = str(self._ws.root)
+        self._config = config
         self.trust_remote_code = kwargs.get('trust_remote_code', False)
         self.allow_read_all_files = getattr(
             getattr(config.tools, 'file_system', {}), 'allow_read_all_files',
@@ -789,6 +790,31 @@ class FileSystemTool(ToolBase):
             out = [path.strip()]
         return out
 
+    def _images_reach_the_model(self) -> bool:
+        """Whether an image this tool returns can actually be seen.
+
+        The tool and the transport must not disagree about this. The transport
+        drops a tool result's images when the switch is off (see
+        ``multimodal.openai_tool_media_message``), so a tool that always said
+        "attached as an image" was, in exactly that case, telling the model
+        something no layer would make true — and the model then answered as if
+        it had looked.
+
+        Reads the same per-model switch the transports resolve from, and fails
+        CLOSED: an unusual config that hides the flag makes the tool describe a
+        file it cannot show, which is recoverable, rather than promise a picture
+        that never arrives, which is not.
+        """
+        llm = getattr(self._config, 'llm', None) if self._config else None
+        if llm is None:
+            return False
+        from ms_agent.llm.vision import _as_bool
+        for name in ('supports_vision', 'vision_supported'):
+            value = getattr(llm, name, None)
+            if value is not None:
+                return _as_bool(value)
+        return False
+
     async def read_file(self,
                         paths: Optional[List[str]] = None,
                         path: Optional[str] = None,
@@ -857,23 +883,41 @@ class FileSystemTool(ToolBase):
                     # the file it asked to read.
                     media_type = f'image/{ext}' if ext != 'jpg' else 'image/jpeg'
                     size = os.path.getsize(target_path_real)
-                    image_refs.append({
-                        'type': 'image',
-                        'path': path,
-                        'media_type': media_type,
-                        'label': f'Image: {os.path.basename(path)}',
-                    })
-                    results[path] = {
-                        'type': 'image',
-                        'media_type': media_type,
-                        'bytes': size,
-                        'shown_as_image': True,
-                        'message':
-                        (f'This {media_type} image ({size} bytes) is attached to '
-                         'this result as an image, so look at it directly; it '
-                         'cannot be read as text. If you cannot see it, the '
-                         'current model has image understanding disabled.'),
-                    }
+                    if self._images_reach_the_model():
+                        image_refs.append({
+                            'type': 'image',
+                            'path': path,
+                            'media_type': media_type,
+                            'label': f'Image: {os.path.basename(path)}',
+                        })
+                        results[path] = {
+                            'type': 'image',
+                            'media_type': media_type,
+                            'bytes': size,
+                            'shown_as_image': True,
+                            'message':
+                            (f'This {media_type} image ({size} bytes) is '
+                             'attached below as an image. Read it from the '
+                             'image, not from this text.'),
+                        }
+                    else:
+                        # The switch decides, and the tool has to agree with it.
+                        # Claiming "attached as an image" while the transport
+                        # attaches nothing is how the model ended up describing
+                        # pictures it never received. Producing no attachment
+                        # also saves encoding bytes nobody will look at.
+                        results[path] = {
+                            'type': 'image',
+                            'media_type': media_type,
+                            'bytes': size,
+                            'shown_as_image': False,
+                            'message':
+                            ('Image understanding is off for the current '
+                             'model, so this file cannot enter the '
+                             'conversation as an image and cannot be read as '
+                             'text either. Do not guess or infer its '
+                             'contents.'),
+                        }
                     continue
 
                 # --- Text files ---

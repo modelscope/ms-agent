@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import inspect
 from copy import deepcopy
+from dataclasses import replace
 from typing import Any, Dict, Generator, Iterable, List, Optional, Union
 
 from ms_agent.llm import multimodal
@@ -27,7 +28,7 @@ from ms_agent.llm.thinking import apply_effort, create_with_thinking_fallback
 from ms_agent.llm.transport.base import Transport
 from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.llm.vision import create_with_vision_fallback
-from ms_agent.llm.vision import disabled_reason as vision_disabled_reason
+from ms_agent.llm.vision import delivery_reason as vision_delivery_reason
 from ms_agent.utils import MAX_CONTINUE_RUNS, assert_package_exist, get_logger
 
 logger = get_logger()
@@ -82,6 +83,9 @@ class OpenAICompatTransport(Transport):
         # Whether THIS model accepts images. Resolved by the caller from the
         # per-model capability flag; False degrades attachments to text.
         self._vision_supported = bool(vision_supported)
+        # What happened to each image on the most recently formatted request.
+        # See _format_input_message.
+        self._last_deliveries: List[multimodal.ImageDelivery] = []
 
         self.model = model
         self.base_url = self._normalize_base_url(base_url)
@@ -209,6 +213,11 @@ class OpenAICompatTransport(Transport):
         # symmetric. Note `to_dict_clean()` omits falsy values, so a None/'' id
         # disappears from the dict entirely rather than arriving as None.
         pending_tool_ids: List[str] = []
+        # One ordinal per PICTURE for the whole request — see
+        # multimodal.image_index for why neither per-turn nor per-appearance
+        # numbering works.
+        numbering: Dict[str, int] = {}
+        deliveries: List[multimodal.ImageDelivery] = []
         for idx, message in enumerate(messages):
             # Image refs must be read BEFORE to_dict_clean(), which strips them
             # (they are this method's input, never wire output).
@@ -236,13 +245,19 @@ class OpenAICompatTransport(Transport):
             # but hoisting is valid under the schema AND under all of them — see
             # multimodal.TOOL_MEDIA_PROMPT for the full measurement.
             if attachments and message.get('role') != 'tool':
-                content = multimodal.openai_content(
+                content, built = multimodal.openai_content(
                     content,
                     attachments,
                     self._vision,
-                    vision_supported=self._vision_supported,
-                    disabled_reason=vision_disabled_reason(
-                        getattr(self.client, 'base_url', ''), self.model))
+                    vision_supported=self._images_allowed(),
+                    reason=vision_delivery_reason(
+                        getattr(self.client, 'base_url', ''), self.model),
+                    numbering=numbering,
+                    priors=[
+                        str((a or {}).get('delivery') or '')
+                        for a in attachments if isinstance(a, dict)
+                    ])
+                deliveries.extend(built)
 
             if cache_indice is not None and idx == cache_indice:
                 content = self._to_structured_content(
@@ -289,13 +304,50 @@ class OpenAICompatTransport(Transport):
             # after it, because the Chat Completions schema restricts a tool
             # message to text parts (see multimodal.TOOL_MEDIA_PROMPT).
             if attachments and role == 'tool':
+                if multimodal.tool_media_withheld(attachments, self._vision,
+                                                  self._images_allowed()):
+                    # The tool said it attached pictures; this request will not
+                    # carry them. Saying so here is the only thing that stops
+                    # the tool's own text from being the last word.
+                    formatted_message['content'] = '\n'.join(
+                        filter(None, [
+                            str(formatted_message.get('content') or ''),
+                            multimodal.TOOL_MEDIA_WITHHELD,
+                        ]))
                 media = multimodal.openai_tool_media_message(
                     attachments,
                     self._vision,
-                    vision_supported=self._vision_supported)
+                    vision_supported=self._images_allowed(),
+                    numbering=numbering)
                 if media is not None:
                     openai_messages.append(media)
+        # Read by _call_llm for the recovery ladder and by hosts that want to
+        # show the user what actually happened. Instance state rather than a
+        # changed return type: this method has six call sites and one request is
+        # formatted at a time per transport instance.
+        self._last_deliveries = deliveries
         return openai_messages
+
+    def _images_allowed(self) -> bool:
+        """Whether to encode pixels at all for this request.
+
+        The per-model switch, and nothing else. There is deliberately no memory
+        of past refusals to consult — see ``llm/vision.py`` for why.
+        """
+        return bool(self._vision_supported)
+
+    def _mark_images_degraded(self, reason: str) -> None:
+        """Correct this request's delivery record after recovery dropped images.
+
+        The record is built while formatting, i.e. before the endpoint has had a
+        chance to object, so left alone it would say "delivered" for exactly the
+        requests the user most needs told about.
+        """
+        self._last_deliveries = [
+            d if d.state != multimodal.DELIVERED else replace(
+                d, state=multimodal.DEGRADED, reason=reason)
+            for d in self._last_deliveries
+        ]
 
     # ------------------------------------------------------------------ #
     # entry point
@@ -418,12 +470,13 @@ class OpenAICompatTransport(Transport):
         kwargs = apply_effort(
             kwargs, base_url=str(getattr(self.client, 'base_url', '')))
 
-        # Image content is the other per-model hard-400: a text-only model
-        # rejects the whole request rather than ignoring the image blocks, which
-        # would make it unusable the moment a user attaches a file. Retry once
-        # with the images folded into text, and remember the model. Wrapped
-        # OUTSIDE the thinking fallback so the two compose: a request can be
-        # retried for thinking and, independently, for images.
+        # Images are the other per-model hard-400: a text-only model rejects the
+        # whole request rather than ignoring the image blocks, which would make
+        # it unusable the moment a user attaches a file. The fallback runs a
+        # recovery ladder (shrink / thin the batch / drop) chosen by what the
+        # endpoint actually complained about. Wrapped OUTSIDE the thinking
+        # fallback so the two compose: a request can be retried for thinking
+        # and, independently, for images.
         sent_images = any(
             multimodal.has_image_blocks(m.get('content'))
             for m in messages if isinstance(m, dict))
@@ -436,6 +489,9 @@ class OpenAICompatTransport(Transport):
             model=self.model,
             messages=messages,
             sent_images=sent_images,
+            max_edge=getattr(
+                getattr(self, '_vision', None), 'max_edge', 0),
+            on_degrade=self._mark_images_degraded,
             logger_=logger,
             **kwargs)
 
