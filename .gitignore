@@ -132,6 +132,7 @@ venv.bak/
 .firecrawl
 .claude/
 .claude-trace/
+.qoder
 
 # custom
 *.pkl
