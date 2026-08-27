@@ -884,17 +884,23 @@ class FileSystemTool(ToolBase):
                         f'Use offset and limit to read specific portions.')
                     continue
 
-                # Dedup: return stub if file unchanged since last read
+                # Whether this path was read before, and looks the same. Used
+                # only to ANNOTATE the content — never to withhold it.
+                #
+                # Withholding assumed the earlier read was still in the model's
+                # context, which the tool cannot know: after a truncation or a
+                # compaction it is not, and the model is then unable to get the
+                # file back at all. Observed consequence — it fell back to the
+                # shell, hit an approval it could not clear, and finally edited
+                # the file to reconstruct what it could no longer see. The
+                # mtime comparison is also not proof of sameness: two writes
+                # within one filesystem timestamp tick are indistinguishable,
+                # so this could withhold content that HAD changed.
                 mtime = os.path.getmtime(target_path_real)
                 cached = self._read_cache.get(target_path_real)
-                if (cached and cached['mtime'] == mtime
-                        and cached['offset'] == offset
-                        and cached['limit'] == limit):
-                    results[path] = {
-                        'type': 'file_unchanged',
-                        'message': 'File has not changed since last read.',
-                    }
-                    continue
+                unchanged = bool(cached and cached['mtime'] == mtime
+                                 and cached['offset'] == offset
+                                 and cached['limit'] == limit)
 
                 with open(target_path_real, 'rb') as f:
                     raw_bytes = f.read()
@@ -926,7 +932,14 @@ class FileSystemTool(ToolBase):
                 else:
                     selected = lines
 
-                results[path] = ''.join(selected)
+                body = ''.join(selected)
+                if unchanged:
+                    # Says the same thing the old stub said, without taking the
+                    # content away to say it. The model can now decide for
+                    # itself whether it still had this in context.
+                    body = ('[note: unchanged since your last read of this '
+                            'file]\n' + body)
+                results[path] = body
 
                 # Update dedup cache
                 self._read_cache[target_path_real] = {

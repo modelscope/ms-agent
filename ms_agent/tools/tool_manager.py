@@ -15,6 +15,7 @@ from types import TracebackType
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from ms_agent.llm.utils import Tool, ToolCall
+from ms_agent.tools.arg_coercion import coerce_arguments
 from ms_agent.tools.agent_tool import AgentTool
 from ms_agent.tools.base import ToolBase
 from ms_agent.tools.code import CodeExecutionTool, LocalCodeExecutionTool
@@ -423,6 +424,45 @@ class ToolManager:
             server_name = server_name[:max(0, max_server_len)]
         return f'{server_name}{self.TOOL_SPLITER}{tool_name}'
 
+    def _resolve_tool_name(self, tool_name: str) -> tuple:
+        """Map what the model asked for onto a registered tool.
+
+        Some models reach for the server segment alone — ``code_executor``
+        instead of ``code_executor---shell_executor`` — and used to get an
+        AssertionError wrapped in a traceback, which says nothing about what
+        the name should have been. When the shorthand picks out exactly one
+        tool there is no ambiguity to resolve, so the call proceeds and the
+        result carries a note; otherwise it is reported as not found, with
+        candidates.
+
+        Returns ``(resolved_name, note)``; ``resolved_name`` is ``None`` when
+        nothing matched.
+        """
+        if tool_name in self._tool_index:
+            return tool_name, ''
+        prefix = f'{tool_name}{self.TOOL_SPLITER}'
+        matches = [key for key in self._tool_index if key.startswith(prefix)]
+        if len(matches) == 1:
+            return matches[0], (
+                f'Note: "{tool_name}" was resolved to "{matches[0]}". '
+                'Use the exact tool name in subsequent calls.')
+        return None, ''
+
+    def _unknown_tool_message(self, tool_name: str) -> str:
+        """Say what to call instead, rather than how the lookup failed."""
+        import difflib
+
+        available = sorted(self._tool_index)
+        close = difflib.get_close_matches(tool_name, available, n=3, cutoff=0.4)
+        if not close:
+            prefix = f'{tool_name}{self.TOOL_SPLITER}'
+            close = [k for k in available if k.startswith(prefix)][:3]
+        detail = (f' Closest matches: {", ".join(close)}.' if close else
+                  f' Available tools: {", ".join(available[:20])}'
+                  f'{" …" if len(available) > 20 else ""}.')
+        return (f'Tool "{tool_name}" is not available.{detail} '
+                'Use the exact tool name from the tool list.')
+
     def _extend_mcp_tool_index(
         self,
         tool_ins: ToolBase,
@@ -557,9 +597,28 @@ class ToolManager:
                         tool_args = json.loads(tool_args)
                     except Exception:  # noqa
                         return f'The input {tool_args} is not a valid JSON, fix your arguments and try again'
-                assert tool_name in self._tool_index, f'Tool name {tool_name} not found'
+                resolved_name, resolution_note = self._resolve_tool_name(
+                    tool_name)
+                if resolved_name is None:
+                    return {
+                        'result': self._unknown_tool_message(tool_name),
+                        'is_error': True,
+                    }
+                tool_name = resolved_name
+                tool_info['tool_name'] = tool_name
                 index_snapshot = self._tool_index[tool_name]
-                tool_ins, server_name, _ = index_snapshot
+                tool_ins, server_name, tool_spec = index_snapshot
+
+                # Reconcile the model's JSON with the tool's declared schema
+                # before anyone validates it. The schema is right here in the
+                # index; leaving a quoted number quoted just moves the failure
+                # to the tool, which reports it in terms of its own validator.
+                if isinstance(tool_args, dict):
+                    coerced = coerce_arguments(
+                        tool_args, (tool_spec or {}).get('parameters'))
+                    if coerced is not tool_args:
+                        tool_args = coerced
+                        tool_info['arguments'] = tool_args
 
                 # --- MCP availability (before SafetyGuard / PreToolUse) ---
                 if (tool_ins is self.servers
@@ -609,11 +668,19 @@ class ToolManager:
                                 }
                             # interactive mode: force the enforcer to confirm with
                             # the user; whitelist/memory must not bypass a safety
-                            # ask (REVIEW P1-2).
+                            # ask (REVIEW P1-2) — except for the categories a
+                            # user can reasonably settle once for a project,
+                            # where an ask that ignores their answer is just an
+                            # ask they learn to click through.
+                            from ms_agent.permission.ask_resolver import \
+                                REMEMBERABLE_ASK_CATEGORIES
                             from ms_agent.permission.enforcer import \
                                 PermissionDecision
                             safety_force_decision = PermissionDecision(
-                                action='ask', reason=resolved.reason)
+                                action='ask',
+                                reason=resolved.reason,
+                                rememberable=(resolved.category
+                                              in REMEMBERABLE_ASK_CATEGORIES))
 
                 # --- PreToolUse hooks ---
                 hook_result = None
@@ -696,6 +763,17 @@ class ToolManager:
                 if (self.mcp_success_handler is not None
                         and tool_ins is self.servers):
                     await self.mcp_success_handler(server_name)
+
+                if resolution_note:
+                    # Carried on the successful result so the correction lands
+                    # while the model is looking at what it just did, instead
+                    # of costing it a failed round to discover.
+                    if isinstance(response, dict):
+                        response = dict(response)
+                        response['result'] = (
+                            f'{resolution_note}\n{response.get("result", "")}')
+                    else:
+                        response = f'{resolution_note}\n{response}'
 
                 # --- PostToolUse hooks ---
                 hook_attachments = list(pre_attachments)
