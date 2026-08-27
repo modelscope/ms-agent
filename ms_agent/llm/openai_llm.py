@@ -5,6 +5,7 @@ import httpx
 import inspect
 import json
 from copy import deepcopy
+from dataclasses import replace
 from omegaconf import DictConfig, OmegaConf
 from openai.types.chat.chat_completion_message_tool_call import (
     ChatCompletionMessageToolCall, Function)
@@ -14,12 +15,13 @@ from ms_agent.llm import LLM, multimodal
 from ms_agent.llm.thinking import apply_effort, create_with_thinking_fallback
 from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.llm.vision import create_with_vision_fallback
-from ms_agent.llm.vision import disabled_reason as vision_disabled_reason
+from ms_agent.llm.vision import delivery_reason as vision_delivery_reason
 from ms_agent.utils import (MAX_CONTINUE_RUNS, assert_package_exist,
                             get_logger, retry)
 from ms_agent.utils.constants import get_service_config
 
 logger = get_logger()
+
 
 class _DashScopeResponsesTransport(httpx.HTTPTransport):
     """Rewrite /v1/responses -> /v1/chat/completions for DashScope proxy.
@@ -107,6 +109,7 @@ class OpenAI(LLM):
         from ms_agent.llm.vision import resolve_supports_vision
         self._vision = multimodal.VisionOptions.from_config(config)
         _service = getattr(config.llm, 'service', None)
+        self._last_deliveries: List[multimodal.ImageDelivery] = []
         self._vision_supported = resolve_supports_vision(
             config,
             spec=get_registry().get(_service)
@@ -294,6 +297,27 @@ class OpenAI(LLM):
             return self._continue_generate(messages, completion, tools,
                                            max_continue_runs - 1, **args)
 
+    def _images_allowed(self) -> bool:
+        """Whether to encode pixels at all for this request.
+
+        The per-model switch, and nothing else. There is deliberately no memory
+        of past refusals to consult — see ``llm/vision.py`` for why.
+        """
+        return bool(self._vision_supported)
+
+    def _mark_images_degraded(self, reason: str) -> None:
+        """Correct this request's delivery record after recovery dropped images.
+
+        The record is built while formatting, i.e. before the endpoint has had a
+        chance to object, so left alone it would say "delivered" for exactly the
+        requests the user most needs told about.
+        """
+        self._last_deliveries = [
+            d if d.state != multimodal.DELIVERED else replace(
+                d, state=multimodal.DEGRADED, reason=reason)
+            for d in self._last_deliveries
+        ]
+
     def _call_llm(self,
                   messages: List[Message],
                   tools: Optional[List[Tool]] = None,
@@ -333,6 +357,9 @@ class OpenAI(LLM):
             model=self.model,
             messages=messages,
             sent_images=sent_images,
+            max_edge=getattr(
+                getattr(self, '_vision', None), 'max_edge', 0),
+            on_degrade=self._mark_images_degraded,
             logger_=logger,
             **kwargs)
 
@@ -1060,6 +1087,10 @@ class OpenAI(LLM):
         # Determine if we need to add cache_control (for dashscope/anthropic)
         add_cache_control = self._prefix_cache_provider is not None
 
+        # One ordinal per PICTURE; see multimodal.image_index.
+        numbering: Dict[str, int] = {}
+        deliveries: List[multimodal.ImageDelivery] = []
+
         # Determine which message index should have cache_control (the last matching one)
         cache_indice = None
         if self._prefix_cache_enabled and add_cache_control:
@@ -1104,13 +1135,18 @@ class OpenAI(LLM):
             # but hoisting is valid under the schema AND under all of them — see
             # multimodal.TOOL_MEDIA_PROMPT for the full measurement.
             if attachments and message.get('role') != 'tool':
-                content = multimodal.openai_content(
+                content, built = multimodal.openai_content(
                     content,
                     attachments,
                     self._vision,
-                    vision_supported=self._vision_supported,
-                    disabled_reason=vision_disabled_reason(
-                        self.base_url, self.model))
+                    vision_supported=self._images_allowed(),
+                    reason=vision_delivery_reason(self.base_url, self.model),
+                    numbering=numbering,
+                    priors=[
+                        str((a or {}).get('delivery') or '')
+                        for a in attachments if isinstance(a, dict)
+                    ])
+                deliveries.extend(built)
 
             # Apply prefix cache structured content transformation
             # Only for string content, multimodal content is already structured
@@ -1147,10 +1183,22 @@ class OpenAI(LLM):
             # Tool-result images: same hoist as OpenAICompatTransport (the
             # Chat Completions schema restricts a tool message to text parts).
             if attachments and message.get('role') == 'tool':
+                if multimodal.tool_media_withheld(attachments, self._vision,
+                                                  self._images_allowed()):
+                    # See the router transport: without this the tool's own
+                    # text is the last word on images this request drops.
+                    formatted_message['content'] = '\n'.join(
+                        filter(None, [
+                            str(formatted_message.get('content') or ''),
+                            multimodal.TOOL_MEDIA_WITHHELD,
+                        ]))
                 media = multimodal.openai_tool_media_message(
-                    attachments, self._vision,
-                    vision_supported=self._vision_supported)
+                    attachments,
+                    self._vision,
+                    vision_supported=self._images_allowed(),
+                    numbering=numbering)
                 if media is not None:
                     openai_messages.append(media)
 
+        self._last_deliveries = deliveries
         return openai_messages

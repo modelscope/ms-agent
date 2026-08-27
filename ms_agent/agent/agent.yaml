@@ -15,11 +15,17 @@ llm:
   # Image encoding, applied at the wire boundary (ms_agent/llm/multimodal.py).
   vision:
     enabled: true
-    # Long-edge cap. 2560 sits inside DashScope's recommended range and at
-    # Anthropic's high-resolution tier while cutting a 4K upload ~4x. NOT 1568
-    # (Anthropic's standard tier): it downsamples rather than rejecting, so
-    # forcing that would throw away resolution the newer tier can use.
-    max_edge: 2560
+    # Long-edge cap. Unset on purpose: the safe default lives in
+    # multimodal.VisionOptions (2048 — the ceiling every measured endpoint
+    # accepts), and a provider documented to allow more raises it through
+    # ProviderSpec.max_image_edge. Pinning a number here would defeat both.
+    #
+    # It used to say 2560, taken from DashScope's guidance, and that one line
+    # caused a total outage: ModelScope's Qwen3-VL rejects anything above
+    # 2048x2048, and because the encoder resizes TO the cap, every image with a
+    # long edge over 2048 landed at exactly 2560 and was therefore certain to
+    # fail. Set this only to override deliberately.
+    # max_edge: 2048
     # Hard ceiling on the base64 STRING length — DashScope's 10 MB limit is
     # expressed that way; 8 MB leaves headroom.
     max_bytes: 8388608
