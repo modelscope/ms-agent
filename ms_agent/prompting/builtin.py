@@ -176,6 +176,45 @@ The ~/.ms_agent/... source labels are logical names — on this machine those \
 files actually live in {home}; project AGENTS.md files live in the project \
 directory."""
 
+#: Injected when the framework keeps its own records INSIDE the working
+#: directory, which is the layout of a managed project.
+#:
+#: Without it the agent has no way to tell its own bookkeeping apart from the
+#: user's material, and the confusion is not hypothetical: searching the
+#: workspace for a phrase finds that phrase in the transcript of the very
+#: request being served, because the prompt was written there moments earlier.
+#: Every hit is real, every hit is worthless, and the model has no reason to
+#: suspect it. Naming the directories, and saying what changing them does, is
+#: cheaper and less brittle than hiding them — hidden, they would also be
+#: unavailable when the user genuinely asks about history or configuration.
+WORKSPACE_INTERNALS_HINT = """\
+## Framework files in your working directory
+
+Two things under your working directory are maintained by the framework rather \
+than written by the user:
+
+- `sessions/` — a full transcript of every conversation in this project, \
+including the user's messages verbatim.{session_line}
+- `.ms_agent/` — this project's state: `memory/` (what is remembered across \
+conversations), `snapshots/` (a git repository of previous workspace \
+versions), `permission_memory.json` (approvals the user chose to keep), \
+`web_search/` (cached search results), `mcp.json` and `project.json`.
+
+Settings that apply to every project live separately, in {home} — the location \
+is configurable, so a machine may have several and this conversation is using \
+that one.
+
+When you search the workspace, matches inside those two directories are the \
+framework's record of this and earlier conversations, not the user's content. \
+Anything you were just asked is already written to `sessions/`, so searching \
+for a phrase from the request will match your own transcript. Exclude them \
+unless the user is asking about history or configuration, and never cite such \
+a match as if it were something you found in their material.
+
+You may read these files, and edit them when asked. Be aware that editing \
+`memory/` or `permission_memory.json` changes how later conversations behave, \
+and that `snapshots/` is what makes reverting possible."""
+
 #: Filename -> template registry used by workspace_files.ensure logic.
 HOME_FILE_TEMPLATES = {
     'SOUL.md': SOUL_TEMPLATE,

@@ -440,6 +440,10 @@ class LLMAgent(Agent):
                 content += '\n\n' + LIVE_FILES_HINT.format(
                     home=str(global_home()))
 
+        internals = self._build_workspace_internals_section()
+        if internals:
+            content += '\n\n' + internals
+
         if self._memory_guidance:
             content += '\n\n' + self._memory_guidance
 
@@ -456,6 +460,46 @@ class LLMAgent(Agent):
                 content += '\n\n' + skill_section
 
         return content
+
+    def _build_workspace_internals_section(self) -> str:
+        """Describe the framework's own directories, when they sit in the
+        working directory.
+
+        Only for the layout where they do. A project opened from an existing
+        folder keeps its records elsewhere, and telling that agent to watch out
+        for a ``sessions/`` directory it will never encounter would be a
+        fabricated warning.
+        """
+        from ms_agent.prompting.builtin import WORKSPACE_INTERNALS_HINT
+        from ms_agent.utils.workspace_context import resolve_workspace_root
+
+        try:
+            workspace_root = Path(resolve_workspace_root(self.config))
+        except Exception:  # noqa: BLE001 - never break prompt assembly
+            return ''
+        if not (workspace_root / 'sessions').is_dir():
+            return ''
+
+        # The directory the log is actually writing to, not the agent's tag:
+        # naming a path that does not exist is worse than naming none, since
+        # the model will go looking for it.
+        session_dir = None
+        log = getattr(self, 'session_log', None)
+        directory = getattr(log, 'directory', None)
+        if directory is not None:
+            session_dir = Path(directory).name
+        if not session_dir:
+            session_dir = getattr(self.runtime, 'session_id', None)
+
+        try:
+            home = str(global_home())
+        except Exception:  # noqa: BLE001
+            home = '~/.ms_agent'
+        hint = WORKSPACE_INTERNALS_HINT.format(
+            session_line=(f' This conversation is `sessions/{session_dir}/`.'
+                          if session_dir else ''),
+            home=home)
+        return hint
 
     def _check_skill_tool_dependencies(self):
         """Warn if skills are enabled but essential tools are missing."""
@@ -854,10 +898,8 @@ class LLMAgent(Agent):
         perm_config = PermissionConfig.from_dict(
             raw, project_root=workspace_root)
 
-        allowed_dirs = [workspace_root]
-        for directory in perm_config.safety.allowed_directories:
-            if directory not in allowed_dirs:
-                allowed_dirs.append(directory)
+        allowed_dirs = list(
+            perm_config.safety.effective_allowed_directories(workspace_root))
         read_only_dirs = list(perm_config.safety.read_only_directories)
         safety_guard = SafetyGuard(
             config=perm_config.safety,
