@@ -33,6 +33,7 @@ class SafetyGuard:
         self._allowed_dirs = list(allowed_dirs)
         self._read_only_dirs = list(read_only_dirs)
         self._sensitive_paths = list(config.sensitive_paths)
+        self._sensitive_read_paths = list(config.sensitive_read_paths)
         self._workspace_root = workspace_root
 
         path_safety_cfg = PathSafetyConfig(
@@ -41,6 +42,7 @@ class SafetyGuard:
             read_only_directories=tuple(self._read_only_dirs),
             workspace_root=workspace_root,
             dangerous_removal_paths=tuple(config.dangerous_removal_paths),
+            sensitive_read_paths=tuple(config.sensitive_read_paths),
         )
         self._shell_validator = ShellPathValidator(
             allowed_dirs=self._allowed_dirs,
@@ -105,7 +107,8 @@ class SafetyGuard:
             cwd,
             self._allowed_dirs,
             op_type,
-            read_only_dirs=self._read_only_dirs)
+            read_only_dirs=self._read_only_dirs,
+            sensitive_paths=self._sensitive_read_paths)
         if not result.allowed:
             return SafetyDecision(
                 action=result.action,

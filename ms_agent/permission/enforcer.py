@@ -17,6 +17,9 @@ from .handler import (AutoPermissionHandler, PermissionAction,
 from .matcher import CONTENT_SEP, PermissionMatcher
 from .memory import PermissionMemory
 from .suggestions import generate_suggestions
+from ms_agent.utils import get_logger
+
+logger = get_logger()
 
 
 @dataclass(frozen=True)
@@ -24,6 +27,17 @@ class PermissionDecision:
     action: Literal['allow', 'deny', 'ask']
     reason: str
     updated_args: dict[str, Any] | None = None
+    #: Whether a standing answer may satisfy this confirmation next time.
+    #:
+    #: Safety confirmations default to False — a remembered answer must not
+    #: stand in for looking at THIS call. But that is not true of all of them
+    #: equally. "This command runs code I cannot analyse" is a thing a user can
+    #: reasonably decide once for a project, the way they decide about `git`;
+    #: "this reads a private key" is not. Marking the first kind rememberable
+    #: is what keeps the confirmation useful — an ask that reappears no matter
+    #: how the user answers it does not make anyone safer, it just teaches them
+    #: to turn confirmations off entirely.
+    rememberable: bool = False
 
 
 class PermissionEnforcer:
@@ -77,6 +91,11 @@ class PermissionEnforcer:
         if 'call_id' in kwargs and not self._handler_accepts('call_id'):
             kwargs.pop('call_id')
         if getattr(self._handler, 'supports_concurrent_asks', False):
+            # A handler that services asks concurrently needs to know which of
+            # them are safety confirmations, so a remembered answer is never
+            # applied to one. Older handlers with a fixed signature don't.
+            if self._handler_accepts('forced'):
+                return await self._handler.ask(forced=forced, **kwargs)
             return await self._handler.ask(**kwargs)
         async with self._ask_lock_for_loop():
             if not forced and self._memory.matches(kwargs['tool_name'],
@@ -125,9 +144,15 @@ class PermissionEnforcer:
                 )
 
         if force_decision and force_decision.action == 'ask':
+            rememberable = getattr(force_decision, 'rememberable', False)
+            if rememberable and self._memory.matches(tool_name, tool_args):
+                return PermissionDecision(
+                    action='allow',
+                    reason='Allowed by remembered permission',
+                )
             suggestions = generate_suggestions(tool_name, tool_args)
             response = await self._ask_user(
-                forced=True,
+                forced=not rememberable,
                 tool_name=tool_name,
                 tool_args=tool_args,
                 context=force_decision.reason or '',
@@ -209,6 +234,30 @@ class PermissionEnforcer:
                 return s
         return tool_name
 
+    def _release_asks_covered_by_memory(self, pattern: str) -> int:
+        """Apply a just-remembered answer to the other cards still on screen.
+
+        Only reaches handlers that show several cards at once. There, "always
+        allow" is a statement about a pattern, so re-asking about a sibling the
+        pattern covers asks a question the user has answered. It also stops
+        mattering only in one direction: since a wait has no deadline, an
+        unanswered sibling now holds the turn open instead of being denied
+        after a couple of minutes, so leaving them up turns a mis-set
+        expectation into a stuck conversation.
+        """
+        resolver = getattr(self._handler, 'resolve_matching', None)
+        if resolver is None:
+            return 0
+        released = resolver(
+            lambda name, args: self._memory.matches(name, args),
+            PermissionResponse(action=PermissionAction.ALLOW_ONCE),
+        )
+        if released:
+            logger.info(
+                'permission pattern %r also released %d waiting request(s)',
+                pattern, released)
+        return released
+
     def _process_response(
         self,
         response: PermissionResponse | None,
@@ -230,6 +279,7 @@ class PermissionEnforcer:
         if response.action == PermissionAction.ALLOW_SESSION:
             pattern = self._remember_pattern(response, tool_name, tool_args)
             self._memory.add_session(pattern)
+            self._release_asks_covered_by_memory(pattern)
             return PermissionDecision(
                 action='allow',
                 reason=f'User allowed for session (pattern: {pattern})',
@@ -238,6 +288,7 @@ class PermissionEnforcer:
         if response.action == PermissionAction.ALLOW_ALWAYS:
             pattern = self._remember_pattern(response, tool_name, tool_args)
             self._memory.add(pattern, scope='project', source='user')
+            self._release_asks_covered_by_memory(pattern)
             return PermissionDecision(
                 action='allow',
                 reason=f'User allowed always (pattern: {pattern})',
