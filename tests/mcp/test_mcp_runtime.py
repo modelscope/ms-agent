@@ -527,19 +527,34 @@ async def test_sync_mcp_tools_list_failure_records():
 
 @pytest.mark.asyncio
 async def test_mcp_client_aexit_disconnects_server_stacks():
-    from contextlib import AsyncExitStack
+    import asyncio
 
     from ms_agent.tools.mcp_client import MCPClient
 
     client = MCPClient({'mcpServers': {}})
+
+    # Stand in for a live server: an owner task parked on its shutdown event,
+    # exactly as _own_server parks once its transport is open.
+    shutdown = asyncio.Event()
+    closed = asyncio.Event()
+
+    async def _owner():
+        try:
+            await shutdown.wait()
+        finally:
+            client.sessions.pop('fake', None)
+            closed.set()
+
     client.sessions['fake'] = object()
-    stack = AsyncExitStack()
-    await stack.__aenter__()
-    client._server_stacks['fake'] = stack
+    client._server_shutdown['fake'] = shutdown
+    client._server_tasks['fake'] = asyncio.create_task(_owner())
+    await asyncio.sleep(0)
 
     await client.__aexit__(None, None, None)
+    assert closed.is_set()
     assert 'fake' not in client.sessions
-    assert 'fake' not in client._server_stacks
+    assert 'fake' not in client._server_tasks
+    assert 'fake' not in client._server_shutdown
 
 
 def _make_tool_manager(client, runtime, hook_runtime=None):

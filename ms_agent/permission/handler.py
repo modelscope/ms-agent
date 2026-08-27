@@ -13,7 +13,7 @@ import json
 import sys
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 from uuid import uuid4
 
 
@@ -152,6 +152,15 @@ class EventEmitter(Protocol):
         ...
 
 
+@dataclass
+class _PendingAsk:
+    """One card the user has not answered yet, and what it was about."""
+    future: 'asyncio.Future[PermissionResponse]'
+    tool_name: str
+    tool_args: dict
+    forced: bool = False
+
+
 class WebPermissionHandler:
     """Async handler that suspends on a Future until the frontend responds."""
 
@@ -164,9 +173,17 @@ class WebPermissionHandler:
     def __init__(
         self,
         event_emitter: EventEmitter,
-        timeout: float = 120.0,
+        timeout: float | None = None,
     ) -> None:
-        self._pending: dict[str, asyncio.Future[PermissionResponse]] = {}
+        """``timeout=None`` waits indefinitely for an answer.
+
+        That is the right default for a handler whose whole purpose is to ask
+        a person something: expiring the question answers it on their behalf,
+        with the one answer they cannot undo. The host sets a bound where one
+        makes sense — a full-access session, where the human may not be at the
+        keyboard at all.
+        """
+        self._pending: dict[str, _PendingAsk] = {}
         self._event_emitter = event_emitter
         self._timeout = timeout
 
@@ -177,11 +194,19 @@ class WebPermissionHandler:
         context: str,
         suggestions: list[str] | None = None,
         call_id: str = '',
+        forced: bool = False,
     ) -> PermissionResponse:
         request_id = uuid4().hex
         loop = asyncio.get_running_loop()
         future: asyncio.Future[PermissionResponse] = loop.create_future()
-        self._pending[request_id] = future
+        # What was asked is kept beside the future so an answer to ONE card can
+        # be applied to the others it covers (see resolve_matching).
+        self._pending[request_id] = _PendingAsk(
+            future=future,
+            tool_name=tool_name,
+            tool_args=dict(tool_args or {}),
+            forced=forced,
+        )
 
         self._event_emitter.emit({
             'type':
@@ -202,16 +227,97 @@ class WebPermissionHandler:
         })
 
         try:
+            if self._timeout is None:
+                return await future
             return await asyncio.wait_for(future, timeout=self._timeout)
         except asyncio.TimeoutError:
+            # Said plainly, and said to the MODEL: a timeout is not a person
+            # declining. Without the distinction the agent reads an ordinary
+            # refusal, tries a variation, and waits out the whole timeout
+            # again — one unattended prompt costing several times what the
+            # limit says it should.
             return PermissionResponse(
                 action=PermissionAction.DENY,
-                feedback='Permission request timed out',
+                feedback=(
+                    f'No response within {self._timeout:.0f}s, so this call '
+                    'was not run. This is a TIMEOUT, not a refusal by the '
+                    'user — nobody saw the request. Do not re-request the '
+                    'same approval; finish what you can without it and say '
+                    'plainly what is left waiting on approval.'),
             )
         finally:
             self._pending.pop(request_id, None)
 
+    def awaiting_request_ids(self) -> set:
+        """Every request still open for an answer.
+
+        A host replaying a reconnected turn needs this to tell a card that is
+        still live from one that was already decided.
+        """
+        return {
+            request_id
+            for request_id, pending in self._pending.items()
+            if not pending.future.done()
+        }
+
+    def is_awaiting(self, request_id: str) -> bool:
+        """Whether this request is still open for an answer.
+
+        Public because a host has to ask before routing a click, and reaching
+        into ``_pending`` to ask makes the host's code depend on how pending
+        asks happen to be stored — which is how adding a field to that record
+        turned every approval click into a 500.
+        """
+        pending = self._pending.get(request_id)
+        return pending is not None and not pending.future.done()
+
     def resolve(self, request_id: str, response: PermissionResponse) -> None:
-        future = self._pending.get(request_id)
-        if future and not future.done():
-            future.set_result(response)
+        pending = self._pending.get(request_id)
+        if pending and not pending.future.done():
+            pending.future.set_result(response)
+
+    def resolve_matching(
+        self,
+        covers: Callable[[str, dict[str, Any]], bool],
+        response: PermissionResponse,
+    ) -> int:
+        """Answer the still-open asks that a decision just made unnecessary.
+
+        A round can put several cards up at once, and answering one of them
+        with "always allow" is a statement about a PATTERN, not about that one
+        call. Leaving its siblings up asks the user the question they just
+        answered — and since a wait has no deadline, an unanswered sibling
+        holds the turn open indefinitely rather than being quietly denied.
+
+        Safety confirmations are skipped: those exist precisely so a remembered
+        answer cannot stand in for looking at this one.
+        """
+        resolved = 0
+        for request_id, pending in list(self._pending.items()):
+            if pending.forced or pending.future.done():
+                continue
+            if not covers(pending.tool_name, pending.tool_args):
+                continue
+            pending.future.set_result(response)
+            self._pending.pop(request_id, None)
+            resolved += 1
+        return resolved
+
+    def cancel_pending(self, feedback: str = 'Session closed') -> int:
+        """Answer every outstanding ask so nothing is left waiting on a person
+        who has gone. Returns how many were resolved.
+
+        Needed once waits can be unbounded: a suspended ask holds its turn, and
+        a held turn is exempt from idle reclamation, so an abandoned prompt
+        would otherwise pin its session for the life of the process.
+        """
+        resolved = 0
+        for request_id, pending in list(self._pending.items()):
+            if pending.future.done():
+                continue
+            pending.future.set_result(
+                PermissionResponse(
+                    action=PermissionAction.DENY, feedback=feedback))
+            resolved += 1
+            self._pending.pop(request_id, None)
+        return resolved

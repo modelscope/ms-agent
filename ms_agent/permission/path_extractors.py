@@ -414,6 +414,78 @@ def _make_filter_entry(
     )
 
 
+#: Commands that run code supplied as an argument, a script, or on stdin.
+#:
+#: Path extraction is a claim about what a command touches, and for these that
+#: claim cannot be made: the argument to ``python3 -c`` is a program, and a
+#: program can open, write or delete anything. So they are not extracted from —
+#: they are surfaced, letting the mode decide (see ``ask_resolver``). Without
+#: this they fell to the "unregistered command" branch and were allowed
+#: outright, which is how ``python3 -c "import os; os.remove(...)"`` walked
+#: past a policy that stops a plain ``rm``.
+INTERPRETER_COMMANDS: frozenset[str] = frozenset({
+    'python',
+    'python2',
+    'python3',
+    'pypy',
+    'pypy3',
+    'uv',
+    'uvx',
+    'pipx',
+    'node',
+    'nodejs',
+    'deno',
+    'bun',
+    'npx',
+    'ruby',
+    'perl',
+    'php',
+    'lua',
+    'Rscript',
+    'sh',
+    'bash',
+    'zsh',
+    'ksh',
+    'dash',
+    'fish',
+    'osascript',
+    'eval',
+    'exec',
+})
+
+#: Interpreter flags that take code inline rather than a file path.
+_INLINE_CODE_FLAGS = frozenset({'-c', '-e', '--eval', '--exec', '-E'})
+
+
+def interpreter_runs_inline_code(args: list[str]) -> bool:
+    """Whether an interpreter invocation carries its program in the argv.
+
+    ``python3 script.py`` names a file the workspace rules can judge;
+    ``python3 -c '…'`` and a bare ``python3`` reading stdin do not.
+    """
+    if not args:
+        return True  # bare REPL / stdin
+    for arg in args:
+        if arg == '--':
+            break
+        if arg in _INLINE_CODE_FLAGS or arg.startswith('--eval='):
+            return True
+        if arg == '-':
+            return True  # explicit stdin, e.g. `python3 - <<EOF`
+    return False
+
+
+def extract_interpreter_script(args: list[str]) -> list[str]:
+    """The script path an interpreter was pointed at, if it was pointed at one."""
+    for arg in args:
+        if arg == '--':
+            continue
+        if arg.startswith('-'):
+            continue
+        return [arg]
+    return []
+
+
 def build_extractor_registry() -> dict[str, ExtractorEntry]:
     """Build the full 36-command extractor registry."""
     registry: dict[str, ExtractorEntry] = {}

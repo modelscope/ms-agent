@@ -19,7 +19,29 @@ _AUTO_CATEGORY_POLICY: dict[str, Literal['allow', 'deny']] = {
     'command_validator': 'deny',
     'shell_expansion': 'deny',
     'read_outside_dirs': 'deny',
+    # Running code is what full access is FOR. Refusing every `python3 -c` in
+    # the mode whose whole meaning is "stop asking me" would make the mode
+    # useless, and the confirmation this category exists for is the one an
+    # interactive user gets. What auto mode cannot honestly claim is that it
+    # inspected the code — hence the message on the ask, and the setting-page
+    # copy that says so.
+    'interpreter_exec': 'allow',
+    # A private key does not become less private because the user is not
+    # watching. There is no path here that reads it without someone deciding.
+    'sensitive_read': 'deny',
 }
+
+
+#: Safety confirmations a standing answer may satisfy.
+#:
+#: The rest are deliberately not here. "This reads a private key" has to be
+#: decided each time, because what makes it risky is the specific file, and a
+#: pattern broad enough to remember would cover files the user never saw.
+#: "This runs code I cannot analyse" is different: every inline `python3 -c` is
+#: the same decision, it comes up constantly, and an ask the user cannot settle
+#: is one they answer by turning confirmations off — which is the outcome the
+#: confirmation existed to prevent.
+REMEMBERABLE_ASK_CATEGORIES: frozenset = frozenset({'interpreter_exec'})
 
 
 def resolve_ask(

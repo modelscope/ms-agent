@@ -4,7 +4,6 @@ import inspect
 import io
 import json
 import os
-import shlex
 import shutil
 import time
 from contextlib import redirect_stderr, redirect_stdout
@@ -19,6 +18,81 @@ from ms_agent.utils.utils import install_package
 from ms_agent.utils.workspace_context import WorkspaceContext
 
 logger = get_logger()
+
+#: Ambient variables a POSIX command may read without them carrying anything
+#: the agent should not have. The environment is built as an allow-list rather
+#: than inherited, so anything missing here is simply absent for every command
+#: the agent runs — and an absent one is not a neutral default:
+#:
+#: * ``USER``/``LOGNAME`` unset makes ``git commit`` and anything deriving an
+#:   identity from the environment fail or record the wrong author.
+#: * ``TMPDIR`` unset sends every tool that wants scratch space to ``/tmp``,
+#:   which is outside the workspace and therefore refused by the path policy —
+#:   leaving the agent with nowhere to write a temporary file at all.
+#: * ``SSL_CERT_FILE``/``REQUESTS_CA_BUNDLE`` unset breaks TLS for interpreters
+#:   with no system trust store, so ``pip install`` fails to verify PyPI.
+#: * The proxy variables are how a developer behind one reaches the network;
+#:   dropping them turns every fetch into a timeout.
+#:
+#: Credentials are still NOT forwarded: no ``*_API_KEY``, ``*_TOKEN``,
+#: ``AWS_*``, ``GITHUB_*`` or similar appears here, and the tool's own
+#: ``shell_env`` config remains the way to pass one deliberately.
+_POSIX_ENV_PASSTHROUGH = (
+    'PATH',
+    'HOME',
+    'USER',
+    'LOGNAME',
+    'SHELL',
+    'TMPDIR',
+    'LANG',
+    'LC_ALL',
+    'LC_CTYPE',
+    'TERM',
+    'TZ',
+    'SSL_CERT_FILE',
+    'SSL_CERT_DIR',
+    'REQUESTS_CA_BUNDLE',
+    'CURL_CA_BUNDLE',
+    'NODE_EXTRA_CA_CERTS',
+    'HTTP_PROXY',
+    'HTTPS_PROXY',
+    'ALL_PROXY',
+    'NO_PROXY',
+    'http_proxy',
+    'https_proxy',
+    'all_proxy',
+    'no_proxy',
+)
+
+
+#: Set on every command the agent runs, unless the environment already says
+#: otherwise. Nothing here changes what a command DOES — it changes what the
+#: command assumes about who is reading.
+#:
+#: A pager is the sharp edge: ``git log`` or ``systemctl status`` hands its
+#: output to ``less``, which waits for a keypress that will never come, and the
+#: tool call sits there until it times out. Progress bars and colour codes are
+#: milder, but they fill the result with control characters that cost context
+#: and read as noise. ``AI_AGENT`` is a cross-vendor convention some tools
+#: (``gh``) report in their User-Agent.
+_AGENT_FRIENDLY_ENV = {
+    'PAGER': 'cat',
+    'GIT_PAGER': 'cat',
+    'MANPAGER': 'cat',
+    # -F quit if it all fits on one screen, -R keep colour, -X no alternate
+    # screen. Needed because PAGER=cat only covers programs that CONSULT it;
+    # anything invoking `less` directly would still sit waiting for a key.
+    'LESS': '-FRX',
+    'GIT_TERMINAL_PROMPT': '0',
+    'GIT_MERGE_AUTOEDIT': 'no',
+    'PIP_DISABLE_PIP_VERSION_CHECK': '1',
+    'PIP_PROGRESS_BAR': 'off',
+    'PYTHONUNBUFFERED': '1',
+    'TQDM_DISABLE': '1',
+    'DEBIAN_FRONTEND': 'noninteractive',
+    'NO_COLOR': '1',
+    'AI_AGENT': 'ms_agent',
+}
 
 
 def _is_relative_to(path: Path, base: Path) -> bool:
@@ -328,10 +402,19 @@ class LocalCodeExecutionTool(ToolBase):
         else:
             env: Dict[str, str] = {
                 'INHERITED_FROM_LOCAL': 'False',
-                'PATH': os.environ.get('PATH', ''),
-                'HOME': os.environ.get('HOME', ''),
-                'LANG': os.environ.get('LANG', ''),
             }
+            for key in _POSIX_ENV_PASSTHROUGH:
+                value = os.environ.get(key)
+                if value is not None:
+                    env[key] = value
+            env.setdefault('PATH', '')
+            # Set outright, NOT deferring to whatever the parent had. These
+            # exist to undo settings made for a human at a terminal, so
+            # inheriting them defeats the entire point: a developer's
+            # `PAGER=less` is exactly the value that leaves `git log` waiting
+            # for a keypress nobody will press. A deliberate choice still wins
+            # — `tools.code_executor.shell_env` is applied after this.
+            env.update(_AGENT_FRIENDLY_ENV)
             if os.name == 'nt':
                 # ``create_subprocess_shell`` uses the native Windows command
                 # processor. Keep the non-secret OS/user variables that cmd
@@ -459,12 +542,30 @@ class LocalCodeExecutionTool(ToolBase):
                 Tool(
                     tool_name='shell_executor',
                     server_name='code_executor',
-                    description=
-                    ('Execute shell commands locally under the workspace output directory (cwd). '
-                     'Subject to policy (read_only vs workspace_write, network toggle). '
-                     'Large stdout/stderr may be spilled to .ms_agent_artifacts. '
-                     'Use run_in_background=true to return immediately with task_id; poll via task notifications.'
-                     ),
+                    description=(
+                        'Run a shell command.\n'
+                        '\n'
+                        'Each call starts a NEW shell in the workspace root, '
+                        f'which is {self._ws.root}. Nothing carries over '
+                        'between calls: not the working directory, not '
+                        'environment variables, and not an activated '
+                        'virtualenv or conda environment.\n'
+                        '\n'
+                        'So do each of those in the SAME call as the work '
+                        'that needs it, chained with && — for example '
+                        '`cd sub && ls`, or '
+                        '`. .venv/bin/activate && pip install requests && '
+                        'python -c "import requests"`. Prefer absolute paths '
+                        'or a leading cd over assuming a directory from an '
+                        'earlier call.\n'
+                        '\n'
+                        'Paths are restricted to the workspace (plus the OS '
+                        'temp directory); reading credential files and running '
+                        'code inline (python -c, heredocs) may require '
+                        'approval. Large output is spilled to '
+                        '.ms_agent_artifacts and the result says where. Use '
+                        'run_in_background=true for a long command: it returns '
+                        'a task_id immediately.'),
                     parameters={
                         'type': 'object',
                         'properties': {
@@ -600,21 +701,6 @@ class LocalCodeExecutionTool(ToolBase):
                 ensure_ascii=False,
                 indent=2)
 
-    def _prepare_shell_command(self, command: str) -> str:
-        """Use the native Windows shell; wrap composite POSIX input when needed."""
-        if os.name == 'nt':
-            # asyncio.create_subprocess_shell delegates to cmd.exe on Windows;
-            # wrapping native syntax in a usually unavailable POSIX shell
-            # makes otherwise valid compound commands fail.
-            return command
-        shell_meta = ('&&', '||', '|', ';', '>', '<', '`', '$(', 'cd ',
-                      'export ')
-        already_wrapped = command.lstrip().startswith(
-            ('sh ', 'bash ', '/bin/sh ', '/bin/bash '))
-        if not already_wrapped and any(meta in command for meta in shell_meta):
-            return f'sh -lc {shlex.quote(command)}'
-        return command
-
     async def notebook_executor(self,
                                 code: str,
                                 description: str = '',
@@ -718,7 +804,16 @@ class LocalCodeExecutionTool(ToolBase):
         exec_timeout = timeout or self._shell_timeout
         call_id = call_id or f'shell-{os.urandom(4).hex()}'
 
-        shell_cmd = self._prepare_shell_command(command)
+        # Handed to the shell verbatim. ``create_subprocess_shell`` already runs
+        # it under ``/bin/sh -c`` (``cmd.exe`` on Windows), which understands
+        # every compound form on its own, so there is nothing to pre-wrap.
+        # Wrapping used to be conditional on the command CONTAINING a
+        # metacharacter, and the wrapper was a LOGIN shell: adding a `;` to a
+        # command re-ran the profile, which on macOS reorders PATH via
+        # path_helper, so `python3 -V` and `python3 -V ; true` resolved to
+        # different interpreters. Installing with one form and importing with
+        # the other is then a ModuleNotFoundError with no visible cause.
+        shell_cmd = command
 
         if run_in_background:
             if self._task_manager is None:

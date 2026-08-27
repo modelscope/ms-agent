@@ -89,6 +89,27 @@ def _is_under_allowed(resolved: Path, allowed_dirs: Sequence[str]) -> bool:
     return False
 
 
+def matches_sensitive(resolved: str, patterns: Sequence[str]) -> bool:
+    """Whether a resolved path is one of the configured sensitive locations.
+
+    Compared against both the literal pattern and its ``~``-expanded form, and
+    a directory pattern (``~/.ssh/*``) also matches the directory itself, so
+    listing it is judged the same as reading a file inside it.
+    """
+    import fnmatch
+
+    for raw in patterns or ():
+        pattern = os.path.expanduser(str(raw))
+        if fnmatch.fnmatch(resolved, pattern):
+            return True
+        # `~/.ssh/*` should also cover `~/.ssh` and anything nested deeper.
+        if pattern.endswith('/*'):
+            parent = pattern[:-2]
+            if resolved == parent or resolved.startswith(parent + os.sep):
+                return True
+    return False
+
+
 def validate_path(
     path: str,
     cwd: str,
@@ -97,6 +118,7 @@ def validate_path(
     *,
     read_only_dirs: Sequence[str] = (),
     home_dir: str | None = None,
+    sensitive_paths: Sequence[str] = (),
 ) -> PathValidationResult:
     """Validate a single filesystem path for a given operation type.
 
@@ -128,10 +150,7 @@ def validate_path(
         )
 
     if _has_glob(path):
-        # Heuristic: if path contains parentheses or is very long, it's likely
-        # code content (e.g., from heredoc), not a real file path. Skip glob check.
-        looks_like_code = '(' in path or ')' in path or len(path) > 200
-        if op_type in ('write', 'create') and not looks_like_code:
+        if op_type in ('write', 'create'):
             return PathValidationResult(
                 allowed=False,
                 resolved_path=path,
@@ -147,6 +166,19 @@ def validate_path(
         resolved = (Path(cwd) / path).resolve()
 
     resolved_str = str(resolved)
+
+    # Credential stores are gated wherever they sit. The list existed already
+    # but only the write path consulted it, so `cat ~/.ssh/id_rsa` was judged
+    # purely on "is it in the workspace" — and under the default loose read
+    # policy that resolved to allow, putting the key in the transcript.
+    if op_type == 'read' and matches_sensitive(resolved_str, sensitive_paths):
+        return PathValidationResult(
+            allowed=False,
+            resolved_path=resolved_str,
+            action='ask',
+            reason=f'Read of sensitive path: {resolved_str}',
+            category='sensitive_read',
+        )
 
     if not _is_under_allowed(resolved, allowed_dirs):
         if op_type == 'read':

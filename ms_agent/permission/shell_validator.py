@@ -17,8 +17,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Sequence
 
-from .path_extractors import (ExtractorEntry, build_extractor_registry,
-                              extract_find_exec_commands, find_uses_delete)
+from .path_extractors import (INTERPRETER_COMMANDS, ExtractorEntry,
+                              build_extractor_registry,
+                              extract_find_exec_commands,
+                              extract_interpreter_script, find_uses_delete,
+                              interpreter_runs_inline_code)
 from .path_validator import (PathValidationResult, is_dangerous_removal_path,
                              validate_path)
 from .sed_validator import check_sed_expression_safety, is_sed_read_only
@@ -26,11 +29,216 @@ from .wrapper_strip import strip_safe_wrappers
 
 _PROCESS_INPUT_SUB = re.compile(r'<\s*\(')
 _PROCESS_OUTPUT_SUB = re.compile(r'>\s*\(')
-_REDIRECT_PATTERN = re.compile(r'(?:&>>|&>|>>|>\||>)'
-                               r'\s*'
-                               r'(\S+)')
 _FD_REDIRECT = re.compile(r'^\d*>&\d+$')
 _MAX_SUBSTITUTION_DEPTH = 16
+
+#: Character devices every shell uses as a sink or a source. They are not
+#: files the workspace policy has anything to say about.
+_REDIRECT_DEVICE_ALLOWLIST = frozenset({
+    '/dev/null',
+    '/dev/stdout',
+    '/dev/stderr',
+    '/dev/stdin',
+    '/dev/tty',
+    '/dev/zero',
+})
+
+#: Ends a word in shell source. Used to know where a redirect target stops —
+#: notably at the `)` closing a subshell, which is not part of the filename.
+_WORD_TERMINATORS = frozenset(' \t\n\r;|&()<>')
+
+
+def _extract_redirect_targets(command: str) -> list[str]:
+    """Find the target of every output redirection in one command.
+
+    Walks the source tracking quote state instead of pattern-matching it. A
+    regex reading ``\\S+`` after the operator cannot see either boundary that
+    matters: it takes ``>`` inside a quoted argument for a redirection
+    (``git commit -m "a > b"``), and it swallows whatever punctuation abuts the
+    filename, so ``(… 2>/dev/null)`` yields the target ``/dev/null)`` — which
+    matches no allowlist entry and gets refused as a write outside the
+    workspace.
+    """
+    targets: list[str] = []
+    i = 0
+    n = len(command)
+    in_single = False
+    in_double = False
+
+    while i < n:
+        c = command[i]
+
+        if c == '\\' and not in_single and i + 1 < n:
+            i += 2
+            continue
+        if c == "'" and not in_double:
+            in_single = not in_single
+            i += 1
+            continue
+        if c == '"' and not in_single:
+            in_double = not in_double
+            i += 1
+            continue
+        if in_single or in_double:
+            i += 1
+            continue
+
+        if c != '>':
+            i += 1
+            continue
+
+        # Step back over an fd prefix (``2>``) and ``&`` of ``&>``.
+        start = i
+        i += 1
+        if i < n and command[i] == '>':  # >>
+            i += 1
+        elif i < n and command[i] == '|':  # >|
+            i += 1
+        elif i < n and command[i] == '&':
+            # ``>&2`` / ``2>&1`` duplicates a descriptor; no file involved.
+            j = i + 1
+            while j < n and command[j].isdigit():
+                j += 1
+            if j > i + 1 or (j < n and command[j] == '-'):
+                i = j
+                continue
+
+        while i < n and command[i] in ' \t':
+            i += 1
+
+        word_start = i
+        word: list[str] = []
+        w_single = False
+        w_double = False
+        while i < n:
+            ch = command[i]
+            if ch == '\\' and not w_single and i + 1 < n:
+                word.append(command[i + 1])
+                i += 2
+                continue
+            if ch == "'" and not w_double:
+                w_single = not w_single
+                i += 1
+                continue
+            if ch == '"' and not w_single:
+                w_double = not w_double
+                i += 1
+                continue
+            if not w_single and not w_double and ch in _WORD_TERMINATORS:
+                break
+            word.append(ch)
+            i += 1
+
+        if i == word_start and not word:
+            # A bare ``>`` with nothing after it — malformed, but not ours to
+            # interpret; leave it to the shell.
+            del start
+            continue
+        targets.append(''.join(word))
+
+    return targets
+
+
+_REDIRECT_TOKEN = re.compile(r'^\d*(?:&?>>?\|?|<<?<?|>&|<&)$')
+
+
+def _strip_redirections(tokens: list[str]) -> list[str]:
+    """Remove redirection operators and their targets from a token list.
+
+    ``shlex.split`` has no idea ``>`` means anything, so ``ls >> /dev/null``
+    arrives as three plain words and the extractor reads ``/dev/null`` as a
+    file ``ls`` was asked to list. Redirect targets are checked separately, by
+    :func:`_extract_redirect_targets`, against the rules for the write they
+    actually are.
+    """
+    out: list[str] = []
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        if _FD_REDIRECT.match(token):
+            i += 1
+            continue
+        if _REDIRECT_TOKEN.match(token):
+            # Operator and, unless it is a descriptor duplication, its target.
+            i += 1
+            if i < len(tokens) and not _REDIRECT_TOKEN.match(tokens[i]):
+                i += 1
+            continue
+        # Glued forms such as ``2>/dev/null`` or ``>out.txt``.
+        glued = re.match(r'^\d*(?:&?>>?\|?|<<?<?)(?=\S)', token)
+        if glued:
+            i += 1
+            continue
+        out.append(token)
+        i += 1
+    return out
+
+
+def _unwrap_group(sub_cmd: str) -> str:
+    """Peel subshell/command-group punctuation off one sub-command.
+
+    Splitting a compound command on its operators leaves the delimiters of any
+    group attached to the neighbouring word — ``(cd sub && ls)`` yields
+    ``(cd sub`` and ``ls)``. Only unquoted leading/trailing delimiters are
+    removed, so a real argument like ``echo "(hi)"`` is untouched.
+    """
+    out = sub_cmd.strip()
+    while out and out[0] in '({':
+        out = out[1:].lstrip()
+    while out and out[-1] in ')}':
+        out = out[:-1].rstrip()
+        if out.endswith(';'):
+            out = out[:-1].rstrip()
+    return out
+
+
+_HEREDOC_START = re.compile(r'<<-?\s*([\'"]?)([A-Za-z_][A-Za-z0-9_]*)\1')
+
+
+def _strip_heredoc_bodies(command: str) -> str:
+    """Drop heredoc payloads, keeping the command lines that introduce them.
+
+    A heredoc body is DATA. Left in place it is split on newlines like any
+    compound command and each line analysed as if it were one, so a line of
+    Python such as ``result = [x * 2 for x in data if x > 1]`` reads as a
+    redirection into a file named ``1]`` — a glob in a create position, and a
+    refusal for a script that touches nothing.
+    """
+    if '<<' not in command:
+        return command
+
+    lines = command.splitlines()
+    kept: list[str] = []
+    pending: list[tuple] = []
+    opener_at: int = -1  # where the still-open heredoc began, on kept[-1]
+
+    for line in lines:
+        if pending:
+            delimiter, strip_tabs = pending[0]
+            candidate = line.lstrip('\t') if strip_tabs else line
+            if candidate.strip() == delimiter:
+                pending.pop(0)
+                if not pending:
+                    opener_at = -1
+            continue
+
+        kept.append(line)
+        for match in _HEREDOC_START.finditer(line):
+            if not pending:
+                opener_at = match.start()
+            pending.append((match.group(2), match.group(0).startswith('<<-')))
+
+    if pending and kept and opener_at >= 0:
+        # Opened and never closed. The shell will reject this outright, so
+        # there is nothing here to judge — and judging it anyway means reading
+        # the payload as filenames and refusing for a reason that is not true.
+        # Seen when a multi-line command reaches us flattened onto one line
+        # (a paste that lost its newlines): the refusal claimed a "glob in a
+        # create operation" for a script that creates nothing, hiding the
+        # actual problem, which is a syntax error.
+        kept[-1] = kept[-1][:opener_at].rstrip()
+
+    return '\n'.join(kept)
 
 
 @dataclass(frozen=True)
@@ -47,6 +255,7 @@ class PathSafetyConfig:
     read_only_directories: tuple[str, ...] = ()
     workspace_root: str | None = None
     dangerous_removal_paths: tuple[str, ...] = ()
+    sensitive_read_paths: tuple[str, ...] = ()
 
 
 class ShellPathValidator:
@@ -61,6 +270,7 @@ class ShellPathValidator:
         self._config = safety_config or PathSafetyConfig()
         self._read_only_dirs = list(self._config.read_only_directories)
         self._workspace_root = self._config.workspace_root or os.getcwd()
+        self._sensitive_read_paths = list(self._config.sensitive_read_paths)
         self._extractors = build_extractor_registry()
 
     def check(self, command: str, *, _depth: int = 0) -> SafetyDecision:
@@ -80,6 +290,11 @@ class ShellPathValidator:
                 reason=
                 f'Command exceeds max length ({self._config.max_command_chars})',
             )
+
+        # Heredoc payloads are data, not commands. Analysing them as commands
+        # is how an inline Python script gets refused for a "glob in a create
+        # operation" it never contained.
+        command = _strip_heredoc_bodies(command)
 
         # 1. Process substitution
         if _PROCESS_OUTPUT_SUB.search(command):
@@ -115,6 +330,15 @@ class ShellPathValidator:
             if stripped.startswith('#'):
                 continue  # Skip pure comment
 
+            # Unwrap subshell / group punctuation so the first token is the
+            # command. Without this `(cd sub && …)` presents `(cd` as the
+            # command name, which matches no extractor and silently skips the
+            # cd tracking the rest of the loop depends on.
+            stripped = _unwrap_group(stripped)
+            if not stripped or stripped.startswith('#'):
+                continue
+            sub_cmd = stripped
+
             try:
                 tokens = shlex.split(sub_cmd)
             except ValueError:
@@ -131,7 +355,8 @@ class ShellPathValidator:
             if redirect_result.action != 'allow':
                 return redirect_result
 
-            # 4. Strip safe wrappers
+            # 4. Strip safe wrappers and redirection syntax
+            tokens = _strip_redirections(tokens)
             tokens = strip_safe_wrappers(tokens)
             if not tokens:
                 continue
@@ -189,6 +414,9 @@ class ShellPathValidator:
         _depth: int = 0,
         cwd: str | None = None,
     ) -> SafetyDecision:
+        if base_cmd in INTERPRETER_COMMANDS:
+            return self._check_interpreter(base_cmd, args, cwd=cwd)
+
         entry = self._extractors.get(base_cmd)
         if entry is None:
             return SafetyDecision(
@@ -214,6 +442,39 @@ class ShellPathValidator:
                 action='allow', reason=f'{base_cmd}: no paths to validate')
 
         return self._validate_paths(paths, entry.op_type, base_cmd, cwd=cwd)
+
+    def _check_interpreter(self,
+                           base_cmd: str,
+                           args: list[str],
+                           *,
+                           cwd: str | None = None) -> SafetyDecision:
+        """Judge a command that runs code rather than touching named files.
+
+        Pointing an interpreter at a script inside the workspace is the same
+        kind of act as reading that script, and is treated that way — otherwise
+        every ``python3 build.py`` in a normal project would need confirming,
+        and a prompt nobody can act on is a prompt everybody clicks through.
+        Code arriving inline or on stdin has no path to judge, so it is raised
+        for the mode to resolve.
+        """
+        if not interpreter_runs_inline_code(args):
+            script = extract_interpreter_script(args)
+            if script:
+                result = self._validate_paths(
+                    script, 'read', base_cmd, cwd=cwd)
+                if result.action != 'allow':
+                    return result
+                return SafetyDecision(
+                    action='allow',
+                    reason=f'{base_cmd}: runs a script inside allowed dirs',
+                )
+
+        return SafetyDecision(
+            action='ask',
+            reason=(f'`{base_cmd}` runs code given inline or on stdin; what it '
+                    'touches cannot be determined from the command'),
+            category='interpreter_exec',
+        )
 
     def _check_sed(self,
                    args: list[str],
@@ -315,7 +576,8 @@ class ShellPathValidator:
                 effective_cwd,
                 self._allowed_dirs,
                 op_type,
-                read_only_dirs=self._read_only_dirs)
+                read_only_dirs=self._read_only_dirs,
+                sensitive_paths=self._sensitive_read_paths)
             if not result.allowed:
                 return SafetyDecision(
                     action=result.action,
@@ -326,11 +588,12 @@ class ShellPathValidator:
             action='allow', reason=f'{cmd_name}: all paths validated')
 
     def _check_redirects(self, sub_cmd: str) -> SafetyDecision:
-        for match in _REDIRECT_PATTERN.finditer(sub_cmd):
-            target = match.group(1)
+        for target in _extract_redirect_targets(sub_cmd):
+            if not target:
+                continue
             if _FD_REDIRECT.match(target):
                 continue
-            if target == '/dev/null':
+            if target in _REDIRECT_DEVICE_ALLOWLIST:
                 continue
             if '$' in target or '%' in target:
                 return SafetyDecision(
@@ -345,6 +608,7 @@ class ShellPathValidator:
                 self._allowed_dirs,
                 'create',
                 read_only_dirs=self._read_only_dirs,
+                sensitive_paths=self._sensitive_read_paths,
             )
             if not result.allowed:
                 return SafetyDecision(
