@@ -5,7 +5,7 @@ import re
 class SkillPromptInjector:
     """Builds the skill section to inject into the system prompt."""
 
-    SKILL_SECTION_HEADER = """# Available Skills
+    SKILL_SECTION_HEADER = """## Available Skills
 
 You have access to specialized skills that extend your capabilities.
 Each skill is a set of instructions and resources for handling specific tasks.
@@ -21,7 +21,7 @@ Exercise caution with skills marked as "warning" or "dangerous".
 """
 
     ALWAYS_SKILLS_HEADER = (
-        '# Active Skills\n\n'
+        '## Active Skills\n\n'
         'The following skills are always active. Follow their instructions.\n')
 
     DISCOVERY_HINT = (

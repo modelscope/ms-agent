@@ -25,12 +25,38 @@ def _agent_for(workspace, session_id='abc123', log_dir=None):
     return agent
 
 
-def test_section_is_absent_when_records_live_elsewhere(tmp_path):
-    """A project opened from an existing folder keeps its transcripts outside
-    the working directory; there is nothing to warn about."""
+def test_section_is_absent_without_a_session_log(tmp_path):
+    """No sessions/ in the workspace and no log to point at: say nothing."""
     workspace = tmp_path / 'plain-project'
     workspace.mkdir()
     assert _agent_for(workspace)._build_workspace_internals_section() == ''
+
+
+def test_external_records_are_named_with_their_real_path(tmp_path):
+    """A project opened from an existing folder keeps its transcripts in the
+    data directory. Without saying where, the model guesses when asked — the
+    observed guess was a `conversations/` directory that does not exist.
+
+    The folder here also contains a `sessions/` directory of the USER'S own:
+    where the log writes decides which description applies, not what the
+    working directory happens to contain."""
+    workspace = tmp_path / 'mounted-project'
+    (workspace / 'sessions').mkdir(parents=True)  # user's own, not ours
+    records = tmp_path / 'data' / 'projects' / 'p1' / 'sessions' / 'abc123'
+    records.mkdir(parents=True)
+
+    section = _agent_for(
+        workspace, session_id='abc123',
+        log_dir=records)._build_workspace_internals_section()
+
+    assert str(records) in section
+    assert '.ms_agent/' in section
+    assert 'outside the working directory' in section
+    assert "the user's own" in section
+    assert 'at the root of your working directory' not in section
+    # The echo warning is shared: a machine-wide search reaches the records
+    # wherever they live.
+    assert 'match your own conversation' in section
 
 
 def test_section_names_the_directories_and_this_session(tmp_path):
@@ -44,8 +70,8 @@ def test_section_names_the_directories_and_this_session(tmp_path):
     assert '.ms_agent/' in section
     assert 'sessions/abc123/' in section
     # The reason the agent needs this at all: its own prompt is already on
-    # disk, so searching for a phrase from the request matches the transcript.
-    assert 'searching' in section
+    # disk, so a search for a phrase from the request finds the transcript.
+    assert 'match your own conversation' in section
 
 
 def test_the_named_directory_is_the_one_being_written_to(tmp_path):

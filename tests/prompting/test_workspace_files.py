@@ -26,7 +26,7 @@ def test_pristine_templates_strip_to_empty():
 
 def test_soul_template_is_real_content():
     body = wf.strip_for_injection(builtin.SOUL_TEMPLATE)
-    assert body.startswith('# Who You Are')
+    assert body.startswith('## Who You Are')
     assert 'version:' not in body  # frontmatter stripped
 
 

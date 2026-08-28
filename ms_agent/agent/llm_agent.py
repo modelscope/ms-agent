@@ -466,44 +466,61 @@ class LLMAgent(Agent):
         return content
 
     def _build_workspace_internals_section(self) -> str:
-        """Describe the framework's own directories, when they sit in the
-        working directory.
+        """Describe where the framework's own records live.
 
-        Only for the layout where they do. A project opened from an existing
-        folder keeps its records elsewhere, and telling that agent to watch out
-        for a ``sessions/`` directory it will never encounter would be a
-        fabricated warning.
+        Which of the two descriptions applies is decided by where the session
+        log ACTUALLY writes, not by what the working directory happens to
+        contain: a mounted project may well have a user-owned ``sessions/``
+        directory of its own, and describing that as framework transcripts
+        would be false. The directory-existence check is only the fallback for
+        callers that run without a session log.
         """
-        from ms_agent.prompting.builtin import WORKSPACE_INTERNALS_HINT
+        from ms_agent.prompting.builtin import (TRANSCRIPTS_INSIDE,
+                                                TRANSCRIPTS_OUTSIDE,
+                                                WORKSPACE_RECORDS_HINT)
         from ms_agent.utils.workspace_context import resolve_workspace_root
 
         try:
             workspace_root = Path(resolve_workspace_root(self.config))
         except Exception:  # noqa: BLE001 - never break prompt assembly
             return ''
-        if not (workspace_root / 'sessions').is_dir():
-            return ''
-
-        # The directory the log is actually writing to, not the agent's tag:
-        # naming a path that does not exist is worse than naming none, since
-        # the model will go looking for it.
-        session_dir = None
-        log = getattr(self, 'session_log', None)
-        directory = getattr(log, 'directory', None)
-        if directory is not None:
-            session_dir = Path(directory).name
-        if not session_dir:
-            session_dir = getattr(self.runtime, 'session_id', None)
-
         try:
             home = str(global_home())
         except Exception:  # noqa: BLE001
             home = '~/.ms_agent'
-        hint = WORKSPACE_INTERNALS_HINT.format(
-            session_line=(f' This conversation is `sessions/{session_dir}/`.'
-                          if session_dir else ''),
-            home=home)
-        return hint
+
+        directory = getattr(
+            getattr(self, 'session_log', None), 'directory', None)
+        records_inside = None
+        if directory is not None:
+            try:
+                Path(directory).relative_to(workspace_root)
+                records_inside = True
+            except ValueError:
+                records_inside = False
+        if records_inside is None:
+            # No session log to consult (bare SDK / tests): fall back to the
+            # managed layout's signature.
+            if not (workspace_root / 'sessions').is_dir():
+                return ''
+            records_inside = True
+
+        if records_inside:
+            # The directory the log is actually writing to, not the agent's
+            # tag: naming a path that does not exist is worse than naming
+            # none, since the model will go looking for it.
+            session_dir = Path(directory).name if directory else None
+            if not session_dir:
+                session_dir = getattr(self.runtime, 'session_id', None)
+            transcripts_where = TRANSCRIPTS_INSIDE.format(session_line=(
+                f' This conversation is `sessions/{session_dir}/`.'
+                if session_dir else ''))
+        else:
+            transcripts_where = TRANSCRIPTS_OUTSIDE.format(
+                session_dir=str(Path(directory)))
+
+        return WORKSPACE_RECORDS_HINT.format(
+            transcripts_where=transcripts_where, home=home)
 
     def _check_skill_tool_dependencies(self):
         """Warn if skills are enabled but essential tools are missing."""
