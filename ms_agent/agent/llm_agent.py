@@ -1187,6 +1187,18 @@ class LLMAgent(Agent):
     #: second, large enough that a short call emits once and stops.
     _COMPOSING_STEP = 256
 
+    @staticmethod
+    def _is_writing_tool_call(message) -> bool:
+        """Whether this streamed message has begun a tool call. The name arrives
+        before the arguments, so a NAMED call is the first sign the response
+        moved from thinking to calling (same test ``_emit_tool_composing`` uses).
+        """
+        for call in getattr(message, 'tool_calls', None) or []:
+            if isinstance(call, dict) and (call.get('tool_name')
+                                           or call.get('name')):
+                return True
+        return False
+
     def _emit_tool_composing(self, message, announced: Dict[int, int]) -> None:
         """Report tool calls the model is still writing.
 
@@ -2145,6 +2157,16 @@ class LLMAgent(Agent):
                                 _printed_reasoning_footer = True
                             self._emit_content(new_content)
                         _content = _response_message.content
+                        # Thinking ends when the model starts writing a tool call,
+                        # not when the response drains — for a call carrying a
+                        # whole file those are a minute apart, and both the UI
+                        # timer and the persisted `reasoning_duration` read this
+                        # boundary. Mirrors the content branch above.
+                        if (_printed_reasoning_header
+                                and not _printed_reasoning_footer
+                                and self._is_writing_tool_call(_response_message)):
+                            self._emit_reasoning_end()
+                            _printed_reasoning_footer = True
                         self._emit_tool_composing(_response_message, _composing)
                         if not _reported_images:
                             # After the first chunk, not before it: the payload's
