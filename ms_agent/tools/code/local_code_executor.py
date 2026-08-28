@@ -563,7 +563,7 @@ class LocalCodeExecutionTool(ToolBase):
                         'temp directory); reading credential files and running '
                         'code inline (python -c, heredocs) may require '
                         'approval. Large output is spilled to '
-                        '.ms_agent_artifacts and the result says where. Use '
+                        '.ms_agent/artifacts and the result says where. Use '
                         'run_in_background=true for a long command: it returns '
                         'a task_id immediately.'),
                     parameters={
