@@ -5,6 +5,7 @@ import asyncio
 import copy
 import os
 import re
+import shutil
 from contextlib import AsyncExitStack, suppress
 from datetime import timedelta
 from mcp import ClientSession, ListToolsResult, StdioServerParameters
@@ -60,6 +61,63 @@ DEFAULT_SERVER_STARTUP_TIMEOUT = _int_env('MCP_STARTUP_TIMEOUT', 60)
 
 DEFAULT_STREAMABLE_HTTP_TIMEOUT = timedelta(seconds=30)
 DEFAULT_STREAMABLE_HTTP_SSE_READ_TIMEOUT = timedelta(seconds=60 * 5)
+
+#: Variables a stdio server's child process inherits from this one. The MCP
+#: SDK's default child environment is deliberately tiny, which strips proxy,
+#: TLS and package-index settings — a cold ``uvx <package>`` then downloads
+#: without the proxy the machine needs and runs into the startup timeout.
+#: Identity, toolchain and network settings pass through; credentials do not.
+#: A server's configured ``env`` is applied on top and wins per key.
+_STDIO_ENV_PASSTHROUGH = (
+    'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'TERM', 'TZ',
+    'LANG', 'LC_ALL', 'LC_CTYPE',
+    'SSL_CERT_FILE', 'SSL_CERT_DIR', 'REQUESTS_CA_BUNDLE',
+    # ALL_PROXY is deliberately absent: a socks5:// value makes any child
+    # whose httpx lacks the socksio extra fail on its FIRST request, and the
+    # child's venv is not ours to fix. The scheme-specific variables cover
+    # the download-acceleration need without that trap.
+    'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY',
+    'http_proxy', 'https_proxy', 'no_proxy',
+    'UV_INDEX_URL', 'UV_DEFAULT_INDEX', 'PIP_INDEX_URL',
+    'npm_config_registry',
+)
+
+#: Where a bare stdio command is looked for when PATH does not know it. A
+#: backend launched by an IDE or launchd runs with a minimal PATH while the
+#: user's ``uvx``/``npx`` lives in one of these.
+_STDIO_EXTRA_BIN_DIRS = (
+    os.path.expanduser('~/.local/bin'),
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+)
+
+
+def stdio_child_env(config_env: Optional[dict]) -> dict:
+    env = {
+        key: os.environ[key]
+        for key in _STDIO_ENV_PASSTHROUGH if os.environ.get(key)
+    }
+    for key, value in (config_env or {}).items():
+        env[str(key)] = str(value)
+    return env
+
+
+def resolve_stdio_command(command: str) -> str:
+    """Absolute path for *command*, searching PATH then the usual user dirs."""
+    if os.path.sep in command:
+        return command
+    found = shutil.which(command)
+    if found:
+        return found
+    for base in _STDIO_EXTRA_BIN_DIRS:
+        candidate = os.path.join(base, command)
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    searched = ':'.join([os.environ.get('PATH', '')] +
+                        list(_STDIO_EXTRA_BIN_DIRS))
+    raise FileNotFoundError(
+        f"stdio MCP command '{command}' was not found on this machine. "
+        f'Searched: {searched}')
 
 
 _PYDANTIC_DOC_LINK = re.compile(r'\s*For further information visit \S+')
@@ -130,8 +188,18 @@ class MCPClient(ToolBase):
 
     async def call_tool(self, server_name: str, tool_name: str,
                         tool_args: dict):
-        response = await self.sessions[server_name].call_tool(
-            tool_name, tool_args)
+        session = self.sessions.get(server_name)
+        if session is None:
+            # The server's tools stay in the tool index after its connection
+            # dies (a failed call tears the session down), so the model can
+            # still address it — and used to get a bare KeyError. Name what
+            # actually happened and what to do instead.
+            raise RuntimeError(
+                f"MCP server '{server_name}' is not connected (it failed or "
+                'was disconnected earlier in this conversation). Its tools '
+                'are unavailable for now — do not retry this call; use a '
+                'different approach or tell the user the server is down.')
+        response = await session.call_tool(tool_name, tool_args)
 
         texts = []
         resources = []
@@ -369,10 +437,15 @@ class MCPClient(ToolBase):
             if not args:
                 raise ValueError(
                     "'args' parameter is required for stdio connection")
+            if os.name == 'nt':
+                child_env = kwargs.get('env')
+            else:
+                command = resolve_stdio_command(command)
+                child_env = stdio_child_env(kwargs.get('env'))
             server_params = StdioServerParameters(
                 command=command,
                 args=args,
-                env=kwargs.get('env'),
+                env=child_env,
                 encoding=kwargs.get('encoding', DEFAULT_ENCODING),
                 encoding_error_handler=kwargs.get(
                     'encoding_error_handler', DEFAULT_ENCODING_ERROR_HANDLER),
