@@ -54,8 +54,7 @@ def _print_openhuman_next_steps(root) -> None:
         'system_prompt.inline（粘贴 SOUL.md 内容）/ model.exact="inherit"；id 仅限字母、数字、"_"、"-"。\n'
         '  2) UI「设置 → 智能体 → 新建智能体」，id / model / 工具白名单与 TOML 保持一致。\n'
         '  3) UI「设置 → 智能体配置 → 新建配置」，base agent id 填同一个 id。\n'
-        '  4) 新建一个对话即可使用。'
-    )
+        '  4) 新建一个对话即可使用。')
     logger.info(
         'Conversion/download finished, but the agent is NOT usable yet '
         '(if you have not registered it). OpenHuman discovers agents only via the '
@@ -68,8 +67,7 @@ def _print_openhuman_next_steps(root) -> None:
         'id may contain only letters, digits, "_", "-".\n'
         '  2) UI "Settings → Agents → New Agent": keep id / model / tool allowlist consistent with the TOML.\n'
         '  3) UI "Settings → Agent Config → New Config": set base agent id to the same id.\n'
-        '  4) Start a new conversation.'
-    )
+        '  4) Start a new conversation.')
 
 
 def _fail(message: str) -> int:
@@ -289,10 +287,10 @@ def convert_resources(
         source_defaults=get_defaults(source_fw),
         target_defaults=get_defaults(target_fw),
         fill_missing_defaults=fill_missing_defaults,
-        overflow_target=(_file_per_agent_identity_path(dst_spec)
-                         if dst_spec is not None else None),
-        identity_source=(_file_per_agent_identity_path(src_spec)
-                         if src_spec is not None else None),
+        overflow_target=(_file_per_agent_identity_path(
+            dst_spec, for_target=True) if dst_spec is not None else None),
+        identity_source=(_file_per_agent_identity_path(
+            src_spec, for_target=False) if src_spec is not None else None),
         existing_skills=(_existing_skill_names(existing_files)
                          if existing_files else None),
     )
@@ -832,8 +830,8 @@ def cmd_download(
     from ._sync import backup_local
     if spec.collect():
         backup_label = (
-            target_fw if local_name == ALL_AGENT_NAME else
-            f'{target_fw}_{local_name}')
+            target_fw
+            if local_name == ALL_AGENT_NAME else f'{target_fw}_{local_name}')
         display.meta('backup', backup_local(spec, backup_label))
 
     written = spec.apply(filtered)
@@ -850,18 +848,27 @@ def cmd_download(
     return 0
 
 
-def _file_per_agent_identity_path(dst_spec: WorkspaceSpec) -> str | None:
-    """Resolve the per-agent identity file for a file-per-agent target.
+def _file_per_agent_identity_path(spec: WorkspaceSpec, *,
+                                  for_target: bool) -> str | None:
+    """Resolve the per-agent identity file of a file-per-agent layout.
 
     File-per-agent frameworks (e.g. qoder) declare a ``{name}`` placeholder
-    pattern such as ``agents/{name}.md``.  Format it with the destination
-    agent name so converted persona content can be routed into that file.
-    Returns ``None`` when the layout has no single ``{name}`` file pattern.
+    pattern such as ``agents/{name}.md``.  Format it with the agent name so
+    persona content can be routed there.  Returns ``None`` when the layout
+    has no single ``{name}`` file pattern.
+
+    ``for_target=True`` resolves the overflow target (where converted persona
+    lands); qoder opts out there: imported persona folds into the shared
+    ``AGENTS.md`` instead of spawning ``agents/<name>.md``.
+    ``for_target=False`` resolves the identity source (flag this layout's own
+    persona file so it folds into the target persona instead of being
+    dropped); qoder must stay in there -- skipping it on the source side
+    loses the persona on every qoder->X conversion.
     """
-    if dst_spec.product_name == 'qoder':
+    if for_target and spec.product_name == 'qoder':
         return None
-    name = dst_spec.agent_name or DEFAULT_AGENT_NAME
-    for pattern in dst_spec.patterns:
+    name = spec.agent_name or DEFAULT_AGENT_NAME
+    for pattern in spec.patterns:
         # Only single-file placeholders (no wildcard) identify the persona file;
         # skip glob patterns like ``skills/{name}/*`` if any exist.
         if '{name}' in pattern and '*' not in pattern:
@@ -973,15 +980,18 @@ def convert_workspace(
         default_paths = set()
         skipped_skills = []
     else:
-        # File-per-agent targets (e.g. qoder ``agents/{name}.md``) keep
-        # per-agent identity in a dedicated sub-agent file; route overflow
-        # (persona content with no shared mapping) there instead of the
-        # shared catch-all so it does not pollute other sub-agents.
-        # Symmetrically, a file-per-agent SOURCE's persona file is flagged so
-        # it folds into the target's persona file instead of being dropped.
+        # File-per-agent targets declare a per-agent identity file
+        # (``agents/{name}.md``); overflow (persona content with no shared
+        # mapping) is routed there instead of the shared catch-all so it does
+        # not pollute other sub-agents. qoder opts out on the target side:
+        # its imported persona folds into the shared AGENTS.md instead (see
+        # _file_per_agent_identity_path). Symmetrically, a file-per-agent
+        # SOURCE's persona file is flagged so it folds into the target's
+        # persona file instead of being dropped.
         overflow_target = None
         if any('{name}' in p for p in dst_spec.patterns):
-            overflow_target = _file_per_agent_identity_path(dst_spec)
+            overflow_target = _file_per_agent_identity_path(
+                dst_spec, for_target=True)
         result = merge_resources(
             incoming=resources,
             source_product=source_fw,
@@ -989,7 +999,8 @@ def convert_workspace(
             source_defaults=get_defaults(source_fw),
             target_defaults=get_defaults(target_fw),
             overflow_target=overflow_target,
-            identity_source=_file_per_agent_identity_path(src_spec),
+            identity_source=_file_per_agent_identity_path(
+                src_spec, for_target=False),
             fill_missing_defaults=False,
             existing_skills=_existing_skill_names(existing_paths),
         )

@@ -65,8 +65,9 @@ class TestConvertTargetNameLanding(unittest.TestCase):
 
     root-per-agent (openclaw/qwenpaw): target-name lands via directory prefix.
     single-agent   (hermes):           target-name has no path effect (by design).
-    file-per-agent (qoder):            target-name lands in agents/{name}.md,
-                                       keeping the shared AGENTS.md clean.
+    file-per-agent (qoder):            converted persona folds into the shared
+                                       AGENTS.md; --target-name has no path
+                                       effect.
     """
 
     def setUp(self):
@@ -170,12 +171,12 @@ class TestConvertTargetNameLanding(unittest.TestCase):
         self.assertIn("SOUL.md", files)
         self.assertIn("Bot A creative AI.", files["SOUL.md"])
 
-    def test_qwenpaw_to_qoder_targetname_lands_in_agents_file(self):
-        """file-per-agent target: --target-name lands in agents/{name}.md.
+    def test_qwenpaw_to_qoder_persona_folds_into_agents_md(self):
+        """file-per-agent target: converted persona folds into AGENTS.md.
 
-        The converted persona (SOUL/PROFILE) is routed to the per-agent file
-        agents/bot-a.md, while the shared AGENTS.md must NOT be polluted with
-        that identity content.
+        The imported persona (SOUL/PROFILE) folds into the shared AGENTS.md
+        instead of spawning agents/{name}.md; --target-name is still accepted
+        but no longer picks a landing file.
         """
         out = self.base / "qoder_home"
         rc = cmd_convert(
@@ -185,18 +186,16 @@ class TestConvertTargetNameLanding(unittest.TestCase):
         )
         self.assertEqual(rc, 0)
         files = _read_all(out)
-        # Persona now lands in the dedicated per-agent file.
-        self.assertIn("agents/bot-a.md", files,
-                      "file-per-agent target must route persona to agents/{name}.md")
-        self.assertIn("Bot A creative AI.", files["agents/bot-a.md"])
-        self.assertIn("Bot A profile.", files["agents/bot-a.md"])
-        # Shared AGENTS.md, if present, must not carry the imported persona.
-        if "AGENTS.md" in files:
-            self.assertNotIn("Bot A creative AI.", files["AGENTS.md"],
-                             "shared AGENTS.md must stay free of per-agent identity")
+        # Persona folds into the shared AGENTS.md ...
+        self.assertIn("AGENTS.md", files,
+                      "qoder target must fold persona into AGENTS.md")
+        self.assertIn("Bot A creative AI.", files["AGENTS.md"])
+        self.assertIn("Bot A profile.", files["AGENTS.md"])
+        # ... and no per-agent identity file is spawned.
+        self.assertNotIn("agents/bot-a.md", files)
 
-    def test_qwenpaw_to_qoder_default_name_lands_in_agents_default(self):
-        """file-per-agent target without --target-name: persona -> agents/default.md."""
+    def test_qwenpaw_to_qoder_default_name_persona_folds_into_agents_md(self):
+        """file-per-agent target without --target-name: persona -> AGENTS.md."""
         out = self.base / "qoder_default_home"
         # from_name=default -> source lives in the default sub-agent workspace.
         src_default = self.base / "src_default"
@@ -211,9 +210,10 @@ class TestConvertTargetNameLanding(unittest.TestCase):
         )
         self.assertEqual(rc, 0)
         files = _read_all(out)
-        self.assertIn("agents/default.md", files,
-                      "default persona must land in agents/default.md")
-        self.assertIn("Bot A creative AI.", files["agents/default.md"])
+        self.assertIn("AGENTS.md", files,
+                      "default persona must fold into AGENTS.md")
+        self.assertIn("Bot A creative AI.", files["AGENTS.md"])
+        self.assertNotIn("agents/default.md", files)
 
 
 # ===========================================================================
@@ -617,7 +617,8 @@ class TestQoderPersonaOutbound(unittest.TestCase):
                 f"qoder->{target}: shared rules lost")
 
     def test_reverse_direction_not_regressed(self):
-        """hermes -> qoder still folds SOUL.md into agents/<target-name>.md."""
+        """hermes -> qoder still folds SOUL.md -- into the shared AGENTS.md,
+        not into agents/<target-name>.md."""
         with tempfile.TemporaryDirectory() as td:
             src = Path(td) / "src"
             src.mkdir()
@@ -628,9 +629,10 @@ class TestQoderPersonaOutbound(unittest.TestCase):
                 from_name="default", target_name="test-architect",
                 local_dir=str(src), out_dir=str(out))
             self.assertEqual(rc, 0)
-            persona = out / "agents" / "test-architect.md"
-            self.assertTrue(persona.is_file())
-            self.assertIn("GOLD-HERMES-PERSONA", persona.read_text())
+            shared = out / "AGENTS.md"
+            self.assertTrue(shared.is_file())
+            self.assertIn("GOLD-HERMES-PERSONA", shared.read_text())
+            self.assertFalse((out / "agents" / "test-architect.md").is_file())
 
 
 class TestHermesOptionalSkillsOutbound(unittest.TestCase):
