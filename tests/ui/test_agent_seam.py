@@ -60,3 +60,24 @@ def test_no_sink_reasoning_goes_to_stdout(capsys):
     a._emit_reasoning_end()
     out = capsys.readouterr().out
     assert 'thinking' in out and 'mulling' in out
+
+
+# ── where thinking ends ───────────────────────────────────────────────────
+# Both the UI timer and the persisted `reasoning_duration` are measured to this
+# boundary, so it has to be "the model started calling", not "the stream ended".
+
+
+class _Msg:
+    def __init__(self, tool_calls=None):
+        self.tool_calls = tool_calls
+
+
+def test_named_tool_call_marks_the_end_of_thinking():
+    started = LLMAgent._is_writing_tool_call
+    assert started(_Msg()) is False
+    assert started(_Msg([])) is False
+    # Arguments without a name yet: not the boundary (nor what composing waits for).
+    assert started(_Msg([{'arguments': '{"path": "a.md"'}])) is False
+    assert started(_Msg([{'tool_name': 'file_system---write_file'}])) is True
+    assert started(_Msg([{'name': 'write_file', 'arguments': ''}])) is True
+    assert started(_Msg(['nonsense'])) is False  # never raise mid-stream
