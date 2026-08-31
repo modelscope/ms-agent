@@ -1,5 +1,5 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
-"""Spill large tool outputs to disk under output_dir/.ms_agent_artifacts/."""
+"""Spill large tool outputs to disk under output_dir/.ms_agent/artifacts/."""
 
 from __future__ import annotations
 
