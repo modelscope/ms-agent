@@ -77,6 +77,50 @@ class TestAgentAwareCollect(unittest.TestCase):
         self.assertNotIn("skills/docx/SKILL.md", collected)
         self.assertNotIn("skills/broken-bundled/SKILL.md", collected)
 
+    def test_hermes_metadata_hermes_tags_marks_app_native_skill(self):
+        """BUG-0828: Hermes app-native skills (desktop plugins, themes, the
+        ``apple/`` / ``media/`` category libraries) are seeded OUTSIDE the
+        ``.bundled_manifest`` sync and carry a ``metadata.hermes`` catalog
+        block -- ``tags`` is the shape marker. A ``metadata.hermes.config``
+        settings block or a bare ``hermes`` key is a legitimate user skill
+        (BUG-022 precedent) and must stay.
+        """
+        spec = build_spec("hermes", "default", str(self.root))
+        base = spec.workspace_root
+        # App-native top-level skill: metadata.hermes.tags -> dropped.
+        (base / "skills" / "hermes-themes").mkdir(parents=True)
+        (base / "skills" / "hermes-themes" / "SKILL.md").write_text(
+            "---\nname: hermes-themes\nmetadata:\n  hermes:\n"
+            "    tags: [theme, skin]\n    related_skills: []\n---\n# themes\n",
+            encoding="utf-8")
+        # App-native skill nested in a category dir, with an asset -> the
+        # whole tree is dropped.
+        cat = base / "skills" / "media" / "heartmula"
+        cat.mkdir(parents=True)
+        (cat / "SKILL.md").write_text(
+            "---\nname: heartmula\nmetadata:\n  hermes:\n"
+            "    tags: [music]\n---\n# heartmula\n", encoding="utf-8")
+        (cat / "references").mkdir()
+        (cat / "references" / "models.md").write_text("bundled asset\n")
+        # User skill with metadata.hermes.config SETTINGS (no tags) -> kept.
+        (base / "skills" / "my-configured").mkdir()
+        (base / "skills" / "my-configured" / "SKILL.md").write_text(
+            "---\nname: my-configured\nmetadata:\n  hermes:\n"
+            "    config:\n      api_url: https://example.com\n---\nBODY\n",
+            encoding="utf-8")
+        # User skill with a bare hermes key (no catalog shape) -> kept.
+        (base / "skills" / "my-bare-meta").mkdir()
+        (base / "skills" / "my-bare-meta" / "SKILL.md").write_text(
+            "---\nname: my-bare-meta\nmetadata:\n  hermes: {}\n---\nBODY\n",
+            encoding="utf-8")
+        collected = spec.collect()
+        self.assertNotIn("skills/hermes-themes/SKILL.md", collected)
+        self.assertNotIn("skills/media/heartmula/SKILL.md", collected)
+        self.assertNotIn("skills/media/heartmula/references/models.md",
+                         collected)
+        self.assertIn("skills/my-configured/SKILL.md", collected)
+        self.assertIn("skills/my-bare-meta/SKILL.md", collected)
+
     def test_hermes_collects_hooks_same_framework(self):
         """hermes collects ``hooks/*`` (lifecycle hooks) for same-framework
         fidelity, both for the default agent and named agents in all-mode."""
@@ -336,7 +380,10 @@ class TestOpenhumanUserWorkspace(unittest.TestCase):
         alice = build_spec("openhuman", "Alice", str(self.root))
         self.assertEqual(alice.workspace_root,
                          self.ws / "personalities" / "Alice")
-        self.assertEqual(sorted(alice.collect_bytes()), ["SOUL.md"])
+        # Alice lacks IDENTITY.md, so the workspace-level copy falls back in
+        # (app lookup order: Profile file > workspace-level default).
+        self.assertEqual(sorted(alice.collect_bytes()),
+                         ["IDENTITY.md", "SOUL.md"])
 
     def test_all_mode_prefixes_profile_dirs(self):
         spec = build_spec("openhuman", "all", str(self.root))
@@ -357,6 +404,208 @@ class TestOpenhumanUserWorkspace(unittest.TestCase):
         fresh.mkdir()
         spec = build_spec("openhuman", "default", str(fresh))
         self.assertEqual(spec.collect_bytes(), {})
+
+
+class TestOpenhumanWorkspaceLiveness(unittest.TestCase):
+    """BUG-0828: reinstalls / user-id migrations leave SEVERAL ``users/<id>``
+    dirs behind. The resolver must pick the LIVE workspace by liveness score
+    (``agent_profiles.json`` / ``personalities/`` / ``SOUL.md``), not the
+    alphabetically-first one -- a stale ``users/local`` shell used to shadow
+    the active ``users/local-u-...`` workspace and every convert silently
+    read the wrong persona.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name) / ".openhuman"
+        # Stale shell: sorts FIRST, keeps only a persona file.
+        self.stale = self.root / "users" / "local" / "workspace"
+        self.stale.mkdir(parents=True)
+        (self.stale / "SOUL.md").write_text("# stale soul\n")
+        # Live workspace: machine-generated id sorts AFTER the shell.
+        self.live = (self.root / "users" / "local-u-x1" / "workspace")
+        self.live.mkdir(parents=True)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_live_workspace_beats_stale_sorted_first(self):
+        (self.live / "agent_profiles.json").write_text(
+            json.dumps({"activeProfileId": "p"}))
+        (self.live / "personalities" / "p").mkdir(parents=True)
+        (self.live / "SOUL.md").write_text("# live soul\n")
+        spec = build_spec("openhuman", "default", str(self.root))
+        self.assertEqual(spec.root, self.live)
+        self.assertEqual(spec.collect()["SOUL.md"], "# live soul\n")
+
+    def test_personalities_alone_outscores_soul_only_shell(self):
+        # No agent_profiles.json anywhere: personalities/ (2) + SOUL.md (1)
+        # still beats the shell's SOUL.md (1).
+        (self.live / "personalities" / "p").mkdir(parents=True)
+        (self.live / "SOUL.md").write_text("# live soul\n")
+        spec = build_spec("openhuman", "default", str(self.root))
+        self.assertEqual(spec.root, self.live)
+
+    def test_no_markers_falls_back_to_sorted_first(self):
+        spec = build_spec("openhuman", "default", str(self.root))
+        self.assertEqual(spec.root, self.stale)
+
+    def test_tie_falls_back_to_sorted_first(self):
+        for ws in (self.stale, self.live):
+            (ws / "agent_profiles.json").write_text("{}")
+        spec = build_spec("openhuman", "default", str(self.root))
+        self.assertEqual(spec.root, self.stale)
+
+    def test_local_dir_one_level_above_data_root_is_probed(self):
+        # A backup dir that merely CONTAINS ``.openhuman/`` resolves through.
+        (self.live / "agent_profiles.json").write_text("{}")
+        spec = build_spec("openhuman", "default", str(self.root.parent))
+        self.assertEqual(spec.root, self.live)
+
+    def test_user_dir_without_workspace_keeps_legacy_path(self):
+        # users/<id> exists but has no workspace/ yet: report the canonical
+        # path anyway (status must not fail on a fresh install). Uses its own
+        # tree -- setUp's dirs all have workspace/ already.
+        root = Path(self.tmp.name) / "fresh-oh" / ".openhuman"
+        no_ws = root / "users" / "aaa"
+        no_ws.mkdir(parents=True)
+        spec = build_spec("openhuman", "default", str(root))
+        self.assertEqual(spec.root, no_ws / "workspace")
+
+    def test_convert_end_to_end_picks_live_user_active_profile(self):
+        """Full BUG-0828 shape: stale user sorts first; the LIVE user's
+        ACTIVE profile carries skills (+openhuman provenance sidecars) but no
+        SOUL.md of its own. A name-less convert must resolve the live
+        workspace, pick the active profile, migrate the skills without the
+        ``_meta.json`` sidecar, and fold the workspace-level SOUL fallback
+        into the target persona.
+        """
+        profile = self.live / "personalities" / "personalized-agent"
+        (profile / "skills" / "weather").mkdir(parents=True)
+        (self.live / "agent_profiles.json").write_text(
+            json.dumps({"activeProfileId": "personalized-agent"}))
+        (self.live / "SOUL.md").write_text("# live soul\nGOLD-PERSONA\n")
+        (profile / "MEMORY.md").write_text("GOLD-MEMORY\n")
+        (profile / "skills" / "weather" / "SKILL.md").write_text(
+            "GOLD-WEATHER\n")
+        (profile / "skills" / "weather" / "_meta.json").write_text('{"k": 1}')
+        out = Path(self.tmp.name) / "out"
+        rc = cmd_convert("openhuman", "ms-agent", None, None,
+                         str(self.root), str(out))
+        self.assertEqual(rc, 0)
+        rels = {
+            str(p.relative_to(out)) for p in out.rglob("*") if p.is_file()
+        }
+        self.assertIn("skills/weather/SKILL.md", rels)
+        self.assertNotIn("skills/weather/_meta.json", rels)
+        all_text = "".join(
+            p.read_text(encoding="utf-8") for p in out.rglob("*")
+            if p.is_file())
+        self.assertIn("GOLD-PERSONA", all_text)
+        self.assertIn("GOLD-MEMORY", all_text)
+        self.assertIn("GOLD-WEATHER", all_text)
+        # the stale shell's persona must NOT leak into the output
+        self.assertNotIn("stale soul", all_text)
+
+
+class TestOpenhumanActiveProfile(unittest.TestCase):
+    """an omitted --from-name must convert the ACTIVE profile
+    (``agent_profiles.json`` ``activeProfileId``), not the workspace-level
+    fallback persona, and a Profile without its own MEMORY.md must fall back
+    to the workspace-level one -- otherwise converting an openhuman install
+    loses the active persona's memory.
+    """
+
+    USER_ID = "local-u-x"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name) / ".openhuman"
+        self.ws = self.root / "users" / self.USER_ID / "workspace"
+        librarian = self.ws / "personalities" / "to-ms-librarian"
+        librarian.mkdir(parents=True)
+        (self.ws / "personalities" / "idle").mkdir()
+        # Workspace-level fallback persona + curated memory.
+        (self.ws / "SOUL.md").write_text("# fallback soul\n")
+        (self.ws / "IDENTITY.md").write_text("# id\n")
+        (self.ws / "MEMORY.md").write_text("# workspace memory\n")
+        # Active profile carries its own SOUL but NOT its own MEMORY.
+        (librarian / "SOUL.md").write_text("# librarian soul\n")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _write_profiles(self, content):
+        (self.ws / "agent_profiles.json").write_text(content)
+
+    def test_omitted_name_selects_active_profile(self):
+        self._write_profiles(json.dumps({"activeProfileId": "to-ms-librarian"}))
+        spec = build_spec("openhuman", "default", str(self.root))
+        self.assertEqual(spec.resolve_default_agent_name(), "to-ms-librarian")
+
+    def test_no_profiles_json_falls_back_to_default(self):
+        spec = build_spec("openhuman", "default", str(self.root))
+        self.assertEqual(spec.resolve_default_agent_name(), "default")
+
+    def test_malformed_profiles_json_falls_back_to_default(self):
+        self._write_profiles("{not json")
+        spec = build_spec("openhuman", "default", str(self.root))
+        self.assertEqual(spec.resolve_default_agent_name(), "default")
+
+    def test_unknown_profile_id_falls_back_to_default(self):
+        self._write_profiles(json.dumps({"activeProfileId": "ghost"}))
+        spec = build_spec("openhuman", "default", str(self.root))
+        self.assertEqual(spec.resolve_default_agent_name(), "default")
+
+    def test_empty_profile_id_falls_back_to_default(self):
+        self._write_profiles(json.dumps({"activeProfileId": "  "}))
+        spec = build_spec("openhuman", "default", str(self.root))
+        self.assertEqual(spec.resolve_default_agent_name(), "default")
+
+    def test_profile_memory_falls_back_to_workspace_level(self):
+        spec = build_spec("openhuman", "to-ms-librarian", str(self.root))
+        files = spec.collect()
+        # Profile's own SOUL wins over the workspace-level one ...
+        self.assertEqual(files["SOUL.md"], "# librarian soul\n")
+        # ... while the missing persona files fall back to workspace copies.
+        self.assertEqual(files["MEMORY.md"], "# workspace memory\n")
+        self.assertEqual(files["IDENTITY.md"], "# id\n")
+        self.assertNotIn("config.toml", files)
+        self.assertNotIn("wiki/note.md", files)
+
+    def test_profile_file_always_wins_over_workspace_fallback(self):
+        (self.ws / "personalities" / "to-ms-librarian" /
+         "MEMORY.md").write_text("# profile memory\n")
+        spec = build_spec("openhuman", "to-ms-librarian", str(self.root))
+        self.assertEqual(spec.collect()["MEMORY.md"], "# profile memory\n")
+
+    def test_missing_memory_everywhere_is_silent(self):
+        (self.ws / "MEMORY.md").unlink()
+        spec = build_spec("openhuman", "to-ms-librarian", str(self.root))
+        self.assertNotIn("MEMORY.md", spec.collect())
+
+    def test_all_mode_stays_bare_per_profile(self):
+        spec = build_spec("openhuman", "all", str(self.root))
+        # No workspace-level duplication leaks into the per-profile repos.
+        self.assertEqual(sorted(spec.collect()),
+                         ["to-ms-librarian/SOUL.md"])
+
+    def test_convert_without_name_uses_active_profile(self):
+        """cmd_convert auto-selects the active profile end to end."""
+        self._write_profiles(json.dumps({"activeProfileId": "to-ms-librarian"}))
+        out_dir = Path(self.tmp.name) / "out"
+        rc = cmd_convert(
+            "openhuman", "nanobot", None, None, str(self.root), str(out_dir))
+        self.assertEqual(rc, 0)
+        # The ACTIVE profile's own SOUL (not the workspace-level fallback
+        # persona) must be the converted persona ...
+        self.assertIn("# librarian soul",
+                      (out_dir / "SOUL.md").read_text(encoding="utf-8"))
+        # ... and the workspace-level MEMORY falls back into the target's
+        # memory slot instead of being lost (BUG-0825).
+        memory = (out_dir / "memory" / "MEMORY.md").read_text(
+            encoding="utf-8")
+        self.assertIn("# workspace memory", memory)
 
 
 class TestQwenpawAgentJsonSecrets(unittest.TestCase):

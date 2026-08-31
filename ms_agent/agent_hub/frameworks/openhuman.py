@@ -2,11 +2,16 @@
 """OpenHuman workspace specification (single-agent install)."""
 from __future__ import annotations
 
+import copy
+import json
 import re
 from pathlib import Path
 
+from ms_agent.utils.logger import get_logger
 from .._workspace import (DEFAULT_AGENT_NAME, WorkspaceSpec, is_secret_key,
                           register_framework)
+
+logger = get_logger()
 
 
 class OpenhumanWorkspace(WorkspaceSpec):
@@ -49,9 +54,31 @@ class OpenhumanWorkspace(WorkspaceSpec):
 
     # Per-device user workspace: ``users/<user-id>/workspace``. The id segment
     # is machine-generated, so it is discovered by scanning rather than named.
+    _DATA_DIRNAME = '.openhuman'
     _USERS_DIRNAME = 'users'
     _WORKSPACE_DIRNAME = 'workspace'
     _PROFILES_DIRNAME = 'personalities'
+    _PROFILES_JSON_FILENAME = 'agent_profiles.json'
+
+    # Liveness markers used to SCORE candidate user workspaces when several
+    # exist (app reinstalls / user-id scheme migrations leave stale siblings
+    # behind, and a sorted-first pick silently resolved to the stale one --
+    # BUG-0828). ``agent_profiles.json`` is the profile registry the app only
+    # writes where a user actually runs; ``personalities/`` holds the Profile
+    # personas; ``SOUL.md`` is a weak signal (stale shells keep a copy too).
+    _LIVENESS_SCORES: tuple[tuple[str, int], ...] = (
+        (_PROFILES_JSON_FILENAME, 4),
+        (_PROFILES_DIRNAME, 2),
+        ('SOUL.md', 1),
+    )
+
+    # Persona files that fall back to the workspace-level copy when a Profile
+    # does not carry its own -- the app's own lookup order (Profile file >
+    # workspace-level default). Deliberately limited to these four:
+    # ``config.toml`` is machine-local, and ``wiki/`` / ``skills/`` are large
+    # trees whose per-profile duplication would bloat upload/sync.
+    _WORKSPACE_FALLBACK_FILES = frozenset(
+        ['SOUL.md', 'IDENTITY.md', 'HEARTBEAT.md', 'MEMORY.md'])
 
     @property
     def product_name(self) -> str:
@@ -61,15 +88,25 @@ class OpenhumanWorkspace(WorkspaceSpec):
     def default_root(self) -> Path:
         """Resolve the per-device user workspace under ``~/.openhuman``.
 
-        Returns ``<home>/.openhuman/users/<user-id>/workspace`` for the single
-        installed user; when several user dirs exist the one with a
-        ``workspace/`` subdir wins (deterministic: first in sorted order). On a
-        fresh install with no ``users/`` tree yet, falls back to
-        ``~/.openhuman`` so ``status`` still reports a sensible path instead of
-        raising.
+        Returns ``<home>/.openhuman/users/<user-id>/workspace`` for the
+        installed users; when several user dirs exist the LIVE one wins by
+        liveness score (see :meth:`_resolve_workspace`), with sorted order as
+        the deterministic tie-break. On a fresh install with no ``users/``
+        tree yet, falls back to ``~/.openhuman`` so ``status`` still reports
+        a sensible path instead of raising.
         """
         base = Path.home() / '.openhuman'
         return self._resolve_workspace(base)
+
+    @classmethod
+    def _workspace_score(cls, ws: Path) -> int:
+        """Liveness score of a candidate user workspace (higher = more likely
+        the one actually in use). See :data:`_LIVENESS_SCORES`."""
+        score = 0
+        for name, weight in cls._LIVENESS_SCORES:
+            if (ws / name).exists():
+                score += weight
+        return score
 
     @classmethod
     def _resolve_workspace(cls, base: Path) -> Path:
@@ -77,15 +114,32 @@ class OpenhumanWorkspace(WorkspaceSpec):
 
         Also accepts *base* already BEING a user workspace (it directly holds
         ``personalities/`` or the persona files), so an explicit ``local_dir``
-        may point at either the ``.openhuman`` root or the workspace itself.
+        may point at either the ``.openhuman`` root or the workspace itself --
+        or even one level ABOVE the data root (a backup dir that merely
+        CONTAINS ``.openhuman/``), which is descended into (BUG-0828).
+
+        When several ``users/<id>/`` dirs exist, the LIVE workspace wins by
+        liveness score (``agent_profiles.json`` / ``personalities/`` /
+        ``SOUL.md``); ties and all-empty scores fall back to sorted order, so
+        a single-user or fresh install behaves exactly as before (BUG-0828:
+        a stale alphabetically-first user dir used to shadow the active one).
         """
         users = base / cls._USERS_DIRNAME
+        if not users.is_dir():
+            data_root = base / cls._DATA_DIRNAME
+            if (data_root / cls._USERS_DIRNAME).is_dir():
+                users = data_root / cls._USERS_DIRNAME
         if users.is_dir():
-            candidates = [d for d in sorted(users.iterdir()) if d.is_dir()]
-            for d in candidates:
-                ws = d / cls._WORKSPACE_DIRNAME
-                if ws.is_dir():
-                    return ws
+            candidates = sorted(d for d in users.iterdir() if d.is_dir())
+            workspaces = [
+                d / cls._WORKSPACE_DIRNAME for d in candidates
+                if (d / cls._WORKSPACE_DIRNAME).is_dir()
+            ]
+            if workspaces:
+                # ``max`` keeps the FIRST maximum in iteration order, and the
+                # list is sorted -- so ties deterministically fall back to the
+                # old sorted-first behavior.
+                return max(workspaces, key=cls._workspace_score)
             if candidates:
                 return candidates[0] / cls._WORKSPACE_DIRNAME
         return base
@@ -159,6 +213,79 @@ class OpenhumanWorkspace(WorkspaceSpec):
         if DEFAULT_AGENT_NAME not in agents:
             agents = [DEFAULT_AGENT_NAME] + agents
         return agents
+
+    # ------------------------------------------------------------------
+    # Active-profile auto-selection
+    # ------------------------------------------------------------------
+
+    def resolve_default_agent_name(self) -> str:
+        """Omitted ``--name`` selects the ACTIVE profile, not bare ``default``.
+
+        The app keeps the currently selected persona in
+        ``agent_profiles.json`` (``activeProfileId``); converting without an
+        explicit name should migrate that persona, matching what the user
+        sees in the app. Strictly best-effort: a missing / malformed marker
+        or an id whose directory does not exist falls back to ``default``
+        (the workspace-level persona) without raising.
+        """
+        active = self._active_profile_id()
+        if active and active in self.list_agents():
+            return active
+        return DEFAULT_AGENT_NAME
+
+    def _active_profile_id(self) -> str | None:
+        """Read ``activeProfileId`` from ``agent_profiles.json`` (best effort).
+
+        Returns ``None`` on any failure (file absent, unreadable, not JSON,
+        unexpected shape) -- callers treat that as "no active profile".
+        """
+        path = self.root / self._PROFILES_JSON_FILENAME
+        try:
+            data = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, UnicodeDecodeError, ValueError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        active = data.get('activeProfileId')
+        if not isinstance(active, str) or not active.strip():
+            return None
+        return active.strip()
+
+    # ------------------------------------------------------------------
+    # Workspace-level persona fallback for Profile agents
+    # ------------------------------------------------------------------
+
+    def collect(self) -> dict[str, str]:
+        return self._with_workspace_fallbacks(super().collect(), text=True)
+
+    def collect_bytes(self) -> dict[str, bytes]:
+        return self._with_workspace_fallbacks(
+            super().collect_bytes(), text=False)
+
+    def _with_workspace_fallbacks(self, resources: dict, *,
+                                  text: bool) -> dict:
+        """Fill missing Profile files from the workspace-level copies.
+
+        A Profile that lacks e.g. ``MEMORY.md`` runs with the workspace-level
+        one at runtime (app lookup order), so a converted agent must get it
+        too: missing files in :data:`_WORKSPACE_FALLBACK_FILES` are taken
+        from the workspace root when present there. Files the Profile already
+        has always win; all-mode is exempt (each Profile mirrors to its own
+        repo and workspace files would duplicate across every Profile).
+        """
+        if self._is_all() or self.workspace_root == self.root:
+            return resources
+        workspace_spec = copy.copy(self)
+        workspace_spec.agent_name = DEFAULT_AGENT_NAME
+        for rel, f in workspace_spec._walk_matched():
+            if rel not in self._WORKSPACE_FALLBACK_FILES or rel in resources:
+                continue
+            try:
+                resources[rel] = (
+                    f.read_text(encoding='utf-8') if text else f.read_bytes())
+            except (OSError, UnicodeDecodeError) as e:
+                logger.warning('Skip workspace fallback %s: %s', f, e)
+        return resources
 
     # ------------------------------------------------------------------
     # config.toml secret sanitization (inbound + outbound)

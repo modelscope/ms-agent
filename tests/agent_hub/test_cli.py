@@ -1234,8 +1234,8 @@ class TestDownload(unittest.TestCase):
     def test_download_convert_parity_with_local_convert(self):
         """Regression (BUG-020): ``download --target-framework`` must produce
         the SAME file set as a local ``convert`` -- same persona routing for
-        file-per-agent targets (agents/<name>.md, no shared AGENTS.md
-        pollution) and no invented target default templates."""
+        file-per-agent targets (folded into the shared AGENTS.md, no
+        per-agent file spawned) and no invented target default templates."""
         from ms_agent.agent_hub._commands import cmd_convert
         src = Path(self.tmp.name) / "src"
         src.mkdir()
@@ -1262,9 +1262,13 @@ class TestDownload(unittest.TestCase):
             cv_files = sorted(
                 str(p.relative_to(cv)) for p in cv.rglob("*") if p.is_file())
             self.assertEqual(dl_files, cv_files, f"target={target}")
-        # file-per-agent target: persona landed in its private file.
-        self.assertTrue((Path(self.tmp.name) / "dl_qoder" / "agents"
-                         / "myagent.md").is_file())
+        # file-per-agent target: persona folded into the shared AGENTS.md;
+        # no per-agent identity file spawned.
+        dl_agents_md = Path(self.tmp.name) / "dl_qoder" / "AGENTS.md"
+        self.assertTrue(dl_agents_md.is_file())
+        self.assertIn("soul", dl_agents_md.read_text())
+        self.assertFalse((Path(self.tmp.name) / "dl_qoder" / "agents"
+                          / "myagent.md").is_file())
 
     def test_download_without_login_fails(self):
         rc = cmd_download(
