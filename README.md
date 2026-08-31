@@ -631,7 +631,7 @@ This project is licensed under the [Apache License (Version 2.0)](https://github
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=modelscope/modelscope-agent&type=Date)](https://star-history.com/#modelscope/modelscope-agent&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=modelscope/modelscope-agent&type=Date)](https://star-history.dera.page/#modelscope/modelscope-agent&Date)
 
 
 ---
