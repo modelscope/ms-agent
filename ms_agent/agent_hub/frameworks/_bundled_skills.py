@@ -24,14 +24,16 @@ class BundledSkillFilterMixin:
     A ``skills/<dir>/`` is treated as framework-provided when its ``SKILL.md``
     frontmatter carries any of: a ``name`` listed in the sibling
     ``.bundled_manifest`` (Hermes's content library); a ``builtin_skill_version``
-    field; or a ``metadata`` block whose nested product entry carries install
-    hints (``emoji``/``requires``/``install``). User skills carry none of these
-    and are the only ones kept. A bare ``license`` field or a bare
-    ``metadata.<product>`` key is deliberately NOT a marker: both appear on
-    user-authored skills (open-source license, custom per-product parameters)
-    and treating them as "bundled" silently dropped those skills
-    (BUG-021/BUG-022). Only the ``skills/`` tree is filtered (Hermes's
-    ``optional-skills/`` is left untouched).
+    field; a ``metadata`` block whose nested product entry carries install
+    hints (``emoji``/``requires``/``install``); or a ``metadata.hermes``
+    catalog block carrying ``tags`` (Hermes app-native skills seeded outside
+    the manifest, BUG-0828). User skills carry none of these and are the only
+    ones kept. A bare ``license`` field or a bare ``metadata.<product>`` key is
+    deliberately NOT a marker: both appear on user-authored skills
+    (open-source license, custom per-product parameters) and treating them as
+    "bundled" silently dropped those skills (BUG-021/BUG-022). Only the
+    ``skills/`` tree is filtered (Hermes's ``optional-skills/`` is left
+    untouched).
     """
 
     def _walk_matched(self):
@@ -113,6 +115,17 @@ class BundledSkillFilterMixin:
             for v in md.values():
                 if isinstance(v, dict) and (v.keys() & _BUNDLED_SKILL_KEYS):
                     return True
+            # Hermes app-native skills (desktop plugins, themes, the
+            # ``apple/`` / ``media/`` / ``mlops/`` category libraries) are
+            # seeded by the app OUTSIDE the ``.bundled_manifest`` sync, so
+            # neither the manifest nor the install-hint keys above catch
+            # them. They carry a ``metadata.hermes`` catalog block; ``tags``
+            # is the shape marker. A bare ``hermes`` key or a
+            # ``metadata.hermes.config`` settings block is a legitimate user
+            # skill and must NOT be marked (BUG-022 precedent, BUG-0828).
+            hermes_md = md.get('hermes')
+            if isinstance(hermes_md, dict) and 'tags' in hermes_md:
+                return True
         return False
 
     def _user_skill_dirs(self, skills_rel: str) -> set:

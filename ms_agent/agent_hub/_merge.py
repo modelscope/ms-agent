@@ -485,11 +485,19 @@ _DEFAULT_FILE_CLASS = {
 # every file verbatim by design).
 PRODUCT_PRIVATE_FILES = {
     'hermes': frozenset(['config.yaml', 'hooks/*']),
-    'ms-agent':
-    frozenset(['settings.json', 'skills.json',
-              'mcp.json']),
+    'ms-agent': frozenset(['settings.json', 'skills.json', 'mcp.json']),
     'qwenpaw': frozenset(['agent.json', 'skill.json']),
     'openhuman': frozenset(['config.toml']),
+}
+
+# openhuman records HOW a skill was installed in a per-skill sidecar:
+# ``_meta.json`` (marketplace entry: owner/slug/publishedAt) and
+# ``metadata.json`` (github source: repo/path/downloaded_at). Both are
+# openhuman-private provenance with no meaning to other frameworks, so a
+# cross-framework convert drops them while same-framework sync keeps them
+# (BUG-0828).
+_SKILL_PROVENANCE_FILES = {
+    'openhuman': frozenset(['_meta.json', 'metadata.json']),
 }
 
 
@@ -775,6 +783,19 @@ def merge_resources(
         if skill_path.startswith('skills/'):
             parts = skill_path.split('/')
             skill_name = parts[1] if len(parts) > 1 else ''
+            # Framework-private per-skill provenance sidecars never travel
+            # across frameworks (BUG-0828).
+            if (is_cross_product and len(parts) == 3
+                    and parts[2] in _SKILL_PROVENANCE_FILES.get(
+                        source_product, ())):
+                result.actions.append(
+                    MergeAction(
+                        path=path,
+                        action='skip',
+                        detail=(f'{path} is {source_product}-private skill '
+                                f'provenance, dropped'),
+                    ))
+                continue
             if skill_name in existing_skill_set:
                 result.actions.append(
                     MergeAction(

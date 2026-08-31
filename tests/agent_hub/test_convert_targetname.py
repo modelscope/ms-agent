@@ -804,20 +804,23 @@ class TestPrivateConfigDroppedOnConvert(unittest.TestCase):
                 p.read_text() for p in out.rglob("*") if p.is_file())
             self.assertIn("GOLD-PERSONA", all_text)
 
-    def test_openhuman_to_ms_agent_keeps_full_skill_tree(self):
-        """openhuman -> ms-agent: a skill is an atomic directory, so the whole
-        tree travels -- SKILL.md plus every sibling file, including per-skill
-        sidecars like ``_meta.json`` / ``metadata.json``. ms-agent only reads
-        SKILL.md, so extra files are harmless; the merger never guesses which
-        filenames are ``private`` and risks dropping a real dependency.
-        Regression for a report where skills vanished entirely.
+    def test_openhuman_to_ms_agent_keeps_skill_tree_drops_provenance(self):
+        """openhuman -> ms-agent: a skill is an atomic directory, so the tree
+        travels -- SKILL.md plus asset subdirs -- and skills must never vanish
+        (regression for a report where they were lost entirely). But
+        openhuman's per-skill PROVENANCE sidecars (``_meta.json`` marketplace
+        record, ``metadata.json`` github source) are framework-private and are
+        dropped on the cross-framework convert (BUG-0828); same-framework sync
+        still keeps them.
         """
         with tempfile.TemporaryDirectory() as td:
             src = Path(td) / "src"
-            (src / "skills" / "weather").mkdir(parents=True)
+            (src / "skills" / "weather" / "references").mkdir(parents=True)
             (src / "skills" / "news-daily").mkdir(parents=True)
             (src / "SOUL.md").write_text("# Soul\nGOLD-PERSONA\n")
             (src / "skills" / "weather" / "SKILL.md").write_text("GOLD-WEATHER\n")
+            (src / "skills" / "weather" / "references" / "formats.md").write_text(
+                "GOLD-ASSET\n")
             (src / "skills" / "weather" / "_meta.json").write_text('{"k": 1}')
             (src / "skills" / "news-daily" / "SKILL.md").write_text("GOLD-NEWS\n")
             (src / "skills" / "news-daily" / "metadata.json").write_text('{"k": 2}')
@@ -831,13 +834,15 @@ class TestPrivateConfigDroppedOnConvert(unittest.TestCase):
                 str(p.relative_to(out))
                 for p in out.rglob("*") if p.is_file()
             }
-            # the whole skill tree travels verbatim, sidecars included.
+            # SKILL.md and asset subdirs travel ...
             for expected in (
                     "skills/weather/SKILL.md",
-                    "skills/weather/_meta.json",
-                    "skills/news-daily/SKILL.md",
-                    "skills/news-daily/metadata.json"):
+                    "skills/weather/references/formats.md",
+                    "skills/news-daily/SKILL.md"):
                 self.assertIn(expected, rels)
+            # ... but the openhuman-private provenance sidecars are dropped.
+            self.assertNotIn("skills/weather/_meta.json", rels)
+            self.assertNotIn("skills/news-daily/metadata.json", rels)
             self.assertEqual(
                 (out / "skills" / "weather" / "SKILL.md").read_text(),
                 "GOLD-WEATHER\n")
