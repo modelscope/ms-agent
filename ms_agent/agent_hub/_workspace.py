@@ -69,6 +69,194 @@ def is_secret_key(name: str) -> bool:
     return bool(_SECRET_KEY_RE.search(name.strip()))
 
 
+# Mapping keys whose VALUES are secret bags regardless of the inner key names:
+# ``env`` (MCP server environment variables) and ``headers`` (HTTP headers are
+# bearer credentials in disguise -- their names are arbitrary, e.g. a gateway
+# may demand ``X-Auth-Code``, which no key-name vocabulary could enumerate).
+# Every scrubber blanks the whole mapping, keeping only the key names.
+SECRET_BAG_KEYS = frozenset(('env', 'headers'))
+
+_URL_RE = re.compile(r'^[A-Za-z][A-Za-z0-9+.\-]*://')
+
+
+def scrub_url_secrets(url: str) -> str:
+    """Strip credentials embedded in a URL, leaving the rest byte-identical.
+
+    Two carriers are removed:
+
+    * userinfo passwords -- ``https://user:pass@host`` becomes
+      ``https://user@host`` (the username is kept; the password is dropped);
+    * query parameters whose NAME matches :func:`is_secret_key` --
+      ``?api_key=X&model=y`` becomes ``?model=y``.
+
+    Values that are not absolute URLs, or that carry no credentials, are
+    returned unchanged. A URL is never *added* or *reformatted*: only the
+    credential fragments is cut, so non-secret configs survive byte-for-byte.
+    Malformed URLs are returned as-is (the caller's structural rules still
+    apply; this helper must never raise on the outbound path).
+    """
+    if not isinstance(url, str) or not _URL_RE.match(url):
+        return url
+    scheme, sep, rest = url.partition('://')
+    # The authority ends at the first '/', '?' or '#'.
+    cut = len(rest)
+    for ch in ('/', '?', '#'):
+        idx = rest.find(ch)
+        if idx != -1:
+            cut = min(cut, idx)
+    authority, tail = rest[:cut], rest[cut:]
+    at = authority.rfind('@')
+    if at != -1:
+        userinfo = authority[:at]
+        user, colon, password = userinfo.partition(':')
+        if colon and password:
+            authority = (f'{user}@' if user else '') + authority[at + 1:]
+    path = tail
+    query = fragment = ''
+    if '#' in path:
+        path, frag = path.split('#', 1)
+        fragment = '#' + frag
+    if '?' in path:
+        path, q = path.split('?', 1)
+        pairs = q.split('&')
+        kept = [p for p in pairs
+                if not p or not is_secret_key(p.split('=', 1)[0])]
+        query = ('?' + '&'.join(kept)) if kept else ''
+    return f'{scheme}{sep}{authority}{path}{query}{fragment}'
+
+
+_SECRET_FLAG_RE = re.compile(r'^-{1,2}[A-Za-z][\w.\-]*$')
+
+
+def scrub_args_secrets(args: list) -> list:
+    """Blank secrets passed as CLI flags in a stdio ``args`` list.
+
+    MCP stdio servers commonly receive credentials on the command line, where
+    no ``env`` block exists to catch them. Two spellings are covered:
+
+    * ``--api-key VALUE`` -- when a flag's name matches
+      :func:`is_secret_key`, the FOLLOWING element (the value) is blanked;
+    * ``--api-key=VALUE`` -- the value after ``=`` is blanked in place.
+
+    Non-flag elements and values of non-secret flags are preserved as-is.
+    Non-string items pass through untouched.
+    """
+    if not isinstance(args, list):
+        return args
+    out = list(args)
+    n = len(out)
+    i = 0
+    while i < n:
+        item = out[i]
+        if isinstance(item, str) and _SECRET_FLAG_RE.match(item):
+            name = item.lstrip('-')
+            if is_secret_key(name):
+                if i + 1 < n and isinstance(out[i + 1], str) \
+                        and not _SECRET_FLAG_RE.match(out[i + 1]):
+                    out[i + 1] = ''
+                    i += 1
+        elif isinstance(item, str) and item.startswith('--') \
+                and '=' in item:
+            flag, _, _val = item.partition('=')
+            if is_secret_key(flag.lstrip('-')):
+                out[i] = flag + '='
+        i += 1
+    return out
+
+
+def scrub_scalar_url_token(val: str) -> str:
+    """Scrub credentials in a URL scalar, keeping quotes/whitespace intact.
+
+    Used by the line-based YAML scrubber on raw ``key: value`` captures: the
+    value may carry surrounding whitespace or be quoted. Returns *val*
+    byte-identical unless a secret was actually removed.
+    """
+    lead = val[:len(val) - len(val.lstrip())]
+    trail = val[len(val.rstrip()):]
+    core = val.strip()
+    quote = ''
+    if len(core) >= 2 and core[0] == core[-1] and core[0] in '\'"':
+        quote = core[0]
+        core = core[1:-1]
+    cleaned = scrub_url_secrets(core)
+    if cleaned == core:
+        return val
+    return f'{lead}{quote}{cleaned}{quote}{trail}'
+
+
+def _scrub_yaml_flow_args(val: str) -> str:
+    """Positional scrub of a flow-style ``args: [-y, srv, --api-key, X]``.
+
+    Returns the rewritten value text (brackets included) or *val* unchanged
+    when nothing secret was found. Items may be quoted; quotes are stripped
+    for flag detection and dropped in the (rewritten) output. Mirrors
+    :func:`scrub_args_secrets` plus URL scrubbing of each item.
+    """
+    lead = val[:len(val) - len(val.lstrip())]
+    body = val.strip()
+    if not body.startswith('['):
+        return val
+    end = body.find(']')
+    if end == -1:
+        return val
+    inner, trail = body[1:end], body[end + 1:]
+    items = [it.strip() for it in inner.split(',')] if inner.strip() else []
+    norm = []
+    for it in items:
+        if len(it) >= 2 and it[0] == it[-1] and it[0] in '\'"':
+            norm.append(it[1:-1])
+        else:
+            norm.append(it)
+    scrubbed = [scrub_url_secrets(it) for it in scrub_args_secrets(norm)]
+    if scrubbed == norm:
+        return val
+    parts = []
+    for orig, norm_it, scrub_it in zip(items, norm, scrubbed):
+        if scrub_it == norm_it:
+            parts.append(orig)
+        elif scrub_it == '':
+            parts.append("''")
+        else:
+            parts.append(scrub_it)
+    return f'{lead}[{", ".join(parts)}]{trail}'
+
+
+def scrub_toml_array_args(val: str) -> str:
+    """Positional scrub of a single-line TOML ``args = ["-y", "--token", X]``.
+
+    Like :func:`_scrub_yaml_flow_args` but TOML strings must stay quoted, so
+    each item keeps (or receives) its quotes in the rewritten output. Returns
+    *val* unchanged when nothing secret was found.
+    """
+    lead = val[:len(val) - len(val.lstrip())]
+    body = val.strip()
+    if not body.startswith('['):
+        return val
+    end = body.find(']')
+    if end == -1:
+        return val
+    inner, trail = body[1:end], body[end + 1:]
+    items = [it.strip() for it in inner.split(',') if it.strip()]
+    norm, quotes = [], []
+    for it in items:
+        if len(it) >= 2 and it[0] == it[-1] and it[0] in '\'"':
+            quotes.append(it[0])
+            norm.append(it[1:-1])
+        else:
+            quotes.append('"')
+            norm.append(it)
+    scrubbed = [scrub_url_secrets(it) for it in scrub_args_secrets(norm)]
+    if scrubbed == norm:
+        return val
+    parts = []
+    for orig, norm_it, scrub_it, q in zip(items, norm, scrubbed, quotes):
+        if scrub_it == norm_it:
+            parts.append(orig)
+        else:
+            parts.append(f'{q}{scrub_it}{q}')
+    return f'{lead}[{", ".join(parts)}]{trail}'
+
+
 def scrub_yaml_secrets(
     text: str, mcp_block_keys: tuple[str, ...] = ('mcp_servers', 'mcpServers')
 ) -> str:
@@ -80,17 +268,24 @@ def scrub_yaml_secrets(
 
     * a key whose name matches :func:`is_secret_key` -> value cleared, anywhere
       in the tree (e.g. top-level ``model.api_key`` or ``llm.modelscope_api_key``);
-    * every scalar nested inside an MCP-server ``env`` mapping (a block opened
-      by any key in *mcp_block_keys*, then a nested ``env:``) -> value cleared
-      regardless of key name (that block is a free-form secret bag where API
-      keys live under arbitrary names).
+    * every scalar nested inside an MCP-server ``env`` or ``headers`` mapping
+      (a block opened by any key in *mcp_block_keys*, then a nested bag key
+      from :data:`SECRET_BAG_KEYS`) -> value cleared regardless of key name
+      (those blocks are free-form secret bags where API keys live under
+      arbitrary names);
+    * any scalar that IS an absolute URL -> userinfo passwords and secret-named
+      query parameters stripped (:func:`scrub_url_secrets`), wherever it lives
+      (``base_url``, MCP ``url``, ...);
+    * ``args`` lists inside the MCP block (block ``- item`` and flow
+      ``[a, b]`` styles) -> the value following a secret-named flag is blanked
+      and URL items are scrubbed, mirroring :func:`scrub_args_secrets`.
 
     Beyond simple ``key: <scalar>`` lines the scrubber also covers the other
     legal spellings a secret can hide in:
 
     * flow mappings (``llm: {api_key: X, model: y}``) -- secret pairs inside
-      the braces are cleared in place; an ``env: {...}`` flow mapping is
-      cleared wholesale;
+      the braces are cleared in place; an ``env: {...}`` / ``headers: {...}``
+      flow mapping is cleared wholesale, and URL values inside are scrubbed;
     * block/folded scalars (``api_key: |`` / ``>`` and their chomping
       variants) -- the opener is blanked and the indented content lines that
       carry the secret are dropped.
@@ -106,10 +301,15 @@ def scrub_yaml_secrets(
     flow_pair = re.compile(r'(?P<key>["\']?[\w.\-]+["\']?)(?P<sep>\s*:\s*)'
                            r'(?P<val>[^,{}\[\]]+)')
     block_opener = re.compile(r'^[|>][+-]?\d*$')
-    # Indent of the active mcp-servers / nested ``env:`` block openers;
-    # ``None`` means we are not currently inside that block.
+    list_item = re.compile(r'^(?P<indent>[ \t]*)-[ \t]+(?P<val>\S.*)$')
+    # Indent of the active mcp-servers / nested secret-bag (``env`` /
+    # ``headers``) / ``args`` block openers; ``None`` = not inside.
     mcp_indent: int | None = None
-    env_indent: int | None = None
+    bag_indent: int | None = None
+    args_indent: int | None = None
+    # Inside a block ``args:`` list: the previous item was a secret flag whose
+    # value is still owed (``--api-key`` -> the NEXT item is that value).
+    args_pending = False
     # Inside a secret block scalar: drop lines indented deeper than this.
     skip_indent: int | None = None
     out: list[str] = []
@@ -126,25 +326,66 @@ def scrub_yaml_secrets(
         if not stripped or stripped.startswith('#'):
             out.append(line)
             continue
+        # Block ``args:`` list items: positional scrub of the stdio command
+        # line (secret flag values blanked, URL items scrubbed).
+        if args_indent is not None:
+            cur = len(line) - len(line.lstrip(' \t'))
+            am = list_item.match(line)
+            if am and cur >= args_indent:
+                core = am.group('val').strip()
+                quote = ''
+                if len(core) >= 2 and core[0] == core[-1] \
+                        and core[0] in '\'"':
+                    quote = core[0]
+                    core = core[1:-1]
+                if args_pending and not _SECRET_FLAG_RE.match(core):
+                    # The value owed to the previous secret flag: blank it.
+                    out.append(f"{am.group('indent')}- ''")
+                    args_pending = False
+                    continue
+                args_pending = False
+                if _SECRET_FLAG_RE.match(core) and '=' not in core \
+                        and is_secret_key(core.lstrip('-')):
+                    args_pending = True
+                    out.append(line)
+                    continue
+                if core.startswith('--') and '=' in core \
+                        and is_secret_key(core.partition('=')[0].lstrip('-')):
+                    out.append(f"{am.group('indent')}- "
+                               f"{core.partition('=')[0]}=")
+                    continue
+                cleaned = scrub_url_secrets(core)
+                if cleaned != core:
+                    out.append(f"{am.group('indent')}- {quote}{cleaned}"
+                               f"{quote}")
+                    continue
+                out.append(line)
+                continue
+            if cur <= args_indent:
+                args_indent = None
+                args_pending = False
         m = kv.match(line)
         if not m:
             out.append(line)
             continue
         indent = len(m.group('indent'))
         # Dedenting to <= a block opener's indent leaves that block.
-        if env_indent is not None and indent <= env_indent:
-            env_indent = None
+        if bag_indent is not None and indent <= bag_indent:
+            bag_indent = None
+        if args_indent is not None and indent <= args_indent:
+            args_indent = None
+            args_pending = False
         if mcp_indent is not None and indent <= mcp_indent:
             mcp_indent = None
         key = m.group('key').strip()
         val = m.group('val')
-        in_env = env_indent is not None and indent > env_indent
+        in_bag = bag_indent is not None and indent > bag_indent
         secret_key = is_secret_key(key)
         # Block/folded scalar opener (| / > + chomping variants): the secret
         # lives on the FOLLOWING deeper-indented lines -- blank the key and
         # drop that content.
         if val is not None and block_opener.match(val.strip()):
-            if secret_key or in_env:
+            if secret_key or in_bag:
                 out.append(
                     f"{m.group('indent')}{m.group('key')}{m.group('sep')}''")
                 skip_indent = indent
@@ -152,15 +393,18 @@ def scrub_yaml_secrets(
                 out.append(line)
             continue
         # Flow mapping value: scrub secret pairs inside the braces. An
-        # ``env`` (or secret-named) flow mapping is a free-form secret bag ->
-        # clear every value in it.
+        # ``env`` / ``headers`` (or secret-named) flow mapping is a free-form
+        # secret bag -> clear every value in it.
         if val is not None and val.lstrip().startswith(
                 '{') and val.strip() != '{}':
-            clear_all = secret_key or in_env or key == 'env'
+            clear_all = secret_key or in_bag or key in SECRET_BAG_KEYS
 
             def _repl(pm, _all=clear_all):
                 if _all or is_secret_key(pm.group('key').strip('"\'')):
                     return f"{pm.group('key')}{pm.group('sep')}''"
+                cleaned = scrub_scalar_url_token(pm.group('val'))
+                if cleaned != pm.group('val'):
+                    return (f"{pm.group('key')}{pm.group('sep')}{cleaned}")
                 return pm.group(0)
 
             out.append(f"{m.group('indent')}{m.group('key')}{m.group('sep')}"
@@ -168,18 +412,37 @@ def scrub_yaml_secrets(
             continue
         has_scalar = val is not None and val.strip() not in ('{}', '[]')
         # A key with no scalar value opens a mapping/list block: track the
-        # mcp-servers and nested ``env`` openers so their descendants can be
-        # scoped, then emit the opener line unchanged.
+        # mcp-servers, nested secret-bag and ``args`` openers so their
+        # descendants can be scoped, then emit the opener line unchanged.
         if not has_scalar:
             if key in mcp_block_keys:
                 mcp_indent = indent
-            elif key == 'env' and mcp_indent is not None:
-                env_indent = indent
+            elif key in SECRET_BAG_KEYS and mcp_indent is not None:
+                bag_indent = indent
+            elif key == 'args' and mcp_indent is not None:
+                args_indent = indent
+                args_pending = False
             out.append(line)
             continue
-        if secret_key or in_env:
+        if secret_key or in_bag:
             out.append(
                 f"{m.group('indent')}{m.group('key')}{m.group('sep')}''")
+            continue
+        # Flow-list ``args: [...]``: positional scrub inside the brackets.
+        if key == 'args' and mcp_indent is not None \
+                and val.lstrip().startswith('['):
+            cleaned = _scrub_yaml_flow_args(val)
+            if cleaned != val:
+                out.append(f"{m.group('indent')}{m.group('key')}"
+                           f"{m.group('sep')}{cleaned}")
+            else:
+                out.append(line)
+            continue
+        cleaned = scrub_scalar_url_token(val)
+        if cleaned != val:
+            out.append(
+                f"{m.group('indent')}{m.group('key')}{m.group('sep')}"
+                f'{cleaned}')
         else:
             out.append(line)
     return '\n'.join(out)
@@ -194,23 +457,37 @@ def scrub_json_secrets(obj) -> None:
     * a key matching :func:`is_secret_key` -> value blanked to ``''`` whatever
       its type (a nested mapping under e.g. ``credentials`` is wiped wholesale
       -- its inner field names may look harmless);
-    * every value inside an ``env`` mapping -> blanked regardless of key name
-      (an ``env`` block, e.g. under an MCP server, is a free-form secret bag).
+    * every value inside an ``env`` or ``headers`` mapping -> blanked
+      regardless of key name (:data:`SECRET_BAG_KEYS`; both are free-form
+      secret bags -- env var and header names are arbitrary);
+    * ``args`` lists (MCP stdio command lines) -> the value following a
+      secret-named flag is blanked (:func:`scrub_args_secrets`);
+    * every string that is an absolute URL -> userinfo passwords and
+      secret-named query parameters are stripped (:func:`scrub_url_secrets`),
+      wherever it lives (provider ``base_url``, MCP ``url``, ...).
 
     Non-secret structure and values are preserved; nested dicts / lists are
     walked recursively.
     """
     if isinstance(obj, dict):
         for key, val in obj.items():
-            if key == 'env' and isinstance(val, dict):
+            if key in SECRET_BAG_KEYS and isinstance(val, dict):
                 obj[key] = {k: '' for k in val}
             elif is_secret_key(key):
                 obj[key] = ''
+            elif key == 'args' and isinstance(val, list):
+                obj[key] = scrub_args_secrets(val)
+                scrub_json_secrets(obj[key])
+            elif isinstance(val, str):
+                obj[key] = scrub_url_secrets(val)
             else:
                 scrub_json_secrets(val)
     elif isinstance(obj, list):
-        for item in obj:
-            scrub_json_secrets(item)
+        for idx, item in enumerate(obj):
+            if isinstance(item, str):
+                obj[idx] = scrub_url_secrets(item)
+            else:
+                scrub_json_secrets(item)
 
 
 class WorkspaceSpec(ABC):

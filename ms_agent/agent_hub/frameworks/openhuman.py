@@ -8,8 +8,9 @@ import re
 from pathlib import Path
 
 from ms_agent.utils.logger import get_logger
-from .._workspace import (DEFAULT_AGENT_NAME, WorkspaceSpec, is_secret_key,
-                          register_framework)
+from .._workspace import (DEFAULT_AGENT_NAME, SECRET_BAG_KEYS, WorkspaceSpec,
+                          is_secret_key, register_framework,
+                          scrub_scalar_url_token, scrub_toml_array_args)
 
 logger = get_logger()
 
@@ -316,64 +317,135 @@ class OpenhumanWorkspace(WorkspaceSpec):
         # so ``a.b.api_key`` is caught, not just a bare top-level ``api_key``.
         # Beyond simple ``key = <scalar>`` lines this also covers:
         # * inline tables  ``provider = { api_key = "X" }`` (incl. nested) --
-        #   secret pairs inside the braces are cleared in place;
-        # * arrays         ``tokens = ["X"]`` -> ``tokens = []``;
+        #   secret pairs inside the braces are cleared in place; an
+        #   ``env`` / ``headers`` inline table (SECRET_BAG_KEYS) is cleared
+        #   wholesale -- those names are arbitrary bearer bags;
+        # * table sections ``[mcp.fs.headers]`` / ``[[...env]]`` -- when the
+        #   LAST path segment is a secret bag every assignment inside the
+        #   section is blanked, including quoted keys (``"X-Auth-Code"``)
+        #   that the bare-key pattern cannot match;
+        # * arrays         ``tokens = ["X"]`` -> ``tokens = []``; an ``args``
+        #   array (single- or multi-line) is positionally scrubbed (secret
+        #   flag values blanked); a clean multi-line array keeps its layout;
         # * multi-line strings (``secret = '''`` / ``\"\"\"``) -- the opener is
-        #   blanked and the content lines up to the closing delimiter dropped.
+        #   blanked and the content lines up to the closing delimiter dropped;
+        # * URL string values under any key -- userinfo passwords and
+        #   secret-named query parameters are stripped.
         pattern = re.compile(
             r'^(?P<pre>\s*(?P<key>[A-Za-z0-9_.-]+)\s*=\s*)(?P<val>.*)$')
         inline_pair = re.compile(r'(?P<key>[A-Za-z0-9_.-]+)(?P<sep>\s*=\s*)'
                                  r'(?P<val>"[^"]*"|\'[^\']*\'|[^,{}\s][^,}]*)')
+        section = re.compile(r'^\s*\[{1,2}\s*(?P<path>[^#\]\[]+?)\s*\]{1,2}'
+                             r'\s*(?:#.*)?$')
+        bagged_assign = re.compile(r'^(?P<pre>\s*.+?=\s*)(?P<val>.*)$')
         out: list[str] = []
         lines = text.split('\n')
+        # True while inside a ``[...headers]`` / ``[...env]`` table section.
+        in_bag_section = False
         i = 0
         while i < len(lines):
             line = lines[i]
+            sm = section.match(line)
+            if sm:
+                seg = sm.group('path').split('.')[-1].strip().strip('"\'')
+                in_bag_section = seg in SECRET_BAG_KEYS
+                out.append(line)
+                i += 1
+                continue
             m = pattern.match(line)
             if not m:
+                # Quoted keys (``"X-Auth-Code" = ...``) fail the bare-key
+                # pattern; inside a bag section they must still be blanked.
+                if in_bag_section and not line.strip().startswith('#'):
+                    bm = bagged_assign.match(line)
+                    if bm:
+                        i = self._blank_toml_value(
+                            out, lines, i, bm.group('pre'), bm.group('val'))
+                        continue
                 out.append(line)
                 i += 1
                 continue
             key = m.group('key').split('.')[-1]
             val = m.group('val')
             vstrip = val.strip()
-            if is_secret_key(key):
-                # Multi-line string: blank the opener and drop content lines
-                # up to (and including) the closing delimiter.
-                delim = next((d for d in ('"""', "'''")
-                              if vstrip.startswith(d) and vstrip.count(d) < 2),
-                             None)
-                if delim:
-                    out.append(m.group('pre') + '""')
-                    i += 1
-                    while i < len(lines) and delim not in lines[i]:
-                        i += 1
-                    i += 1  # skip the closing-delimiter line
-                    continue
-                if vstrip.startswith('['):
-                    out.append(m.group('pre') + '[]')
-                    if ']' not in vstrip:  # multi-line array
-                        i += 1
-                        while i < len(lines) and ']' not in lines[i]:
-                            i += 1
-                    i += 1
-                    continue
-                out.append(m.group('pre') + '""')
-                i += 1
+            if is_secret_key(key) or in_bag_section:
+                i = self._blank_toml_value(out, lines, i, m.group('pre'), val)
                 continue
-            # Non-secret key: still scrub secret pairs inside inline tables
-            # (``provider = { api_key = "X" }``, nested tables included).
-            if '{' in vstrip:
+            # Secret-bag inline table (``headers = {...}`` / ``env = {...}``):
+            # clear every pair -- the names inside are arbitrary.
+            if key in SECRET_BAG_KEYS and vstrip.startswith('{'):
                 out.append(
                     m.group('pre') + inline_pair.sub(
-                        lambda pm: f"{pm.group('key')}{pm.group('sep')}\"\""
-                        if is_secret_key(pm.group('key').split('.')[-1]) else
-                        pm.group(0), val))
+                        lambda pm: f"{pm.group('key')}{pm.group('sep')}\"\"",
+                        val))
                 i += 1
                 continue
-            out.append(line)
+            # ``args = [...]``: positional flag scrub. A multi-line array is
+            # joined for the scrub and only re-emitted on one line when a
+            # secret was actually removed (clean arrays keep their layout).
+            if key == 'args' and vstrip.startswith('['):
+                if ']' in vstrip:
+                    out.append(m.group('pre') + scrub_toml_array_args(val))
+                    i += 1
+                    continue
+                j = i + 1
+                parts = [val.strip()]
+                while j < len(lines) and ']' not in lines[j]:
+                    parts.append(lines[j].strip())
+                    j += 1
+                if j < len(lines):
+                    parts.append(lines[j].strip())
+                    joined = ' '.join(parts)
+                    cleaned = scrub_toml_array_args(joined)
+                    if cleaned == joined:
+                        out.extend(lines[i:j + 1])
+                    else:
+                        out.append(m.group('pre') + cleaned.strip())
+                    i = j + 1
+                    continue
+            # Non-secret key: still scrub secret pairs inside inline tables
+            # (``provider = { api_key = "X" }``, nested tables included), and
+            # strip credentials from URL string values.
+            if '{' in vstrip:
+                def _repl(pm):
+                    if is_secret_key(pm.group('key').split('.')[-1]):
+                        return f"{pm.group('key')}{pm.group('sep')}\"\""
+                    cleaned = scrub_scalar_url_token(pm.group('val'))
+                    if cleaned != pm.group('val'):
+                        return f"{pm.group('key')}{pm.group('sep')}{cleaned}"
+                    return pm.group(0)
+
+                out.append(m.group('pre') + inline_pair.sub(_repl, val))
+                i += 1
+                continue
+            out.append(m.group('pre') + scrub_scalar_url_token(val))
             i += 1
         return '\n'.join(out)
+
+    @staticmethod
+    def _blank_toml_value(out: list[str], lines: list[str], i: int,
+                            pre: str, val: str) -> int:
+        """Blank the value of the assignment at ``lines[i]``, appending to
+        *out*. Handles multi-line strings (``'''`` / ``\"\"\"``), (multi-line)
+        arrays and plain scalars; returns the next line index to process."""
+        vstrip = val.strip()
+        delim = next((d for d in ('"""', "'''")
+                      if vstrip.startswith(d) and vstrip.count(d) < 2), None)
+        if delim:
+            out.append(pre + '""')
+            i += 1
+            while i < len(lines) and delim not in lines[i]:
+                i += 1
+            return i + 1
+        if vstrip.startswith('['):
+            out.append(pre + '[]')
+            if ']' not in vstrip:
+                i += 1
+                while i < len(lines) and ']' not in lines[i]:
+                    i += 1
+            return i + 1
+        out.append(pre + '""')
+        return i + 1
 
 
 register_framework('openhuman', OpenhumanWorkspace)

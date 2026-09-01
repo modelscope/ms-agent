@@ -916,5 +916,387 @@ class TestInstallRootProbing(unittest.TestCase):
                 self.assertEqual(spec.root, given, f"{fw} root changed")
 
 
+class TestUrlAndArgSecretHelpers(unittest.TestCase):
+    """Shared carrier helpers: URL credentials and stdio flag values.
+
+    Secrets travel in places no key-name vocabulary can reach: inside URLs
+    (query parameters, userinfo passwords) and as positional values after a
+    secret-named CLI flag (``--api-key VALUE``). These helpers strip them
+    while leaving clean input byte-identical.
+    """
+
+    def test_url_secret_query_params_stripped(self):
+        from ms_agent.agent_hub._workspace import scrub_url_secrets
+        out = scrub_url_secrets(
+            "https://api.example.com/v1?api_key=S1&token=S2&model=y")
+        self.assertEqual(out, "https://api.example.com/v1?model=y")
+
+    def test_url_all_secret_params_drops_query_mark(self):
+        from ms_agent.agent_hub._workspace import scrub_url_secrets
+        out = scrub_url_secrets("https://api.example.com/sse?api_key=S1")
+        self.assertEqual(out, "https://api.example.com/sse")
+
+    def test_url_userinfo_password_stripped(self):
+        from ms_agent.agent_hub._workspace import scrub_url_secrets
+        out = scrub_url_secrets("https://user:pa55@host.example.com/p?x=1")
+        self.assertEqual(out, "https://user@host.example.com/p?x=1")
+
+    def test_url_fragment_and_port_preserved(self):
+        from ms_agent.agent_hub._workspace import scrub_url_secrets
+        url = "https://host.example.com:8443/p?a=1#frag"
+        self.assertEqual(scrub_url_secrets(url), url)
+
+    def test_url_no_scheme_is_not_a_url(self):
+        from ms_agent.agent_hub._workspace import scrub_url_secrets
+        for val in ("not a url ?token=x", "example.com?token=x", "", 42):
+            self.assertEqual(scrub_url_secrets(val), val)
+
+    def test_clean_url_round_trips_byte_identical(self):
+        from ms_agent.agent_hub._workspace import scrub_url_secrets
+        for url in ("https://dashscope.aliyuncs.com/compatible-mode/v1",
+                    "https://host/x?model=qwen&temp=0.7",
+                    "https://host",
+                    "http://[::1]:8080/path"):
+            self.assertEqual(scrub_url_secrets(url), url)
+
+    def test_args_flag_value_blanked(self):
+        from ms_agent.agent_hub._workspace import scrub_args_secrets
+        out = scrub_args_secrets(
+            ["-y", "srv", "--api-key", "SECRET", "--model", "qwen"])
+        self.assertEqual(out, ["-y", "srv", "--api-key", "",
+                               "--model", "qwen"])
+
+    def test_args_flag_equals_form_blanked(self):
+        from ms_agent.agent_hub._workspace import scrub_args_secrets
+        out = scrub_args_secrets(["run", "--token=SECRET", "--port", "8080"])
+        self.assertEqual(out, ["run", "--token=", "--port", "8080"])
+
+    def test_args_flag_value_followed_by_flag_not_eaten(self):
+        from ms_agent.agent_hub._workspace import scrub_args_secrets
+        out = scrub_args_secrets(["--api-key", "--verbose", "x"])
+        self.assertEqual(out, ["--api-key", "--verbose", "x"])
+
+    def test_args_clean_list_byte_identical(self):
+        from ms_agent.agent_hub._workspace import scrub_args_secrets
+        args = ["-y", "mcp-server", "--port", "8080", "--model", "qwen"]
+        self.assertEqual(scrub_args_secrets(args), args)
+
+    def test_args_trailing_secret_flag_without_value(self):
+        from ms_agent.agent_hub._workspace import scrub_args_secrets
+        self.assertEqual(scrub_args_secrets(["srv", "--token"]),
+                         ["srv", "--token"])
+
+
+class TestMsAgentOutboundLeakCarriers(unittest.TestCase):
+    """ms-agent upload must not leak url / headers / args carriers.
+
+    ``settings.json`` and ``mcp.json`` carry provider and MCP server
+    definitions; credentials hide in URL query strings / userinfo, in
+    arbitrary-named HTTP headers and in stdio command lines -- none of which
+    a key-name vocabulary can catch.
+    """
+
+    def setUp(self):
+        from ms_agent.agent_hub.frameworks.ms_agent import MsAgentWorkspace
+        self.spec = MsAgentWorkspace(agent_name="default")
+
+    SETTINGS = {
+        "providers": {
+            "dashscope": {
+                "name": "dashscope", "protocol": "openai",
+                "api_key": "sk-LEAK-provider",
+                "base_url": "https://dashscope.aliyuncs.com/compatible/v1",
+                "models": ["qwen3-max"],
+            },
+            "my-gateway": {
+                "name": "gateway", "protocol": "openai",
+                "api_key": "sk-LEAK-gateway",
+                "base_url": "https://gw.example.com/v1?token=LEAK-url-token",
+                "models": [],
+            },
+        },
+        "default_model": "dashscope/qwen3-max",
+    }
+
+    MCP = {
+        "mcpServers": {
+            "remote-http": {
+                "url": "https://api.example.com/msse?api_key=LEAK-url-key",
+                "transport": "sse",
+                "headers": {
+                    "Authorization": "Bearer LEAK-bearer",
+                    "x-api-key": "LEAK-header-key",
+                    "X-Auth-Code": "LEAK-custom-header",
+                },
+                "enabled": True,
+            },
+            "userinfo": {
+                "url": "https://user:LEAK-pass@host.example.com/sse",
+                "transport": "sse",
+            },
+            "local-stdio": {
+                "command": "npx",
+                "args": ["-y", "mcp-server", "--api-key", "LEAK-arg-key",
+                         "--model", "qwen"],
+                "env": {"OPENAI_API_KEY": "LEAK-env-key"},
+                "enabled": True,
+            },
+        },
+    }
+
+    def _out(self, rel, data):
+        raw = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+        return json.loads(self.spec.sanitize_outbound_file(rel, raw))
+
+    def test_no_leak_tokens_survive_upload(self):
+        for rel, data in (("settings.json", self.SETTINGS),
+                          ("mcp.json", self.MCP)):
+            out = json.dumps(self._out(rel, data))
+            self.assertNotIn("LEAK", out, f"{rel} leaked secrets")
+
+    def test_structure_and_non_secrets_preserved(self):
+        s = self._out("settings.json", self.SETTINGS)
+        self.assertEqual(s["default_model"], "dashscope/qwen3-max")
+        self.assertEqual(s["providers"]["dashscope"]["models"], ["qwen3-max"])
+        # clean URL untouched, secret query param removed:
+        self.assertEqual(
+            s["providers"]["dashscope"]["base_url"],
+            "https://dashscope.aliyuncs.com/compatible/v1")
+        self.assertEqual(
+            s["providers"]["my-gateway"]["base_url"],
+            "https://gw.example.com/v1")
+        m = self._out("mcp.json", self.MCP)
+        remote = m["mcpServers"]["remote-http"]
+        self.assertEqual(remote["url"], "https://api.example.com/msse")
+        self.assertEqual(remote["transport"], "sse")
+        self.assertEqual(remote["enabled"], True)
+        # header names kept (structure visible), values wiped:
+        self.assertEqual(set(remote["headers"]),
+                         {"Authorization", "x-api-key", "X-Auth-Code"})
+        self.assertEqual(set(remote["headers"].values()), {""})
+        self.assertEqual(m["mcpServers"]["userinfo"]["url"],
+                         "https://user@host.example.com/sse")
+        stdio = m["mcpServers"]["local-stdio"]
+        self.assertEqual(stdio["command"], "npx")
+        self.assertEqual(stdio["args"],
+                         ["-y", "mcp-server", "--api-key", "",
+                          "--model", "qwen"])
+        self.assertEqual(stdio["env"], {"OPENAI_API_KEY": ""})
+
+    def test_inbound_direction_scrubs_too(self):
+        raw = json.dumps(self.MCP, ensure_ascii=False).encode("utf-8")
+        out = self.spec.sanitize_inbound_file("mcp.json", raw).decode()
+        self.assertNotIn("LEAK", out)
+
+
+class TestQwenpawOutboundLeakCarriers(unittest.TestCase):
+    """qwenpaw agent.json upload must close the same three carriers."""
+
+    def setUp(self):
+        self.spec = QwenpawWorkspace(agent_name="paw_qa_01")
+
+    SRC = json.dumps({
+        "id": "bot",
+        "model": {"api_key": "sk-SECRET-1", "model": "qwen-max"},
+        "mcp": {
+            "clients": {
+                "remote": {
+                    "url": "https://mcp.example.com/sse?api_key=SECRET-URL",
+                    "headers": {"X-Auth-Code": "SECRET-HEADER"},
+                },
+                "stdio": {
+                    "command": "npx",
+                    "args": ["-y", "srv", "--token=SECRET-ARG"],
+                },
+            },
+        },
+    })
+
+    def test_outbound_scrubs_url_headers_args(self):
+        out = self.spec._strip_outbound_agent_json(self.SRC)
+        self.assertNotIn("SECRET", out)
+        data = json.loads(out)
+        remote = data["mcp"]["clients"]["remote"]
+        self.assertEqual(remote["url"], "https://mcp.example.com/sse")
+        self.assertEqual(remote["headers"], {"X-Auth-Code": ""})
+        self.assertEqual(data["mcp"]["clients"]["stdio"]["args"],
+                         ["-y", "srv", "--token="])
+        self.assertEqual(data["model"]["model"], "qwen-max")
+
+
+class TestYamlOutboundLeakCarriers(unittest.TestCase):
+    """hermes config.yaml must close the url / headers / args carriers in
+    every legal YAML spelling, without touching clean lines."""
+
+    def _scrub(self, text):
+        from ms_agent.agent_hub._workspace import scrub_yaml_secrets
+        return scrub_yaml_secrets(text, mcp_block_keys=("mcp_servers",))
+
+    CONFIG = (
+        "# hermes config\n"
+        "model: qwen3-max\n"
+        "llm:\n"
+        "  base_url: https://gw.example.com/v1?token=LEAK-url-token\n"
+        "  api_key: LEAK-key\n"
+        "mcp_servers:\n"
+        "  remote:\n"
+        "    url: https://api.example.com/msse?api_key=LEAK-url-key&v=2\n"
+        "    transport: sse\n"
+        "    headers:\n"
+        "      Authorization: Bearer LEAK-bearer\n"
+        "      X-Auth-Code: LEAK-custom-header\n"
+        "    enabled: true\n"
+        "  gateway:\n"
+        "    url: https://user:LEAK-pass@host.example.com/path\n"
+        "  stdio:\n"
+        "    command: npx\n"
+        "    args:\n"
+        "      - -y\n"
+        "      - mcp-server\n"
+        "      - --api-key\n"
+        "      - LEAK-arg-key\n"
+        "      - --model\n"
+        "      - qwen\n"
+        "    env:\n"
+        "      OPENAI_API_KEY: LEAK-env-key\n"
+        "  flow:\n"
+        "    command: uvx\n"
+        "    args: [run, --token, LEAK-flow-arg, --port, \"8080\"]\n"
+        "    headers: {X-Custom: LEAK-flow-header}\n"
+        "plain: value\n"
+    )
+
+    def test_no_leak_tokens_survive(self):
+        out = self._scrub(self.CONFIG)
+        self.assertNotIn("LEAK", out)
+
+    def test_structure_preserved(self):
+        out = self._scrub(self.CONFIG)
+        self.assertIn("model: qwen3-max", out)
+        self.assertIn("plain: value", out)
+        self.assertIn("url: https://api.example.com/msse?v=2", out)
+        self.assertIn("url: https://user@host.example.com/path", out)
+        self.assertIn("base_url: https://gw.example.com/v1", out)
+        self.assertIn("Authorization: ''", out)
+        self.assertIn("X-Auth-Code: ''", out)
+        self.assertIn("- -y", out)
+        self.assertIn("- mcp-server", out)
+        self.assertIn("- --api-key", out)
+        self.assertIn("- --model", out)
+        self.assertIn("- qwen", out)
+        self.assertIn("- ''", out)
+        self.assertIn("args: [run, --token, '', --port, \"8080\"]", out)
+        self.assertIn("headers: {X-Custom: ''}", out)
+
+    def test_clean_config_byte_identical(self):
+        clean = (
+            "# comment\n"
+            "model: qwen3-max\n"
+            "mcp_servers:\n"
+            "  remote:\n"
+            "    url: https://api.example.com/msse?v=2\n"
+            "    transport: sse\n"
+            "  stdio:\n"
+            "    args:\n"
+            "      - -y\n"
+            "      - --port\n"
+            "      - \"8080\"\n"
+        )
+        self.assertEqual(self._scrub(clean), clean)
+
+    def test_innocuous_headers_cleared_too(self):
+        """headers is a wholesale secret bag: header names cannot be
+        enumerated (a gateway may demand ``X-Auth-Code``), so even innocuous
+        values like ``Accept`` are deliberately cleared -- fail-closed."""
+        text = ("mcp_servers:\n"
+                "  remote:\n"
+                "    headers:\n"
+                "      Accept: application/json\n")
+        self.assertIn("Accept: ''", self._scrub(text))
+
+
+class TestTomlOutboundLeakCarriers(unittest.TestCase):
+    """openhuman config.toml must close the url / headers / args carriers."""
+
+    def _scrub(self, text):
+        from ms_agent.agent_hub.frameworks.openhuman import \
+            OpenhumanWorkspace
+        return OpenhumanWorkspace(
+            agent_name="default")._scrub_toml_secrets(text)
+
+    CONFIG = (
+        "# openhuman config\n"
+        "[model]\n"
+        'provider = "openai"\n'
+        'api_key = "LEAK-key"\n'
+        "[providers.gateway]\n"
+        'base_url = "https://gw.example.com/v1?token=LEAK-url&mode=fast"\n'
+        'endpoint = "https://user:LEAK-pass@ep.example.com/x"\n'
+        "[mcp.remote]\n"
+        "headers = { Authorization = \"Bearer LEAK-b\", X-Custom = "
+        "\"LEAK-c\" }\n"
+        'args = ["-y", "srv", "--api-key", "LEAK-arg", "--port", "8080"]\n'
+        'url = "https://mcp.example.com/sse?api_key=LEAK-u&v=2"\n'
+        # Block table-section spellings (NOT inline tables): a headers / env
+        # section whose inner key names are arbitrary (incl. a quoted key that
+        # the bare-key pattern cannot match).
+        "[mcp.block.headers]\n"
+        'X-Auth-Code = "LEAK-block-header"\n'
+        '"X-Quoted-Key" = "LEAK-quoted-header"\n'
+        "[mcp.block.env]\n"
+        'SOME_RANDOM_NAME = "LEAK-block-env"\n'
+        # Multi-line args array with the secret on a continuation line.
+        "[mcp.spawner]\n"
+        "args = [\n"
+        '  "-y",\n'
+        '  "--token",\n'
+        '  "LEAK-ml-arg",\n'
+        '  "--model",\n'
+        '  "qwen",\n'
+        "]\n"
+    )
+
+    def test_no_leak_tokens_survive(self):
+        self.assertNotIn("LEAK", self._scrub(self.CONFIG))
+
+    def test_structure_preserved(self):
+        out = self._scrub(self.CONFIG)
+        self.assertIn('provider = "openai"', out)
+        self.assertIn('base_url = "https://gw.example.com/v1?mode=fast"',
+                      out)
+        self.assertIn('endpoint = "https://user@ep.example.com/x"', out)
+        self.assertIn("headers = { Authorization = \"\", X-Custom = \"\" }",
+                      out)
+        self.assertIn(
+            'args = ["-y", "srv", "--api-key", "", "--port", "8080"]', out)
+        self.assertIn('url = "https://mcp.example.com/sse?v=2"', out)
+        # Block sections: the section headers survive, the inner values don't.
+        self.assertIn("[mcp.block.headers]", out)
+        self.assertIn('X-Auth-Code = ""', out)
+        self.assertIn('"X-Quoted-Key" = ""', out)
+        self.assertIn("[mcp.block.env]", out)
+        self.assertIn('SOME_RANDOM_NAME = ""', out)
+        # Multi-line args collapsed to one line with the secret value blanked.
+        self.assertIn('args = ["-y", "--token", "", "--model", "qwen"]', out)
+
+    def test_clean_config_byte_identical(self):
+        # No bag section here: [...headers] / [...env] are fail-closed and
+        # blank every value even when innocuous (same as the YAML scrubber).
+        clean = (
+            "# comment\n"
+            'name = "bot"\n'
+            'base_url = "https://gw.example.com/v1?mode=fast"\n'
+            'args = ["-y", "srv", "--port", "8080"]\n'
+            "[mcp.spawner]\n"
+            'command = "srv"\n'
+            "args = [\n"
+            '  "-y",\n'
+            '  "--port",\n'
+            '  "8080",\n'
+            "]\n"
+        )
+        self.assertEqual(self._scrub(clean), clean)
+
+
 if __name__ == "__main__":
     unittest.main()
