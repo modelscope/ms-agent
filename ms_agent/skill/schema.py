@@ -5,7 +5,10 @@ Skill Directory Schema
 Defines the data structure and validation logic for Agent Skills.
 Each Skill is represented as a self-contained directory with metadata.
 """
+import hashlib
+import os
 import re
+import stat
 import yaml
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -233,13 +236,17 @@ class SkillSchemaParser:
         Returns:
             True if path should be ignored, False otherwise
         """
+        return SkillSchemaParser._is_ignored_name(p.name)
+
+    @staticmethod
+    def _is_ignored_name(name: str) -> bool:
         ignored_names = {
             '.DS_Store', '__pycache__', '.git', '.gitignore', '.pytest_cache',
             '.mypy_cache'
         }
         ignored_suffixes = {'.pyc', '.pyo'}
-
-        return (p.name in ignored_names) or (p.suffix in ignored_suffixes)
+        return ((name in ignored_names)
+                or (os.path.splitext(name)[1] in ignored_suffixes))
 
     @staticmethod
     def parse_skill_directory(directory_path: Path) -> Optional[SkillSchema]:
@@ -276,31 +283,77 @@ class SkillSchemaParser:
         scripts = []
         references = []
         resources = []
+        digest = hashlib.sha256()
 
-        for file_path in directory_path.rglob('*'):
-            if file_path.is_file():
-                if SkillSchemaParser.is_ignored_path(file_path):
+        def _walk(current_path: Path, relative_dir: str,
+                  visible_dir: bool) -> None:
+            # DirEntry keeps type/stat data from the same scandir call.  This
+            # avoids a second filesystem lookup while retaining deterministic
+            # files-first DFS order (the legacy notice signature's order).
+            try:
+                with os.scandir(current_path) as iterator:
+                    entries = sorted(iterator, key=lambda entry: entry.name)
+            except OSError:
+                return
+            directories = []
+            for entry in entries:
+                try:
+                    if entry.is_dir(follow_symlinks=False):
+                        directories.append(entry.name)
+                        continue
+                    file_stat = entry.stat(follow_symlinks=True)
+                except OSError:
+                    continue
+                if not stat.S_ISREG(file_stat.st_mode):
                     continue
 
-                file_type = file_path.suffix if file_path.suffix else '.unknown'
+                filename = entry.name
+                file_path = current_path / filename
+                relative = (
+                    filename
+                    if not relative_dir else f'{relative_dir}/{filename}')
+                if visible_dir and not filename.startswith('.'):
+                    signature_row = (f'{relative}|{file_stat.st_mtime_ns}|'
+                                     f'{file_stat.st_size}\n')
+                    digest.update(signature_row.encode())
 
+                if SkillSchemaParser._is_ignored_name(filename):
+                    continue
+
+                suffix = os.path.splitext(filename)[1]
+                file_type = suffix if suffix else '.unknown'
                 skill_file = SkillFile(
-                    name=file_path.name,
+                    name=filename,
                     type=file_type,
                     path=file_path,
-                    required=(file_path.name == 'SKILL.md'))
+                    required=(filename == 'SKILL.md'))
                 files.append(skill_file)
 
                 # Get scripts, references and resources
                 if skill_file.type in SUPPORTED_SCRIPT_EXT:
                     scripts.append(skill_file)
-                elif skill_file.type in ['.md'
-                                         ] and skill_file.name != 'SKILL.md':
+                elif (skill_file.type == '.md'
+                      and skill_file.name != 'SKILL.md'):
                     references.append(skill_file)
                 else:
                     resources.append(skill_file)
 
-        return SkillSchema(
+            # Hidden dirs remain in full materialization because the parser
+            # historically included their non-ignored support files.  Only the
+            # private change signature prunes them.
+            for dirname in directories:
+                child_relative = (
+                    dirname
+                    if not relative_dir else f'{relative_dir}/{dirname}')
+                _walk(
+                    current_path / dirname,
+                    child_relative,
+                    visible_dir and not dirname.startswith('.'),
+                )
+
+        _walk(directory_path, '', True)
+
+        schema = SkillSchema(
             skill_id=skill_id,
             name=frontmatter['name'],
             description=frontmatter['description'],
@@ -314,6 +367,10 @@ class SkillSchemaParser:
             references=references,
             resources=resources,
         )
+        # Private, in-memory-only bridge for hosts that already had to perform
+        # this full traversal.  It deliberately does not alter serialization.
+        schema._files_signature = digest.hexdigest()[:16]
+        return schema
 
     @staticmethod
     def validate_skill_schema(schema: SkillSchema) -> List[str]:

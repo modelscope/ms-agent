@@ -182,14 +182,18 @@ class SkillRuntime:
         self._catalog.reload()
         self._version += 1
 
-    def sync_with_config(self, skills_config) -> bool:
+    def sync_with_config(self, skills_config, *, force: bool = True) -> bool:
         """Resync the catalog from an updated skills config; bump the
         version only when the effective skill surface (inventory, metadata,
         disabled set) actually changed, so maybe_refresh_system_prompt()
         rebuilds messages[0] on real change and stays a no-op otherwise.
 
-        Returns True when the surface changed.
+        Existing callers retain the full-resync behavior by default.  A host
+        with an authoritative change tracker may pass ``force=False`` to skip
+        I/O for a known-clean turn.  Returns True when the surface changed.
         """
+        if not force:
+            return False
         before = self._surface()
         self._catalog.resync(skills_config)
         after = self._surface()

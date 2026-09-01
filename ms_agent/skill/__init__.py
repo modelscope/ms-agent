@@ -1,5 +1,6 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 from .catalog import SkillCatalog
+from .discovery import SkillDescriptor
 from .loader import SkillLoader, load_skills
 from .prompt_injector import SkillPromptInjector
 from .safety import SafetyFinding, SkillSafetyReport, SkillSafetyScanner
@@ -12,6 +13,7 @@ __all__ = [
     'SkillSchema',
     'SkillSchemaParser',
     'SkillFile',
+    'SkillDescriptor',
     'SkillLoader',
     'load_skills',
     'SkillSource',

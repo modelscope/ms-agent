@@ -198,6 +198,27 @@ class TestCatalogResync:
 
 class TestRuntimeSync:
 
+    def test_known_clean_sync_skips_catalog_io(self, tmp_path, monkeypatch):
+        s1 = _mk_skill(tmp_path, 'alpha')
+        cfg = _skills_config([s1])
+        cat = SkillCatalog(config=cfg)
+        cat.load_from_config(cfg)
+        rt = SkillRuntime(catalog=cat)
+        calls = []
+        original_resync = cat.resync
+
+        def _resync(value):
+            calls.append(value)
+            return original_resync(value)
+
+        monkeypatch.setattr(cat, 'resync', _resync)
+
+        assert rt.sync_with_config(cfg, force=False) is False
+        assert calls == []
+
+        assert rt.sync_with_config(cfg) is False
+        assert calls == [cfg]
+
     def test_sync_bumps_version_only_on_change(self, tmp_path):
         s1 = _mk_skill(tmp_path, 'alpha')
         cfg = _skills_config([s1])
