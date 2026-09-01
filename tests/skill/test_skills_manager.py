@@ -5,7 +5,11 @@ from ms_agent.config.skills_manager import SkillsConfigManager
 
 class TestSkillsConfigManager:
     @pytest.fixture
-    def mgr(self, tmp_path):
+    def mgr(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            'ms_agent.config.skills_manager.global_standard_skills_tree',
+            lambda: tmp_path / 'missing-standard-skills',
+        )
         return SkillsConfigManager(global_dir=str(tmp_path))
 
     def test_load_global_empty(self, mgr):

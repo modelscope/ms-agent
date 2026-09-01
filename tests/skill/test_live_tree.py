@@ -5,8 +5,12 @@ import json
 import pytest
 from omegaconf import OmegaConf
 
-from ms_agent.config.skills_manager import (SkillsConfigManager,
-                                            resolve_source_entry)
+from ms_agent.config.skills_manager import (
+    SkillsConfigManager,
+    global_standard_skills_tree,
+    project_standard_skills_tree,
+    resolve_source_entry,
+)
 from ms_agent.skill.catalog import SkillCatalog
 from ms_agent.skill.loader import SkillLoader
 from ms_agent.skill.runtime import SkillRuntime
@@ -63,7 +67,11 @@ class TestResolveSourceEntry:
 class TestManagerAnchoring:
 
     @pytest.fixture
-    def mgr(self, tmp_path):
+    def mgr(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            'ms_agent.config.skills_manager.global_standard_skills_tree',
+            lambda: tmp_path / 'missing-standard-skills',
+        )
         return SkillsConfigManager(global_dir=str(tmp_path / 'home'))
 
     def test_project_relative_source_anchors_at_project_root(
@@ -108,6 +116,22 @@ class TestManagerAnchoring:
         sources = mgr.list_sources()
         assert sources and sources[0] == str(tree.resolve())
 
+    def test_standard_global_tree_precedes_managed_tree(
+            self, mgr, tmp_path, monkeypatch):
+        standard = tmp_path / 'user-home' / '.agents' / 'skills'
+        managed = tmp_path / 'home' / 'skills'
+        _mk_skill(standard, 'standard')
+        _mk_skill(managed, 'managed')
+        monkeypatch.setattr(
+            'ms_agent.config.skills_manager.global_standard_skills_tree',
+            lambda: standard,
+        )
+
+        assert mgr.list_sources()[:2] == [
+            str(standard.resolve()),
+            str(managed.resolve()),
+        ]
+
     def test_implicit_project_tree(self, mgr, tmp_path):
         proj = tmp_path / 'proj'
         tree = proj / '.ms_agent' / 'skills'
@@ -115,8 +139,39 @@ class TestManagerAnchoring:
         sources = mgr.list_sources(scope='project', project_path=str(proj))
         assert str(tree.resolve()) in sources
 
+    def test_standard_project_tree_precedes_managed_tree(
+            self, mgr, tmp_path):
+        proj = tmp_path / 'proj'
+        standard = project_standard_skills_tree(str(proj))
+        managed = proj / '.ms_agent' / 'skills'
+        _mk_skill(standard, 'standard-project')
+        _mk_skill(managed, 'managed-project')
+
+        sources = mgr.list_sources(scope='project', project_path=str(proj))
+        assert sources[:2] == [
+            str(standard.resolve()),
+            str(managed.resolve()),
+        ]
+
     def test_no_tree_no_implicit_and_empty_shape_kept(self, mgr):
         assert mgr.load_global() == {}
+
+    def test_explicit_sources_exclude_implicit_trees(
+            self, mgr, tmp_path, monkeypatch):
+        standard = tmp_path / 'user-home' / '.agents' / 'skills'
+        managed = tmp_path / 'home' / 'skills'
+        explicit = tmp_path / 'external'
+        for root, name in (
+                (standard, 'standard'), (managed, 'managed'),
+                (explicit, 'external')):
+            _mk_skill(root, name)
+        monkeypatch.setattr(
+            'ms_agent.config.skills_manager.global_standard_skills_tree',
+            lambda: standard,
+        )
+        mgr.add_source(str(explicit))
+
+        assert mgr.list_explicit_sources() == [str(explicit)]
 
     def test_merged_contains_both_trees(self, mgr, tmp_path):
         _mk_skill(tmp_path / 'home' / 'skills', 'g')

@@ -16,12 +16,12 @@ Read-side semantics (loads and list_sources):
     project file — never the process cwd. The file itself keeps the raw
     strings (writers round-trip them untouched) so hand-written relative
     paths stay portable.
-  * Each scope has one implicit **live tree** source prepended when the
-    directory exists: ``<global_dir>/skills`` and
-    ``<project>/.ms_agent/skills``. Dropping a skill directory there
-    registers it without touching skills.json ("existence = filesystem,
-    state = disabled list"). Explicit sources come after the implicit tree
-    so they win on skill_id collisions.
+  * Each scope can have two implicit discovery trees: the cross-agent standard
+    ``.agents/skills`` directory followed by ms-agent's managed live tree
+    (``<global_dir>/skills`` or ``<project>/.ms_agent/skills``). Dropping a
+    Skill directory into either registers it without touching skills.json
+    ("existence = filesystem, state = disabled list"). The managed tree wins
+    over the standard tree, and explicit sources remain highest priority.
 """
 from __future__ import annotations
 
@@ -37,6 +37,22 @@ SKILLS_FILE = 'skills.json'
 #: Live-tree directory name, shared by both scopes (``<global_dir>/skills``
 #: and ``<project>/.ms_agent/skills``).
 SKILLS_TREE_DIR = 'skills'
+
+
+def global_standard_skills_tree() -> Path:
+    """Cross-agent personal skills: ``~/.agents/skills``.
+
+    This directory is read-only from ms-agent's point of view.  It is an
+    implicit discovery root, never written to ``skills.json`` and never used as
+    an install destination.
+    """
+    return Path.home() / '.agents' / SKILLS_TREE_DIR
+
+
+def project_standard_skills_tree(project_path: str) -> Path:
+    """Cross-agent project skills: ``<project>/.agents/skills``."""
+    root = Path(os.path.expanduser(str(project_path))).resolve()
+    return root / '.agents' / SKILLS_TREE_DIR
 
 #: Remote-source prefixes that must never be path-anchored.
 _REMOTE_PREFIXES = ('modelscope://', 'http://', 'https://', 'git://', '@')
@@ -78,13 +94,22 @@ class SkillsConfigManager:
     def load_global(self) -> Dict[str, Any]:
         data = self._read(self._global_path())
         return self._resolved(
-            data, base=self._global_dir, tree=self.global_skills_tree())
+            data,
+            base=self._global_dir,
+            trees=(global_standard_skills_tree(), self.global_skills_tree()),
+        )
 
     def load_project(self, project_path: str) -> Dict[str, Any]:
         data = self._read(self._project_path(project_path))
         base = Path(os.path.expanduser(str(project_path))).resolve()
         return self._resolved(
-            data, base=base, tree=self.project_skills_tree(project_path))
+            data,
+            base=base,
+            trees=(
+                project_standard_skills_tree(project_path),
+                self.project_skills_tree(project_path),
+            ),
+        )
 
     def load_merged(self,
                     project_path: Optional[str] = None) -> Dict[str, Any]:
@@ -111,18 +136,25 @@ class SkillsConfigManager:
 
     @staticmethod
     def _resolved(data: Dict[str, Any], base: Path,
-                  tree: Path) -> Dict[str, Any]:
-        """Anchor relative sources at *base*; prepend the live *tree* when it
-        exists. Preserves the empty-dict shape for missing/empty files."""
+                  trees: tuple[Path, ...]) -> Dict[str, Any]:
+        """Anchor relative sources at *base* and prepend implicit trees.
+
+        Trees are ordered from lower to higher priority.  The standard
+        ``.agents/skills`` root therefore comes before ms-agent's managed live
+        tree, while explicit sources still come last and retain their existing
+        precedence.
+        """
         out = dict(data)
         sources = [
             resolve_source_entry(s, base) for s in (data.get('sources') or [])
         ]
         implicit: List[str] = []
-        if tree.is_dir():
+        for tree in trees:
+            if not tree.is_dir():
+                continue
             tree_str = str(tree.resolve())
-            if tree_str not in sources:
-                implicit = [tree_str]
+            if tree_str not in implicit and tree_str not in sources:
+                implicit.append(tree_str)
         if implicit or sources or 'sources' in data:
             out['sources'] = implicit + sources
         return out
@@ -196,6 +228,30 @@ class SkillsConfigManager:
                 raise ValueError('project_path required for project scope')
             return list(self.load_project(project_path).get('sources', []))
         return list(self.load_global().get('sources', []))
+
+    def list_explicit_sources(
+        self,
+        scope: str = 'global',
+        project_path: Optional[str] = None,
+    ) -> List[str]:
+        """Configured sources only, excluding all implicit discovery trees.
+
+        Callers that remove a legacy path reference must not accidentally treat
+        ``~/.agents/skills`` or an ms-agent live tree as a removable
+        ``skills.json`` entry.
+        """
+        if scope == 'project':
+            if not project_path:
+                raise ValueError('project_path required for project scope')
+            base = Path(os.path.expanduser(str(project_path))).resolve()
+            data = self._read(self._project_path(project_path))
+        else:
+            base = self._global_dir
+            data = self._read(self._global_path())
+        return [
+            resolve_source_entry(source, base)
+            for source in (data.get('sources') or [])
+        ]
 
     # -- internal --
 
