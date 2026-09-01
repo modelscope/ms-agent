@@ -4,9 +4,10 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, Iterable, List, Optional, Union
 
 from ms_agent.utils.logger import logger
+from .discovery import SkillDescriptor
 from .schema import SkillSchema, SkillSchemaParser
 
 
@@ -22,6 +23,9 @@ class SkillLoader:
     def __init__(self):
         self.loaded_skills: Dict[str, SkillSchema] = {}
         self.parser = SkillSchemaParser()
+        self._discovery_cache: Dict[Path,
+                                    tuple[tuple[int, int, int],
+                                          Optional[SkillDescriptor]]] = {}
 
     def load_skills(
         self, skills: Union[str, List[str], List[SkillSchema]]
@@ -80,6 +84,48 @@ class SkillLoader:
 
         return all_skills
 
+    def discover_skills(
+            self, skills: Union[str, List[str]]) -> Dict[str, SkillDescriptor]:
+        """Discover local skills without traversing their support files.
+
+        The source ordering, hidden-directory rule, maximum nesting depth,
+        and "skill root is a leaf" rule match :meth:`load_skills`.  Only
+        ``SKILL.md`` is read; callers that execute a skill must still use the
+        full catalog loading path.
+        """
+        if not skills:
+            return {}
+        if isinstance(skills, str):
+            skill_list = [skills]
+        elif all(isinstance(skill, str) for skill in skills):
+            skill_list = skills
+        else:
+            raise ValueError('Invalid skills input type.')
+
+        discovered: Dict[str, SkillDescriptor] = {}
+        active_roots: set[Path] = set()
+        for value in skill_list:
+            path = Path(value)
+            if not path.exists():
+                logger.warning(f'Path does not exist: {path} - Skipping.')
+                continue
+            roots: Iterable[Path]
+            if self._is_skill_directory(path):
+                roots = (path, )
+            else:
+                roots = self._iter_skill_directories(path)
+            for root in roots:
+                active_roots.add(root.resolve())
+                descriptor = self._discover_single_skill(root)
+                if descriptor is not None:
+                    discovered[descriptor.key] = descriptor
+        self._discovery_cache = {
+            path: cached
+            for path, cached in self._discovery_cache.items()
+            if path in active_roots
+        }
+        return discovered
+
     def _is_skill_directory(self, path: Path) -> bool:
         """
         Check if a directory is a valid skill directory.
@@ -122,9 +168,64 @@ class SkillLoader:
             logger.error(f'Error loading skill ({skill_dir}): {str(e)}')
             return None
 
+    def _discover_single_skill(self,
+                               skill_dir: Path) -> Optional[SkillDescriptor]:
+        try:
+            skill_dir = skill_dir.resolve()
+            skill_md = skill_dir / 'SKILL.md'
+            file_stat = skill_md.stat()
+            fingerprint = (file_stat.st_mtime_ns, file_stat.st_ctime_ns,
+                           file_stat.st_size)
+            cached = self._discovery_cache.get(skill_dir)
+            if cached is not None and cached[0] == fingerprint:
+                return cached[1]
+
+            content = skill_md.read_text(encoding='utf-8')
+            frontmatter = self.parser.parse_yaml_frontmatter(content)
+            if (not frontmatter or 'name' not in frontmatter
+                    or 'description' not in frontmatter):
+                self._discovery_cache[skill_dir] = (fingerprint, None)
+                return None
+            descriptor = SkillDescriptor(
+                skill_id=skill_dir.name,
+                name=frontmatter['name'],
+                description=frontmatter['description'],
+                content=content,
+                version=frontmatter.get('version', 'latest'),
+                author=frontmatter.get('author'),
+                tags=tuple(frontmatter.get('tags') or []),
+                skill_path=skill_dir,
+            )
+            self._discovery_cache[skill_dir] = (fingerprint, descriptor)
+            return descriptor
+        except Exception as exc:
+            logger.error(f'Error discovering skill ({skill_dir}): {exc}')
+            return None
+
     #: How deep _scan_and_load_skills descends below the scan root. Bounds
     #: symlink cycles; deep enough for organizational nesting (category dirs).
     _MAX_SCAN_DEPTH = 5
+
+    def _iter_skill_directories(self, base_path: Path) -> Iterable[Path]:
+        """Yield skill roots using the same bounded marker walk as loading."""
+        if not base_path.is_dir():
+            logger.warning(f'Not a valid directory: {base_path}')
+            return
+
+        def _walk(directory: Path, depth: int) -> Iterable[Path]:
+            try:
+                entries = sorted(directory.iterdir())
+            except OSError:
+                return
+            for item in entries:
+                if not item.is_dir() or item.name.startswith('.'):
+                    continue
+                if self._is_skill_directory(item):
+                    yield item
+                elif depth < self._MAX_SCAN_DEPTH:
+                    yield from _walk(item, depth + 1)
+
+        yield from _walk(base_path, 1)
 
     def _scan_and_load_skills(self, base_path: Path) -> Dict[str, SkillSchema]:
         """
@@ -144,26 +245,10 @@ class SkillLoader:
         """
         skills: Dict[str, SkillSchema] = {}
 
-        if not base_path.is_dir():
-            logger.warning(f'Not a valid directory: {base_path}')
-            return skills
-
-        def _walk(directory: Path, depth: int) -> None:
-            try:
-                entries = sorted(directory.iterdir())
-            except OSError:
-                return
-            for item in entries:
-                if not item.is_dir() or item.name.startswith('.'):
-                    continue
-                if self._is_skill_directory(item):
-                    skill = self._load_single_skill(item)
-                    if skill:
-                        skills[self._get_skill_key(skill=skill)] = skill
-                elif depth < self._MAX_SCAN_DEPTH:
-                    _walk(item, depth + 1)
-
-        _walk(base_path, 1)
+        for skill_dir in self._iter_skill_directories(base_path):
+            skill = self._load_single_skill(skill_dir)
+            if skill:
+                skills[self._get_skill_key(skill=skill)] = skill
         return skills
 
     @staticmethod
