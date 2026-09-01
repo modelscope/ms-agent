@@ -116,7 +116,20 @@ class ProviderRegistry:
         reasoning_caps = ProviderCapabilities.from_list(
             ['tool_call', 'streaming', 'reasoning', 'continue_gen'])
 
+        # This order is user-visible: the WebUI preserves registry order for
+        # both the provider rail and provider selectors. Keep ModelScope first
+        # as the product's preferred built-in provider.
         builtins = [
+            ProviderSpec(
+                name='modelscope',
+                display_name='ModelScope',
+                transport=TRANSPORT_OPENAI_COMPAT,
+                api_key_env=['MODELSCOPE_API_KEY'],
+                default_base_url='https://api-inference.modelscope.cn/v1',
+                base_url_env=['MODELSCOPE_BASE_URL'],
+                keywords=['qwen'],
+                capabilities=openai_cache_caps,
+            ),
             ProviderSpec(
                 name='openai',
                 display_name='OpenAI',
@@ -154,16 +167,6 @@ class ProviderRegistry:
                 capabilities=openai_caps,
             ),
             ProviderSpec(
-                name='modelscope',
-                display_name='ModelScope',
-                transport=TRANSPORT_OPENAI_COMPAT,
-                api_key_env=['MODELSCOPE_API_KEY'],
-                default_base_url='https://api-inference.modelscope.cn/v1',
-                base_url_env=['MODELSCOPE_BASE_URL'],
-                keywords=['qwen'],
-                capabilities=openai_cache_caps,
-            ),
-            ProviderSpec(
                 name='zhipu',
                 display_name='Zhipu AI (GLM)',
                 transport=TRANSPORT_OPENAI_COMPAT,
@@ -178,7 +181,7 @@ class ProviderRegistry:
             ),
             ProviderSpec(
                 name='kimi',
-                display_name='Moonshot Kimi',
+                display_name='Kimi (Moonshot AI)',
                 transport=TRANSPORT_OPENAI_COMPAT,
                 api_key_env=['KIMI_API_KEY', 'MOONSHOT_API_KEY'],
                 default_base_url='https://api.moonshot.cn/v1',
@@ -204,7 +207,7 @@ class ProviderRegistry:
             ),
             ProviderSpec(
                 name='dashscope',
-                display_name='Alibaba DashScope',
+                display_name='Alibaba Cloud Model Studio (DashScope)',
                 transport=TRANSPORT_OPENAI_COMPAT,
                 api_key_env=['DASHSCOPE_API_KEY'],
                 default_base_url=

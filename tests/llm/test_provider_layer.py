@@ -38,6 +38,22 @@ class TestProviderRegistry(unittest.TestCase):
         self.assertTrue(EXPECTED_PROVIDERS.issubset(names))
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_modelscope_is_first_builtin(self):
+        providers = get_registry().list_providers()
+        self.assertTrue(providers)
+        self.assertEqual('modelscope', providers[0].name)
+
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_builtin_display_names_match_product_copy(self):
+        display_names = {
+            provider.name: provider.display_name
+            for provider in get_registry().list_providers()
+        }
+        self.assertEqual('Kimi (Moonshot AI)', display_names['kimi'])
+        self.assertEqual('Alibaba Cloud Model Studio (DashScope)',
+                         display_names['dashscope'])
+
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_get_is_case_insensitive(self):
         self.assertEqual('openai', get_registry().get('OpenAI').name)
 
