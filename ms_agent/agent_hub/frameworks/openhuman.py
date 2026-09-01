@@ -8,8 +8,8 @@ import re
 from pathlib import Path
 
 from ms_agent.utils.logger import get_logger
-from .._workspace import (DEFAULT_AGENT_NAME, SECRET_BAG_KEYS, WorkspaceSpec,
-                          is_secret_key, register_framework,
+from .._workspace import (ARGS_LIST_KEYS, DEFAULT_AGENT_NAME, SECRET_BAG_KEYS,
+                          WorkspaceSpec, is_secret_key, register_framework,
                           scrub_scalar_url_token, scrub_toml_array_args)
 
 logger = get_logger()
@@ -365,10 +365,15 @@ class OpenhumanWorkspace(WorkspaceSpec):
                 out.append(line)
                 i += 1
                 continue
-            key = m.group('key').split('.')[-1]
+            segs = [s.strip().strip('"\'')
+                    for s in m.group('key').split('.')]
+            key = segs[-1]
             val = m.group('val')
             vstrip = val.strip()
-            if is_secret_key(key) or in_bag_section:
+            # Dotted path THROUGH a bag (``mcp.fs.headers.X = v``) is the
+            # same as living in a ``[...headers]`` section.
+            in_bag_path = any(s in SECRET_BAG_KEYS for s in segs[:-1])
+            if is_secret_key(key) or in_bag_section or in_bag_path:
                 i = self._blank_toml_value(out, lines, i, m.group('pre'), val)
                 continue
             # Secret-bag inline table (``headers = {...}`` / ``env = {...}``):
@@ -383,7 +388,7 @@ class OpenhumanWorkspace(WorkspaceSpec):
             # ``args = [...]``: positional flag scrub. A multi-line array is
             # joined for the scrub and only re-emitted on one line when a
             # secret was actually removed (clean arrays keep their layout).
-            if key == 'args' and vstrip.startswith('['):
+            if key in ARGS_LIST_KEYS and vstrip.startswith('['):
                 if ']' in vstrip:
                     out.append(m.group('pre') + scrub_toml_array_args(val))
                     i += 1

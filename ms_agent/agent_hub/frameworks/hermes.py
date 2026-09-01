@@ -128,9 +128,10 @@ class HermesWorkspace(BundledSkillFilterMixin, WorkspaceSpec):
         """Blank secret values in ``config.yaml`` line-by-line.
 
         Thin wrapper over the shared :func:`scrub_yaml_secrets` (which every
-        YAML-config framework reuses) scoped to hermes' ``mcp_servers`` block.
+        YAML-config framework reuses): secret-named keys, ``env`` / ``headers``
+        bags, ``args`` command lines and URL credentials, at any depth.
         """
-        return scrub_yaml_secrets(text, mcp_block_keys=('mcp_servers', ))
+        return scrub_yaml_secrets(text)
 
     def _sanitize_config_file(self, rel_path: str, content: bytes) -> bytes:
         """Blank secrets in ``config.yaml`` (identical on up- and download).
