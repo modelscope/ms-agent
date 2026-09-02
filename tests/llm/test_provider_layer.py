@@ -18,7 +18,7 @@ from modelscope.utils.test_utils import test_level
 
 EXPECTED_PROVIDERS = {
     'openai', 'anthropic', 'google', 'modelscope', 'zhipu', 'deepseek',
-    'dashscope', 'minimax', 'openrouter', 'kimi'
+    'dashscope', 'minimax', 'openrouter', 'orcarouter', 'kimi'
 }
 
 
@@ -74,6 +74,14 @@ class TestProviderRegistry(unittest.TestCase):
         spec = get_registry().get('zhipu')
         self.assertIn('GLM_API_KEY', spec.api_key_env)
         self.assertIn('GLM_BASE_URL', spec.base_url_env)
+
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_orcarouter_uses_orca_env(self):
+        spec = get_registry().get('orcarouter')
+        self.assertIn('ORCAROUTER_API_KEY', spec.api_key_env)
+        self.assertIn('ORCAROUTER_BASE_URL', spec.base_url_env)
+        self.assertEqual('https://api.orcarouter.ai/v1', spec.default_base_url)
+        self.assertEqual('openai_compat', spec.transport)
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_continue_gen_modes(self):
