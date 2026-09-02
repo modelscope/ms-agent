@@ -50,7 +50,7 @@ class TestProviderRegistry(unittest.TestCase):
             for provider in get_registry().list_providers()
         }
         self.assertEqual('Kimi (Moonshot AI)', display_names['kimi'])
-        self.assertEqual('Alibaba Cloud Model Studio (DashScope)',
+        self.assertEqual('Alibaba (DashScope)',
                          display_names['dashscope'])
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')

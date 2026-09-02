@@ -207,7 +207,7 @@ class ProviderRegistry:
             ),
             ProviderSpec(
                 name='dashscope',
-                display_name='Alibaba Cloud Model Studio (DashScope)',
+                display_name='Alibaba (DashScope)',
                 transport=TRANSPORT_OPENAI_COMPAT,
                 api_key_env=['DASHSCOPE_API_KEY'],
                 default_base_url=
