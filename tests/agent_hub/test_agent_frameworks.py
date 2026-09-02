@@ -129,6 +129,8 @@ QODER_FILES = {
     "agents/code-reviewer.md": "# Code Reviewer\nReview code for bugs and style.\n",
     "commands/review.md": "# /review\nTrigger a code review on the current file.\n",
     "rules/style-guide.md": "# Style Guide\nUse 4-space indentation for Python.\n",
+    "memory/MEMORY.md": "# Memory Index\n\n- [User language](user-language.md) — respond in Chinese\n",
+    "memory/user-language.md": "---\nname: user-language\nmetadata:\n  type: user\n---\n\nUser speaks Chinese.\n",
     "skills/lint/SKILL.md": "# Lint\nRun linters on the codebase.\n",
     "skills/lint/scripts/run_lint.sh": "# lint runner\nrun flake8 on all project files\n",
 }
@@ -452,7 +454,7 @@ class TestClientIntegration(unittest.TestCase):
             "qwenpaw": ["PROFILE.md", "BOOTSTRAP.md", "memory/story-notes.md"],
             "hermes": ["memories/USER.md"],
             "openhuman": ["SOUL.md", "IDENTITY.md", "HEARTBEAT.md", "wiki/interests.md"],
-            "qoder": ["agents/code-reviewer.md", "commands/review.md", "rules/style-guide.md"],
+            "qoder": ["agents/code-reviewer.md", "commands/review.md", "rules/style-guide.md", "memory/MEMORY.md"],
         }
 
         for fw, markers in framework_markers.items():

@@ -37,6 +37,28 @@ class TestAgentAwareCollect(unittest.TestCase):
         self.assertIn("skills/x/SKILL.md", collected)
         self.assertNotIn("agents/other.md", collected)
 
+    def test_qoder_collects_user_level_memory_not_project_level(self):
+        """Qoder CLI auto memory is user-level (``memory/``) plus
+        project-level (``projects/<encoded-workspace>/memory/``). Only the
+        user-level root is portable: the project directory name is a
+        machine-specific encoding of the workspace path and several projects
+        each carry a ``MEMORY.md`` that would overwrite one another in the
+        single cross-framework memory slot."""
+        (self.root / "memory").mkdir()
+        (self.root / "memory" / "MEMORY.md").write_text("# Memory Index\n")
+        (self.root / "memory" / "user-language.md").write_text("topic\n")
+        proj_mem = self.root / "projects" / "-Users-test-demo" / "memory"
+        proj_mem.mkdir(parents=True)
+        (proj_mem / "MEMORY.md").write_text("# Project Memory Index\n")
+
+        spec = QoderWorkspace(agent_name="default", local_dir=self.root)
+        collected = spec.collect()
+
+        self.assertIn("memory/MEMORY.md", collected)
+        self.assertIn("memory/user-language.md", collected)
+        self.assertNotIn(
+            "projects/-Users-test-demo/memory/MEMORY.md", collected)
+
     def test_hermes_excludes_framework_skills_keeps_user_skills(self):
         """hermes collect drops bundled/framework skills (identified by a
         builtin_skill_version / metadata.copaw frontmatter marker or a

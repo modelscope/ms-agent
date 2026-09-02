@@ -265,6 +265,20 @@ class TestResolveTargetPath(unittest.TestCase):
 
     def test_cross_product_memory_md(self):
         self.assertEqual(_resolve_target_path("nanobot", "memory/MEMORY.md", "openclaw"), "MEMORY.md")
+        # qoder user-level auto memory joins the same MEMORY.md group.
+        self.assertEqual(
+            _resolve_target_path("qoder", "memory/MEMORY.md", "hermes"),
+            "memories/MEMORY.md")
+        self.assertEqual(
+            _resolve_target_path("qoder", "memory/MEMORY.md", "openclaw"),
+            "MEMORY.md")
+        self.assertEqual(
+            _resolve_target_path("hermes", "memories/MEMORY.md", "qoder"),
+            "memory/MEMORY.md")
+        # ms-agent has no memory slot, so qoder memory has no semantic target
+        # there either (folds into the catch-all instead).
+        self.assertIsNone(
+            _resolve_target_path("qoder", "memory/MEMORY.md", "ms-agent"))
 
     def test_cross_product_ms_agent_profile(self):
         # ms-agent PROFILE.md -> qwenpaw maps to memory/USER.md (USER group).
@@ -302,6 +316,26 @@ class TestMergeResources(unittest.TestCase):
         )
         self.assertIn("SOUL.md", result.merged_files)
         self.assertEqual(result.merged_files["SOUL.md"], "my soul")
+
+    def test_qoder_memory_maps_and_topic_files_pass_through(self):
+        """Cross-framework, qoder's user-level memory index maps onto the
+        target's MEMORY.md slot while topic files keep their original path
+        (kept only if the target spec accepts it); both travel verbatim --
+        memory is user data, never rebased onto a target template."""
+        result = merge_resources(
+            incoming={
+                "memory/MEMORY.md": "# Memory Index\n\n- [t](t.md) — x\n",
+                "memory/t.md": "---\nname: t\n---\n\ntopic body\n",
+            },
+            source_product="qoder",
+            target_product="openclaw",
+            source_defaults={},
+            target_defaults={},
+        )
+        self.assertEqual(result.merged_files["MEMORY.md"],
+                         "# Memory Index\n\n- [t](t.md) — x\n")
+        self.assertEqual(result.merged_files["memory/t.md"],
+                         "---\nname: t\n---\n\ntopic body\n")
 
     def test_fills_missing_from_target_defaults(self):
         """merge_resources fills target defaults for absent source files."""
