@@ -8,8 +8,8 @@ from typing import Any
 
 from ms_agent.utils.logger import get_logger
 from .._workspace import (ALL_AGENT_NAME, DEFAULT_AGENT_NAME,
-                          GLOBAL_AGENT_NAME, WorkspaceSpec, is_secret_key,
-                          register_framework)
+                          GLOBAL_AGENT_NAME, WorkspaceSpec,
+                          register_framework, scrub_json_secrets)
 from ._bundled_skills import BundledSkillFilterMixin
 
 logger = get_logger()
@@ -128,38 +128,17 @@ class QwenpawWorkspace(BundledSkillFilterMixin, WorkspaceSpec):
         key never lands on disk from a remote agent, and a local key is never
         pushed to the remote repo / its git history.
 
-        The whole JSON tree is walked recursively and any key matching
-        :func:`is_secret_key` is blanked wherever it lives (top-level
-        ``model.api_key``, ``channels.*.client_secret``, future additions...).
-        Two structural rules are applied on top of the vocabulary:
-
-        * channel configs additionally blank ``_CHANNEL_LOCAL_KEYS``
-          (machine-local paths such as ``db_path``);
-        * every ``env`` mapping is cleared wholesale WHEREVER it lives -- env
-          var names are arbitrary, so values there are treated as secrets
-          even when the name does not match the vocabulary.  Anchoring on the
-          ``env`` key (not on a parent block name) keeps every MCP schema
-          spelling covered (``mcp.clients`` / ``mcp_clients`` /
-          ``mcpClients``), mirroring :func:`scrub_json_secrets`.
+        The walk itself is delegated to the shared :func:`scrub_json_secrets`
+        so every framework scrubs with one policy: secret-named keys are
+        blanked at any depth (top-level ``model.api_key``,
+        ``channels.*.client_secret``, ...), ``env`` / ``headers`` mappings are
+        cleared wholesale, ``args`` command lines have their flag values
+        blanked, and URLs are stripped of userinfo passwords / secret query
+        parameters. On top of that vocabulary, channel configs additionally
+        blank ``_CHANNEL_LOCAL_KEYS`` (machine-local paths such as
+        ``db_path``) whose names carry no secret suffix.
         """
-
-        def scrub(node: Any) -> None:
-            if isinstance(node, dict):
-                for key, value in node.items():
-                    # Secret-named key: wipe the WHOLE value (even a nested
-                    # mapping) -- credentials blobs must not survive because
-                    # their inner field names happen to look harmless.
-                    if is_secret_key(key):
-                        node[key] = ''
-                    elif key == 'env' and isinstance(value, dict):
-                        node[key] = {k: '' for k in value}
-                    elif isinstance(value, (dict, list)):
-                        scrub(value)
-            elif isinstance(node, list):
-                for item in node:
-                    scrub(item)
-
-        scrub(data)
+        scrub_json_secrets(data)
         # Channel configs: also blank machine-local (non-secret-named) keys.
         channels = data.get('channels')
         if isinstance(channels, dict):
