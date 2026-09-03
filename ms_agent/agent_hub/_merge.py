@@ -537,7 +537,8 @@ SEMANTIC_GROUPS = [
         'openclaw': 'MEMORY.md',
         'qwenpaw': 'MEMORY.md',
         'hermes': 'memories/MEMORY.md',
-        'openhuman': 'MEMORY.md'
+        'openhuman': 'MEMORY.md',
+        'qoder': 'memory/MEMORY.md'
     },
     {
         'openclaw': 'IDENTITY.md',
