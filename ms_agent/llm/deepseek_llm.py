@@ -46,7 +46,7 @@ class DeepSeek(OpenAI):
             stop = list(stop or [])
         stop.append('```')
         return self._call_llm(
-            messages=messages, tools=tools, stop=stop, **kwargs)
+            messages=messages, tools=self.format_tools(tools), stop=stop, **kwargs)
 
 
 if __name__ == '__main__':
