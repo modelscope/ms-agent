@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,7 @@ from app.backends.ms_agent.common import home
 from app.backends.ms_agent.defaults import DEFAULT_TOOLS, RETIRED_TOOLS
 
 logger = logging.getLogger("app.ms_agent.config")
+_model_snapshot = ContextVar("webui_model_snapshot", default=None)
 
 # mem0 2.x opens a SECOND, process-global qdrant store at
 # ~/.mem0/migrations_qdrant for every Memory instance whose vector provider is
@@ -111,13 +113,20 @@ _EMBEDDER_IDENTITY_FILE = "embedder.json"
 
 
 def _read_settings() -> dict:
-    import json
+    snapshot = _model_snapshot.get()
+    if snapshot is not None:
+        return snapshot.settings
+    from pathlib import Path
+    from ms_agent.utils.json_store import read_json
+    return read_json(Path(home()) / "settings.json")
 
-    try:
-        with open(os.path.join(home(), "settings.json"), encoding="utf-8") as fh:
-            return json.load(fh) or {}
-    except (OSError, json.JSONDecodeError):
-        return {}
+
+def _read_metadata(section: str, key: str, default=None):
+    snapshot = _model_snapshot.get()
+    if snapshot is not None:
+        return snapshot.metadata.get(section, {}).get(key, default)
+    from app.backends.ms_agent import sidecar
+    return sidecar.get(section, key) if default is None else sidecar.get(section, key, default)
 
 
 def _local_embed_available() -> bool:
@@ -147,7 +156,7 @@ def _project_memory_models(project) -> dict:
     """
     from app.backends.ms_agent import sidecar
 
-    meta = sidecar.get("projects", getattr(project, "id", None) or "", {}) or {}
+    meta = _read_metadata("projects", getattr(project, "id", None) or "", {}) or {}
     cfg = dict(meta.get("memory_models") or {})
     if (getattr(project, "path", None)
             and cfg.get("embed_mode", "provider") != "local"
@@ -789,13 +798,7 @@ def _apply_model_compatibility(config):
     model = model_id.lower()
     temperature_enabled = False
     webui_params = _webui_generation_params(service, model_id)
-    try:
-        with open(os.path.join(home(), "settings.json"), encoding="utf-8") as fh:
-            temperature_enabled = bool(
-                ((json.load(fh).get("llm") or {}).get("temperature_enabled"))
-            )
-    except (OSError, json.JSONDecodeError):
-        temperature_enabled = False
+    temperature_enabled = bool((_read_settings().get("llm") or {}).get("temperature_enabled"))
 
     # The SDK's base agent.yaml sets temperature=0.3 as a generic default. Many
     # OpenAI-compatible models (including deepseek-v4-pro and kimi-k2.5 here)
@@ -868,10 +871,10 @@ def _webui_generation_params(provider: str, model: str) -> dict:
     from app.backends.ms_agent.mapping import encode_model_id
 
     provider_params = (
-        sidecar.get("providers", provider) or {}
+        _read_metadata("providers", provider) or {}
     ).get("default_generation_params") or {}
     model_params = (
-        sidecar.get("models", encode_model_id(provider, model)) or {}
+        _read_metadata("models", encode_model_id(provider, model)) or {}
     ).get("advanced_params") or {}
     params: dict = {}
     if isinstance(provider_params, dict):
@@ -892,7 +895,7 @@ def _webui_supports_vision(provider: str, model: str) -> bool | None:
     from app.backends.ms_agent import sidecar
     from app.backends.ms_agent.mapping import encode_model_id
 
-    meta = sidecar.get("models", encode_model_id(provider, model)) or {}
+    meta = _read_metadata("models", encode_model_id(provider, model)) or {}
     value = meta.get("supports_vision")
     return None if value is None else bool(value)
 
@@ -976,7 +979,17 @@ def _healthy_mcp_config(mcp_config: dict | None) -> dict:
 
 
 def build_agent(project, session, *, event_sink, input_source, mcp_config=None,
-                permission_handler=None):
+                permission_handler=None, model_snapshot=None):
+    token = _model_snapshot.set(model_snapshot)
+    try:
+        return _build_agent(project, session, event_sink=event_sink, input_source=input_source,
+                            mcp_config=mcp_config, permission_handler=permission_handler)
+    finally:
+        _model_snapshot.reset(token)
+
+
+def _build_agent(project, session, *, event_sink, input_source, mcp_config=None,
+                 permission_handler=None):
     from ms_agent.agent.llm_agent import LLMAgent
     from ms_agent.config import ConfigResolver
     from ms_agent.permission.handler import AutoPermissionHandler
@@ -1020,14 +1033,26 @@ def build_agent(project, session, *, event_sink, input_source, mcp_config=None,
         agent_config=None,
         project_path=project.path,
         session_overrides=session_overrides,
+        global_settings=_read_settings(),
     )
+    snapshot = _model_snapshot.get()
+    if snapshot is not None:
+        llm = snapshot.settings["llm"]
+        provider = llm["provider"]
+        selected = {"service": provider, "model": llm["model"]}
+        for key in ("api_key", "base_url"):
+            if key in llm:
+                selected[f"{provider}_{key}"] = llm[key]
+        if llm.get("protocol"):
+            selected["protocol"] = llm["protocol"]
+        OmegaConf.update(cfg, "llm", selected, merge=False)
     cfg = _apply_webui_defaults(cfg)
     cfg = _apply_webui_memory(cfg, project)
     # Restricted-by-default permission; the project sidecar's explicit
     # restricted/full-access choice (composer selector) overrides.
     from app.backends.ms_agent import sidecar
 
-    meta = sidecar.get("projects", project.id, {}) or {}
+    meta = _read_metadata("projects", project.id, {}) or {}
     cfg = _apply_webui_permission(cfg, meta.get("permission_mode"))
 
     # Route-A shaping (see tui/app.py::_prepare_config).

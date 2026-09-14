@@ -1,6 +1,6 @@
 import { StableSender as Sender } from '~/components/common/StableSender'
 import { XRequest, useXChat } from '@ant-design/x-sdk'
-import { App } from 'antd'
+import { App, Button } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRevalidator } from 'react-router'
 import {
@@ -74,6 +74,7 @@ export interface ChatComposerCtx {
 
 interface ChatPanelProps {
   sessionId: string | null
+  prepareModel?: () => Promise<string>
   projectId: string | null
   /**
    * Whether the workspace rail is open in side-by-side (lg) mode. When true
@@ -166,6 +167,7 @@ function toThinkingTasks(tasks: SessionPlanTask[]): ThinkingTask[] {
 
 export function ChatPanel({
   sessionId,
+  prepareModel,
   projectId,
   workspaceOpen,
   onOpenStep,
@@ -337,6 +339,7 @@ export function ChatPanel({
   // user's own message wiped out of the list — the turn ran (the backend got the
   // text and streamed a reply) but the bubble for what they typed was gone.
   const autoSentRef = useRef(false)
+  const [autoSubmitFailed, setAutoSubmitFailed] = useState(false)
   useEffect(() => {
     if (autoSentRef.current || isDefaultMessagesRequesting) return
     const text = (autoSubmitMessage ?? '').trim()
@@ -344,11 +347,7 @@ export function ChatPanel({
     // A carried draft of only a skill pill (no typed text) is still valid.
     if (!text && !hasSegments) return
     autoSentRef.current = true
-    handleSubmit(
-      text,
-      autoSubmitFiles?.length ? autoSubmitFiles : undefined,
-      hasSegments ? autoSubmitSegments : undefined
-    )
+    void submitPrefill()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoSubmitMessage, autoSubmitSegments, isDefaultMessagesRequesting])
 
@@ -505,11 +504,12 @@ export function ChatPanel({
   // back any time and re-attach / reload the answer). Only the explicit Stop
   // button cancels a turn.
 
-  const handleSubmit = (
+  const handleSubmit = async (
     value: string,
     files?: ChatFileRef[],
     segments?: MessageSegment[]
   ) => {
+    const modelId = await prepareModel?.()
     const text = value.trim()
     const attached = files?.length ? files : undefined
     setStoppedLocally(false)
@@ -544,8 +544,19 @@ export function ChatPanel({
     onRequest({
       session_id: sidRef.current,
       project_id: effectiveProjectId,
+      model_id: sidRef.current ? undefined : modelId,
       message: { role: 'user', content, files: attached }
     })
+  }
+
+  const submitPrefill = async () => {
+    setAutoSubmitFailed(false)
+    try {
+      await handleSubmit(autoSubmitMessage ?? '', autoSubmitFiles, autoSubmitSegments)
+    } catch {
+      setAutoSubmitFailed(true)
+      toast.error(t.errors.requestFailed)
+    }
   }
 
   // --- live re-attach: rejoin a turn that kept running in the background ---
@@ -1258,6 +1269,13 @@ export function ChatPanel({
       </div>
       <div className="px-9">
         <div className={columnCls}>
+          {autoSubmitFailed && (
+            <div role="alert" className="mb-3 rounded-lg border border-msa-line-1 p-3 text-sm">
+              <p className="whitespace-pre-wrap">{autoSubmitMessage}</p>
+              <p>{autoSubmitFiles?.map(file => file.name).join(', ')}</p>
+              <Button onClick={() => void submitPrefill()}>{t.home.send}</Button>
+            </div>
+          )}
           {renderSender ? (
             renderSender(ctx)
           ) : (

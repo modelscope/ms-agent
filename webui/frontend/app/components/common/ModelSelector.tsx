@@ -1,6 +1,6 @@
 import { CheckOutlined } from '@ant-design/icons'
 import { Popover } from 'antd'
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { ProviderTags } from '~/components/models/ProviderTags'
 import { useT } from '~/lib/i18n'
@@ -18,6 +18,7 @@ interface ModelSelectorProps {
   models: Model[] | null
   providers: Provider[] | null
   settings: AgentSettings | null
+  disabled?: boolean
   onSelectModel: (providerId: string, modelId: string) => void
 }
 
@@ -25,11 +26,13 @@ export function ModelSelector({
   models,
   providers,
   settings,
+  disabled = false,
   onSelectModel
 }: ModelSelectorProps) {
   const { t } = useT()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
+  useEffect(() => { if (disabled) setOpen(false) }, [disabled])
   const [activeProviderId, setActiveProviderId] = useState<string | null>(null)
   // Below `sm` the two panes cannot both fit: the panel is capped at the viewport
   // (`100vw-32px`), so on a phone the 280px provider column left the models one
@@ -68,6 +71,7 @@ export function ModelSelector({
   )
 
   const handleSelectModel = (model: Model) => {
+    if (disabled) return
     onSelectModel(model.provider_id, model.id)
     setOpen(false)
   }
@@ -89,7 +93,7 @@ export function ModelSelector({
     <Popover
       open={open}
       onOpenChange={(v) => {
-        setOpen(v)
+        setOpen(v && !disabled)
         if (!v) setDrilled(true)
       }}
       trigger="click"
@@ -247,6 +251,7 @@ export function ModelSelector({
       }
     >
       <PillButton
+        disabled={disabled}
         open={open}
         icon={
           <span className="h-2 w-2 inline-block rounded-full bg-msa-purple-5" />

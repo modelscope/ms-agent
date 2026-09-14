@@ -22,11 +22,7 @@ class Session(BaseModel):
     # Agent-assigned topic category (see ms_agent/titler.CATEGORIES); "" when the
     # session hasn't been classified yet. Drives the recent-list topic icon.
     category: str = ""
-    # The model this session last ran on. Reopening it selects that model again,
-    # so a conversation keeps the model it was held with instead of inheriting
-    # whatever was picked last somewhere else — which changed the answers, threw
-    # away the provider's prefix cache, and (when the capabilities differed)
-    # changed what the model could even see. "" for sessions that never ran.
+    # This conversation's selection, independent of the new-chat default.
     model_id: str = ""
 
 
@@ -34,6 +30,11 @@ class SessionCreate(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     project_id: str | None = None
     preview: str = ""
+    model_id: str | None = None
+
+
+class SessionModelUpdate(BaseModel):
+    model_id: str = Field(min_length=1)
 
 
 class SessionUpdate(BaseModel):

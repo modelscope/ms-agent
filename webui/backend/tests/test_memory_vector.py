@@ -1055,20 +1055,27 @@ def test_rebuild_refuses_while_a_turn_is_running(monkeypatch, vector_project):
     assert not busy.closed and "s-busy" in registry._runtimes
 
 
-def test_a_flagged_runtime_is_rebuilt_on_the_next_turn(monkeypatch):
+def test_a_flagged_runtime_is_rebuilt_on_the_next_turn(tmp_path, monkeypatch):
     """The other half: `get()` used to look only at the conversation model, so
     a flagged runtime kept serving the old configuration anyway."""
-    from app.backends.ms_agent import model_link
     from app.backends.ms_agent import runtime as R
+    from app.backends.ms_agent import session_models
 
+    monkeypatch.setenv("MS_AGENT_HOME", str(tmp_path))
+    snapshot = session_models.ModelSnapshot(("openai", "unused"), {}, {})
+    monkeypatch.setattr(session_models, "prepare", lambda project, session:
+                        (session, snapshot))
     reg = R.RuntimeRegistry()
+    monkeypatch.setattr(reg, "_ensure_sweeper", lambda: None)
     stale = _FakeRuntime("p1", "s1")
-    stale.model_key = model_link.active_model()
-    stale.needs_rebuild = True
+    stale.project.path = str(tmp_path / "workspace")
+    stale.model_key = snapshot.key
+    stale.settings_fingerprint = R._settings_fingerprint(stale.project, snapshot)
+    stale.mcp_fingerprint = R._mcp_fingerprint(stale.project)
     reg._runtimes["s1"] = stale
     built = []
 
-    def _fake_runtime(project, session, mcp):
+    def _fake_runtime(project, session, mcp, model_snapshot=None):
         built.append(session.id)
         return _FakeRuntime("p1", session.id)
 
@@ -1079,8 +1086,14 @@ def test_a_flagged_runtime_is_rebuilt_on_the_next_turn(monkeypatch):
 
     monkeypatch.setattr(reg, "_resolve_mcp", _mcp)
 
-    got = asyncio.run(reg.get(stale.project, stale.session))
-    assert built == ["s1"] and got is not stale and stale.closed
+    async def check():
+        assert await reg.get(stale.project, stale.session) is stale
+        assert not built and not stale.closed
+        stale.needs_rebuild = True
+        got = await reg.get(stale.project, stale.session)
+        assert built == ["s1"] and got is not stale and stale.closed
+
+    asyncio.run(check())
 
 
 def test_identity_that_cannot_be_written_aborts_before_moving_anything(

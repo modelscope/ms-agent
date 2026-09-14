@@ -25,7 +25,7 @@ def prepare(tmp_path, monkeypatch, tools=None):
         settings["tools"] = tools
     (tmp_path / "settings.json").write_text(json.dumps(settings))
     project = ProjectManager(base_dir=str(tmp_path)).create(name="Import", memory_enabled=False)
-    return project, SessionManager(project).create()
+    return project, SessionManager(project).create(model="unused", model_provider="openai")
 
 
 def build(project, session):
@@ -120,12 +120,12 @@ def test_runtime_reloads_import_on_next_idle_turn(tmp_path, monkeypatch):
     project, session = prepare(tmp_path, monkeypatch)
 
     class Runtime:
-        def __init__(self, project, session, mcp):
+        def __init__(self, project, session, mcp, model_snapshot=None):
             self.turn_lock = asyncio.Lock()
             self.run_task = SimpleNamespace(done=lambda: False)
-            self.model_key = model_link.active_model()
+            self.model_key = model_snapshot.key
             self.mcp_fingerprint = runtime._mcp_fingerprint(project)
-            self.settings_fingerprint = runtime._settings_fingerprint(project)
+            self.settings_fingerprint = runtime._settings_fingerprint(project, model_snapshot)
             self.needs_rebuild = False
             self.closed = False
         def touch(self):
@@ -133,8 +133,6 @@ def test_runtime_reloads_import_on_next_idle_turn(tmp_path, monkeypatch):
         async def aclose(self):
             self.closed = True
 
-    from app.backends.ms_agent import model_link
-    monkeypatch.setattr(model_link, "active_model", lambda: ("openai", "unused"))
     monkeypatch.setattr(runtime, "SessionRuntime", Runtime)
     registry = runtime.RuntimeRegistry()
     monkeypatch.setattr(registry, "_ensure_sweeper", lambda: None)

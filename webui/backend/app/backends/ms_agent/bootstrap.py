@@ -40,6 +40,9 @@ def bootstrap() -> None:
     for project in manager.list():
         sessions = manager.session_manager(project, auto_initialize=False)
         sessions.initialize()
+        from app.backends.ms_agent.session_models import migrate
+        for session in sessions.list():
+            migrate(project, session)
     _ensure_prompt_files(home())
     _seed_tools_settings(home())
     _seed_llm_settings(home())

@@ -91,6 +91,7 @@ export type MessageSegment =
 
 export interface AgentInput {
   session_id?: string | null;
+  model_id?: string;
   project_id?: string | null;
   /** The CURRENT turn's user message. Conversation context is NOT sent — the
    * backend's ms-agent SessionLog (on disk) is the source of truth. */
@@ -264,6 +265,7 @@ export class AgentChatProvider extends AbstractChatProvider<
     return {
       ...(options?.params || {}),
       session_id: requestParams.session_id ?? null,
+      model_id: requestParams.model_id,
       project_id: requestParams.project_id ?? null,
       message: requestParams.message ?? { role: "user", content: "" },
     };

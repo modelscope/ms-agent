@@ -83,34 +83,6 @@ def _image_media_type(path: str) -> str | None:
     return "image/jpeg" if ext in (".jpg", ".jpeg") else f"image/{ext[1:]}"
 
 
-def _remember_session_model(session_id: str) -> None:
-    """Record the active model on the session. Best-effort."""
-    model_id = _active_model_id()
-    if not model_id:
-        return
-    try:
-        sidecar.merge("sessions", session_id, {"model_id": model_id})
-    except Exception:  # noqa: BLE001 — bookkeeping must not fail a turn
-        logger.debug("session model persist failed", exc_info=True)
-
-
-def _active_model_id() -> str:
-    """Encoded id of the model this turn is running on.
-
-    Carried on a degraded-image notice so the UI can offer "try again" without
-    the user having to work out which model it is about. Best-effort: a notice
-    without it is still readable, and failing to read the settings file must
-    never break a chat stream.
-    """
-    try:
-        from app.backends.ms_agent.mapping import encode_model_id
-        from app.backends.ms_agent.model_link import active_model
-
-        provider, model = active_model()
-        return encode_model_id(provider, model) if provider and model else ""
-    except Exception:  # noqa: BLE001
-        return ""
-
 
 def _compose_turn(msg) -> tuple[str, list[dict]]:
     """``(prompt, attachments)`` for one user turn.
@@ -218,11 +190,15 @@ def _resolve_or_create(req: ChatRequest):
             project, session, _sm = found
             _touch_session(project, session.id)
             return project, session
+        from app.backends.errors import NotFound
+        raise NotFound("Conversation not found.")
     try:
         project = resolve_project(req.project_id)
     except KeyError:
         project = resolve_project(None)  # unknown id -> default project
-    session = sm_for(project).create()
+    from app.backends.ms_agent import session_models
+
+    session = session_models.create(project, model_id=req.model_id)
     return project, session
 
 
@@ -480,8 +456,10 @@ class _TurnMapper:
     in stream order; a todo plan (plan_updated) emits `task` frames rendered as a
     plain plan list — steps are no longer nested under tasks."""
 
-    def __init__(self, session_id: str = "", resolved_permissions: list[dict] | None = None) -> None:
+    def __init__(self, session_id: str = "", resolved_permissions: list[dict] | None = None, model_key=None) -> None:
         self._session_id = session_id
+        from app.backends.ms_agent.mapping import encode_model_id
+        self._model_id = encode_model_id(*model_key) if model_key and all(model_key) else ""
         # Pre-resolved permissions (for attach replay only). Each entry has
         # {tool_name, arguments, state}. Consumed in order (FIFO per tool_name).
         self._resolved_perms: list[dict] = list(resolved_permissions or [])
@@ -616,7 +594,7 @@ class _TurnMapper:
                 "filename": str(payload.get("filename") or ""),
                 # Which model this is about, so the notice can offer to retry or
                 # switch without the user having to work it out.
-                "model": _active_model_id() if state == "degraded" else "",
+                "model": self._model_id if state == "degraded" else "",
             })]
         if t == "tool_call_started":
             # Stash name+args+group by call_id — the completed event lacks
@@ -1541,13 +1519,8 @@ async def _adopt_unwatched_turn(prep: "asyncio.Future", session_id: str) -> None
 
 
 async def stream(req: ChatRequest) -> AsyncIterator[dict]:
-    project, session = _resolve_or_create(req)
+    project, session = await asyncio.to_thread(_resolve_or_create, req)
     session_id = session.id
-
-    # Remember which model this conversation is being held with, so reopening
-    # it later selects the same one instead of inheriting whatever was picked
-    # elsewhere in the meantime.
-    _remember_session_model(session_id)
 
     user_msg = req.message
     prompt, attachments = _compose_turn(user_msg)
@@ -1628,7 +1601,7 @@ async def stream(req: ChatRequest) -> AsyncIterator[dict]:
 
     usage = None
     error_sent = False
-    mapper = _TurnMapper(session_id)
+    mapper = _TurnMapper(session_id, model_key=getattr(rt, "model_key", None))
     pos = 0
     # This turn = one tool-call loop. Track wall-clock + files written/edited so
     # the terminal `done` frame can carry a loop summary (frontend collapses the
@@ -1912,7 +1885,7 @@ async def attach(session_id: str) -> AsyncIterator[dict]:
                 })
     except Exception:
         pass
-    mapper = _TurnMapper(session_id, resolved_permissions=resolved_perms)
+    mapper = _TurnMapper(session_id, resolved_permissions=resolved_perms, model_key=getattr(rt, "model_key", None))
     pos = 0
     try:
         # The rejoining client (a reload, or a second viewer) has no idea when

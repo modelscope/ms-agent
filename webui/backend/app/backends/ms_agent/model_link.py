@@ -12,9 +12,9 @@ provider) -> built-in registry default.
 """
 from __future__ import annotations
 
-import json
-import os
 from pathlib import Path
+
+from ms_agent.utils.atomic_file import atomic_write_json
 
 from app.backends.ms_agent.common import home
 from app.backends.ms_agent.settings_store import settings_lock
@@ -36,11 +36,7 @@ def _load() -> dict:
 
 
 def _save_unlocked(data: dict) -> None:
-    p = _path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, p)
+    atomic_write_json(_path(), data)
 
 
 def _save(data: dict) -> None:
@@ -78,43 +74,40 @@ def active_model(data: dict | None = None) -> tuple[str | None, str | None]:
     return None, None
 
 
+def preserve_legacy_credentials(data: dict) -> None:
+    """Keep old llm-only credentials reachable when the default moves away."""
+    llm = data.get("llm") or {}
+    provider = llm.get("provider")
+    if not provider:
+        return
+    entry = data.setdefault("providers", {}).setdefault(provider, {})
+    for key in ("api_key", "base_url", "protocol"):
+        if key in llm and key not in entry:
+            entry[key] = llm[key]
+
+
 def set_active_model(provider: str, model: str) -> None:
-    """Point the llm block + default_model at (provider, model) and ensure the
-    model is in the provider's catalog. Preserves working credentials."""
+    from ms_agent.config.model_settings import resolve_model_settings
+
     with settings_lock():
         data = _load_unlocked()
-        llm = data.get("llm", {}) or {}
-        prov_entry = (data.get("providers", {}) or {}).get(provider, {}) or {}
-        same_provider = llm.get("provider") == provider
-
-        if "api_key" in prov_entry:
-            api_key = prov_entry.get("api_key") or ""
-        else:
-            api_key = (llm.get("api_key") if same_provider else "") or ""
-        if "base_url" in prov_entry:
-            base_url = prov_entry.get("base_url") or _registry_base_url(provider)
-        else:
-            base_url = (llm.get("base_url") if same_provider else "") or _registry_base_url(provider)
-
-        new_llm = {"provider": provider, "model": model}
-        if api_key:
-            new_llm["api_key"] = api_key
-        if base_url:
-            new_llm["base_url"] = base_url
-        data["llm"] = new_llm
+        preserve_legacy_credentials(data)
+        previous = data.get("llm") or {}
+        entry = (data.get("providers") or {}).get(provider) or {}
+        selected = resolve_model_settings(data, provider, model)
+        if "protocol" not in entry and not (previous.get("provider") == provider and "protocol" in previous):
+            selected.pop("protocol", None)
+        if not selected.get("api_key"):
+            selected.pop("api_key", None)
+        data["llm"] = selected
         data["default_model"] = f"{provider}/{model}"
-
         prov = data.setdefault("providers", {}).setdefault(provider, {})
-        # Selecting a model must not create a protocol override. Without one,
-        # the SDK registry remains authoritative (e.g. Anthropic Messages).
-        if api_key and not prov.get("api_key"):
-            prov["api_key"] = api_key
-        if base_url and not prov.get("base_url"):
-            prov["base_url"] = base_url
+        for key in ("api_key", "base_url"):
+            if key not in prov and data["llm"].get(key):
+                prov[key] = data["llm"][key]
         models = prov.setdefault("models", [])
         if model and model not in models:
             models.append(model)
-
         _save_unlocked(data)
 
 
@@ -122,6 +115,7 @@ def ensure_link() -> None:
     """Normalize on boot: default_model -> 'provider/model' and the active model
     registered in the catalog, so the chat dropdown is never empty for a
     configured model."""
-    provider, model = active_model()
-    if provider and model:
-        set_active_model(provider, model)
+    with settings_lock():
+        provider, model = active_model()
+        if provider and model:
+            set_active_model(provider, model)

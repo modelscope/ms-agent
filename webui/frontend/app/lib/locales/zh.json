@@ -146,6 +146,7 @@
     "runningTask": "正在执行任务：",
     "thinkingFiles": "文件列表",
     "send": "发送",
+    "modelSaveFailed": "模型选择未保存成功。请重新选择模型后再发送，输入内容已保留。",
     "modelRequired": "请先选择模型",
     "stop": "停止",
     "addFile": "添加文件",

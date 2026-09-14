@@ -92,6 +92,9 @@ def project_to_schema(project) -> ProjectSchema:
 
 
 def session_to_schema(session) -> SessionSchema:
+    from app.backends.ms_agent.session_models import selection
+
+    key = selection(session)
     meta = sidecar.get("sessions", session.id, {}) or {}
     return SessionSchema(
         id=session.id,
@@ -101,7 +104,7 @@ def session_to_schema(session) -> SessionSchema:
         preview=meta.get("preview", ""),
         unread=bool(meta.get("unread", False)),
         category=meta.get("category", ""),
-        model_id=meta.get("model_id", ""),
+        model_id=encode_model_id(*key) if key else "",
     )
 
 

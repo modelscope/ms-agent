@@ -146,6 +146,7 @@
     "runningTask": "Running task: ",
     "thinkingFiles": "Files",
     "send": "Send",
+    "modelSaveFailed": "The model selection could not be saved. Select a model again before sending; your draft has been kept.",
     "modelRequired": "Select a model first",
     "stop": "Stop",
     "addFile": "Add file",

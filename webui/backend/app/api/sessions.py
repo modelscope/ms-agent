@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.core.envelope import EnvelopeRoute
 from app.schemas.session import (
-    Artifact, Session, SessionCreate, SessionMessage, SessionPlan, SessionUpdate
+    Artifact, Session, SessionCreate, SessionMessage, SessionPlan, SessionUpdate, SessionModelUpdate
 )
 
 router = APIRouter(prefix="/api", tags=["sessions"], route_class=EnvelopeRoute)
@@ -78,3 +78,10 @@ def list_artifacts(session_id: str) -> list[Artifact]:
     from app.backends.ms_agent import sessions
 
     return sessions.list_artifacts(session_id)
+
+
+@router.patch("/sessions/{session_id}/model")
+def update_session_model(session_id: str, body: SessionModelUpdate) -> dict:
+    from app.backends.ms_agent import sessions
+
+    return sessions.update_session_model(session_id, body.model_id)

@@ -91,12 +91,14 @@ export function ProjectOverviewView({
   const handleSubmit = async (
     text: string,
     files?: ChatFileRef[],
-    segments?: MessageSegment[]
+    segments?: MessageSegment[],
+    modelId?: string
   ) => {
     const session = await api.createSession({
       title: text.slice(0, 60) || 'New chat',
       project_id: project.id,
-      preview: text
+      preview: text,
+      model_id: modelId
     })
     // Refresh the sidebar's session list BEFORE leaving: the app layout no
     // longer revalidates on a route change (see its `shouldRevalidate`), so

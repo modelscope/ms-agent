@@ -17,6 +17,29 @@ from ms_agent.utils.file_lock import locked
 from ms_agent.utils.json_store import read_json
 
 
+def resolve_model_settings(data: dict, provider: str, model: str) -> dict:
+    """Resolve a selection without inheriting another provider's credentials."""
+    from ms_agent.llm.spec import get_registry
+
+    entry = (data.get('providers') or {}).get(provider) or {}
+    current = data.get('llm') or {}
+    same_provider = current.get('provider') == provider
+    spec = next((s for s in get_registry().list_providers() if s.name == provider), None)
+    result = {'provider': provider, 'model': model}
+    for key in ('api_key', 'base_url', 'protocol'):
+        if key in entry:
+            result[key] = entry[key]
+        elif same_provider and key in current:
+            result[key] = current[key]
+    if not result.get('base_url') and spec:
+        result['base_url'] = spec.default_base_url
+    if not result.get('protocol') and spec:
+        result['protocol'] = ('anthropic' if 'anthropic' in spec.transport else 'openai')
+    if same_provider and current.get('model') == model:
+        for key in ('temperature', 'temperature_enabled', 'max_tokens'):
+            if key in current:
+                result[key] = current[key]
+    return result
 
 
 class ModelSettingsManager:

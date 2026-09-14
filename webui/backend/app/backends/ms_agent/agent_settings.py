@@ -42,39 +42,45 @@ def get_settings() -> AgentSettings:
 
 
 def update_settings(body: AgentSettings) -> AgentSettings:
-    from ms_agent.personalization import PersonalizationConfig
+    from app.backends.errors import BadRequest
+    from ms_agent.utils.json_store import json_transaction
+    from pathlib import Path
 
+    patch = body.model_dump(exclude_unset=True)
     with settings_lock():
-        # default_model_id arrives as a base64 Model.id; decode and point the active
-        # model (llm block + default_model + catalog) at it so chat actually uses it.
-        if body.default_model_id:
-            try:
-                provider, model = decode_model_id(body.default_model_id)
+        if "default_model_id" in patch:
+            if body.default_model_id:
+                try:
+                    provider, model = decode_model_id(body.default_model_id)
+                except (ValueError, TypeError):
+                    raise BadRequest("Invalid model selection.") from None
+                from app.backends.ms_agent.session_models import validate_selection
+                if "default_provider_id" in patch and body.default_provider_id not in (None, provider):
+                    raise BadRequest("The selected model belongs to a different provider.")
+                validate_selection(provider, model)
                 model_link.set_active_model(provider, model)
-            except Exception:
-                pass
+            else:
+                with json_transaction(Path(home()) / "settings.json") as data:
+                    model_link.preserve_legacy_credentials(data)
+                    data.pop("default_model", None)
+                    data["llm"] = {}
+        elif "default_provider_id" in patch:
+            provider, _ = model_link.active_model()
+            if body.default_provider_id != provider:
+                raise BadRequest("Select a model together with its provider.")
 
-        ps = _ps()
-        cur = ps.load()
-        ps.save(
-            PersonalizationConfig(
-                global_instruction=cur.global_instruction,  # preserve
-                memory_enabled=body.default_memory_enabled,
-                memory_backend=body.default_memory_backend,
-            )
-        )
-    sidecar.put("agent_settings", "global_mcp_auto_attach", body.global_mcp_auto_attach)
-    sidecar.put("agent_settings", "global_skill_auto_attach", body.global_skill_auto_attach)
-    sidecar.put(
-        "agent_settings",
-        "memory_models",
-        {
-            "llm_provider_id": body.memory_llm_provider_id,
-            "llm_model": body.memory_llm_model,
-            "embed_mode": body.memory_embed_mode,
-            "embed_provider_id": body.memory_embed_provider_id,
-            "embed_model": body.memory_embed_model,
-            "recall_top_k": body.memory_recall_top_k,
-        },
-    )
-    return get_settings()
+        personalization = {
+            key.removeprefix("default_"): value
+            for key, value in patch.items()
+            if key in ("default_memory_enabled", "default_memory_backend")
+        }
+        if personalization:
+            _ps().update(**personalization)
+        for key in ("global_mcp_auto_attach", "global_skill_auto_attach"):
+            if key in patch:
+                sidecar.put("agent_settings", key, patch[key])
+        memory = {key.removeprefix("memory_"): value for key, value in patch.items()
+                  if key.startswith("memory_")}
+        if memory:
+            sidecar.merge("agent_settings", "memory_models", memory)
+        return get_settings()

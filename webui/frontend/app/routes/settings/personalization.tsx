@@ -54,7 +54,7 @@ export default function PersonalizationSettings() {
   const updateSettings = async (patch: Partial<AgentSettings>) => {
     if (!settings) return
     try {
-      const next = await api.putAgentSettings({ ...settings, ...patch })
+      const next = await api.putAgentSettings(patch)
       setSettings(next)
     } catch {
       // API errors surface via the global toast (see root ApiErrorBridge).

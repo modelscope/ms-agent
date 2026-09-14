@@ -291,10 +291,16 @@ export const api = {
     title: string
     project_id?: string
     preview?: string
+    model_id?: string
   }) =>
     json<Session>('/api/sessions', {
       method: 'POST',
       body: JSON.stringify(body)
+    }),
+  updateSessionModel: (id: string, modelId: string) =>
+    json<{ session: Session; settings: AgentSettings }>(`/api/sessions/${pid(id)}/model`, {
+      method: 'PATCH',
+      body: JSON.stringify({ model_id: modelId })
     }),
   deleteSession: (id: string) =>
     json<void>(`/api/sessions/${pid(id)}`, { method: 'DELETE' }),
@@ -634,7 +640,7 @@ export const api = {
     json<Model>(`/api/models/${pid(id)}/vision/retry`, { method: 'POST' }),
 
   getAgentSettings: () => json<AgentSettings>('/api/agent-settings'),
-  putAgentSettings: (body: AgentSettings) =>
+  putAgentSettings: (body: Partial<AgentSettings>) =>
     json<AgentSettings>('/api/agent-settings', {
       method: 'PUT',
       body: JSON.stringify(body)

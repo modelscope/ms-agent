@@ -9,6 +9,7 @@ import IconTask from '~/assets/icons/task.svg?react'
 import { NewProjectModal } from '~/components/project/NewProjectModal'
 import { PillButton } from './PillButton'
 import { api } from '~/lib/api'
+import { useSessionModel, type SessionModelSelection } from '~/lib/sessionModel'
 import { useModelChanged } from '~/lib/modelChanged'
 import { useOnMcpSkillChanged, dispatchWorkspaceChanged } from '~/lib/events'
 import type { ChatFileRef } from '~/lib/agentProvider'
@@ -77,13 +78,16 @@ export interface ThinkingState {
 }
 
 interface ComposerProps {
+  modelSelection?: SessionModelSelection
+  modelSelectionDisabled?: boolean
   onSubmit: (
     text: string,
     files?: ChatFileRef[],
     /** Ordered configuration-style segments (text + skill pills) exactly as
      * laid out in the input — present only when at least one pill was used. */
-    segments?: MessageSegment[]
-  ) => void
+    segments?: MessageSegment[],
+    modelId?: string
+  ) => void | Promise<void>
   loading?: boolean
   onCancel?: () => void
   /** Fired whenever the textarea value changes (used to snap the message list
@@ -125,6 +129,8 @@ function SuggestionDesc({ text }: { text: string }) {
 }
 
 export function Composer({
+  modelSelection: providedSelection,
+  modelSelectionDisabled = false,
   onSubmit,
   loading = false,
   onCancel,
@@ -221,9 +227,16 @@ export function Composer({
   const [providers, setProviders] = useState<Provider[] | null>(
     appData?.providers ?? null
   )
-  const [settings, setSettings] = useState<AgentSettings | null>(
+  const [globalSettings, setSettings] = useState<AgentSettings | null>(
     appData?.agentSettings ?? null
   )
+  const draftSelection = useSessionModel(null, appData?.agentSettings.default_model_id ?? '', !providedSelection)
+  const modelSelection = providedSelection ?? draftSelection
+  const selectedProvider = models?.find(m => m.id === modelSelection.modelId)?.provider_id ?? null
+  const settings = globalSettings ? { ...globalSettings, default_model_id: modelSelection.modelId,
+    default_provider_id: selectedProvider } : null
+  const submitting = useRef(false)
+  const [preparing, setPreparing] = useState(false)
   // Global lists also come from the loader; only the project-scoped halves are
   // fetched here, since the project can be picked in this component (homepage).
   const [globalMcps, setGlobalMcps] = useState<Mcp[]>(appData?.globalMcps ?? [])
@@ -343,16 +356,11 @@ export function Composer({
     }
   }, [hasProjectPicker, hasAppData])
 
-  const updateSettings = async (patch: Partial<AgentSettings>) => {
-    if (!settings) return
-    const next = await api.putAgentSettings({ ...settings, ...patch })
-    setSettings(next)
-    // Refresh the loader snapshot this component SEEDS from. Sending the first
-    // message swaps ChatPanel's empty-state tree for the message-list one, which
-    // remounts the composer at a new position — the fresh instance re-seeds from
-    // `appData`, so leaving that stale made the pill snap back to the model
-    // picked before this switch until something else remounted it.
-    revalidator.revalidate()
+  const selectModel = async (providerId: string, modelId: string) => {
+    try {
+      setSettings(await modelSelection.select(providerId, modelId))
+      void revalidator.revalidate()
+    } catch { /* API errors are shown by the shared error toast. */ }
   }
 
   // Slash-command suggestions list EVERY known skill (global + project),
@@ -636,11 +644,13 @@ export function Composer({
   const modelMissing =
     models !== null &&
     settings !== null &&
-    !models.some((m) => m.id === settings.default_model_id)
+    (!models.some((m) => m.id === settings.default_model_id) ||
+      providers?.find(p => p.id === selectedProvider)?.enabled === false)
   // Send is allowed when nothing is still uploading and there is text, a
   // ready file, or a picked skill pill (a bare skill invocation is valid —
   // the backend answers with the skill intro).
   const canSend =
+    !preparing &&
     !hasUploading &&
     !modelMissing &&
     (!!draft.trim() || hasReadyFiles || pickedSkills.length > 0)
@@ -653,13 +663,15 @@ export function Composer({
    * in the middle of writing and left an orphaned upload in the workspace. The
    * setting is one boolean on one model; there is nothing here worth a round
    * trip through another page. */
-  // Opening a session re-selects the model it was held with; refresh so the
-  // pill shows the model the next turn will actually run on.
+  // Refresh the catalog without replacing this conversation's selection.
   useModelChanged(
     useCallback(() => {
-      api
-        .getAgentSettings()
-        .then(setSettings)
+      Promise.all([api.getAgentSettings(), api.listModels(), api.listProviders()])
+        .then(([settings, models, providers]) => {
+          setSettings(settings)
+          setModels(models)
+          setProviders(providers)
+        })
         .catch(() => {})
     }, [])
   )
@@ -682,7 +694,8 @@ export function Composer({
     }
   }
 
-  const handleSubmit = (value: string) => {
+  const handleSubmit = async (value: string) => {
+    if (submitting.current) return
     const text = value.trim()
     if (hasUploading) return
     // Enter reaches here without passing the button's disabled state, so the
@@ -723,7 +736,18 @@ export function Composer({
       }
     }
     const hasSkill = segments.some((s) => s.type === 'skill')
-    onSubmit(text, refs, hasSkill ? segments : undefined)
+    submitting.current = true
+    setPreparing(true)
+    try {
+      const modelId = await modelSelection.ready()
+      await onSubmit(text, refs, hasSkill ? segments : undefined, modelId)
+    } catch {
+      message.error(t.errors.requestFailed)
+      return
+    } finally {
+      submitting.current = false
+      setPreparing(false)
+    }
     setDraft('')
     setFiles([])
     setPickedSkills([])
@@ -1105,8 +1129,14 @@ export function Composer({
               )}
             >
               <div onPasteCapture={handlePasteCapture}>
+                {modelSelection.saveFailed && (
+                  <p role="alert" className="mb-2 text-xs text-msa-text-2">
+                    {t.home.modelSaveFailed}
+                  </p>
+                )}
                 <StableSender
                   ref={senderRef}
+                  disabled={preparing}
                   slotConfig={ALWAYS_SLOT_MODE}
                   onChange={(v, _e, slotCfg) => {
                     setDraft(v)
@@ -1282,15 +1312,11 @@ export function Composer({
                         >
                           {/* Model pill */}
                           <ModelSelector
+                            disabled={preparing || modelSelectionDisabled}
                             models={models}
                             providers={providers}
                             settings={settings}
-                            onSelectModel={(providerId, modelId) =>
-                              updateSettings({
-                                default_provider_id: providerId,
-                                default_model_id: modelId
-                              })
-                            }
+                            onSelectModel={selectModel}
                           />
 
                           {/* MCP pill */}
