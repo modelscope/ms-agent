@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import tempfile
 from dataclasses import asdict, replace
 from pathlib import Path
 
@@ -63,6 +64,47 @@ class ProjectManager:
             self._ensure_default_project()
         if not marker.exists():
             marker.write({'version': 1})
+
+    def default_project_needs_repair(self) -> bool:
+        """Inspect missing metadata without initializing or modifying storage."""
+        metadata = self._meta_file(DEFAULT_PROJECT_ID)
+        if metadata.exists() or metadata.is_symlink():
+            try:
+                project = self.get(DEFAULT_PROJECT_ID)
+            except (TypeError, ValueError) as exc:
+                raise ValueError('Existing project.json is invalid; restore it from a backup') from exc
+            if project is None:
+                raise ValueError('Existing project.json is empty or unreadable; restore it from a backup')
+            return False
+        default_dir = self._projects_root / DEFAULT_PROJECT_ID
+        has_files = default_dir.is_dir() and any(p.is_file() for p in default_dir.rglob('*'))
+        if not (self._base / '.projects.initialized').exists() and not has_files:
+            raise ValueError('No previous default project data found; start MS-Agent normally to initialize it')
+        return True
+
+    @locked(lambda self: self._projects_root)
+    def repair_default_project(self) -> Path | None:
+        """Back up managed project data before explicitly recreating missing metadata."""
+        if not self.default_project_needs_repair():
+            return None
+        backups = self._base / 'backups'
+        backups.mkdir(mode=0o700, exist_ok=True)
+        backup = Path(tempfile.mkdtemp(prefix='default-project-', dir=backups))
+        project_dir = self._projects_root / DEFAULT_PROJECT_ID
+        marker = self._base / '.projects.initialized'
+        try:
+            if project_dir.exists():
+                shutil.copytree(project_dir, backup / 'projects' / DEFAULT_PROJECT_ID, symlinks=True)
+            if marker.exists():
+                shutil.copy2(marker, backup / marker.name)
+        except OSError as exc:
+            raise OSError(f'Backup failed; project data was not changed. Partial backup: {backup}') from exc
+        try:
+            self._ensure_default_project()
+            self.initialize()
+        except (OSError, ValueError) as exc:
+            raise RuntimeError(f'Repair did not finish. Backup: {backup}. Resolve the error and retry.') from exc
+        return backup
 
     def session_manager(self, project: Project, *, auto_initialize: bool = True):
         from ms_agent.project.session import SessionManager

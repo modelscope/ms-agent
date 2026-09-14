@@ -1,5 +1,23 @@
 {
   "brand": "MS Agent",
+  "recovery": {
+    "title": "Default project needs recovery",
+    "description": "The default project's record is missing. Existing conversation files may still be present. Restore the record to continue using the app.",
+    "restore": "Restore default project",
+    "later": "Not now",
+    "deferredDescription": "No project data was changed. You can restore later using the button below, or ask an administrator to recover the original record from a backup.",
+    "confirmDescription": "A backup will be created first. The project name, workspace path, instructions and memory settings will reset to defaults. Existing conversations, workspace files and global settings will be kept. Other services sharing this data directory should be stopped before continuing.",
+    "confirm": "Back up and restore",
+    "cancel": "Cancel",
+    "successTitle": "Ready to continue",
+    "successDescription": "The service is ready. Existing conversations remain available; review the default project's settings after recovery.",
+    "continue": "Continue to WebUI",
+    "backup": "Backup location",
+    "networkError": "The recovery result could not be confirmed. Check your connection and refresh this page before retrying.",
+    "backup_failed": "The backup could not be completed, so recovery did not proceed. Ask an administrator to check disk space and permissions, then retry.",
+    "repair_failed": "Recovery could not be completed. Existing files were not automatically replaced. Ask an administrator to check the server log before retrying.",
+    "startup_failed": "The project record is available, but another startup step failed. Normal operations remain paused. Ask an administrator to check the server log, then retry."
+  },
   "common": {
     "noData": "No data",
     "viewPreview": "Preview",

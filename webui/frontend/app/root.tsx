@@ -9,6 +9,7 @@ import {
   Scripts,
   ScrollRestoration,
   isRouteErrorResponse,
+  redirect,
   useRouteError,
   useRouteLoaderData
 } from 'react-router'
@@ -17,7 +18,7 @@ import './app.css'
 import { NProgressHandler } from '~/components/common/NProgressHandler'
 import { renderAntdEmpty } from '~/components/common/EmptyState'
 import { ErrorState } from '~/components/common/ErrorState'
-import { ApiError, registerApiErrorReporter } from '~/lib/api'
+import { api, ApiError, orThrow, registerApiErrorReporter } from '~/lib/api'
 import { getAntdCssHref } from '~/lib/antdStyle.server'
 import { getDesignTokenStyleContent } from '~/lib/designTokens'
 import { SERVER_HOSTED_MODE } from '~/lib/env'
@@ -65,6 +66,14 @@ function langFromAcceptLanguage(header: string): Lang | null {
 }
 
 export async function loader({ request }: { request: Request }) {
+  const recovery = await orThrow(api.getRecoveryStatus().catch((error) => {
+    // Preserve pages that can render without an API, including the SSR package check.
+    if (error instanceof ApiError && error.status === 0) return null
+    throw error
+  }))
+  if (recovery?.required && new URL(request.url).pathname !== '/recovery') {
+    throw redirect('/recovery')
+  }
   const cookie = request.headers.get('Cookie') || ''
   const themeRaw = readCookie(cookie, THEME_COOKIE)
   const schemeRaw = readCookie(cookie, SCHEME_COOKIE)

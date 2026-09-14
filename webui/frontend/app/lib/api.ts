@@ -47,6 +47,12 @@ export interface ApiEnvelope<T = unknown> {
   data: T
 }
 
+export interface RecoveryStatus {
+  required: boolean
+  backup_path: string | null
+  error: 'backup_failed' | 'repair_failed' | 'startup_failed' | null
+}
+
 /**
  * Error thrown by the REST client when a request fails (non-2xx, envelope
  * `code !== 0`, or a network/parse failure). Carries the resolved,
@@ -242,6 +248,12 @@ const fp = (path: string) =>
  * useXChat (see app/lib/agentProvider.ts), not this module.
  */
 export const api = {
+  getRecoveryStatus: () => json<RecoveryStatus>('/api/recovery', undefined, { silent: true }),
+  repairDefaultProject: () =>
+    json<RecoveryStatus>('/api/recovery/default-project', {
+      method: 'POST',
+      body: JSON.stringify({ confirm: true })
+    }, { silent: true }),
   // Projects
   listProjects: () => json<Project[]>('/api/projects'),
   createProject: (body: {

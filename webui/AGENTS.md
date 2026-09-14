@@ -155,7 +155,9 @@ pnpm typecheck           # runs react-router typegen + tsc --noEmit
   runtime requires one API worker; shutdown must close owned SDK resources and
   file watchers.
 - **State lifecycle**: `bootstrap.py` initializes SDK project/session storage
-  before normal API operations become available.
+  before normal API operations become available. Missing default project metadata
+  opens the recovery page; only health and recovery endpoints remain available
+  until an explicitly confirmed backup, repair and initialization succeed.
   Request handlers use `common.pm()` and
   `common.sm_for()` without implicit entity creation. Protect the complete
   read-modify-write operation with the SDK file lock; keep network calls and

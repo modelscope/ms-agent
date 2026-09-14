@@ -1,3 +1,5 @@
+import threading
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -12,17 +14,28 @@ from app.api import (
     profile,
     projects,
     providers,
+    recovery,
     search,
     sessions,
     skills,
     workspace,
 )
-from app.core.envelope import register_exception_handlers
+from app.core.envelope import error_response, register_exception_handlers
 from app.core.settings import settings
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="ms-agent-webui backend", version="0.2.0")
+    app.state.recovery = recovery.RecoveryStatus(required=False)
+    app.state.recovery_lock = threading.Lock()
+
+    @app.middleware("http")
+    async def require_ready(request, call_next):
+        if app.state.recovery.required and request.url.path not in {
+            "/api/health", "/api/recovery", "/api/recovery/default-project"
+        }:
+            return error_response(503, "Restore the default project in the WebUI before continuing.")
+        return await call_next(request)
 
     # Uniform envelope-shaped errors for every route (HTTP / validation / crash).
     register_exception_handlers(app)
@@ -37,8 +50,12 @@ def create_app() -> FastAPI:
 
     # Ensure the SDK home + default project + settings.json llm are ready.
     from app.backends.ms_agent.bootstrap import bootstrap
+    from ms_agent.project.manager import DefaultProjectMissingError
 
-    bootstrap()
+    try:
+        bootstrap()
+    except DefaultProjectMissingError:
+        app.state.recovery = recovery.RecoveryStatus(required=True)
 
     # HOME semantics, pinned (docs and code agree from here on): the default is
     # the SHARED ~/.ms_agent — the same home CLI/TUI use; isolation is an
@@ -84,9 +101,12 @@ def create_app() -> FastAPI:
     app.include_router(search.router)
     app.include_router(profile.router)
     app.include_router(workspace.router)
+    app.include_router(recovery.router)
 
     @app.get("/api/health")
     def health() -> dict[str, str]:
+        if app.state.recovery.required:
+            return {"status": "ok", "mode": "recovery"}
         return {"status": "ok"}
 
     return app
