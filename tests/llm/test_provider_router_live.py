@@ -54,6 +54,7 @@ PROVIDERS = {
     'kimi': ('moonshot-v1-8k', 'KIMI_API_KEY'),
     'minimax': ('MiniMax-M2', 'MINIMAX_API_KEY'),
     'openrouter': ('qwen/qwen3.7-plus', 'OpenRouter_API_KEY'),
+    'orcarouter': ('orcarouter/auto', 'ORCAROUTER_API_KEY'),
 }
 
 
@@ -145,6 +146,10 @@ class TestProviderRouterLive(unittest.TestCase):
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_openrouter(self):
         self._run('openrouter')
+
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_orcarouter(self):
+        self._run('orcarouter')
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_reasoning_content(self):
