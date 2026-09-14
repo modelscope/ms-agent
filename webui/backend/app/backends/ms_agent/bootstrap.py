@@ -8,6 +8,10 @@ import json
 import os
 from pathlib import Path
 
+from ms_agent.utils.file_lock import locked
+from ms_agent.utils.json_store import read_json
+from ms_agent.utils.atomic_file import atomic_write_json
+
 from app.core.settings import settings
 from app.backends.ms_agent.defaults import DEFAULT_TOOLS as _DEFAULT_TOOLS
 
@@ -31,7 +35,11 @@ def bootstrap() -> None:
 
     apply_home_env()
     _export_env()
-    pm()  # ProjectManager.__init__ ensures ~/.ms_agent/projects + default project
+    manager = pm()
+    manager.initialize()
+    for project in manager.list():
+        sessions = manager.session_manager(project, auto_initialize=False)
+        sessions.initialize()
     _ensure_prompt_files(home())
     _seed_tools_settings(home())
     _seed_llm_settings(home())
@@ -57,6 +65,7 @@ def _ensure_prompt_files(home_dir: str) -> None:
     ensure_home_files(Path(home_dir))
 
 
+@locked(lambda home_dir: Path(home_dir) / "settings.json")
 def _migrate_provider_brand_names(home_dir: str) -> None:
     """Upgrade historical built-in display names exactly once.
 
@@ -96,12 +105,7 @@ def _migrate_provider_brand_names(home_dir: str) -> None:
                         entry["name"] = canonical_name
                         changed = True
             if changed:
-                tmp = path.with_suffix(".json.tmp")
-                tmp.write_text(
-                    json.dumps(data, ensure_ascii=False, indent=2),
-                    encoding="utf-8",
-                )
-                os.replace(tmp, path)
+                atomic_write_json(path, data)
 
         sidecar.merge("flags", migration_key, {"migrated": True})
     except Exception:  # a migration must never block boot
@@ -128,6 +132,7 @@ def _export_fastembed_cache() -> None:
             "fastembed cache pinning failed", exc_info=True)
 
 
+@locked(lambda home_dir: Path(home_dir) / "webui_meta.json")
 def _migrate_vision_default(home_dir: str) -> None:
     """Materialize the old implicit "unset" into an explicit ``false``. Once.
 
@@ -178,16 +183,12 @@ def _export_env() -> None:
             os.environ[key] = value
 
 
+@locked(lambda home_dir: Path(home_dir) / "settings.json")
 def _seed_llm_settings(home_dir: str) -> None:
     """Write settings.json `llm` from env when absent, so ConfigResolver yields a
     working model. Matches §3.1: llm.{provider,model,api_key,base_url}."""
     path = Path(home_dir) / "settings.json"
-    data: dict = {}
-    if path.exists():
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            data = {}
+    data = read_json(path)
     if "llm" in data:
         return  # never overwrite an existing config (e.g. a shared ~/.ms_agent)
 
@@ -209,10 +210,7 @@ def _seed_llm_settings(home_dir: str) -> None:
     data["llm"] = llm
     data.setdefault("default_model", f"{provider}/{model}")
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, path)
+    atomic_write_json(path, data)
 
 
 

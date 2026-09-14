@@ -14,6 +14,9 @@ Legacy locations are migrated once on first access and then retired:
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
+
+from ms_agent.utils.file_lock import locked
 
 from app.backends.ms_agent import sidecar
 from app.backends.ms_agent.common import home  # noqa: F401  (pins MS_AGENT_HOME)
@@ -44,6 +47,8 @@ def _migrate_sidecar_call_me(wf, text: str) -> str:
     return text
 
 
+@locked(lambda *args, **kwargs: Path(home()) / "webui_meta.json")
+@locked(lambda *args, **kwargs: Path(home()) / ".prompt-files")
 def get_profile() -> Profile:
     wf = _wf()
     text = wf.read_home_file(_NAME)
@@ -55,6 +60,8 @@ def get_profile() -> Profile:
     )
 
 
+@locked(lambda *args, **kwargs: Path(home()) / "webui_meta.json")
+@locked(lambda *args, **kwargs: Path(home()) / ".prompt-files")
 def update_profile(body: ProfileUpsert) -> Profile:
     wf = _wf()
     text = wf.read_home_file(_NAME)

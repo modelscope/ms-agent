@@ -1356,14 +1356,22 @@ async def _apply_title(project, session_id: str, text: str) -> dict | None:
     persist them (session name + ``category`` sidecar). Returns the applied
     ``{title, category}`` for the ``done`` frame, or None when generation failed
     (the cheap first-line title from ``autoname_session`` then stands)."""
+    manager = sm_for(project)
+    before = await asyncio.to_thread(manager.get, session_id)
+    if before is None or not (_is_default_name(before.name) or _is_cheap_title(before.name, text)):
+        return None
     res = await titler.generate_title_and_category(text)
     if not res:
         return None
     title, category = res
     try:
-        sm_for(project).update(session_id, name=title)
+        saved = await asyncio.to_thread(manager.update_if, session_id,
+                                        expected={"name": before.name, "updated_at": before.updated_at}, name=title)
+        if saved is None or saved.name != title:
+            return None
     except Exception:  # naming is best-effort; keep the fallback title
         logger.debug("title update failed", exc_info=True)
+        return None
     try:
         sidecar.merge("sessions", session_id, {"category": category})
     except Exception:

@@ -154,6 +154,13 @@ pnpm typecheck           # runs react-router typegen + tsc --noEmit
   Preserve frame order, identifiers and completion handling. In-memory session
   runtime requires one API worker; shutdown must close owned SDK resources and
   file watchers.
+- **State lifecycle**: `bootstrap.py` initializes SDK project/session storage
+  before normal API operations become available.
+  Request handlers use `common.pm()` and
+  `common.sm_for()` without implicit entity creation. Protect the complete
+  read-modify-write operation with the SDK file lock; keep network calls and
+  async waits outside it. Acquire project storage, settings, then sidecar locks
+  in that order when an operation needs more than one.
 - **SSR + antd**: antd/x run with `theme.zeroRuntime`, so no component CSS is generated at request time. `pnpm gen:antd-css` (auto-run by `pnpm dev` / `pnpm build`) renders every antd + `@ant-design/x` component through `scripts/genAntdCss.tsx` into `public/assets/antd.<hash>.css`; the root loader returns its href via `app/lib/antdStyle.server.ts` and `root.tsx` links it in `<head>`. `entry.server.tsx` therefore streams HTML untouched.
 
 `frontend/server.js` must route `/api/*` before compression and the SSR catch-all.
