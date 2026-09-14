@@ -51,5 +51,5 @@ class TestProfileManager:
     def test_write_atomic_no_partial_file(self, manager):
         manager.write('complete content')
         # Temp names are unique per writer now, so check for any leftover.
-        left = [p.name for p in manager.path.parent.iterdir()]
-        assert left == ['profile.md']
+        left = {p.name for p in manager.path.parent.iterdir()}
+        assert left == {'profile.md', '.locks'}

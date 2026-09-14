@@ -102,10 +102,14 @@ class TestPersonalizationSettings:
         assert loaded.memory_backend is None
 
     def test_load_corrupt_json(self, settings_dir):
-        (settings_dir / 'settings.json').write_text('not valid json{{{')
-        s = PersonalizationSettings(global_dir=str(settings_dir))
-        config = s.load()
-        assert config.global_instruction == ''
+        path = settings_dir / 'settings.json'
+        path.write_text('not valid json{{{')
+        settings = PersonalizationSettings(global_dir=str(settings_dir))
+        with pytest.raises(ValueError, match='valid JSON'):
+            settings.load()
+        with pytest.raises(ValueError, match='valid JSON'):
+            settings.save(PersonalizationConfig())
+        assert path.read_text() == 'not valid json{{{'
 
     def test_project_instruction_not_persisted(self, settings):
         """project_instruction comes from Project, not settings.json."""

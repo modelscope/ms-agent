@@ -33,6 +33,8 @@ from typing import Dict, Optional, Tuple
 from ms_agent.prompting.builtin import (HOME_FILE_TEMPLATES, TEMPLATE_VERSION)
 from ms_agent.project.paths import global_home, local_internal_dir
 from ms_agent.utils.atomic_file import atomic_write_text
+from ms_agent.utils.file_lock import locked
+from ms_agent.utils.json_store import read_json
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
@@ -135,10 +137,8 @@ def _sidecar_path(home: Path, name: str) -> Path:
 
 
 def _load_sidecar(home: Path, name: str) -> Optional[dict]:
-    try:
-        return json.loads(_sidecar_path(home, name).read_text('utf-8'))
-    except (OSError, json.JSONDecodeError, ValueError):
-        return None
+    path = _sidecar_path(home, name)
+    return read_json(path) if path.exists() else None
 
 
 def _save_sidecar(home: Path, name: str, data: dict) -> None:
@@ -253,6 +253,7 @@ def _rebuild_legacy_profile(home: Path) -> None:
                 f'(backup: PROFILE.md.bak)')
 
 
+@locked(lambda home=None: (home or global_home()) / '.prompt-files')
 def ensure_home_files(home: Optional[Path] = None) -> None:
     """Materialize missing home files + run the one-time PROFILE rebuild.
 
@@ -266,7 +267,9 @@ def ensure_home_files(home: Optional[Path] = None) -> None:
     _rebuild_legacy_profile(home)
     for name, template in HOME_FILE_TEMPLATES.items():
         _ensure_one(home, name, template)
-    _ensured_homes.add(key)
+    if all((home / name).exists() or _sidecar_path(home, name).exists()
+           for name in HOME_FILE_TEMPLATES):
+        _ensured_homes.add(key)
 
 
 # ── PROFILE region model (R0 header / R1 managed / R2 free) ─────────────────
@@ -405,6 +408,7 @@ def read_home_file(name: str) -> str:
     return _read_raw(global_home() / name)
 
 
+@locked(lambda name, text: global_home() / '.prompt-files')
 def write_home_file(name: str, text: str) -> None:
     """Atomic write of a home workspace file. The mtime bump makes the next
     agent round pick the change up through the content compare."""

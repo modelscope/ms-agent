@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
 from ms_agent.utils.atomic_file import atomic_write_json
+from ms_agent.utils.json_store import read_json
 
 
 class JSONFileStore:
@@ -18,10 +18,7 @@ class JSONFileStore:
         return self._path.exists()
 
     def read(self) -> dict[str, Any]:
-        if not self._path.exists():
-            return {}
-        with open(self._path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        return read_json(self._path)
 
     def write(self, data: dict[str, Any]) -> None:
         atomic_write_json(self._path, data)

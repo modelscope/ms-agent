@@ -94,7 +94,11 @@ class TestSkillsConfigManager:
         merged = mgr.load_merged()
         assert '/src' in merged['sources']
 
-    def test_corrupt_file_returns_empty(self, mgr, tmp_path):
+    def test_corrupt_file_is_preserved(self, mgr, tmp_path):
         path = tmp_path / 'skills.json'
         path.write_text('not json{{{')
-        assert mgr.load_global() == {}
+        with pytest.raises(ValueError, match='valid JSON'):
+            mgr.load_global()
+        with pytest.raises(ValueError, match='valid JSON'):
+            mgr.add_source('new-source')
+        assert path.read_text() == 'not json{{{'

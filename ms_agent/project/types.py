@@ -55,3 +55,4 @@ class Session:
     session_key: str = ''
     created_at: str = field(default_factory=_now_iso)
     updated_at: str = field(default_factory=_now_iso)
+    model_provider: str | None = None

@@ -9,11 +9,14 @@ never clobbers the other settings.json sections (llm, personalization, ...).
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ms_agent.utils.atomic_file import atomic_write_json
+from ms_agent.utils.file_lock import locked
+from ms_agent.utils.json_store import read_json
+
+
 
 
 class ModelSettingsManager:
@@ -26,13 +29,7 @@ class ModelSettingsManager:
     # -- raw settings.json io --
 
     def _load_raw(self) -> Dict[str, Any]:
-        if not self._path.exists():
-            return {}
-        try:
-            with open(self._path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except (json.JSONDecodeError, OSError):
-            return {}
+        return read_json(self._path)
 
     def _save_raw(self, data: Dict[str, Any]) -> None:
         atomic_write_json(self._path, data)
@@ -62,6 +59,7 @@ class ModelSettingsManager:
             out.append(entry)
         return out
 
+    @locked(lambda self, *args, **kwargs: self._path)
     def add_provider(
         self,
         provider_id: str,
@@ -89,11 +87,17 @@ class ModelSettingsManager:
         self._save_raw(data)
         return entry
 
+    @locked(lambda self, *args, **kwargs: self._path)
     def remove_provider(self, provider_id: str) -> None:
         data = self._load_raw()
         if data.get('providers', {}).pop(provider_id, None) is not None:
+            if (data.get('llm') or {}).get('provider') == provider_id:
+                data['llm'] = {}
+            if str(data.get('default_model') or '').startswith(provider_id + '/'):
+                data.pop('default_model', None)
             self._save_raw(data)
 
+    @locked(lambda self, *args, **kwargs: self._path)
     def add_model(self, provider_id: str, model: str) -> None:
         data = self._load_raw()
         providers = data.setdefault('providers', {})
@@ -103,11 +107,20 @@ class ModelSettingsManager:
             models.append(model)
             self._save_raw(data)
 
+    @locked(lambda self, *args, **kwargs: self._path)
     def remove_model(self, provider_id: str, model: str) -> None:
         data = self._load_raw()
         entry = data.get('providers', {}).get(provider_id)
         if entry and model in entry.get('models', []):
             entry['models'].remove(model)
+            llm = data.get('llm') or {}
+            if (llm.get('provider'), llm.get('model')) == (provider_id, model):
+                for key in ('api_key', 'base_url', 'protocol'):
+                    if key in llm and key not in entry:
+                        entry[key] = llm[key]
+                data['llm'] = {}
+            if data.get('default_model') in (f'{provider_id}/{model}', model):
+                data.pop('default_model', None)
             self._save_raw(data)
 
     # -- default model --
@@ -116,6 +129,7 @@ class ModelSettingsManager:
         """Returns ``provider/model`` (or bare ``model``), or None."""
         return self._load_raw().get('default_model')
 
+    @locked(lambda self, *args, **kwargs: self._path)
     def set_default_model(self,
                           model: str,
                           provider: Optional[str] = None) -> None:

@@ -5,13 +5,18 @@ import shutil
 from dataclasses import asdict, replace
 from pathlib import Path
 
+from ms_agent.utils.file_lock import locked
 from ms_agent.project.store import JSONFileStore
 from ms_agent.project.types import (DEFAULT_PROJECT_ID, Project, _new_id,
                                     _now_iso)
 
 
+class DefaultProjectMissingError(ValueError):
+    """Previously initialized storage has lost its default project record."""
+
+
 class ProjectManager:
-    """Project CRUD. Pure SDK interface, no IO assumptions."""
+    """File-backed project CRUD with optional explicit initialization."""
 
     PROJECTS_DIR = 'projects'
     META_DIR = '.ms_agent'
@@ -30,12 +35,41 @@ class ProjectManager:
             return legacy
         return new
 
-    def __init__(self, base_dir: str = '~/.ms_agent') -> None:
-        self._base = Path(os.path.expanduser(base_dir))
+    def __init__(self, base_dir: str = '~/.ms_agent', *,
+                 auto_initialize: bool = True) -> None:
+        self._base = Path(base_dir).expanduser().resolve()
         self._projects_root = self._base / self.PROJECTS_DIR
-        self._projects_root.mkdir(parents=True, exist_ok=True)
-        self._ensure_default_project()
+        self._auto_initialize = auto_initialize
+        if auto_initialize:
+            self.initialize()
 
+    @property
+    def base_dir(self) -> Path:
+        return self._base
+
+    @locked(lambda self: self._projects_root)
+    def initialize(self) -> None:
+        """Prepare first-use storage; never recreate lost project metadata."""
+        marker = JSONFileStore(self._base / '.projects.initialized')
+        project = self.get(DEFAULT_PROJECT_ID)
+        if project is None:
+            if self._meta_file(DEFAULT_PROJECT_ID).exists():
+                raise ValueError('Default project metadata is empty; restore project.json from a backup')
+            default_dir = self._projects_root / DEFAULT_PROJECT_ID
+            has_files = default_dir.exists() and any(p.is_file() for p in default_dir.rglob('*'))
+            if marker.exists() or has_files:
+                raise DefaultProjectMissingError(
+                    f'Default project metadata is missing: {self._meta_file(DEFAULT_PROJECT_ID)}')
+            self._ensure_default_project()
+        if not marker.exists():
+            marker.write({'version': 1})
+
+    def session_manager(self, project: Project, *, auto_initialize: bool = True):
+        from ms_agent.project.session import SessionManager
+        return SessionManager(project, base_dir=self._base,
+                              auto_initialize=auto_initialize, require_project=True)
+
+    @locked(lambda self, *args, **kwargs: self._projects_root)
     def create(
         self,
         name: str,
@@ -69,6 +103,7 @@ class ProjectManager:
         self._save_meta(project)
         return project
 
+    @locked(lambda self, *args, **kwargs: self._projects_root)
     def open_folder(
         self,
         path: str,
@@ -113,24 +148,30 @@ class ProjectManager:
         if not store.exists():
             return None
         data = store.read()
-        return Project(**data)
+        return Project(**{k: v for k, v in data.items() if k in Project.__dataclass_fields__}) if data else None
 
     def list(self) -> list[Project]:
         projects: list[Project] = []
-        if not self._projects_root.exists():
+        try:
+            entries = sorted(self._projects_root.iterdir())
+        except FileNotFoundError:
             return projects
-        for entry in sorted(self._projects_root.iterdir()):
+        for entry in entries:
             if not entry.is_dir():
                 continue
             meta_file = self._meta_file(entry.name)
             if meta_file.exists():
                 store = JSONFileStore(meta_file)
                 try:
-                    projects.append(Project(**store.read()))
+                    data = store.read()
+                    if data:
+                        projects.append(Project(**{k: v for k, v in data.items()
+                                                   if k in Project.__dataclass_fields__}))
                 except (TypeError, KeyError):
                     pass
         return projects
 
+    @locked(lambda self, *args, **kwargs: self._projects_root)
     def update(self, project_id: str, **kwargs: object) -> Project:
         old = self.get(project_id)
         if old is None:
@@ -140,6 +181,7 @@ class ProjectManager:
         self._save_meta(new)
         return new
 
+    @locked(lambda self, *args, **kwargs: self._projects_root)
     def delete(self, project_id: str) -> None:
         if project_id == DEFAULT_PROJECT_ID:
             raise ValueError('Cannot delete the default project')
@@ -152,10 +194,11 @@ class ProjectManager:
 
     def get_default_project(self) -> Project:
         project = self.get(DEFAULT_PROJECT_ID)
-        if project is None:
-            self._ensure_default_project()
+        if project is None and self._auto_initialize:
+            self.initialize()
             project = self.get(DEFAULT_PROJECT_ID)
-        assert project is not None
+        if project is None:
+            raise ValueError('Default project is not initialized or its metadata is missing')
         return project
 
     # -- internal --
@@ -199,4 +242,6 @@ class ProjectManager:
         meta_dir = project_dir / self.META_DIR
         meta_dir.mkdir(parents=True, exist_ok=True)
         store = JSONFileStore(meta_dir / self.META_FILE)
-        store.write(asdict(project))
+        data = self._meta_store(project.id).read()
+        data.update(asdict(project))
+        store.write(data)

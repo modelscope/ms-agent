@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 from ms_agent.utils.atomic_file import atomic_write_text
+from ms_agent.utils.file_lock import locked
 
 PROFILE_FILENAME = 'profile.md'
 
@@ -38,5 +39,6 @@ class ProfileManager:
             return ''
         return self._path.read_text(encoding='utf-8')
 
+    @locked(lambda self, content: self._dir / '.prompt-files')
     def write(self, content: str) -> None:
         atomic_write_text(self._path, content)
