@@ -802,11 +802,11 @@ function WorkspacePanel({
                     return (
                       <span className="flex items-center gap-3">
                         {record.kind === 'folder' ? (
-                          <FolderIcon className="h-4 w-4" />
+                          <FolderIcon className="h-5 w-5" />
                         ) : (
                           <FileTypeIcon
                             name={displayName}
-                            className="h-4 w-4"
+                            className="h-5 w-5"
                           />
                         )}
                         {record.kind === 'folder' ? (
