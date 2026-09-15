@@ -113,6 +113,9 @@ async def cmd_compact(ctx: CommandContext) -> CommandResult:
         return CommandResult(
             type=CommandResultType.MESSAGE, content='No messages available.')
 
+    from copy import deepcopy
+    original_messages = messages
+    messages = deepcopy(messages)
     keep_recent = 3
     prune_threshold = 200
     tool_idxs = [
@@ -139,6 +142,10 @@ async def cmd_compact(ctx: CommandContext) -> CommandResult:
             content=(f'Nothing to compact ({len(messages)} messages; no large '
                      f'old tool outputs beyond the last {keep_recent}).'),
         )
+    persist = ctx.extra.get('persist_context')
+    if persist is not None:
+        persist(messages)
+    original_messages[:] = messages
     return CommandResult(
         type=CommandResultType.MESSAGE,
         content=(

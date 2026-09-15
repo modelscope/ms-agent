@@ -378,7 +378,8 @@ class TodoListTool(ToolBase):
                 seen.add(tid)
         return merged_list
 
-    def _render_plan_md_text(self, plan: Dict[str, Any]) -> str:
+    @staticmethod
+    def _render_plan_md_text(plan: Dict[str, Any]) -> str:
         todos = plan.get('todos', []) if isinstance(plan, dict) else []
         if not todos:
             return '# Plan\n\n(Empty)\n'
