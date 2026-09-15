@@ -12,6 +12,7 @@ import {
   useRouteLoaderData
 } from 'react-router'
 import { MsaButton } from '~/components/common/MsaButton'
+import { ScrollArea } from '~/components/common/ScrollArea'
 import { NewProjectModal } from '~/components/project/NewProjectModal'
 import { api } from '~/lib/api'
 import { useT } from '~/lib/i18n'
@@ -214,7 +215,7 @@ export function Sidebar({
                 <NavLink
                   to="/settings"
                   onClick={onNavigate}
-                  className="flex flex-col items-center w-[40px] h-[40px] rounded-[12px] bg-msa-fill-0 hover:bg-msa-fill-3"
+                  className="flex flex-col items-center w-[40px] h-[40px] rounded-[12px] bg-msa-fill-0 hover:bg-msa-fill-brand-subtle"
                 >
                   <IconButton
                     variant="ghost"
@@ -231,7 +232,7 @@ export function Sidebar({
                   rel="noreferrer"
                   className="flex h-10 w-full items-center justify-center text-msa-text-3 transition-colors hover:text-msa-text-1"
                 >
-                  <GithubIcon className="h-4 w-4" />
+                  <GithubIcon className="h-5 w-5" />
                 </a>
               </Tooltip>
             </div>
@@ -298,21 +299,16 @@ export function Sidebar({
                     variant="filled"
                     size="sm"
                     onClick={openCreateProject}
-                    icon={<NewProjectIcon className="h-4 w-4" />}
+                    icon={<NewProjectIcon className="h-5 w-5" />}
                     className="text-msa-text-2 hover:bg-msa-fill-2"
                   />
                 </Tooltip>
               </div>
-              {/* `-mx-1.5` full-bleeds the scroll box to both card borders so its
-                  scrollbar sits flush right; `scrollbar-gutter: stable both-edges`
-                  then reserves an equal gutter on BOTH sides, so the reserved
-                  right-hand scrollbar space is mirrored on the left and the rows
-                  end up with matching left/right gaps (otherwise the hidden thin
-                  scrollbar leaves empty space only on the right). */}
-              <div
-                className="mt-1 -mx-1.5 min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden"
-                style={{ scrollbarGutter: 'stable both-edges' }}
-              >
+              {/* `-mx-1.5` full-bleeds the scroll box to both card borders so the
+                  scrollbar sits flush right; `pad` then puts the rows back at the
+                  card's own inset (-6 + 14 = 8px) — and holds them there whether
+                  or not the scrollbar takes space. */}
+              <ScrollArea pad={14} className="mt-1 -mx-1.5 flex-1">
                 {orderedProjects.length === 0 ? (
                   <RecentEmpty />
                 ) : (
@@ -329,7 +325,7 @@ export function Sidebar({
                     ))}
                   </div>
                 )}
-              </div>
+              </ScrollArea>
             </div>
 
             {/* One card wrapping both: the settings row keeps its own rounded
@@ -340,7 +336,7 @@ export function Sidebar({
                 label={t.nav.agentSettings}
                 icon={<SettingsIcon className="h-5 w-5" />}
                 onNavigate={onNavigate}
-                className="bg-msa-fill-0 rounded-[12px] !text-sm !font-normal hover:bg-msa-fill-4 hover:!text-msa-text-brand1"
+                className="bg-msa-fill-0 rounded-[12px] !text-sm !font-normal hover:bg-msa-fill-brand-subtle hover:!text-msa-text-brand1"
               />
               <a
                 href={REPO_URL}
@@ -401,7 +397,7 @@ function SidebarNavItem({
     <NavLink
       to={to}
       onClick={onNavigate}
-      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-medium text-msa-text-1 transition-colors hover:bg-msa-fill-2 ${className}`}
+      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-medium text-msa-text-1 transition-colors hover:bg-msa-fill-2 ${className || ''}`}
     >
       <span className="shrink-0 flex items-center">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
@@ -479,7 +475,7 @@ function ProjectRowActions({
     <>
       <Tooltip title={t.nav.newChat}>
         <IconButton
-          icon={<AddIcon className="h-3.5 w-3.5" />}
+          icon={<AddIcon className="h-5 w-5" />}
           variant="ghost"
           size="xs"
           className={actionClass}
@@ -571,13 +567,9 @@ function CollapsedProjectList({
     (sessionsByProject.get(p.id) ?? []).some((s) => s.unread)
   )
   const content = (
-    // stable both-edges: mirror the styled scrollbar's right-hand gutter on the
-    // left too, so the hover-highlighted rows keep equal left/right insets
-    // instead of a wider gap on the scrollbar side.
-    <div
-      className="max-h-[60vh] w-56 overflow-y-auto py-1 space-y-1"
-      style={{ scrollbarGutter: 'stable both-edges' }}
-    >
+    // pad: hover-highlighted rows keep equal left/right insets in either
+    // scrollbar mode.
+    <ScrollArea pad={12} className="max-h-[60vh] w-56 py-1 space-y-1">
       {projects.map((p) => (
         <CollapsedProjectGroup
           key={p.id}
@@ -587,7 +579,7 @@ function CollapsedProjectList({
           onEditProject={onEditProject}
         />
       ))}
-    </div>
+    </ScrollArea>
   )
 
   return (
@@ -680,9 +672,7 @@ function CollapsedProjectGroup({
           }}
         >
           <span
-            className={`min-w-0 truncate text-sm font-semibold ${
-              isActiveProject ? 'text-msa-purple-5' : 'text-msa-text-1'
-            }`}
+            className={`min-w-0 truncate text-sm font-semibold text-msa-text-1`}
             title={projectName}
           >
             {projectName}
@@ -806,9 +796,7 @@ function ProjectGroup({
           }}
         >
           <span
-            className={`min-w-0 truncate text-sm font-semibold ${
-              isActiveProject ? 'text-msa-purple-5' : 'text-msa-text-1'
-            }`}
+            className={`min-w-0 truncate text-sm font-semibold text-msa-text-1`}
             title={projectName}
           >
             {projectName}

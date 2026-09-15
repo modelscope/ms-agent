@@ -172,9 +172,9 @@ export function Composer({
   const [permModeLocal, setPermModeLocal] = useState<PermissionMode | null>(
     null
   )
-  // Small screen (<md): pills collapse behind a toggle. Visibility is CSS-driven
-  // (md: classes) so the first paint is correct on any viewport with no
-  // SSR/hydration flash; `pillsExpanded` only flips after a user click.
+  // Narrow composer: pills collapse behind a toggle. Visibility is CSS-driven
+  // (container queries on the footer) so the first paint is correct at any width
+  // with no SSR/hydration flash; `pillsExpanded` only flips after a user click.
   const [pillsExpanded, setPillsExpanded] = useState(false)
   const pillsRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -807,7 +807,7 @@ export function Composer({
         // instead of being hoisted into its own section above a divider.
         ...projects.map((p) => ({
           key: p.id,
-          icon: <FolderIcon className="h-4 w-4" />,
+          icon: <FolderIcon className="h-5 w-5" />,
           // Capped + truncated: an antd menu sizes itself to its widest row, so
           // one long project name stretched the whole panel past the viewport.
           // The full name stays reachable via the row's native tooltip.
@@ -824,7 +824,7 @@ export function Composer({
         { type: 'divider' as const },
         {
           key: '__create__',
-          icon: <AddIcon className="h-4 w-4" />,
+          icon: <AddIcon className="h-5 w-5" />,
           label: t.home.createProject,
           onClick: () => setCreateOpen(true)
         }
@@ -1224,15 +1224,31 @@ export function Composer({
                   }
                   footer={
                     // @container: makes this footer an inline-size query
-                    // container so the pills can cap their width relative to the
-                    // composer column (cqw), not the viewport — the composer can
-                    // be narrow while the viewport stays wide (e.g. a detail rail
-                    // is open), so a viewport-relative cap would overflow.
+                    // container, so both the pills' width cap (cqw) and the
+                    // collapse threshold below resolve against the composer column
+                    // rather than the viewport — the composer can be narrow while
+                    // the viewport stays wide (e.g. a detail rail is open), where a
+                    // viewport-relative rule overflows or wraps.
                     <div className="@container relative flex items-center justify-between gap-2 pt-3">
-                      {/* Left: pills. Collapsed behind a toggle on <md, inline on
-                          >=md. Visibility is CSS-driven (md: classes) so the first
-                          paint is correct with no SSR/hydration flash. When expanded
-                          on small screens the group floats above the row.
+                      {/* Left: pills. Collapsed behind a toggle while the footer
+                          is narrower than the row needs, inline above that.
+
+                          The threshold is a query on the footer's own inline size,
+                          NOT a viewport breakpoint: the composer takes the full
+                          width of a column the rail can squeeze to ~340px while the
+                          viewport stays wide, and a `md:` breakpoint read as "wide
+                          viewport, so keep the pills inline" and let them wrap into
+                          three rows there.
+
+                          600px is what one row costs: the four standing pills come
+                          to ~510px with a long model name (PillButton caps each at
+                          240px) plus ~90px for the attach/send cluster. A session
+                          can carry two more pills, so this is the common case, not a
+                          guarantee.
+
+                          Visibility is CSS-driven so the first paint is correct with
+                          no SSR/hydration flash. When expanded on a narrow footer
+                          the group floats above the row.
 
                           That float is pinned to the row's own width (`inset-x-0`)
                           and scrolls sideways as ONE line. It used to be a wrapping
@@ -1252,20 +1268,21 @@ export function Composer({
                         ref={pillsRef}
                         className={`flex items-center gap-2.5 ${
                           pillsExpanded
-                            ? 'absolute inset-x-0 bottom-0 z-10 flex-nowrap overflow-x-auto bg-msa-bg-1 pt-3 md:static md:flex-wrap md:overflow-x-visible md:bg-transparent md:pt-0'
+                            ? 'absolute inset-x-0 bottom-0 z-10 flex-nowrap overflow-x-auto bg-msa-bg-1 pt-3 @min-[600px]:static @min-[600px]:flex-wrap @min-[600px]:overflow-x-visible @min-[600px]:bg-transparent @min-[600px]:pt-0'
                             : 'flex-wrap'
                         }`}
                       >
-                        {/* Toggle button: shown only on <md while collapsed */}
+                        {/* Toggle button: shown only while collapsed */}
                         {!pillsExpanded && (
                           <IconButton
-                            className="md:hidden"
-                            icon={<MoreIcon className="h-4 w-4" />}
+                            className="@min-[600px]:hidden"
+                            icon={<MoreIcon className="h-5 w-5" />}
                             onClick={() => setPillsExpanded(true)}
                           />
                         )}
 
-                        {/* Pills: hidden on <md unless expanded; always inline on >=md.
+                        {/* Pills: hidden on a narrow footer unless expanded, always
+                            inline above the threshold.
                             `w-max` + `shrink-0` are what make the strip above
                             scrollable rather than squashed: PillButton carries
                             `min-w-0`, so inside a nowrap line the pills would
@@ -1276,8 +1293,8 @@ export function Composer({
                         <div
                           className={`flex items-center gap-2.5 ${
                             pillsExpanded
-                              ? 'w-max shrink-0 flex-nowrap md:w-auto md:flex-wrap'
-                              : 'hidden flex-wrap md:flex'
+                              ? 'w-max shrink-0 flex-nowrap @min-[600px]:w-auto @min-[600px]:flex-wrap'
+                              : 'hidden flex-wrap @min-[600px]:flex'
                           }`}
                         >
                           {/* Model pill */}
@@ -1315,6 +1332,9 @@ export function Composer({
                           <Dropdown
                             trigger={['click']}
                             onOpenChange={setPermMenuOpen}
+                            classNames={{
+                              itemContent: 'text-xs'
+                            }}
                             menu={{
                               selectedKeys: [permMode],
                               items: [
@@ -1350,7 +1370,7 @@ export function Composer({
                               <PillButton
                                 caret={false}
                                 onClick={() => navigate('/settings/search')}
-                                icon={<EditIcon className="h-3.5 w-3.5" />}
+                                icon={<EditIcon className="h-4 w-4" />}
                                 className="!text-msa-text-3"
                               >
                                 {t.home.searchUnconfigured}
@@ -1379,7 +1399,8 @@ export function Composer({
                               }
                             >
                               <IconButton
-                                icon={<AddIcon className="h-4 w-4" />}
+                                icon={<AddIcon className="h-5 w-5" />}
+                                variant="tonal"
                                 onClick={() => fileInputRef.current?.click()}
                                 disabled={isMaxFiles}
                               />
@@ -1420,7 +1441,7 @@ export function Composer({
                             >
                               <IconButton
                                 variant="primary"
-                                icon={<SendIcon className="h-4 w-4" />}
+                                icon={<SendIcon className="h-5 w-5" />}
                                 onClick={() => handleSubmit(draft)}
                                 disabled={!canSend}
                               />

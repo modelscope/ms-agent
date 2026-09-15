@@ -143,7 +143,7 @@ export function ToolCallStepCard({
               className="h-4 w-4 animate-spin text-msa-text-brand1"
             />
           ) : (
-            (icon ?? <InvokeIcon className="h-4 w-4" />)
+            (icon ?? <InvokeIcon className="h-5 w-5" />)
           )}
         </span>
         <Typography.Text

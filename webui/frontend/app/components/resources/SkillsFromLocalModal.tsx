@@ -401,7 +401,7 @@ export function SkillsFromLocalModal({
                   key={pick.uid}
                   className="flex items-center gap-2 rounded-lg border border-msa-line-1 px-3 py-2.5 text-sm"
                 >
-                  <FolderIcon className="h-4 w-4" />
+                  <FolderIcon className="h-5 w-5" />
                   <span className="flex-1 truncate text-msa-text-1">
                     {pick.name}
                   </span>

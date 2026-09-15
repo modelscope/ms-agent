@@ -85,7 +85,7 @@ export default function SettingsLayout() {
               <NavLink
                 to={it.to}
                 className={({ isActive }) =>
-                  `flex items-center justify-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors md:justify-start ${
+                  `flex items-center justify-center gap-2.5 rounded-lg p-3.25 text-sm transition-colors md:justify-start ${
                     isActive
                       ? 'bg-msa-fill-0 font-medium text-msa-text-1'
                       : 'text-msa-text-2 hover:bg-msa-fill-3'
@@ -103,12 +103,18 @@ export default function SettingsLayout() {
         <Tooltip title={compact ? t.settings.back : ''} placement="right">
           <button
             onClick={goBack}
-            className="flex w-full items-center justify-center gap-3 px-2 py-2 text-sm font-medium text-msa-text-1 border-none rounded-lg cursor-pointer bg-msa-fill-2 hover:bg-msa-fill-4 md:justify-start"
+            className="group flex w-full cursor-pointer items-center justify-center border-none bg-transparent p-0 md:justify-start"
           >
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-msa-fill-0 shadow-sm">
-              <IconBack className="h-4 w-4" />
+            {/* The gradient lives on this inner span, not the button: its stops
+                are percentages, so they have to resolve against the content's
+                own width. The button stays full-width to keep the hit area on
+                the whole row, and `md:pr-12` is the room the fade needs. */}
+            <span className="flex items-center gap-2 rounded-[12px] p-1.5 text-sm font-medium text-msa-text-1 bg-[linear-gradient(90deg,var(--msa-fill-3)_54%,transparent_95%)] group-hover:bg-[linear-gradient(90deg,var(--msa-fill-4)_54%,transparent_95%)] md:pr-20">
+              <span className="flex p-1.5 shrink-0 items-center justify-center rounded-[12px] bg-msa-fill-0">
+                <IconBack className="h-6 w-6" />
+              </span>
+              <span className="hidden md:inline">{t.settings.back}</span>
             </span>
-            <span className="hidden md:inline">{t.settings.back}</span>
           </button>
         </Tooltip>
       </aside>

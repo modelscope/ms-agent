@@ -146,7 +146,7 @@ export function StepInProgressRow({ step }: { step: AgentStep }) {
         <InProgressRow
           label={t.chat.stepSearching}
           detail={String(meta.query ?? '')}
-          icon={<SearchIcon className="h-4 w-4" />}
+          icon={<SearchIcon className="h-5 w-5" />}
         />
       )
     case 'file_read':

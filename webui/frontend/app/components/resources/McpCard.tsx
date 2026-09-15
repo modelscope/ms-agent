@@ -155,7 +155,7 @@ export function McpCard({
               <Button
                 size="small"
                 type="text"
-                icon={<RefreshIcon className="h-4 w-4" />}
+                icon={<RefreshIcon className="h-5 w-5" />}
                 loading={testing || probing}
                 onClick={async () => {
                   setTesting(true)
@@ -187,7 +187,7 @@ export function McpCard({
                 aria-label={t.resources.more}
                 size="small"
                 type="text"
-                icon={<MoreIcon className="h-4 w-4" />}
+                icon={<MoreIcon className="h-5 w-5" />}
                 className="!text-msa-text-3"
               />
             </Dropdown>

@@ -116,7 +116,7 @@ export function AuthConfirmStepCard({
           />
         ) : (
           <span className="flex h-4 w-4 shrink-0 items-center justify-center text-msa-text-3">
-            <InvokeIcon className="h-4 w-4" />
+            <InvokeIcon className="h-5 w-5" />
           </span>
         )}
         <Typography.Text

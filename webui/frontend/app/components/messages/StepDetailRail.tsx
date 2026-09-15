@@ -142,7 +142,7 @@ function SearchResults({ raw }: { raw: string }) {
                   }}
                 />
               ) : (
-                <GlobeIcon className="h-4 w-4 text-msa-text-3" />
+                <GlobeIcon className="h-5 w-5 text-msa-text-3" />
               )}
               <span className="min-w-0 flex-1 truncate text-xs text-msa-text-2">
                 {host || r.url}
@@ -404,7 +404,7 @@ export function StepDetailRail({
           {title}
         </h3>
         <IconButton
-          icon={<CloseIcon className="h-4 w-4" />}
+          icon={<CloseIcon className="h-5 w-5" />}
           variant="tonal"
           size="sm"
           onClick={onClose}

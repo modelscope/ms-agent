@@ -19,6 +19,7 @@ import { Markdown } from '~/components/common/Markdown'
 import { docKindFor, languageFor } from '~/lib/editorLanguage'
 import { extensionOf, mediaKindFor } from '~/lib/mediaKind'
 import { makeRefResolver } from '~/lib/previewRefs'
+import { ScrollArea } from '~/components/common/ScrollArea'
 import { DeferredSkeleton } from '~/components/common/DeferredSkeleton'
 import type { FolderTreeActions } from '~/components/common/FolderTree'
 import { IconButton } from '~/components/common/IconButton'
@@ -854,9 +855,7 @@ export function SessionRightRail({
   const downloadMany = async (paths: string[]) => {
     // Folders can't be streamed as a single file; caller passes files only.
     try {
-      await Promise.all(
-        paths.map((p) => downloadWorkspaceFile(project.id, p))
-      )
+      await Promise.all(paths.map((p) => downloadWorkspaceFile(project.id, p)))
     } catch (err) {
       message.error(downloadErrorText(t, err))
     }
@@ -987,7 +986,9 @@ export function SessionRightRail({
     // Reflect updated size / mtime in the tree metadata.
     setFiles((prev) =>
       prev
-        ? prev.map((f) => (f.path === res.file.path ? { ...f, ...res.file } : f))
+        ? prev.map((f) =>
+            f.path === res.file.path ? { ...f, ...res.file } : f
+          )
         : prev
     )
     // An edit changes no path, but it does change what other views SHOW about
@@ -1167,7 +1168,7 @@ export function SessionRightRail({
         </div>
         {onClose && (
           <IconButton
-            icon={<CloseIcon className="h-4 w-4" />}
+            icon={<CloseIcon className="h-5 w-5" />}
             variant="tonal"
             size="sm"
             onClick={onClose}
@@ -1186,7 +1187,7 @@ export function SessionRightRail({
               <Dropdown menu={addMenu} trigger={['hover']}>
                 <MsaButton
                   variant="primary"
-                  icon={<AddIcon className="h-4 w-4" />}
+                  icon={<AddIcon className="h-5 w-5" />}
                 >
                   {t.workspace.addFile}
                 </MsaButton>
@@ -1204,20 +1205,17 @@ export function SessionRightRail({
                 <Input
                   allowClear
                   size="small"
-                  prefix={<SearchIcon className="h-4 w-4 text-msa-text-3" />}
+                  prefix={<SearchIcon className="h-5 w-5 text-msa-text-3" />}
                   placeholder={t.workspace.searchPlaceholder}
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
                 />
               </div>
-              <div
-                className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-1"
-                // stable both-edges: the styled scrollbar reserves a gutter on
-                // the right only; mirroring it on the left keeps the selected
-                // tree-row highlight's left/right insets equal. The former px-2
-                // is dropped because the ~8px gutter already supplies that inset,
-                // keeping the total spacing the same as before.
-                style={{ scrollbarGutter: 'stable both-edges' }}
+              <ScrollArea
+                pad={12}
+                className="min-h-0 flex-1 py-1"
+                // pad: keeps the selected tree-row highlight's left/right insets
+                // equal whether or not the scrollbar takes space.
                 onDragOver={(e) => {
                   // Native OS file drag over empty tree area -> upload to root.
                   // Folder nodes handle (and stop) their own drops.
@@ -1247,13 +1245,13 @@ export function SessionRightRail({
                     onDraftCancel={() => setNewEntry(null)}
                   />
                 )}
-              </div>
+              </ScrollArea>
               {/* Footer: download + add, inside left panel */}
               <div className="flex shrink-0 items-stretch border-t border-msa-line-1">
                 <Button
                   type="text"
                   size="small"
-                  icon={<DownloadIcon className="h-4 w-4" />}
+                  icon={<DownloadIcon className="h-5 w-5" />}
                   loading={downloadingAll}
                   disabled={!files || files.length === 0}
                   onClick={handleDownloadAll}
@@ -1266,7 +1264,7 @@ export function SessionRightRail({
                   <Button
                     type="text"
                     size="small"
-                    icon={<AddIcon className="h-4 w-4" />}
+                    icon={<AddIcon className="h-5 w-5" />}
                     className="h-10 flex-1 !rounded-none !text-msa-text-2"
                   >
                     {t.workspace.addFile}
@@ -1316,7 +1314,7 @@ export function SessionRightRail({
                               value: 'preview',
                               icon: (
                                 <Tooltip title={t.common.viewPreview}>
-                                  <ViewIcon className="h-4 w-4" />
+                                  <ViewIcon className="h-5 w-5" />
                                 </Tooltip>
                               )
                             },
@@ -1324,7 +1322,7 @@ export function SessionRightRail({
                               value: 'code',
                               icon: (
                                 <Tooltip title={t.common.viewCode}>
-                                  <TerminalIcon className="h-4 w-4" />
+                                  <TerminalIcon className="h-5 w-5" />
                                 </Tooltip>
                               )
                             }
@@ -1335,7 +1333,7 @@ export function SessionRightRail({
                         <Button
                           type="text"
                           size="small"
-                          icon={<DownloadIcon className="h-4 w-4" />}
+                          icon={<DownloadIcon className="h-5 w-5" />}
                           onClick={() => downloadOne(selectedFile)}
                           className="!text-msa-text-2"
                         />
@@ -1441,15 +1439,17 @@ export function SessionRightRail({
             <Button danger onClick={discardAllAndClose}>
               {t.workspace.discardAndClose}
             </Button>
-            <Button type="primary" loading={savingAll} onClick={saveAllAndClose}>
+            <Button
+              type="primary"
+              loading={savingAll}
+              onClick={saveAllAndClose}
+            >
               {t.workspace.saveAllAndClose}
             </Button>
           </>
         }
       >
-        <p className="m-0 text-sm text-msa-text-2">
-          {t.workspace.unsavedHint}
-        </p>
+        <p className="m-0 text-sm text-msa-text-2">{t.workspace.unsavedHint}</p>
         <ul className="m-0 mt-3 flex list-none flex-col gap-1 p-0">
           {unsavedPaths.map((p) => (
             <li key={p} className="min-w-0">

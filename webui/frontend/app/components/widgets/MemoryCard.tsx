@@ -251,7 +251,7 @@ export function MemoryCard({ project }: Props) {
               >
                 <Tooltip title={t.widgets.delete}>
                   <IconButton
-                    icon={<DeleteIcon className="h-4 w-4" />}
+                    icon={<DeleteIcon className="h-5 w-5" />}
                     size="xs"
                     variant="ghost"
                     className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 hover:!text-msa-text-danger"

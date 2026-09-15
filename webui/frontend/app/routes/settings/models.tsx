@@ -7,11 +7,12 @@ import { ProviderTags } from '~/components/models/ProviderTags'
 import { EmptyState, EmptyStateAction } from '~/components/common/EmptyState'
 import { KeyStatusTag } from '~/components/common/KeyStatus'
 import { DeferredSkeleton } from '~/components/common/DeferredSkeleton'
+import { ScrollArea } from '~/components/common/ScrollArea'
 import { api } from '~/lib/api'
 import { useT } from '~/lib/i18n'
 import type { AgentSettings, Model, Provider } from '~/lib/types'
-import IconEdit from '~/assets/icons/edit.svg?react'
-import IconDelete from '~/assets/icons/delete.svg?react'
+import EditIcon from '~/assets/icons/edit.svg?react'
+import DeleteIcon from '~/assets/icons/delete.svg?react'
 import { metaDict, pageTitle } from '~/lib/pageTitle'
 import type { Route } from './+types/models'
 import AddIcon from '~/assets/icons/add.svg?react'
@@ -54,11 +55,7 @@ export default function ModelsSettings() {
   const [defaultModelOpen, setDefaultModelOpen] = useState(false)
 
   const refresh = () =>
-    Promise.all([
-      api.listProviders(),
-      api.listModels(),
-      api.getAgentSettings()
-    ])
+    Promise.all([api.listProviders(), api.listModels(), api.getAgentSettings()])
       .then(([ps, ms, s]) => {
         setProviders(ps)
         setModels(ms)
@@ -95,7 +92,8 @@ export default function ModelsSettings() {
   )
 
   const defaultProvider = useMemo(
-    () => providers?.find((p) => p.id === settings?.default_provider_id) ?? null,
+    () =>
+      providers?.find((p) => p.id === settings?.default_provider_id) ?? null,
     [providers, settings?.default_provider_id]
   )
 
@@ -250,16 +248,9 @@ export default function ModelsSettings() {
               you came. Uncapped from `md` up, where the two panes sit side by side
               and the height is no longer shared. */}
           <aside className="flex max-h-[192px] w-full shrink-0 flex-col border-b border-msa-line-1 md:max-h-none md:w-[280px] md:border-b-0 md:border-r">
-            {/* stable both-edges: the styled scrollbar reserves a gutter on the
-                right only, which would leave the selected-row highlight with a
-                wider gap on the right than the left. Mirroring the gutter on
-                both edges keeps the row insets symmetric. Horizontal padding is
-                dropped from p-3 to px-1 to offset the ~8px gutter, so the total
-                inset stays ~12px — the same as the original p-3. */}
-            <div
-              className="flex flex-1 flex-col gap-1 overflow-y-auto px-1 py-3"
-              style={{ scrollbarGutter: 'stable both-edges' }}
-            >
+            {/* pad: rows keep a 12px inset (the original p-3) whether or not the
+                scrollbar takes space. */}
+            <ScrollArea pad={12} className="flex flex-1 flex-col gap-1 py-3">
               {providers === null ? (
                 <DeferredSkeleton rows={8} className="px-1 py-2" />
               ) : providers.length === 0 ? (
@@ -289,12 +280,12 @@ export default function ModelsSettings() {
                   </button>
                 ))
               )}
-            </div>
+            </ScrollArea>
             <div
               className="flex cursor-pointer items-center justify-center gap-1.5 border-t border-msa-line-1 py-3.5 text-sm text-msa-purple-6 transition-opacity hover:opacity-80"
               onClick={() => setProviderModal({ provider: null })}
             >
-              <AddIcon className="h-4 w-4" />
+              <AddIcon className="h-5 w-5" />
               <span>{t.modelsAdmin.addProvider}</span>
             </div>
           </aside>
@@ -312,7 +303,9 @@ export default function ModelsSettings() {
                 onAddModel={() =>
                   setModelEdit({ provider: activeProvider, model: null })
                 }
-                onConfigure={() => setProviderModal({ provider: activeProvider })}
+                onConfigure={() =>
+                  setProviderModal({ provider: activeProvider })
+                }
                 onDelete={async () => {
                   try {
                     await api.deleteProvider(activeProvider.id)
@@ -422,8 +415,12 @@ function ProviderDetail({
         </div>
         <Button
           size="small"
-          icon={<IconEdit className="h-4 w-4" />}
+          icon={<EditIcon className="h-5 w-5" />}
           onClick={onConfigure}
+          classNames={{
+            icon: 'flex items-center justify-center'
+          }}
+          className="shadow-none"
         >
           {t.resources.edit}
         </Button>
@@ -438,7 +435,11 @@ function ProviderDetail({
             <Button
               size="small"
               danger
-              icon={<IconDelete className="h-4 w-4" />}
+              icon={<DeleteIcon className="h-5 w-5" />}
+              classNames={{
+                icon: 'flex items-center justify-center'
+              }}
+              className="shadow-none"
             >
               {t.modelsAdmin.deleteProvider}
             </Button>
@@ -500,8 +501,8 @@ function ProviderDetail({
                 </div>
               </div>
               <Tooltip title={t.modelsAdmin.editModel}>
-                <IconEdit
-                  className="h-[18px] w-[18px] shrink-0 cursor-pointer text-msa-text-3 transition-colors hover:text-msa-purple-6"
+                <EditIcon
+                  className="h-5 w-5 shrink-0 cursor-pointer text-msa-text-3 transition-colors hover:text-msa-purple-6"
                   onClick={() => onEditModel(m)}
                 />
               </Tooltip>
@@ -511,7 +512,7 @@ function ProviderDetail({
                 onConfirm={() => onDeleteModel(m)}
               >
                 <Tooltip title={t.modelsAdmin.deleteModel}>
-                  <IconDelete className="h-[18px] w-[18px] shrink-0 cursor-pointer text-msa-text-3 transition-colors hover:text-msa-purple-6" />
+                  <DeleteIcon className="h-5 w-5 shrink-0 cursor-pointer text-msa-text-3 transition-colors hover:text-msa-purple-6" />
                 </Tooltip>
               </Popconfirm>
             </div>
@@ -527,7 +528,7 @@ function ProviderDetail({
             className="flex cursor-pointer items-center justify-center gap-1.5 rounded-[10px] border border-dashed border-msa-line-1 px-4 py-[18px] text-sm text-msa-text-brand1 transition-colors hover:border-msa-line-3"
             onClick={onAddModel}
           >
-            <AddIcon className="h-4 w-4" />
+            <AddIcon className="h-5 w-5" />
             <span>{t.modelsAdmin.addModel}</span>
           </div>
         </div>

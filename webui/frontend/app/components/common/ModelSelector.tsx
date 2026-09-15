@@ -161,7 +161,7 @@ export function ModelSelector({
                   title={t.modelsAdmin.changeProvider}
                   className="flex shrink-0 cursor-pointer items-center gap-1.5 border-0 bg-msa-fill-0 px-[10px] py-[10px] text-left text-sm font-medium text-msa-text-1 transition-colors hover:text-msa-text-brand1 sm:hidden"
                 >
-                  <BackIcon className="h-4 w-4 shrink-0" />
+                  <BackIcon className="h-5 w-5 shrink-0" />
                   <span className="min-w-0 truncate">
                     {activeProvider.name}
                   </span>

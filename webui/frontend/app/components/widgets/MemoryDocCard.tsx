@@ -157,7 +157,7 @@ export function MemoryDocCard({ project }: { project: Project }) {
                   value: 'edit',
                   icon: (
                     <Tooltip title={t.common.viewCode}>
-                      <TerminalIcon className="h-4 w-4" />
+                      <TerminalIcon className="h-5 w-5" />
                     </Tooltip>
                   )
                 },
@@ -165,7 +165,7 @@ export function MemoryDocCard({ project }: { project: Project }) {
                   value: 'preview',
                   icon: (
                     <Tooltip title={t.common.viewPreview}>
-                      <ViewIcon className="h-4 w-4" />
+                      <ViewIcon className="h-5 w-5" />
                     </Tooltip>
                   )
                 }
