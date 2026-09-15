@@ -162,7 +162,7 @@ function RemoveButton({ onClick }: { onClick?: () => void }) {
       onClick={onClick}
       className="absolute -right-1.5 -top-1.5 z-10 flex h-[20px] w-[20px] items-center justify-center p-0 rounded-full bg-msa-fill-3  text-mas-text-0 shadow-sm  transition-opacity opacity-0 group-hover:opacity-100 border-none outline-none cursor-pointer"
     >
-      <CloseIcon className="h-2.5 h-2.5" />
+      <CloseIcon className="h-2.5 w-2.5" />
     </button>
   )
 }
