@@ -299,6 +299,11 @@ export const api = {
     json<SessionMessage[]>(`/api/sessions/${pid(id)}/messages`, {}, opts),
   getSessionPlan: (id: string, opts?: ApiCallOpts) =>
     json<SessionPlan>(`/api/sessions/${pid(id)}/plan`, {}, opts),
+  forkSession: (id: string, afterSeq: number, requestId: string) =>
+    json<Session>(`/api/sessions/${pid(id)}/fork`, {
+      method: 'POST',
+      body: JSON.stringify({ after_seq: afterSeq, request_id: requestId })
+    }),
   createSession: (body: {
     title: string
     project_id?: string

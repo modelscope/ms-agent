@@ -294,6 +294,8 @@ export function ChatView({
           </p>
         </ChatBackdrop>
         <Composer
+          draftKey={activeSessionId}
+          focusOnMount={!!location.state?.focusComposer}
           modelSelection={modelSelection}
           modelSelectionDisabled={isNewChat && ctx.loading}
           project={activeProject}
@@ -315,6 +317,8 @@ export function ChatView({
   const renderSender = (ctx: ChatComposerCtx) => (
     <div>
       <Composer
+        draftKey={activeSessionId}
+        focusOnMount={!!location.state?.focusComposer}
         modelSelection={modelSelection}
         modelSelectionDisabled={isNewChat && ctx.loading}
         project={activeProject}

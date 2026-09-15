@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
 
-from app.backends.errors import NotFound
+from app.backends.errors import NotFound, Conflict
 from app.backends.ms_agent import sidecar
 from app.backends.ms_agent.common import (
     autoname_session,
@@ -24,6 +24,8 @@ from app.schemas.session import (
     Artifact,
     Session,
     SessionCreate,
+    SessionFork,
+    ForkOrigin,
     SessionFile,
     SessionMessage,
     SessionPart,
@@ -72,6 +74,23 @@ def create_session(body: SessionCreate) -> Session:
     if body.preview:
         sidecar.merge("sessions", session.id, {"preview": body.preview})
     return session_to_schema(session)
+
+
+def fork_session(sid: str, body: SessionFork) -> Session:
+    from ms_agent.session.replay import InvalidForkPoint
+
+    found = find_session(sid)
+    if not found:
+        raise NotFound("Source conversation not found.")
+    _project, _source, manager = found
+    try:
+        child = manager.fork(sid, after_seq=body.after_seq,
+                             name=body.title, request_id=body.request_id)
+    except FileNotFoundError:
+        raise NotFound("Source conversation was deleted.") from None
+    except InvalidForkPoint as exc:
+        raise Conflict(str(exc)) from None
+    return session_to_schema(child)
 
 
 def get_session(sid: str) -> Session:
@@ -283,7 +302,8 @@ def read_plan(session_id: str) -> SessionPlan:
 
     plan_path = os.path.join(session_dir(project, session), "plan.json")
     todos = _disk_plan(plan_path)
-    if todos is None:  # pre-isolation sessions used a project-shared plan
+    if todos is None and not getattr(session, "forked_from", None):
+        # Only old, unbranched sessions may use the project-shared plan.
         plan_path = os.path.join(project.path, "plan.json")
         todos = _disk_plan(plan_path)
     if todos is None:
@@ -316,6 +336,7 @@ def list_messages(sid: str) -> list[SessionMessage]:
     project, session, sm = found
     rows: list[dict] = []
     extra: list[dict] = []
+    log = None
     try:
         log = sm.get_session_log(session)
         rows = log.get_all_messages()
@@ -334,6 +355,24 @@ def list_messages(sid: str) -> list[SessionMessage]:
         rows, extra = [], []
     stream = sorted([*rows, *extra], key=lambda r: r.get("seq", 0))
     messages = _reconstruct(stream, project)
+    try:
+        from ms_agent.session.replay import fork_points
+        points = {p.assistant_seq: p.after_seq for p in fork_points(log.records())} if log else {}
+    except (ValueError, OSError):
+        points = {}
+    origin = session.forked_from
+    for message in messages:
+        if message.role != "assistant":
+            continue
+        message.fork_after_seq = points.get(message.log_seq)
+        if origin and message.log_seq == origin.get("assistant_seq"):
+            source = sm.get(origin["session_id"])
+            message.fork_origin = ForkOrigin(
+                session_id=origin["session_id"], project_id=project.id,
+                title=source.name if source else origin["title"],
+                assistant_seq=origin["assistant_seq"], available=source is not None)
+        if origin and message.plan_file and message.log_seq is not None and message.log_seq <= origin["assistant_seq"]:
+            message.plan_file = str(sm.sessions_dir / session.id / "plan.md")
     # A turn in flight has its finished rounds on disk AND replayed on the live
     # stream. Flag the trailing message so an attached viewer drops this copy
     # and renders the turn once, not twice.
@@ -347,7 +386,7 @@ def list_messages(sid: str) -> list[SessionMessage]:
         try:
             from app.backends.ms_agent.runtime import registry
 
-            messages[-1].partial = registry.is_generating(sid)
+            messages[-1].partial = registry.is_generating(sid) and messages[-1].fork_after_seq is None
         except Exception:  # a history read must never fail over a live check
             messages[-1].partial = False
     return messages
@@ -462,6 +501,9 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
     """
     from app.backends.ms_agent.chat import is_placeholder_content
 
+    # Saved context copies must not replace original tool results in the UI.
+    rows = [row for row in rows if row.get("_source") != "compaction"]
+
     # Failed tool results keyed by call id, so the matching tool_call step can be
     # marked errored (the assistant tool_call row precedes its tool result row).
     errored: dict[str, str] = {
@@ -514,6 +556,7 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
     # Absolute path of the session plan markdown (loop_end marker's
     # ``plan_file``), set when the turn rewrote the todo list.
     turn_plan_file: str | None = None
+    turn_log_seq: int | None = None
 
     def _perm_key(tool: str, args) -> str:
         # Normalize dict or JSON-string arguments to a canonical form so a
@@ -548,7 +591,7 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
 
     def flush() -> None:
         nonlocal parts, pending_perms, turn_changed, turn_changed_seen
-        nonlocal turn_duration_ms, turn_plan_file
+        nonlocal turn_duration_ms, turn_plan_file, turn_log_seq
         # Any authorization that never matched a tool step (unusual) still
         # renders, appended in record order so nothing is dropped.
         for rec in pending_perms:
@@ -562,6 +605,7 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
                                      "error") for p in parts):
             messages.append(
                 SessionMessage(role="assistant",
+                               log_seq=turn_log_seq,
                                content=content,
                                parts=parts,
                                changed_files=turn_changed,
@@ -572,6 +616,7 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
         turn_changed_seen = set()
         turn_duration_ms = None
         turn_plan_file = None
+        turn_log_seq = None
 
     def append_text(text: str) -> None:
         # Merge consecutive answer rows into the current text block; start a new
@@ -583,10 +628,6 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
             parts.append(SessionPart(kind="text", text=text))
 
     for row in rows:
-        if row.get("_source") == "compaction":
-            # Compacted-view re-appends duplicate earlier rows for the LLM
-            # window only; replaying them would double the timeline.
-            continue
         if row.get("_type") == "loop_end":
             # Persisted loop boundary: carries the wall-clock duration for this
             # turn (its seq lands after the turn's rows, before the next user
@@ -697,6 +738,7 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
                         segments=segments,
                     ))
         elif role == "assistant":
+            turn_log_seq = row.get("seq")
             # An interrupted round's unsigned partial reasoning is persisted
             # under a display-only key (replaying it would 400 on Anthropic);
             # it renders as a normal finished thought block.

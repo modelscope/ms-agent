@@ -52,6 +52,11 @@
     "unreadProject": "Has finished chats you haven't opened"
   },
   "chat": {
+    "forkUploadPending": "Please wait for the current upload or submission to finish.",
+    "forkReply": "Branch",
+    "forkFrom": "Branched from “{title}”",
+    "forkSourceDeleted": "Source conversation deleted",
+    "forkFailed": "Could not create branch. Please try again.",
     "welcomeDesc": "Tell me what to do. I'll plan, call tools, and write artifacts to workspace.",
     "placeholder": "Type your task. Enter to send, Shift+Enter for newline.",
     "thoughts": "Thoughts",
