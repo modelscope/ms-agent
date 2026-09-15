@@ -733,7 +733,7 @@ function WorkspacePanel({
                 <Button size="small" type="text">
                   {t.workspace.addFile}
                   <CaretDownIcon
-                    className={`ml-1 h-1.5 w-1.5 transition-transform duration-200 ${
+                    className={`h-2.5 w-2.5 transition-transform duration-200 ${
                       addMenuOpen ? 'rotate-180' : ''
                     }`}
                   />
@@ -802,7 +802,7 @@ function WorkspacePanel({
                     return (
                       <span className="flex items-center gap-3">
                         {record.kind === 'folder' ? (
-                          <FolderIcon className="h-5 w-5" />
+                          <FolderIcon className="h-4 w-4" />
                         ) : (
                           <FileTypeIcon
                             name={displayName}
@@ -925,7 +925,7 @@ function WorkspacePanel({
                 <Button size="small" type="text">
                   {t.workspace.addFile}
                   <CaretDownIcon
-                    className={`ml-1 h-1.5 w-1.5 transition-transform duration-200 ${
+                    className={`h-2.5 w-2.5 transition-transform duration-200 ${
                       addMenuOpen ? 'rotate-180' : ''
                     }`}
                   />

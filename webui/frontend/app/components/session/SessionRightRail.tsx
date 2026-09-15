@@ -1204,11 +1204,14 @@ export function SessionRightRail({
               <div className="shrink-0 px-2 pt-2 pb-1">
                 <Input
                   allowClear
-                  size="small"
-                  prefix={<SearchIcon className="h-5 w-5 text-msa-text-3" />}
+                  variant="borderless"
+                  prefix={
+                    <SearchIcon className="mr-1 h-5 w-5 text-msa-text-3" />
+                  }
                   placeholder={t.workspace.searchPlaceholder}
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
+                  className="rounded-lg h-8 bg-msa-fill-2 px-1.5 py-1"
                 />
               </div>
               <ScrollArea

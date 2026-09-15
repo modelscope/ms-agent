@@ -925,7 +925,7 @@ export function Composer({
               className="-mx-2 flex w-[calc(100%+1rem)] cursor-pointer items-center justify-between gap-2 rounded-lg border-none bg-transparent px-2 py-1 text-left outline-none"
             >
               <span className="flex shrink-0 items-center gap-1">
-                <IconTask className="h-5 w-5" />
+                <IconTask className="h-5.5 w-5.5" />
                 <span className="text-sm font-medium text-msa-text-1">
                   {t.home.thinkingTasks}
                 </span>
@@ -933,7 +933,7 @@ export function Composer({
                   {doneCount}/{totalCount}
                 </span>
                 <ExpandIcon
-                  className={`ml-1 h-5 w-5 text-msa-text-3 transition-transform ${
+                  className={`ml-1 h-3.5 w-3.5 text-msa-text-3 transition-transform ${
                     thinkingExpanded ? '' : 'rotate-180'
                   }`}
                 />
@@ -1009,7 +1009,7 @@ export function Composer({
               onClick={() => setFilesExpanded((v) => !v)}
               className="-mx-2 flex w-[calc(100%+1rem)] cursor-pointer items-center gap-1 rounded-lg border-none bg-transparent px-2 py-1 text-left outline-none"
             >
-              <IconFolder className="h-5 w-5" />
+              <IconFolder className="h-5.5 w-5.5" />
               <span className="ml-1 text-sm font-medium text-msa-text-1">
                 {t.home.thinkingFiles}
               </span>
@@ -1017,7 +1017,7 @@ export function Composer({
                 {thinking.files.length}
               </span>
               <ExpandIcon
-                className={`ml-1 h-5 w-5 text-msa-text-3 transition-transform ${
+                className={`ml-1 h-3.5 w-3.5 text-msa-text-3 transition-transform ${
                   filesExpanded ? '' : 'rotate-180'
                 }`}
               />

@@ -8,6 +8,7 @@ import type { AgentSettings, Model, Provider } from '~/lib/types'
 import { PillButton } from './PillButton'
 import { EmptyState, EmptyStateAction } from './EmptyState'
 import { DeferredSkeleton } from './DeferredSkeleton'
+import { ScrollArea } from './ScrollArea'
 import './ModelSelector.css'
 import JumpIcon from '~/assets/icons/jump.svg?react'
 import BackIcon from '~/assets/icons/back.svg?react'
@@ -102,17 +103,14 @@ export function ModelSelector({
       }}
       content={
         <div className="flex h-[300px] w-[min(661px,calc(100vw-32px))]">
-          {/* Left: providers.
-              Fixed width from `sm` up, not shrink-0 alone: without a cap the
-              column expands to fit the widest provider name, which squeezes the
-              models column (min-w-0 flex-1) down to a few characters. 280px keeps
-              common provider names on one line next to their status tags, while
-              the row's own `truncate` handles longer canonical or custom names.
-              The models column keeps ~380px, still ample for model names.
-              Below `sm` it instead spans the full panel and yields the whole
-              panel to the models pane once drilled in. */}
-          <div
-            className={`h-full w-full shrink-0 flex-col gap-1 overflow-y-auto border-msa-line-1 p-[6px] sm:flex sm:w-[280px] sm:border-r ${
+          {/* Left: providers. Fixed width from `sm` up so the column can't
+              expand to fit the widest provider name and squeeze the models
+              column; below `sm` it spans the full panel and yields it once
+              drilled in. `pad` is 12 because ScrollArea only subtracts the
+              scrollbar back out when `pad` is at least the bar width. */}
+          <ScrollArea
+            pad={12}
+            className={`h-full w-full shrink-0 flex-col gap-1 border-msa-line-1 py-[6px] sm:flex sm:w-[280px] sm:border-r ${
               drilled ? 'hidden' : 'flex'
             }`}
           >
@@ -134,18 +132,14 @@ export function ModelSelector({
                   }`}
                 >
                   {/* No `flex-1` on the name: it would claim the row's slack and
-                      push the tags over to the arrow, reading as if they
-                      belonged to it. Shrinking (the flex default) still lets
-                      `truncate` cut a long name, and `ml-auto` keeps the arrow
-                      pinned right. Same tags as the settings provider list, so
-                      "built-in" and "key on file" mean the same thing here. */}
+                      push the tags over to the arrow. */}
                   <span className="min-w-0 truncate">{p.name}</span>
                   <ProviderTags provider={p} />
                   <JumpIcon className="ml-auto h-[15px] w-[15px] shrink-0 text-msa-text-3" />
                 </button>
               )
             })}
-          </div>
+          </ScrollArea>
 
           {/* Right: models */}
           <div
@@ -174,7 +168,9 @@ export function ModelSelector({
               </>
             )}
 
-            <div className="min-h-0 flex-1 overflow-y-auto p-[6px]">
+            {/* Same 12px inset as the provider column, so the divider has an
+                equal gap on either side. */}
+            <ScrollArea pad={12} className="flex-1 py-[6px]">
               {models === null || providers === null ? (
                 <DeferredSkeleton rows={5} className="p-2" />
               ) : activeProvider ? (
@@ -245,7 +241,7 @@ export function ModelSelector({
                   —
                 </div>
               )}
-            </div>
+            </ScrollArea>
           </div>
         </div>
       }
