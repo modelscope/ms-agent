@@ -474,6 +474,8 @@ class LLMAgent(Agent):
         """
         from ms_agent.prompting.builtin import (TRANSCRIPTS_INSIDE,
                                                 TRANSCRIPTS_OUTSIDE,
+                                                SESSION_PLAN_HINT,
+                                                FORK_PLAN_HINT,
                                                 WORKSPACE_RECORDS_HINT)
         from ms_agent.utils.workspace_context import resolve_workspace_root
 
@@ -516,8 +518,22 @@ class LLMAgent(Agent):
             transcripts_where = TRANSCRIPTS_OUTSIDE.format(
                 session_dir=str(Path(directory)))
 
-        return WORKSPACE_RECORDS_HINT.format(
+        section = WORKSPACE_RECORDS_HINT.format(
             transcripts_where=transcripts_where, home=home)
+        todo = getattr(getattr(self.config, 'tools', None), 'todo_list', None)
+        if todo is not None and not getattr(todo, 'mcp', False):
+            plan_json = getattr(todo, 'plan_filename', None)
+            plan_md = getattr(todo, 'plan_md_filename', None)
+            if plan_json and plan_md:
+                output_dir = str(getattr(self.config, 'output_dir', workspace_root))
+                section += '\n\n' + SESSION_PLAN_HINT.format(
+                    plan_json=os.path.abspath(os.path.join(output_dir, plan_json)),
+                    plan_md=os.path.abspath(os.path.join(output_dir, plan_md)))
+                get_metadata = getattr(
+                    getattr(self, 'session_log', None), 'get_metadata', None)
+                if get_metadata and get_metadata().get('fork_after_seq') is not None:
+                    section += ' ' + FORK_PLAN_HINT
+        return section
 
     def _check_skill_tool_dependencies(self):
         """Warn if skills are enabled but essential tools are missing."""

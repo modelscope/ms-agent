@@ -114,15 +114,22 @@ class TodoListTool(ToolBase):
         )
 
     async def _get_tools_inner(self) -> Dict[str, Any]:
+        paths = self._paths()
+        plan_json = os.path.abspath(paths.plan_json)
+        plan_md = os.path.abspath(paths.plan_md)
+        render_note = (
+            f' Also updates `{plan_md}` automatically.'
+            if self._auto_render_md else '')
         tools: Dict[str, List[Tool]] = {
             self.SERVER_NAME: [
                 Tool(
                     tool_name='todo_write',
                     server_name=self.SERVER_NAME,
                     description=
-                    ('Create or update the structured todo list (plan.json) for this session/workdir. '
+                    (f'Create or update the current session plan at `{plan_json}`. '
                      'Use merge=true to merge by id (partial updates allowed for existing ids); '
-                     'merge=false replaces the list (full items required).'),
+                     'merge=false replaces the list (full items required).'
+                     + render_note),
                     parameters={
                         'type': 'object',
                         'properties': {
@@ -189,7 +196,8 @@ class TodoListTool(ToolBase):
                     tool_name='todo_read',
                     server_name=self.SERVER_NAME,
                     description=
-                    'Read the current todo list for this session/workdir.',
+                    (f'Read the current session plan at `{plan_json}`. '
+                     'Plan paths in earlier conversation history may refer to another session.'),
                     parameters={
                         'type': 'object',
                         'properties': {},
@@ -201,7 +209,7 @@ class TodoListTool(ToolBase):
                     tool_name='todo_render_md',
                     server_name=self.SERVER_NAME,
                     description=
-                    'Render plan.md from plan.json (checkbox view).',
+                    f'Render the current plan at `{plan_json}` as Markdown (checkbox view).',
                     parameters={
                         'type': 'object',
                         'properties': {
@@ -209,8 +217,8 @@ class TodoListTool(ToolBase):
                                 'type':
                                 'string',
                                 'description':
-                                ('Optional relative output path for the markdown file. '
-                                 'Defaults to plan.md in the workdir.'),
+                                ('Optional output path for the markdown file, relative to the workdir. '
+                                 f'When omitted, writes `{plan_md}`.'),
                             }
                         },
                         'required': [],

@@ -96,6 +96,10 @@ def test_it_reaches_the_system_prompt(tmp_path):
     # ``system`` reads through the config; set it where it actually comes from.
     agent.config = OmegaConf.create({
         'output_dir': str(workspace),
+        'tools': {'todo_list': {
+            'plan_filename': str(workspace / 'sessions/sid/plan.json'),
+            'plan_md_filename': str(workspace / 'sessions/sid/plan.md'),
+        }},
         'prompt': {
             'system': 'BASE PROMPT'
         },
@@ -108,3 +112,11 @@ def test_it_reaches_the_system_prompt(tmp_path):
     content = agent._build_system_content()
     assert content.startswith('BASE PROMPT')
     assert 'sessions/sid/' in content
+    assert str(workspace / 'sessions/sid/plan.json') in content
+    assert str(workspace / 'sessions/sid/plan.md') in content
+    assert 'branched session' not in content
+
+    from ms_agent.session import SessionLog
+    agent.session_log = SessionLog(workspace / 'sessions/sid', 'session_sid')
+    agent.session_log.set_metadata_field('fork_after_seq', 6)
+    assert 'branched session with an independent plan' in agent._build_system_content()
