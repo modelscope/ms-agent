@@ -297,15 +297,15 @@ export function Sidebar({
             {/* Projects card */}
             <div className="flex min-h-0 flex-1 flex-col rounded-2xl bg-msa-fill-0 p-1.5">
               <div className="flex shrink-0 items-center justify-between px-2 py-1">
-                <span className="text-sm font-medium text-msa-text-2">
+                <span className="text-[13px] text-msa-text-3">
                   {t.nav.projectsTitle}
                 </span>
                 <Tooltip title={t.nav.newProject}>
                   <IconButton
-                    variant="filled"
-                    size="sm"
+                    variant="tonal"
+                    size="xs"
                     onClick={openCreateProject}
-                    icon={<NewProjectIcon className="h-5 w-5" />}
+                    icon={<NewProjectIcon className="h-4 w-4" />}
                     className="text-msa-text-2 hover:bg-msa-fill-2"
                   />
                 </Tooltip>
@@ -481,7 +481,7 @@ function ProjectRowActions({
     <>
       <Tooltip title={t.nav.newChat}>
         <IconButton
-          icon={<AddIcon className="h-5 w-5" />}
+          icon={<AddIcon className="h-4 w-4" />}
           variant="ghost"
           size="xs"
           className={actionClass}
@@ -504,7 +504,7 @@ function ProjectRowActions({
         >
           <IconButton
             aria-label={t.resources.more}
-            icon={<MoreIcon className="h-3.5 w-3.5" />}
+            icon={<MoreIcon className="h-4 w-4" />}
             variant="ghost"
             size="xs"
             className={actionClass}
@@ -666,7 +666,7 @@ function CollapsedProjectGroup({
       >
         <span className="flex h-4 w-4 shrink-0 items-center justify-center text-[10px] text-msa-neutral-3">
           <ExpandIcon
-            className={`h-3 w-3 transition-transform ${open ? '' : 'rotate-180'}`}
+            className={`h-3.5 w-3.5 transition-transform ${open ? '' : 'rotate-180'}`}
           />
         </span>
         <div
@@ -789,7 +789,7 @@ function ProjectGroup({
           }}
         >
           <ExpandIcon
-            className={`h-4 w-4 transition-transform ${open ? '' : 'rotate-180'}`}
+            className={`h-3.5 w-3.5 transition-transform ${open ? '' : 'rotate-180'}`}
           />
         </span>
         {/* Project name — click to enter project detail */}

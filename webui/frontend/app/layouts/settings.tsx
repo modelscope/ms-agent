@@ -110,8 +110,8 @@ export default function SettingsLayout() {
                 own width. The button stays full-width to keep the hit area on
                 the whole row, and `md:pr-12` is the room the fade needs. */}
             <span className="flex items-center gap-2 rounded-[12px] p-1.5 text-sm font-medium text-msa-text-1 bg-[linear-gradient(90deg,var(--msa-fill-3)_54%,transparent_95%)] group-hover:bg-[linear-gradient(90deg,var(--msa-fill-4)_54%,transparent_95%)] md:pr-20">
-              <span className="flex p-1.5 shrink-0 items-center justify-center rounded-[12px] bg-msa-fill-0">
-                <IconBack className="h-6 w-6" />
+              <span className="flex shrink-0 items-center justify-center rounded-[12px] bg-msa-fill-0 h-8 w-8">
+                <IconBack className="h-4.5 w-4.5" />
               </span>
               <span className="hidden md:inline">{t.settings.back}</span>
             </span>

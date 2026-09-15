@@ -1,9 +1,11 @@
 """Running-state poll for the app shell.
 
-The frontend polls here every ~10s. The response carries the ids of sessions
-with a turn in flight, which drives the sidebar "running" spinners, triggers
-the live re-attach when the user opens a running session, and lets the client
-reload lists/history the moment a background turn finishes.
+The frontend polls here while its tab is visible: every ~10s while a turn is
+running, every ~30s otherwise, plus one poll on mount even if the tab is
+hidden. The response carries the ids of sessions with a turn in flight, which
+drives the sidebar "running" spinners, triggers the live re-attach when the
+user opens a running session, and lets the client reload lists/history the
+moment a background turn finishes.
 
 This is NOT a liveness contract: by product decision (aligned with the
 frontend team), a running turn is never stopped because clients went away —
