@@ -230,11 +230,21 @@ export function Composer({
   const [globalSettings, setSettings] = useState<AgentSettings | null>(
     appData?.agentSettings ?? null
   )
-  const draftSelection = useSessionModel(null, appData?.agentSettings.default_model_id ?? '', !providedSelection)
+  const draftSelection = useSessionModel(
+    null,
+    appData?.agentSettings.default_model_id ?? '',
+    !providedSelection
+  )
   const modelSelection = providedSelection ?? draftSelection
-  const selectedProvider = models?.find(m => m.id === modelSelection.modelId)?.provider_id ?? null
-  const settings = globalSettings ? { ...globalSettings, default_model_id: modelSelection.modelId,
-    default_provider_id: selectedProvider } : null
+  const selectedProvider =
+    models?.find((m) => m.id === modelSelection.modelId)?.provider_id ?? null
+  const settings = globalSettings
+    ? {
+        ...globalSettings,
+        default_model_id: modelSelection.modelId,
+        default_provider_id: selectedProvider
+      }
+    : null
   const submitting = useRef(false)
   const [preparing, setPreparing] = useState(false)
   // Global lists also come from the loader; only the project-scoped halves are
@@ -360,7 +370,9 @@ export function Composer({
     try {
       setSettings(await modelSelection.select(providerId, modelId))
       void revalidator.revalidate()
-    } catch { /* API errors are shown by the shared error toast. */ }
+    } catch {
+      /* API errors are shown by the shared error toast. */
+    }
   }
 
   // Slash-command suggestions list EVERY known skill (global + project),
@@ -645,7 +657,7 @@ export function Composer({
     models !== null &&
     settings !== null &&
     (!models.some((m) => m.id === settings.default_model_id) ||
-      providers?.find(p => p.id === selectedProvider)?.enabled === false)
+      providers?.find((p) => p.id === selectedProvider)?.enabled === false)
   // Send is allowed when nothing is still uploading and there is text, a
   // ready file, or a picked skill pill (a bare skill invocation is valid —
   // the backend answers with the skill intro).
@@ -666,7 +678,11 @@ export function Composer({
   // Refresh the catalog without replacing this conversation's selection.
   useModelChanged(
     useCallback(() => {
-      Promise.all([api.getAgentSettings(), api.listModels(), api.listProviders()])
+      Promise.all([
+        api.getAgentSettings(),
+        api.listModels(),
+        api.listProviders()
+      ])
         .then(([settings, models, providers]) => {
           setSettings(settings)
           setModels(models)
@@ -1069,7 +1085,7 @@ export function Composer({
         )}
 
         {/* Card-style composer container */}
-        <div className="composer-card relative flex flex-col rounded-2xl border border-msa-line-1 bg-msa-bg-1 p-5 shadow-msa-m">
+        <div className="composer-card relative flex flex-col rounded-3xl border border-msa-line-1 bg-msa-bg-1 p-5 shadow-msa-m">
           {/* Project picker (top-right, outside card flow) */}
           {hasProjectPicker && projectMenuItems && (
             <div className="absolute -top-8 right-0">

@@ -50,7 +50,7 @@ export const MsaButton = forwardRef<HTMLButtonElement, MsaButtonProps>(
       <Button
         ref={ref}
         type="text"
-        className={`${variant === 'outlined' ? 'shadow-none' : 'border-none shadow-none'} ${variantStyles[variant]} ${className}`}
+        className={`${variant === 'outlined' ? 'shadow-none' : 'border-none shadow-none'} px-3 ${variantStyles[variant]} ${className}`}
         classNames={{
           ...extraClassNames,
           icon: `flex items-center justify-center leading-none ${extraIcon}`

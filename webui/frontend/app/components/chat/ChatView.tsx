@@ -282,7 +282,9 @@ export function ChatView({
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden justify-center px-4 sm:px-[24px]">
       <div
         className={`mx-auto flex transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
-          railOpen ? 'w-full' : 'w-full xl:w-[80%]'
+          railOpen
+            ? 'w-full max-w-[900px]'
+            : 'w-full xl:w-[80%] xl:max-w-[900px]'
         } flex-col`}
       >
         <ChatBackdrop className="mb-10 w-full">

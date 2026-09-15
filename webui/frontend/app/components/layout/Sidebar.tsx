@@ -240,7 +240,7 @@ export function Sidebar({
         ) : (
           <div className="flex min-h-0 flex-1 flex-col gap-3">
             {/* Top card: brand + new chat + nav shortcuts */}
-            <div className="shrink-0 rounded-[12px] bg-msa-fill-3 p-[8px]">
+            <div className="shrink-0 rounded-[20px] bg-msa-fill-3 p-[8px]">
               <div className="flex items-center gap-2">
                 {/* Logo / collapse toggle: on sidebar hover the logo morphs
                     into the collapse icon (same pattern as collapsed mode). */}
@@ -265,7 +265,7 @@ export function Sidebar({
                   block
                   icon={<NewChatIcon className="h-5 w-5" />}
                   onClick={openNewChat}
-                  className="!flex !items-center !justify-center !gap-2 !rounded-2xl !px-4 !py-2.5 !h-auto !font-medium !text-sm hover:!opacity-90"
+                  className="!flex !items-center !justify-center !gap-2 !rounded-xl !px-4 !py-2.5 !h-auto !font-medium !text-sm hover:!opacity-90"
                 >
                   <span>{t.nav.newChatShort}</span>
                 </MsaButton>
