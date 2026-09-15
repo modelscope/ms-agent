@@ -332,6 +332,13 @@ export const api = {
     ),
   listArtifacts: (sessionId: string) =>
     json<Artifact[]>(`/api/sessions/${pid(sessionId)}/artifacts`),
+  // Browser-only URL for a credentialed Blob download (see download.ts).
+  sessionExportUrl: (
+    sessionId: string,
+    format: 'markdown' | 'html',
+    detail: 'full' | 'compact' | 'user-only'
+  ) =>
+    `/api/sessions/${pid(sessionId)}/export${q({ format, detail })}`,
 
   // MCPs
   listMcps: (scope?: Scope) => json<Mcp[]>(`/api/mcps${q({ scope })}`),

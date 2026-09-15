@@ -15,6 +15,12 @@ import { MsaButton } from '~/components/common/MsaButton'
 import { ScrollArea } from '~/components/common/ScrollArea'
 import { NewProjectModal } from '~/components/project/NewProjectModal'
 import { api } from '~/lib/api'
+import {
+  DownloadUnauthorizedError,
+  downloadSessionExport,
+  type SessionExportDetail,
+  type SessionExportFormat
+} from '~/lib/download'
 import { useT } from '~/lib/i18n'
 import { usePresence } from '~/lib/presenceContext'
 import { useUrlPath } from '~/lib/useUrlPath'
@@ -854,7 +860,7 @@ function SessionItem({
   onNavigate?: () => void
 }) {
   const { t } = useT()
-  const { modal } = App.useApp()
+  const { message, modal } = App.useApp()
   const navigate = useNavigate()
   const location = useLocation()
   const revalidator = useRevalidator()
@@ -902,6 +908,40 @@ function SessionItem({
     })
   }
 
+  const handleExport = async (
+    format: SessionExportFormat,
+    detail: SessionExportDetail
+  ) => {
+    try {
+      await downloadSessionExport(session, format, detail)
+      message.success(t.sidebar.exportSuccess)
+    } catch (error) {
+      message.error(
+        error instanceof DownloadUnauthorizedError
+          ? t.workspace.downloadUnauthorized
+          : t.sidebar.exportFailed
+      )
+    }
+  }
+
+  const exportDetailItems = (format: SessionExportFormat): MenuProps['items'] => [
+    {
+      key: `${format}-full`,
+      label: t.sidebar.exportFull,
+      onClick: () => void handleExport(format, 'full')
+    },
+    {
+      key: `${format}-compact`,
+      label: t.sidebar.exportCompact,
+      onClick: () => void handleExport(format, 'compact')
+    },
+    {
+      key: `${format}-user-only`,
+      label: t.sidebar.exportConversationOnly,
+      onClick: () => void handleExport(format, 'user-only')
+    }
+  ]
+
   const sessionMenu: MenuProps = {
     items: [
       {
@@ -911,6 +951,22 @@ function SessionItem({
           setRenameValue(session.title)
           setRenameOpen(true)
         }
+      },
+      {
+        key: 'export',
+        label: t.sidebar.exportSession,
+        children: [
+          {
+            key: 'export-markdown',
+            label: t.sidebar.exportMarkdown,
+            children: exportDetailItems('markdown')
+          },
+          {
+            key: 'export-html',
+            label: t.sidebar.exportHtml,
+            children: exportDetailItems('html')
+          }
+        ]
       },
       {
         key: 'delete',
