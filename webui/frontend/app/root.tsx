@@ -24,6 +24,10 @@ import { SERVER_HOSTED_MODE } from '~/lib/env'
 import { LANG_COOKIE, dictFor, type Lang, LangProvider, useT } from '~/lib/i18n'
 import { getMsaAntdTheme, msaModalProps } from '~/lib/msaTheme'
 import {
+  SCROLLBAR_WIDTH_SCRIPT,
+  useScrollbarWidthVar
+} from '~/lib/scrollbarWidth'
+import {
   SCHEME_COOKIE,
   THEME_COOKIE,
   type Theme,
@@ -174,6 +178,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
         ) : null}
       </head>
       <body className="h-full overflow-x-hidden">
+        {/* Before anything below it lays out — see the script's own comment. */}
+        <script dangerouslySetInnerHTML={{ __html: SCROLLBAR_WIDTH_SCRIPT }} />
         <LangProvider initialLang={initialLang}>
           <ThemeProvider
             initialPref={initialPref}
@@ -192,6 +198,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 function ThemedRoot({ children }: { children: React.ReactNode }) {
   const { antdLocale } = useT()
   const { theme } = useTheme()
+  useScrollbarWidthVar()
   return (
     <StyleProvider layer>
       <XProvider
