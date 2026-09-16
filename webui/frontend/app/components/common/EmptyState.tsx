@@ -103,10 +103,7 @@ export function EmptyState({
  * comes with the one thing that fixes it, rather than prose pointing at a
  * button somewhere else on the page.
  */
-export function EmptyStateAction({
-  className = '',
-  ...rest
-}: MsaButtonProps) {
+export function EmptyStateAction({ className = '', ...rest }: MsaButtonProps) {
   return (
     <MsaButton
       variant="primary"
@@ -145,7 +142,9 @@ export function AntdRenderEmpty({
   // illustration would stack a second one inside the filter panel.
   if (componentName === 'Table.filter') return null
   const inList = componentName === 'Table' || componentName === 'List'
-  return <EmptyState size={inList ? 'sm' : 'xs'} description={t.common.noData} />
+  return (
+    <EmptyState size={inList ? 'sm' : 'xs'} description={t.common.noData} />
+  )
 }
 
 /** Ready to hand to `ConfigProvider.renderEmpty`. A module-level constant

@@ -36,7 +36,7 @@
     "collapse": "Collapse",
     "poweredBy": "Powered by",
     "github": "MS-Agent on GitHub",
-    "recentEmpty": "No chats yet — click \"New chat\" above to start."
+    "projectsEmpty": "No projects yet"
   },
   "sidebar": {
     "editProject": "Edit project",

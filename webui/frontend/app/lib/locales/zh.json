@@ -36,7 +36,7 @@
     "collapse": "收起",
     "poweredBy": "Powered by",
     "github": "MS-Agent GitHub 仓库",
-    "recentEmpty": "暂无对话 —— 点击上方\"新建对话\"开始"
+    "projectsEmpty": "暂无项目"
   },
   "sidebar": {
     "editProject": "编辑项目",
