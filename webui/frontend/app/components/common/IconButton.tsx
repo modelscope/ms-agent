@@ -30,7 +30,7 @@ interface IconButtonProps extends Omit<MsaButtonProps, 'size'> {
 
 const sizeStyles: Record<string, string> = {
   xs: 'h-5 w-5 min-w-0 rounded-md text-xs',
-  sm: 'h-7 w-7 min-w-0 rounded-lg text-xs',
+  sm: 'h-6 w-6 min-w-0 rounded-lg text-xs',
   md: 'h-8 w-8 min-w-0 rounded-xl text-sm',
   lg: 'h-10 w-10 min-w-0 rounded-xl text-base'
 }
@@ -54,7 +54,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
       <MsaButton
         ref={ref}
         variant={variant}
-        className={`flex items-center justify-center p-0 ${sizeStyles[size]} ${noHoverBg} ${className}`}
+        className={`flex items-center justify-center p-0! ${sizeStyles[size]} ${noHoverBg} ${className}`}
         onClick={(e) => {
           if (stopPropagation) {
             e.stopPropagation()

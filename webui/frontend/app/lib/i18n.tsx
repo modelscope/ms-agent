@@ -6,6 +6,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState
 } from 'react'
@@ -73,6 +74,15 @@ export function LangProvider({
   children: React.ReactNode
 }) {
   const [lang, setLangState] = useState<Lang>(initialLang)
+
+  // Keep <html lang> in sync with the active language. The server-rendered
+  // attribute is set in root.tsx Layout; this owns it on the client so it
+  // survives a route change re-render (the root loader no longer revalidates on
+  // navigation, but this makes the attribute correct regardless of loaderData).
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en'
+  }, [lang])
 
   const setLang = useCallback((next: Lang) => {
     setLangState(next)

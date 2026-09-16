@@ -135,14 +135,14 @@ export function Sidebar({
             <div className="shrink-0">
               <Tooltip title={t.nav.expand} placement="right">
                 <div
-                  className="relative flex h-10 w-10 cursor-pointer items-center justify-center"
+                  className="relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-2xl bg-msa-fill-0"
                   onClick={onExpand}
                 >
-                  <div className="flex h-9 w-9 items-center justify-center transition-opacity group-hover/sidebar:opacity-0">
+                  <div className="flex h-9.5 w-9.5 items-center justify-center transition-opacity group-hover/sidebar:opacity-0">
                     <img
                       src={logoImg}
                       alt="MS-Agent"
-                      className="h-9 w-9 select-none"
+                      className="h-9.5 w-9.5 select-none"
                       draggable={false}
                     />
                   </div>
@@ -153,7 +153,7 @@ export function Sidebar({
                       size="lg"
                       stopPropagation={false}
                       icon={
-                        <SidebarToggleIcon className="h-5 w-5 rotate-180" />
+                        <SidebarToggleIcon className="h-6 w-6 rotate-180 text-msa-text-2" />
                       }
                       className="rounded-2xl"
                     />
@@ -258,11 +258,11 @@ export function Sidebar({
                     <img
                       src={logoImg}
                       alt="MS-Agent"
-                      className="h-8 w-8 select-none transition-opacity group-hover/sidebar:opacity-0"
+                      className="h-9.5 w-9.5 select-none transition-opacity group-hover/sidebar:opacity-0"
                       draggable={false}
                     />
                     <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover/sidebar:opacity-100">
-                      <SidebarToggleIcon className="h-5 w-5 text-msa-text-2" />
+                      <SidebarToggleIcon className="h-6 w-6 text-msa-text-2" />
                     </div>
                   </div>
                 </Tooltip>
@@ -303,9 +303,9 @@ export function Sidebar({
                 <Tooltip title={t.nav.newProject}>
                   <IconButton
                     variant="tonal"
-                    size="xs"
+                    size="sm"
                     onClick={openCreateProject}
-                    icon={<NewProjectIcon className="h-4 w-4" />}
+                    icon={<NewProjectIcon className="h-5 w-5" />}
                     className="text-msa-text-2 hover:bg-msa-fill-2"
                   />
                 </Tooltip>
@@ -342,7 +342,7 @@ export function Sidebar({
                 label={t.nav.agentSettings}
                 icon={<SettingsIcon className="h-5 w-5" />}
                 onNavigate={onNavigate}
-                className="bg-msa-fill-0 rounded-[12px] !text-sm !font-normal hover:bg-msa-fill-brand-subtle hover:!text-msa-text-brand1"
+                className="bg-msa-fill-0 rounded-[12px] !text-sm !font-normal hover:bg-msa-fill-brand-subtle"
               />
               <a
                 href={REPO_URL}
@@ -924,7 +924,9 @@ function SessionItem({
     }
   }
 
-  const exportDetailItems = (format: SessionExportFormat): MenuProps['items'] => [
+  const exportDetailItems = (
+    format: SessionExportFormat
+  ): MenuProps['items'] => [
     {
       key: `${format}-full`,
       label: t.sidebar.exportFull,

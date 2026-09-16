@@ -203,3 +203,9 @@ export const msaModalProps: XProviderProps['modal'] = {
     body: 'overflow-y-auto flex-1 px-[24px] mx-[-24px]'
   }
 }
+
+/* ===== Global Drawer close placement ===== */
+// Close button on the top-right, matching the app's rail headers.
+export const msaDrawerProps: XProviderProps['drawer'] = {
+  closable: { placement: 'end' }
+}

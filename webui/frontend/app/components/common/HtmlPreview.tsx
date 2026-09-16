@@ -25,7 +25,7 @@ export function HtmlPreview({ src, title, reloadKey }: Props) {
       src={src}
       title={title}
       sandbox="allow-scripts allow-forms allow-popups allow-modals"
-      className="h-full w-full border-none bg-white"
+      className="h-full w-full border-none"
     />
   )
 }

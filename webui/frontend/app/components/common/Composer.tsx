@@ -847,12 +847,15 @@ export function Composer({
         // instead of being hoisted into its own section above a divider.
         ...projects.map((p) => ({
           key: p.id,
-          icon: <FolderIcon className="h-5 w-5" />,
+          icon: <FolderIcon className="h-4 w-4" />,
           // Capped + truncated: an antd menu sizes itself to its widest row, so
           // one long project name stretched the whole panel past the viewport.
           // The full name stays reachable via the row's native tooltip.
           label: (
-            <span className="block max-w-[240px] truncate" title={p.name}>
+            <span
+              className="block max-w-[240px] text-xs truncate"
+              title={p.name}
+            >
               {p.name}
             </span>
           ),
@@ -861,11 +864,11 @@ export function Composer({
             onProjectChange?.(p.id)
           }
         })),
-        { type: 'divider' as const },
+        ...(projects.length > 0 ? [{ type: 'divider' as const }] : []),
         {
           key: '__create__',
-          icon: <AddIcon className="h-5 w-5" />,
-          label: t.home.createProject,
+          icon: <AddIcon className="h-4 w-4" />,
+          label: <span className="text-xs">{t.home.createProject}</span>,
           onClick: () => setCreateOpen(true)
         }
       ]
@@ -1102,7 +1105,7 @@ export function Composer({
                 >
                   <span className="min-w-0 truncate">{pickerLabel}</span>
                   <CaretDownIcon
-                    className={`ml-1 h-[7px] w-[7px] shrink-0 transition-transform duration-200 ${
+                    className={`ml-1 h-2.25 w-2.25 shrink-0 transition-transform duration-200 ${
                       projectMenuOpen ? 'rotate-180' : ''
                     }`}
                   />

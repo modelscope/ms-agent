@@ -8,6 +8,7 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  type ShouldRevalidateFunctionArgs,
   isRouteErrorResponse,
   redirect,
   useRouteError,
@@ -23,7 +24,7 @@ import { getAntdCssHref } from '~/lib/antdStyle.server'
 import { getDesignTokenStyleContent } from '~/lib/designTokens'
 import { SERVER_HOSTED_MODE } from '~/lib/env'
 import { LANG_COOKIE, dictFor, type Lang, LangProvider, useT } from '~/lib/i18n'
-import { getMsaAntdTheme, msaModalProps } from '~/lib/msaTheme'
+import { getMsaAntdTheme, msaDrawerProps, msaModalProps } from '~/lib/msaTheme'
 import {
   SCROLLBAR_WIDTH_SCRIPT,
   useScrollbarWidthVar
@@ -97,10 +98,23 @@ export async function loader({ request }: { request: Request }) {
       ? langRaw
       : (langFromAcceptLanguage(request.headers.get('Accept-Language') || '') ??
         'en')
+  // URL query overrides — `?__theme=…&__language=…` force a theme/language for
+  // THIS load only. Read here so SSR paints the forced value with no flash. Not
+  // persisted: the providers write cookies only on an explicit in-app change, so
+  // a reload without the query falls straight back to the cookie.
+  const url = new URL(request.url)
+  const themeQuery = url.searchParams.get('__theme')
+  const langQuery = url.searchParams.get('__language')
+  const forcedPref: ThemePref =
+    themeQuery === 'dark' || themeQuery === 'light' || themeQuery === 'system'
+      ? themeQuery
+      : initialPref
+  const forcedLang: Lang =
+    langQuery === 'zh' || langQuery === 'en' ? langQuery : initialLang
   return {
-    initialPref,
+    initialPref: forcedPref,
     initialSystemTheme,
-    initialLang,
+    initialLang: forcedLang,
     // Sent through the loader because the constant is `false` in the browser (the
     // client build has no `process.env`); this is what makes the value available
     // to components, via `useHosted()`. Declared in `lib/env.ts`.
@@ -109,6 +123,26 @@ export async function loader({ request }: { request: Request }) {
     // ever emitted at render time — the pre-baked file is it.
     antdCssHref: getAntdCssHref()
   } satisfies RootData
+}
+
+// The `__theme`/`__language` overrides above live only in the URL of the FIRST
+// load — later in-app navigations drop them. Re-running this loader on a route
+// change would therefore re-derive theme/language from the cookie and revert
+// `<html class lang>` (which binds to this loader's data) while the providers
+// still hold the forced values, tearing the theme in half. Refuse pure route
+// changes so the initial (forced) values stand for the whole session; an
+// explicit `revalidate()` (same URL) and non-GET submissions still pass.
+export function shouldRevalidate({
+  currentUrl,
+  nextUrl,
+  formMethod,
+  defaultShouldRevalidate
+}: ShouldRevalidateFunctionArgs) {
+  if (formMethod && formMethod.toUpperCase() !== 'GET') {
+    return defaultShouldRevalidate
+  }
+  if (currentUrl.href === nextUrl.href) return defaultShouldRevalidate
+  return false
 }
 
 /** Universal title fallback: any route without its own `meta` (e.g. a
@@ -214,6 +248,7 @@ function ThemedRoot({ children }: { children: React.ReactNode }) {
         locale={antdLocale}
         theme={getMsaAntdTheme(theme)}
         modal={msaModalProps}
+        drawer={msaDrawerProps}
         // Every antd data component falls back to its own "No data" illustration
         // when the call site names no empty content; this replaces all of them
         // with the project's, so a new Select or Table is themed by default
