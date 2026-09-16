@@ -45,6 +45,7 @@ class ChatMessage(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    model_id: str | None = None
     session_id: str | None = None
     project_id: str | None = None
     # The CURRENT turn's user message. Conversation context is NOT taken from

@@ -3,13 +3,12 @@ character budget, and entry-level add / replace / remove operations.
 """
 from __future__ import annotations
 
-import os
-import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from ms_agent.utils.atomic_file import atomic_write_text
 from ms_agent.utils.logger import get_logger
 from ..config import MemoryConfig
 from ..protocols import MemoryEntry
@@ -188,16 +187,7 @@ class FileMemoryStorage:
         return content
 
     def _write(self, content: str) -> None:
-        self.memory_path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=self.memory_path.parent, suffix='.tmp')
-        try:
-            with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                f.write(content)
-            os.replace(tmp, self.memory_path)
-        except Exception:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
-            raise
+        atomic_write_text(self.memory_path, content)
         self._content_cache = content
         try:
             st = self.memory_path.stat()

@@ -49,10 +49,14 @@ def run_cmd():
     # leftover argument is always a user mistake (e.g. a bare path that would
     # silently fall back to the framework default workspace on upload).
     if unknown and isinstance(cmd, AgentCMD):
-        parser.error(
-            f'unrecognized arguments: {" ".join(unknown)} '
-            '(`ms-agent agent` takes no positional arguments; '
-            'use --local-dir to specify a local directory)')
+        # Only a leftover positional argument warrants the --local-dir hint;
+        # for a misspelled option keep the plain unrecognized-arguments error.
+        if any(not u.startswith('-') for u in unknown):
+            parser.error(
+                f'unrecognized arguments: {" ".join(unknown)} '
+                '(`ms-agent agent` takes no positional arguments; '
+                'use --local-dir to specify a local directory)')
+        parser.error(f'unrecognized arguments: {" ".join(unknown)}')
     cmd.execute()
 
 

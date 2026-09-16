@@ -1,6 +1,6 @@
 import { api } from './api'
 import type { Dict } from './i18n'
-import type { WorkspaceFile } from './types'
+import type { Session, WorkspaceFile } from './types'
 
 /**
  * Unified workspace download logic. Single source of truth for every "download"
@@ -154,6 +154,57 @@ async function downloadWorkspaceZip(
   // is always a zip, so any HTML at all gives the gateway away.
   assertRawResponse(res, zipName)
   saveBlob(await res.blob(), zipName)
+}
+
+export type SessionExportFormat = 'markdown' | 'html'
+export type SessionExportDetail = 'full' | 'compact' | 'user-only'
+
+function exportedFilename(res: Response, fallback: string): string {
+  const disposition = res.headers.get('content-disposition') ?? ''
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded)
+    } catch {
+      // Fall through to the conservative local name for a malformed header.
+    }
+  }
+  const plain = disposition.match(/filename="([^"\r\n]+)"/i)?.[1]
+  return plain || fallback
+}
+
+function sessionExportFallbackName(
+  session: Pick<Session, 'id' | 'title'>,
+  format: SessionExportFormat
+): string {
+  const safeTitle = session.title
+    .replace(/[\u0000-\u001f\u007f/\\:*?"<>|]+/g, '-')
+    .trim()
+    .slice(0, 96) || 'conversation'
+  return `${safeTitle}-${session.id.slice(0, 8)}.${format === 'html' ? 'html' : 'md'}`
+}
+
+/** Download one immutable snapshot of the reconstructed conversation. The
+ * request stays fetch-based so iframe deployments retain partitioned auth
+ * cookies; a server-provided UTF-8 filename is preferred over the fallback. */
+export async function downloadSessionExport(
+  session: Pick<Session, 'id' | 'title'>,
+  format: SessionExportFormat,
+  detail: SessionExportDetail
+): Promise<void> {
+  const fallback = sessionExportFallbackName(session, format)
+  const res = await fetch(api.sessionExportUrl(session.id, format, detail), {
+    credentials: 'include'
+  })
+  if (res.status === 401 || res.status === 403 || res.redirected) {
+    throw new DownloadUnauthorizedError(fallback)
+  }
+  if (!res.ok) throw new Error(`session export failed (${res.status})`)
+  const disposition = res.headers.get('content-disposition') ?? ''
+  if (!/\battachment\b/i.test(disposition)) {
+    throw new Error('session export did not return an attachment')
+  }
+  saveBlob(await res.blob(), exportedFilename(res, fallback))
 }
 
 /** Whether a listing holds anything a download could contain. Folders carry no

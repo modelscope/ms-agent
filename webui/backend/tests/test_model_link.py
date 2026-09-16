@@ -24,6 +24,12 @@ from app.schemas.mcp import McpCreate, McpUpdate
 from app.schemas.skill import SkillCreate, SkillPathImport, SkillUpdate
 
 
+@pytest.fixture
+def prepared_project_storage(tmp_path, monkeypatch):
+    monkeypatch.setenv("MS_AGENT_HOME", str(tmp_path))
+    common.pm().initialize()
+
+
 def test_active_model_parsing():
     assert model_link.active_model({"default_model": "openai/qwen-max"}) == ("openai", "qwen-max")
     # bare name -> infer provider from the catalog
@@ -203,7 +209,7 @@ def test_session_naming_helpers():
     assert len(common._title_from_text("x" * 100)) == 40
 
 
-def test_session_messages_reads_persisted_user_and_assistant_only():
+def test_session_messages_reads_persisted_user_and_assistant_only(prepared_project_storage):
     project = common.pm().get_default_project()
     sm = common.sm_for(project)
     session = sm.create()
@@ -221,7 +227,7 @@ def test_session_messages_reads_persisted_user_and_assistant_only():
     ]
 
 
-def test_project_mcp_can_be_re_added_after_removal():
+def test_project_mcp_can_be_re_added_after_removal(prepared_project_storage):
     """Removing a project MCP that shadows a GLOBAL one leaves a MASK in the
     project file (that is how a project hides a global server). The mask is a row
     that exists without defining a server, so `list` skipped it while the
@@ -356,7 +362,7 @@ def test_skill_source_requires_existing_directory(tmp_path):
         assert str(skill_dir) not in (sj.read_text(encoding="utf-8"))
 
 
-def test_source_skill_disable_uses_runtime_skill_id(tmp_path):
+def test_source_skill_disable_uses_runtime_skill_id(tmp_path, prepared_project_storage):
     from omegaconf import OmegaConf
 
     from ms_agent.skill.catalog import SkillCatalog

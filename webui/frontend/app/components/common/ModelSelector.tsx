@@ -1,12 +1,14 @@
 import { CheckOutlined } from '@ant-design/icons'
 import { Popover } from 'antd'
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router'
 import { ProviderTags } from '~/components/models/ProviderTags'
 import { useT } from '~/lib/i18n'
 import type { AgentSettings, Model, Provider } from '~/lib/types'
 import { PillButton } from './PillButton'
-import { EmptyState } from './EmptyState'
+import { EmptyState, EmptyStateAction } from './EmptyState'
 import { DeferredSkeleton } from './DeferredSkeleton'
+import { ScrollArea } from './ScrollArea'
 import './ModelSelector.css'
 import JumpIcon from '~/assets/icons/jump.svg?react'
 import BackIcon from '~/assets/icons/back.svg?react'
@@ -17,6 +19,7 @@ interface ModelSelectorProps {
   models: Model[] | null
   providers: Provider[] | null
   settings: AgentSettings | null
+  disabled?: boolean
   onSelectModel: (providerId: string, modelId: string) => void
 }
 
@@ -24,10 +27,13 @@ export function ModelSelector({
   models,
   providers,
   settings,
+  disabled = false,
   onSelectModel
 }: ModelSelectorProps) {
   const { t } = useT()
+  const navigate = useNavigate()
   const [open, setOpen] = useState(false)
+  useEffect(() => { if (disabled) setOpen(false) }, [disabled])
   const [activeProviderId, setActiveProviderId] = useState<string | null>(null)
   // Below `sm` the two panes cannot both fit: the panel is capped at the viewport
   // (`100vw-32px`), so on a phone the 280px provider column left the models one
@@ -66,15 +72,29 @@ export function ModelSelector({
   )
 
   const handleSelectModel = (model: Model) => {
+    if (disabled) return
     onSelectModel(model.provider_id, model.id)
     setOpen(false)
+  }
+
+  /** A provider with no models is a dead end here — models are added in global
+   * settings, never from this picker. The provider being browsed rides along in
+   * the URL so the page opens on it instead of on its own first one, which is
+   * rarely the one the user just found empty. */
+  const goAddModels = () => {
+    setOpen(false)
+    navigate(
+      activeProvider
+        ? `/settings/models?provider=${encodeURIComponent(activeProvider.id)}`
+        : '/settings/models'
+    )
   }
 
   return (
     <Popover
       open={open}
       onOpenChange={(v) => {
-        setOpen(v)
+        setOpen(v && !disabled)
         if (!v) setDrilled(true)
       }}
       trigger="click"
@@ -83,17 +103,14 @@ export function ModelSelector({
       }}
       content={
         <div className="flex h-[300px] w-[min(661px,calc(100vw-32px))]">
-          {/* Left: providers.
-              Fixed width from `sm` up, not shrink-0 alone: without a cap the
-              column expands to fit the widest provider name, which squeezes the
-              models column (min-w-0 flex-1) down to a few characters. 280px keeps
-              common provider names on one line next to their status tags, while
-              the row's own `truncate` handles longer canonical or custom names.
-              The models column keeps ~380px, still ample for model names.
-              Below `sm` it instead spans the full panel and yields the whole
-              panel to the models pane once drilled in. */}
-          <div
-            className={`h-full w-full shrink-0 flex-col gap-1 overflow-y-auto border-msa-line-1 p-[6px] sm:flex sm:w-[280px] sm:border-r ${
+          {/* Left: providers. Fixed width from `sm` up so the column can't
+              expand to fit the widest provider name and squeeze the models
+              column; below `sm` it spans the full panel and yields it once
+              drilled in. `pad` is 12 because ScrollArea only subtracts the
+              scrollbar back out when `pad` is at least the bar width. */}
+          <ScrollArea
+            pad={12}
+            className={`h-full w-full shrink-0 flex-col gap-1 border-msa-line-1 py-[6px] sm:flex sm:w-[280px] sm:border-r ${
               drilled ? 'hidden' : 'flex'
             }`}
           >
@@ -115,18 +132,14 @@ export function ModelSelector({
                   }`}
                 >
                   {/* No `flex-1` on the name: it would claim the row's slack and
-                      push the tags over to the arrow, reading as if they
-                      belonged to it. Shrinking (the flex default) still lets
-                      `truncate` cut a long name, and `ml-auto` keeps the arrow
-                      pinned right. Same tags as the settings provider list, so
-                      "built-in" and "key on file" mean the same thing here. */}
+                      push the tags over to the arrow. */}
                   <span className="min-w-0 truncate">{p.name}</span>
                   <ProviderTags provider={p} />
                   <JumpIcon className="ml-auto h-[15px] w-[15px] shrink-0 text-msa-text-3" />
                 </button>
               )
             })}
-          </div>
+          </ScrollArea>
 
           {/* Right: models */}
           <div
@@ -146,14 +159,18 @@ export function ModelSelector({
                   title={t.modelsAdmin.changeProvider}
                   className="flex shrink-0 cursor-pointer items-center gap-1.5 border-0 bg-msa-fill-0 px-[10px] py-[10px] text-left text-sm font-medium text-msa-text-1 transition-colors hover:text-msa-text-brand1 sm:hidden"
                 >
-                  <BackIcon className="h-4 w-4 shrink-0" />
-                  <span className="min-w-0 truncate">{activeProvider.name}</span>
+                  <BackIcon className="h-5 w-5 shrink-0" />
+                  <span className="min-w-0 truncate">
+                    {activeProvider.name}
+                  </span>
                 </button>
                 <div className="h-px shrink-0 bg-msa-line-1 sm:hidden" />
               </>
             )}
 
-            <div className="min-h-0 flex-1 overflow-y-auto p-[6px]">
+            {/* Same 12px inset as the provider column, so the divider has an
+                equal gap on either side. */}
+            <ScrollArea pad={12} className="flex-1 py-[6px]">
               {models === null || providers === null ? (
                 <DeferredSkeleton rows={5} className="p-2" />
               ) : activeProvider ? (
@@ -161,7 +178,24 @@ export function ModelSelector({
                   <div className="flex h-full items-center justify-center">
                     <EmptyState
                       size="sm"
+                      // The pane is 300px tall and the illustration, copy and
+                      // button already fill it — the variant's own vertical
+                      // padding on top of that would push the button out of
+                      // reach (a centred flex child clips, it does not scroll).
+                      className="!py-0"
                       description={t.modelsAdmin.modelsEmpty}
+                      action={
+                        // Smaller than the full-page empty states this button
+                        // was sized for: here it sits in a popover among 12px
+                        // rows, where the default pill reads as the loudest
+                        // thing on screen.
+                        <EmptyStateAction
+                          className="!px-4 !py-1 !text-xs"
+                          onClick={goAddModels}
+                        >
+                          {t.modelsAdmin.addModel}
+                        </EmptyStateAction>
+                      }
                     />
                   </div>
                 ) : (
@@ -207,12 +241,13 @@ export function ModelSelector({
                   —
                 </div>
               )}
-            </div>
+            </ScrollArea>
           </div>
         </div>
       }
     >
       <PillButton
+        disabled={disabled}
         open={open}
         icon={
           <span className="h-2 w-2 inline-block rounded-full bg-msa-purple-5" />

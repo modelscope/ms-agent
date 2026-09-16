@@ -11,6 +11,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from app.core.envelope import EnvelopeRoute
+from app.core.filetypes import raw_headers
 from app.schemas.workspace import (
     WorkspaceFile,
     WorkspaceFileCreate,
@@ -47,7 +48,7 @@ def move_file(project_id: str, body: WorkspaceFileMove) -> WorkspaceFile:
     return workspace.move_file(project_id, body.src, body.dst)
 
 
-@router.get("/files/{file_path:path}/raw")
+@router.get("/raw/{file_path:path}")
 def raw_file(project_id: str, file_path: str) -> Response:
     """Serve raw file bytes (for media preview / download). Not enveloped: the
     EnvelopeRoute only wraps JSON responses, so binary passes through as-is.
@@ -56,11 +57,14 @@ def raw_file(project_id: str, file_path: str) -> Response:
     chunks, so serving a large file costs a buffer instead of its full size in
     resident memory -- which, multiplied by concurrent downloads, was the real
     cost here.
+
+    The path is the URL TAIL (not `/files/<path>/raw`) so that a previewed HTML
+    document resolves its own `./style.css` back into this route.
     """
     from app.backends.ms_agent import workspace
 
     target, ctype = workspace.raw_file(project_id, file_path)
-    return FileResponse(target, media_type=ctype)
+    return FileResponse(target, media_type=ctype, headers=raw_headers(ctype))
 
 
 # Before the `/files/{file_path:path}` catch-all in URL space but deliberately

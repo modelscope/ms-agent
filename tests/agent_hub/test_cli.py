@@ -1,5 +1,7 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 """CLI command tests: helper functions, upload/download/convert flows (stubbed client)."""
+import base64
+import contextlib
 import io
 import os
 import tempfile
@@ -1764,6 +1766,94 @@ class TestUploadSanitization(unittest.TestCase):
         self.assertEqual(pushed["model"], "gpt-4o")
         self.assertNotIn("sk-LEAKME333", raw)
         self.assertNotIn("env-LEAKME444", raw)
+
+    # BUG-0909-01: skills/*, persona and memory files used to upload verbatim.
+    B64_PERSONA_KEY = base64.b64encode(b"sk-S28PersonaB64Leak1").decode()
+    SKILL_SENTINELS = (
+        "sk-SkillScriptLeak01",
+        "ghp_SkillPat7x9Qm2Rt4V",
+        "S32SkillEnvLeak0001",
+        "S33SkillUrlLeak0001",
+        "S34SkillDocLeak0001",
+        "sk-S26PersonaProse01",
+        "sk-S27PersonaBearer1",
+        B64_PERSONA_KEY,
+    )
+
+    def _skill_tree_files(self):
+        import json
+        return {
+            "SOUL.md": (
+                "# Persona\n\n"
+                "You are a helpful weather assistant.\n\n"
+                "调用 API 时使用 sk-S26PersonaProse01 作为密钥。\n\n"
+                "```bash\n"
+                'curl -H "Authorization: Bearer sk-S27PersonaBearer1" '
+                "https://api.example.com/v1\n"
+                "```\n\n"
+                f'    echo "{self.B64_PERSONA_KEY}" | base64 -d\n\n'
+                "Benign lines that must survive:\n\n"
+                "- Use `os.environ[\"DASHSCOPE_API_KEY\"]` to read the key.\n"
+                "- Pass `--api-key <YOUR_KEY>` on the command line.\n"),
+            "skills/weather/scripts/leak_point.py": (
+                '"""Fetch the forecast."""\n'
+                "import os\n\n"
+                'API_KEY = "sk-SkillScriptLeak01"\n'
+                'GITHUB_TOKEN = "ghp_SkillPat7x9Qm2Rt4V"\n\n\n'
+                "def fetch(city):\n"
+                '    return city, os.environ.get("OPENWEATHER_KEY", "")\n'),
+            "skills/weather/mcp.json": json.dumps({
+                "mcpServers": {
+                    "weather": {
+                        "command": "uvx",
+                        "args": ["-y", "mcp-server-weather"],
+                        "env": {"OPENWEATHER_KEY": "S32SkillEnvLeak0001"},
+                        "url": ("https://api.example.com/v1"
+                                "?api_key=S33SkillUrlLeak0001"),
+                    }
+                }
+            }),
+            "skills/weather/SKILL.md": (
+                "---\nname: weather\n---\n\n"
+                "```json\n"
+                '{"mcpServers": {"weather": '
+                '{"env": {"OPENWEATHER_KEY": "S34SkillDocLeak0001"}}}}\n'
+                "```\n\n"
+                "```bash\n"
+                'curl -H "Authorization: Bearer $OPENAI_API_KEY" https://h/v1\n'
+                "```\n"),
+        }
+
+    @mock.patch("ms_agent.agent_hub._commands.AgentApi", _StubClient)
+    def test_upload_scrubs_skill_tree_and_persona(self):
+        root = self._write_ws("ms-agent", self._skill_tree_files())
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = cmd_upload(
+                framework="ms-agent", name=None, local_dir=str(root),
+                endpoint="http://s", token="tok", username="u",
+            )
+        self.assertEqual(rc, 0)
+        client = _StubClient.instances[0]
+        # Guard against a vacuous pass: the skill tree really was collected.
+        self.assertIn("skills/weather/scripts/leak_point.py",
+                      client.uploaded_resources)
+        self.assertIn("skills/weather/mcp.json", client.uploaded_resources)
+        blob = "\n".join(v.decode("utf-8", "replace")
+                         for v in client.uploaded_resources.values())
+        for sentinel in self.SKILL_SENTINELS:
+            self.assertNotIn(sentinel, blob)
+        self.assertIn('os.environ.get("OPENWEATHER_KEY", "")', blob)
+        self.assertIn('os.environ["DASHSCOPE_API_KEY"]', blob)
+        self.assertIn("--api-key <YOUR_KEY>", blob)
+        self.assertIn("Bearer $OPENAI_API_KEY", blob)
+        self.assertIn("You are a helpful weather assistant.", blob)
+        # The report names what was stripped without echoing the secret.
+        report = buf.getvalue()
+        self.assertIn("Secrets redacted", report)
+        self.assertIn("skills/weather/scripts/leak_point.py", report)
+        for sentinel in self.SKILL_SENTINELS:
+            self.assertNotIn(sentinel, report)
 
 
 class _OpenclawStub(_RepoStub):

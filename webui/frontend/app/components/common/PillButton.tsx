@@ -62,7 +62,7 @@ export const PillButton = forwardRef<HTMLButtonElement, PillButtonProps>(
       <MsaButton
         ref={ref}
         variant="tonal"
-        className={`!flex !items-center !gap-1.5 !rounded-full !px-3 !py-1.5 !h-auto !text-xs !font-normal !max-w-[min(240px,55cqw)] min-w-0 ${className}`}
+        className={`!flex !items-center !gap-1.5 !rounded-[12px] !px-3 !py-1.5 !h-auto !text-xs !font-normal !max-w-[min(210px,55cqw)] min-w-0 ${className}`}
         classNames={{ ...extra, icon: `shrink-0 ${extra.icon ?? ''}` }}
         {...rest}
       >

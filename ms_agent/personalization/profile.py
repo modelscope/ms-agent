@@ -3,6 +3,9 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from ms_agent.utils.atomic_file import atomic_write_text
+from ms_agent.utils.file_lock import locked
+
 PROFILE_FILENAME = 'profile.md'
 
 
@@ -36,10 +39,6 @@ class ProfileManager:
             return ''
         return self._path.read_text(encoding='utf-8')
 
+    @locked(lambda self, content: self._dir / '.prompt-files')
     def write(self, content: str) -> None:
-        self._dir.mkdir(parents=True, exist_ok=True)
-        tmp = self._path.with_suffix('.tmp')
-        tmp.write_text(content, encoding='utf-8')
-        # replace() is atomic and cross-platform; rename() raises on Windows
-        # when the destination already exists.
-        tmp.replace(self._path)
+        atomic_write_text(self._path, content)

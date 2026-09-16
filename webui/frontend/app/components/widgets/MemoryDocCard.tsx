@@ -156,16 +156,16 @@ export function MemoryDocCard({ project }: { project: Project }) {
                 {
                   value: 'edit',
                   icon: (
-                    <Tooltip title={t.skillDetail.viewCode}>
-                      <TerminalIcon className="h-4 w-4" />
+                    <Tooltip title={t.common.viewCode}>
+                      <TerminalIcon className="h-5 w-5" />
                     </Tooltip>
                   )
                 },
                 {
                   value: 'preview',
                   icon: (
-                    <Tooltip title={t.skillDetail.viewPreview}>
-                      <ViewIcon className="h-4 w-4" />
+                    <Tooltip title={t.common.viewPreview}>
+                      <ViewIcon className="h-5 w-5" />
                     </Tooltip>
                   )
                 }

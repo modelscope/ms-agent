@@ -139,7 +139,7 @@ export function McpSelector({ items, project }: McpSelectorProps) {
       <PillButton
         open={open}
         icon={
-          <McpSelectIcon className="h-3.5 w-3.5 text-msa-text-3 dark:text-msa-purple-10" />
+          <McpSelectIcon className="h-4 w-4 text-msa-text-3 dark:text-msa-purple-10" />
         }
       >
         {/* Plain count while everything answers; a fraction the moment some

@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from ms_agent.utils.atomic_file import atomic_write_json
+
 _ALLOWED_TYPES = frozenset(
     {'string', 'boolean', 'number', 'integer', 'array', 'object'})
 
@@ -88,13 +90,7 @@ def save_user_config(
     errors = validate_values(schema, values)
     if errors:
         raise UserConfigError('; '.join(errors))
-    path = Path(data_dir)
-    path.mkdir(parents=True, exist_ok=True)
-    config_path = path / 'config.json'
-    tmp = config_path.with_suffix('.tmp')
-    with open(tmp, 'w', encoding='utf-8') as f:
-        json.dump(values, f, indent=2, ensure_ascii=False)
-    tmp.rename(config_path)
+    atomic_write_json(Path(data_dir) / 'config.json', values)
     return values
 
 

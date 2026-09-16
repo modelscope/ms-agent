@@ -79,7 +79,7 @@ export function SkillTabPanel({ project }: Props) {
         />
         <MsaButton
           variant="primary"
-          icon={<AddIcon className="h-4 w-4" />}
+          icon={<AddIcon className="h-5 w-5" />}
           onClick={() => setShowLocal(true)}
         >
           {t.resources.addSkill}

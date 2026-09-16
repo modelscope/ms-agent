@@ -1,5 +1,6 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 """Sub-agent-aware workspace spec collection tests."""
+import base64
 import json
 import tempfile
 import unittest
@@ -1688,6 +1689,176 @@ class TestLeakCarrierEdgeCases(unittest.TestCase):
         out = self._tscrub(
             "base_url = 'https://h.example.com/v1?token=LEAK'\n")
         self.assertEqual(out, "base_url = 'https://h.example.com/v1?token='\n")
+
+
+class TestOutboundCoverageAcrossFrameworks(unittest.TestCase):
+    """BUG-0909-01: outbound cleaning must be content-driven, not path-driven.
+
+    Every framework collects ``skills/*`` plus its persona and memory
+    documents, and three of them defined no outbound hook at all, so the fix
+    has to hold for all seven rather than for the two the bug report named.
+    """
+
+    B64_KEY = base64.b64encode(b"sk-PersonaB64Leak001").decode()
+    SENTINELS = (
+        "sk-PersonaProseLeak01",
+        "sk-PersonaBearerLeak1",
+        B64_KEY,
+        "sk-SkillScriptLeak01",
+        "ghp_SkillPat7x9Qm2Rt4V",
+        "S32SkillEnvLeak0001",
+        "sk-MemoryNoteLeak0001",
+    )
+    BENIGN = (
+        "You are a helpful weather assistant.",
+        'os.environ.get("OPENWEATHER_KEY", "")',
+        "--api-key <YOUR_KEY>",
+        "Bearer $OPENAI_API_KEY",
+        "Query the forecast.",
+    )
+
+    # The persona slot every framework collects.
+    PERSONA = {
+        "ms-agent": "SOUL.md",
+        "qwenpaw": "SOUL.md",
+        "hermes": "SOUL.md",
+        "openclaw": "SOUL.md",
+        "openhuman": "SOUL.md",
+        "nanobot": "SOUL.md",
+        "qoder": "AGENTS.md",
+    }
+    # The memory slot; ms-agent keeps memory project-level, so it has none.
+    MEMORY = {
+        "qwenpaw": "MEMORY.md",
+        "openclaw": "MEMORY.md",
+        "openhuman": "MEMORY.md",
+        "nanobot": "memory/MEMORY.md",
+        "qoder": "memory/MEMORY.md",
+        "hermes": "memories/MEMORY.md",
+    }
+    SCRIPT = "skills/weather/scripts/leak_point.py"
+    SKILL_MCP = "skills/weather/mcp.json"
+    SKILL_DOC = "skills/weather/SKILL.md"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _files(self, framework):
+        persona = (
+            "# Persona\n\n"
+            "You are a helpful weather assistant.\n\n"
+            "调用 API 时使用 sk-PersonaProseLeak01 作为密钥。\n\n"
+            "```bash\n"
+            'curl -H "Authorization: Bearer sk-PersonaBearerLeak1" https://h/v1\n'
+            "```\n\n"
+            f'    echo "{self.B64_KEY}" | base64 -d\n\n'
+            "Benign lines that must survive:\n\n"
+            "- Pass `--api-key <YOUR_KEY>` on the command line.\n")
+        script = (
+            '"""Fetch the forecast."""\n'
+            "import os\n\n"
+            'API_KEY = "sk-SkillScriptLeak01"\n'
+            'GITHUB_TOKEN = "ghp_SkillPat7x9Qm2Rt4V"\n\n\n'
+            "def fetch(city):\n"
+            '    return city, os.environ.get("OPENWEATHER_KEY", "")\n')
+        skill_mcp = json.dumps({
+            "mcpServers": {
+                "weather": {
+                    "command": "uvx",
+                    "env": {"OPENWEATHER_KEY": "S32SkillEnvLeak0001"},
+                }
+            }
+        })
+        memory = ("# Memory\n\n## 凭据备忘\n\n"
+                  "- OPENAI_API_KEY=sk-MemoryNoteLeak0001\n")
+        # No bundled frontmatter markers: hermes / qwenpaw only keep a skill
+        # directory whose SKILL.md is user-authored.
+        skill_doc = (
+            "---\nname: weather\ndescription: Query the forecast.\n---\n\n"
+            "# Weather\n\n"
+            "```bash\n"
+            'curl -H "Authorization: Bearer $OPENAI_API_KEY" https://h/v1\n'
+            "```\n")
+        files = {
+            self.PERSONA[framework]: persona,
+            self.SCRIPT: script,
+            self.SKILL_MCP: skill_mcp,
+            self.SKILL_DOC: skill_doc,
+        }
+        memory_rel = self.MEMORY.get(framework)
+        if memory_rel:
+            files[memory_rel] = memory
+        return files
+
+    def _outbound(self, framework):
+        """Seed *framework*'s own layout and run the real upload sanitize path."""
+        from ms_agent.agent_hub._sync import sanitize_outbound
+
+        root = Path(self.tmp.name) / framework
+        root.mkdir(parents=True, exist_ok=True)
+        ws = build_spec(framework, "default", str(root)).workspace_root
+        files = self._files(framework)
+        for rel, content in files.items():
+            target = ws / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+        # Rebuild after seeding: a framework may resolve its data root from the
+        # markers it finds (openhuman probes for a live workspace).
+        spec = build_spec(framework, "default", str(root))
+        collected = spec.collect_bytes()
+        findings = []
+        return files, collected, sanitize_outbound(collected, spec,
+                                                   findings=findings), findings
+
+    def test_every_framework_redacts_secrets_but_keeps_documentation(self):
+        for framework in sorted(FRAMEWORK_REGISTRY):
+            with self.subTest(framework=framework):
+                _files, collected, out, findings = self._outbound(framework)
+                # Guard against a vacuous pass: the carriers really were
+                # collected by this framework's patterns.
+                self.assertIn(self.PERSONA[framework], collected)
+                self.assertIn(self.SCRIPT, collected)
+                blob = "\n".join(v.decode("utf-8", "replace")
+                                 for v in out.values())
+                for sentinel in self.SENTINELS:
+                    if sentinel == "sk-MemoryNoteLeak0001" \
+                            and framework not in self.MEMORY:
+                        continue
+                    self.assertNotIn(sentinel, blob)
+                # Over-redaction is this layer's likely failure mode, so the
+                # same pass pins the documentation that must survive.
+                for needle in self.BENIGN:
+                    self.assertIn(needle, blob)
+                self.assertTrue(findings, "no redaction reported")
+                for finding in findings:
+                    for field in finding:
+                        for sentinel in self.SENTINELS:
+                            self.assertNotIn(sentinel, str(field))
+
+    def test_clean_workspace_is_not_rewritten(self):
+        """Byte identity matters: ``drop_unchanged_defaults`` compares bytes and
+        ``push_mirror`` skips uploads by sha256."""
+        for framework in sorted(FRAMEWORK_REGISTRY):
+            with self.subTest(framework=framework):
+                root = Path(self.tmp.name) / f"clean-{framework}"
+                root.mkdir(parents=True, exist_ok=True)
+                ws = build_spec(framework, "default", str(root)).workspace_root
+                rel = self.PERSONA[framework]
+                (ws / rel).parent.mkdir(parents=True, exist_ok=True)
+                (ws / rel).write_text(
+                    "# Persona\n\nYou are a helpful weather assistant.\n",
+                    encoding="utf-8")
+                spec = build_spec(framework, "default", str(root))
+                collected = spec.collect_bytes()
+                self.assertIn(rel, collected)
+                findings = []
+                from ms_agent.agent_hub._sync import sanitize_outbound
+                out = sanitize_outbound(collected, spec, findings=findings)
+                self.assertEqual(out[rel], collected[rel])
+                self.assertEqual(findings, [])
 
 
 if __name__ == "__main__":

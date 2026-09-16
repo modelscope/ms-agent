@@ -4,13 +4,15 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { CodeEditor } from '~/components/common/CodeEditor'
 import { DeferredSkeleton } from '~/components/common/DeferredSkeleton'
 import { FolderTree } from '~/components/common/FolderTree'
+import { HtmlPreview } from '~/components/common/HtmlPreview'
 import { Markdown } from '~/components/common/Markdown'
 import { api } from '~/lib/api'
 import { useT } from '~/lib/i18n'
 import type { Skill } from '~/lib/types'
 import ViewIcon from '~/assets/icons/view.svg?react'
 import TerminalIcon from '~/assets/icons/terminal.svg?react'
-import { languageFor } from '~/lib/editorLanguage'
+import { docKindFor, languageFor } from '~/lib/editorLanguage'
+import { makeRefResolver } from '~/lib/previewRefs'
 
 interface Props {
   open: boolean
@@ -140,8 +142,18 @@ export function SkillDetailDrawer({
   const body = skill ? bodies[selected] : undefined
 
   const language = languageFor(selected)
-  const isMarkdown = language === 'markdown'
+  const docKind = docKindFor(selected)
   const isBinary = body === null
+  // Relative references in a skill document point at the skill's own files.
+  const previewRefs = useMemo(
+    () =>
+      skill
+        ? makeRefResolver(selected, (path) =>
+            api.skillFileRawUrl(skill.id, path)
+          )
+        : undefined,
+    [skill, selected]
+  )
   // `undefined` = not fetched yet; `null` = binary; `''` = a genuinely empty
   // file. Only the first deserves a loading state — without this the pane
   // rendered an empty document while the request was in flight.
@@ -195,7 +207,7 @@ export function SkillDetailDrawer({
                 {selected}
               </span>
               <span className="flex-1" />
-              {isMarkdown && !isBinary && (
+              {docKind && !isBinary && (
                 <Segmented<ViewMode>
                   size="small"
                   value={viewMode}
@@ -204,16 +216,16 @@ export function SkillDetailDrawer({
                     {
                       value: 'preview',
                       icon: (
-                        <Tooltip title={t.skillDetail.viewPreview}>
-                          <ViewIcon className="h-4 w-4" />
+                        <Tooltip title={t.common.viewPreview}>
+                          <ViewIcon className="h-5 w-5" />
                         </Tooltip>
                       )
                     },
                     {
                       value: 'code',
                       icon: (
-                        <Tooltip title={t.skillDetail.viewCode}>
-                          <TerminalIcon className="h-4 w-4" />
+                        <Tooltip title={t.common.viewCode}>
+                          <TerminalIcon className="h-5 w-5" />
                         </Tooltip>
                       )
                     }
@@ -228,10 +240,19 @@ export function SkillDetailDrawer({
                 <div className="flex h-full items-center justify-center text-sm text-msa-text-3">
                   {t.skillDetail.binaryFile}
                 </div>
-              ) : isMarkdown && viewMode === 'preview' ? (
+              ) : docKind === 'markdown' && viewMode === 'preview' ? (
                 <div className="px-4 py-4 h-full">
-                  <Markdown content={body ?? ''} frontmatter />
+                  <Markdown
+                    content={body ?? ''}
+                    frontmatter
+                    resolveRef={previewRefs}
+                  />
                 </div>
+              ) : docKind === 'html' && viewMode === 'preview' ? (
+                <HtmlPreview
+                  src={api.skillFileRawUrl(skill.id, selected)}
+                  title={selected}
+                />
               ) : (
                 <div className="py-4 h-full">
                   <CodeEditor

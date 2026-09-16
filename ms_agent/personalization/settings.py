@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 from typing import Any, Dict
 
 from ms_agent.personalization.types import PersonalizationConfig
+from ms_agent.utils.atomic_file import atomic_write_json
+from ms_agent.utils.file_lock import locked
+from ms_agent.utils.json_store import read_json, json_transaction
 
 SETTINGS_FILE = 'settings.json'
 SECTION_KEY = 'personalization'
@@ -34,33 +36,30 @@ class PersonalizationSettings:
             memory_backend=data.get('memory_backend'),
         )
 
+    @locked(lambda self, *args, **kwargs: self._path)
     def save(self, config: PersonalizationConfig) -> None:
         full = self._read_full()
-        full[SECTION_KEY] = {
+        full.setdefault(SECTION_KEY, {}).update({
             'global_instruction': config.global_instruction,
             'memory_enabled': config.memory_enabled,
             'memory_backend': config.memory_backend,
-        }
+        })
         self._write_full(full)
+
+    def update(self, **patch) -> PersonalizationConfig:
+        unknown = patch.keys() - {'global_instruction', 'memory_enabled', 'memory_backend'}
+        if unknown:
+            raise ValueError('Unknown personalization field')
+        with json_transaction(self._path) as data:
+            data.setdefault(SECTION_KEY, {}).update(patch)
+        return self.load()
 
     def _read_section(self) -> Dict[str, Any]:
         full = self._read_full()
         return full.get(SECTION_KEY, {})
 
     def _read_full(self) -> Dict[str, Any]:
-        if not self._path.is_file():
-            return {}
-        try:
-            with open(self._path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except (json.JSONDecodeError, OSError):
-            return {}
+        return read_json(self._path)
 
     def _write_full(self, data: Dict[str, Any]) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self._path.with_suffix('.tmp')
-        with open(tmp, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        # replace() is atomic and cross-platform; rename() raises on Windows
-        # when the destination already exists.
-        tmp.replace(self._path)
+        atomic_write_json(self._path, data)

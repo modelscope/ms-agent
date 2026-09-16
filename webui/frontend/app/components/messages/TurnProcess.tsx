@@ -107,7 +107,7 @@ export function TurnProcess({
           {timing}
         </span>
         <ArrowDownIcon
-          className={`h-3 w-3 transition-transform duration-200 ${
+          className={`h-3.5 w-3.5 transition-transform duration-200 ${
             expanded ? 'rotate-180' : ''
           }`}
         />

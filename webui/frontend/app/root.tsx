@@ -9,19 +9,25 @@ import {
   Scripts,
   ScrollRestoration,
   isRouteErrorResponse,
+  redirect,
   useRouteError,
   useRouteLoaderData
 } from 'react-router'
 
 import './app.css'
 import { NProgressHandler } from '~/components/common/NProgressHandler'
+import { renderAntdEmpty } from '~/components/common/EmptyState'
 import { ErrorState } from '~/components/common/ErrorState'
-import { ApiError, registerApiErrorReporter } from '~/lib/api'
+import { api, ApiError, orThrow, registerApiErrorReporter } from '~/lib/api'
 import { getAntdCssHref } from '~/lib/antdStyle.server'
 import { getDesignTokenStyleContent } from '~/lib/designTokens'
 import { SERVER_HOSTED_MODE } from '~/lib/env'
 import { LANG_COOKIE, dictFor, type Lang, LangProvider, useT } from '~/lib/i18n'
 import { getMsaAntdTheme, msaModalProps } from '~/lib/msaTheme'
+import {
+  SCROLLBAR_WIDTH_SCRIPT,
+  useScrollbarWidthVar
+} from '~/lib/scrollbarWidth'
 import {
   SCHEME_COOKIE,
   THEME_COOKIE,
@@ -64,6 +70,14 @@ function langFromAcceptLanguage(header: string): Lang | null {
 }
 
 export async function loader({ request }: { request: Request }) {
+  const recovery = await orThrow(api.getRecoveryStatus().catch((error) => {
+    // Preserve pages that can render without an API, including the SSR package check.
+    if (error instanceof ApiError && error.status === 0) return null
+    throw error
+  }))
+  if (recovery?.required && new URL(request.url).pathname !== '/recovery') {
+    throw redirect('/recovery')
+  }
   const cookie = request.headers.get('Cookie') || ''
   const themeRaw = readCookie(cookie, THEME_COOKIE)
   const schemeRaw = readCookie(cookie, SCHEME_COOKIE)
@@ -173,6 +187,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
         ) : null}
       </head>
       <body className="h-full overflow-x-hidden">
+        {/* Before anything below it lays out — see the script's own comment. */}
+        <script dangerouslySetInnerHTML={{ __html: SCROLLBAR_WIDTH_SCRIPT }} />
         <LangProvider initialLang={initialLang}>
           <ThemeProvider
             initialPref={initialPref}
@@ -191,12 +207,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
 function ThemedRoot({ children }: { children: React.ReactNode }) {
   const { antdLocale } = useT()
   const { theme } = useTheme()
+  useScrollbarWidthVar()
   return (
     <StyleProvider layer>
       <XProvider
         locale={antdLocale}
         theme={getMsaAntdTheme(theme)}
         modal={msaModalProps}
+        // Every antd data component falls back to its own "No data" illustration
+        // when the call site names no empty content; this replaces all of them
+        // with the project's, so a new Select or Table is themed by default
+        // instead of by whoever remembers to pass `notFoundContent`.
+        renderEmpty={renderAntdEmpty}
       >
         <AntdApp>
           <NProgressHandler />
@@ -252,29 +274,27 @@ export function ErrorBoundary() {
   const error = useRouteError()
   const { t } = useT()
   const routeError = isRouteErrorResponse(error)
-  // A loader that let an API failure propagate carries the real HTTP status on
-  // the ApiError — without reading it, a missing project/session would show no
-  // status at all when it is plainly a 404.
-  const apiStatus = error instanceof ApiError ? error.status : undefined
-  const status = routeError ? error.status : apiStatus
-  // The status code IS the headline. A client-side exception carries no status,
-  // so it falls back to the error's OWN name (`TypeError`) rather than a phrase
-  // we made up — same principle as the description below.
-  const code = status
-    ? String(status)
-    : error instanceof Error
-      ? error.name
-      : undefined
+  // Read nothing off the error object but its message: a server-rendered error
+  // arrives here as a plain `Error`, so `status` and the class are gone and
+  // reading them broke hydration. Loaders carry status via `orThrow` instead.
+  const status = routeError ? error.status : undefined
+  // No status means a client-side exception; its own name is unavailable (see
+  // above), so use a fixed phrase and let the message explain.
+  const code = status ? String(status) : t.errors.unexpected
   // The server's own message is the explanation — it is the only text that knows
   // what actually failed. Inventing a per-status sentence here would replace
   // "project not found" with something vaguer.
-  const description = routeError
+  const reported = routeError
     ? typeof error.data === 'string' && error.data
       ? error.data
       : error.statusText
     : error instanceof Error
       ? error.message
       : String(error ?? '')
+  // Some failures carry no words at all (backend never answered, or an empty
+  // gateway body), which left the headline over an empty paragraph.
+  const description =
+    reported || (status === 502 ? t.errors.network : t.errors.requestFailed)
 
   return (
     <ErrorState

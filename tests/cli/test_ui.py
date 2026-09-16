@@ -261,3 +261,68 @@ def test_reload_fails_with_development_instructions(capsys):
         ui.UICMD(_parse_ui_args('--reload')).execute()
     assert error.value.code == 1
     assert 'pnpm dev' in capsys.readouterr().err
+
+
+def _prepare_installed_kwargs(monkeypatch, trace_env=None):
+    """Drive execute() far enough to capture what it hands prepare_installed.
+
+    `--prepare-only` returns before ports and the launcher, so the WebUI backend
+    never has to be importable here: a stub `app.processes` satisfies the single
+    import execute() makes for its own signal handling.
+    """
+    import contextlib
+    import sys
+    import types
+    from pathlib import Path
+
+    package = types.ModuleType('app')
+    package.__path__ = []
+
+    @contextlib.contextmanager
+    def interruptible():
+        yield
+
+    processes = types.ModuleType('app.processes')
+    processes.interruptible = interruptible
+    monkeypatch.setitem(sys.modules, 'app', package)
+    monkeypatch.setitem(sys.modules, 'app.processes', processes)
+
+    if trace_env is None:
+        monkeypatch.delenv(ui.TRACE_RUNTIME_ENV, raising=False)
+    else:
+        monkeypatch.setenv(ui.TRACE_RUNTIME_ENV, trace_env)
+
+    captured = {}
+    monkeypatch.setattr(ui, 'find_webui', lambda: (Path('/webui'), True))
+    monkeypatch.setattr(ui, 'load_common', lambda webui: SimpleNamespace())
+    monkeypatch.setattr(ui, '_require_executable', lambda name: '/tools/' + name)
+    monkeypatch.setattr(ui, '_check_tool_versions',
+                        lambda tools, frontend=None: None)
+    monkeypatch.setattr(ui, '_read_semantic_version',
+                        lambda *args, **kwargs: (22, 22, 0))
+
+    def fake_prepare(webui, common, node_version, **kwargs):
+        captured.update(kwargs)
+        return webui
+
+    monkeypatch.setattr(ui, 'prepare_installed', fake_prepare)
+    ui.UICMD(_parse_ui_args('--prepare-only', '--no-browser')).execute()
+    return captured
+
+
+def test_runtime_tracing_is_off_unless_the_environment_asks(monkeypatch):
+    assert _prepare_installed_kwargs(monkeypatch)['trace_runtime'] is None
+
+
+def test_runtime_tracing_env_reaches_preparation(monkeypatch):
+    kwargs = _prepare_installed_kwargs(monkeypatch, trace_env='1')
+    assert callable(kwargs['trace_runtime'])
+
+
+@pytest.mark.parametrize('value', ['0', '', 'true', 'yes', 'false'])
+def test_only_an_exact_1_enables_runtime_tracing(monkeypatch, value):
+    """A truthiness check here would trace on `=0`, and the cost of that (a full
+    devDependency install plus a tracing pass) lands on whoever set the variable
+    specifically to turn the feature off."""
+    kwargs = _prepare_installed_kwargs(monkeypatch, trace_env=value)
+    assert kwargs['trace_runtime'] is None

@@ -49,7 +49,7 @@ def test_attached_files_exists_flag_and_kind(tmp_path):
     here, gone = files
     assert here.name == "here.png" and here.exists is True and here.type == "image"
     assert here.size == 1  # one byte written
-    assert here.url == "/api/projects/p1/workspace/files/user_files/here.png/raw"
+    assert here.url == "/api/projects/p1/workspace/raw/user_files/here.png"
     assert gone.name == "gone.txt" and gone.exists is False and gone.type == "file"
     assert gone.size is None
 

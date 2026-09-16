@@ -29,6 +29,19 @@ def test_models_and_default(tmp_path):
     assert 'a-2' not in m.list_custom_providers()['acme']['models']
 
 
+def test_add_model_materializes_a_provider_without_inventing_metadata(tmp_path):
+    """The entry a first model creates must describe nothing but that model.
+
+    Readers merge these entries over the built-in registry, so a stored field is
+    taken as the user's own override. Seeding a name and a protocol here made
+    adding the first model to a built-in provider an unasked-for rename (to its
+    id) and an unasked-for protocol change.
+    """
+    m = ModelSettingsManager(global_dir=str(tmp_path))
+    m.add_model('google', 'gemini-3-pro')
+    assert m.list_custom_providers()['google'] == {'models': ['gemini-3-pro']}
+
+
 def test_preserves_other_sections(tmp_path):
     p = tmp_path / 'settings.json'
     p.write_text(json.dumps({'theme': 'dark', 'llm': {'provider': 'x'}}))

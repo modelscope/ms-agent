@@ -12,8 +12,15 @@ import {
   useRouteLoaderData
 } from 'react-router'
 import { MsaButton } from '~/components/common/MsaButton'
+import { ScrollArea } from '~/components/common/ScrollArea'
 import { NewProjectModal } from '~/components/project/NewProjectModal'
 import { api } from '~/lib/api'
+import {
+  DownloadUnauthorizedError,
+  downloadSessionExport,
+  type SessionExportDetail,
+  type SessionExportFormat
+} from '~/lib/download'
 import { useT } from '~/lib/i18n'
 import { usePresence } from '~/lib/presenceContext'
 import { useUrlPath } from '~/lib/useUrlPath'
@@ -28,7 +35,10 @@ import AddIcon from '~/assets/icons/add.svg?react'
 import NewProjectIcon from '~/assets/icons/new-project.svg?react'
 import MoreIcon from '~/assets/icons/more.svg?react'
 import ExpandIcon from '~/assets/icons/expand.svg?react'
+import GithubIcon from '~/assets/icons/github.svg?react'
 import SpinnerIcon from '~/assets/icons/generating.svg?react'
+
+const REPO_URL = 'https://github.com/modelscope/ms-agent'
 
 interface AppLoaderData {
   projects: Project[]
@@ -139,7 +149,7 @@ export function Sidebar({
 
                   <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover/sidebar:opacity-100">
                     <IconButton
-                      variant="outlined"
+                      variant="filled"
                       size="lg"
                       stopPropagation={false}
                       icon={
@@ -205,27 +215,38 @@ export function Sidebar({
             {/* Spacer pushes settings to the bottom */}
             <div className="min-h-0 flex-1" />
 
-            {/* Settings */}
-
-            <Tooltip title={t.nav.agentSettings} placement="right">
-              <NavLink
-                to="/settings"
-                onClick={onNavigate}
-                className="flex shrink-0 flex-col items-center rounded-[12px] bg-msa-fill-0.5 w-[40px] h-[40px] bg-msa-fill-0 hover:bg-msa-fill-3"
-              >
-                <IconButton
-                  variant="ghost"
-                  stopPropagation={false}
-                  icon={<SettingsIcon className="h-5 w-5" />}
-                  className="w-full h-full"
-                />
-              </NavLink>
-            </Tooltip>
+            {/* Settings + repo credit: one card, same as expanded mode */}
+            <div className="shrink-0 rounded-[12px] bg-msa-fill-3 w-[40px]">
+              <Tooltip title={t.nav.agentSettings} placement="right">
+                <NavLink
+                  to="/settings"
+                  onClick={onNavigate}
+                  className="flex flex-col items-center w-[40px] h-[40px] rounded-[12px] bg-msa-fill-0 hover:bg-msa-fill-brand-subtle"
+                >
+                  <IconButton
+                    variant="ghost"
+                    stopPropagation={false}
+                    icon={<SettingsIcon className="h-5 w-5" />}
+                    className="w-full h-full"
+                  />
+                </NavLink>
+              </Tooltip>
+              <Tooltip title={t.nav.github} placement="right">
+                <a
+                  href={REPO_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex h-10 w-full items-center justify-center text-msa-text-3 transition-colors hover:text-msa-text-1"
+                >
+                  <GithubIcon className="h-5 w-5" />
+                </a>
+              </Tooltip>
+            </div>
           </>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col gap-3">
             {/* Top card: brand + new chat + nav shortcuts */}
-            <div className="shrink-0 rounded-[12px] bg-msa-fill-3 p-[8px]">
+            <div className="shrink-0 rounded-[20px] bg-msa-fill-3 p-[8px]">
               <div className="flex items-center gap-2">
                 {/* Logo / collapse toggle: on sidebar hover the logo morphs
                     into the collapse icon (same pattern as collapsed mode). */}
@@ -250,7 +271,7 @@ export function Sidebar({
                   block
                   icon={<NewChatIcon className="h-5 w-5" />}
                   onClick={openNewChat}
-                  className="!flex !items-center !justify-center !gap-2 !rounded-2xl !px-4 !py-2.5 !h-auto !font-medium !text-sm hover:!opacity-90"
+                  className="!flex !items-center !justify-center !gap-2 !rounded-xl !px-4 !py-2.5 !h-auto !font-medium !text-sm hover:!opacity-90"
                 >
                   <span>{t.nav.newChatShort}</span>
                 </MsaButton>
@@ -274,31 +295,26 @@ export function Sidebar({
             </div>
 
             {/* Projects card */}
-            <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-msa-line-1 bg-msa-fill-0 p-1.5">
+            <div className="flex min-h-0 flex-1 flex-col rounded-2xl bg-msa-fill-0 p-1.5">
               <div className="flex shrink-0 items-center justify-between px-2 py-1">
-                <span className="text-sm font-medium text-msa-text-2">
+                <span className="text-[13px] text-msa-text-3">
                   {t.nav.projectsTitle}
                 </span>
                 <Tooltip title={t.nav.newProject}>
                   <IconButton
-                    variant="filled"
-                    size="sm"
+                    variant="tonal"
+                    size="xs"
                     onClick={openCreateProject}
                     icon={<NewProjectIcon className="h-4 w-4" />}
                     className="text-msa-text-2 hover:bg-msa-fill-2"
                   />
                 </Tooltip>
               </div>
-              {/* `-mx-1.5` full-bleeds the scroll box to both card borders so its
-                  scrollbar sits flush right; `scrollbar-gutter: stable both-edges`
-                  then reserves an equal gutter on BOTH sides, so the reserved
-                  right-hand scrollbar space is mirrored on the left and the rows
-                  end up with matching left/right gaps (otherwise the hidden thin
-                  scrollbar leaves empty space only on the right). */}
-              <div
-                className="mt-1 -mx-1.5 min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden"
-                style={{ scrollbarGutter: 'stable both-edges' }}
-              >
+              {/* `-mx-1.5` full-bleeds the scroll box to both card borders so the
+                  scrollbar sits flush right; `pad` then puts the rows back at the
+                  card's own inset (-6 + 14 = 8px) — and holds them there whether
+                  or not the scrollbar takes space. */}
+              <ScrollArea pad={14} className="mt-1 -mx-1.5 flex-1">
                 {orderedProjects.length === 0 ? (
                   <RecentEmpty />
                 ) : (
@@ -315,18 +331,30 @@ export function Sidebar({
                     ))}
                   </div>
                 )}
-              </div>
+              </ScrollArea>
             </div>
 
-            {/* Settings card */}
-
-            <SidebarNavItem
-              to="/settings"
-              label={t.nav.agentSettings}
-              icon={<SettingsIcon className="h-5 w-5" />}
-              onNavigate={onNavigate}
-              className="bg-msa-fill-0 rounded-[12px] !text-sm !font-normal hover:bg-msa-fill-4 hover:!text-msa-text-brand1"
-            />
+            {/* One card wrapping both: the settings row keeps its own rounded
+                corners and the credit row shows the wrapper's fill. */}
+            <div className="shrink-0 rounded-[12px] bg-msa-fill-3">
+              <SidebarNavItem
+                to="/settings"
+                label={t.nav.agentSettings}
+                icon={<SettingsIcon className="h-5 w-5" />}
+                onNavigate={onNavigate}
+                className="bg-msa-fill-0 rounded-[12px] !text-sm !font-normal hover:bg-msa-fill-brand-subtle hover:!text-msa-text-brand1"
+              />
+              <a
+                href={REPO_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="flex h-10 items-center justify-center gap-1.5 whitespace-nowrap text-xs text-msa-text-3! transition-colors hover:text-msa-text-1!"
+              >
+                <span>{t.nav.poweredBy}</span>
+                <GithubIcon className="h-3.5 w-3.5 shrink-0" />
+                <span>MS-Agent</span>
+              </a>
+            </div>
           </div>
         )}
       </aside>
@@ -375,7 +403,7 @@ function SidebarNavItem({
     <NavLink
       to={to}
       onClick={onNavigate}
-      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-medium text-msa-text-1 transition-colors hover:bg-msa-fill-2 ${className}`}
+      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-medium text-msa-text-1 transition-colors hover:bg-msa-fill-2 ${className || ''}`}
     >
       <span className="shrink-0 flex items-center">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
@@ -453,7 +481,7 @@ function ProjectRowActions({
     <>
       <Tooltip title={t.nav.newChat}>
         <IconButton
-          icon={<AddIcon className="h-3.5 w-3.5" />}
+          icon={<AddIcon className="h-4 w-4" />}
           variant="ghost"
           size="xs"
           className={actionClass}
@@ -476,7 +504,7 @@ function ProjectRowActions({
         >
           <IconButton
             aria-label={t.resources.more}
-            icon={<MoreIcon className="h-3.5 w-3.5" />}
+            icon={<MoreIcon className="h-4 w-4" />}
             variant="ghost"
             size="xs"
             className={actionClass}
@@ -545,13 +573,9 @@ function CollapsedProjectList({
     (sessionsByProject.get(p.id) ?? []).some((s) => s.unread)
   )
   const content = (
-    // stable both-edges: mirror the styled scrollbar's right-hand gutter on the
-    // left too, so the hover-highlighted rows keep equal left/right insets
-    // instead of a wider gap on the scrollbar side.
-    <div
-      className="max-h-[60vh] w-56 overflow-y-auto py-1 space-y-1"
-      style={{ scrollbarGutter: 'stable both-edges' }}
-    >
+    // pad: hover-highlighted rows keep equal left/right insets in either
+    // scrollbar mode.
+    <ScrollArea pad={12} className="max-h-[60vh] w-56 py-1 space-y-1">
       {projects.map((p) => (
         <CollapsedProjectGroup
           key={p.id}
@@ -561,7 +585,7 @@ function CollapsedProjectList({
           onEditProject={onEditProject}
         />
       ))}
-    </div>
+    </ScrollArea>
   )
 
   return (
@@ -642,7 +666,7 @@ function CollapsedProjectGroup({
       >
         <span className="flex h-4 w-4 shrink-0 items-center justify-center text-[10px] text-msa-neutral-3">
           <ExpandIcon
-            className={`h-3 w-3 transition-transform ${open ? '' : 'rotate-180'}`}
+            className={`h-3.5 w-3.5 transition-transform ${open ? '' : 'rotate-180'}`}
           />
         </span>
         <div
@@ -654,9 +678,7 @@ function CollapsedProjectGroup({
           }}
         >
           <span
-            className={`min-w-0 truncate text-sm font-semibold ${
-              isActiveProject ? 'text-msa-purple-5' : 'text-msa-text-1'
-            }`}
+            className={`min-w-0 truncate text-sm font-semibold text-msa-text-1`}
             title={projectName}
           >
             {projectName}
@@ -767,7 +789,7 @@ function ProjectGroup({
           }}
         >
           <ExpandIcon
-            className={`h-4 w-4 transition-transform ${open ? '' : 'rotate-180'}`}
+            className={`h-3.5 w-3.5 transition-transform ${open ? '' : 'rotate-180'}`}
           />
         </span>
         {/* Project name — click to enter project detail */}
@@ -780,9 +802,7 @@ function ProjectGroup({
           }}
         >
           <span
-            className={`min-w-0 truncate text-sm font-semibold ${
-              isActiveProject ? 'text-msa-purple-5' : 'text-msa-text-1'
-            }`}
+            className={`min-w-0 truncate text-sm font-semibold text-msa-text-1`}
             title={projectName}
           >
             {projectName}
@@ -840,7 +860,7 @@ function SessionItem({
   onNavigate?: () => void
 }) {
   const { t } = useT()
-  const { modal } = App.useApp()
+  const { message, modal } = App.useApp()
   const navigate = useNavigate()
   const location = useLocation()
   const revalidator = useRevalidator()
@@ -888,6 +908,40 @@ function SessionItem({
     })
   }
 
+  const handleExport = async (
+    format: SessionExportFormat,
+    detail: SessionExportDetail
+  ) => {
+    try {
+      await downloadSessionExport(session, format, detail)
+      message.success(t.sidebar.exportSuccess)
+    } catch (error) {
+      message.error(
+        error instanceof DownloadUnauthorizedError
+          ? t.workspace.downloadUnauthorized
+          : t.sidebar.exportFailed
+      )
+    }
+  }
+
+  const exportDetailItems = (format: SessionExportFormat): MenuProps['items'] => [
+    {
+      key: `${format}-full`,
+      label: t.sidebar.exportFull,
+      onClick: () => void handleExport(format, 'full')
+    },
+    {
+      key: `${format}-compact`,
+      label: t.sidebar.exportCompact,
+      onClick: () => void handleExport(format, 'compact')
+    },
+    {
+      key: `${format}-user-only`,
+      label: t.sidebar.exportConversationOnly,
+      onClick: () => void handleExport(format, 'user-only')
+    }
+  ]
+
   const sessionMenu: MenuProps = {
     items: [
       {
@@ -897,6 +951,22 @@ function SessionItem({
           setRenameValue(session.title)
           setRenameOpen(true)
         }
+      },
+      {
+        key: 'export',
+        label: t.sidebar.exportSession,
+        children: [
+          {
+            key: 'export-markdown',
+            label: t.sidebar.exportMarkdown,
+            children: exportDetailItems('markdown')
+          },
+          {
+            key: 'export-html',
+            label: t.sidebar.exportHtml,
+            children: exportDetailItems('html')
+          }
+        ]
       },
       {
         key: 'delete',

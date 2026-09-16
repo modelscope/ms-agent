@@ -59,7 +59,7 @@ function CopyReplyButton({ text }: { text: string }) {
           copied ? (
             <CheckOutlined className="text-sm !text-msa-green-5" />
           ) : (
-            <CopyIcon className="h-4 w-4" />
+            <CopyIcon className="h-5 w-5" />
           )
         }
         className="text-msa-text-3 hover:!text-msa-text-1"
@@ -266,7 +266,7 @@ export const MessageList = forwardRef<
             }}
             className="absolute bottom-5 right-5 z-10 !rounded-full"
             variant="tonal"
-            icon={<DownloadIcon className="h-4 w-4" />}
+            icon={<DownloadIcon className="h-5 w-5" />}
           ></IconButton>
         </Tooltip>
       )}

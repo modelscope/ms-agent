@@ -47,7 +47,11 @@ def test_agent_unknown_option_is_rejected(monkeypatch, capsys):
     with pytest.raises(SystemExit) as exc_info:
         run_cmd()
     assert exc_info.value.code == 2
-    assert 'unrecognized arguments: --dry-runn' in capsys.readouterr().err
+    stderr = capsys.readouterr().err
+    assert 'unrecognized arguments: --dry-runn' in stderr
+    # A misspelled option must not get the positional-argument hint.
+    assert '--local-dir' not in stderr
+    assert 'no positional arguments' not in stderr
 
 
 def test_valid_agent_command_still_dispatches(monkeypatch):

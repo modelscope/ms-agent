@@ -140,7 +140,7 @@ export function McpTabPanel({ project }: Props) {
           </MsaButton>
           <MsaButton
             variant="primary"
-            icon={<AddIcon className="h-4 w-4" />}
+            icon={<AddIcon className="h-5 w-5" />}
             onClick={() => setImporting('custom')}
           >
             {t.resources.addMcp}

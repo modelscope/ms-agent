@@ -239,6 +239,38 @@ def test_clearing_a_builtin_display_name_restores_the_spec_default():
         P.update_provider("openai", ProviderUpdate(api_key="", name=""))
 
 
+def test_adding_a_model_does_not_relabel_a_builtin_provider():
+    """Adding a model must not double as an edit of the provider itself.
+
+    A built-in provider has no settings.json entry until something writes one,
+    and `add_model` writes the first one. That entry is merged over the registry
+    on read, so the SDK seeding it with `name: <provider_id>` and
+    `protocol: "openai"` reached the UI as the user's own overrides: the first
+    model added to `google` renamed it to "google" for good (deleting the model
+    leaves the entry, and the label, behind) and `anthropic` was reported — and
+    configured — as an OpenAI-protocol endpoint.
+    """
+    from app.backends.ms_agent import models as M
+    from app.backends.ms_agent import providers as P
+    from app.schemas.model import ModelCreate
+
+    before = P.get_provider("anthropic")
+    assert before.name == "Anthropic" and before.protocol == "anthropic"
+
+    created = M.create_model(
+        ModelCreate(provider_id="anthropic", name="claude-4-opus"))
+    try:
+        after = P.get_provider("anthropic")
+        assert after.name == before.name
+        assert after.protocol == before.protocol
+        assert after.base_url == before.base_url
+    finally:
+        M.delete_model(created.id)
+        # The materialized entry outlives the model it was created for; drop it
+        # so the built-in is back to "never configured" for later tests.
+        P.delete_provider("anthropic")
+
+
 def test_provider_id_accepts_letters_of_either_case():
     """The id only has to be an identifier, not a lowercase slug."""
     from app.schemas.provider import ProviderCreate

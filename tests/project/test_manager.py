@@ -1,3 +1,5 @@
+import threading
+
 import pytest
 from ms_agent.project.manager import ProjectManager
 from ms_agent.project.types import DEFAULT_PROJECT_ID, Project
@@ -13,6 +15,35 @@ class TestProjectManager:
         assert default is not None
         assert default.id == DEFAULT_PROJECT_ID
         assert default.name == 'Default'
+
+    def test_concurrent_managers_can_create_the_default_project(
+            self, tmp_path):
+        # A first visit does this from several requests at once: the WebUI
+        # builds a manager per request and construction creates the default
+        # project when missing.
+        home = tmp_path / 'home'
+        callers = 6
+        failures: list[BaseException] = []
+        names: list[str] = []
+        start = threading.Barrier(callers)
+
+        def visit() -> None:
+            start.wait()
+            try:
+                names.append(
+                    ProjectManager(
+                        base_dir=str(home)).get_default_project().name)
+            except BaseException as exc:  # noqa: B902 - reported verbatim
+                failures.append(exc)
+
+        threads = [threading.Thread(target=visit) for _ in range(callers)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not failures, f'{len(failures)} failed: {failures[:3]}'
+        assert names == ['Default'] * callers
 
     def test_create_and_get(self, pm):
         project = pm.create(name='Test Project')

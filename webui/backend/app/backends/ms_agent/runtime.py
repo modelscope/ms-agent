@@ -198,7 +198,7 @@ def _mcp_fingerprint(project) -> str:
         return ""
 
 
-def _settings_fingerprint(project) -> str:
+def _settings_fingerprint(project, model_snapshot=None) -> str:
     """Detect imports and file edits before reusing a session's frozen config."""
     import hashlib
     from pathlib import Path
@@ -206,12 +206,19 @@ def _settings_fingerprint(project) -> str:
     from app.backends.ms_agent.common import home
     from ms_agent.config.resolver import _project_internal_file
 
-    paths = [Path(home()) / "settings.json"]
+    paths = [] if model_snapshot is not None else [Path(home()) / "settings.json"]
     paths.extend(_project_internal_file(project.path, name)
                  for name in ("config.yaml", "settings.local.json"))
     paths.extend(root / name for root in (Path(home()), Path(project.path))
                  for name in ("AGENTS.md", "SOUL.md", "PROFILE.md"))
     digest = hashlib.sha256()
+    if model_snapshot is not None:
+        import json
+        digest.update(json.dumps(model_snapshot.settings, sort_keys=True).encode())
+        # Session display fields change on every turn and do not configure the agent.
+        meta = {k: v for k, v in model_snapshot.metadata.items()
+                if k in ("providers", "models", "agent_settings", "projects")}
+        digest.update(json.dumps(meta, sort_keys=True).encode())
     for path in paths:
         try:
             content = path.read_bytes()
@@ -319,19 +326,16 @@ def _persisting_permission_handler(sink, session_log_getter, timeout=None):
 
 
 class SessionRuntime:
-    def __init__(self, project, session, mcp_config: dict | None = None) -> None:
+    def __init__(self, project, session, mcp_config: dict | None = None, model_snapshot=None) -> None:
         from app.backends.ms_agent import model_link
 
         self.project = project
         self.session = session
-        # (provider, model) baked into this agent — the resolver reads it from
-        # settings.json.llm, so a later model switch is detected by comparing
-        # against active_model() and triggers a rebuild (see RuntimeRegistry.get).
-        self.model_key = model_link.active_model()
+        self.model_key = model_snapshot.key if model_snapshot is not None else model_link.active_model()
         # Config identity at build time; get() compares it per turn so edits
         # made outside the management routes still reach the next turn.
         self.mcp_fingerprint = _mcp_fingerprint(project)
-        self.settings_fingerprint = _settings_fingerprint(project)
+        self.settings_fingerprint = _settings_fingerprint(project, model_snapshot)
         # Set when this agent's configuration was superseded while it was
         # mid-turn (a memory-model edit, a store rebuild): it finishes the turn
         # it is in, and the NEXT one gets a freshly built agent. Without it a
@@ -376,6 +380,7 @@ class SessionRuntime:
             input_source=self.input_source,
             mcp_config=mcp_config,
             permission_handler=self.permission_handler,
+            model_snapshot=model_snapshot,
         )
         # Last user-driven activity (monotonic). The idle sweeper evicts
         # runtimes that sat untouched past the TTL — an idle vector project
@@ -579,7 +584,10 @@ class RuntimeRegistry:
             # External import services write the file directly. Complete its
             # global defaults before fingerprinting so this write does not
             # cause another rebuild on the following turn.
-            ensure_tool_settings(home())
+            await asyncio.to_thread(ensure_tool_settings, home())
+            from app.backends.ms_agent.session_models import prepare
+
+            session, model_snapshot = await asyncio.to_thread(prepare, project, session)
             # Rebuild on a model switch or a superseded config, but never
             # mid-turn: an in-flight turn holds turn_lock, so defer the swap to
             # the next idle turn to avoid cancelling it. The MCP fingerprint
@@ -588,11 +596,11 @@ class RuntimeRegistry:
             # one — which previously took effect only for NEW sessions: the
             # session where the fix happened kept its frozen tool set.
             current_fp = _mcp_fingerprint(project)
-            current_settings = _settings_fingerprint(project)
+            current_settings = _settings_fingerprint(project, model_snapshot)
             superseded = (
                 rt is not None
                 and not rt.turn_lock.locked()
-                and (rt.model_key != model_link.active_model()
+                and (rt.model_key != model_snapshot.key
                      or rt.needs_rebuild
                      or rt.settings_fingerprint != current_settings
                      # Both sides non-empty: a fingerprint FAILURE ("") must
@@ -605,7 +613,7 @@ class RuntimeRegistry:
                 return rt
             if rt is not None:
                 await rt.aclose()
-            rt = SessionRuntime(project, session, await self._resolve_mcp(project))
+            rt = SessionRuntime(project, session, await self._resolve_mcp(project), model_snapshot=model_snapshot)
             self._runtimes[session.id] = rt
             return rt
 

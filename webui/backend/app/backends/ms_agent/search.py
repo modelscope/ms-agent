@@ -22,9 +22,9 @@ from the page either. So the settings page describes exactly what it manages.
 """
 from __future__ import annotations
 
-import json
-import os
 from pathlib import Path
+
+from ms_agent.utils.atomic_file import atomic_write_json
 
 from app.backends.ms_agent.common import home
 from app.backends.ms_agent.settings_store import settings_lock
@@ -110,11 +110,7 @@ def _load() -> dict:
 
 
 def _save(data: dict) -> None:
-    path = _settings_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, path)
+    atomic_write_json(_settings_path(), data)
 
 
 def _block(data: dict) -> dict:

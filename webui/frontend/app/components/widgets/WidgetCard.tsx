@@ -64,7 +64,7 @@ export function WidgetCard({
           {onEdit && (
             <Tooltip title={t.widgets.edit}>
               <IconButton
-                icon={<EditIcon className="h-4 w-4" />}
+                icon={<EditIcon className="h-5 w-5" />}
                 variant="ghost"
                 size="sm"
                 onClick={onEdit}

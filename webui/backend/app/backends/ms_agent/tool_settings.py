@@ -10,7 +10,7 @@ from ms_agent.config.tool_settings import merge_tool_settings
 
 from app.backends.errors import BadRequest, Conflict
 from app.backends.ms_agent.defaults import DEFAULT_TOOLS, RETIRED_TOOLS
-from app.backends.ms_agent.settings_store import settings_lock
+from ms_agent.utils.file_lock import file_lock
 
 
 def normalize_tool_settings(data: dict) -> dict:
@@ -39,11 +39,11 @@ def ensure_tool_settings(home_dir: str | Path) -> dict:
 
     External import services can replace settings.json without calling the SDK.
     Never reuse a cached pre-import configuration or restore deleted credentials.
-    Recheck the source before replacement to avoid overwriting an observed
-    concurrent edit; external writers should also use atomic file replacement.
+    Recheck the source before replacement to avoid an observed external edit.
+    External writers must use the same lock for a strict no-lost-update guarantee.
     """
     path = Path(home_dir) / "settings.json"
-    with settings_lock():
+    with file_lock(path):
         for _ in range(3):
             before = _read(path)
             try:

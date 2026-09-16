@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import copy
-import json
 from datetime import datetime, timezone
 from pathlib import Path
-from threading import Lock
+from contextlib import contextmanager, ExitStack
 from typing import Any, Dict, Literal, Optional
 
+from ms_agent.utils.file_lock import file_lock
+from ms_agent.utils.json_store import read_json
+from ms_agent.utils.atomic_file import atomic_write_json
 from ms_agent.config.env import Env
 from ms_agent.config.mcp_schema import normalize_mcp_server_entry
 
@@ -26,7 +28,6 @@ class MCPConfigManager:
         self.global_root = Path(global_root).expanduser()
         self.project_root = (
             Path(project_root).expanduser() if project_root else None)
-        self._lock = Lock()
 
     # ── paths ──────────────────────────────────────────────────────────
 
@@ -45,21 +46,22 @@ class MCPConfigManager:
         from ms_agent.project.paths import project_internal_file
         return project_internal_file(self.project_root, 'mcp.json')
 
-    def _ensure_dir(self, path: Path) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-
-    # ── IO ─────────────────────────────────────────────────────────────
+    @contextmanager
+    def _transaction_lock(self):
+        # Global settings always precedes the compatibility MCP file.
+        with ExitStack() as stack:
+            stack.enter_context(file_lock(self.global_settings_path))
+            stack.enter_context(file_lock(self.global_mcp_path))
+            if self.project_root is not None:
+                stack.enter_context(file_lock(self.project_mcp_path))
+            yield
 
     def _read_json(self, path: Path) -> Dict[str, Any]:
-        if not path.is_file():
-            return {}
-        with open(path, encoding='utf-8') as f:
-            return json.load(f)
+        return read_json(path)
 
     def _write_json(self, path: Path, data: Dict[str, Any]) -> None:
-        self._ensure_dir(path)
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+        with file_lock(path):
+            atomic_write_json(path, data)
 
     def _load_scope_raw(
             self, scope: Literal['global',
@@ -114,7 +116,7 @@ class MCPConfigManager:
     # ── CRUD ───────────────────────────────────────────────────────────
 
     def list(self, scope: MCPScope = 'merged') -> Dict[str, Dict[str, Any]]:
-        with self._lock:
+        with self._transaction_lock():
             if scope == 'global':
                 return self._normalize_scope(
                     self._load_scope_raw('global'), source='global')
@@ -141,7 +143,7 @@ class MCPConfigManager:
         server: Dict[str, Any],
         scope: Literal['global', 'project'] = 'project',
     ) -> None:
-        with self._lock:
+        with self._transaction_lock():
             raw = self._load_scope_raw(scope)
             entry = copy.deepcopy(server)
             entry.setdefault('enabled', True)
@@ -160,7 +162,7 @@ class MCPConfigManager:
         patch: Dict[str, Any],
         scope: Literal['global', 'project'] = 'project',
     ) -> None:
-        with self._lock:
+        with self._transaction_lock():
             raw = self._load_scope_raw(scope)
             if name not in raw:
                 raise KeyError(
@@ -172,15 +174,17 @@ class MCPConfigManager:
 
     def remove(self,
                name: str,
-               scope: Literal['global', 'project'] = 'project') -> None:
+               scope: Literal['global', 'project'] = 'project',
+               *, mask_global: bool = True) -> None:
         """Remove or mask a server.
 
         Project scope masks a global server (``enabled: false``) without
-        deleting the global definition. Global scope deletes the entry.
+        deleting the global definition. Set ``mask_global=False`` to remove
+        only a project override. Global scope deletes the entry.
         """
-        with self._lock:
+        with self._transaction_lock():
             raw = self._load_scope_raw(scope)
-            if scope == 'project':
+            if scope == 'project' and mask_global:
                 raw[name] = {'enabled': False, '_removed': True}
             elif name in raw:
                 del raw[name]
@@ -194,7 +198,7 @@ class MCPConfigManager:
         enabled: bool,
         scope: Literal['global', 'project'] = 'project',
     ) -> None:
-        with self._lock:
+        with self._transaction_lock():
             raw = self._load_scope_raw(scope)
             if name not in raw:
                 if scope == 'project':
@@ -217,7 +221,7 @@ class MCPConfigManager:
         incoming = data.get('mcpServers', data)
         if not isinstance(incoming, dict):
             return 0
-        with self._lock:
+        with self._transaction_lock():
             raw = self._load_scope_raw('global') if merge else {}
             count = 0
             for name, entry in incoming.items():

@@ -66,7 +66,9 @@ def create_session(body: SessionCreate) -> Session:
     except KeyError:
         project = resolve_project(
             None)  # unknown id -> default (mock is lenient)
-    session = sm_for(project).create(name=body.title)
+    from app.backends.ms_agent import session_models
+
+    session = session_models.create(project, name=body.title, model_id=body.model_id)
     if body.preview:
         sidecar.merge("sessions", session.id, {"preview": body.preview})
     return session_to_schema(session)
@@ -409,7 +411,7 @@ def _file_kind(name: str) -> str:
 
 def _raw_url(pid: str, path: str) -> str:
     enc = "/".join(quote(seg) for seg in path.split("/"))
-    return f"/api/projects/{quote(pid)}/workspace/files/{enc}/raw"
+    return f"/api/projects/{quote(pid)}/workspace/raw/{enc}"
 
 
 def _attached_files(project,
@@ -1097,3 +1099,16 @@ def list_artifacts(sid: str) -> list[Artifact]:
                 deleted=deleted,
             ))
     return out
+
+
+def update_session_model(sid: str, model_id: str) -> dict:
+    from app.backends.ms_agent import agent_settings, session_models
+    from app.backends.ms_agent.settings_store import settings_lock
+
+    found = find_session(sid)
+    if not found:
+        raise NotFound("Conversation not found.")
+    project, _, manager = found
+    with manager.transaction_lock(), settings_lock():
+        saved = session_models.change(project, sid, model_id)
+        return {"session": session_to_schema(saved), "settings": agent_settings.get_settings()}

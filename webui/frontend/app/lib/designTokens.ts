@@ -122,7 +122,12 @@ const light = {
     input: '#fff',
     error: 'rgba(212, 87, 115, 0.12)',
     warning: 'rgba(231, 174, 62, 0.12)',
-    brand: '#fff'
+    brand: '#fff',
+    // Brand-tinted fill for rows that sit INSIDE a filled card, where the
+    // fill-4 interaction color is too close to the card to read as a change.
+    // Separates by hue (warm violet against the cool grey-blue cards) rather
+    // than by lightness, which the cards' own brightness leaves no room for.
+    'brand-subtle': '#e9e5ff'
   },
   line: {
     0: '#fff',
@@ -251,7 +256,10 @@ const dark = {
     input: '#343434',
     error: 'rgba(188, 95, 116, 0.12)',
     warning: 'rgba(193, 160, 95, 0.12)',
-    brand: '#202020'
+    brand: '#202020',
+    // Dark counterpart: here lightness is available, so this lifts off the
+    // card instead of darkening. See the light entry.
+    'brand-subtle': '#333150'
   },
   line: {
     0: '#27254c',

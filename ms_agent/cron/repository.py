@@ -2,13 +2,12 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from ms_agent.cron.types import CronJobSpec, CronJobState
+from ms_agent.utils.atomic_file import atomic_write_json
 
 
 class JsonJobRepository:
@@ -31,15 +30,7 @@ class JsonJobRepository:
         """Write data atomically: tmpfile -> fsync -> os.replace.
         Caller MUST hold self._lock.
         """
-        content = json.dumps(data, ensure_ascii=False, indent=2)
-        dir_path = str(self._path.parent)
-        fd, tmp_path = tempfile.mkstemp(dir=dir_path, suffix='.tmp')
-        try:
-            os.write(fd, content.encode('utf-8'))
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-        os.replace(tmp_path, str(self._path))
+        atomic_write_json(self._path, data, fsync=True)
         self._last_mtime = self._path.stat().st_mtime
         self._cache = data
 

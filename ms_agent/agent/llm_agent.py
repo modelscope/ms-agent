@@ -54,6 +54,7 @@ from ms_agent.ui.events import (ContentDelta, ContentEnd, ContextCompacted,
                                 TurnCompleted, UsageInfo)
 from ms_agent.utils import (async_retry, is_retryable_error, read_history,
                             save_history)
+from ms_agent.utils.atomic_file import atomic_write_json
 from ms_agent.utils.constants import DEFAULT_TAG, DEFAULT_USER
 from ms_agent.utils.logger import get_logger
 from ms_agent.utils.snapshot import take_snapshot
@@ -1686,16 +1687,11 @@ class LLMAgent(Agent):
         if path is None:
             return
         try:
-            tmp = path.with_suffix('.json.tmp')
-            tmp.write_text(
-                json.dumps({
+            atomic_write_json(
+                path, {
                     'version': 1,
                     'sources': surface
-                },
-                           ensure_ascii=False,
-                           indent=1),
-                encoding='utf-8')
-            tmp.replace(path)
+                }, indent=1)
         except OSError as e:
             logger.warning(f'[prompt-surface] sidecar save failed: {e}')
 

@@ -1,20 +1,10 @@
-"""Process-local guard for SDK settings.json read-modify-write sequences."""
-from __future__ import annotations
+"""Shared SDK settings transaction lock."""
+from pathlib import Path
 
-import threading
-from contextlib import contextmanager
-from collections.abc import Iterator
+from ms_agent.utils.file_lock import file_lock
 
-_settings_lock = threading.RLock()
+from app.backends.ms_agent.common import home
 
 
-@contextmanager
-def settings_lock() -> Iterator[None]:
-    """Serialize settings.json mutations made through SDK manager adapters.
-
-    The SDK managers rewrite the whole settings file. FastAPI sync routes run in
-    a threadpool, so two management requests can otherwise load the same old
-    file and save incompatible partial updates.
-    """
-    with _settings_lock:
-        yield
+def settings_lock():
+    return file_lock(Path(home()) / "settings.json")

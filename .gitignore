@@ -187,6 +187,11 @@ webui/frontend/.react-router
 # file it asks for so a local 404-silencer never gets committed again.
 webui/frontend/public/.well-known/appspecific/com.chrome.devtools.json
 
+# The traced runtime tree `pnpm build:image` assembles; `build/` above does not
+# match it. The image builds its own copy inside the WebUI cache rather than here,
+# but a local `pnpm build:image` lands one in the checkout.
+webui/frontend/build-runtime/
+
 # Frontend CSS and dependency caches are generated during build and preparation.
 webui/frontend/public/antd/
 webui/frontend/public/assets/

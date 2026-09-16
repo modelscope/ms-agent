@@ -21,6 +21,13 @@ MIN_NODE_VERSION = (22, 22, 0)
 MIN_UV_VERSION = (0, 5, 0)
 IS_WINDOWS = os.name == 'nt'
 
+#: Opt in to keeping only the traced SSR dependency closure instead of everything
+#: `pnpm install` resolved. Deliberately not a CLI flag: the image sets it while
+#: building, and the first preparation it triggers costs a full devDependency
+#: install plus a tracing pass. Advertising it in `--help` would invite that onto
+#: laptops, where the 430 MB it saves is a cache directory nobody ships.
+TRACE_RUNTIME_ENV = 'MS_AGENT_WEBUI_TRACE_RUNTIME'
+
 
 def _port_number(value):
     try:
@@ -121,20 +128,38 @@ class UICMD(CLICommand):
 
                 def build_frontend(frontend):
                     pnpm = _require_executable('pnpm')
-                    _check_tool_versions({'node': node, 'pnpm': pnpm}, frontend)
+                    _check_tool_versions({
+                        'node': node,
+                        'pnpm': pnpm
+                    }, frontend)
                     print(
                         '[setup] Building WebUI (including generated CSS)...',
                         flush=True)
                     _run_setup([pnpm, 'build'], frontend, 'frontend build')
 
+                def trace_runtime(frontend):
+                    pnpm = _require_executable('pnpm')
+                    _check_tool_versions({
+                        'node': node,
+                        'pnpm': pnpm
+                    }, frontend)
+                    print(
+                        '[setup] Tracing WebUI runtime dependencies...',
+                        flush=True)
+                    _run_setup(
+                        [pnpm, 'exec', 'tsx', 'scripts/traceRuntime.ts'],
+                        frontend, 'runtime dependency tracing')
+
                 if installed:
+                    tracing = os.environ.get(TRACE_RUNTIME_ENV) == '1'
                     webui = prepare_installed(
                         webui,
                         common,
                         node_version,
                         skip_install=self.args.skip_install,
                         install_node=install_node,
-                        build_frontend=build_frontend)
+                        build_frontend=build_frontend,
+                        trace_runtime=trace_runtime if tracing else None)
                     python = Path(sys.executable)
                 else:
                     backend = webui / 'backend'

@@ -4,8 +4,8 @@ import errorDark from '~/assets/images/error-dark.png'
 import { useTheme } from '~/lib/theme'
 
 interface Props {
-  /** Big headline — the HTTP status code, or the error's own name when a
-   * client-side exception has no status. Omitted when neither exists. */
+  /** Big headline — the HTTP status code, or a generic phrase when a client-side
+   * exception has no status. Omitted when neither exists. */
   code?: string
   /** What failed, as reported by the server. */
   description: string

@@ -5,6 +5,9 @@ Built-ins come from the read-only registry; customs from settings.json
 override and is merged into that built-in row (kept as a single entry)."""
 from __future__ import annotations
 
+from pathlib import Path
+from ms_agent.utils.file_lock import locked
+
 from app.backends.errors import BadRequest, Conflict, NotFound
 from app.backends.ms_agent import model_link, sidecar
 from app.backends.ms_agent.common import home
@@ -69,6 +72,7 @@ def get_provider(pid: str) -> Provider:
     raise NotFound("Provider not found.")
 
 
+@locked(lambda *args, **kwargs: Path(home()) / "settings.json")
 def create_provider(body: ProviderCreate) -> Provider:
     with settings_lock():
         msm = _msm()
@@ -91,6 +95,7 @@ def create_provider(body: ProviderCreate) -> Provider:
     return custom_provider_to_schema(body.id, custom)
 
 
+@locked(lambda *args, **kwargs: Path(home()) / "settings.json")
 def update_provider(pid: str, body: ProviderUpdate) -> Provider:
     with settings_lock():
         msm = _msm()
@@ -107,8 +112,10 @@ def update_provider(pid: str, body: ProviderUpdate) -> Provider:
             msm.add_provider(
                 pid,
                 name=name or _default_name(pid),
+                # A partial edit retains the effective protocol, including
+                # the registry default when no override has been saved yet.
                 protocol=(body.protocol if body.protocol is not None else
-                          cur.get("protocol")) or "openai",
+                          get_provider(pid).protocol),
                 api_key=body.api_key
                 if body.api_key is not None else cur.get("api_key"),
                 base_url=body.base_url
@@ -135,6 +142,7 @@ def update_provider(pid: str, body: ProviderUpdate) -> Provider:
     return get_provider(pid)
 
 
+@locked(lambda *args, **kwargs: Path(home()) / "settings.json")
 def delete_provider(pid: str) -> None:
     with settings_lock():
         msm = _msm()

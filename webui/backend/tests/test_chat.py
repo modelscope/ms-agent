@@ -2002,13 +2002,17 @@ async def test_stream_maps_and_terminates(monkeypatch):
     assert fake_rt.turn_lock.locked() is False
 
 
-async def test_stream_done_carries_generated_title_and_category(monkeypatch):
+async def test_stream_done_carries_generated_title_and_category(tmp_path, monkeypatch):
     """On a first message the concurrent titler result is folded into the `done`
     frame so the frontend can refresh the lists with the summarized title +
     topic category."""
     fake_rt = _FakeRuntime()
-    monkeypatch.setattr(chat, "_resolve_or_create", lambda req:
-                        (_FakeProject(), _FakeSession()))
+    from app.backends.ms_agent.common import pm, sm_for
+    monkeypatch.setenv("MS_AGENT_HOME", str(tmp_path))
+    pm().initialize()
+    project = pm().get_default_project()
+    session = sm_for(project).create()
+    monkeypatch.setattr(chat, "_resolve_or_create", lambda req: (project, session))
 
     async def _fake_get(project, session):
         return fake_rt
@@ -2039,7 +2043,7 @@ async def test_stream_done_carries_generated_title_and_category(monkeypatch):
     assert done["meta"]["title"] == "My Title"
     assert done["meta"]["category"] == "coding"
     assert done["meta"][
-        "project_id"] == "pid-1"  # drives the new-session redirect
+        "project_id"] == project.id
 
 
 async def test_stream_empty_user_message_ends_immediately(monkeypatch):

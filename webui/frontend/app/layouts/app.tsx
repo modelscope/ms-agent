@@ -10,7 +10,7 @@ import {
 } from 'react-router'
 import { IconButton } from '~/components/common/IconButton'
 import { Sidebar } from '~/components/layout/Sidebar'
-import { api } from '~/lib/api'
+import { api, orThrow } from '~/lib/api'
 import { useOnMcpSkillChanged } from '~/lib/events'
 import { recordLastAppRoute } from '~/lib/lastAppRoute'
 import { useModelChanged } from '~/lib/modelChanged'
@@ -34,6 +34,8 @@ const MD = '(min-width: 768px)'
 // resolving it per Composer mount re-asked the same question on every session
 // switch and flashed the "search not configured" pill in a beat late.
 export async function loader() {
+  // `orThrow` wraps the whole batch: any failure takes the app shell down, and
+  // a raw ApiError loses its class and status across the SSR boundary.
   const [
     projects,
     sessions,
@@ -43,16 +45,18 @@ export async function loader() {
     globalMcps,
     globalSkills,
     searchSettings
-  ] = await Promise.all([
-    api.listProjects(),
-    api.listSessions(),
-    api.listProviders(),
-    api.listModels(),
-    api.getAgentSettings(),
-    api.listMcps('global'),
-    api.listSkills('global'),
-    api.getSearchSettings()
-  ])
+  ] = await orThrow(
+    Promise.all([
+      api.listProjects(),
+      api.listSessions(),
+      api.listProviders(),
+      api.listModels(),
+      api.getAgentSettings(),
+      api.listMcps('global'),
+      api.listSkills('global'),
+      api.getSearchSettings()
+    ])
+  )
 
   return {
     projects,

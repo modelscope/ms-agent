@@ -116,7 +116,7 @@ export function AuthConfirmStepCard({
           />
         ) : (
           <span className="flex h-4 w-4 shrink-0 items-center justify-center text-msa-text-3">
-            <InvokeIcon className="h-4 w-4" />
+            <InvokeIcon className="h-5 w-5" />
           </span>
         )}
         <Typography.Text
@@ -145,7 +145,7 @@ export function AuthConfirmStepCard({
           </span>
         )}
         <ArrowDownIcon
-          className={`h-3 w-3 shrink-0 text-msa-text-3 transition-transform duration-200 ${
+          className={`h-3.5 w-3.5 shrink-0 text-msa-text-3 transition-transform duration-200 ${
             expanded ? 'rotate-180' : ''
           }`}
         />

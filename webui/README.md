@@ -259,5 +259,6 @@ PyPI packages; Git repositories and model downloads use their own addresses.
 | Python or Node version is unsupported | Check the requirements above and which interpreter the terminal uses |
 | An explicit port is occupied | Choose another `--port`, or omit it for automatic selection |
 | Pages or styles are missing | For source installs, run `pnpm build` in `webui/frontend/`; for pip installs, reinstall the package and follow the error message to prepare its cache again |
+| Default project metadata is missing | Open the WebUI recovery page. Choose **Not now** to keep the data as-is, or **Restore default project** and confirm. Recovery backs up the managed project directory before rebuilding its record; existing conversations and global settings are kept, but project settings reset to defaults |
 | Model connection or authentication fails | Check the provider's API key, endpoint, model name and network access |
 | WebUI Python dependencies are missing | Run `pip install -U "ms-agent[webui]"` in the environment used to start the app |

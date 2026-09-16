@@ -69,8 +69,7 @@ class ProjectUpdate(BaseModel):
     # Only accepted while the project has never had memory enabled (see
     # ``Project.memory_backend_locked``); rejected with 400 afterwards.
     memory_backend: MemoryBackend | None = None
-    # Sent as a whole group (the modal owns the section): if ANY of the five is
-    # present the stored group is replaced from the body.
+    # Only submitted fields change; explicit None clears an override.
     memory_llm_provider_id: str | None = None
     memory_llm_model: str | None = None
     memory_embed_mode: MemoryEmbedMode | None = None
@@ -82,7 +81,7 @@ class ProjectUpdate(BaseModel):
     permission_mode: PermissionMode | None = None
 
 
-# The five per-project memory-model fields, shared by create/update handling.
+# Per-project memory-model fields, shared by create/update handling.
 MEMORY_MODEL_FIELDS = (
     "memory_llm_provider_id",
     "memory_llm_model",

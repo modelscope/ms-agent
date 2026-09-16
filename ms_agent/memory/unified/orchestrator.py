@@ -34,7 +34,6 @@ import asyncio
 import hashlib
 import json
 import os
-import tempfile
 import time
 from dataclasses import fields
 from typing import Any, Dict, List, Optional, Set
@@ -44,6 +43,7 @@ from ms_agent.memory.base import Memory
 # Single canonical deserializer, shared with ContextAssembler. A second local
 # copy previously drifted and silently dropped `tool_call_id` / `name`.
 from ms_agent.session.context_assembler import _dicts_to_messages
+from ms_agent.utils.atomic_file import atomic_write_json
 from ms_agent.utils.logger import get_logger
 from .config import MemoryConfig
 from .protocols import RECALL_BLOCK_MARKER, MemoryBackend, MemoryEntry
@@ -413,12 +413,12 @@ class MemoryOrchestrator(Memory):
                 seen.discard(stale)
             self._ledger_order = self._ledger_order[-_LEDGER_MAX:]
         try:
-            os.makedirs(str(self.mem_config.base_dir), exist_ok=True)
-            fd, tmp = tempfile.mkstemp(
-                dir=str(self.mem_config.base_dir), suffix='.tmp')
-            with os.fdopen(fd, 'w', encoding='utf-8') as fh:
-                json.dump({'version': 1, 'hashes': self._ledger_order}, fh)
-            os.replace(tmp, self._ledger_path())
+            atomic_write_json(
+                self._ledger_path(), {
+                    'version': 1,
+                    'hashes': self._ledger_order
+                },
+                indent=None)
         except OSError as e:  # pragma: no cover - bookkeeping never breaks
             logger.warning(f'[orchestrator] ingest ledger write failed: {e}')
 

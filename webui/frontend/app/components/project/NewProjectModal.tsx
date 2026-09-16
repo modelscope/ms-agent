@@ -2,7 +2,10 @@ import { App, Button, Form, Input, Modal, Radio, Tooltip } from 'antd'
 import type { UploadFile } from 'antd'
 import { useEffect, useRef, useState } from 'react'
 import { api } from '~/lib/api'
-import { dispatchWorkspaceChanged, dispatchProjectSettingsChanged } from '~/lib/events'
+import {
+  dispatchWorkspaceChanged,
+  dispatchProjectSettingsChanged
+} from '~/lib/events'
 import { collectDroppedFiles } from '~/lib/dropFiles'
 import { useHosted } from '~/lib/hosted'
 import { useT } from '~/lib/i18n'
@@ -269,20 +272,18 @@ export function NewProjectModal({
               {t.newProject.dropZoneTip}
             </p>
             <div className="flex gap-3" onClick={(e) => e.stopPropagation()}>
-              <MsaButton
-                size="small"
-                variant="primary"
+              <Button
+                className="rounded-sm"
                 onClick={() => fileInputRef.current?.click()}
               >
                 {t.workspace.uploadFile}
-              </MsaButton>
-              <MsaButton
-                size="small"
-                variant="primary"
+              </Button>
+              <Button
+                className="rounded-sm"
                 onClick={() => folderInputRef.current?.click()}
               >
                 {t.workspace.uploadFolder}
-              </MsaButton>
+              </Button>
             </div>
           </div>
           {/* Hidden file inputs */}

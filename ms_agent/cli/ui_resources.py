@@ -128,7 +128,14 @@ def materialize(bundled, manifest, destination):
             shutil.rmtree(temporary)
 
 
-def node_stamp(frontend, node_version, *, production=True):
+def node_stamp(frontend, node_version, *, production=True, traced=False):
+    """Describe the prepared dependency tree, so a stale one is replaced.
+
+    ``production`` describes the wheel's own mode, not the install that produced
+    the tree: tracing needs devDependencies, but that full install is scaffolding
+    for the tracer and is gone before this is written. ``traced`` is what tells a
+    closure apart from everything ``pnpm install`` resolved.
+    """
     return {
         'node':
         list(node_version),
@@ -142,7 +149,49 @@ def node_stamp(frontend, node_version, *, production=True):
         json.loads((frontend / 'package.json').read_text())['packageManager'],
         'production':
         production,
+        'traced':
+        traced,
     }
+
+
+def _stamp_matches(stamp, expected):
+    """Decide whether an already prepared tree satisfies this start.
+
+    Tracing is a property of how the cache was built, not of how it is launched:
+    the image traces once while building and the container then starts from a
+    plain ``CMD`` that carries no such request. A traced tree therefore answers a
+    start that did not ask for one -- otherwise every container start would
+    reject the cache it was shipped with. The reverse must not hold: asking for
+    tracing when the cache holds the full tree has to re-prepare it, or a
+    regression in that step would quietly ship the whole 430 MB again.
+    """
+    if stamp is None:
+        return False
+    if stamp.get('traced') and not expected['traced']:
+        stamp = {**stamp, 'traced': False}
+    return stamp == expected
+
+
+def _prune_to_traced_closure(frontend):
+    """Replace the installed tree with the closure the tracer just verified.
+
+    ``scripts/traceRuntime.ts`` assembles ``build-runtime/`` -- the build output,
+    the entries and only the ``node_modules`` files those entries can reach -- and
+    boots it to render a page before it returns. That order is the point: the full
+    tree is still intact while the closure proves itself, so a dependency the
+    tracer could not see fails before anything has been destroyed.
+    """
+    traced = frontend / 'build-runtime'
+    closure = traced / 'node_modules'
+    if not closure.is_dir():
+        raise UIError('Runtime tracing produced no dependency closure at '
+                      + str(closure))
+    shutil.rmtree(frontend / 'node_modules')
+    # A rename, not a copy: pnpm's layout is relative symlinks into `.pnpm/` and
+    # the tracer recreated them as such, so moving the directory keeps every one
+    # of them resolving inside it.
+    closure.rename(frontend / 'node_modules')
+    shutil.rmtree(traced)
 
 
 def check_backend_dependencies():
@@ -164,8 +213,14 @@ def check_backend_dependencies():
         )
 
 
-def prepare_installed(bundled, common, node_version, *, skip_install,
-                      install_node, build_frontend=None):
+def prepare_installed(bundled,
+                      common,
+                      node_version,
+                      *,
+                      skip_install,
+                      install_node,
+                      build_frontend=None,
+                      trace_runtime=None):
     from ms_agent.version import __version__
 
     manifest_file = bundled / 'RESOURCE-MANIFEST.json'
@@ -186,20 +241,30 @@ def prepare_installed(bundled, common, node_version, *, skip_install,
         if prebuilt:
             common.validate_build(frontend)
         marker = frontend / '.node-dependencies.json'
-        expected = node_stamp(frontend, node_version, production=prebuilt)
+        expected = node_stamp(
+            frontend,
+            node_version,
+            production=prebuilt,
+            traced=bool(trace_runtime))
         try:
-            ready = json.loads(marker.read_text()) == expected and (
-                frontend / 'node_modules').is_dir()
+            stamp = json.loads(marker.read_text())
         except (OSError, ValueError):
-            ready = False
+            stamp = None
+        ready = _stamp_matches(
+            stamp, expected) and (frontend / 'node_modules').is_dir()
         if not ready:
             if skip_install:
                 raise UIError(
                     'WebUI Node dependencies need preparation. Run once without --skip-install.'
                 )
             marker.unlink(missing_ok=True)
-            install_node(frontend, production=prebuilt)
-            marker.write_text(json.dumps(expected, sort_keys=True) + '\n')
+            # The tracer runs out of this tree and imports `tsx` and
+            # `@vercel/nft` from it, so tracing cannot start from a production
+            # install. What it leaves behind is narrower than either.
+            install_node(
+                frontend, production=prebuilt and trace_runtime is None)
+            if trace_runtime is None:
+                marker.write_text(json.dumps(expected, sort_keys=True) + '\n')
         if not prebuilt:
             try:
                 common.validate_build(frontend)
@@ -212,4 +277,11 @@ def prepare_installed(bundled, common, node_version, *, skip_install,
                     raise UIError('No WebUI frontend builder is available')
                 build_frontend(frontend)
                 common.validate_build(frontend)
+        if not ready and trace_runtime is not None:
+            # After any build, because the tracer follows what the SSR bundle
+            # imports. The stamp lands only once the closure is in place: an
+            # interrupted trace must not leave one claiming this tree is traced.
+            trace_runtime(frontend)
+            _prune_to_traced_closure(frontend)
+            marker.write_text(json.dumps(expected, sort_keys=True) + '\n')
     return destination

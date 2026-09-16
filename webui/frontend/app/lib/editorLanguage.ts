@@ -151,3 +151,14 @@ export function languageFor(path: string): string {
   const ext = name.includes('.') ? (name.split('.').pop() ?? '') : ''
   return LANGUAGE_BY_EXT[ext] ?? 'plaintext'
 }
+
+/** Text files a viewer can also show as a rendered document. */
+export type DocKind = 'markdown' | 'html'
+
+/** The rendered form a file offers next to its source, if any. */
+export function docKindFor(path: string): DocKind | null {
+  const language = languageFor(path)
+  if (language === 'markdown') return 'markdown'
+  if (language === 'html') return 'html'
+  return null
+}

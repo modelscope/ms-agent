@@ -103,6 +103,7 @@ class ConfigResolver:
         agent_config: Union[DictConfig, str, None] = None,
         project_path: Optional[str] = None,
         session_overrides: Optional[Dict[str, Any]] = None,
+        global_settings: Optional[Dict[str, Any]] = None,
     ) -> DictConfig:
         """Merge configs from all layers.
 
@@ -112,6 +113,7 @@ class ConfigResolver:
             project_path: The project's workspace root. If provided,
                 reads <project_path>/.ms-agent/config.yaml as a patch.
             session_overrides: Runtime overrides (e.g. model switch).
+            global_settings: Optional already-read settings snapshot.
 
         Returns:
             The merged DictConfig ready for AgentLoader.build().
@@ -122,9 +124,10 @@ class ConfigResolver:
         if self.defaults is not None:
             layers.append(OmegaConf.create(self.defaults))
 
-        global_settings = self._load_global_settings()
-        if global_settings:
-            layers.append(global_settings)
+        global_layer = (self._settings_to_agent_config(global_settings)
+                        if global_settings is not None else self._load_global_settings())
+        if global_layer:
+            layers.append(global_layer)
 
         effective_agent_config = (
             agent_config if agent_config is not None else self.agent_config)

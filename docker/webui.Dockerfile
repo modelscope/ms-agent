@@ -57,8 +57,17 @@ RUN mkdir -p /data /opt/ms-agent-webui-cache
 WORKDIR /app
 # This uses the installed wheel and the final runtime's Node version. No source
 # checkout or frontend compilation is performed inside the image.
+#
+# MS_AGENT_WEBUI_TRACE_RUNTIME keeps only the dependency closure the SSR entries
+# can actually reach: `pnpm install --prod` lands ~430 MB in the cache against a
+# real closure of ~51 MB, the waste sitting inside the packages rather than in a
+# list of unneeded ones. Tracing imports `tsx` and `@vercel/nft`, both
+# devDependencies, so the install it runs on is a full one -- transient, and
+# discarded within this single RUN, so no layer retains it. The tracer boots the
+# closure and renders a page before the full tree goes away, which is why a
+# dependency it could not see fails HERE instead of a request in production.
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
-    ms-agent ui --prepare-only --no-browser
+    MS_AGENT_WEBUI_TRACE_RUNTIME=1 ms-agent ui --prepare-only --no-browser
 # Runtime defaults also apply to agent subprocesses with filtered environments.
 # Mount replacement files at these paths to use another package index.
 RUN <<'EOF'

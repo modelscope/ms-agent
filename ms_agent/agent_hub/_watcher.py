@@ -154,8 +154,14 @@ def _poll_once(client, username, repo, framework, spec, push_only, state,
     # Sanitize first so a secret left in a local config is never pushed, and
     # never enters the sync baseline as pushable content (which would
     # otherwise re-push it every cycle).
+    redacted: list = []
     local_resources = drop_unchanged_defaults(
-        sanitize_outbound(spec.collect_bytes(), spec), framework, spec)
+        sanitize_outbound(spec.collect_bytes(), spec, findings=redacted),
+        framework, spec)
+    if redacted:
+        where = ', '.join(sorted({f.rel for f in redacted}))
+        logger.warning('Redacted %d secret value(s) before push, in: %s',
+                       len(redacted), where)
     baseline = state.get('remote_files', {})
     # A remote file counts toward change detection if it was in our baseline
     # (so edits/deletions are seen) OR it is a workspace file the collect

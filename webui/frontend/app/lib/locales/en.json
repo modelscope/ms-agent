@@ -1,5 +1,28 @@
 {
   "brand": "MS Agent",
+  "recovery": {
+    "title": "Default project needs recovery",
+    "description": "The default project's record is missing. Existing conversation files may still be present. Restore the record to continue using the app.",
+    "restore": "Restore default project",
+    "later": "Not now",
+    "deferredDescription": "No project data was changed. You can restore later using the button below, or ask an administrator to recover the original record from a backup.",
+    "confirmDescription": "A backup will be created first. The project name, workspace path, instructions and memory settings will reset to defaults. Existing conversations, workspace files and global settings will be kept. Other services sharing this data directory should be stopped before continuing.",
+    "confirm": "Back up and restore",
+    "cancel": "Cancel",
+    "successTitle": "Ready to continue",
+    "successDescription": "The service is ready. Existing conversations remain available; review the default project's settings after recovery.",
+    "continue": "Continue to WebUI",
+    "backup": "Backup location",
+    "networkError": "The recovery result could not be confirmed. Check your connection and refresh this page before retrying.",
+    "backup_failed": "The backup could not be completed, so recovery did not proceed. Ask an administrator to check disk space and permissions, then retry.",
+    "repair_failed": "Recovery could not be completed. Existing files were not automatically replaced. Ask an administrator to check the server log before retrying.",
+    "startup_failed": "The project record is available, but another startup step failed. Normal operations remain paused. Ask an administrator to check the server log, then retry."
+  },
+  "common": {
+    "noData": "No data",
+    "viewPreview": "Preview",
+    "viewCode": "Source"
+  },
   "nav": {
     "newChat": "Start new chat",
     "newProject": "Start new project",
@@ -11,12 +34,22 @@
     "projectsTitle": "Projects",
     "expand": "Expand",
     "collapse": "Collapse",
+    "poweredBy": "Powered by",
+    "github": "MS-Agent on GitHub",
     "recentEmpty": "No chats yet — click \"New chat\" above to start."
   },
   "sidebar": {
     "editProject": "Edit project",
     "deleteProject": "Delete project",
     "renameSession": "Rename",
+    "exportSession": "Export conversation",
+    "exportMarkdown": "Markdown (.md)",
+    "exportHtml": "Web page (.html)",
+    "exportFull": "Full details",
+    "exportCompact": "Compact",
+    "exportConversationOnly": "Conversation only",
+    "exportSuccess": "Conversation exported",
+    "exportFailed": "Could not export conversation",
     "deleteSession": "Delete session",
     "confirmDeleteProject": "Are you sure you want to delete this project? This action cannot be undone.",
     "confirmDeleteSession": "Are you sure you want to delete this session? This action cannot be undone.",
@@ -139,6 +172,7 @@
     "runningTask": "Running task: ",
     "thinkingFiles": "Files",
     "send": "Send",
+    "modelSaveFailed": "The model selection could not be saved. Select a model again before sending; your draft has been kept.",
     "modelRequired": "Select a model first",
     "stop": "Stop",
     "addFile": "Add file",
@@ -284,8 +318,6 @@
   },
   "skillDetail": {
     "title": "Details",
-    "viewPreview": "Preview",
-    "viewCode": "Source",
     "binaryFile": "Binary file — preview not available."
   },
   "explore": {
@@ -492,6 +524,7 @@
   "errors": {
     "requestFailed": "Request failed",
     "network": "Network error — please check your connection",
+    "unexpected": "Something went wrong",
     "backHome": "Back to home"
   },
   "pageTitle": {

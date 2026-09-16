@@ -2,9 +2,7 @@ import { Image, Tooltip } from 'antd'
 import type React from 'react'
 import { useT } from '~/lib/i18n'
 
-// File type icons. Inlined (`?react`) instead of loaded as <img> URLs so the
-// theme-adaptive badges (e.g. web) can follow `currentColor` — an external SVG
-// referenced by <img> has no inherited color and would render black.
+// File type icons, inlined via `?react` so they render as sized SVG components.
 import iconDefault from '~/assets/files/default.svg?react'
 import iconPdf from '~/assets/files/pdf.svg?react'
 import iconWord from '~/assets/files/word.svg?react'
@@ -17,7 +15,30 @@ import iconJavascript from '~/assets/files/js.svg?react'
 import iconPython from '~/assets/files/py.svg?react'
 import iconText from '~/assets/files/txt.svg?react'
 import iconMp3 from '~/assets/files/mp3.svg?react'
-import iconWeb from '~/assets/files/web.svg?react'
+import iconHtml from '~/assets/files/html.svg?react'
+import iconCss from '~/assets/files/css.svg?react'
+import iconSass from '~/assets/files/sass.svg?react'
+import iconLess from '~/assets/files/less.svg?react'
+import iconJson from '~/assets/files/json.svg?react'
+import iconYaml from '~/assets/files/yaml.svg?react'
+import iconXml from '~/assets/files/xml.svg?react'
+import iconConfig from '~/assets/files/config.svg?react'
+import iconDatabase from '~/assets/files/database.svg?react'
+import iconShell from '~/assets/files/shell.svg?react'
+import iconDocker from '~/assets/files/docker.svg?react'
+import iconGit from '~/assets/files/git.svg?react'
+import iconTs from '~/assets/files/ts.svg?react'
+import iconGo from '~/assets/files/go.svg?react'
+import iconRust from '~/assets/files/rust.svg?react'
+import iconC from '~/assets/files/c.svg?react'
+import iconCpp from '~/assets/files/cpp.svg?react'
+import iconCsharp from '~/assets/files/csharp.svg?react'
+import iconRuby from '~/assets/files/ruby.svg?react'
+import iconPhp from '~/assets/files/php.svg?react'
+import iconSwift from '~/assets/files/swift.svg?react'
+import iconKotlin from '~/assets/files/kotlin.svg?react'
+import iconVue from '~/assets/files/vue.svg?react'
+import iconSvelte from '~/assets/files/svelte.svg?react'
 import iconImage from '~/assets/icons/image.svg?react'
 import iconAudio from '~/assets/icons/audio.svg?react'
 import iconVideo from '~/assets/icons/video.svg?react'
@@ -76,43 +97,132 @@ function getFileExt(name: string): string {
 
 type FileIcon = React.FC<React.SVGProps<SVGSVGElement>>
 
+// Full filename (lowercased) to icon, checked before the extension map.
+const fileNameIcons: Record<string, FileIcon> = {
+  readme: iconMarkdown,
+  'readme.md': iconMarkdown,
+  'readme.txt': iconText,
+  changelog: iconText,
+  license: iconText,
+  licence: iconText,
+  copying: iconText,
+  notice: iconText,
+  authors: iconText,
+  dockerfile: iconDocker,
+  'docker-compose.yml': iconDocker,
+  'docker-compose.yaml': iconDocker,
+  '.dockerignore': iconDocker,
+  '.gitignore': iconGit,
+  '.gitattributes': iconGit,
+  '.gitmodules': iconGit,
+  '.gitkeep': iconGit,
+  gemfile: iconRuby,
+  'go.mod': iconGo,
+  'go.sum': iconGo
+}
+
 // File extension to icon mapping
 const fileIcons: Record<string, FileIcon> = {
   // Documents
   PDF: iconPdf,
   DOC: iconWord,
   DOCX: iconWord,
+  RTF: iconWord,
+  ODT: iconWord,
   // Spreadsheets
   XLS: iconExcel,
   XLSX: iconExcel,
   CSV: iconExcel,
+  TSV: iconExcel,
+  ODS: iconExcel,
   // Presentations
   PPT: iconPpt,
   PPTX: iconPpt,
+  ODP: iconPpt,
   // Archives
   ZIP: iconZip,
   RAR: iconZip,
   '7Z': iconZip,
   TAR: iconZip,
   GZ: iconZip,
+  TGZ: iconZip,
+  BZ2: iconZip,
+  XZ: iconZip,
+  ZST: iconZip,
+  JAR: iconZip,
+  WAR: iconZip,
   // Code / Text
   MD: iconMarkdown,
+  MDX: iconMarkdown,
+  MARKDOWN: iconMarkdown,
   TXT: iconText,
+  TEXT: iconText,
   LOG: iconText,
-  // Web sources
-  HTML: iconWeb,
-  HTM: iconWeb,
-  CSS: iconWeb,
-  // .ipynb has no dedicated badge asset; use the generic file badge so doc
-  // cards render uniformly (matching the composer upload card) instead of the
-  // odd line-art glyph.
+  NFO: iconText,
   IPYNB: iconDefault,
+  // Data / config
+  JSON: iconJson,
+  JSONC: iconJson,
+  JSON5: iconJson,
+  YAML: iconYaml,
+  YML: iconYaml,
+  XML: iconXml,
+  PLIST: iconXml,
+  TOML: iconConfig,
+  INI: iconConfig,
+  CFG: iconConfig,
+  CONF: iconConfig,
+  ENV: iconConfig,
+  PROPERTIES: iconConfig,
+  EDITORCONFIG: iconConfig,
+  // Database
+  SQL: iconDatabase,
+  DB: iconDatabase,
+  SQLITE: iconDatabase,
+  SQLITE3: iconDatabase,
+  // Shell
+  SH: iconShell,
+  BASH: iconShell,
+  ZSH: iconShell,
+  FISH: iconShell,
+  // Web sources
+  HTML: iconHtml,
+  HTM: iconHtml,
+  XHTML: iconHtml,
+  CSS: iconCss,
+  STYL: iconCss,
+  SCSS: iconSass,
+  SASS: iconSass,
+  LESS: iconLess,
   JS: iconJavascript,
-  TS: iconJavascript,
+  MJS: iconJavascript,
+  CJS: iconJavascript,
   JSX: iconJavascript,
-  TSX: iconJavascript,
+  TS: iconTs,
+  TSX: iconTs,
+  MTS: iconTs,
+  CTS: iconTs,
   JAVA: iconJava,
   PY: iconPython,
+  // Languages
+  GO: iconGo,
+  RS: iconRust,
+  C: iconC,
+  H: iconC,
+  CPP: iconCpp,
+  CC: iconCpp,
+  CXX: iconCpp,
+  HPP: iconCpp,
+  HH: iconCpp,
+  HXX: iconCpp,
+  CS: iconCsharp,
+  RB: iconRuby,
+  PHP: iconPhp,
+  SWIFT: iconSwift,
+  KT: iconKotlin,
+  KTS: iconKotlin,
+  VUE: iconVue,
+  SVELTE: iconSvelte,
   // Media
   PNG: iconImage,
   JPG: iconImage,
@@ -120,19 +230,40 @@ const fileIcons: Record<string, FileIcon> = {
   GIF: iconImage,
   SVG: iconImage,
   WEBP: iconImage,
+  ICO: iconImage,
+  BMP: iconImage,
+  TIFF: iconImage,
+  TIF: iconImage,
+  AVIF: iconImage,
+  HEIC: iconImage,
+  HEIF: iconImage,
   MP3: iconMp3,
   WAV: iconAudio,
   OGG: iconAudio,
   FLAC: iconAudio,
+  M4A: iconAudio,
+  AAC: iconAudio,
+  OPUS: iconAudio,
+  AIFF: iconAudio,
+  WMA: iconAudio,
   MP4: iconVideo,
   MOV: iconVideo,
   AVI: iconVideo,
   WEBM: iconVideo,
-  MKV: iconVideo
+  MKV: iconVideo,
+  MPG: iconVideo,
+  MPEG: iconVideo,
+  M4V: iconVideo,
+  FLV: iconVideo,
+  WMV: iconVideo,
+  '3GP': iconVideo,
+  OGV: iconVideo
 }
 
-function getFileIcon(ext: string): FileIcon {
-  return fileIcons[ext] ?? iconDefault
+export function getFileIcon(name: string): FileIcon {
+  const named = fileNameIcons[name.toLowerCase()]
+  if (named) return named
+  return fileIcons[getFileExt(name)] ?? iconDefault
 }
 
 /** File-type badge for a filename (extension-based, with fallback). The color
@@ -145,7 +276,7 @@ export function FileTypeIcon({
   name: string
   className?: string
 }) {
-  const Icon = getFileIcon(getFileExt(name))
+  const Icon = getFileIcon(name)
   return <Icon aria-hidden className={`text-msa-icon-neutral ${className}`} />
 }
 
@@ -162,7 +293,7 @@ function RemoveButton({ onClick }: { onClick?: () => void }) {
       onClick={onClick}
       className="absolute -right-1.5 -top-1.5 z-10 flex h-[20px] w-[20px] items-center justify-center p-0 rounded-full bg-msa-fill-3  text-mas-text-0 shadow-sm  transition-opacity opacity-0 group-hover:opacity-100 border-none outline-none cursor-pointer"
     >
-      <CloseIcon className="h-2.5 h-2.5" />
+      <CloseIcon className="h-2.5 w-2.5" />
     </button>
   )
 }
@@ -190,9 +321,9 @@ function OpenButton({ onClick }: { onClick?: () => void }) {
         e.stopPropagation()
         onClick?.()
       }}
-      className="absolute -right-1.5 -top-1.5 z-10 flex h-[20px] w-[20px] cursor-pointer items-center justify-center rounded-full border-none bg-msa-fill-3 p-0 text-msa-text-2 opacity-0 shadow-sm outline-none transition-opacity hover:text-msa-text-1 group-hover:opacity-100"
+      className="absolute -right-1.5 -top-1.5 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border-none bg-msa-fill-3 p-0 text-msa-text-2 opacity-0 shadow-sm outline-none transition-opacity hover:text-msa-text-1 group-hover:opacity-100"
     >
-      <JumpIcon className="h-5 w-5" />
+      <JumpIcon className="h-4 w-4" />
     </button>
   )
 }

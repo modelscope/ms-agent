@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse, Response
 
 from app.core.envelope import EnvelopeRoute
+from app.core.filetypes import raw_headers
 from app.schemas.skill import (
     Skill,
     SkillCreate,
@@ -57,6 +59,17 @@ def read_skill_file(skill_id: str, path: str) -> SkillFileContent:
     from app.backends.ms_agent import skills
 
     return skills.read_skill_file(skill_id, path)
+
+
+@router.get("/{skill_id}/raw/{file_path:path}")
+def raw_skill_file(skill_id: str, file_path: str) -> Response:
+    """Raw bytes of one skill file, for the assets a previewed document pulls in.
+    The path is the URL tail so those `./img/a.png` references resolve here.
+    """
+    from app.backends.ms_agent import skills
+
+    target, ctype = skills.raw_skill_file(skill_id, file_path)
+    return FileResponse(target, media_type=ctype, headers=raw_headers(ctype))
 
 
 @router.patch("/{skill_id}")

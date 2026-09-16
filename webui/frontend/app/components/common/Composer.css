@@ -9,7 +9,7 @@
     content: '';
     position: absolute;
     inset: -3px;
-    border-radius: 16px;
+    border-radius: 24px;
     padding: 3px;
     background: conic-gradient(from var(--gradient-angle, 0deg), #90DFE5, #A288FF, #90DFE5);
     -webkit-mask:
@@ -88,66 +88,177 @@
 }
 
 /* Palette mirrors the static gradient (cyan + violet family). */
-.composer-motion-layer span:nth-child(1) { background: rgba(0, 240, 243, 0.35); animation-name: composer-blob-1; }
-.composer-motion-layer span:nth-child(2) { background: rgba(193, 193, 255, 0.55); animation-name: composer-blob-2; }
-.composer-motion-layer span:nth-child(3) { background: rgba(162, 136, 255, 0.35); animation-name: composer-blob-3; }
-.composer-motion-layer span:nth-child(4) { background: rgba(0, 240, 243, 0.22); animation-name: composer-blob-4; }
-.composer-motion-layer span:nth-child(5) { background: rgba(193, 193, 255, 0.45); animation-name: composer-blob-5; }
-.composer-motion-layer span:nth-child(6) { background: rgba(144, 223, 229, 0.35); animation-name: composer-blob-6; }
+.composer-motion-layer span:nth-child(1) {
+    background: rgba(0, 240, 243, 0.35);
+    animation-name: composer-blob-1;
+}
 
-.dark .composer-motion-layer span { opacity: 0.45; }
+.composer-motion-layer span:nth-child(2) {
+    background: rgba(193, 193, 255, 0.55);
+    animation-name: composer-blob-2;
+}
+
+.composer-motion-layer span:nth-child(3) {
+    background: rgba(162, 136, 255, 0.35);
+    animation-name: composer-blob-3;
+}
+
+.composer-motion-layer span:nth-child(4) {
+    background: rgba(0, 240, 243, 0.22);
+    animation-name: composer-blob-4;
+}
+
+.composer-motion-layer span:nth-child(5) {
+    background: rgba(193, 193, 255, 0.45);
+    animation-name: composer-blob-5;
+}
+
+.composer-motion-layer span:nth-child(6) {
+    background: rgba(144, 223, 229, 0.35);
+    animation-name: composer-blob-6;
+}
+
+.dark .composer-motion-layer span {
+    opacity: 0.45;
+}
 
 /* Keyframes transcribed from the Figma motion JSON (nodes 15:603..608):
    4 waypoints per blob over ~8s, looping back to the start. The extra
    translate(-50%, -50%) centers each blob on its waypoint. */
 @keyframes composer-blob-1 {
-    0%   { transform: translate(641px, 112px)  translate(-50%, -50%); }
-    25%  { transform: translate(700px, -72px)  translate(-50%, -50%); }
-    50%  { transform: translate(270px, -112px) translate(-50%, -50%); }
-    75%  { transform: translate(11px, 93px)    translate(-50%, -50%); }
-    100% { transform: translate(641px, 112px)  translate(-50%, -50%); }
+    0% {
+        transform: translate(641px, 112px) translate(-50%, -50%);
+    }
+
+    25% {
+        transform: translate(700px, -72px) translate(-50%, -50%);
+    }
+
+    50% {
+        transform: translate(270px, -112px) translate(-50%, -50%);
+    }
+
+    75% {
+        transform: translate(11px, 93px) translate(-50%, -50%);
+    }
+
+    100% {
+        transform: translate(641px, 112px) translate(-50%, -50%);
+    }
 }
 
 @keyframes composer-blob-2 {
-    0%   { transform: translate(290px, -42px)  translate(-50%, -50%); }
-    25%  { transform: translate(-28px, -42px)  translate(-50%, -50%); }
-    50%  { transform: translate(122px, 98px)   translate(-50%, -50%); }
-    75%  { transform: translate(543px, 130px)  translate(-50%, -50%); }
-    100% { transform: translate(290px, -42px)  translate(-50%, -50%); }
+    0% {
+        transform: translate(290px, -42px) translate(-50%, -50%);
+    }
+
+    25% {
+        transform: translate(-28px, -42px) translate(-50%, -50%);
+    }
+
+    50% {
+        transform: translate(122px, 98px) translate(-50%, -50%);
+    }
+
+    75% {
+        transform: translate(543px, 130px) translate(-50%, -50%);
+    }
+
+    100% {
+        transform: translate(290px, -42px) translate(-50%, -50%);
+    }
 }
 
 @keyframes composer-blob-3 {
-    0%   { transform: translate(-125px, 113px) translate(-50%, -50%); }
-    25%  { transform: translate(293px, 113px)  translate(-50%, -50%); }
-    50%  { transform: translate(526px, 98px)   translate(-50%, -50%); }
-    75%  { transform: translate(295px, -71px)  translate(-50%, -50%); }
-    100% { transform: translate(-125px, 113px) translate(-50%, -50%); }
+    0% {
+        transform: translate(-125px, 113px) translate(-50%, -50%);
+    }
+
+    25% {
+        transform: translate(293px, 113px) translate(-50%, -50%);
+    }
+
+    50% {
+        transform: translate(526px, 98px) translate(-50%, -50%);
+    }
+
+    75% {
+        transform: translate(295px, -71px) translate(-50%, -50%);
+    }
+
+    100% {
+        transform: translate(-125px, 113px) translate(-50%, -50%);
+    }
 }
 
 @keyframes composer-blob-4 {
-    0%   { transform: translate(-21px, -52px)  translate(-50%, -50%); }
-    25%  { transform: translate(-21px, 84px)   translate(-50%, -50%); }
-    50%  { transform: translate(-124px, -57px) translate(-50%, -50%); }
-    75%  { transform: translate(167px, -72px)  translate(-50%, -50%); }
-    100% { transform: translate(-21px, -52px)  translate(-50%, -50%); }
+    0% {
+        transform: translate(-21px, -52px) translate(-50%, -50%);
+    }
+
+    25% {
+        transform: translate(-21px, 84px) translate(-50%, -50%);
+    }
+
+    50% {
+        transform: translate(-124px, -57px) translate(-50%, -50%);
+    }
+
+    75% {
+        transform: translate(167px, -72px) translate(-50%, -50%);
+    }
+
+    100% {
+        transform: translate(-21px, -52px) translate(-50%, -50%);
+    }
 }
 
 @keyframes composer-blob-5 {
-    0%   { transform: translate(116px, 53px)   translate(-50%, -50%); }
-    25%  { transform: translate(426px, 53px)   translate(-50%, -50%); }
-    50%  { transform: translate(635px, -74px)  translate(-50%, -50%); }
-    75%  { transform: translate(-32px, -119px) translate(-50%, -50%); }
-    100% { transform: translate(116px, 53px)   translate(-50%, -50%); }
+    0% {
+        transform: translate(116px, 53px) translate(-50%, -50%);
+    }
+
+    25% {
+        transform: translate(426px, 53px) translate(-50%, -50%);
+    }
+
+    50% {
+        transform: translate(635px, -74px) translate(-50%, -50%);
+    }
+
+    75% {
+        transform: translate(-32px, -119px) translate(-50%, -50%);
+    }
+
+    100% {
+        transform: translate(116px, 53px) translate(-50%, -50%);
+    }
 }
 
 @keyframes composer-blob-6 {
-    0%   { transform: translate(587px, -96px)  translate(-50%, -50%); }
-    25%  { transform: translate(260px, -96px)  translate(-50%, -50%); }
-    50%  { transform: translate(98px, 0px)     translate(-50%, -50%); }
-    75%  { transform: translate(568px, 89px)   translate(-50%, -50%); }
-    100% { transform: translate(587px, -96px)  translate(-50%, -50%); }
+    0% {
+        transform: translate(587px, -96px) translate(-50%, -50%);
+    }
+
+    25% {
+        transform: translate(260px, -96px) translate(-50%, -50%);
+    }
+
+    50% {
+        transform: translate(98px, 0px) translate(-50%, -50%);
+    }
+
+    75% {
+        transform: translate(568px, 89px) translate(-50%, -50%);
+    }
+
+    100% {
+        transform: translate(587px, -96px) translate(-50%, -50%);
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .composer-motion-layer span { animation: none; }
+    .composer-motion-layer span {
+        animation: none;
+    }
 }

@@ -11,7 +11,7 @@ import type { MsaButtonProps } from './MsaButton'
  *   - Rounded-xl border-radius
  *
  * Usage (icons come from app/assets/icons via `?react`, sized by class):
- *   <IconButton icon={<AddIcon className="h-4 w-4" />} />
+ *   <IconButton icon={<AddIcon className="h-5 w-5" />} />
  *   <IconButton icon={<SendIcon className="h-4 w-4" />} variant="primary" size="sm" />
  * ================================================================ */
 

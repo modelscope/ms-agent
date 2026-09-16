@@ -1,8 +1,12 @@
-from fastapi import APIRouter, HTTPException
+from typing import Literal
+from urllib.parse import quote
+
+from fastapi import APIRouter
+from fastapi.responses import Response
 
 from app.core.envelope import EnvelopeRoute
 from app.schemas.session import (
-    Artifact, Session, SessionCreate, SessionMessage, SessionPlan, SessionUpdate
+    Artifact, Session, SessionCreate, SessionMessage, SessionPlan, SessionUpdate, SessionModelUpdate
 )
 
 router = APIRouter(prefix="/api", tags=["sessions"], route_class=EnvelopeRoute)
@@ -34,6 +38,31 @@ def list_session_messages(session_id: str) -> list[SessionMessage]:
     from app.backends.ms_agent import sessions
 
     return sessions.list_messages(session_id)
+
+
+@router.get("/sessions/{session_id}/export")
+def export_session(
+    session_id: str,
+    format: Literal["markdown", "html"] = "html",
+    detail: Literal["full", "compact", "user-only"] = "full",
+) -> Response:
+    """Download the reconstructed conversation as Markdown or standalone HTML."""
+    from app.backends.ms_agent import session_export
+
+    exported = session_export.build_session_export(session_id, format, detail)
+    disposition = (
+        f'attachment; filename="{exported.ascii_filename}"; '
+        f"filename*=UTF-8''{quote(exported.filename, safe='')}"
+    )
+    return Response(
+        content=exported.content,
+        media_type=exported.media_type,
+        headers={
+            "Content-Disposition": disposition,
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.get("/sessions/{session_id}/plan")
@@ -78,3 +107,10 @@ def list_artifacts(session_id: str) -> list[Artifact]:
     from app.backends.ms_agent import sessions
 
     return sessions.list_artifacts(session_id)
+
+
+@router.patch("/sessions/{session_id}/model")
+def update_session_model(session_id: str, body: SessionModelUpdate) -> dict:
+    from app.backends.ms_agent import sessions
+
+    return sessions.update_session_model(session_id, body.model_id)

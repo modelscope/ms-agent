@@ -305,25 +305,7 @@ def _update_mcp_locked(mcp_id: str, body: McpUpdate) -> Mcp:
 
 
 def _hard_remove_project_entry(mm, name: str) -> None:
-    """Delete a project-owned server from the project's mcp.json.
-
-    The SDK's `remove(scope='project')` always writes a MASK
-    (`{enabled: false, _removed: true}`) because a project may hide a global
-    server without deleting the global definition. For a server the project owns
-    there is nothing to hide, so masking made "remove" behave like "disable" —
-    the card stayed, just switched off. No SDK call can delete a project key, so
-    the file is edited directly (same shape/formatting the SDK writes).
-    """
-    path = mm.project_mcp_path
-    data = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
-    servers = data.get("mcpServers")
-    if not isinstance(servers, dict) or name not in servers:
-        return
-    del servers[name]
-    data["mcpServers"] = servers
-    path.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    mm.remove(name, scope="project", mask_global=False)
 
 
 def replace_mcps(scope: str, bodies: list[McpCreate]) -> list[Mcp]:

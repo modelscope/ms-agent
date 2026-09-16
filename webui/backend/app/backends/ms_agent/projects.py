@@ -1,6 +1,9 @@
 """Projects adapter — ProjectManager + sidecar (description / auto-attach)."""
 from __future__ import annotations
 
+from pathlib import Path
+from ms_agent.utils.file_lock import locked
+
 from app.backends.errors import BadRequest, NotFound
 from app.backends.ms_agent import sidecar
 from app.backends.ms_agent.common import home, pm
@@ -55,6 +58,7 @@ def _memory_models_from(body, defaults: dict) -> dict:
     }
 
 
+@locked(lambda *args, **kwargs: Path(home()) / "projects")
 def create_project(body: ProjectCreate) -> Project:
     manager = pm()
     default_enabled, default_backend = _memory_defaults()
@@ -62,6 +66,11 @@ def create_project(body: ProjectCreate) -> Project:
     mem_backend = body.memory_backend if body.memory_backend is not None else default_backend
 
     if body.local_path:
+        from ms_agent.project.paths import project_key
+
+        existing = manager.get(project_key(str(Path(body.local_path).expanduser().resolve())))
+        if existing is not None:
+            return project_to_schema(existing)
         # "use an existing folder": path is identity, dedups on reopen.
         proj = manager.open_folder(
             path=body.local_path,
@@ -112,7 +121,9 @@ def _backend_locked(proj) -> bool:
                 or proj.memory_enabled)
 
 
-def update_project(pid: str, body: ProjectUpdate) -> Project:
+@locked(lambda *args, **kwargs: Path(home()) / "projects")
+@locked(lambda *args, **kwargs: Path(home()) / "webui_meta.json")
+def _save_project_update(pid: str, body: ProjectUpdate) -> tuple[Project, bool]:
     manager = pm()
     proj = manager.get(pid)
     if proj is None:
@@ -157,48 +168,40 @@ def update_project(pid: str, body: ProjectUpdate) -> Project:
         )
         if getattr(body, k) is not None
     }
-    # Memory-model group replaces as a whole when any of it was sent (the
-    # modal owns the section and always sends all five together).
     if set(MEMORY_MODEL_FIELDS) & body.model_fields_set:
-        mode = body.memory_embed_mode
-        side["memory_models"] = {
-            "llm_provider_id": body.memory_llm_provider_id,
-            "llm_model": body.memory_llm_model,
-            "embed_mode": mode if mode in ("provider", "local") else "provider",
-            "embed_provider_id": body.memory_embed_provider_id,
-            "embed_model": body.memory_embed_model,
-            "recall_top_k": body.memory_recall_top_k,
-        }
+        models = dict(prev_models or {})
+        for key in MEMORY_MODEL_FIELDS:
+            if key in body.model_fields_set:
+                models[key.removeprefix("memory_")] = getattr(body, key)
+        if models.get("embed_mode") not in ("provider", "local"):
+            models["embed_mode"] = "provider"
+        side["memory_models"] = models
     # Enabling memory freezes the backend from here on — record it so the lock
     # survives the user turning memory back off.
     if body.memory_enabled:
         side["memory_backend_locked"] = True
     if side:
         sidecar.merge("projects", pid, side)
-    if body.permission_mode is not None:
-        # Hot-apply to every live runtime of this project so the very next
-        # tool call obeys the new mode — no agent rebuild, no turn restart.
-        from app.backends.ms_agent.runtime import registry
-
-        registry.set_project_permission_mode(pid, body.permission_mode)
-    # Memory config is frozen into the agent (and into the shared store client)
-    # at build time, so a live runtime would keep serving the old models /
-    # recall size — indistinguishable from the setting doing nothing. Drop the
-    # project's idle runtimes so the next turn is built from what was just
-    # saved. Unlike the permission mode there is nothing to hot-swap: the
-    # embedder decides the vector store's identity.
     memory_changed = (
         (body.memory_enabled is not None
          and bool(body.memory_enabled) != was_enabled)
         or "memory_backend" in fields
         or ("memory_models" in side and side["memory_models"] != prev_models))
+    return project_to_schema(proj), memory_changed
+
+
+def update_project(pid: str, body: ProjectUpdate) -> Project:
+    saved, memory_changed = _save_project_update(pid, body)
+    from app.backends.ms_agent.runtime import registry
+
+    if body.permission_mode is not None:
+        registry.set_project_permission_mode(pid, body.permission_mode)
     if memory_changed:
-        from app.backends.ms_agent.runtime import registry
-
         registry.discard_project(pid)
-    return project_to_schema(proj)
+    return saved
 
 
+@locked(lambda *args, **kwargs: Path(home()) / "projects")
 def delete_project(pid: str) -> None:
     manager = pm()
     proj = manager.get(pid)

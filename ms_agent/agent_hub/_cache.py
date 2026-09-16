@@ -18,6 +18,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from ms_agent.utils.atomic_file import atomic_write_json
+
 __all__ = [
     'cache_dir',
     'log_file',
@@ -96,14 +98,4 @@ def load_sync_state(name: str) -> dict:
 
 def save_sync_state(name: str, remote_files: dict[str, str]) -> None:
     """Persist sync state to disk (atomic write)."""
-    path = sync_state_file(name)
-    tmp = path.with_suffix('.tmp')
-    payload = json.dumps(
-        {
-            'remote_files': remote_files,
-        },
-        ensure_ascii=False,
-        indent=2,
-    )
-    tmp.write_text(payload, encoding='utf-8')
-    tmp.replace(path)
+    atomic_write_json(sync_state_file(name), {'remote_files': remote_files})

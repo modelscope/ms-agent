@@ -1,16 +1,18 @@
 import { Button, Popconfirm, Select, Tooltip } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { AddProviderModal } from '~/components/models/AddProviderModal'
 import { ModelEditModal } from '~/components/models/ModelEditModal'
 import { ProviderTags } from '~/components/models/ProviderTags'
-import { EmptyState } from '~/components/common/EmptyState'
+import { EmptyState, EmptyStateAction } from '~/components/common/EmptyState'
 import { KeyStatusTag } from '~/components/common/KeyStatus'
 import { DeferredSkeleton } from '~/components/common/DeferredSkeleton'
+import { ScrollArea } from '~/components/common/ScrollArea'
 import { api } from '~/lib/api'
 import { useT } from '~/lib/i18n'
 import type { AgentSettings, Model, Provider } from '~/lib/types'
-import IconEdit from '~/assets/icons/edit.svg?react'
-import IconDelete from '~/assets/icons/delete.svg?react'
+import EditIcon from '~/assets/icons/edit.svg?react'
+import DeleteIcon from '~/assets/icons/delete.svg?react'
 import { metaDict, pageTitle } from '~/lib/pageTitle'
 import type { Route } from './+types/models'
 import AddIcon from '~/assets/icons/add.svg?react'
@@ -22,12 +24,18 @@ export function meta({ matches }: Route.MetaArgs) {
 
 export default function ModelsSettings() {
   const { t } = useT()
+  const [searchParams] = useSearchParams()
   // null = not loaded yet (skeleton), [] = genuinely no providers (empty
   // state). Collapsing the two would flash "no providers" on every visit.
   const [providers, setProviders] = useState<Provider[] | null>(null)
   const [models, setModels] = useState<Model[]>([])
   const [settings, setSettings] = useState<AgentSettings | null>(null)
-  const [activeProviderId, setActiveProviderId] = useState<string | null>(null)
+  // `?provider=` lets a caller open this page on the provider it was talking
+  // about — the composer's model picker sends the one whose list it found empty.
+  // A seed only: the selection is the user's from here on.
+  const [activeProviderId, setActiveProviderId] = useState<string | null>(() =>
+    searchParams.get('provider')
+  )
 
   // Provider add/edit share one modal: null = closed, { provider: null } = add,
   // { provider } = edit.
@@ -37,20 +45,27 @@ export default function ModelsSettings() {
   const [modelEdit, setModelEdit] = useState<{
     provider: Provider
     model: Model | null
+    /** Opened from the default-model picker: the model it creates is the one the
+     *  user was trying to pick, so it becomes the selection on save. */
+    asDefault?: boolean
   } | null>(null)
+  // Controlled so the empty state's "add model" button can close the panel:
+  // the select popup outranks the modal mask, and would otherwise float on top
+  // of the dialog it just opened.
+  const [defaultModelOpen, setDefaultModelOpen] = useState(false)
 
   const refresh = () =>
-    Promise.all([
-      api.listProviders(),
-      api.listModels(),
-      api.getAgentSettings()
-    ])
+    Promise.all([api.listProviders(), api.listModels(), api.getAgentSettings()])
       .then(([ps, ms, s]) => {
         setProviders(ps)
         setModels(ms)
         setSettings(s)
-        // Default-select the first provider when nothing is selected.
-        setActiveProviderId((prev) => prev ?? ps[0]?.id ?? null)
+        // Default-select the first provider when nothing is selected. A seed
+        // naming a provider this instance does not have is dropped here rather
+        // than left selected, which would render as a blank detail pane.
+        setActiveProviderId((prev) =>
+          prev && ps.some((p) => p.id === prev) ? prev : (ps[0]?.id ?? null)
+        )
       })
       // `null` gates the skeletons on this page, so a failure has to settle the
       // lists to `[]` or they stay skeletons for good. `Promise.all` means any
@@ -76,9 +91,15 @@ export default function ModelsSettings() {
     [models, activeProviderId]
   )
 
+  const defaultProvider = useMemo(
+    () =>
+      providers?.find((p) => p.id === settings?.default_provider_id) ?? null,
+    [providers, settings?.default_provider_id]
+  )
+
   const updateSettings = async (patch: Partial<AgentSettings>) => {
     if (!settings) return
-    const next = await api.putAgentSettings({ ...settings, ...patch })
+    const next = await api.putAgentSettings(patch)
     setSettings(next)
   }
 
@@ -92,6 +113,12 @@ export default function ModelsSettings() {
           }
         : prev
     )
+  }
+
+  const addDefaultModel = () => {
+    if (!defaultProvider) return
+    setDefaultModelOpen(false)
+    setModelEdit({ provider: defaultProvider, model: null, asDefault: true })
   }
 
   const defaultModelOptions = useMemo(
@@ -172,6 +199,27 @@ export default function ModelsSettings() {
               value={resolvedDefaultModelId}
               onChange={(v) => updateSettings({ default_model_id: v })}
               options={defaultModelOptions}
+              open={defaultModelOpen}
+              onOpenChange={setDefaultModelOpen}
+              // A provider with no models leaves this picker with nothing to
+              // offer, and the models list that fixes it is further down the
+              // page — behind a provider selection of its own. Adding from here
+              // opens the same modal that pane uses, on the provider this
+              // picker is already pointed at.
+              notFoundContent={
+                <EmptyState
+                  size="xs"
+                  description={t.modelsAdmin.modelsEmpty}
+                  action={
+                    <EmptyStateAction
+                      className="!px-4 !py-1 !text-xs"
+                      onClick={addDefaultModel}
+                    >
+                      {t.modelsAdmin.addModel}
+                    </EmptyStateAction>
+                  }
+                />
+              }
               className="w-full"
               placeholder="—"
               disabled={!settings?.default_provider_id}
@@ -200,16 +248,9 @@ export default function ModelsSettings() {
               you came. Uncapped from `md` up, where the two panes sit side by side
               and the height is no longer shared. */}
           <aside className="flex max-h-[192px] w-full shrink-0 flex-col border-b border-msa-line-1 md:max-h-none md:w-[280px] md:border-b-0 md:border-r">
-            {/* stable both-edges: the styled scrollbar reserves a gutter on the
-                right only, which would leave the selected-row highlight with a
-                wider gap on the right than the left. Mirroring the gutter on
-                both edges keeps the row insets symmetric. Horizontal padding is
-                dropped from p-3 to px-1 to offset the ~8px gutter, so the total
-                inset stays ~12px — the same as the original p-3. */}
-            <div
-              className="flex flex-1 flex-col gap-1 overflow-y-auto px-1 py-3"
-              style={{ scrollbarGutter: 'stable both-edges' }}
-            >
+            {/* pad: rows keep a 12px inset (the original p-3) whether or not the
+                scrollbar takes space. */}
+            <ScrollArea pad={12} className="flex flex-1 flex-col gap-1 py-3">
               {providers === null ? (
                 <DeferredSkeleton rows={8} className="px-1 py-2" />
               ) : providers.length === 0 ? (
@@ -239,12 +280,12 @@ export default function ModelsSettings() {
                   </button>
                 ))
               )}
-            </div>
+            </ScrollArea>
             <div
               className="flex cursor-pointer items-center justify-center gap-1.5 border-t border-msa-line-1 py-3.5 text-sm text-msa-purple-6 transition-opacity hover:opacity-80"
               onClick={() => setProviderModal({ provider: null })}
             >
-              <AddIcon className="h-4 w-4" />
+              <AddIcon className="h-5 w-5" />
               <span>{t.modelsAdmin.addProvider}</span>
             </div>
           </aside>
@@ -262,7 +303,9 @@ export default function ModelsSettings() {
                 onAddModel={() =>
                   setModelEdit({ provider: activeProvider, model: null })
                 }
-                onConfigure={() => setProviderModal({ provider: activeProvider })}
+                onConfigure={() =>
+                  setProviderModal({ provider: activeProvider })
+                }
                 onDelete={async () => {
                   try {
                     await api.deleteProvider(activeProvider.id)
@@ -309,8 +352,25 @@ export default function ModelsSettings() {
         model={modelEdit?.model ?? null}
         providers={providers ?? []}
         onClose={() => setModelEdit(null)}
-        onSaved={() => {
+        onSaved={async (m) => {
+          const asDefault = modelEdit?.asDefault ?? false
           setModelEdit(null)
+          // Coming from the default-model picker, the new model is what the
+          // user was there to choose. The provider rides along because picking
+          // one is local state until a model is saved with it — the reload
+          // below would otherwise restore the previously persisted provider and
+          // drop the model out of sight. Awaited, since a concurrent GET can
+          // still answer with the pre-save settings.
+          if (asDefault) {
+            try {
+              await updateSettings({
+                default_provider_id: m.provider_id,
+                default_model_id: m.id
+              })
+            } catch {
+              // API errors surface via the global toast.
+            }
+          }
           refresh()
         }}
       />
@@ -355,8 +415,12 @@ function ProviderDetail({
         </div>
         <Button
           size="small"
-          icon={<IconEdit className="h-4 w-4" />}
+          icon={<EditIcon className="h-5 w-5" />}
           onClick={onConfigure}
+          classNames={{
+            icon: 'flex items-center justify-center'
+          }}
+          className="shadow-none"
         >
           {t.resources.edit}
         </Button>
@@ -371,7 +435,11 @@ function ProviderDetail({
             <Button
               size="small"
               danger
-              icon={<IconDelete className="h-4 w-4" />}
+              icon={<DeleteIcon className="h-5 w-5" />}
+              classNames={{
+                icon: 'flex items-center justify-center'
+              }}
+              className="shadow-none"
             >
               {t.modelsAdmin.deleteProvider}
             </Button>
@@ -433,8 +501,8 @@ function ProviderDetail({
                 </div>
               </div>
               <Tooltip title={t.modelsAdmin.editModel}>
-                <IconEdit
-                  className="h-[18px] w-[18px] shrink-0 cursor-pointer text-msa-text-3 transition-colors hover:text-msa-purple-6"
+                <EditIcon
+                  className="h-5 w-5 shrink-0 cursor-pointer text-msa-text-3 transition-colors hover:text-msa-purple-6"
                   onClick={() => onEditModel(m)}
                 />
               </Tooltip>
@@ -444,20 +512,25 @@ function ProviderDetail({
                 onConfirm={() => onDeleteModel(m)}
               >
                 <Tooltip title={t.modelsAdmin.deleteModel}>
-                  <IconDelete className="h-[18px] w-[18px] shrink-0 cursor-pointer text-msa-text-3 transition-colors hover:text-msa-purple-6" />
+                  <DeleteIcon className="h-5 w-5 shrink-0 cursor-pointer text-msa-text-3 transition-colors hover:text-msa-purple-6" />
                 </Tooltip>
               </Popconfirm>
             </div>
           ))
         )}
 
-        {/* Add model button - inline with model items */}
-        <div
-          className="flex cursor-pointer items-center justify-center gap-1.5 rounded-[10px] border border-dashed border-msa-line-1 px-4 py-[18px] text-sm text-msa-text-brand1 transition-colors hover:border-msa-line-3"
-          onClick={onAddModel}
-        >
-          <AddIcon className="h-4 w-4" />
-          <span>{t.modelsAdmin.addModel}</span>
+        {/* Sticky instead of antd Affix: no scroll target to wire up, and a
+            short list never scrolls so it just sits inline. The wrapper pulls
+            the pane background over the list gap above it (-mt-3 + pt-3 cancel
+            out) so rows slide out of sight behind the button. */}
+        <div className="sticky bottom-0 -mt-3 bg-msa-fill-0 pt-3">
+          <div
+            className="flex cursor-pointer items-center justify-center gap-1.5 rounded-[10px] border border-dashed border-msa-line-1 px-4 py-[18px] text-sm text-msa-text-brand1 transition-colors hover:border-msa-line-3"
+            onClick={onAddModel}
+          >
+            <AddIcon className="h-5 w-5" />
+            <span>{t.modelsAdmin.addModel}</span>
+          </div>
         </div>
       </div>
     </div>

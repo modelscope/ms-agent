@@ -153,6 +153,7 @@
   --color-msa-fill-error: var(--msa-fill-error);
   --color-msa-fill-warning: var(--msa-fill-warning);
   --color-msa-fill-brand: var(--msa-fill-brand);
+  --color-msa-fill-brand-subtle: var(--msa-fill-brand-subtle);
 
   /* --- Line / Border --- */
   --color-msa-line-0: var(--msa-line-0);
@@ -256,6 +257,15 @@ a {
 
    Unlayered on purpose: these must outrank antd's layered styles, and the
    WebKit pseudo-elements below already override the `color-scheme` bar. */
+
+/* How much width a scrollbar steals from the content box. 0 is the overlay
+   case (macOS default, mobile) and the SSR default; a blocking script at the top
+   of <body> overwrites it on <html> with the real measurement before the app
+   lays out. See ScrollArea. */
+:root {
+  --msa-scrollbar-w: 0px;
+}
+
 * {
   scrollbar-width: thin;
   /* thumb track — transparent until hover (Firefox has no hover pseudo). */

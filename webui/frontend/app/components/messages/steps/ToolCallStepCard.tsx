@@ -116,7 +116,8 @@ export function ToolCallStepCard({
   // in-progress state for the kinds StepCard routes through this card (browser,
   // file grep/glob, memory, skill_load).
   const executing =
-    meta.status === 'running' || (state === 'approved' && !!requestId && !result)
+    meta.status === 'running' ||
+    (state === 'approved' && !!requestId && !result)
 
   // A kind with its own in-progress ROW (a web search, a file operation) is only
   // using this accordion for its ASK (details + decision buttons). The moment
@@ -143,7 +144,7 @@ export function ToolCallStepCard({
               className="h-4 w-4 animate-spin text-msa-text-brand1"
             />
           ) : (
-            (icon ?? <InvokeIcon className="h-4 w-4" />)
+            (icon ?? <InvokeIcon className="h-5 w-5" />)
           )}
         </span>
         <Typography.Text
@@ -178,7 +179,7 @@ export function ToolCallStepCard({
           </span>
         )}
         <ArrowDownIcon
-          className={`h-3 w-3 shrink-0 text-msa-text-3 transition-transform duration-200 ${
+          className={`h-3.5 w-3.5 shrink-0 text-msa-text-3 transition-transform duration-200 ${
             expanded ? 'rotate-180' : ''
           }`}
         />

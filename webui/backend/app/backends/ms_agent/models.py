@@ -4,6 +4,9 @@ A synthetic id encodes (provider_id, name); display_name / advanced_params (not
 modelled by the SDK) live in the sidecar keyed by that id."""
 from __future__ import annotations
 
+from pathlib import Path
+from ms_agent.utils.file_lock import locked
+
 import logging
 
 from app.backends.errors import BadRequest, NotFound
@@ -54,6 +57,7 @@ def list_models(provider_id: str | None = None) -> list[Model]:
     return out
 
 
+@locked(lambda *args, **kwargs: Path(home()) / "settings.json")
 def create_model(body: ModelCreate) -> Model:
     with settings_lock():
         msm = _msm()
@@ -80,6 +84,7 @@ def _decode(model_id: str) -> tuple[str, str]:
         raise NotFound("Model not found.")
 
 
+@locked(lambda *args, **kwargs: Path(home()) / "settings.json")
 def update_model(model_id: str, body: ModelUpdate) -> Model:
     provider_id, name = _decode(model_id)
     if name not in _model_names(provider_id):
@@ -106,6 +111,7 @@ def update_model(model_id: str, body: ModelUpdate) -> Model:
     return model_to_schema(provider_id, name)
 
 
+@locked(lambda *args, **kwargs: Path(home()) / "settings.json")
 def delete_model(model_id: str) -> None:
     provider_id, name = _decode(model_id)
     with settings_lock():

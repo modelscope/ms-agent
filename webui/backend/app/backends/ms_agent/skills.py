@@ -34,6 +34,7 @@ from pathlib import Path, PurePosixPath
 from app.backends.errors import BadRequest, Conflict, NotFound
 from app.backends.ms_agent import sidecar
 from app.backends.ms_agent.common import home, pm
+from app.core.filetypes import guess_type
 from app.schemas.skill import (
     Skill,
     SkillCreate,
@@ -932,6 +933,19 @@ def read_skill_file(sid: str, path: str) -> SkillFileContent:
                                 content=f.read_text("utf-8"))
     except (UnicodeDecodeError, ValueError):
         return SkillFileContent(path=rel.as_posix(), content=None)
+
+
+def raw_skill_file(sid: str, path: str) -> tuple[Path, str]:
+    """Resolve a skill file to (path, mime) for raw byte serving — what an
+    in-viewer preview loads its images, styles and scripts from."""
+    rel = _safe_relpath(path)
+    root = _skill_dir_for(sid)
+    if root is None:
+        raise NotFound("File not found.")
+    f = root / rel
+    if not f.is_file():
+        raise NotFound("File not found.")
+    return f, guess_type(f.name) or "application/octet-stream"
 
 
 def update_skill(sid: str, body: SkillUpdate) -> Skill:

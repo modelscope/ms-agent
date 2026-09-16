@@ -12,6 +12,7 @@ dependencies = [
     "httpx>=0.28.1",
     "loguru>=0.7.3",
     "lxml",
+    "markdown>=3.10",
     "mem0ai>=2.0.12",
     "ms-agent",
     "pydantic-settings>=2.14.2",

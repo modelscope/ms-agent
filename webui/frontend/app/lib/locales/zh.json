@@ -1,5 +1,28 @@
 {
   "brand": "MS Agent",
+  "recovery": {
+    "title": "默认项目需要恢复",
+    "description": "默认项目的记录文件丢失了，原来的会话文件可能仍然保留。恢复项目记录后，即可继续使用。",
+    "restore": "恢复默认项目",
+    "later": "暂不恢复",
+    "deferredDescription": "尚未修改项目数据。你可以稍后点击下方按钮恢复，或请管理员从备份中找回原来的项目记录。",
+    "confirmDescription": "恢复前会先备份。项目名称、工作目录、提示词和记忆设置将恢复为默认值，已有会话、工作文件和全局配置会保留。如果还有其他服务使用同一数据目录，请先停止那些服务。",
+    "confirm": "备份并恢复",
+    "cancel": "取消",
+    "successTitle": "可以继续使用了",
+    "successDescription": "服务已就绪，已有会话仍可访问。恢复后请检查默认项目的设置是否符合预期。",
+    "continue": "进入 WebUI",
+    "backup": "备份位置",
+    "networkError": "暂时无法确认恢复结果。请检查网络并刷新页面，再决定是否重试。",
+    "backup_failed": "备份未完成，本次没有继续重建。请管理员检查磁盘空间和目录权限后重试。",
+    "repair_failed": "恢复未完成，程序没有自动覆盖已有文件。请管理员检查服务日志后再重试。",
+    "startup_failed": "项目记录已就位，但其他启动步骤出错，正常操作仍暂停。请管理员检查服务日志后重试。"
+  },
+  "common": {
+    "noData": "暂无数据",
+    "viewPreview": "预览",
+    "viewCode": "源码"
+  },
   "nav": {
     "newChat": "开启新对话",
     "newProject": "开启新项目",
@@ -11,12 +34,22 @@
     "projectsTitle": "项目",
     "expand": "展开",
     "collapse": "收起",
+    "poweredBy": "Powered by",
+    "github": "MS-Agent GitHub 仓库",
     "recentEmpty": "暂无对话 —— 点击上方\"新建对话\"开始"
   },
   "sidebar": {
     "editProject": "编辑项目",
     "deleteProject": "删除项目",
     "renameSession": "重命名",
+    "exportSession": "导出对话",
+    "exportMarkdown": "Markdown (.md)",
+    "exportHtml": "网页 (.html)",
+    "exportFull": "完整内容",
+    "exportCompact": "精简内容",
+    "exportConversationOnly": "仅对话正文",
+    "exportSuccess": "对话已导出",
+    "exportFailed": "导出对话失败",
     "deleteSession": "删除对话",
     "confirmDeleteProject": "确定删除该项目吗？此操作无法撤销。",
     "confirmDeleteSession": "确定删除该对话吗？此操作无法撤销。",
@@ -139,6 +172,7 @@
     "runningTask": "正在执行任务：",
     "thinkingFiles": "文件列表",
     "send": "发送",
+    "modelSaveFailed": "模型选择未保存成功。请重新选择模型后再发送，输入内容已保留。",
     "modelRequired": "请先选择模型",
     "stop": "停止",
     "addFile": "添加文件",
@@ -284,8 +318,6 @@
   },
   "skillDetail": {
     "title": "详情",
-    "viewPreview": "预览",
-    "viewCode": "源码",
     "binaryFile": "二进制文件，暂不支持预览。"
   },
   "explore": {
@@ -492,6 +524,7 @@
   "errors": {
     "requestFailed": "请求失败",
     "network": "网络错误，请检查您的网络连接",
+    "unexpected": "出错了",
     "backHome": "回到首页"
   },
   "pageTitle": {

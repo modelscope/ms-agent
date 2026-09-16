@@ -297,7 +297,8 @@ export function StepCard({
       // buttons / the rejected badge. Titled with the pre-action verb, since
       // nothing has happened yet.
       const askState = String(meta.state ?? '')
-      if (askState === 'pending' || askState === 'rejected') return fileAccordion
+      if (askState === 'pending' || askState === 'rejected')
+        return fileAccordion
       // In progress: "reading/writing/editing {path}", not the past-tense row.
       // Either the live `running` frame, or an ask already approved whose result
       // hasn't landed (what an attach replay hands back after a refresh).
@@ -349,7 +350,7 @@ export function StepCard({
         <ToolCallStepCard
           step={step}
           isLast={isLast}
-          icon={<GlobeIcon className="h-4 w-4" />}
+          icon={<GlobeIcon className="h-5 w-5" />}
           title={
             <>
               <span className="align-middle">{t.chat.stepBrowser}</span>{' '}
@@ -369,7 +370,7 @@ export function StepCard({
           <ToolCallStepCard
             step={step}
             isLast={isLast}
-            icon={<SearchIcon className="h-4 w-4" />}
+            icon={<SearchIcon className="h-5 w-5" />}
             title={
               <>
                 <span className="align-middle">{t.chat.stepSearchFiles}</span>{' '}
@@ -390,7 +391,7 @@ export function StepCard({
           <ToolCallStepCard
             step={step}
             isLast={isLast}
-            icon={<GlobeIcon className="h-4 w-4" />}
+            icon={<GlobeIcon className="h-5 w-5" />}
             title={
               <>
                 <span className="align-middle">{t.chat.stepSearch}</span>{' '}
@@ -426,7 +427,7 @@ export function StepCard({
       const failed = meta.status === 'error' && !denied
       return (
         <StepCardShell
-          icon={<GlobeIcon className="h-4 w-4" />}
+          icon={<GlobeIcon className="h-5 w-5" />}
           onClick={open}
           // The outcome belongs on the ROW itself — the error text only lives in
           // the rail, which the user has to open to see.
@@ -478,7 +479,7 @@ export function StepCard({
         <ToolCallStepCard
           step={step}
           isLast={isLast}
-          icon={<MemoryIcon className="h-4 w-4" />}
+          icon={<MemoryIcon className="h-5 w-5" />}
           title={label}
         />
       )

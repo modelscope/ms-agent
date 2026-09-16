@@ -21,6 +21,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from contextlib import ExitStack, contextmanager
+
+from ms_agent.utils.atomic_file import atomic_write_text
+from ms_agent.utils.file_lock import file_lock, locked
 
 from app.backends.errors import BadRequest
 from app.backends.ms_agent.common import home, pm
@@ -56,6 +60,8 @@ def _parse_scope(scope: str) -> tuple[str, str | None]:
 # ── global scope: region edit under the seeded header ───────────────────────
 
 
+@locked(lambda wf: Path(home()) / "settings.json")
+@locked(lambda wf: Path(home()) / ".prompt-files")
 def _global_read(wf) -> tuple[str, str]:
     """(full text, user region) of the global AGENTS.md after migration."""
     text = wf.read_home_file(_NAME)
@@ -81,6 +87,8 @@ def _global_read(wf) -> tuple[str, str]:
     return text, user_region
 
 
+@locked(lambda wf, content: Path(home()) / "settings.json")
+@locked(lambda wf, content: Path(home()) / ".prompt-files")
 def _global_write(wf, content: str) -> None:
     text = wf.read_home_file(_NAME)
     body = content.strip()
@@ -97,27 +105,31 @@ def _project_file(pid: str) -> Path:
     return Path(local_internal_dir(pm().get(pid).path)) / _NAME
 
 
+@locked(lambda pid, *args: Path(home()) / "projects")
+@locked(lambda pid, *args: _project_file(pid))
 def _project_read(pid: str) -> str:
     path = _project_file(pid)
     try:
         content = path.read_text(encoding="utf-8")
-    except OSError:
+    except FileNotFoundError:
         content = ""
     if not content.strip():
         legacy = (pm().get(pid).instruction or "").strip()
         if legacy:
             content = legacy + "\n"
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content, encoding="utf-8")
+            atomic_write_text(path, content)
             pm().update(pid, instruction="")
     return content
 
 
+@locked(lambda pid, *args: Path(home()) / "projects")
+@locked(lambda pid, *args: _project_file(pid))
 def _project_write(pid: str, content: str) -> None:
     path = _project_file(pid)
     body = content.strip()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(body + "\n" if body else "", encoding="utf-8")
+    atomic_write_text(path, body + "\n" if body else "")
 
 
 # ── API surface (unchanged shapes) ───────────────────────────────────────────

@@ -40,6 +40,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from ms_agent.utils.atomic_file import atomic_write_json
+
 
 class SessionLog:
     """Append-only JSONL session log — the source of truth for message history."""
@@ -518,12 +520,7 @@ class SessionLog:
 
     def _write_meta(self, meta: Dict[str, Any]) -> None:
         """Atomically persist the sidecar (write temp + os.replace)."""
-        tmp = self._meta_path.parent / (self._meta_path.name + '.tmp')
-        with open(tmp, 'w', encoding='utf-8') as f:
-            f.write(json.dumps(meta, ensure_ascii=False, indent=2))
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, self._meta_path)
+        atomic_write_json(self._meta_path, meta, fsync=True)
         self._metadata = meta
 
     def _read_legacy_header(self) -> Optional[Dict[str, Any]]:
