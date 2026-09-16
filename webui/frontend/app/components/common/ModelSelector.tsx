@@ -3,6 +3,7 @@ import { Popover } from 'antd'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { ProviderTags } from '~/components/models/ProviderTags'
+import { ProviderLogo } from '~/components/models/ProviderLogo'
 import { useT } from '~/lib/i18n'
 import type { AgentSettings, Model, Provider } from '~/lib/types'
 import { PillButton } from './PillButton'
@@ -133,6 +134,7 @@ export function ModelSelector({
                 >
                   {/* No `flex-1` on the name: it would claim the row's slack and
                       push the tags over to the arrow. */}
+                  <ProviderLogo provider={p} size={20} />
                   <span className="min-w-0 truncate">{p.name}</span>
                   <ProviderTags provider={p} />
                   <JumpIcon className="ml-auto h-[15px] w-[15px] shrink-0 text-msa-text-3" />
