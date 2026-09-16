@@ -1,7 +1,7 @@
 import { App, Dropdown, Input, Modal, Popover, Tooltip } from 'antd'
 import type { MenuProps } from 'antd'
 import { IconButton } from '~/components/common/IconButton'
-import { EmptyState } from '~/components/common/EmptyState'
+import { EmptyState, EmptyStateAction } from '~/components/common/EmptyState'
 import { useEffect, useMemo, useState } from 'react'
 import logoImg from '~/assets/images/logo.png'
 import {
@@ -314,9 +314,18 @@ export function Sidebar({
                   scrollbar sits flush right; `pad` then puts the rows back at the
                   card's own inset (-6 + 14 = 8px) — and holds them there whether
                   or not the scrollbar takes space. */}
-              <ScrollArea pad={14} className="mt-1 -mx-1.5 flex-1">
+              {/* When empty, turn the scroll box into a flex column so the empty
+                  state can center with `m-auto`: a percentage `h-full` child does
+                  not resolve to fill this flex-grown, overflow-auto box, which
+                  left the placeholder pinned to the top. */}
+              <ScrollArea
+                pad={14}
+                className={`mt-1 -mx-1.5 flex-1${
+                  orderedProjects.length === 0 ? ' flex flex-col' : ''
+                }`}
+              >
                 {orderedProjects.length === 0 ? (
-                  <RecentEmpty />
+                  <ProjectsEmpty onCreateProject={openCreateProject} />
                 ) : (
                   <div className="space-y-1">
                     {orderedProjects.map((p) => (
@@ -716,13 +725,26 @@ function CollapsedProjectGroup({
   )
 }
 
-function RecentEmpty() {
+function ProjectsEmpty({ onCreateProject }: { onCreateProject: () => void }) {
   const { t } = useT()
   return (
-    <div className="flex flex-col items-center gap-2 px-4 pt-10 text-center">
-      <NewChatIcon className="h-6 w-6 opacity-40" />
-      <p className="text-xs text-msa-text-3">{t.nav.recentEmpty}</p>
-    </div>
+    <EmptyState
+      size="sm"
+      art="box"
+      className="m-auto h-full"
+      description={t.nav.projectsEmpty}
+      action={
+        // EmptyStateAction hardcodes `h-auto px-6 py-2`, so the antd `size` prop
+        // has no visible effect; shrink it with `!` overrides like the compact
+        // model CTAs so the pill fits the narrow sidebar.
+        <EmptyStateAction
+          className="!px-4 !py-1.5 !text-xs"
+          onClick={onCreateProject}
+        >
+          {t.nav.newProject}
+        </EmptyStateAction>
+      }
+    />
   )
 }
 
