@@ -89,3 +89,33 @@ def test_lost_default_is_reported_without_recreating_data(client):
         client.post('/api/sessions', json={'title': 'No ghost'})
     assert not metadata.exists()
     assert not list(manager.base_dir.rglob('session.json'))
+
+
+def _provider_ids(client):
+    return [p['id'] for p in client.get('/api/providers').json()['data']]
+
+
+def test_new_provider_is_listed_first(client):
+    default = _provider_ids(client)
+    assert default and default[0] != 'zzz'  # built-ins lead by default
+    assert client.post('/api/providers', json={'id': 'zzz'}).status_code == 201
+    assert _provider_ids(client)[0] == 'zzz'
+
+
+def test_reorder_persists_and_ignores_unknown_ids(client):
+    ids = _provider_ids(client)
+    # Move the last built-in to the front; tack on an id that does not exist.
+    reordered = client.put(
+        '/api/providers/order',
+        json={'order': [ids[-1], 'ghost', *ids[:-1]]},
+    )
+    assert reordered.status_code == 200
+    assert [p['id'] for p in reordered.json()['data']] == [ids[-1], *ids[:-1]]
+    assert _provider_ids(client) == [ids[-1], *ids[:-1]]
+
+
+def test_deleting_provider_drops_it_from_the_order(client):
+    assert client.post('/api/providers', json={'id': 'temp'}).status_code == 201
+    assert _provider_ids(client)[0] == 'temp'
+    assert client.delete('/api/providers/temp').status_code == 200
+    assert 'temp' not in _provider_ids(client)

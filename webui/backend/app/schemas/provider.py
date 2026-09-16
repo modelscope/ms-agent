@@ -51,3 +51,9 @@ class ProviderUpdate(BaseModel):
     protocol: Protocol | None = None
     enabled: bool | None = None
     default_generation_params: dict | None = None
+
+
+class ProviderOrder(BaseModel):
+    # Full list of provider ids in display order. Unknown ids are dropped and
+    # any known id left out keeps its default position after the listed ones.
+    order: list[str] = Field(default_factory=list)

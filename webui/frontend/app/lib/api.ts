@@ -607,6 +607,11 @@ export const api = {
     }),
   deleteProvider: (id: string) =>
     json<void>(`/api/providers/${pid(id)}`, { method: 'DELETE' }),
+  reorderProviders: (order: string[]) =>
+    json<Provider[]>('/api/providers/order', {
+      method: 'PUT',
+      body: JSON.stringify({ order })
+    }),
   listProviderModels: (id: string, opts?: ApiCallOpts) =>
     json<string[]>(
       `/api/providers/${pid(id)}/available-models`,
