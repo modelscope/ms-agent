@@ -22,6 +22,7 @@ import { SkillTabPanel } from '~/components/project/SkillTabPanel'
 import { ProjectWidgetRail } from '~/components/project/ProjectWidgetRail'
 import { api } from '~/lib/api'
 import { dispatchWorkspaceChanged, useOnWorkspaceChanged } from '~/lib/events'
+import { useSpin } from '~/lib/useSpin'
 import type { ChatFileRef, MessageSegment } from '~/lib/agentProvider'
 import {
   DownloadEmptyError,
@@ -462,6 +463,7 @@ function WorkspacePanel({
   const { t } = useT()
   const { message } = App.useApp()
   const [files, setFiles] = useState<WorkspaceFile[] | null>(null)
+  const [refreshing, spin] = useSpin()
   const [currentPath, setCurrentPath] = useState('')
   const [downloadingAll, setDownloadingAll] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -475,12 +477,11 @@ function WorkspacePanel({
     }
   }, [])
 
-  const loadFiles = () => {
+  const loadFiles = () =>
     api
       .listWorkspaceFiles(project.id)
       .then(setFiles)
       .catch(() => setFiles([]))
-  }
 
   useEffect(() => {
     loadFiles()
@@ -721,8 +722,13 @@ function WorkspacePanel({
                 <Button
                   size="small"
                   type="text"
-                  icon={<RefreshIcon className="h-5 w-5" />}
-                  onClick={loadFiles}
+                  icon={
+                    <RefreshIcon
+                      className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`}
+                    />
+                  }
+                  disabled={refreshing}
+                  onClick={() => spin(loadFiles)}
                 />
               </Tooltip>
               <Dropdown
@@ -913,8 +919,13 @@ function WorkspacePanel({
                 <Button
                   size="small"
                   type="text"
-                  icon={<RefreshIcon className="h-5 w-5" />}
-                  onClick={loadFiles}
+                  icon={
+                    <RefreshIcon
+                      className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`}
+                    />
+                  }
+                  disabled={refreshing}
+                  onClick={() => spin(loadFiles)}
                 />
               </Tooltip>
               <Dropdown
