@@ -64,13 +64,12 @@ export const PillButton = forwardRef<HTMLButtonElement, PillButtonProps>(
       classNames && typeof classNames === 'object'
         ? (classNames as Record<string, string>)
         : {}
-    // No max cap: a pill grows to its full label whenever the row has room.
-    // `min-w-24` (96px) is the floor. Overflow is the pills row's job, not the
-    // pill's — it wraps (`flex-wrap`) or scrolls sideways (collapsed footer), so
-    // a tight row wraps/scrolls instead of pinning every pill to a fixed width.
-    // If flex still forces a pill narrower than its label, the inner span
-    // truncates and the label tooltip engages.
-    const width = 'min-w-24'
+    // `min-w-24` (96px) is the floor, `max-w-[250px]` the cap: a pill grows with
+    // its label up to 250px, then truncates. The pills row still owns the rest of
+    // overflow — a tight row shrinks each pill (flex) toward the floor and scrolls
+    // once collapsed. When flex forces a pill narrower than its label the inner
+    // span truncates and the label tooltip engages.
+    const width = 'min-w-24 max-w-[250px]'
     return (
       <MsaButton
         ref={ref}

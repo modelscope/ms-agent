@@ -1278,7 +1278,7 @@ export function Composer({
                     // rather than the viewport — the composer can be narrow while
                     // the viewport stays wide (e.g. a detail rail is open), where a
                     // viewport-relative rule overflows or wraps.
-                    <div className="@container relative flex items-center justify-between gap-2 pt-3">
+                    <div className="@container relative flex items-center justify-between gap-[32px] pt-3">
                       {/* Left: pills. Collapsed behind a toggle while the footer
                           is narrower than the row needs, inline above that.
 
