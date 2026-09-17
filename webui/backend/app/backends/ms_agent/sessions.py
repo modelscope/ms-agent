@@ -42,13 +42,27 @@ def list_sessions(project_id: str | None = None) -> list[Session]:
     else:
         projects = manager.list()
 
-    out: list[Session] = []
+    # Pair each session with its SessionManager: the live preview reads the
+    # session log, and after the sort the (project, session) association is gone.
+    pairs: list[tuple] = []
     for proj in projects:
-        for s in sm_for(proj).list():
+        sm = sm_for(proj)
+        for s in sm.list():
             # backfill a display title for still-default sessions that have history
-            out.append(autoname_session(proj, s))
-    out.sort(key=lambda s: s.updated_at, reverse=True)
-    return [_with_running(session_to_schema(s)) for s in out]
+            pairs.append((sm, autoname_session(proj, s)))
+    pairs.sort(key=lambda p: p[1].updated_at, reverse=True)
+    out: list[Session] = []
+    for sm, s in pairs:
+        schema = _with_running(session_to_schema(s))
+        # Preview = the user's LAST message, read live from the log, not the
+        # sidecar snapshot (which only ever held the FIRST message, and only for
+        # sessions started via the project-page first-message path). Falls back
+        # to the snapshot when the log has no readable user text yet.
+        preview = _last_user_preview(sm, s)
+        if preview:
+            schema.preview = preview
+        out.append(schema)
+    return out
 
 
 def _with_running(schema: Session) -> Session:
@@ -78,8 +92,12 @@ def get_session(sid: str) -> Session:
     found = find_session(sid)
     if not found:
         raise NotFound("Conversation not found.")
-    _project, session, _sm = found
-    return _with_running(session_to_schema(session))
+    _project, session, sm = found
+    schema = _with_running(session_to_schema(session))
+    preview = _last_user_preview(sm, session)
+    if preview:
+        schema.preview = preview
+    return schema
 
 
 def _history_step(
@@ -396,6 +414,28 @@ def _split_attached(content: str) -> tuple[str, list[str]]:
             if p:
                 paths.append(p)
     return text, paths
+
+
+def _last_user_preview(sm, session) -> str:
+    """First line of the LAST user message in the session log — the recent-
+    conversations subtitle. Read live so it tracks the newest thing the user
+    typed and grows with the conversation (the sidecar snapshot only held the
+    first message). Strips the framework <system-reminder> blocks and the
+    attached-files block so the subtitle shows the typed text, not machinery,
+    and skips a trailing attachment-only turn (no typed text) so it falls back
+    to the last thing actually said; "" when there is no user text yet."""
+    try:
+        rows = sm.get_session_log(session).get_all_messages()
+    except Exception:  # a preview must never break the list
+        return ""
+    for msg in reversed(rows):
+        if msg.get("role") != "user" or not msg.get("content"):
+            continue
+        text, _paths = _split_attached(_message_text(msg["content"]))
+        text = _REMINDER_RE.sub("", text).strip()
+        if text:
+            return text.splitlines()[0][:120]
+    return ""
 
 
 def _file_kind(name: str) -> str:
