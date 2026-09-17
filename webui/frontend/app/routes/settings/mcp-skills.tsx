@@ -45,6 +45,7 @@ export default function SettingsMcpSkills() {
         <MsaButton
           key="via-json"
           variant="tonal"
+          className="rounded-[12px] text-[13px]"
           onClick={() => setViaJson(true)}
         >
           {t.resources.viaJson}
@@ -52,6 +53,7 @@ export default function SettingsMcpSkills() {
         <MsaButton
           key="add-mcp"
           variant="primary"
+          className="rounded-[12px] text-[13px]"
           icon={<AddIcon className="h-5 w-5" />}
           onClick={() => setMcpImporting('custom')}
         >
@@ -62,6 +64,7 @@ export default function SettingsMcpSkills() {
       <MsaButton
         variant="primary"
         key="add-skill"
+        className="rounded-[12px] text-[13px]"
         icon={<AddIcon className="h-5 w-5" />}
         onClick={() => setSkillImporting('local')}
       >

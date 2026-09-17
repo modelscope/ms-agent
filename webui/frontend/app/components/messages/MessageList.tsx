@@ -234,7 +234,9 @@ export const MessageList = forwardRef<
               />
             ),
             classNames: {
-              root: 'px-0'
+              root: 'px-0',
+              // 38px for a single line: 8px padding + 22px line box + 8px.
+              content: 'min-h-[38px] py-2'
             }
           },
           assistant: {

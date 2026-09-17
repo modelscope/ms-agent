@@ -55,7 +55,7 @@
     "confirmDeleteSession": "确定删除该对话吗？此操作无法撤销。",
     "confirmOk": "删除",
     "confirmCancel": "取消",
-    "noSessions": "您还没有对话，快去对话吧～",
+    "noSessions": "这个项目还没有对话",
     "unreadSession": "离开期间已完成 — 点开查看",
     "unreadProject": "有已完成但未查看的对话"
   },

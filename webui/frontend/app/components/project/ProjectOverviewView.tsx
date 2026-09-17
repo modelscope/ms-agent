@@ -350,14 +350,14 @@ export function ProjectOverviewView({
 // backend taxonomy (ms_agent/titler.CATEGORIES); an unset/unknown category
 // falls back to the generic "general" chat icon.
 const CATEGORY_ICON: Record<string, ReactNode> = {
-  coding: <TerminalIcon className="h-6 w-6 text-msa-text-3" />,
-  writing: <EditIcon className="h-6 w-6 text-msa-text-3" />,
-  research: <GlobeIcon className="h-6 w-6 text-msa-text-3" />,
-  planning: <TodoIcon className="h-6 w-6 text-msa-text-3" />,
-  data: <ParamsIcon className="h-6 w-6 text-msa-text-3" />,
-  creative: <CreativeIcon className="h-6 w-6 text-msa-text-3" />,
-  media: <MediaIcon className="h-6 w-6 text-msa-text-3" />,
-  general: <ChatsIcon className="h-6 w-6 text-msa-text-3" />
+  coding: <TerminalIcon className="h-8 w-8 text-msa-text-3" />,
+  writing: <EditIcon className="h-8 w-8 text-msa-text-3" />,
+  research: <GlobeIcon className="h-8 w-8 text-msa-text-3" />,
+  planning: <TodoIcon className="h-8 w-8 text-msa-text-3" />,
+  data: <ParamsIcon className="h-8 w-8 text-msa-text-3" />,
+  creative: <CreativeIcon className="h-8 w-8 text-msa-text-3" />,
+  media: <MediaIcon className="h-8 w-8 text-msa-text-3" />,
+  general: <ChatsIcon className="h-8 w-8 text-msa-text-3" />
 }
 
 function categoryIcon(category?: string): ReactNode {

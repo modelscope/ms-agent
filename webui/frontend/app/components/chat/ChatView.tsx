@@ -121,9 +121,15 @@ export function ChatView({
 
   const activeProject = project ?? startedProject
   const activeSessionId = sessionId ?? startedSessionId
-  const appData = useRouteLoaderData('layouts/app') as Awaited<ReturnType<typeof appLoader>> | undefined
-  const modelSelection = useSessionModel(activeSessionId,
-    sessionId ? (initialModelId ?? '') : (appData?.agentSettings.default_model_id ?? ''))
+  const appData = useRouteLoaderData('layouts/app') as
+    | Awaited<ReturnType<typeof appLoader>>
+    | undefined
+  const modelSelection = useSessionModel(
+    activeSessionId,
+    sessionId
+      ? (initialModelId ?? '')
+      : (appData?.agentSettings.default_model_id ?? '')
+  )
   const isNewChat = activeSessionId === null
   const showWorkspace = activeProject !== null
 
@@ -457,7 +463,7 @@ export function ChatView({
                 shape="round"
                 icon={<CollectionIcon className="h-5 w-5" />}
                 onClick={toggleRail}
-                className="absolute right-3 top-3 z-10 !rounded-full !border-msa-line-1 !bg-msa-bg-1 !text-msa-text-1 hover:!bg-msa-fill-2 shadow-none"
+                className="absolute text-[13px] right-3 top-3 z-10 !rounded-full !border-msa-line-1 !bg-msa-bg-1 !text-msa-text-1 hover:!bg-msa-fill-2 shadow-none"
                 classNames={{
                   icon: 'flex items-center justify-center leading-none'
                 }}

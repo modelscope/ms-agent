@@ -130,16 +130,22 @@ export function McpTabPanel({ project }: Props) {
       {/* Toolbar */}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <Segmented<Scope>
+          className="text-[13px]"
           value={activeScope}
           onChange={setActiveScope}
           options={scopeOptions}
         />
         <div className="flex items-center gap-3">
-          <MsaButton variant="tonal" onClick={() => setViaJson(true)}>
+          <MsaButton
+            variant="tonal"
+            className="rounded-[12px] text-[13px]"
+            onClick={() => setViaJson(true)}
+          >
             {t.resources.viaJson}
           </MsaButton>
           <MsaButton
             variant="primary"
+            className="rounded-[12px] text-[13px]"
             icon={<AddIcon className="h-5 w-5" />}
             onClick={() => setImporting('custom')}
           >

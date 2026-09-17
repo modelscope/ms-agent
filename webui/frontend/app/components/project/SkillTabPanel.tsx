@@ -73,12 +73,14 @@ export function SkillTabPanel({ project }: Props) {
       {/* Toolbar */}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <Segmented<Scope>
+          className="text-[13px]"
           value={activeScope}
           onChange={setActiveScope}
           options={scopeOptions}
         />
         <MsaButton
           variant="primary"
+          className="rounded-[12px] text-[13px]"
           icon={<AddIcon className="h-5 w-5" />}
           onClick={() => setShowLocal(true)}
         >

@@ -148,7 +148,7 @@ export function UserBubble({
         </div>
       )}
       {message.segments && message.segments.length > 0 ? (
-        <div className="whitespace-pre-wrap text-sm leading-relaxed">
+        <div className="whitespace-pre-wrap text-sm leading-[22px]">
           {message.segments.map((seg, i) =>
             seg.type === 'skill' ? (
               <span
@@ -164,7 +164,7 @@ export function UserBubble({
         </div>
       ) : (
         message.content && (
-          <div className="whitespace-pre-wrap text-sm leading-relaxed">
+          <div className="whitespace-pre-wrap text-sm leading-[22px]">
             {message.content}
           </div>
         )
