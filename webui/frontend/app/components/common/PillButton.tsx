@@ -16,6 +16,12 @@ import ArrowDownIcon from '~/assets/icons/arrow-down.svg?react'
  * relative, so it still holds when the composer column is narrow but the
  * viewport is wide (e.g. a detail rail is open). A tooltip surfaces the
  * full text — but only when the label is actually clipped.
+ *
+ * `min-w-24` is the floor at the other end: 96px keeps a few characters of
+ * label readable on the narrowest composer instead of letting the pill
+ * squash down to its caret. It deliberately outranks the `max-w` cap —
+ * CSS gives min-width precedence when the two cross — so a very narrow
+ * container overflows the row (which scrolls) rather than shrinking pills.
  * ================================================================ */
 
 interface PillButtonProps extends Omit<MsaButtonProps, 'variant'> {
@@ -24,6 +30,10 @@ interface PillButtonProps extends Omit<MsaButtonProps, 'variant'> {
   /** Panel open state — flips the caret (same 180° + transition as the
    * accordion headers) so the pill reads as expanded. */
   open?: boolean
+  /** Drop the shared max-width cap so the pill grows to its full label instead
+   * of truncating. Used by the search-not-configured hint, whose message has to
+   * read in full rather than collapse to "Searc…". */
+  fitContent?: boolean
 }
 
 export const PillButton = forwardRef<HTMLButtonElement, PillButtonProps>(
@@ -31,6 +41,7 @@ export const PillButton = forwardRef<HTMLButtonElement, PillButtonProps>(
     {
       caret = true,
       open = false,
+      fitContent = false,
       children,
       className = '',
       classNames,
@@ -58,11 +69,17 @@ export const PillButton = forwardRef<HTMLButtonElement, PillButtonProps>(
       classNames && typeof classNames === 'object'
         ? (classNames as Record<string, string>)
         : {}
+    // The width cap is `!important`, so a caller can't undo it with its own
+    // `max-w-*`; `fitContent` omits it here instead. `min-w-24` stays either way
+    // so a short label keeps the shared minimum pill size.
+    const width = fitContent
+      ? 'min-w-24'
+      : '!max-w-[min(96px,55cqw)] min-w-24'
     return (
       <MsaButton
         ref={ref}
         variant="tonal"
-        className={`!flex !items-center !gap-1.5 !rounded-[12px] !px-3 !py-1.5 !h-auto !text-xs !font-normal !max-w-[min(210px,55cqw)] min-w-0 ${className}`}
+        className={`!flex !items-center !gap-1.5 !rounded-[12px] !px-3 !py-1.5 !h-auto !text-xs !font-normal ${width} ${className}`}
         classNames={{ ...extra, icon: `shrink-0 ${extra.icon ?? ''}` }}
         {...rest}
       >

@@ -1330,15 +1330,6 @@ export function Composer({
                           />
                         )}
 
-                        {/* Pills: hidden on a narrow footer unless expanded, always
-                            inline above the threshold.
-                            `w-max` + `shrink-0` are what make the strip above
-                            scrollable rather than squashed: PillButton carries
-                            `min-w-0`, so inside a nowrap line the pills would
-                            otherwise all compress to a few unreadable characters
-                            instead of overflowing. Sizing this row to its content
-                            leaves the line exactly full, so each pill keeps the
-                            width its own `max-w` cap gives it. */}
                         <div
                           className={`flex items-center gap-2.5 ${
                             pillsExpanded
@@ -1405,15 +1396,17 @@ export function Composer({
 
                           {/* Search-not-configured hint: only when search is on
                               but its provider has no key. Uses PillButton (not a
-                              hand-rolled button) so the background, padding,
-                              height and label truncation match the selector
-                              pills exactly — copying its classes by hand drifted
-                              on all four. `caret={false}`: it navigates rather
-                              than opening a panel. */}
+                              hand-rolled button) so the background, padding and
+                              height match the selector pills exactly — copying its
+                              classes by hand drifted on all of them. `caret={false}`:
+                              it navigates rather than opening a panel. `fitContent`
+                              drops the shared width cap so the whole "search not set
+                              up" message reads instead of collapsing to "Searc…". */}
                           {searchNeedsKey && (
                             <Tooltip title={t.home.searchUnconfiguredTip}>
                               <PillButton
                                 caret={false}
+                                fitContent
                                 onClick={() => navigate('/settings/search')}
                                 icon={<EditIcon className="h-4 w-4" />}
                                 className="!text-msa-text-3"
@@ -1426,7 +1419,7 @@ export function Composer({
                       </div>
 
                       {/* Right: attach + send */}
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-4">
                         {attachable && (
                           <>
                             <input
