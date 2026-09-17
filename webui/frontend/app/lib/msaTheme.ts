@@ -89,9 +89,9 @@ const componentTokens = {
     trackBg: light.fill[2],
     trackPadding: 4,
     itemColor: light.text[3],
-    itemHoverColor: light.text.brand1,
+    itemHoverColor: light.text[1],
     itemSelectedBg: light.bg[1],
-    itemSelectedColor: light.text.brand1,
+    itemSelectedColor: light.text[1],
     borderRadiusSM: 6
   },
   // Flat tabs: the MSA design uses plain text colour for the active tab (the
@@ -126,7 +126,7 @@ const darkComponentTokens = {
     itemColor: dark.text[3],
     itemHoverColor: dark.text.brand1,
     itemSelectedBg: dark.bg[1],
-    itemSelectedColor: dark.text.brand1,
+    itemSelectedColor: dark.text[1],
     borderRadiusSM: 6
   },
   Tabs: {

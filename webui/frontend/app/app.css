@@ -153,7 +153,6 @@
   --color-msa-fill-error: var(--msa-fill-error);
   --color-msa-fill-warning: var(--msa-fill-warning);
   --color-msa-fill-brand: var(--msa-fill-brand);
-  --color-msa-fill-brand-subtle: var(--msa-fill-brand-subtle);
 
   /* --- Line / Border --- */
   --color-msa-line-0: var(--msa-line-0);
@@ -334,6 +333,16 @@ a {
   select:focus-visible,
   [contenteditable]:focus-visible {
     outline: none;
+  }
+
+  /* Segmented: drop antd's raised look. The selected item + moving thumb carry
+     `box-shadow: boxShadowTertiary` (a global alias token, not a Segmented
+     component token), so it can't be turned off in msaTheme.ts — the flat MSA
+     control keeps only the white pill fill. Layer precedence beats the baked
+     `antd` rule without stacking `.ant-*` selectors. */
+  .ant-segmented .ant-segmented-item-selected,
+  .ant-segmented .ant-segmented-thumb {
+    box-shadow: none;
   }
 }
 
