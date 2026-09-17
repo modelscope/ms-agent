@@ -1289,11 +1289,13 @@ export function Composer({
                           viewport, so keep the pills inline" and let them wrap into
                           three rows there.
 
-                          600px is what one row costs: the four standing pills come
-                          to ~510px with a long model name (PillButton caps each at
-                          240px) plus ~90px for the attach/send cluster. A session
-                          can carry two more pills, so this is the common case, not a
-                          guarantee.
+                          550px is the threshold: the four standing pills plus the
+                          ~90px attach/send cluster fit inline in a fairly narrow
+                          column, so opening the workspace panel (which splits the
+                          chat column) no longer collapses them into the toggle right
+                          away. Above it the pills shrink to one line; below it
+                          collapses to the scroll row. A session can carry two more
+                          pills, so this is the common case, not a guarantee.
 
                           Visibility is CSS-driven so the first paint is correct with
                           no SSR/hydration flash. When expanded on a narrow footer
@@ -1309,22 +1311,22 @@ export function Composer({
                           transcript. One line can never do that, whatever the pill
                           count or label length.
 
-                          `flex-wrap` is declared per branch instead of on the base:
-                          it and `flex-nowrap` are the same utility group, so keeping
-                          both here would let stylesheet order — not this class
-                          list — decide the winner. */}
+                          Pills never wrap: `flex-nowrap` plus `min-w-0` on every
+                          wrapper let an over-long row shrink each pill to its
+                          `min-w-24` floor and truncate the label instead of spilling
+                          onto a second line. */}
                       <div
                         ref={pillsRef}
                         className={`flex items-center gap-2.5 ${
                           pillsExpanded
-                            ? 'absolute inset-x-0 bottom-0 z-10 flex-nowrap overflow-x-auto bg-msa-bg-1 pt-3 @min-[600px]:static @min-[600px]:flex-wrap @min-[600px]:overflow-x-visible @min-[600px]:bg-transparent @min-[600px]:pt-0'
-                            : 'flex-wrap'
+                            ? 'absolute inset-x-0 bottom-0 z-10 min-w-0 flex-nowrap overflow-x-auto bg-msa-bg-1 pt-3 @min-[550px]:static @min-[550px]:overflow-x-visible @min-[550px]:bg-transparent @min-[550px]:pt-0'
+                            : 'min-w-0 flex-nowrap'
                         }`}
                       >
                         {/* Toggle button: shown only while collapsed */}
                         {!pillsExpanded && (
                           <IconButton
-                            className="@min-[600px]:hidden"
+                            className="@min-[550px]:hidden"
                             icon={<MoreIcon className="h-5 w-5" />}
                             onClick={() => setPillsExpanded(true)}
                           />
@@ -1333,8 +1335,8 @@ export function Composer({
                         <div
                           className={`flex items-center gap-2.5 ${
                             pillsExpanded
-                              ? 'w-max shrink-0 flex-nowrap @min-[600px]:w-auto @min-[600px]:flex-wrap'
-                              : 'hidden flex-wrap @min-[600px]:flex'
+                              ? 'w-max shrink-0 min-w-0 flex-nowrap @min-[550px]:w-auto @min-[550px]:shrink'
+                              : 'hidden min-w-0 flex-nowrap @min-[550px]:flex'
                           }`}
                         >
                           {/* Model pill */}
@@ -1399,14 +1401,11 @@ export function Composer({
                               hand-rolled button) so the background, padding and
                               height match the selector pills exactly — copying its
                               classes by hand drifted on all of them. `caret={false}`:
-                              it navigates rather than opening a panel. `fitContent`
-                              drops the shared width cap so the whole "search not set
-                              up" message reads instead of collapsing to "Searc…". */}
+                              it navigates rather than opening a panel. */}
                           {searchNeedsKey && (
                             <Tooltip title={t.home.searchUnconfiguredTip}>
                               <PillButton
                                 caret={false}
-                                fitContent
                                 onClick={() => navigate('/settings/search')}
                                 icon={<EditIcon className="h-4 w-4" />}
                                 className="!text-msa-text-3"

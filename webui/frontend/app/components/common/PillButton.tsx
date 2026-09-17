@@ -30,10 +30,6 @@ interface PillButtonProps extends Omit<MsaButtonProps, 'variant'> {
   /** Panel open state — flips the caret (same 180° + transition as the
    * accordion headers) so the pill reads as expanded. */
   open?: boolean
-  /** Drop the shared max-width cap so the pill grows to its full label instead
-   * of truncating. Used by the search-not-configured hint, whose message has to
-   * read in full rather than collapse to "Searc…". */
-  fitContent?: boolean
 }
 
 export const PillButton = forwardRef<HTMLButtonElement, PillButtonProps>(
@@ -41,7 +37,6 @@ export const PillButton = forwardRef<HTMLButtonElement, PillButtonProps>(
     {
       caret = true,
       open = false,
-      fitContent = false,
       children,
       className = '',
       classNames,
@@ -69,12 +64,13 @@ export const PillButton = forwardRef<HTMLButtonElement, PillButtonProps>(
       classNames && typeof classNames === 'object'
         ? (classNames as Record<string, string>)
         : {}
-    // The width cap is `!important`, so a caller can't undo it with its own
-    // `max-w-*`; `fitContent` omits it here instead. `min-w-24` stays either way
-    // so a short label keeps the shared minimum pill size.
-    const width = fitContent
-      ? 'min-w-24'
-      : '!max-w-[min(96px,55cqw)] min-w-24'
+    // No max cap: a pill grows to its full label whenever the row has room.
+    // `min-w-24` (96px) is the floor. Overflow is the pills row's job, not the
+    // pill's — it wraps (`flex-wrap`) or scrolls sideways (collapsed footer), so
+    // a tight row wraps/scrolls instead of pinning every pill to a fixed width.
+    // If flex still forces a pill narrower than its label, the inner span
+    // truncates and the label tooltip engages.
+    const width = 'min-w-24'
     return (
       <MsaButton
         ref={ref}
