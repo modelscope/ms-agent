@@ -31,7 +31,7 @@ class GenerateScript(LLMAgent):
         config = deepcopy(self.config)
         config.generation_config.temperature = 0.6
         config.generation_config.top_k = 50
-        self.llm: LLM = LLM.from_config(self.config)
+        self.llm: LLM = LLM.from_config(config)
 
     def on_task_end(self, messages: List[Message]):
         script = os.path.join(self.work_dir, 'script.txt')
