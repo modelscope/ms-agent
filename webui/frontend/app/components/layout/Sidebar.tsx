@@ -457,12 +457,16 @@ function ProjectRowActions({
       okButtonProps: { danger: true },
       onOk: async () => {
         await api.deleteProject(project.id)
-        // Awaited: see the create handler — a navigation in the same tick would
-        // interrupt this refresh, and the route change itself no longer triggers
-        // one, so the deleted project would linger in the sidebar.
+        // Leave the deleted project's page and let that navigation fully settle
+        // before revalidating. Revalidating while the switch is still in flight
+        // aborts it (the router restarts the pending load), and revalidating in
+        // place re-runs the now-missing project's loader and flashes its 404 —
+        // awaiting navigate lands us on a live URL, so the refresh repaints the
+        // sidebar there instead.
+        if (location.pathname.startsWith(`/projects/${project.id}`)) {
+          await navigate('/', { replace: true })
+        }
         await revalidator.revalidate()
-        if (location.pathname.startsWith(`/projects/${project.id}`))
-          navigate('/')
       }
     })
   }
@@ -946,11 +950,14 @@ function SessionItem({
       okButtonProps: { danger: true },
       onOk: async () => {
         await api.deleteSession(session.id)
-        // Awaited for the same reason as project delete: the route change that
-        // follows no longer revalidates on its own.
-        await revalidator.revalidate()
+        // Same as project delete: leave the deleted session's page and let that
+        // navigation settle before revalidating, so the refresh runs on a live
+        // URL instead of aborting the switch or flashing the session's 404.
         const isActive = location.pathname.includes(`/sessions/${session.id}`)
-        if (isActive) navigate(`/projects/${projectId}`)
+        if (isActive) {
+          await navigate(`/projects/${projectId}`, { replace: true })
+        }
+        await revalidator.revalidate()
       }
     })
   }

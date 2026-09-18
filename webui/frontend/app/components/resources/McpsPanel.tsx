@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router'
 import { CardSkeletonGrid } from '~/components/common/CardSkeletonGrid'
 import { EmptyState, EmptyStateAction } from '~/components/common/EmptyState'
 import { api } from '~/lib/api'
+import { useOnMcpSkillChanged } from '~/lib/events'
 import { useT } from '~/lib/i18n'
 import { useMcpHealth } from '~/lib/mcpHealth'
 import type { Mcp, Scope } from '~/lib/types'
@@ -107,6 +108,10 @@ export function McpsPanel({
     knownIdsRef.current = null // new scope = new baseline, not "all new"
     refresh()
   }, [activeScope])
+
+  // Refresh when the set changes elsewhere (e.g. an external API call relayed by
+  // the server-event bridge). `fresh` re-runs the health sweep.
+  useOnMcpSkillChanged(() => refresh(true))
 
   const scopeBadge =
     activeScope === 'global'

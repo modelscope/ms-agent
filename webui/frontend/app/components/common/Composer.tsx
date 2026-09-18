@@ -11,7 +11,13 @@ import { PillButton } from './PillButton'
 import { api } from '~/lib/api'
 import { useSessionModel, type SessionModelSelection } from '~/lib/sessionModel'
 import { useModelChanged } from '~/lib/modelChanged'
-import { useOnMcpSkillChanged, dispatchWorkspaceChanged } from '~/lib/events'
+import {
+  useOnMcpSkillChanged,
+  useOnModelsChanged,
+  useOnProjectSettingsChanged,
+  useOnProjectsChanged,
+  dispatchWorkspaceChanged
+} from '~/lib/events'
 import type { ChatFileRef } from '~/lib/agentProvider'
 import { useT } from '~/lib/i18n'
 import type {
@@ -298,6 +304,50 @@ export function Composer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveProject?.id])
   useOnMcpSkillChanged(refreshMcpSkill)
+
+  // Re-fetch when the model catalog changes elsewhere (Settings → Models, or an
+  // external API call relayed by the server-event bridge). The picker seeds
+  // these from the loader once at mount, so without this a new model never
+  // appears until the component remounts.
+  const refreshModels = useCallback(() => {
+    api
+      .listProviders()
+      .then(setProviders)
+      .catch(() => {})
+    api
+      .listModels()
+      .then(setModels)
+      .catch(() => {})
+    api
+      .getAgentSettings()
+      .then(setSettings)
+      .catch(() => {})
+  }, [])
+  useOnModelsChanged(refreshModels)
+
+  // Web-search config is edited on Settings → Search and can arrive via an
+  // external API call; both relay as a project-settings change. The pill seeds
+  // from the loader once at mount, so without this a toggle elsewhere never
+  // reflects here until the Composer remounts.
+  const refreshSearchSettings = useCallback(() => {
+    api
+      .getSearchSettings()
+      .then(setSearchSettings)
+      .catch(() => {})
+  }, [])
+  useOnProjectSettingsChanged(refreshSearchSettings)
+
+  // The picker seeds its project list from the loader once at mount; a project
+  // added, renamed or removed elsewhere (or by an external API call) reaches it
+  // through this event. Only meaningful when the picker is shown (homepage).
+  const refreshProjects = useCallback(() => {
+    if (!hasProjectPicker) return
+    api
+      .listProjects()
+      .then(setProjects)
+      .catch(() => {})
+  }, [hasProjectPicker])
+  useOnProjectsChanged(refreshProjects)
 
   const mergedMcps = useMemo(
     () => [...globalMcps, ...projectMcps],
