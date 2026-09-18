@@ -11,7 +11,11 @@ import { PillButton } from './PillButton'
 import { api } from '~/lib/api'
 import { useSessionModel, type SessionModelSelection } from '~/lib/sessionModel'
 import { useModelChanged } from '~/lib/modelChanged'
-import { useOnMcpSkillChanged, dispatchWorkspaceChanged } from '~/lib/events'
+import {
+  useOnMcpSkillChanged,
+  useOnModelsChanged,
+  dispatchWorkspaceChanged
+} from '~/lib/events'
 import type { ChatFileRef } from '~/lib/agentProvider'
 import { useT } from '~/lib/i18n'
 import type {
@@ -298,6 +302,26 @@ export function Composer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveProject?.id])
   useOnMcpSkillChanged(refreshMcpSkill)
+
+  // Re-fetch when the model catalog changes elsewhere (Settings → Models, or an
+  // external API call relayed by the server-event bridge). The picker seeds
+  // these from the loader once at mount, so without this a new model never
+  // appears until the component remounts.
+  const refreshModels = useCallback(() => {
+    api
+      .listProviders()
+      .then(setProviders)
+      .catch(() => {})
+    api
+      .listModels()
+      .then(setModels)
+      .catch(() => {})
+    api
+      .getAgentSettings()
+      .then(setSettings)
+      .catch(() => {})
+  }, [])
+  useOnModelsChanged(refreshModels)
 
   const mergedMcps = useMemo(
     () => [...globalMcps, ...projectMcps],

@@ -37,6 +37,7 @@ import {
   ThemeProvider,
   useTheme
 } from '~/lib/theme'
+import { ServerEventsBridge } from '~/lib/serverEvents'
 import { MsaButton } from './components/common/MsaButton'
 
 interface RootData {
@@ -258,6 +259,7 @@ function ThemedRoot({ children }: { children: React.ReactNode }) {
         <AntdApp>
           <NProgressHandler />
           <ApiErrorBridge />
+          <ServerEventsBridge />
           {children}
         </AntdApp>
       </XProvider>

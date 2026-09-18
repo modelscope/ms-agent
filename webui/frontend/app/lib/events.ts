@@ -81,6 +81,29 @@ export function useOnMcpSkillChanged(callback: () => void) {
   }, [callback])
 }
 
+// ─── Model catalog (providers / models / default) ──────────────────────────
+
+/** Dispatch after adding, editing, removing or reordering a provider or model,
+ * or changing the default model. Consumers that seed the model catalog into
+ * their own state (the Composer picker, the Settings → Models page) re-fetch
+ * providers + models + agent settings. Fired by the server-event bridge for
+ * `/api/models` and `/api/providers`, so an external API call updates the
+ * picker the same way an in-tab edit does. */
+export function dispatchModelsChanged() {
+  if (typeof window !== 'undefined')
+    window.dispatchEvent(new Event('msa:models-changed'))
+}
+
+/** Re-run `callback` whenever the model catalog is changed by another component
+ * or an external API call. */
+export function useOnModelsChanged(callback: () => void) {
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.addEventListener('msa:models-changed', callback)
+    return () => window.removeEventListener('msa:models-changed', callback)
+  }, [callback])
+}
+
 // ─── Session turn completion ───────────────────────────────────────────
 
 /** Dispatch when a session's agent turn completes (done frame received).
