@@ -19,7 +19,7 @@ import './app.css'
 import { NProgressHandler } from '~/components/common/NProgressHandler'
 import { renderAntdEmpty } from '~/components/common/EmptyState'
 import { ErrorState } from '~/components/common/ErrorState'
-import { api, ApiError, orThrow, registerApiErrorReporter } from '~/lib/api'
+import { api, ApiError, describeFailure, orThrow, registerApiErrorReporter } from '~/lib/api'
 import { getAntdCssHref } from '~/lib/antdStyle.server'
 import { getDesignTokenStyleContent } from '~/lib/designTokens'
 import { SERVER_HOSTED_MODE } from '~/lib/env'
@@ -272,37 +272,18 @@ function ApiErrorBridge() {
   const { message } = AntdApp.useApp()
   const { t } = useT()
   useEffect(() => {
-    registerApiErrorReporter((msg: string, err: ApiError) => {
-      // No message means the failure was not reported by our backend at all —
-      // something in FRONT of it answered (a proxy/gateway 502, an upstream
-      // 504) with a body carrying no envelope. Naming the number keeps a burst
-      // of such toasts distinguishable and reportable instead of an
-      // indistinguishable wall of "Request failed".
-      // `code`, not `status`: the two are equal for a transport failure, but a
-      // rejection the body declares itself (readFailure) can arrive with a 2xx
-      // status, and only `code` then holds the real one.
-      // The reason phrase is appended when there is one, since it is the only
-      // words such a failure carries — absent over HTTP/2, hence the bare-code
-      // fallback. It pairs with `status` ONLY: for the 200-OK-with-code-400 case
-      // above, "400 OK" would describe neither half truthfully.
-      const detail =
-        err.code === err.status && err.statusText
-          ? `${err.status} ${err.statusText}`
-          : String(err.code)
-      // A 5xx (or a gateway answering for an unreachable backend, e.g. 502/504)
-      // is a server-side fault, so "request failed" — which reads as the caller's
-      // mistake — understates it; name it a server error instead. `code` holds
-      // the real number for a body-declared rejection carrying a 2xx status.
-      const headline =
-        err.code >= 500 ? t.errors.server : t.errors.requestFailed
-      // Status first, explanation second (`502 Bad Gateway: server error…`): the
-      // number locates the failure at a glance, the phrase says whose fault it is.
-      const text = msg
-        ? msg
-        : err.status === 0
-          ? t.errors.network
-          : `${detail}: ${headline}`
-      message.error(text)
+    registerApiErrorReporter((_msg: string, err: ApiError) => {
+      // One toast for every failed request. `describeFailure` composes the text:
+      // the backend's own message when it sent one, otherwise the status first
+      // (`502 Bad Gateway`) and a server-vs-client headline second. The chat
+      // stream reuses the same helper so a failure reads identically there.
+      message.error(
+        describeFailure(err, {
+          server: t.errors.server,
+          requestFailed: t.errors.requestFailed,
+          network: t.errors.network
+        })
+      )
     })
     return () => registerApiErrorReporter(null)
   }, [message, t])

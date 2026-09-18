@@ -17,7 +17,7 @@ import {
   type HistoryMessage,
   type MessageSegment
 } from '~/lib/agentProvider'
-import { api } from '~/lib/api'
+import { ApiError, api, describeFailure } from '~/lib/api'
 import {
   dispatchUrlChange,
   dispatchSessionDone,
@@ -187,6 +187,18 @@ export function ChatPanel({
   // Aliased: `message` is shadowed all over this file by per-message callback
   // params, so the toast handle gets an unambiguous name.
   const { message: toast } = App.useApp()
+  // A failed chat turn reads the same as a failed REST call: its rejection
+  // carries an ApiError (status + any backend message), so `describeFailure`
+  // yields the status-first, server-vs-client line; a non-HTTP error (a bare
+  // network blip) keeps its own message.
+  const failureText = (error: unknown): string =>
+    error instanceof ApiError
+      ? describeFailure(error, {
+          server: t.errors.server,
+          requestFailed: t.errors.requestFailed,
+          network: t.errors.network
+        })
+      : `${t.chat.requestFailed}: ${(error as Error)?.message ?? ''}`
   const hydrated = useHydrated()
   const listRef = useRef<MessageListHandle>(null)
   const [projectOverride, setProjectOverride] = useState<string | null>(null)
@@ -322,7 +334,7 @@ export function ChatPanel({
       }
       return {
         role: 'assistant',
-        content: `${t.chat.requestFailed}: ${error?.message ?? ''}`
+        content: failureText(error)
       }
     }
   })
@@ -706,7 +718,7 @@ export function ChatPanel({
         // toasting those would be pure noise; a rejection is the one case where
         // the placeholder vanishing is otherwise unexplained.
         if ((e as Error)?.name === CHAT_STREAM_ERROR) {
-          toast.error(`${t.chat.requestFailed}: ${(e as Error).message}`)
+          toast.error(failureText(e))
         }
       } finally {
         // Only clear attaching if THIS stream's ctrl is still the active one.
