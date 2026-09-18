@@ -12,6 +12,7 @@ from openai.types.chat.chat_completion_message_tool_call import (
 from typing import Any, Dict, Generator, Iterable, List, Optional
 
 from ms_agent.llm import LLM, multimodal
+from ms_agent.llm.io import interrupt_stream
 from ms_agent.llm.thinking import apply_effort, create_with_thinking_fallback
 from ms_agent.llm.utils import Message, Tool, ToolCall
 from ms_agent.llm.vision import create_with_vision_fallback
@@ -101,6 +102,7 @@ class OpenAI(LLM):
                 float(_read_timeout), connect=float(_connect_timeout)),
         )
         self.base_url = base_url or ''
+        self._active_stream = None
 
         # Image attachments (legacy non-router path). Resolution mirrors the
         # router's: an explicit per-model switch wins, else the service's
@@ -318,6 +320,18 @@ class OpenAI(LLM):
             for d in self._last_deliveries
         ]
 
+    def _track_stream(self, stream):
+        # Retain the HTTP stream, not the lazy thinking/vision wrapper: closing
+        # an unstarted or currently executing generator cannot close its socket.
+        self._active_stream = stream
+        return stream
+
+    def interrupt(self) -> None:
+        stream = getattr(self, '_active_stream', None)
+        interrupt_stream(stream)
+        if getattr(self, '_active_stream', None) is stream:
+            self._active_stream = None
+
     def _call_llm(self,
                   messages: List[Message],
                   tools: Optional[List[Tool]] = None,
@@ -348,17 +362,21 @@ class OpenAI(LLM):
         sent_images = any(
             multimodal.has_image_blocks(m.get('content'))
             for m in messages if isinstance(m, dict))
+
+        def create(messages, **params):
+            result = self.client.chat.completions.create(
+                model=self.model, messages=messages, tools=tools, **params)
+            return self._track_stream(result) if is_streaming else result
+
         return create_with_vision_fallback(
             lambda messages, **kw: create_with_thinking_fallback(
-                lambda **kw2: self.client.chat.completions.create(
-                    model=self.model, messages=messages, tools=tools, **kw2),
-                self.client, self.model, logger, **kw),
+                lambda **kw2: create(messages=messages, **kw2), self.client,
+                self.model, logger, **kw),
             base_url=getattr(self.client, 'base_url', ''),
             model=self.model,
             messages=messages,
             sent_images=sent_images,
-            max_edge=getattr(
-                getattr(self, '_vision', None), 'max_edge', 0),
+            max_edge=getattr(getattr(self, '_vision', None), 'max_edge', 0),
             on_degrade=self._mark_images_degraded,
             logger_=logger,
             **kwargs)
@@ -995,8 +1013,9 @@ class OpenAI(LLM):
             kwargs['tools'] = resp_tools
 
         stream = create_with_thinking_fallback(
-            lambda **kw: self._responses_client.responses.create(
-                model=self.model, input=input_items, **kw),
+            lambda **kw: self._track_stream(
+                self._responses_client.responses.create(
+                    model=self.model, input=input_items, **kw)),
             self._responses_client,
             self.model,
             logger,

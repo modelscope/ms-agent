@@ -24,6 +24,7 @@ from dataclasses import replace
 from typing import Any, Dict, Generator, Iterable, List, Optional, Union
 
 from ms_agent.llm import multimodal
+from ms_agent.llm.io import interrupt_stream
 from ms_agent.llm.thinking import apply_effort, create_with_thinking_fallback
 from ms_agent.llm.transport.base import Transport
 from ms_agent.llm.utils import Message, Tool, ToolCall
@@ -413,7 +414,10 @@ class OpenAICompatTransport(Transport):
         underlying HTTP response unblocks that read (it raises inside ``next()``,
         which the caller discards). A no-op when nothing is streaming.
         """
-        self._close_stream(self._active_stream)
+        stream = self._active_stream
+        interrupt_stream(stream)
+        if self._active_stream is stream:
+            self._active_stream = None
 
     # ------------------------------------------------------------------ #
     # inline <think> handling (e.g. MiniMax M-series)
@@ -478,19 +482,28 @@ class OpenAICompatTransport(Transport):
         # fallback so the two compose: a request can be retried for thinking
         # and, independently, for images.
         sent_images = any(
-            multimodal.has_image_blocks(m.get('content'))
-            for m in messages if isinstance(m, dict))
+            multimodal.has_image_blocks(m.get('content')) for m in messages
+            if isinstance(m, dict))
+
+        def create(messages, **params):
+            result = self.client.chat.completions.create(
+                model=self.model, messages=messages, tools=tools, **params)
+            if is_streaming:
+                # Keep the actual HTTP stream, before the fallback layers wrap
+                # it in generators. Closing a wrapper before its first next()
+                # (or while next() is running) cannot close the connection.
+                self._active_stream = result
+            return result
+
         return create_with_vision_fallback(
             lambda messages, **kw: create_with_thinking_fallback(
-                lambda **kw2: self.client.chat.completions.create(
-                    model=self.model, messages=messages, tools=tools, **kw2),
-                self.client, self.model, logger, **kw),
+                lambda **kw2: create(messages=messages, **kw2), self.client,
+                self.model, logger, **kw),
             base_url=getattr(self.client, 'base_url', ''),
             model=self.model,
             messages=messages,
             sent_images=sent_images,
-            max_edge=getattr(
-                getattr(self, '_vision', None), 'max_edge', 0),
+            max_edge=getattr(getattr(self, '_vision', None), 'max_edge', 0),
             on_degrade=self._mark_images_degraded,
             logger_=logger,
             **kwargs)
@@ -592,10 +605,8 @@ class OpenAICompatTransport(Transport):
                                   **kwargs) -> Generator[Message, None, None]:
         flag = self._continue_flag
         message = None
-        # Track the stream so interrupt() can close it from another thread; a
-        # continuation rebinds it below. The finally releases it on every exit
-        # path (normal end, error, or GeneratorExit when the consumer stops).
-        self._active_stream = completion
+        # _call_llm tracks the raw HTTP stream for interruption. Also close its
+        # fallback wrappers on normal end, error, or GeneratorExit.
         try:
             for chunk in completion:
                 message_chunk = self._stream_format_output_message(chunk)
@@ -633,7 +644,6 @@ class OpenAICompatTransport(Transport):
                             f'continue generate.')
                         completion = self._call_llm_for_continue_gen(
                             messages, message, tools, **kwargs)
-                        self._active_stream = completion
                         for chunk in self._stream_continue_generate(
                                 messages, completion, tools,
                                 max_runs - 1 if max_runs is not None else None,
@@ -650,8 +660,8 @@ class OpenAICompatTransport(Transport):
                 yield message
         finally:
             self._close_stream(completion)
-            if self._active_stream is completion:
-                self._active_stream = None
+            self.interrupt()
+            self._active_stream = None
 
     @staticmethod
     def _stream_format_output_message(completion_chunk) -> Message:

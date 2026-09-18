@@ -17,6 +17,7 @@ from dataclasses import replace
 from typing import Any, Dict, Generator, Iterator, List, Optional, Union
 
 from ms_agent.llm import multimodal
+from ms_agent.llm.io import OpenedStream, interrupt_stream
 from ms_agent.llm.thinking import apply_effort, create_with_thinking_fallback
 from ms_agent.llm.transport.base import Transport
 from ms_agent.llm.utils import Message, Tool, ToolCall
@@ -349,7 +350,9 @@ class AnthropicMessagesTransport(Transport):
             # than forwarded — the API call has to name it again itself.
             call['model'] = self.model
             if stream:
-                return self.client.messages.stream(**call)
+                opened = OpenedStream(self.client.messages.stream(**call))
+                self._active_stream = opened
+                return opened
             return self.client.messages.create(**call)
 
         # Thinking is the OTHER per-model hard-400, and this transport used to
@@ -507,7 +510,10 @@ class AnthropicMessagesTransport(Transport):
         from a different thread than the one iterating the stream: closing the
         underlying HTTP response unblocks that read. A no-op when nothing streams.
         """
-        self._close_stream(self._active_stream)
+        stream = self._active_stream
+        interrupt_stream(stream)
+        if self._active_stream is stream:
+            self._active_stream = None
 
     @staticmethod
     def _format_output_message(completion) -> Message:
