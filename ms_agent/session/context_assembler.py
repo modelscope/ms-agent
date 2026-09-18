@@ -139,25 +139,8 @@ class ContextAssembler:
                     event['summary_preview'] = meta['summary'][:200]
                 if meta.get('pruned_count') is not None:
                     event['pruned_count'] = meta['pruned_count']
-                self.session_log.record_compaction(event)
-
-                first_new_seq = None
-                for msg in visible:
-                    clean = {
-                        k: v
-                        for k, v in msg.items()
-                        if k not in ('seq', 'timestamp')
-                    }
-                    s = self.session_log.append({
-                        **clean, '_source':
-                        'compaction'
-                    })
-                    if first_new_seq is None:
-                        first_new_seq = s
-
-                if first_new_seq is not None:
-                    self.session_log.last_consolidated = first_new_seq
-                    lc_seq = first_new_seq
+                self.session_log.commit_compaction(visible, event)
+                lc_seq = self.session_log.last_consolidated
 
                 all_msgs = self.session_log.get_all_messages()
                 visible = _slice_visible(all_msgs, lc_seq)

@@ -96,6 +96,13 @@ class SessionManager:
         self._save_meta(session)
         return session
 
+    def fork(self, session_id: str, *, after_seq: int, name: str | None = None,
+             request_id: str | None = None) -> Session:
+        """Branch after a completed reply without changing its source session."""
+        from ms_agent.project.fork import fork_session
+        return fork_session(self, session_id, after_seq=after_seq,
+                            name=name, request_id=request_id)
+
     def get(self, session_id: str) -> Session | None:
         store = self._meta_store(session_id)
         if not store.exists():

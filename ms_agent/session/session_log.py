@@ -60,6 +60,7 @@ class SessionLog:
         self._metadata: Optional[Dict[str, Any]] = None
         self._messages: Optional[List[Dict[str, Any]]] = None
         self._seq: int = 0
+        self._records: Optional[List[Dict[str, Any]]] = None
 
         self._ensure_metadata()
 
@@ -101,6 +102,57 @@ class SessionLog:
             **event,
         }
         self._append_line(record)
+
+    def records(self) -> List[Dict[str, Any]]:
+        from ms_agent.session.replay import read_records
+        if self._records is None:
+            self._records = read_records(self._path)
+        return self._records
+
+    def commit_compaction(self, messages: List[Dict[str, Any]],
+                          event: Dict[str, Any]) -> None:
+        """Publish a new context only after all of its records are durable."""
+        if not messages:
+            return
+        transaction = uuid.uuid4().hex
+        self.record_compaction({**event, 'transaction_id': transaction,
+                                'message_count': len(messages)})
+        try:
+            seqs = [self.append({
+                **{k: v for k, v in msg.items()
+                   if k not in ('seq', 'timestamp', '_compaction_id')},
+                '_source': 'compaction', '_compaction_id': transaction,
+            }) for msg in messages]
+            self._append_line({
+                '_type': 'compaction_commit', 'seq': self._next_seq(),
+                'transaction_id': transaction,
+                'context_start': seqs[0], 'context_end': seqs[-1],
+            })
+            self.last_consolidated = seqs[0]
+        finally:
+            self._messages = None
+
+    def record_turn_checkpoint(self, round: int, state: dict | None = None) -> None:
+        """Persist the successful reply before waiting for another user input."""
+        from ms_agent.session.replay import fork_points
+        points = fork_points(self.records(), require_checkpoint=False)
+        if not points:
+            return
+        point = points[-1]
+        if any(r.get('_type') == 'turn_checkpoint'
+               and r.get('assistant_seq') == point.assistant_seq for r in self.records()):
+            return
+        # Never checkpoint an earlier reply while the latest user turn is open.
+        original = [r for r in self.records() if r.get('role')
+                    and r.get('_source') != 'compaction']
+        if not original or original[-1].get('seq') != point.assistant_seq:
+            return
+        self._append_line({
+            '_type': 'turn_checkpoint', 'seq': self._next_seq(),
+            'status': 'completed', 'assistant_seq': point.assistant_seq,
+            'context_start': self.last_consolidated, 'round': round,
+            'state': state or {},
+        })
 
     def record_error(self, event: Dict[str, Any]) -> None:
         """Record an error event — a non-message, display-only marker.
@@ -196,7 +248,9 @@ class SessionLog:
 
     @property
     def last_consolidated(self) -> int:
-        return self._read_meta().get('last_consolidated', 0)
+        from ms_agent.session.replay import committed_records
+        _, start = committed_records(self.records())
+        return start if start is not None else self._read_meta().get('last_consolidated', 0)
 
     @last_consolidated.setter
     def last_consolidated(self, value: int) -> None:
@@ -230,41 +284,12 @@ class SessionLog:
         self._update_meta('round', value)
 
     def get_all_messages(self) -> List[Dict[str, Any]]:
-        """All messages (excluding metadata and compaction events)."""
+        """All messages, including committed compaction copies, without events."""
         if self._messages is not None:
             return self._messages
-        msgs: List[Dict[str, Any]] = []
-        if not self._path.exists():
-            self._messages = msgs
-            return msgs
-        for line in self._path.read_text(encoding='utf-8').splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if record.get('_type') == 'image_delivery':
-                # Not a message — a note about one. The turn's row is written
-                # before the request goes out, so what became of its images is
-                # only knowable afterwards; rather than rewriting an append-only
-                # log, the outcome arrives as its own record and is folded back
-                # onto the attachment here. Every reader downstream (context
-                # assembly, history replay) then sees it as an ordinary field
-                # and needs to know nothing about this.
-                _merge_image_delivery(msgs, record)
-                continue
-            if record.get('_type') in ('metadata', 'compaction_event', 'error',
-                                       'permission', 'skill_invocation',
-                                       'loop_end'):
-                continue
-            msgs.append(record)
+        from ms_agent.session.replay import context_messages
+        msgs = context_messages(self.records(), start=0)
         self._messages = msgs
-        # Update seq counter to be past the last message
-        if msgs:
-            max_seq = max(m.get('seq', 0) for m in msgs)
-            self._seq = max(self._seq, max_seq + 1)
         return msgs
 
     def record_image_delivery(self, entries: List[Dict[str, Any]]) -> None:
@@ -408,8 +433,9 @@ class SessionLog:
             'created_at': meta.get('created_at', ''),
             'title': meta.get('title', ''),
             'status': meta.get('status', 'idle'),
-            'last_consolidated': meta.get('last_consolidated', 0),
+            'last_consolidated': self.last_consolidated,
             'round': meta.get('round', 0),
+            'fork_after_seq': meta.get('fork_after_seq'),
             'message_count': len(all_msgs),
             'total_tokens': sum(m.get('tokens', 0) for m in all_msgs),
         }
@@ -426,6 +452,7 @@ class SessionLog:
         """Force re-read from disk on next access."""
         self._metadata = None
         self._messages = None
+        self._records = None
 
     # ------------------------------------------------------------------
     # Internals
@@ -452,6 +479,7 @@ class SessionLog:
             created_at = datetime.now(timezone.utc).isoformat()
             header = {
                 '_type': 'metadata',
+                'checkpoint_from_seq': 0,
                 'session_key': self.session_key,
                 'created_at': created_at,
             }
@@ -540,6 +568,7 @@ class SessionLog:
 
     def _append_line(self, record: Dict[str, Any]) -> None:
         """Append a single JSON line and flush."""
+        self._records = None
         with open(self._path, 'a', encoding='utf-8') as f:
             f.write(json.dumps(record, ensure_ascii=False) + '\n')
             f.flush()

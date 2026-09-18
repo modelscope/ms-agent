@@ -55,7 +55,18 @@ export interface Session {
   model_id?: string
 }
 
+export interface ForkOrigin {
+  session_id: string
+  project_id: string
+  title: string
+  assistant_seq: number
+  available: boolean
+}
+
 export interface SessionMessage {
+  log_seq?: number | null
+  fork_after_seq?: number | null
+  fork_origin?: ForkOrigin | null
   role: 'user' | 'assistant' | 'system'
   content: string
   // Ordered turn view-model rebuilt by the backend from the session log (mirrors

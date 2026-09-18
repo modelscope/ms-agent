@@ -475,6 +475,8 @@ class LLMAgent(Agent):
         """
         from ms_agent.prompting.builtin import (TRANSCRIPTS_INSIDE,
                                                 TRANSCRIPTS_OUTSIDE,
+                                                SESSION_PLAN_HINT,
+                                                FORK_PLAN_HINT,
                                                 WORKSPACE_RECORDS_HINT)
         from ms_agent.utils.workspace_context import resolve_workspace_root
 
@@ -517,8 +519,22 @@ class LLMAgent(Agent):
             transcripts_where = TRANSCRIPTS_OUTSIDE.format(
                 session_dir=str(Path(directory)))
 
-        return WORKSPACE_RECORDS_HINT.format(
+        section = WORKSPACE_RECORDS_HINT.format(
             transcripts_where=transcripts_where, home=home)
+        todo = getattr(getattr(self.config, 'tools', None), 'todo_list', None)
+        if todo is not None and not getattr(todo, 'mcp', False):
+            plan_json = getattr(todo, 'plan_filename', None)
+            plan_md = getattr(todo, 'plan_md_filename', None)
+            if plan_json and plan_md:
+                output_dir = str(getattr(self.config, 'output_dir', workspace_root))
+                section += '\n\n' + SESSION_PLAN_HINT.format(
+                    plan_json=os.path.abspath(os.path.join(output_dir, plan_json)),
+                    plan_md=os.path.abspath(os.path.join(output_dir, plan_md)))
+                get_metadata = getattr(
+                    getattr(self, 'session_log', None), 'get_metadata', None)
+                if get_metadata and get_metadata().get('fork_after_seq') is not None:
+                    section += ' ' + FORK_PLAN_HINT
+        return section
 
     def _check_skill_tool_dependencies(self):
         """Warn if skills are enabled but essential tools are missing."""
@@ -715,6 +731,7 @@ class LLMAgent(Agent):
                     if self._interactive:
                         self.callbacks.append(callbacks_mapping[_callback](
                             self.config,
+                            persist_context=self._persist_manual_compaction,
                             command_router=self._get_command_router(),
                             input_source=self._input_source,
                             event_sink=self._event_sink))
@@ -730,6 +747,7 @@ class LLMAgent(Agent):
             self.callbacks.append(
                 input_cls(
                     self.config,
+                    persist_context=self._persist_manual_compaction,
                     command_router=self._get_command_router(),
                     input_source=self._input_source,
                     event_sink=self._event_sink))
@@ -787,6 +805,9 @@ class LLMAgent(Agent):
 
         if would_stop:
             self.runtime.should_stop = True
+            if self.session_log is not None:
+                self.session_log.record_turn_checkpoint(
+                    self.runtime.round, self._checkpoint_state())
         await self.loop_callback('after_tool_call', messages)
 
     async def loop_callback(self, point, messages: List[Message]):
@@ -1808,6 +1829,22 @@ class LLMAgent(Agent):
             messages = await memory_tool.run(messages)
         return messages
 
+    def _persist_manual_compaction(self, messages: List[Message]) -> None:
+        if self.session_log is not None:
+            self.session_log.commit_compaction(
+                [self._msg_to_dict(m) for m in messages],
+                {'strategy': 'manual_tool_pruner',
+                 'boundary_before': self.session_log.last_consolidated})
+
+    def _checkpoint_state(self) -> dict:
+        state = {'active_model': self.session_log.active_model}
+        for name in ('prompt_surface', 'skill_surface'):
+            try:
+                state[name] = json.loads((self.session_log.directory / f'{name}.json').read_text())
+            except (OSError, ValueError):
+                pass
+        return state
+
     def _init_session_log(self) -> None:
         """Create SessionLog and ContextAssembler if session logging is enabled.
 
@@ -2696,7 +2733,7 @@ class LLMAgent(Agent):
             # Load history and restore state
             restored_from_log = False
             if self.session_log is not None:
-                restored = self.session_log.get_all_messages()
+                restored = self.session_log.get_visible_messages()
                 if restored and self.load_cache:
                     # Reuse the canonical dict->Message conversion so tool-use
                     # fields (tool_call_id, name) survive the round-trip.
@@ -2769,6 +2806,9 @@ class LLMAgent(Agent):
                     self.session_log.active_model = (
                         self._capability_signature())
 
+            resume_waiting = bool(restored_from_log and messages
+                                  and messages[-1].role == 'assistant'
+                                  and not messages[-1].tool_calls)
             for message in messages:
                 if message.role != 'system':
                     self.log_output('[' + message.role + ']:')
@@ -2777,7 +2817,8 @@ class LLMAgent(Agent):
                 # Rebuild context view from SessionLog (non-destructive
                 # compression). This is the canonical history for the round, so
                 # it must run before the per-round augmentations below.
-                if self.context_assembler is not None and self.runtime.round > 0:
+                if (not resume_waiting and self.context_assembler is not None
+                        and self.runtime.round > 0):
                     # Detect real compaction via last_consolidated advancing
                     # (assemble() only advances it when a strategy consolidated
                     # the window — see ContextAssembler.assemble).
@@ -2791,52 +2832,54 @@ class LLMAgent(Agent):
                         self._event_sink.emit(ContextCompacted())
 
                 messages = self._apply_pending_rollback(messages)
-                if self.task_manager is not None:
-                    notifications = self.task_manager.drain_notifications()
-                    if notifications:
-                        messages.append(
-                            Message(
-                                role='user', content='\n'.join(notifications)))
-                if self._skill_runtime:
-                    self._skill_runtime.maybe_refresh_system_prompt(messages)
-                messages = await self.condense_memory(messages)
-                # If assistant and tool content can be ignored, add memory earlier to reduce running time.
-                self._schedule_add_memory_after_task(
-                    messages, timestamp='early')
+                if not resume_waiting:
+                    if self.task_manager is not None:
+                        notifications = self.task_manager.drain_notifications()
+                        if notifications:
+                            messages.append(
+                                Message(
+                                    role='user', content='\n'.join(notifications)))
+                    if self._skill_runtime:
+                        self._skill_runtime.maybe_refresh_system_prompt(messages)
+                    messages = await self.condense_memory(messages)
+                    # If assistant and tool content can be ignored, add memory earlier to reduce running time.
+                    self._schedule_add_memory_after_task(
+                        messages, timestamp='early')
 
                 # Captured right before step() so only genuine step outputs are
                 # appended to the SessionLog (ephemeral injections are excluded).
                 pre_step_len = len(messages)
-                try:
-                    async for messages in self.step(messages):
-                        messages = self._apply_pending_rollback(messages)
-                        yield messages
-                except (asyncio.CancelledError, GeneratorExit):
-                    # The turn was interrupted mid-round (task cancelled, or the
-                    # consumer closed the generator). Round persistence below
-                    # never runs, so faithfully seal what this round produced —
-                    # partial assistant text/reasoning, validated tool_calls
-                    # plus synthesized interrupted tool results — before the
-                    # cancellation unwinds. Sync file I/O only; must re-raise.
-                    self._persist_partial_round(messages, pre_step_len)
-                    # An interrupted round is never ingested into long-term
-                    # memory: a half-finished answer is not durable
-                    # conversational truth. Advance the ingest ledger past it
-                    # (sync, in-memory + small file write) so the next turn's
-                    # delta does not sweep the partial content in either.
-                    # THIS ROUND ONLY -- the same slice `_persist_partial_round`
-                    # takes. Handing over the whole history would mark earlier
-                    # rounds as ingested too, including one a background ingest
-                    # is still writing (extraction takes seconds), which loses
-                    # it: the write finds an empty delta, or fails and is denied
-                    # its retry.
-                    for _mem_tool in self.memory_tools:
-                        if hasattr(_mem_tool, 'mark_ingested'):
-                            try:
-                                _mem_tool.mark_ingested(messages[pre_step_len:])
-                            except Exception:  # noqa: E722 - never mask cancel
-                                pass
-                    raise
+                if not resume_waiting:
+                    try:
+                        async for messages in self.step(messages):
+                            messages = self._apply_pending_rollback(messages)
+                            yield messages
+                    except (asyncio.CancelledError, GeneratorExit):
+                        # The turn was interrupted mid-round (task cancelled, or the
+                        # consumer closed the generator). Round persistence below
+                        # never runs, so faithfully seal what this round produced —
+                        # partial assistant text/reasoning, validated tool_calls
+                        # plus synthesized interrupted tool results — before the
+                        # cancellation unwinds. Sync file I/O only; must re-raise.
+                        self._persist_partial_round(messages, pre_step_len)
+                        # An interrupted round is never ingested into long-term
+                        # memory: a half-finished answer is not durable
+                        # conversational truth. Advance the ingest ledger past it
+                        # (sync, in-memory + small file write) so the next turn's
+                        # delta does not sweep the partial content in either.
+                        # THIS ROUND ONLY -- the same slice `_persist_partial_round`
+                        # takes. Handing over the whole history would mark earlier
+                        # rounds as ingested too, including one a background ingest
+                        # is still writing (extraction takes seconds), which loses
+                        # it: the write finds an empty delta, or fails and is denied
+                        # its retry.
+                        for _mem_tool in self.memory_tools:
+                            if hasattr(_mem_tool, 'mark_ingested'):
+                                try:
+                                    _mem_tool.mark_ingested(messages[pre_step_len:])
+                                except Exception:  # noqa: E722 - never mask cancel
+                                    pass
+                        raise
 
                 # Persist THIS round's step output (assistant + any tool
                 # messages) NOW — before after_tool_call below, whose interactive
@@ -2861,12 +2904,17 @@ class LLMAgent(Agent):
                 # ingesting every round made memory cost O(rounds x history):
                 # a 4-round tool-calling answer paid ~4 extraction-LLM calls
                 # where one covers it (the closing ingest sees the whole turn).
-                if (messages and messages[-1].role == 'assistant'
+                if (not resume_waiting and messages and messages[-1].role == 'assistant'
                         and not messages[-1].tool_calls):
                     await self.add_memory(
                         messages, add_type='add_after_step', **kwargs)
 
-                await self.after_tool_call(messages)
+                if resume_waiting:
+                    self.runtime.should_stop = True
+                    await self.loop_callback('after_tool_call', messages)
+                else:
+                    await self.after_tool_call(messages)
+                resume_waiting = False
                 # New user turn (interactive multi-turn): attach the durable
                 # augmentations BEFORE the slice below persists them — same
                 # semantics as the round-0 attach. Order: state notice first

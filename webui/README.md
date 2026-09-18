@@ -65,6 +65,22 @@ printed in the terminal. Press **Ctrl-C** to stop the service.
 3. Create a session, choose a model and enter your task. Attach files or images
    when relevant.
 
+## Branch a conversation
+
+Click **Branch** beside the copy button below a completed reply to
+continue in a new session, named `Original title (2)`, then `(3)`, and so on.
+The new session keeps the history through that reply, including tool results
+and saved summaries. A divider links back to the original conversation.
+
+You can branch from an earlier reply while the original session is still
+running. Interrupted or unfinished turns cannot be selected. The new session
+starts with the original session's selected model and an empty input box;
+opening it does not change your default model. The original input draft stays
+in that browser tab when you return, but is not saved across a page refresh.
+
+Sessions have independent histories and share the project's current files,
+settings and memory. Branching does not copy or roll back the workspace.
+
 ## Edit project files
 
 Open a project's workspace to create files or folders, rename entries in place,

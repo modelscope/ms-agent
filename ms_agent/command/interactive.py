@@ -41,7 +41,8 @@ class InteractiveSession:
                  router: CommandRouter,
                  source: str = 'cli',
                  input_source: Any = None,
-                 event_sink: Any = None) -> None:
+                 event_sink: Any = None,
+                 persist_context: Any = None) -> None:
         self._router = router
         self._source = source
         # Async InputSource (ms_agent.ui). Its awaitable read_prompt lets the
@@ -52,6 +53,7 @@ class InteractiveSession:
         # Notice so a TUI renders it on the same channel as everything else.
         # When None, plain print() is used (CLI).
         self._event_sink = event_sink
+        self._persist_context = persist_context
 
     def _take_attachments(self) -> List[Dict[str, Any]]:
         """Non-text parts the input source queued for the prompt just read.
@@ -121,6 +123,7 @@ class InteractiveSession:
                 source=self._source,
                 runtime=runtime,
                 extra={
+                    'persist_context': self._persist_context,
                     'router': self._router,
                     'messages': messages if messages is not None else [],
                 },
