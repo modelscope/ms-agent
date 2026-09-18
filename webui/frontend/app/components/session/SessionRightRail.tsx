@@ -25,6 +25,7 @@ import type { FolderTreeActions } from '~/components/common/FolderTree'
 import { IconButton } from '~/components/common/IconButton'
 import { api } from '~/lib/api'
 import { dispatchWorkspaceChanged, useOnWorkspaceChanged } from '~/lib/events'
+import { useSpin } from '~/lib/useSpin'
 import { collectDroppedFiles } from '~/lib/dropFiles'
 import { createWorkspaceEntry } from '~/lib/workspaceCreate'
 import {
@@ -268,7 +269,7 @@ export function SessionRightRail({
   const { t } = useT()
   const { message, modal } = App.useApp()
   const [files, setFiles] = useState<WorkspaceFile[] | null>(null)
-  const [refreshing, setRefreshing] = useState(false)
+  const [refreshing, spin] = useSpin()
   const [filter, setFilter] = useState('')
   // The entry being created: an inline row in the tree, named in place the way
   // an editor does it. null = nothing being created; '' is the workspace root,
@@ -362,16 +363,11 @@ export function SessionRightRail({
     }
   }, [])
 
-  const loadFiles = (spin = false) => {
-    if (spin) setRefreshing(true)
+  const loadFiles = () =>
     api
       .listWorkspaceFiles(project.id)
       .then(setFiles)
       .catch(() => setFiles([]))
-      .finally(() => {
-        if (spin) setRefreshing(false)
-      })
-  }
 
   // A project switch must not flash the previous project's tree (or keep its
   // selected file) while the new list loads — reset to the loading placeholder
@@ -441,8 +437,8 @@ export function SessionRightRail({
   }, [project.id, previewKind, dirty])
 
   // Cross-component sync: another view (e.g. project-edit modal) uploaded files.
-  // Wrapped so the event's optional `created` paths payload isn't mistaken for
-  // loadFiles' `spin` flag.
+  // Wrapped so the reload also re-reads the open file, and so the event's
+  // optional `created` paths payload isn't forwarded on as an argument.
   const reloadOnChange = useCallback(() => {
     loadFiles()
     void syncOpenFile()
@@ -1162,7 +1158,7 @@ export function SessionRightRail({
               variant="ghost"
               size="sm"
               disabled={refreshing}
-              onClick={() => loadFiles(true)}
+              onClick={() => spin(loadFiles)}
             />
           </Tooltip>
         </div>
@@ -1343,7 +1339,7 @@ export function SessionRightRail({
                       </Tooltip>
                     </div>
                   </div>
-                  <div className="min-h-0 flex-1">
+                  <div className="min-h-0 flex-1 flex flex-col">
                     {fileLoading ? (
                       <DeferredSkeleton rows={10} className="p-4" />
                     ) : previewKind === 'text' &&

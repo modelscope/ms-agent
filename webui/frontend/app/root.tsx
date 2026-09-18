@@ -8,6 +8,7 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  type ShouldRevalidateFunctionArgs,
   isRouteErrorResponse,
   redirect,
   useRouteError,
@@ -18,12 +19,12 @@ import './app.css'
 import { NProgressHandler } from '~/components/common/NProgressHandler'
 import { renderAntdEmpty } from '~/components/common/EmptyState'
 import { ErrorState } from '~/components/common/ErrorState'
-import { api, ApiError, orThrow, registerApiErrorReporter } from '~/lib/api'
+import { api, ApiError, describeFailure, orThrow, registerApiErrorReporter } from '~/lib/api'
 import { getAntdCssHref } from '~/lib/antdStyle.server'
 import { getDesignTokenStyleContent } from '~/lib/designTokens'
 import { SERVER_HOSTED_MODE } from '~/lib/env'
 import { LANG_COOKIE, dictFor, type Lang, LangProvider, useT } from '~/lib/i18n'
-import { getMsaAntdTheme, msaModalProps } from '~/lib/msaTheme'
+import { getMsaAntdTheme, msaDrawerProps, msaModalProps } from '~/lib/msaTheme'
 import {
   SCROLLBAR_WIDTH_SCRIPT,
   useScrollbarWidthVar
@@ -97,10 +98,23 @@ export async function loader({ request }: { request: Request }) {
       ? langRaw
       : (langFromAcceptLanguage(request.headers.get('Accept-Language') || '') ??
         'en')
+  // URL query overrides — `?__theme=…&__language=…` force a theme/language for
+  // THIS load only. Read here so SSR paints the forced value with no flash. Not
+  // persisted: the providers write cookies only on an explicit in-app change, so
+  // a reload without the query falls straight back to the cookie.
+  const url = new URL(request.url)
+  const themeQuery = url.searchParams.get('__theme')
+  const langQuery = url.searchParams.get('__language')
+  const forcedPref: ThemePref =
+    themeQuery === 'dark' || themeQuery === 'light' || themeQuery === 'system'
+      ? themeQuery
+      : initialPref
+  const forcedLang: Lang =
+    langQuery === 'zh' || langQuery === 'en' ? langQuery : initialLang
   return {
-    initialPref,
+    initialPref: forcedPref,
     initialSystemTheme,
-    initialLang,
+    initialLang: forcedLang,
     // Sent through the loader because the constant is `false` in the browser (the
     // client build has no `process.env`); this is what makes the value available
     // to components, via `useHosted()`. Declared in `lib/env.ts`.
@@ -109,6 +123,26 @@ export async function loader({ request }: { request: Request }) {
     // ever emitted at render time — the pre-baked file is it.
     antdCssHref: getAntdCssHref()
   } satisfies RootData
+}
+
+// The `__theme`/`__language` overrides above live only in the URL of the FIRST
+// load — later in-app navigations drop them. Re-running this loader on a route
+// change would therefore re-derive theme/language from the cookie and revert
+// `<html class lang>` (which binds to this loader's data) while the providers
+// still hold the forced values, tearing the theme in half. Refuse pure route
+// changes so the initial (forced) values stand for the whole session; an
+// explicit `revalidate()` (same URL) and non-GET submissions still pass.
+export function shouldRevalidate({
+  currentUrl,
+  nextUrl,
+  formMethod,
+  defaultShouldRevalidate
+}: ShouldRevalidateFunctionArgs) {
+  if (formMethod && formMethod.toUpperCase() !== 'GET') {
+    return defaultShouldRevalidate
+  }
+  if (currentUrl.href === nextUrl.href) return defaultShouldRevalidate
+  return false
 }
 
 /** Universal title fallback: any route without its own `meta` (e.g. a
@@ -214,6 +248,7 @@ function ThemedRoot({ children }: { children: React.ReactNode }) {
         locale={antdLocale}
         theme={getMsaAntdTheme(theme)}
         modal={msaModalProps}
+        drawer={msaDrawerProps}
         // Every antd data component falls back to its own "No data" illustration
         // when the call site names no empty content; this replaces all of them
         // with the project's, so a new Select or Table is themed by default
@@ -237,29 +272,18 @@ function ApiErrorBridge() {
   const { message } = AntdApp.useApp()
   const { t } = useT()
   useEffect(() => {
-    registerApiErrorReporter((msg: string, err: ApiError) => {
-      // No message means the failure was not reported by our backend at all —
-      // something in FRONT of it answered (a proxy/gateway 502, an upstream
-      // 504) with a body carrying no envelope. Naming the number keeps a burst
-      // of such toasts distinguishable and reportable instead of an
-      // indistinguishable wall of "Request failed".
-      // `code`, not `status`: the two are equal for a transport failure, but a
-      // rejection the body declares itself (readFailure) can arrive with a 2xx
-      // status, and only `code` then holds the real one.
-      // The reason phrase is appended when there is one, since it is the only
-      // words such a failure carries — absent over HTTP/2, hence the bare-code
-      // fallback. It pairs with `status` ONLY: for the 200-OK-with-code-400 case
-      // above, "400 OK" would describe neither half truthfully.
-      const detail =
-        err.code === err.status && err.statusText
-          ? `${err.status} ${err.statusText}`
-          : String(err.code)
-      const text = msg
-        ? msg
-        : err.status === 0
-          ? t.errors.network
-          : `${t.errors.requestFailed}: ${detail}`
-      message.error(text)
+    registerApiErrorReporter((_msg: string, err: ApiError) => {
+      // One toast for every failed request. `describeFailure` composes the text:
+      // the backend's own message when it sent one, otherwise the status first
+      // (`502 Bad Gateway`) and a server-vs-client headline second. The chat
+      // stream reuses the same helper so a failure reads identically there.
+      message.error(
+        describeFailure(err, {
+          server: t.errors.server,
+          requestFailed: t.errors.requestFailed,
+          network: t.errors.network
+        })
+      )
     })
     return () => registerApiErrorReporter(null)
   }, [message, t])
@@ -292,9 +316,12 @@ export function ErrorBoundary() {
       ? error.message
       : String(error ?? '')
   // Some failures carry no words at all (backend never answered, or an empty
-  // gateway body), which left the headline over an empty paragraph.
+  // gateway body), which left the headline over an empty paragraph. A 5xx is a
+  // server-side fault, so it falls back to the server error, not "check your
+  // connection" (the user's network is not the problem).
   const description =
-    reported || (status === 502 ? t.errors.network : t.errors.requestFailed)
+    reported ||
+    (status && status >= 500 ? t.errors.server : t.errors.requestFailed)
 
   return (
     <ErrorState

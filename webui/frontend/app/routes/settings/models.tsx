@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router'
 import { AddProviderModal } from '~/components/models/AddProviderModal'
 import { ModelEditModal } from '~/components/models/ModelEditModal'
 import { ProviderTags } from '~/components/models/ProviderTags'
+import { ProviderLogo } from '~/components/models/ProviderLogo'
 import { EmptyState, EmptyStateAction } from '~/components/common/EmptyState'
 import { KeyStatusTag } from '~/components/common/KeyStatus'
 import { DeferredSkeleton } from '~/components/common/DeferredSkeleton'
@@ -53,6 +54,10 @@ export default function ModelsSettings() {
   // the select popup outranks the modal mask, and would otherwise float on top
   // of the dialog it just opened.
   const [defaultModelOpen, setDefaultModelOpen] = useState(false)
+  // Native drag-to-reorder of the provider list. `dragId` is the row being
+  // dragged, `dropId` the row it is hovering over (for the insertion hint).
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dropId, setDropId] = useState<string | null>(null)
 
   const refresh = () =>
     Promise.all([api.listProviders(), api.listModels(), api.getAgentSettings()])
@@ -101,6 +106,20 @@ export default function ModelsSettings() {
     if (!settings) return
     const next = await api.putAgentSettings(patch)
     setSettings(next)
+  }
+
+  // Move `fromId` to `toId`'s slot and persist the whole list. Optimistic: the
+  // new order shows at once and a failed save reloads the server's order back.
+  const commitReorder = (fromId: string, toId: string) => {
+    if (!providers || fromId === toId) return
+    const from = providers.findIndex((p) => p.id === fromId)
+    const to = providers.findIndex((p) => p.id === toId)
+    if (from === -1 || to === -1 || from === to) return
+    const next = [...providers]
+    const [moved] = next.splice(from, 1)
+    next.splice(to, 0, moved)
+    setProviders(next)
+    api.reorderProviders(next.map((p) => p.id)).catch(() => refresh())
   }
 
   const selectDefaultProvider = (providerId: string) => {
@@ -167,16 +186,26 @@ export default function ModelsSettings() {
                 label: p.name,
                 disabled: !p.enabled
               }))}
-              // The closed box shows the name alone; the tags (built-in pill,
+              // The closed box shows the logo + name; the tags (built-in pill,
               // key glyph) ride the dropdown OPTIONS, where the user is choosing
-              // and the "is this ready to use" signal actually helps. Looked up
-              // by id because the option only carries value + label. The name
-              // span does NOT grow (no flex-1) so the tags hug the text; it only
-              // shrinks + truncates when the name is too long to fit.
+              // and the "is this ready to use" signal actually helps. Both are
+              // looked up by id because the option only carries value + label.
+              // The name span does NOT grow (no flex-1) so the tags hug the
+              // text; it only shrinks + truncates when the name is too long.
+              labelRender={(props) => {
+                const p = (providers ?? []).find((x) => x.id === props.value)
+                return (
+                  <span className="flex items-center gap-2">
+                    {p && <ProviderLogo provider={p} size={18} />}
+                    <span className="min-w-0 truncate">{props.label}</span>
+                  </span>
+                )
+              }}
               optionRender={(option) => {
                 const p = (providers ?? []).find((x) => x.id === option.value)
                 return (
                   <div className="flex items-center gap-2">
+                    {p && <ProviderLogo provider={p} size={18} />}
                     <span className="min-w-0 truncate">{option.label}</span>
                     {p && <ProviderTags provider={p} />}
                   </div>
@@ -264,19 +293,53 @@ export default function ModelsSettings() {
                   <button
                     key={p.id}
                     type="button"
+                    draggable
+                    onDragStart={(e) => {
+                      setDragId(p.id)
+                      e.dataTransfer.effectAllowed = 'move'
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault()
+                      e.dataTransfer.dropEffect = 'move'
+                      if (dragId && dragId !== p.id) setDropId(p.id)
+                    }}
+                    onDragLeave={() =>
+                      setDropId((cur) => (cur === p.id ? null : cur))
+                    }
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      if (dragId) commitReorder(dragId, p.id)
+                      setDragId(null)
+                      setDropId(null)
+                    }}
+                    onDragEnd={() => {
+                      setDragId(null)
+                      setDropId(null)
+                    }}
                     // Long display names truncate visually; the tooltip surfaces
                     // the full text on hover so a clipped label never becomes a
                     // guess. Same pattern as the ModelSelector row.
                     title={p.name}
                     onClick={() => setActiveProviderId(p.id)}
-                    className={`flex w-full cursor-pointer items-center gap-2 rounded-[10px] border-0 px-3.5 py-3 text-left text-sm font-medium transition-all ${
+                    className={`group flex w-full cursor-pointer items-center gap-2 rounded-[10px] border-0 px-3.5 py-3 text-left text-sm font-medium transition-all ${
+                      dropId === p.id && dragId !== p.id
+                        ? 'ring-2 ring-inset ring-msa-purple-6/50 '
+                        : ''
+                    }${dragId === p.id ? 'opacity-40 ' : ''}${
                       activeProviderId === p.id
                         ? 'bg-msa-fill-2 text-msa-text-1'
                         : 'bg-transparent text-msa-text-1 hover:bg-msa-fill-2'
                     }`}
                   >
+                    <ProviderLogo provider={p} size={22} />
                     <span className="min-w-0 truncate">{p.name}</span>
                     <ProviderTags provider={p} />
+                    {/* Drag handle rides the RIGHT edge (ml-auto), same as the
+                        ModelSelector row's jump arrow. On the left it reserved
+                        its width even while invisible, indenting every row's
+                        logo/name; the whole button is draggable anyway, so this
+                        is only a hover hint. */}
+                    <GripIcon className="ml-auto h-4 w-4 shrink-0 cursor-grab text-msa-text-3 opacity-0 transition-opacity group-hover:opacity-60 active:cursor-grabbing" />
                   </button>
                 ))
               )}
@@ -378,6 +441,24 @@ export default function ModelsSettings() {
   )
 }
 
+function GripIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden
+    >
+      <circle cx="9" cy="6" r="1.5" />
+      <circle cx="15" cy="6" r="1.5" />
+      <circle cx="9" cy="12" r="1.5" />
+      <circle cx="15" cy="12" r="1.5" />
+      <circle cx="9" cy="18" r="1.5" />
+      <circle cx="15" cy="18" r="1.5" />
+    </svg>
+  )
+}
+
 function ProviderDetail({
   provider,
   models,
@@ -405,6 +486,7 @@ function ProviderDetail({
     <div className="flex h-full min-h-0 flex-col overflow-y-auto">
       {/* Provider header */}
       <div className="mb-3 flex items-center gap-3">
+        <ProviderLogo provider={provider} size={36} />
         <div
           className="min-w-0 flex-1 truncate text-lg font-semibold text-msa-text-1"
           // Same tooltip pattern as the left rail: a truncated title without a

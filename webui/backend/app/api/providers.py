@@ -1,7 +1,12 @@
 from fastapi import APIRouter, HTTPException
 
 from app.core.envelope import EnvelopeRoute
-from app.schemas.provider import Provider, ProviderCreate, ProviderUpdate
+from app.schemas.provider import (
+    Provider,
+    ProviderCreate,
+    ProviderOrder,
+    ProviderUpdate,
+)
 
 router = APIRouter(prefix="/api/providers", tags=["providers"],
                    route_class=EnvelopeRoute)
@@ -19,6 +24,15 @@ def create_provider(body: ProviderCreate) -> Provider:
     from app.backends.ms_agent import providers
 
     return providers.create_provider(body)
+
+
+# Declared before the ``/{provider_id}`` routes so its literal path is matched
+# first (belt-and-braces — the method differs from those routes anyway).
+@router.put("/order")
+def reorder_providers(body: ProviderOrder) -> list[Provider]:
+    from app.backends.ms_agent import providers
+
+    return providers.reorder_providers(body.order)
 
 
 @router.get("/{provider_id}")

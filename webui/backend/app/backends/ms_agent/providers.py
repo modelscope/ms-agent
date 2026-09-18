@@ -49,6 +49,32 @@ def _default_name(pid: str) -> str:
     return (spec.display_name or spec.name) if spec else pid
 
 
+# User-defined display order, kept in the WebUI sidecar (its own section so a
+# provider id can never collide with a real key). Own isolated store because it
+# spans both built-ins (read-only registry) and customs (settings.json).
+_ORDER_SECTION = "ordering"
+_ORDER_KEY = "providers"
+
+
+def _saved_order() -> list[str]:
+    val = sidecar.get(_ORDER_SECTION, _ORDER_KEY, [])
+    return [str(x) for x in val] if isinstance(val, list) else []
+
+
+def _write_order(ids: list[str]) -> None:
+    sidecar.put(_ORDER_SECTION, _ORDER_KEY, ids)
+
+
+def _apply_order(rows: list[Provider]) -> list[Provider]:
+    """Sort by the saved order overlay: ids listed there lead, in that order;
+    anything unlisted keeps its default position after them (stable sort)."""
+    order = _saved_order()
+    if not order:
+        return rows
+    rank = {pid: i for i, pid in enumerate(order)}
+    return sorted(rows, key=lambda p: rank.get(p.id, len(order)))
+
+
 def list_providers() -> list[Provider]:
     with settings_lock():
         custom = _msm().list_custom_providers()
@@ -58,7 +84,7 @@ def list_providers() -> list[Provider]:
         custom_provider_to_schema(pid, entry) for pid, entry in custom.items()
         if pid not in builtin_ids
     ]
-    return out
+    return _apply_order(out)
 
 
 def get_provider(pid: str) -> Provider:
@@ -92,6 +118,8 @@ def create_provider(body: ProviderCreate) -> Provider:
             body.id,
             {"default_generation_params": body.default_generation_params},
         )
+    # Newly added providers surface at the very top of the list.
+    _write_order([body.id, *(x for x in _saved_order() if x != body.id)])
     return custom_provider_to_schema(body.id, custom)
 
 
@@ -156,6 +184,25 @@ def delete_provider(pid: str) -> None:
     for name in model_names:
         sidecar.drop("models", encode_model_id(pid, name))
     sidecar.drop("providers", pid)
+    order = _saved_order()
+    if pid in order:
+        _write_order([x for x in order if x != pid])
+
+
+def reorder_providers(order: list[str]) -> list[Provider]:
+    """Persist a user-chosen display order. Only known ids are kept (dropping
+    duplicates and any that vanished in a concurrent delete); ids left out fall
+    back to their default position behind the listed ones."""
+    with settings_lock():
+        known = _builtin_ids() | set(_msm().list_custom_providers())
+    seen: set[str] = set()
+    clean: list[str] = []
+    for pid in order:
+        if pid in known and pid not in seen:
+            seen.add(pid)
+            clean.append(pid)
+    _write_order(clean)
+    return list_providers()
 
 
 def get_provider_secret(pid: str) -> tuple[str, str, str]:

@@ -847,12 +847,15 @@ export function Composer({
         // instead of being hoisted into its own section above a divider.
         ...projects.map((p) => ({
           key: p.id,
-          icon: <FolderIcon className="h-5 w-5" />,
+          icon: <FolderIcon className="h-4 w-4" />,
           // Capped + truncated: an antd menu sizes itself to its widest row, so
           // one long project name stretched the whole panel past the viewport.
           // The full name stays reachable via the row's native tooltip.
           label: (
-            <span className="block max-w-[240px] truncate" title={p.name}>
+            <span
+              className="block max-w-[240px] text-xs truncate"
+              title={p.name}
+            >
               {p.name}
             </span>
           ),
@@ -861,11 +864,11 @@ export function Composer({
             onProjectChange?.(p.id)
           }
         })),
-        { type: 'divider' as const },
+        ...(projects.length > 0 ? [{ type: 'divider' as const }] : []),
         {
           key: '__create__',
-          icon: <AddIcon className="h-5 w-5" />,
-          label: t.home.createProject,
+          icon: <AddIcon className="h-4 w-4" />,
+          label: <span className="text-xs">{t.home.createProject}</span>,
           onClick: () => setCreateOpen(true)
         }
       ]
@@ -1102,7 +1105,7 @@ export function Composer({
                 >
                   <span className="min-w-0 truncate">{pickerLabel}</span>
                   <CaretDownIcon
-                    className={`ml-1 h-[7px] w-[7px] shrink-0 transition-transform duration-200 ${
+                    className={`ml-1 h-2.25 w-2.25 shrink-0 transition-transform duration-200 ${
                       projectMenuOpen ? 'rotate-180' : ''
                     }`}
                   />
@@ -1275,7 +1278,7 @@ export function Composer({
                     // rather than the viewport — the composer can be narrow while
                     // the viewport stays wide (e.g. a detail rail is open), where a
                     // viewport-relative rule overflows or wraps.
-                    <div className="@container relative flex items-center justify-between gap-2 pt-3">
+                    <div className="@container relative flex items-center justify-between gap-[32px] pt-3">
                       {/* Left: pills. Collapsed behind a toggle while the footer
                           is narrower than the row needs, inline above that.
 
@@ -1286,11 +1289,13 @@ export function Composer({
                           viewport, so keep the pills inline" and let them wrap into
                           three rows there.
 
-                          600px is what one row costs: the four standing pills come
-                          to ~510px with a long model name (PillButton caps each at
-                          240px) plus ~90px for the attach/send cluster. A session
-                          can carry two more pills, so this is the common case, not a
-                          guarantee.
+                          550px is the threshold: the four standing pills plus the
+                          ~90px attach/send cluster fit inline in a fairly narrow
+                          column, so opening the workspace panel (which splits the
+                          chat column) no longer collapses them into the toggle right
+                          away. Above it the pills shrink to one line; below it
+                          collapses to the scroll row. A session can carry two more
+                          pills, so this is the common case, not a guarantee.
 
                           Visibility is CSS-driven so the first paint is correct with
                           no SSR/hydration flash. When expanded on a narrow footer
@@ -1306,41 +1311,32 @@ export function Composer({
                           transcript. One line can never do that, whatever the pill
                           count or label length.
 
-                          `flex-wrap` is declared per branch instead of on the base:
-                          it and `flex-nowrap` are the same utility group, so keeping
-                          both here would let stylesheet order — not this class
-                          list — decide the winner. */}
+                          Pills never wrap: `flex-nowrap` plus `min-w-0` on every
+                          wrapper let an over-long row shrink each pill to its
+                          `min-w-24` floor and truncate the label instead of spilling
+                          onto a second line. */}
                       <div
                         ref={pillsRef}
                         className={`flex items-center gap-2.5 ${
                           pillsExpanded
-                            ? 'absolute inset-x-0 bottom-0 z-10 flex-nowrap overflow-x-auto bg-msa-bg-1 pt-3 @min-[600px]:static @min-[600px]:flex-wrap @min-[600px]:overflow-x-visible @min-[600px]:bg-transparent @min-[600px]:pt-0'
-                            : 'flex-wrap'
+                            ? 'absolute inset-x-0 bottom-0 z-10 min-w-0 flex-nowrap overflow-x-auto bg-msa-bg-1 pt-3 @min-[550px]:static @min-[550px]:overflow-x-visible @min-[550px]:bg-transparent @min-[550px]:pt-0'
+                            : 'min-w-0 flex-nowrap'
                         }`}
                       >
                         {/* Toggle button: shown only while collapsed */}
                         {!pillsExpanded && (
                           <IconButton
-                            className="@min-[600px]:hidden"
+                            className="@min-[550px]:hidden"
                             icon={<MoreIcon className="h-5 w-5" />}
                             onClick={() => setPillsExpanded(true)}
                           />
                         )}
 
-                        {/* Pills: hidden on a narrow footer unless expanded, always
-                            inline above the threshold.
-                            `w-max` + `shrink-0` are what make the strip above
-                            scrollable rather than squashed: PillButton carries
-                            `min-w-0`, so inside a nowrap line the pills would
-                            otherwise all compress to a few unreadable characters
-                            instead of overflowing. Sizing this row to its content
-                            leaves the line exactly full, so each pill keeps the
-                            width its own `max-w` cap gives it. */}
                         <div
                           className={`flex items-center gap-2.5 ${
                             pillsExpanded
-                              ? 'w-max shrink-0 flex-nowrap @min-[600px]:w-auto @min-[600px]:flex-wrap'
-                              : 'hidden flex-wrap @min-[600px]:flex'
+                              ? 'w-max shrink-0 min-w-0 flex-nowrap @min-[550px]:w-auto @min-[550px]:shrink'
+                              : 'hidden min-w-0 flex-nowrap @min-[550px]:flex'
                           }`}
                         >
                           {/* Model pill */}
@@ -1402,11 +1398,10 @@ export function Composer({
 
                           {/* Search-not-configured hint: only when search is on
                               but its provider has no key. Uses PillButton (not a
-                              hand-rolled button) so the background, padding,
-                              height and label truncation match the selector
-                              pills exactly — copying its classes by hand drifted
-                              on all four. `caret={false}`: it navigates rather
-                              than opening a panel. */}
+                              hand-rolled button) so the background, padding and
+                              height match the selector pills exactly — copying its
+                              classes by hand drifted on all of them. `caret={false}`:
+                              it navigates rather than opening a panel. */}
                           {searchNeedsKey && (
                             <Tooltip title={t.home.searchUnconfiguredTip}>
                               <PillButton
@@ -1423,7 +1418,7 @@ export function Composer({
                       </div>
 
                       {/* Right: attach + send */}
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-4">
                         {attachable && (
                           <>
                             <input

@@ -36,7 +36,7 @@
     "collapse": "Collapse",
     "poweredBy": "Powered by",
     "github": "MS-Agent on GitHub",
-    "recentEmpty": "No chats yet — click \"New chat\" above to start."
+    "projectsEmpty": "No projects yet"
   },
   "sidebar": {
     "editProject": "Edit project",
@@ -55,7 +55,7 @@
     "confirmDeleteSession": "Are you sure you want to delete this session? This action cannot be undone.",
     "confirmOk": "Delete",
     "confirmCancel": "Cancel",
-    "noSessions": "No chats yet — start one!",
+    "noSessions": "No chats in this project yet",
     "unreadSession": "Finished while you were away — open to read",
     "unreadProject": "Has finished chats you haven't opened"
   },
@@ -523,6 +523,7 @@
   },
   "errors": {
     "requestFailed": "Request failed",
+    "server": "Server error — please try again later",
     "network": "Network error — please check your connection",
     "unexpected": "Something went wrong",
     "backHome": "Back to home"

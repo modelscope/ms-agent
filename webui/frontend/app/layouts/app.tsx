@@ -226,7 +226,15 @@ export default function AppLayout() {
           />
         </Drawer>
 
-        <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-[10px]">
+        {/* `md:pl-0`: on desktop the sidebar already supplies the left gutter
+            (16px around the collapsed rail's cards, 12px in expanded mode), so
+            keeping main's own 10px there would stack on top of it and push the
+            content ~10px further from the sidebar than the rail's outer gutter —
+            the asymmetry you'd read as "the right side is wider". Dropping it
+            lets that single sidebar gutter be the content's left inset. Mobile
+            keeps the full padding: there is no sidebar (drawer), and the toggle
+            below lives inside this padding. */}
+        <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-[10px] md:pl-0">
           {/* Mobile sidebar toggle — opens the drawer (small screens only) */}
           <IconButton
             variant="filled"

@@ -25,7 +25,6 @@ interface Props {
 
 type ViewMode = 'preview' | 'code'
 
-
 /** Build a FolderTree data set from the backend's flat relative-path list.
  * Keys follow the FolderTree convention (`dir:<path>` / `file:<path>`) so the
  * tree infers icons itself. Directories first, then files, both sorted. */
@@ -233,7 +232,7 @@ export function SkillDetailDrawer({
                 />
               )}
             </header>
-            <div className="min-h-0 flex-1 overflow-auto">
+            <div className="min-h-0 flex-1 flex flex-col">
               {isLoading ? (
                 <DeferredSkeleton rows={8} className="px-4 py-4" />
               ) : isBinary ? (
@@ -241,7 +240,7 @@ export function SkillDetailDrawer({
                   {t.skillDetail.binaryFile}
                 </div>
               ) : docKind === 'markdown' && viewMode === 'preview' ? (
-                <div className="px-4 py-4 h-full">
+                <div className="px-4 py-4 h-full overflow-auto">
                   <Markdown
                     content={body ?? ''}
                     frontmatter

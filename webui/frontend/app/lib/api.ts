@@ -80,6 +80,26 @@ export class ApiError extends Error {
   }
 }
 
+/** User-facing text for a failed request: the backend's own message when it
+ * sent one, otherwise the HTTP status first (`502 Bad Gateway`) and a
+ * server-vs-client headline second. `code` — not `status` — picks both the
+ * headline and the bare-number detail, since a gateway rejection can arrive
+ * with a 2xx status while `code` holds the real one. Shared by the REST toast
+ * bridge and the chat-stream paths so a failure reads the same everywhere. */
+export function describeFailure(
+  err: ApiError,
+  s: { server: string; requestFailed: string; network: string }
+): string {
+  if (err.message) return err.message
+  if (err.status === 0) return s.network
+  const detail =
+    err.code === err.status && err.statusText
+      ? `${err.status} ${err.statusText}`
+      : String(err.code)
+  const headline = err.code >= 500 ? s.server : s.requestFailed
+  return `${detail}: ${headline}`
+}
+
 // Global error reporter, registered once in the browser by the app shell (see
 // root.tsx). Lets the API layer surface a single, consistent toast for every
 // failed request without each call site repeating `message.error(...)`. Stays
@@ -607,6 +627,11 @@ export const api = {
     }),
   deleteProvider: (id: string) =>
     json<void>(`/api/providers/${pid(id)}`, { method: 'DELETE' }),
+  reorderProviders: (order: string[]) =>
+    json<Provider[]>('/api/providers/order', {
+      method: 'PUT',
+      body: JSON.stringify({ order })
+    }),
   listProviderModels: (id: string, opts?: ApiCallOpts) =>
     json<string[]>(
       `/api/providers/${pid(id)}/available-models`,
