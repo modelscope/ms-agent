@@ -289,11 +289,19 @@ function ApiErrorBridge() {
         err.code === err.status && err.statusText
           ? `${err.status} ${err.statusText}`
           : String(err.code)
+      // A 5xx (or a gateway answering for an unreachable backend, e.g. 502/504)
+      // is a server-side fault, so "request failed" — which reads as the caller's
+      // mistake — understates it; name it a server error instead. `code` holds
+      // the real number for a body-declared rejection carrying a 2xx status.
+      const headline =
+        err.code >= 500 ? t.errors.server : t.errors.requestFailed
+      // Status first, explanation second (`502 Bad Gateway: server error…`): the
+      // number locates the failure at a glance, the phrase says whose fault it is.
       const text = msg
         ? msg
         : err.status === 0
           ? t.errors.network
-          : `${t.errors.requestFailed}: ${detail}`
+          : `${detail}: ${headline}`
       message.error(text)
     })
     return () => registerApiErrorReporter(null)
@@ -327,9 +335,12 @@ export function ErrorBoundary() {
       ? error.message
       : String(error ?? '')
   // Some failures carry no words at all (backend never answered, or an empty
-  // gateway body), which left the headline over an empty paragraph.
+  // gateway body), which left the headline over an empty paragraph. A 5xx is a
+  // server-side fault, so it falls back to the server error, not "check your
+  // connection" (the user's network is not the problem).
   const description =
-    reported || (status === 502 ? t.errors.network : t.errors.requestFailed)
+    reported ||
+    (status && status >= 500 ? t.errors.server : t.errors.requestFailed)
 
   return (
     <ErrorState

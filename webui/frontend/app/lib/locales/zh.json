@@ -523,6 +523,7 @@
   },
   "errors": {
     "requestFailed": "请求失败",
+    "server": "服务器出错了，请稍后重试",
     "network": "网络错误，请检查您的网络连接",
     "unexpected": "出错了",
     "backHome": "回到首页"

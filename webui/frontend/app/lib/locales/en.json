@@ -523,6 +523,7 @@
   },
   "errors": {
     "requestFailed": "Request failed",
+    "server": "Server error — please try again later",
     "network": "Network error — please check your connection",
     "unexpected": "Something went wrong",
     "backHome": "Back to home"
