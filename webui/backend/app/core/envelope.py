@@ -41,6 +41,28 @@ def error_response(status_code: int, message: str, *,
     )
 
 
+_CHANGE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+# Successful writes under these prefixes must NOT broadcast: the presence poll
+# would feed back into itself (every browser would refresh on every heartbeat),
+# the chat stream/control own their own SSE, and recovery runs before the app is
+# even usable. Everything else that mutates state notifies the open pages.
+_NO_BROADCAST_PREFIXES = ("/api/presence", "/api/chat", "/api/recovery", "/api/events")
+
+
+def _broadcast_change(request: Request, status: int) -> None:
+    """Announce a successful management write so every open page can refresh.
+    Carries the path and method; the frontend maps them to the lists to reload."""
+    if request.method not in _CHANGE_METHODS or not (200 <= status < 300):
+        return
+    path = request.url.path
+    if any(path.startswith(p) for p in _NO_BROADCAST_PREFIXES):
+        return
+    # Imported lazily so this core module stays free of app-package import order
+    # concerns; publishing never blocks or raises.
+    from app.core.events import event_bus
+    event_bus.publish({"path": path, "method": request.method})
+
+
 class EnvelopeRoute(APIRoute):
     """Wraps a route's serialized success payload into the standard envelope.
 
@@ -68,6 +90,7 @@ class EnvelopeRoute(APIRoute):
             # Preserve the RESTful status code (e.g. 201 Created). A 204 becomes
             # 200 since the envelope now carries a body.
             status = 200 if response.status_code == 204 else response.status_code
+            _broadcast_change(request, status)
             return success_response(data, status_code=status)
 
         return custom

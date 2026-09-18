@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import (
     agent_settings,
     chat,
+    events,
     instructions,
     mcps,
     memory,
@@ -88,6 +89,7 @@ def create_app() -> FastAPI:
             skill_index.stop()
 
     app.include_router(chat.router)
+    app.include_router(events.router)
     app.include_router(presence.router)
     app.include_router(projects.router)
     app.include_router(sessions.router)
