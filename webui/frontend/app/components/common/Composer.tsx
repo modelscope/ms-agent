@@ -14,6 +14,8 @@ import { useModelChanged } from '~/lib/modelChanged'
 import {
   useOnMcpSkillChanged,
   useOnModelsChanged,
+  useOnProjectSettingsChanged,
+  useOnProjectsChanged,
   dispatchWorkspaceChanged
 } from '~/lib/events'
 import type { ChatFileRef } from '~/lib/agentProvider'
@@ -322,6 +324,30 @@ export function Composer({
       .catch(() => {})
   }, [])
   useOnModelsChanged(refreshModels)
+
+  // Web-search config is edited on Settings → Search and can arrive via an
+  // external API call; both relay as a project-settings change. The pill seeds
+  // from the loader once at mount, so without this a toggle elsewhere never
+  // reflects here until the Composer remounts.
+  const refreshSearchSettings = useCallback(() => {
+    api
+      .getSearchSettings()
+      .then(setSearchSettings)
+      .catch(() => {})
+  }, [])
+  useOnProjectSettingsChanged(refreshSearchSettings)
+
+  // The picker seeds its project list from the loader once at mount; a project
+  // added, renamed or removed elsewhere (or by an external API call) reaches it
+  // through this event. Only meaningful when the picker is shown (homepage).
+  const refreshProjects = useCallback(() => {
+    if (!hasProjectPicker) return
+    api
+      .listProjects()
+      .then(setProjects)
+      .catch(() => {})
+  }, [hasProjectPicker])
+  useOnProjectsChanged(refreshProjects)
 
   const mergedMcps = useMemo(
     () => [...globalMcps, ...projectMcps],

@@ -5,6 +5,7 @@ import { CardSkeletonGrid } from '~/components/common/CardSkeletonGrid'
 import { EmptyState, EmptyStateAction } from '~/components/common/EmptyState'
 import { MsaSwitch } from '~/components/common/MsaSwitch'
 import { api } from '~/lib/api'
+import { useOnMcpSkillChanged } from '~/lib/events'
 import { useT } from '~/lib/i18n'
 import type { Scope, Skill } from '~/lib/types'
 import { SkillCard } from './SkillCard'
@@ -52,6 +53,10 @@ export function SkillsPanel({
     setPage(1)
     refresh()
   }, [activeScope])
+
+  // Refresh when the set changes elsewhere (e.g. an external API call relayed by
+  // the server-event bridge).
+  useOnMcpSkillChanged(refresh)
 
   return (
     <div className="flex h-full min-h-0 flex-col">

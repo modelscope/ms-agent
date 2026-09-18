@@ -167,3 +167,25 @@ export function useOnProjectSettingsChanged(callback: () => void) {
       window.removeEventListener('msa:project-settings-changed', callback)
   }, [callback])
 }
+
+// ─── Project list (create / rename / delete a project) ─────────────────────
+
+/** Dispatch after a project is created, renamed or deleted. Loader-backed views
+ * (sidebar, project detail) refresh through the layout revalidate, but the
+ * homepage Composer's project picker seeds its list into its own state once at
+ * mount — it re-fetches on this event so an externally added project shows up.
+ * Fired by the server-event bridge for `/api/projects`. */
+export function dispatchProjectsChanged() {
+  if (typeof window !== 'undefined')
+    window.dispatchEvent(new Event('msa:projects-changed'))
+}
+
+/** Re-run `callback` whenever the project list changes elsewhere or via an
+ * external API call. */
+export function useOnProjectsChanged(callback: () => void) {
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.addEventListener('msa:projects-changed', callback)
+    return () => window.removeEventListener('msa:projects-changed', callback)
+  }, [callback])
+}

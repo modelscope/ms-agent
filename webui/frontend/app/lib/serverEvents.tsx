@@ -4,6 +4,7 @@ import {
   dispatchMcpSkillChanged,
   dispatchModelsChanged,
   dispatchProjectSettingsChanged,
+  dispatchProjectsChanged,
   dispatchWorkspaceChanged
 } from '~/lib/events'
 
@@ -52,6 +53,11 @@ export function ServerEventsBridge() {
       if (paths.some((p) => p.includes('/models') || p.includes('/providers')))
         dispatchModelsChanged()
       if (paths.some((p) => p.includes('/workspace'))) dispatchWorkspaceChanged()
+      // Project create/rename/delete: loader-backed lists ride the revalidate
+      // above, the Composer picker rides this. Excludes the nested settings
+      // routes (/projects/:id/mcps …) already covered by their own events.
+      if (paths.some((p) => /\/projects(\/[^/]+)?$/.test(p)))
+        dispatchProjectsChanged()
       if (
         paths.some((p) =>
           /\/(memory|agent-settings|instructions|profile|search-settings)/.test(
