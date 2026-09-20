@@ -32,7 +32,7 @@
 
 ## Introduction
 
-**MS-Agent is a modular, extensible open-source agent framework built for complex, long-running tasks.** Freely combine models, tools, skills, and sub-agents with customizable harness components that coordinate planning, context management, permissions, and execution feedback throughout the agent lifecycle, creating a productivity assistant tailored to your needs. Autonomous scheduling, layered permissions, and project memory support collaboration across turns and recurring tasks, reducing manual supervision while maintaining continuity.
+**MS-Agent is a modular, extensible open-source agent framework built for complex, long-running tasks.** Combine models, tools, skills, and sub-agents with a customizable harness for planning, context management, permissions, and execution feedback, plus project memory and autonomous scheduling, to build a productivity assistant that sustains progress on complex tasks.
 
 A shared Python SDK powers the **CLI, TUI, and WebUI**, enabling capability reuse across terminals, browser workspaces, and business applications while reducing integration and maintenance work.
 
