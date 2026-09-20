@@ -30,13 +30,17 @@
 
 [**中文**](README_ZH.md)
 
-## Introduction
+<a id="introduction"></a>
+
+## 👋 Introduction
 
 **MS-Agent is a modular, extensible open-source agent framework built for complex, long-running tasks.** Combine models, tools, skills, and sub-agents with a customizable harness for planning, context management, permissions, and execution feedback, plus project memory and autonomous scheduling, to build a productivity assistant that sustains progress on complex tasks.
 
 A shared Python SDK powers the **CLI, TUI, and WebUI**, enabling capability reuse across terminals, browser workspaces, and business applications while reducing integration and maintenance work.
 
-[Features](#features) · [Installation](#installation) · [Applications](#applications) · [Documentation](#documentation)
+<p align="center">
+<a href="#features"><b>Features</b></a> · <a href="#installation"><b>Installation</b></a> · <a href="#applications"><b>Applications</b></a> · <a href="#documentation"><b>Documentation</b></a>
+</p>
 
 Join the community and share feedback: [Discord](https://discord.gg/qmTFPY9byM) · [GitHub Issues](https://github.com/modelscope/ms-agent/issues)
 
@@ -140,46 +144,64 @@ For earlier demos and documentation, see [ModelScope-Agent 0.8.0 and earlier](ht
 
 </details>
 
-## Features
+<a id="features"></a>
 
-### A Customizable Agent Harness
+## ✨ Features
 
-Bring tool execution, permission checks, and feedback into an extensible runtime. Use lifecycle callbacks and Hooks to add business rules, plan checks, and result validation. Customize how agents act, when people intervene, and how execution feedback informs the next step.
+<a id="a-customizable-agent-harness"></a>
 
-### Context and Memory for Long-running Tasks
+### 🧩 A Customizable Agent Harness
 
-Manage session history, active context, and project memory as distinct layers. Preserve full records while pruning tool output and compacting older context, then draw on project memory in later tasks. Cron adds scheduled, recurring, and one-time jobs for ongoing research, checks, and maintenance.
+Bring tool execution, permission checks, and feedback into an extensible runtime. Use **lifecycle callbacks and Hooks** to add business rules, plan checks, and result validation. Customize how agents act, when people intervene, and how execution feedback informs the next step.
 
-### Autonomous Collaboration and Explicit Workflows
+<a id="context-and-memory-for-long-running-tasks"></a>
 
-Let a lead agent delegate open-ended work to specialist sub-agents, or define stages and dependencies explicitly with chain and DAG workflows. Choose models, tools, and skills for each role, tailoring collaboration to tasks that range from exploration to structured delivery.
+### 🧠 Context and Memory for Long-running Tasks
 
-### Reusable Agent Skills with Evaluation-driven Improvement
+Manage **session history, active context, and project memory** as distinct layers. Preserve full records while pruning tool output and compacting older context, then draw on project memory in later tasks. Cron adds scheduled, recurring, and one-time jobs for ongoing research, checks, and maintenance.
+
+<a id="autonomous-collaboration-and-explicit-workflows"></a>
+
+### 🤝 Autonomous Collaboration and Explicit Workflows
+
+Let a lead agent delegate open-ended work to specialist sub-agents, or define stages and dependencies explicitly with **chain and DAG workflows**. Choose models, tools, and skills for each role, tailoring collaboration to tasks that range from exploration to structured delivery.
+
+<a id="reusable-agent-skills-with-evaluation-driven-improvement"></a>
+
+### 📈 Reusable Agent Skills with Evaluation-driven Improvement
 
 Package domain knowledge and procedures into skills loaded on demand and reused across tasks. The separate **Skill Evolution** workflow uses execution traces and evaluation feedback to revise skills, then tests candidate updates on a validation set, making improvements measurable.
 
-### An Open Ecosystem with Portable Agent Resources
+<a id="an-open-ecosystem-with-portable-agent-resources"></a>
+
+### 🔌 An Open Ecosystem with Portable Agent Resources
 
 Connect multiple model providers, use MCP for external tools, integrate with editors and other agents through ACP / A2A, and compose extensions through plugins. **Agent Hub** converts, merges, and synchronizes instructions, skills, and memory across frameworks so you can carry them between environments. Applications can also be exposed as MCP services.
 
-### From Framework Capabilities to Domain Applications
+<a id="from-framework-capabilities-to-domain-applications"></a>
 
-Built-in applications bring models, tools, and multi-agent collaboration together into complete workflows for research, software development, financial analysis, and content creation. Use them for domain-specific tasks or adapt their designs and domain knowledge as a starting point for your own applications. [Explore the applications](#applications)
+### 🎯 From Framework Capabilities to Domain Applications
 
-## Installation
+Built-in applications bring models, tools, and multi-agent collaboration together into **complete workflows** for research, software development, financial analysis, and content creation. Use them for domain-specific tasks or adapt their designs and domain knowledge as a starting point for your own applications. [Explore the applications](#applications)
+
+<a id="installation"></a>
+
+## 🚀 Installation
 
 Choose the interface that fits your work. Start with **WebUI** to explore projects, sessions, and tool use, or work in the terminal and integrate the SDK into a Python application.
 
 | Interface | Best suited for |
 | --- | --- |
-| **[WebUI](#webui)** | Work on local projects in the browser and inspect execution and results |
-| **[TUI](#terminal-and-sdk)** | Hold ongoing conversations and manage or resume sessions in the terminal |
-| **[CLI](#terminal-and-sdk)** | Run a single task or use agents from scripts |
-| **[Python SDK](#terminal-and-sdk)** | Customize agents and embed them in applications |
+| 🖥️ **[WebUI](#webui)** | Work on local projects in the browser and inspect execution and results |
+| ⌨️ **[TUI](#terminal-and-sdk)** | Hold ongoing conversations and manage or resume sessions in the terminal |
+| 🛠️ **[CLI](#terminal-and-sdk)** | Run a single task or use agents from scripts |
+| 🐍 **[Python SDK](#terminal-and-sdk)** | Customize agents and embed them in applications |
 
 The default ModelScope provider is supported. Obtain an API key from the [access token page](https://modelscope.cn/my/myaccesstoken).
 
-### WebUI
+<a id="webui"></a>
+
+### 🖥️ WebUI
 
 MS-Agent WebUI is a browser workspace for working with agents on local projects.
 Chat with models, follow tool activity, manage skills and MCP tools, and browse
@@ -189,7 +211,8 @@ or edit project files without leaving the interface.
 
 https://github.com/user-attachments/assets/43b3c1cc-555a-4184-b1dd-66e0a21e7a12
 
-**Install the new WebUI from source for the latest experience.** Requires Git, **Python 3.12+**, **Node.js 22.22.0+**, **pnpm 10.17.1**, and **uv 0.5+**.
+> [!IMPORTANT]
+> **Install the new WebUI from source for the latest experience.** Requires Git, **Python 3.12+**, **Node.js 22.22.0+**, **pnpm 10.17.1**, and **uv 0.5+**.
 
 For a first-time setup, follow [environment setup](webui/README.md#first-time-setup). If Python and Node.js are already installed, check them with `python3 --version` and `node --version`. To create a Python environment, run the following in the directory where you plan to keep the project:
 
@@ -225,7 +248,9 @@ ms-agent ui --no-browser  # Do not open a browser
 For virtual environment setup, development, Docker and configuration, see the
 [WebUI guide](webui/README.md).
 
-### Terminal and SDK
+<a id="terminal-and-sdk"></a>
+
+### ⌨️ Terminal and SDK
 
 TUI, CLI, and the Python SDK require **Python 3.10+**; Node.js and pnpm are not needed. You can [prepare Python with uv](webui/README.md#install-python) if a suitable version is missing. Otherwise, check `python3 --version`, then create and activate an environment:
 
@@ -250,7 +275,9 @@ export MODELSCOPE_API_KEY="your_modelscope_api_key"
 
 The first run of the default agent may install additional dependencies for local code execution. Keep your network connection available and wait for the input prompt or task result.
 
-#### TUI
+<a id="tui"></a>
+
+#### ⌨️ TUI
 
 Start the terminal interface and enter a task. Use `/help` to see commands for session management and more, and `/quit` to exit:
 
@@ -258,7 +285,9 @@ Start the terminal interface and enter a task. Use `/help` to see commands for s
 ms-agent tui
 ```
 
-#### CLI
+<a id="cli"></a>
+
+#### 🛠️ CLI
 
 Run a task directly. Omit `--query` to enter interactive mode:
 
@@ -266,7 +295,9 @@ Run a task directly. Omit `--query` to enter interactive mode:
 ms-agent run --query "Introduce the applications of MS-Agent"
 ```
 
-#### Python SDK
+<a id="python-sdk"></a>
+
+#### 🐍 Python SDK
 
 Save the following as `quickstart.py`, then run `python quickstart.py` in the same terminal where you configured the API key:
 
@@ -308,17 +339,23 @@ The current [PyPI release](https://pypi.org/project/ms-agent/) is 1.6.0. It has 
 
 When you open a new terminal, activate the Python environment again. WebUI users can then run `ms-agent ui`; terminal and SDK users also need to set their API key again, or save it in a `.env` file as described in the configuration guide.
 
-### Configuration and Extensions
+<a id="configuration-and-extensions"></a>
+
+### ⚙️ Configuration and Extensions
 
 After your first conversation, choose another model, connect MCP tools, or load skills as needed. Manage these in WebUI settings, or follow the [model and configuration reference](docs/en/Components/Config.md), [tools and MCP guide](docs/en/Components/Tools.md), and [Agent Skills guide](docs/en/Components/AgentSkills.md) for terminal and SDK usage. Try tool calls online in the [MCP Playground](https://modelscope.cn/mcp/playground).
 
 For scheduled jobs with `ms-agent cron`, Agent Hub with `ms-agent agent`, and more commands, see the [CLI reference](docs/en/GetStarted/CLI.md).
 
-## Applications
+<a id="applications"></a>
+
+## 🎯 Applications
 
 These applications put the framework to work on complete domain-specific tasks. Use them directly or adapt their agent orchestration, tools, and workflows for your own systems. Each linked guide covers the project's models, dependencies, and execution.
 
-### Agentic Insight · From Research Questions to Evidence-based Reports
+<a id="agentic-insight--from-research-questions-to-evidence-based-reports"></a>
+
+### 🔎 Agentic Insight · From Research Questions to Evidence-based Reports
 
 A Researcher coordinates Searcher and Reporter agents to investigate open-ended questions through iterative search, evidence collection, and writing. Version 2 stores structured intermediate artifacts in the filesystem and explicitly ties report claims to evidence, supporting source tracing, inspection, and continued work.
 
@@ -326,25 +363,33 @@ As of April 9, 2026, Agentic Insight v2 scored **55.31 on DeepResearch Bench** w
 
 [v2 guide](projects/deep_research/v2/README.md) · [Report demo](https://github.com/user-attachments/assets/b1091dfc-9429-46ad-b7f8-7cbd1cf3209b) · [Benchmark results](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard) · [v1 base and extended workflows](projects/deep_research/README.md)
 
-### CodeGenesis · From Natural-language Requirements to Software Projects
+<a id="codegenesis--from-natural-language-requirements-to-software-projects"></a>
+
+### 💻 CodeGenesis · From Natural-language Requirements to Software Projects
 
 Coordinate requirements analysis, architecture, file planning, coding, and refinement through a multi-agent development workflow. Generate files in dependency order and iterate using LSP diagnostics and runtime feedback. A seven-stage standard workflow supports detailed project design; a four-stage alternative supports rapid prototyping.
 
 [Design and usage guide](docs/en/Projects/CodeGenesis.md) · [Source code](projects/code_genesis) · [Workflow diagram](projects/code_genesis/asset/workflow.jpg)
 
-### FinResearch · Financial Data Meets Market Research
+<a id="finresearch--financial-data-meets-market-research"></a>
+
+### 📊 FinResearch · Financial Data Meets Market Research
 
 Five specialist agents handle task decomposition, data collection, quantitative analysis, sentiment research, and report synthesis. Combine structured financial data from AkShare / BaoStock with public information from the web to produce illustrated reports that bring together data analysis, visualizations, and qualitative findings.
 
 [Usage guide](projects/fin_research/README.md) · [Online demo](https://modelscope.cn/studios/ms-agent/FinResearch) · [Example reports](https://www.modelscope.cn/models/ms-agent/fin_research_examples) · [Video demo](https://github.com/user-attachments/assets/a11db8d2-b559-4118-a2c0-2622d46840ef)
 
-### DocResearch · Turn Source Documents into Illustrated Reports
+<a id="docresearch--turn-source-documents-into-illustrated-reports"></a>
+
+### 📑 DocResearch · Turn Source Documents into Illustrated Reports
 
 Read papers and research material from multiple documents or URLs, extract key information, and generate reports with figures. Supported inputs include PDF, TXT, PPT, and DOCX; export reports as PDF, PPTX, DOCX, or HTML for reading, presentations, and sharing.
 
 [Usage guide](projects/doc_research/README.md) · [Online demo](https://modelscope.cn/studios/ms-agent/DocResearch)
 
-### Singularity Cinema · Turn Knowledge into Short Videos
+<a id="singularity-cinema--turn-knowledge-into-short-videos"></a>
+
+### 🎬 Singularity Cinema · Turn Knowledge into Short Videos
 
 Start with a topic or plain-text material and coordinate scripting, storyboarding, narration, visual generation, and video composition. Create explainers about science, technology, and economics, combining images, captions, and generated video clips in a customizable creative workflow.
 
@@ -352,21 +397,29 @@ Start with a topic or plain-text material and coordinate scripting, storyboardin
 
 [![Singularity Cinema: How to Deploy a Large Language Model](projects/singularity_cinema/show_case/deploy_llm_en.png)](http://modelscope.oss-cn-beijing.aliyuncs.com/ms-agent/show_case/video/en_deploy_llm_claude_sonnet_4_5_mllm_gemini_3_pro_image_gen_gemini_3_pro_image.mp4)
 
-### Skill Evolution · Improve Skills with Task Feedback
+<a id="skill-evolution--improve-skills-with-task-feedback"></a>
+
+### 🧬 Skill Evolution · Improve Skills with Task Feedback
 
 For tasks with automated evaluation, run the current skills, collect traces and scores, then use reflection and skill-management agents to create or revise skills. Candidate updates pass through a validation gate and are accepted only when scores improve. A SearchQA baseline provides a starting point for studying how task experience can improve a skill library.
 
 [Workflow and usage guide](projects/skill_evolution/README.md)
 
-## Documentation
+<a id="documentation"></a>
+
+## 📚 Documentation
 
 - [User guide](https://ms-agent-en.readthedocs.io/en/latest/): getting started, core components, extensions, and configuration.
 - [Contributor guide](docs/en/Components/ContributorGuide.md): contribute to the framework and applications.
 
-## License
+<a id="license"></a>
+
+## 📄 License
 
 This project is licensed under the [Apache License 2.0](LICENSE).
 
-## Star History
+<a id="star-history"></a>
+
+## ⭐ Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=modelscope/ms-agent&type=Date)](https://star-history.com/#modelscope/ms-agent&Date)

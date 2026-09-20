@@ -30,13 +30,17 @@
 
 [**README**](README.md)
 
-## 简介
+<a id="简介"></a>
+
+## 👋 简介
 
 **MS-Agent 是一个模块化、可扩展的开源智能体框架，专为复杂任务的长程执行打造。** 你可以自由组合模型、工具、技能与子智能体，通过可定制的 Harness 统筹任务规划、上下文管理、权限控制与执行反馈，并结合项目记忆与自主调度，打造能够持续推进复杂任务的专属生产力助手。
 
 框架以 Python SDK 为基础，为 **CLI、TUI 和 WebUI 提供统一的执行与管理能力**，支持从终端、浏览器工作台到业务系统的能力复用，减少多端适配与维护成本。
 
-[核心特性](#核心特性) · [安装](#安装) · [应用项目](#应用项目) · [文档](#文档)
+<p align="center">
+<a href="#核心特性"><b>核心特性</b></a> · <a href="#安装"><b>安装</b></a> · <a href="#应用项目"><b>应用项目</b></a> · <a href="#文档"><b>文档</b></a>
+</p>
 
 社区交流与反馈：[Discord](https://discord.gg/qmTFPY9byM) · [GitHub Issues](https://github.com/modelscope/ms-agent/issues)
 
@@ -144,46 +148,64 @@
 
 </details>
 
-## 核心特性
+<a id="核心特性"></a>
 
-### 可定制的 Agent Harness
+## ✨ 核心特性
 
-将工具执行、权限确认与过程反馈组织成可扩展的运行机制。通过生命周期回调与 Hooks 接入业务规则、计划检查和结果验证，让开发者能够定制智能体如何行动、何时接受人工干预，以及怎样利用执行反馈继续工作。
+<a id="可定制的-agent-harness"></a>
 
-### 面向长任务的上下文与记忆
+### 🧩 可定制的 Agent Harness
 
-将会话历史、当前上下文与项目记忆分层管理：保留完整记录，按需裁剪工具输出、压缩历史内容，并在后续任务中利用项目记忆。配合 Cron 的定时、周期与单次任务调度，支持需要反复推进的研究、巡检和维护工作。
+将工具执行、权限确认与过程反馈组织成可扩展的运行机制。通过**生命周期回调与 Hooks** 接入业务规则、计划检查和结果验证，让开发者能够定制智能体如何行动、何时接受人工干预，以及怎样利用执行反馈继续工作。
 
-### 自主协作与显式工作流编排
+<a id="面向长任务的上下文与记忆"></a>
 
-开放式任务可以由主智能体动态委派给专用子智能体；阶段和依赖明确的任务，则可使用链式或 DAG 工作流编排。为不同角色选择模型、工具与技能，从自主探索到分步交付，按任务需要组织协作。
+### 🧠 面向长任务的上下文与记忆
 
-### 可复用、可评测的 Agent Skills
+将**会话历史、当前上下文与项目记忆**分层管理：保留完整记录，按需裁剪工具输出、压缩历史内容，并在后续任务中利用项目记忆。配合 Cron 的定时、周期与单次任务调度，支持需要反复推进的研究、巡检和维护工作。
+
+<a id="自主协作与显式工作流编排"></a>
+
+### 🤝 自主协作与显式工作流编排
+
+开放式任务可以由主智能体动态委派给专用子智能体；阶段和依赖明确的任务，则可使用**链式或 DAG 工作流**编排。为不同角色选择模型、工具与技能，从自主探索到分步交付，按任务需要组织协作。
+
+<a id="可复用可评测的-agent-skills"></a>
+
+### 📈 可复用、可评测的 Agent Skills
 
 将领域知识与操作方法组织为按需加载的技能，供不同任务复用。独立的 **Skill Evolution** 工作流进一步利用执行轨迹和评测反馈修订技能，通过验证集筛选更新，为经验积累与能力改进提供可检验的依据。
 
-### 开放生态与跨框架资产复用
+<a id="开放生态与跨框架资产复用"></a>
+
+### 🔌 开放生态与跨框架资产复用
 
 接入多家模型服务，通过 MCP 连接外部工具，通过 ACP / A2A 对接编辑器与其他智能体，并利用插件组合扩展能力。**Agent Hub** 支持跨框架转换、合并和同步指令、技能与记忆，让已有积累可以随工作环境迁移；应用也可作为 MCP 服务供外部智能体调用。
 
-### 从框架能力到专业应用
+<a id="从框架能力到专业应用"></a>
 
-从深度研究、软件开发到金融分析与内容创作，内置应用将模型、工具和多智能体协作组织为完整工作流。既可直接用于专业任务，也可作为二次开发的起点，复用已有的设计与领域经验。[探索应用项目](#应用项目)
+### 🎯 从框架能力到专业应用
 
-## 安装
+从深度研究、软件开发到金融分析与内容创作，内置应用将模型、工具和多智能体协作组织为**完整工作流**。既可直接用于专业任务，也可作为二次开发的起点，复用已有的设计与领域经验。[探索应用项目](#应用项目)
+
+<a id="安装"></a>
+
+## 🚀 安装
 
 选择适合你的入口。推荐先从 **WebUI** 体验项目、会话与工具协作；也可以直接使用终端界面，或将 SDK 集成到 Python 应用中。
 
 | 使用入口 | 适合的场景 |
 | --- | --- |
-| **[WebUI](#webui)** | 在浏览器中处理本地项目、查看执行过程与成果 |
-| **[TUI](#终端与-sdk)** | 在终端持续对话、管理和恢复会话 |
-| **[CLI](#终端与-sdk)** | 执行单次任务，或与脚本配合使用 |
-| **[Python SDK](#终端与-sdk)** | 自定义智能体并集成到应用 |
+| 🖥️ **[WebUI](#webui)** | 在浏览器中处理本地项目、查看执行过程与成果 |
+| ⌨️ **[TUI](#终端与-sdk)** | 在终端持续对话、管理和恢复会话 |
+| 🛠️ **[CLI](#终端与-sdk)** | 执行单次任务，或与脚本配合使用 |
+| 🐍 **[Python SDK](#终端与-sdk)** | 自定义智能体并集成到应用 |
 
 项目支持使用默认的 ModelScope 服务商，可在[访问令牌页面](https://modelscope.cn/my/myaccesstoken)获取 API Key。
 
-### WebUI
+<a id="webui"></a>
+
+### 🖥️ WebUI
 
 MS-Agent WebUI 是面向本地项目的智能体工作台。你可以在浏览器中与模型对话、查看工具执行过程、配置技能和 MCP 工具，并直接浏览或编辑项目文件。
 
@@ -191,7 +213,8 @@ MS-Agent WebUI 是面向本地项目的智能体工作台。你可以在浏览�
 
 https://github.com/user-attachments/assets/43b3c1cc-555a-4184-b1dd-66e0a21e7a12
 
-**新版 WebUI 请优先从源码安装。** 需要 Git、**Python 3.12+**、**Node.js 22.22.0+**、**pnpm 10.17.1** 和 **uv 0.5+**。
+> [!IMPORTANT]
+> **新版 WebUI 请优先从源码安装。** 需要 Git、**Python 3.12+**、**Node.js 22.22.0+**、**pnpm 10.17.1** 和 **uv 0.5+**。
 
 首次配置环境，请先完成 [环境准备](webui/README_ZH.md#首次配置)。已有 Python 和 Node.js 时，用 `python3 --version`、`node --version` 确认版本；如果尚未创建 Python 环境，可在准备存放项目的目录执行：
 
@@ -220,7 +243,9 @@ ms-agent ui --no-browser  # 不自动打开浏览器
 
 虚拟环境准备、开发、Docker 和配置说明见 [WebUI 完整指南](webui/README_ZH.md)。
 
-### 终端与 SDK
+<a id="终端与-sdk"></a>
+
+### ⌨️ 终端与 SDK
 
 TUI、CLI 和 Python SDK 需要 **Python 3.10+**，无需安装 Node.js 或 pnpm。还没有合适的 Python 时，可用 [uv 准备 Python 环境](webui/README_ZH.md#安装-python)。已有 Python 时，先用 `python3 --version` 确认版本，再创建并激活环境：
 
@@ -245,7 +270,9 @@ export MODELSCOPE_API_KEY="your_modelscope_api_key"
 
 首次使用默认智能体时，会按需安装本地代码执行所需的额外依赖。请保持网络连接，等待出现输入提示或任务结果。
 
-#### TUI
+<a id="tui"></a>
+
+#### ⌨️ TUI
 
 启动终端交互界面，输入任务即可开始。使用 `/help` 查看会话管理等命令，使用 `/quit` 退出：
 
@@ -253,7 +280,9 @@ export MODELSCOPE_API_KEY="your_modelscope_api_key"
 ms-agent tui
 ```
 
-#### CLI
+<a id="cli"></a>
+
+#### 🛠️ CLI
 
 直接执行一个任务；不传 `--query` 时进入交互模式：
 
@@ -261,7 +290,9 @@ ms-agent tui
 ms-agent run --query "介绍一下 MS-Agent 的应用场景"
 ```
 
-#### Python SDK
+<a id="python-sdk"></a>
+
+#### 🐍 Python SDK
 
 将下面的代码保存为 `quickstart.py`，在已配置 API Key 的同一终端中运行 `python quickstart.py`：
 
@@ -303,17 +334,23 @@ pip install -e '.[all]'
 
 重新打开终端后，需要再次激活 Python 环境。WebUI 用户运行 `ms-agent ui` 即可；终端与 SDK 用户还需重新设置 API Key，或按配置文档将其保存在 `.env` 文件中。
 
-### 配置与扩展
+<a id="配置与扩展"></a>
+
+### ⚙️ 配置与扩展
 
 完成首次对话后，可以按需更换模型、接入 MCP 工具或加载技能。WebUI 可在设置中管理这些配置；终端与 SDK 的用法见[模型与配置参考](docs/zh/Components/config.md)、[工具与 MCP](docs/zh/Components/tools.md)和[Agent Skills](docs/zh/Components/agent-skills.md)。也可以在 [MCP Playground](https://modelscope.cn/mcp/playground) 在线体验工具调用。
 
 定时任务 `ms-agent cron`、Agent Hub `ms-agent agent` 及更多命令见 [CLI 参考](docs/zh/GetStarted/cli.md)。
 
-## 应用项目
+<a id="应用项目"></a>
+
+## 🎯 应用项目
 
 这些应用将框架用于完整的专业任务，也提供可供二次开发的智能体编排、工具与工作流。你可以按场景选择应用，或借鉴其中的设计构建自己的系统。各项目的模型、依赖与运行方式见对应使用指南。
 
-### Agentic Insight · 从研究问题到证据驱动的报告
+<a id="agentic-insight--从研究问题到证据驱动的报告"></a>
+
+### 🔎 Agentic Insight · 从研究问题到证据驱动的报告
 
 围绕开放式研究问题，Researcher 编排 Searcher 与 Reporter 迭代开展检索、证据整理和报告撰写。v2 将结构化中间产物保存在文件系统中，并将报告论述显式绑定到证据，便于追溯来源、检查研究过程与继续任务。
 
@@ -321,25 +358,33 @@ pip install -e '.[all]'
 
 [v2 使用指南](projects/deep_research/v2/README_zh.md) · [报告演示](https://github.com/user-attachments/assets/b1091dfc-9429-46ad-b7f8-7cbd1cf3209b) · [评测结果](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard) · [v1 基础与扩展工作流](projects/deep_research/README_zh.md)
 
-### CodeGenesis · 从自然语言需求到软件项目
+<a id="codegenesis--从自然语言需求到软件项目"></a>
+
+### 💻 CodeGenesis · 从自然语言需求到软件项目
 
 将需求分析、架构设计、文件规划、编码与修正组织为多智能体开发流程。按文件依赖关系安排生成顺序，结合 LSP 诊断与运行反馈迭代代码；提供七阶段标准流程和四阶段简化流程，适配需要详细设计的项目与快速原型。
 
 [设计与使用指南](docs/zh/Projects/code-genesis.md) · [项目源码](projects/code_genesis) · [工作流示意](projects/code_genesis/asset/workflow.jpg)
 
-### FinResearch · 结合金融数据与市场信息的研究
+<a id="finresearch--结合金融数据与市场信息的研究"></a>
+
+### 📊 FinResearch · 结合金融数据与市场信息的研究
 
 由五个专用智能体协作完成任务拆解、数据采集、量化分析、舆情研究与报告汇总。结合 AkShare / BaoStock 的结构化金融数据和互联网公开信息，将数据分析、可视化与定性研究整合为图文报告。
 
 [使用指南](projects/fin_research/README_zh.md) · [在线体验](https://modelscope.cn/studios/ms-agent/FinResearch) · [报告样例](https://www.modelscope.cn/models/ms-agent/fin_research_examples) · [视频演示](https://github.com/user-attachments/assets/a11db8d2-b559-4118-a2c0-2622d46840ef)
 
-### DocResearch · 将多份资料整理为图文报告
+<a id="docresearch--将多份资料整理为图文报告"></a>
+
+### 📑 DocResearch · 将多份资料整理为图文报告
 
 面向论文阅读与资料研究，接收多份文档或 URL，提取关键信息并生成包含图表的研究报告。支持 PDF、TXT、PPT、DOCX 等输入，以及 PDF、PPTX、DOCX、HTML 报告导出，便于将研究成果用于阅读、汇报和分享。
 
 [使用指南](projects/doc_research/README_zh.md) · [在线体验](https://modelscope.cn/studios/ms-agent/DocResearch)
 
-### Singularity Cinema · 奇点放映室
+<a id="singularity-cinema--奇点放映室"></a>
+
+### 🎬 Singularity Cinema · 奇点放映室
 
 从主题或纯文本资料出发，编排台本、分镜、配音、画面生成与视频合成，将知识内容转化为短视频。面向科普、技术原理与经济类讲解，可组合图片、字幕和生成视频等素材，定制自己的创作流程。
 
@@ -347,21 +392,29 @@ pip install -e '.[all]'
 
 [![奇点放映室作品：如何部署大语言模型](projects/singularity_cinema/show_case/deploy_llm.png)](http://modelscope.oss-cn-beijing.aliyuncs.com/ms-agent/show_case/video/deploy_llm_claude_sonnet_4_5_mllm_gemini_3_pro_image_gen_gemini_3_pro_image.mp4)
 
-### Skill Evolution · 用任务反馈改进技能
+<a id="skill-evolution--用任务反馈改进技能"></a>
+
+### 🧬 Skill Evolution · 用任务反馈改进技能
 
 面向可自动评测的任务，运行当前技能、收集轨迹与得分，再由反思和技能管理智能体提炼经验、创建或修订技能。候选更新经过验证集筛选，只有表现提升才被接受；内置 SearchQA 基线，便于研究技能如何从任务经验中持续改进。
 
 [工作流与运行指南](projects/skill_evolution/README_zh.md)
 
-## 文档
+<a id="文档"></a>
+
+## 📚 文档
 
 - [用户文档](https://ms-agent.readthedocs.io/zh-cn/latest/)：快速开始、核心组件、能力扩展与配置参考。
 - [贡献指南](docs/zh/Components/contributor-guide.md)：参与框架与应用开发。
 
-## 许可证
+<a id="许可证"></a>
+
+## 📄 许可证
 
 本项目采用 [Apache License 2.0](LICENSE)。
 
-## Star 历史
+<a id="star-历史"></a>
+
+## ⭐ Star 历史
 
 [![Star History Chart](https://api.star-history.com/svg?repos=modelscope/ms-agent&type=Date)](https://star-history.com/#modelscope/ms-agent&Date)
