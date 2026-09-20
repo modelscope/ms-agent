@@ -34,9 +34,9 @@
 
 ## 👋 Introduction
 
-**MS-Agent is a modular, extensible open-source agent framework built for complex, long-running tasks.** Combine models, tools, skills, and sub-agents with a customizable harness for planning, context management, permissions, and execution feedback, plus project memory and autonomous scheduling, to build a productivity assistant that sustains progress on complex tasks.
+**MS-Agent is a modular, extensible open-source agent framework built for complex, long-running tasks.** Combine models, tools, skills, and sub-agents with a customizable harness to build an assistant tailored to your work. The harness manages planning, context, permissions, and execution feedback, while project memory and autonomous scheduling help the assistant keep complex tasks moving forward.
 
-A shared Python SDK powers the **CLI, TUI, and WebUI**, enabling capability reuse across terminals, browser workspaces, and business applications while reducing integration and maintenance work.
+A shared Python SDK powers the **CLI, TUI, and WebUI**, so you can reuse agent logic and extensions across terminals, browser workspaces, and business applications with less integration and maintenance work.
 
 <p align="center">
 <a href="#features"><b>Features</b></a> · <a href="#installation"><b>Installation</b></a> · <a href="#applications"><b>Applications</b></a> · <a href="#documentation"><b>Documentation</b></a>
@@ -57,89 +57,89 @@ For earlier demos and documentation, see [ModelScope-Agent 0.8.0 and earlier](ht
 
 ## 🎉 News
 
-* 🚀 Jul 13, 2026: Support **Agent Hub** — manage agent workspace files across your local machine and remote ModelScope repositories via the `ms-agent agent` command: upload/download, background sync (`watch`), cross-framework conversion, status, backups and restore across `qoder`, `qwenpaw`, `openclaw`, `hermes`, `nanobot`, `openhuman` and `ms-agent`.
+* 🚀 Jul 13, 2026: Added **Agent Hub** support for managing agent workspace files locally and in remote ModelScope repositories with `ms-agent agent`. Features include uploads and downloads, background sync (`watch`), conversion between frameworks, status checks, backups, and restoration for `qoder`, `qwenpaw`, `openclaw`, `hermes`, `nanobot`, `openhuman`, and `ms-agent`.
 
-* 🏆 Apr 09, 2026: Agentic Insight v2 is now **#2 Open-Source** (#5 Overall) on [DeepResearch Bench](https://github.com/Ayanami0730/deep_research_bench) — scoring **55.31** with the submitted version (Qwen3.5-Plus + GPT 5.2). [Leaderboard](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard) | [Agentic Insight v2](projects/deep_research/v2/README.md).
+* 🏆 Apr 9, 2026: Agentic Insight v2 ranked **#2 among open-source entries** (#5 overall) on [DeepResearch Bench](https://github.com/Ayanami0730/deep_research_bench) with a submitted score of **55.31** (Qwen3.5-Plus + GPT 5.2). [Leaderboard](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard) | [Agentic Insight v2](projects/deep_research/v2/README.md).
 
-* 🚀 Mar 23, 2026: Release MS-Agent v1.6.0, which includes the following updates:
-  - **Context Compression**: Added context compression mechanism with token usage monitoring, overflow detection, and automatic context compaction via pruning historical tool outputs and LLM-based summarization.
-  - **Agentic Insight v2 Enhancements**: Major architecture and performance improvements to the deep research system; achieves **55.43** on DeepResearch Bench with GPT5 and Qwen3.5-plus/flash. See [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2).
+* 🚀 Mar 23, 2026: Released MS-Agent v1.6.0 with the following updates:
+  - **Context Compression**: Added context compression with token usage monitoring and overflow detection. Older tool outputs are pruned and conversation history is summarized by an LLM to keep context within limits.
+  - **Agentic Insight v2 Enhancements**: Improved the architecture and performance of the deep research system, achieving **55.43** on DeepResearch Bench with GPT5 and Qwen3.5-plus/flash. See [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2).
   - **Knowledge Search**: Integrated Sirchmunk for intelligent retrieval over local codebases and documentation during agent conversations. See [Config Docs](docs/en/Components/Config.md).
-  - **Multimodal Model Input**: Support image, video, and other multimodal inputs. See [Multimodal Docs](docs/en/Components/MultimodalSupport.md).
+  - **Multimodal Model Input**: Added support for image, video, and other multimodal inputs. See [Multimodal Docs](docs/en/Components/MultimodalSupport.md).
 
-* 🚀 Feb 06, 2026: Release MS-Agent v1.6.0rc1, which includes the following updates:
-  - **Agentic Insight v2**: A fully refactored deep-research system with better performance, scalability, and trustworthiness, with a WebUI entry point. See [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2).
+* 🚀 Feb 6, 2026: Released MS-Agent v1.6.0rc1 with the following updates:
+  - **Agentic Insight v2**: A fully refactored deep research system with improved performance, scalability, and trustworthiness, accessible through a WebUI. See [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2).
 
-* 🚀 Feb 04, 2026: Release MS-Agent v1.6.0rc0, which includes the following updates:
-  - **Code Genesis** for complex code generation tasks, refer to [Code Genesis](https://github.com/modelscope/ms-agent/tree/main/projects/code_genesis)
-  - **Singularity Cinema** for animated video generation workflow, refactored version, refer to [Singularity Cinema](https://github.com/modelscope/ms-agent/tree/main/projects/singularity_cinema)
-  - **Agent Skills v2**: Knowledge-driven skill system — skills as procedural knowledge with progressive disclosure, multi-source loading, and standard tool integration. Refer to [Agent Skills](https://github.com/modelscope/ms-agent/tree/main/ms_agent/skill).
-  - **WebUI**: A new WebUI has been added, featuring agentic chatting capabilities, complex code generation and video generation workflow.
+* 🚀 Feb 4, 2026: Released MS-Agent v1.6.0rc0 with the following updates:
+  - **Code Genesis**: A workflow for complex code generation tasks. See [Code Genesis](https://github.com/modelscope/ms-agent/tree/main/projects/code_genesis).
+  - **Singularity Cinema**: A refactored workflow for generating animated videos. See [Singularity Cinema](https://github.com/modelscope/ms-agent/tree/main/projects/singularity_cinema).
+  - **Agent Skills v2**: A system for packaging procedural knowledge as skills, with progressive disclosure, loading from multiple sources, and standard tool integration. See [Agent Skills](https://github.com/modelscope/ms-agent/tree/main/ms_agent/skill).
+  - **WebUI**: A new web interface for agent conversations, complex code generation, and video generation workflows.
 
 
 <details><summary>2025 and earlier</summary>
 
-* 🎬 Nov 13, 2025: Release Singularity Cinema, to support short video generation for complex scenarios, check [here](projects/singularity_cinema/README_EN.md)
+* 🎬 Nov 13, 2025: Released Singularity Cinema for creating short videos with complex scenes from source documents. See the [project guide](projects/singularity_cinema/README_EN.md).
 
-* 🚀 Nov 12, 2025: Release MS-Agent v1.5.0, which includes the following updates:
-  - 🔥 We present [FinResearch](projects/fin_research/README.md), a multi-agent workflow tailored for financial research
-  - Support financial data collection via [Akshare](https://github.com/akfamily/akshare) and [Baostock](http://baostock.com/mainContent?file=home.md)
-  - Support DagWorkflow for workflow orchestration
-  - Optimize the DeepResearch workflow for stability and efficiency
-  - FinResearch official documentation: [FinResearch Doc](https://ms-agent-en.readthedocs.io/en/latest/Projects/FinResearch.html)
-  - DEMO: [FinResearchStudio](https://modelscope.cn/studios/ms-agent/FinResearch)
+* 🚀 Nov 12, 2025: Released MS-Agent v1.5.0 with the following updates:
+  - 🔥 Introduced [FinResearch](projects/fin_research/README.md), a multi-agent workflow for financial research.
+  - Added financial data collection via [AkShare](https://github.com/akfamily/akshare) and [BaoStock](http://baostock.com/mainContent?file=home.md).
+  - Added DAG workflow orchestration with DagWorkflow.
+  - Improved the stability and efficiency of the DeepResearch workflow.
+  - Documentation: [FinResearch guide](https://ms-agent-en.readthedocs.io/en/latest/Projects/FinResearch.html)
+  - Demo: [FinResearchStudio](https://modelscope.cn/studios/ms-agent/FinResearch)
   - Examples: [FinResearchExamples](https://www.modelscope.cn/models/ms-agent/fin_research_examples)
 
-* 🚀 Nov 07, 2025: Release MS-Agent v1.4.0, which includes the following updates:
-  - 🔥 We present [**MS-Agent Skills**](docs/en/Components/AgentSkills.md), an **Implementation** of [Anthropic-Agent-Skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills) Protocol.
-  - 🔥 Add [Docs](https://ms-agent-en.readthedocs.io/en) and [中文文档](https://ms-agent.readthedocs.io/zh-cn)
-  - 🔥 Support Sandbox Framework [ms-enclave](https://github.com/modelscope/ms-enclave)
+* 🚀 Nov 7, 2025: Released MS-Agent v1.4.0 with the following updates:
+  - 🔥 Introduced [**MS-Agent Skills**](docs/en/Components/AgentSkills.md), an implementation of the [Anthropic Agent Skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills) protocol.
+  - 🔥 Added [English documentation](https://ms-agent-en.readthedocs.io/en) and [Chinese documentation](https://ms-agent.readthedocs.io/zh-cn).
+  - 🔥 Added support for the [ms-enclave](https://github.com/modelscope/ms-enclave) sandbox framework.
 
-* 🚀 Sep 22, 2025: Release MS-Agent v1.3.0, which includes the following updates:
-  - 🔥 Support [Code Scratch](projects/code_genesis/README.md)
-  - Support `Memory` for building agents with long-term and short-term memory
-  - Enhance the DeepResearch workflow
-  - Support RAY for accelerating document information extraction
-  - Support Anthropic API format for LLMs
+* 🚀 Sep 22, 2025: Released MS-Agent v1.3.0 with the following updates:
+  - 🔥 Added support for [Code Scratch](projects/code_genesis/README.md).
+  - Added `Memory` for building agents with long-term and short-term memory.
+  - Improved the DeepResearch workflow.
+  - Added support for Ray to accelerate information extraction from documents.
+  - Added support for the Anthropic API format.
 
-* 🚀 Aug 28, 2025: Release MS-Agent v1.2.0, which includes the following updates:
-  - DocResearch now supports pushing to `ModelScope`、`HuggingFace`、`GitHub` for easy sharing of research reports. Refer to [Doc Research](projects/doc_research/README.md) for more details.
-  - DocResearch now supports exporting the Markdown report to `HTML`、`PDF`、`PPTX` and `DOCX` formats, refer to [Doc Research](projects/doc_research/README.md) for more details.
-  - DocResearch now supports `TXT` file processing and file preprocessing, refer to [Doc Research](projects/doc_research/README.md) for more details.
+* 🚀 Aug 28, 2025: Released MS-Agent v1.2.0 with the following updates:
+  - DocResearch now supports publishing research reports to `ModelScope`, `HuggingFace`, and `GitHub` for easy sharing. See [Doc Research](projects/doc_research/README.md) for more details.
+  - DocResearch now supports exporting Markdown reports to `HTML`, `PDF`, `PPTX`, and `DOCX`. See [Doc Research](projects/doc_research/README.md) for more details.
+  - DocResearch now supports processing `TXT` files and preprocessing source files. See [Doc Research](projects/doc_research/README.md) for more details.
 
 
-* 🚀 July 31, 2025: Release MS-Agent v1.1.0, which includes the following updates:
-  - 🔥 Support [Doc Research](projects/doc_research/README.md), demo: [DocResearchStudio](https://modelscope.cn/studios/ms-agent/DocResearch)
-  - Add `General Web Search Engine` for Agentic Insight (DeepResearch)
-  - Add `Max Continuous Runs` for Agent chat with MCP.
+* 🚀 July 31, 2025: Released MS-Agent v1.1.0 with the following updates:
+  - 🔥 Added [Doc Research](projects/doc_research/README.md). Demo: [DocResearchStudio](https://modelscope.cn/studios/ms-agent/DocResearch).
+  - Added `General Web Search Engine` support to Agentic Insight (DeepResearch).
+  - Added `Max Continuous Runs` for agent conversations using MCP tools.
 
-* 🚀 July 18, 2025: Release MS-Agent v1.0.0, improve the experience of Agent chat with MCP, and update the readme for [Agentic Insight](projects/deep_research/README.md).
+* 🚀 July 18, 2025: Released MS-Agent v1.0.0, improving agent conversations with MCP tools and updating the README for [Agentic Insight](projects/deep_research/README.md).
 
-* 🚀 July 16, 2025: Release MS-Agent v1.0.0rc0, which includes the following updates:
-  - Support for Agent chat with MCP (Model Context Protocol)
-  - Support for Deep Research (Agentic Insight), refer to: [Report_Demo](projects/deep_research/examples/task_20250617a/report.md), [Script_Demo](projects/deep_research/run.py)
-  - Support for [MCP-Playground](https://modelscope.cn/mcp/playground)
-  - Add callback mechanism for Agent chat
-* 🔥🔥🔥Aug 8, 2024: A new graph based code generation tool [CodexGraph](https://arxiv.org/abs/2408.03910) is released by Modelscope-Agent, it has been proved effective and versatile on various code related tasks, please check [example](https://github.com/modelscope/modelscope-agent/tree/master/apps/codexgraph_agent).
-* 🔥🔥Aug 1, 2024: A high efficient and reliable Data Science Assistant is running on Modelscope-Agent, please find detail in [example](https://github.com/modelscope/modelscope-agent/tree/master/apps/datascience_assistant).
-* 🔥July 17, 2024: Parallel tool calling on Modelscope-Agent-Server, please find detail in [doc](https://github.com/modelscope/modelscope-agent/blob/master/modelscope_agent_servers/README.md).
-* 🔥June 17, 2024: Upgrading RAG flow based on LLama-index, allow user to hybrid search knowledge by different strategies and modalities, please find detail in [doc](https://github.com/modelscope/modelscope-agent/blob/master/modelscope_agent/rag/README_zh.md).
-* 🔥June 6, 2024: With [Modelscope-Agent-Server](https://github.com/modelscope/modelscope-agent/blob/master/modelscope_agent_servers/README.md), **Qwen2** could be used by OpenAI SDK with tool calling ability, please find detail in [doc](https://github.com/modelscope/modelscope-agent/blob/master/docs/llms/qwen2_tool_calling.md).
-* 🔥June 4, 2024: Modelscope-Agent supported Mobile-Agent-V2[arxiv](https://arxiv.org/abs/2406.01014)，based on Android Adb Env, please check in the [application](https://github.com/modelscope/modelscope-agent/tree/master/apps/mobile_agent).
-* 🔥May 17, 2024: Modelscope-Agent supported multi-roles room chat in the [gradio](https://github.com/modelscope/modelscope-agent/tree/master/apps/multi_roles_chat_room).
-* May 14, 2024: Modelscope-Agent supported image input in `RolePlay` agents with latest OpenAI model `GPT-4o`. Developers can experience this feature by specifying the `image_url` parameter.
-* May 10, 2024: Modelscope-Agent launched a user-friendly `Assistant API`, and also provided a `Tools API` that executes utilities in isolated, secure containers, please find the [document](https://github.com/modelscope/modelscope-agent/blob/master/modelscope_agent_servers/)
-* Apr 12, 2024: The [Ray](https://docs.ray.io/en/latest/) version of multi-agent solution is on modelscope-agent, please find the [document](https://github.com/modelscope/modelscope-agent/blob/master/modelscope_agent/multi_agents_utils/README.md)
-* Mar 15, 2024: Modelscope-Agent and the [AgentFabric](https://github.com/modelscope/modelscope-agent/tree/master/apps/agentfabric) (opensource version for GPTs) is running on the production environment of [modelscope studio](https://modelscope.cn/studios/agent).
-* Feb 10, 2024: In Chinese New year, we upgrade the modelscope agent to version v0.3 to facilitate developers to customize various types of agents more conveniently through coding and make it easier to make multi-agent demos. For more details, you can refer to [#267](https://github.com/modelscope/modelscope-agent/pull/267) and [#293](https://github.com/modelscope/modelscope-agent/pull/293) .
-* Nov 26, 2023: [AgentFabric](https://github.com/modelscope/modelscope-agent/tree/master/apps/agentfabric) now supports collaborative use in ModelScope's [Creation Space](https://modelscope.cn/studios/modelscope/AgentFabric/summary), allowing for the sharing of custom applications in the Creation Space. The update also includes the latest [GTE](https://modelscope.cn/models/damo/nlp_gte_sentence-embedding_chinese-base/summary) text embedding integration.
-* Nov 17, 2023: [AgentFabric](https://github.com/modelscope/modelscope-agent/tree/master/apps/agentfabric) released, which is an interactive framework to facilitate creation of agents tailored to various real-world applications.
-* Oct 30, 2023: [Facechain Agent](https://modelscope.cn/studios/CVstudio/facechain_agent_studio/summary) released a local version of the Facechain Agent that can be run locally. For detailed usage instructions, please refer to [Facechain Agent](https://github.com/modelscope/ms-agent/tree/0.8.0#facechain-agent).
-* Oct 25, 2023: [Story Agent](https://modelscope.cn/studios/damo/story_agent/summary) released a local version of the Story Agent for generating storybook illustrations. It can be run locally. For detailed usage instructions, please refer to [Story Agent](https://github.com/modelscope/ms-agent/tree/0.8.0#story-agent).
-* Sep 20, 2023: [ModelScope GPT](https://modelscope.cn/studios/damo/ModelScopeGPT/summary) offers a local version through gradio that can be run locally. You can navigate to the demo/msgpt/ directory and execute `bash run_msgpt.sh`.
-* Sep 4, 2023: Three demos, [demo_qwen](https://github.com/modelscope/ms-agent/blob/0.8.0/demo/demo_qwen_agent.ipynb), [demo_retrieval_agent](https://github.com/modelscope/ms-agent/blob/0.8.0/demo/demo_retrieval_agent.ipynb) and [demo_register_tool](https://github.com/modelscope/ms-agent/blob/0.8.0/demo/demo_register_new_tool.ipynb), have been added, along with detailed tutorials provided.
+* 🚀 July 16, 2025: Released MS-Agent v1.0.0rc0 with the following updates:
+  - Added support for agent conversations with MCP (Model Context Protocol) tools.
+  - Added Deep Research (Agentic Insight). See the [sample report](projects/deep_research/examples/task_20250617a/report.md) and [example script](projects/deep_research/run.py).
+  - Added support for [MCP Playground](https://modelscope.cn/mcp/playground).
+  - Added callbacks for agent conversations.
+* 🔥🔥🔥 Aug 8, 2024: Released [CodexGraph](https://arxiv.org/abs/2408.03910), a graph-based code generation tool that has demonstrated effectiveness across a range of coding tasks. See the [example](https://github.com/modelscope/modelscope-agent/tree/master/apps/codexgraph_agent).
+* 🔥🔥 Aug 1, 2024: An efficient, reliable data science assistant now runs on Modelscope-Agent. See the [example](https://github.com/modelscope/modelscope-agent/tree/master/apps/datascience_assistant).
+* 🔥 July 17, 2024: Added parallel tool calling to Modelscope-Agent-Server. See the [documentation](https://github.com/modelscope/modelscope-agent/blob/master/modelscope_agent_servers/README.md).
+* 🔥 June 17, 2024: Upgraded the RAG workflow with LlamaIndex to support hybrid search across strategies and modalities. See the [documentation](https://github.com/modelscope/modelscope-agent/blob/master/modelscope_agent/rag/README_zh.md).
+* 🔥 June 6, 2024: **Qwen2** now supports tool calling through the OpenAI SDK with [Modelscope-Agent-Server](https://github.com/modelscope/modelscope-agent/blob/master/modelscope_agent_servers/README.md). See the [documentation](https://github.com/modelscope/modelscope-agent/blob/master/docs/llms/qwen2_tool_calling.md).
+* 🔥 June 4, 2024: Added support for [Mobile-Agent-V2](https://arxiv.org/abs/2406.01014) using Android ADB. See the [application](https://github.com/modelscope/modelscope-agent/tree/master/apps/mobile_agent).
+* 🔥 May 17, 2024: Added chat rooms with multiple agent roles in [Gradio](https://github.com/modelscope/modelscope-agent/tree/master/apps/multi_roles_chat_room).
+* May 14, 2024: Added image input for `RolePlay` agents using OpenAI's latest model, `GPT-4o`. Set the `image_url` parameter to use this feature.
+* May 10, 2024: Launched the `Assistant API` and a `Tools API` for running utilities in isolated, secure containers. See the [documentation](https://github.com/modelscope/modelscope-agent/blob/master/modelscope_agent_servers/).
+* Apr 12, 2024: Added a multi-agent solution built on [Ray](https://docs.ray.io/en/latest/). See the [documentation](https://github.com/modelscope/modelscope-agent/blob/master/modelscope_agent/multi_agents_utils/README.md).
+* Mar 15, 2024: Modelscope-Agent and [AgentFabric](https://github.com/modelscope/modelscope-agent/tree/master/apps/agentfabric), an open-source alternative to GPTs, are now running in production on [ModelScope Studio](https://modelscope.cn/studios/agent).
+* Feb 10, 2024: For Chinese New Year, we released Modelscope-Agent v0.3 to make it easier to customize agents in code and build multi-agent demos. See [#267](https://github.com/modelscope/modelscope-agent/pull/267) and [#293](https://github.com/modelscope/modelscope-agent/pull/293) for details.
+* Nov 26, 2023: [AgentFabric](https://github.com/modelscope/modelscope-agent/tree/master/apps/agentfabric) now supports collaboration and sharing custom applications in ModelScope's [Creation Space](https://modelscope.cn/studios/modelscope/AgentFabric/summary). This update also integrates the latest [GTE](https://modelscope.cn/models/damo/nlp_gte_sentence-embedding_chinese-base/summary) text embeddings.
+* Nov 17, 2023: Released [AgentFabric](https://github.com/modelscope/modelscope-agent/tree/master/apps/agentfabric), an interactive framework for creating agents tailored to real-world applications.
+* Oct 30, 2023: Released a local version of [Facechain Agent](https://modelscope.cn/studios/CVstudio/facechain_agent_studio/summary). For usage instructions, see [Facechain Agent](https://github.com/modelscope/ms-agent/tree/0.8.0#facechain-agent).
+* Oct 25, 2023: Released a local version of [Story Agent](https://modelscope.cn/studios/damo/story_agent/summary) for generating storybook illustrations. For usage instructions, see [Story Agent](https://github.com/modelscope/ms-agent/tree/0.8.0#story-agent).
+* Sep 20, 2023: Released a local version of [ModelScope GPT](https://modelscope.cn/studios/damo/ModelScopeGPT/summary) with a Gradio interface. To run it, navigate to the demo/msgpt/ directory and execute `bash run_msgpt.sh`.
+* Sep 4, 2023: Three demos, [demo_qwen](https://github.com/modelscope/ms-agent/blob/0.8.0/demo/demo_qwen_agent.ipynb), [demo_retrieval_agent](https://github.com/modelscope/ms-agent/blob/0.8.0/demo/demo_retrieval_agent.ipynb) and [demo_register_tool](https://github.com/modelscope/ms-agent/blob/0.8.0/demo/demo_register_new_tool.ipynb), have been added, along with detailed tutorials.
 * Sep 2, 2023: The [preprint paper](https://arxiv.org/abs/2309.00986) associated with this project was published.
-* Aug 22, 2023: Support accessing various AI model APIs using ModelScope tokens.
+* Aug 22, 2023: Added access to multiple AI model APIs using ModelScope tokens.
 * Aug 7, 2023: The initial version of the modelscope-agent repository was released.
 
 </details>
@@ -152,76 +152,76 @@ For earlier demos and documentation, see [ModelScope-Agent 0.8.0 and earlier](ht
 
 ### 🧩 A Customizable Agent Harness
 
-Bring tool execution, permission checks, and feedback into an extensible runtime. Use **lifecycle callbacks and Hooks** to add business rules, plan checks, and result validation. Customize how agents act, when people intervene, and how execution feedback informs the next step.
+An extensible runtime brings together tool execution, permission checks, and feedback. Use **lifecycle callbacks and Hooks** to integrate business rules, validate plans, and check results. Customize how agents act, when people intervene, and how execution feedback informs the next step.
 
 <a id="context-and-memory-for-long-running-tasks"></a>
 
 ### 🧠 Context and Memory for Long-running Tasks
 
-Manage **session history, active context, and project memory** as distinct layers. Preserve full records while pruning tool output and compacting older context, then draw on project memory in later tasks. Cron adds scheduled, recurring, and one-time jobs for ongoing research, checks, and maintenance.
+Manage **session history, active context, and project memory** as distinct layers. Preserve full records while pruning tool output and compacting older context, then draw on project memory in later tasks. Cron supports recurring and one-time jobs for ongoing research, monitoring, and maintenance.
 
 <a id="autonomous-collaboration-and-explicit-workflows"></a>
 
 ### 🤝 Autonomous Collaboration and Explicit Workflows
 
-Let a lead agent delegate open-ended work to specialist sub-agents, or define stages and dependencies explicitly with **chain and DAG workflows**. Choose models, tools, and skills for each role, tailoring collaboration to tasks that range from exploration to structured delivery.
+Let a lead agent delegate open-ended tasks to specialist sub-agents, or define stages and dependencies with **sequential workflows or directed acyclic graphs (DAGs)**. Choose models, tools, and skills for each role to suit the task, from autonomous exploration to execution in defined stages.
 
 <a id="reusable-agent-skills-with-evaluation-driven-improvement"></a>
 
 ### 📈 Reusable Agent Skills with Evaluation-driven Improvement
 
-Package domain knowledge and procedures into skills loaded on demand and reused across tasks. The separate **Skill Evolution** workflow uses execution traces and evaluation feedback to revise skills, then tests candidate updates on a validation set, making improvements measurable.
+Package domain knowledge and procedures into skills loaded on demand and reused across tasks. A dedicated **Skill Evolution** workflow uses execution traces and evaluation feedback to revise skills, then tests candidate updates on a validation set, making improvements measurable.
 
 <a id="an-open-ecosystem-with-portable-agent-resources"></a>
 
 ### 🔌 An Open Ecosystem with Portable Agent Resources
 
-Connect multiple model providers, use MCP for external tools, integrate with editors and other agents through ACP / A2A, and compose extensions through plugins. **Agent Hub** converts, merges, and synchronizes instructions, skills, and memory across frameworks so you can carry them between environments. Applications can also be exposed as MCP services.
+Connect to multiple model providers, use MCP for external tools, integrate with editors and other agents through ACP / A2A, and extend functionality with plugins. **Agent Hub** converts, merges, and synchronizes instructions, skills, and memory across frameworks so you can reuse them in different environments. Applications can also be exposed as MCP services.
 
 <a id="from-framework-capabilities-to-domain-applications"></a>
 
 ### 🎯 From Framework Capabilities to Domain Applications
 
-Built-in applications bring models, tools, and multi-agent collaboration together into **complete workflows** for research, software development, financial analysis, and content creation. Use them for domain-specific tasks or adapt their designs and domain knowledge as a starting point for your own applications. [Explore the applications](#applications)
+Built-in applications bring models, tools, and multi-agent collaboration together into **complete workflows** for research, software development, financial analysis, and content creation. Use them directly for specialized tasks, or build on their workflows and domain expertise to create your own applications. [Explore the applications](#applications)
 
 <a id="installation"></a>
 
 ## 🚀 Installation
 
-Choose the interface that fits your work. Start with **WebUI** to explore projects, sessions, and tool use, or work in the terminal and integrate the SDK into a Python application.
+Choose the interface that fits your work. Start with **WebUI** to explore projects, sessions, and tool use. You can also work in the terminal or integrate the SDK into a Python application.
 
 | Interface | Best suited for |
 | --- | --- |
-| 🖥️ **[WebUI](#webui)** | Work on local projects in the browser and inspect execution and results |
-| ⌨️ **[TUI](#terminal-and-sdk)** | Hold ongoing conversations and manage or resume sessions in the terminal |
+| 🖥️ **[WebUI](#webui)** | Work on local projects in the browser, follow task progress, and review results |
+| ⌨️ **[TUI](#terminal-and-sdk)** | Chat with agents and manage or resume sessions in the terminal |
 | 🛠️ **[CLI](#terminal-and-sdk)** | Run a single task or use agents from scripts |
 | 🐍 **[Python SDK](#terminal-and-sdk)** | Customize agents and embed them in applications |
 
-The default ModelScope provider is supported. Obtain an API key from the [access token page](https://modelscope.cn/my/myaccesstoken).
+For the default ModelScope provider, get an API key from the [access token page](https://modelscope.cn/my/myaccesstoken).
 
 <a id="webui"></a>
 
 ### 🖥️ WebUI
 
-MS-Agent WebUI is a browser workspace for working with agents on local projects.
+MS-Agent WebUI provides a browser workspace for local projects.
 Chat with models, follow tool activity, manage skills and MCP tools, and browse
 or edit project files without leaving the interface.
 
-**WebUI demo: turn workshop material into a brief.** Follow task planning, write approval, and artifact verification in the demo.
+**WebUI demo: organize event materials and create a briefing.** See task planning, approvals for file changes, and result checks in action.
 
 https://github.com/user-attachments/assets/43b3c1cc-555a-4184-b1dd-66e0a21e7a12
 
 > [!IMPORTANT]
-> **Install the new WebUI from source for the latest experience.** Requires Git, **Python 3.12+**, **Node.js 22.22.0+**, **pnpm 10.17.1**, and **uv 0.5+**.
+> **Install the new WebUI from source.** You will need Git, **Python 3.12+**, **Node.js 22.22.0+**, **pnpm 10.17.1**, and **uv 0.5+**.
 
-For a first-time setup, follow [environment setup](webui/README.md#first-time-setup). If Python and Node.js are already installed, check them with `python3 --version` and `node --version`. To create a Python environment, run the following in the directory where you plan to keep the project:
+If this is your first installation, follow the [environment setup guide](webui/README.md#first-time-setup). If Python and Node.js are already installed, check their versions with `python3 --version` and `node --version`. To create a Python environment, run the following in the directory where you plan to keep the project:
 
 ```bash
 python3 -m venv ms-agent-env
 source ms-agent-env/bin/activate
 ```
 
-Make sure `python3` is version 3.12+ before creating the environment. If you already use a virtual or Conda environment, activate it instead. Then install and start the app in the same terminal:
+Make sure `python3` is version 3.12+ before creating the environment. If you already have a virtual environment or Conda environment, activate it instead. Then install and start the app in the same terminal:
 
 ```bash
 npm install --global pnpm@10.17.1
@@ -232,34 +232,34 @@ pip install -e .
 ms-agent ui
 ```
 
-The first start uses uv to prepare the backend environment, installs frontend
-dependencies, and builds the pages and styles. Keep your network connection available.
-Once ready, the browser opens at the URL printed in the terminal, usually
+On first launch, MS-Agent sets up the backend environment with uv, installs frontend
+dependencies, and builds the frontend. Stay connected to the internet until setup finishes.
+The browser then opens at the URL printed in the terminal, usually
 **http://127.0.0.1:8000**.
 In **Settings → Models**, select a provider, click **Edit** to save your API key,
-then use **Add model** to enter a model ID. Return to chat and select that model
-below the input to start a conversation. Press Ctrl-C to stop the service.
+then use **Add model** to enter a model ID. Return to the chat page and select the model
+below the message box to start a conversation. Press Ctrl-C to stop the service.
 
 ```bash
 ms-agent ui --port 8080    # Choose another port
 ms-agent ui --no-browser  # Do not open a browser
 ```
 
-For virtual environment setup, development, Docker and configuration, see the
+For virtual environment setup, development, Docker, and configuration, see the
 [WebUI guide](webui/README.md).
 
 <a id="terminal-and-sdk"></a>
 
 ### ⌨️ Terminal and SDK
 
-TUI, CLI, and the Python SDK require **Python 3.10+**; Node.js and pnpm are not needed. You can [prepare Python with uv](webui/README.md#install-python) if a suitable version is missing. Otherwise, check `python3 --version`, then create and activate an environment:
+TUI, CLI, and the Python SDK require **Python 3.10+**; Node.js and pnpm are not needed. You can [install Python with uv](webui/README.md#install-python) if you do not have a compatible version. Otherwise, check `python3 --version`, then create and activate an environment:
 
 ```bash
 python3 -m venv ms-agent-env
 source ms-agent-env/bin/activate
 ```
 
-If you already use a virtual or Conda environment, activate it instead. If you have installed WebUI, skip environment creation and source installation, and configure your API key in the same environment. Otherwise, continue with:
+If you already have a virtual environment or Conda environment, activate it instead. If you have installed WebUI, skip environment creation and source installation, and configure your API key in the same environment. Otherwise, continue with:
 
 ```bash
 git clone https://github.com/modelscope/ms-agent.git
@@ -273,7 +273,7 @@ The following examples use ModelScope inference by default. Set your API key in 
 export MODELSCOPE_API_KEY="your_modelscope_api_key"
 ```
 
-The first run of the default agent may install additional dependencies for local code execution. Keep your network connection available and wait for the input prompt or task result.
+The first run of the default agent may install additional dependencies for local code execution. Stay connected to the internet and wait for the input prompt or task result.
 
 <a id="tui"></a>
 
@@ -333,7 +333,7 @@ pip install -e '.[all]'
 
 See the [installation guide](docs/en/GetStarted/Installation.md#optional-dependencies-extras) for the full list. Keep the quotes: macOS defaults to zsh, which otherwise treats square brackets as filename patterns.
 
-The current [PyPI release](https://pypi.org/project/ms-agent/) is 1.6.0. It has the older WebUI and dependency set, lacks the current TUI, and does not provide `retrieval` or `cinema` extras. Use source installation for a new environment; see the installation guide for version differences and known installation issues.
+The current [PyPI release](https://pypi.org/project/ms-agent/) is 1.6.0. It has the older WebUI and dependency set, lacks the current TUI, and does not provide `retrieval` or `cinema` extras. Install from source when setting up a new environment; see the installation guide for version differences and known installation issues.
 
 </details>
 
@@ -351,13 +351,13 @@ For scheduled jobs with `ms-agent cron`, Agent Hub with `ms-agent agent`, and mo
 
 ## 🎯 Applications
 
-These applications put the framework to work on complete domain-specific tasks. Use them directly or adapt their agent orchestration, tools, and workflows for your own systems. Each linked guide covers the project's models, dependencies, and execution.
+These applications use the framework to handle specialized tasks from start to finish. Use them directly or adapt their agent orchestration, tools, and workflows for your own systems. Each linked guide lists the required models and dependencies and explains how to run the project.
 
 <a id="agentic-insight--from-research-questions-to-evidence-based-reports"></a>
 
 ### 🔎 Agentic Insight · From Research Questions to Evidence-based Reports
 
-A Researcher coordinates Searcher and Reporter agents to investigate open-ended questions through iterative search, evidence collection, and writing. Version 2 stores structured intermediate artifacts in the filesystem and explicitly ties report claims to evidence, supporting source tracing, inspection, and continued work.
+A Researcher agent coordinates Searcher and Reporter agents to investigate open-ended questions through iterative search, evidence collection, and writing. Version 2 stores structured intermediate artifacts in the filesystem and explicitly ties report claims to evidence, making it easier to trace sources, review the research process, and resume work.
 
 As of April 9, 2026, Agentic Insight v2 scored **55.31 on DeepResearch Bench** with Qwen3.5-Plus + GPT 5.2 and ranked second among open-source entries and fifth overall.
 
@@ -367,7 +367,7 @@ As of April 9, 2026, Agentic Insight v2 scored **55.31 on DeepResearch Bench** w
 
 ### 💻 CodeGenesis · From Natural-language Requirements to Software Projects
 
-Coordinate requirements analysis, architecture, file planning, coding, and refinement through a multi-agent development workflow. Generate files in dependency order and iterate using LSP diagnostics and runtime feedback. A seven-stage standard workflow supports detailed project design; a four-stage alternative supports rapid prototyping.
+Coordinate requirements analysis, architecture design, file planning, coding, and refinement through a multi-agent development workflow. Generate files in dependency order and iterate using LSP diagnostics and runtime feedback. A seven-stage standard workflow supports detailed project design; a four-stage alternative supports rapid prototyping.
 
 [Design and usage guide](docs/en/Projects/CodeGenesis.md) · [Source code](projects/code_genesis) · [Workflow diagram](projects/code_genesis/asset/workflow.jpg)
 
@@ -375,7 +375,7 @@ Coordinate requirements analysis, architecture, file planning, coding, and refin
 
 ### 📊 FinResearch · Financial Data Meets Market Research
 
-Five specialist agents handle task decomposition, data collection, quantitative analysis, sentiment research, and report synthesis. Combine structured financial data from AkShare / BaoStock with public information from the web to produce illustrated reports that bring together data analysis, visualizations, and qualitative findings.
+Five specialist agents handle task decomposition, data collection, quantitative analysis, market sentiment analysis, and report writing. Combine structured financial data from AkShare / BaoStock with public information from the web to produce illustrated reports that bring together data analysis, visualizations, and qualitative findings.
 
 [Usage guide](projects/fin_research/README.md) · [Online demo](https://modelscope.cn/studios/ms-agent/FinResearch) · [Example reports](https://www.modelscope.cn/models/ms-agent/fin_research_examples) · [Video demo](https://github.com/user-attachments/assets/a11db8d2-b559-4118-a2c0-2622d46840ef)
 
@@ -401,7 +401,7 @@ Start with a topic or plain-text material and coordinate scripting, storyboardin
 
 ### 🧬 Skill Evolution · Improve Skills with Task Feedback
 
-For tasks with automated evaluation, run the current skills, collect traces and scores, then use reflection and skill-management agents to create or revise skills. Candidate updates pass through a validation gate and are accepted only when scores improve. A SearchQA baseline provides a starting point for studying how task experience can improve a skill library.
+For tasks that can be evaluated automatically, run the current skills, collect traces and scores, then use reflection and skill-management agents to create or revise skills. Candidate updates are tested on a validation set and accepted only if scores improve. A SearchQA baseline provides a starting point for studying how task experience can improve a skill library.
 
 [Workflow and usage guide](projects/skill_evolution/README.md)
 
