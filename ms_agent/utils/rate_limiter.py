@@ -1,5 +1,6 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import asyncio
+import threading
 import time
 from collections import deque
 from typing import Callable
@@ -47,6 +48,10 @@ class RateLimiter:
         # Concurrency control
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._lock = asyncio.Lock()
+        # Separate synchronous lock for the non-async bookkeeping methods
+        # (get_stats/reset/record_success/record_error); an asyncio.Lock only
+        # supports `async with`, so using it under a plain `with` raises.
+        self._state_lock = threading.Lock()
 
         logger.info(
             f'RateLimiter initialized: {max_requests_per_second} req/s, '
@@ -69,8 +74,10 @@ class RateLimiter:
         now = time.time()
 
         # 1. Check minimum request interval
-        if self._last_request_time > 0:
-            elapsed = now - self._last_request_time
+        with self._state_lock:
+            last_request_time = self._last_request_time
+        if last_request_time > 0:
+            elapsed = now - last_request_time
             if elapsed < self.min_request_interval:
                 wait_time = self.min_request_interval - elapsed
                 logger.debug(
@@ -78,33 +85,43 @@ class RateLimiter:
                 await asyncio.sleep(wait_time)
                 now = time.time()
 
-        # 2. Check requests per second limit
+        # 2. Check requests per second limit. _lock serializes coroutines;
+        # _state_lock (a threading.Lock shared with the synchronous bookkeeping
+        # methods) guards the actual shared state and is never held across an
+        # await.
         async with self._lock:
-            # Clean up expired request records (older than 1 second)
-            cutoff_time = now - 1.0
-            while self._request_times and self._request_times[0] < cutoff_time:
-                self._request_times.popleft()
+            with self._state_lock:
+                # Clean up expired request records (older than 1 second)
+                cutoff_time = now - 1.0
+                while self._request_times and self._request_times[
+                        0] < cutoff_time:
+                    self._request_times.popleft()
 
-            # If rate limit reached, wait until oldest request expires
-            if len(self._request_times) >= self.max_requests_per_second:
-                oldest_request = self._request_times[0]
-                wait_time = 1.0 - (now
-                                   - oldest_request) + 0.01  # Add 10ms margin
-                if wait_time > 0:
-                    logger.debug(
-                        f'Rate limit reached ({self.max_requests_per_second} req/s): '
-                        f'waiting {wait_time:.3f}s')
-                    await asyncio.sleep(wait_time)
-                    now = time.time()
-                    # Clean up expired records
+                # If rate limit reached, wait until oldest request expires
+                if len(self._request_times) >= self.max_requests_per_second:
+                    oldest_request = self._request_times[0]
+                    wait_time = 1.0 - (now - oldest_request
+                                       ) + 0.01  # Add 10ms margin
+                else:
+                    wait_time = 0.0
+
+            if wait_time > 0:
+                logger.debug(
+                    f'Rate limit reached ({self.max_requests_per_second} req/s): '
+                    f'waiting {wait_time:.3f}s')
+                await asyncio.sleep(wait_time)
+                now = time.time()
+                with self._state_lock:
+                    # Clean up expired records after waiting
                     cutoff_time = now - 1.0
                     while self._request_times and self._request_times[
                             0] < cutoff_time:
                         self._request_times.popleft()
 
-            # Record this request time
-            self._request_times.append(now)
-            self._last_request_time = now
+            with self._state_lock:
+                # Record this request time
+                self._request_times.append(now)
+                self._last_request_time = now
 
     async def execute(self, func: Callable, *args, **kwargs):
         """
@@ -137,7 +154,7 @@ class RateLimiter:
         Returns:
             Dictionary containing current state
         """
-        with self._lock:
+        with self._state_lock:
             now = time.time()
             cutoff_time = now - 1.0
             recent_requests = sum(1 for t in self._request_times
@@ -161,7 +178,7 @@ class RateLimiter:
 
     def reset(self):
         """Reset rate limiter state"""
-        with self._lock:
+        with self._state_lock:
             self._request_times.clear()
             self._last_request_time = 0.0
             logger.info('RateLimiter reset')
@@ -219,7 +236,7 @@ class AdaptiveRateLimiter(RateLimiter):
 
     def record_success(self):
         """Record successful request"""
-        with self._lock:
+        with self._state_lock:
             self._total_requests += 1
             self._consecutive_successes += 1
             self._consecutive_errors = 0
@@ -231,6 +248,10 @@ class AdaptiveRateLimiter(RateLimiter):
                     round(old_rps * self._recovery_factor), self._max_rps)
                 if new_rps > old_rps:
                     self.max_requests_per_second = new_rps
+                    # deque maxlen is immutable, so resize it to the new limit
+                    # (preserving recent history) or the rps change has no effect.
+                    self._request_times = deque(
+                        self._request_times, maxlen=new_rps)
                     logger.info(
                         f'Rate limit increased: {old_rps} → {new_rps} req/s '
                         f'(after {self._consecutive_successes} successes)')
@@ -243,7 +264,7 @@ class AdaptiveRateLimiter(RateLimiter):
         Args:
             is_rate_limit_error: Whether this is a rate limit error
         """
-        with self._lock:
+        with self._state_lock:
             self._total_requests += 1
             self._total_errors += 1
             self._consecutive_errors += 1
@@ -256,6 +277,10 @@ class AdaptiveRateLimiter(RateLimiter):
                     int(old_rps * self._backoff_factor), self._min_rps)
                 if new_rps < old_rps:
                     self.max_requests_per_second = new_rps
+                    # deque maxlen is immutable, so resize it to the new limit
+                    # (preserving recent history) or the rps change has no effect.
+                    self._request_times = deque(
+                        self._request_times, maxlen=new_rps)
                     # Also increase minimum request interval
                     self.min_request_interval = min(
                         self.min_request_interval * 1.5, 2.0)
@@ -271,6 +296,10 @@ class AdaptiveRateLimiter(RateLimiter):
                     int(old_rps * self._backoff_factor), self._min_rps)
                 if new_rps < old_rps:
                     self.max_requests_per_second = new_rps
+                    # deque maxlen is immutable, so resize it to the new limit
+                    # (preserving recent history) or the rps change has no effect.
+                    self._request_times = deque(
+                        self._request_times, maxlen=new_rps)
                     logger.warning(
                         f'Multiple errors detected! Reducing rate: {old_rps} → {new_rps} req/s '
                         f'(after {self._consecutive_errors} errors)')
@@ -279,7 +308,7 @@ class AdaptiveRateLimiter(RateLimiter):
     def get_stats(self) -> dict:
         """Get extended statistics"""
         stats = super().get_stats()
-        with self._lock:
+        with self._state_lock:
             stats.update({
                 'total_requests':
                 self._total_requests,
