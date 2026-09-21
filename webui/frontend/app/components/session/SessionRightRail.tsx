@@ -1164,9 +1164,10 @@ export function SessionRightRail({
         </div>
         {onClose && (
           <IconButton
-            icon={<CloseIcon className="h-5 w-5" />}
+            icon={<CloseIcon className="h-4 w-4" />}
             variant="tonal"
             size="sm"
+            className="!h-7 !w-7 !rounded-[12px]"
             onClick={onClose}
           />
         )}

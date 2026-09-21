@@ -1,5 +1,5 @@
 import { Input, Radio } from 'antd'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   MemoryModelConfig,
   type MemoryModelValue
@@ -7,6 +7,7 @@ import {
 import { MsaSwitch } from '~/components/common/MsaSwitch'
 import { MsaTextArea } from '~/components/common/MsaTextArea'
 import { api } from '~/lib/api'
+import { useOnProjectSettingsChanged } from '~/lib/events'
 import { useT } from '~/lib/i18n'
 import type { AgentSettings, Profile } from '~/lib/types'
 import { metaDict, pageTitle } from '~/lib/pageTitle'
@@ -24,7 +25,7 @@ export default function PersonalizationSettings() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [settings, setSettings] = useState<AgentSettings | null>(null)
 
-  useEffect(() => {
+  const load = useCallback(() => {
     api.getInstruction('global').then((r) => {
       setContent(r.content)
       setLoaded(true)
@@ -32,6 +33,12 @@ export default function PersonalizationSettings() {
     api.getProfile().then(setProfile)
     api.getAgentSettings().then(setSettings)
   }, [])
+
+  useEffect(load, [load])
+  // These same globals are edited from the project rail (InstructionsCard,
+  // memory config) and by external API calls, all relayed as a project-settings
+  // change — re-read so this page reflects them without a manual reload.
+  useOnProjectSettingsChanged(load)
 
   const saveInstruction = async () => {
     if (!loaded) return

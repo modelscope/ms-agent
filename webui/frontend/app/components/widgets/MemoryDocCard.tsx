@@ -5,6 +5,7 @@ import { DeferredSkeleton } from '~/components/common/DeferredSkeleton'
 import { EmptyState } from '~/components/common/EmptyState'
 import { Markdown } from '~/components/common/Markdown'
 import { api } from '~/lib/api'
+import { useOnProjectSettingsChanged } from '~/lib/events'
 import { useT } from '~/lib/i18n'
 import type { Project } from '~/lib/types'
 import { WidgetCard } from './WidgetCard'
@@ -57,6 +58,10 @@ export function MemoryDocCard({ project }: { project: Project }) {
     setLoaded(false)
     refresh()
   }, [refresh])
+  // The document is also written from the chat side and by external API calls
+  // (both relayed as a project-settings change); re-fetch so the preview here
+  // never lags what the agent now reads.
+  useOnProjectSettingsChanged(refresh)
 
   const openEditor = () => {
     setDraft(content)

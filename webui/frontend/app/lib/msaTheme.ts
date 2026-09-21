@@ -85,6 +85,9 @@ const componentTokens = {
     paddingInline: 10,
     paddingInlineSM: 6
   },
+  Menu: {
+    fontSize: 13
+  },
   Segmented: {
     trackBg: light.fill[2],
     trackPadding: 4,
@@ -119,6 +122,9 @@ const darkComponentTokens = {
   Button: {
     paddingInline: 10,
     paddingInlineSM: 6
+  },
+  Menu: {
+    fontSize: 13
   },
   Segmented: {
     trackBg: dark.fill[2],
@@ -205,7 +211,6 @@ export const msaModalProps: XProviderProps['modal'] = {
 }
 
 /* ===== Global Drawer close placement ===== */
-// Close button on the top-right, matching the app's rail headers.
 export const msaDrawerProps: XProviderProps['drawer'] = {
   closable: { placement: 'end' }
 }

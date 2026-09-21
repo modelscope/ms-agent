@@ -1,5 +1,5 @@
 import { Button, Popconfirm, Select, Tooltip } from 'antd'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { AddProviderModal } from '~/components/models/AddProviderModal'
 import { ModelEditModal } from '~/components/models/ModelEditModal'
@@ -10,6 +10,7 @@ import { KeyStatusTag } from '~/components/common/KeyStatus'
 import { DeferredSkeleton } from '~/components/common/DeferredSkeleton'
 import { ScrollArea } from '~/components/common/ScrollArea'
 import { api } from '~/lib/api'
+import { useOnModelsChanged } from '~/lib/events'
 import { useT } from '~/lib/i18n'
 import type { AgentSettings, Model, Provider } from '~/lib/types'
 import EditIcon from '~/assets/icons/edit.svg?react'
@@ -59,32 +60,43 @@ export default function ModelsSettings() {
   const [dragId, setDragId] = useState<string | null>(null)
   const [dropId, setDropId] = useState<string | null>(null)
 
-  const refresh = () =>
-    Promise.all([api.listProviders(), api.listModels(), api.getAgentSettings()])
-      .then(([ps, ms, s]) => {
-        setProviders(ps)
-        setModels(ms)
-        setSettings(s)
-        // Default-select the first provider when nothing is selected. A seed
-        // naming a provider this instance does not have is dropped here rather
-        // than left selected, which would render as a blank detail pane.
-        setActiveProviderId((prev) =>
-          prev && ps.some((p) => p.id === prev) ? prev : (ps[0]?.id ?? null)
-        )
-      })
-      // `null` gates the skeletons on this page, so a failure has to settle the
-      // lists to `[]` or they stay skeletons for good. `Promise.all` means any
-      // one of the three failing takes the other two down with it — the page
-      // then reads as empty rather than broken, which the toast has to explain.
-      // `settings` stays `null`: every read of it is optional-chained.
-      .catch(() => {
-        setProviders([])
-        setModels([])
-      })
+  const refresh = useCallback(
+    () =>
+      Promise.all([
+        api.listProviders(),
+        api.listModels(),
+        api.getAgentSettings()
+      ])
+        .then(([ps, ms, s]) => {
+          setProviders(ps)
+          setModels(ms)
+          setSettings(s)
+          // Default-select the first provider when nothing is selected. A seed
+          // naming a provider this instance does not have is dropped here rather
+          // than left selected, which would render as a blank detail pane.
+          setActiveProviderId((prev) =>
+            prev && ps.some((p) => p.id === prev) ? prev : (ps[0]?.id ?? null)
+          )
+        })
+        // `null` gates the skeletons on this page, so a failure has to settle the
+        // lists to `[]` or they stay skeletons for good. `Promise.all` means any
+        // one of the three failing takes the other two down with it — the page
+        // then reads as empty rather than broken, which the toast has to explain.
+        // `settings` stays `null`: every read of it is optional-chained.
+        .catch(() => {
+          setProviders([])
+          setModels([])
+        }),
+    []
+  )
 
   useEffect(() => {
     refresh()
-  }, [])
+  }, [refresh])
+
+  // An external API call (or another tab) that adds/edits a model is relayed
+  // here by the server-event bridge, so this page reflects it without a reload.
+  useOnModelsChanged(refresh)
 
   const activeProvider = useMemo(
     () => providers?.find((p) => p.id === activeProviderId) ?? null,

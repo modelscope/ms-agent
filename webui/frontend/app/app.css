@@ -272,8 +272,7 @@ a {
 }
 
 *:hover {
-  scrollbar-color: color-mix(in srgb, var(--msa-text-3) 45%, transparent)
-    transparent;
+  scrollbar-color: color-mix(in srgb, var(--msa-text-3) 45%, transparent) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -343,6 +342,11 @@ a {
   .ant-segmented .ant-segmented-item-selected,
   .ant-segmented .ant-segmented-thumb {
     box-shadow: none;
+  }
+
+  .ant-dropdown-menu-submenu-title {
+    display: flex;
+    align-items: center;
   }
 }
 
