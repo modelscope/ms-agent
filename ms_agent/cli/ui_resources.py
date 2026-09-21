@@ -197,7 +197,7 @@ def _prune_to_traced_closure(frontend):
 def check_backend_dependencies():
     modules = [
         'anthropic', 'exa_py', 'fastapi', 'httpx',
-        'loguru', 'mem0', 'pydantic_settings', 'socksio',
+        'mem0', 'pydantic_settings', 'socksio',
         'sse_starlette', 'uvicorn', 'watchfiles'
     ]
     missing = [

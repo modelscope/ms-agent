@@ -13,16 +13,47 @@ from ms_agent.capabilities import create_registry
 logger = logging.getLogger(__name__)
 
 
-def _protect_stdout() -> None:
-    """Replace sys.stdout with stderr so stray prints never corrupt the
-    MCP stdio JSONRPC channel.
+_stdout_protected = False
 
-    FastMCP's stdio transport writes to the *original* stdout file
-    descriptor, so replacing the Python-level ``sys.stdout`` object is
-    safe: library code that accidentally does ``print()`` or
-    ``sys.stdout.write()`` will be routed to stderr instead.
+
+def _protect_stdout() -> None:
+    """Redirect the Python-level ``sys.stdout`` to stderr, once.
+
+    FastMCP's stdio transport captures ``sys.stdout.buffer`` when the server
+    starts (see ``mcp.server.stdio.stdio_server``) and writes every JSONRPC
+    frame to that captured wrapper.  Re-binding the ``sys.stdout`` *object*
+    afterwards therefore does not affect the protocol channel, but it does
+    reroute stray ``print()`` / ``sys.stdout.write()`` from library code (LLM
+    streaming, third-party tools, ...) to stderr so they can never corrupt the
+    JSONRPC stream.
+
+    This is intentionally a one-way, idempotent switch.  It is applied lazily
+    on the first tool invocation -- strictly *after* the transport has captured
+    the original stdout -- and never restored.  Because nothing ever hands the
+    real stdout back, there is no window in which a concurrent background task
+    can restore it while other code is printing, which eliminates the
+    interleaving hazard of per-call save/restore pairs.
     """
-    sys.stdout = sys.stderr
+    global _stdout_protected
+    if not _stdout_protected:
+        sys.stdout = sys.stderr
+        _stdout_protected = True
+
+
+def _is_exposed_over_mcp(cap) -> bool:
+    """Whether *cap* is registered as an individual MCP tool.
+
+    Parent component descriptors -- those that declare ``sub_capabilities`` but
+    are not themselves a ``project`` and have no ``parent`` -- are *not* exposed
+    directly; their children are registered individually instead.  This is why
+    the registry can hold N descriptors while the MCP server advertises N-1
+    tools.
+    """
+    if cap.granularity == 'project' and cap.sub_capabilities:
+        return True
+    if cap.sub_capabilities and not cap.parent:
+        return False
+    return True
 
 
 def _load_env(env_file: str | None = None) -> None:
@@ -71,16 +102,28 @@ def _load_env(env_file: str | None = None) -> None:
 
 
 def _print_check() -> None:
-    """Quick health check: print available capabilities and exit."""
+    """Quick health check: print available capabilities and exit.
+
+    Reports both the number of *registered* descriptors and the number
+    *exposed* over MCP.  These differ (currently 31 vs 30) because parent
+    component descriptors such as ``lsp_code_server`` are registered but not
+    advertised as their own MCP tool -- see :func:`_is_exposed_over_mcp`.
+    """
     registry = create_registry()
     caps = registry.list_all()
+    exposed = [c for c in caps if _is_exposed_over_mcp(c)]
     info = {
         'status':
         'ok',
+        'registered_total':
+        len(caps),
+        'mcp_exposed_total':
+        len(exposed),
         'capabilities': [{
             'name': c.name,
             'granularity': c.granularity,
             'summary': c.summary,
+            'mcp_exposed': _is_exposed_over_mcp(c),
         } for c in caps],
     }
     print(json.dumps(info, indent=2))
@@ -201,7 +244,7 @@ def main() -> None:
     except ImportError:
         print(
             'ERROR: The "mcp" package is required.  Install it with:\n'
-            '  pip install mcp\n',
+            "  pip install 'mcp<2'\n",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -211,24 +254,23 @@ def main() -> None:
 
     server = FastMCP(
         'ms-agent-capabilities',
+        port=args.port,
         instructions=('ms-agent Capability Gateway. Provides deep research, '
                       'LSP code validation, and advanced file-editing tools.'),
     )
 
     for cap in registry.list_all():
-        if cap.granularity == 'project' and cap.sub_capabilities:
-            # Project-level: register as a tool but note long duration in description
-            _register_cap(server, registry, cap, workspace)
-        elif cap.sub_capabilities and not cap.parent:
-            # Parent component descriptor -- skip (children are registered individually)
-            continue
-        else:
-            _register_cap(server, registry, cap, workspace)
+        # Parent component descriptors are skipped; their children are
+        # registered individually.  See :func:`_is_exposed_over_mcp`.
+        if _is_exposed_over_mcp(cap):
+            _register_cap(
+                server, registry, cap, workspace,
+                protect_stdout=args.transport == 'stdio')
 
     server.run(transport=args.transport)
 
 
-def _build_handler(registry, cap, workspace: str):
+def _build_handler(registry, cap, workspace: str, *, protect_stdout=False):
     """Build a handler function with a proper signature for FastMCP.
 
     FastMCP uses ``inspect.signature()`` to discover parameters, so we
@@ -270,12 +312,13 @@ def _build_handler(registry, cap, workspace: str):
     cap_name = cap.name
 
     async def handler(**kw):
-        saved = sys.stdout
-        sys.stdout = sys.stderr
-        try:
-            result = await registry.invoke(cap_name, kw, workspace=workspace)
-        finally:
-            sys.stdout = saved
+        # Lazily switch stdout to stderr on first use (after the transport has
+        # captured the real stdout).  One-way and idempotent -- no restore, so
+        # concurrent background tasks can never hand the real stdout back mid
+        # print.  See :func:`_protect_stdout`.
+        if protect_stdout:
+            _protect_stdout()
+        result = await registry.invoke(cap_name, kw, workspace=workspace)
         return json.dumps(result, ensure_ascii=False)
 
     handler.__name__ = cap_name
@@ -285,13 +328,15 @@ def _build_handler(registry, cap, workspace: str):
     return handler
 
 
-def _register_cap(server, registry, cap, workspace: str) -> None:
+def _register_cap(server, registry, cap, workspace: str, *,
+                  protect_stdout=False) -> None:
     """Register a single capability as an MCP tool on *server*."""
     desc = cap.summary
     if cap.estimated_duration in ('minutes', 'hours'):
         desc += f' [estimated duration: {cap.estimated_duration}]'
 
-    handler = _build_handler(registry, cap, workspace)
+    handler = _build_handler(
+        registry, cap, workspace, protect_stdout=protect_stdout)
     handler.__doc__ = desc
     server.tool(name=cap.name, description=desc)(handler)
 

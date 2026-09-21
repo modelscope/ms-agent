@@ -6,7 +6,7 @@ google-search-results
 gradio>=5.0.0
 json5
 markdown
-mcp
+mcp<2
 modelscope
 openai
 pandas

@@ -1,6 +1,7 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import asyncio
 import logging
+import os
 from typing import Any
 
 from ms_agent.capabilities.descriptor import CapabilityDescriptor
@@ -10,6 +11,20 @@ logger = logging.getLogger(__name__)
 
 _engines: dict[str, Any] = {}
 _fetcher: Any = None
+
+# API-key requirement per engine (keyed by the normalized engine name/alias).
+# ``arxiv`` needs no key and is deliberately absent.  Validating here -- rather
+# than via the descriptor's static ``requires`` -- lets the default (arxiv)
+# stay key-free while still giving an actionable message for keyed engines.
+_ENGINE_ENV_REQUIREMENTS: dict[str, list[str]] = {
+    'exa': ['EXA_API_KEY', 'EXA_API_KEYS'],
+    'serpapi': ['SERPAPI_API_KEY'],
+    'serp': ['SERPAPI_API_KEY'],
+    'google': ['SERPAPI_API_KEY'],
+    'bing': ['SERPAPI_API_KEY'],
+    'baidu': ['SERPAPI_API_KEY'],
+    'tavily': ['TAVILY_API_KEY'],
+}
 
 
 def _get_engine(engine_type: str) -> Any:
@@ -33,13 +48,18 @@ WEB_SEARCH_DESCRIPTOR = CapabilityDescriptor(
     name='web_search',
     version='0.1.0',
     granularity='tool',
-    summary=('Search the web using multiple engines (exa, serpapi, arxiv) '
-             'and optionally fetch full page content.'),
+    summary=(
+        'Search the web using multiple engines '
+        '(arxiv / exa / serpapi / tavily, plus google/bing/baidu aliases) '
+        'and optionally fetch full page content.'),
     description=(
         'Performs a web search and returns structured results including '
-        'title, URL, and summary for each hit.  Supports exa, serpapi, '
-        'and arxiv backends.  Set fetch_content=true to additionally '
-        'retrieve and return page text (truncated to 10 000 chars).'),
+        'title, URL, and summary for each hit.  Supported engines: '
+        'arxiv (default, no key), exa (EXA_API_KEY or EXA_API_KEYS), '
+        'serpapi / serp / '
+        'google / bing / baidu (SERPAPI_API_KEY), tavily (TAVILY_API_KEY). '
+        'Set fetch_content=true to additionally retrieve and return page '
+        'text (truncated to 10 000 chars).'),
     input_schema={
         'type': 'object',
         'properties': {
@@ -56,8 +76,8 @@ WEB_SEARCH_DESCRIPTOR = CapabilityDescriptor(
                 'type':
                 'string',
                 'description':
-                ("Search engine to use: 'exa', 'serpapi', or 'arxiv' "
-                 "(default: 'arxiv')"),
+                ("Search engine: 'arxiv' (default, no key), 'exa', "
+                 "'serpapi'/'serp'/'google'/'bing'/'baidu', or 'tavily'"),
                 'default':
                 'arxiv',
             },
@@ -106,8 +126,21 @@ async def _handle_web_search(args: dict[str, Any],
         return {'error': 'query is required'}
 
     num_results: int = args.get('num_results', 5)
-    engine_type: str = args.get('engine_type', 'arxiv')
+    engine_type: str = args.get('engine_type', 'arxiv').lower().strip()
     fetch_content: bool = args.get('fetch_content', False)
+
+    # Validate engine credentials up-front so the caller gets one clear,
+    # actionable message instead of an opaque downstream failure.
+    required_env = _ENGINE_ENV_REQUIREMENTS.get(engine_type, [])
+    # 同一引擎的凭据变量互为备选；Exa 也支持多 Key 池。
+    if required_env and not any(os.environ.get(v) for v in required_env):
+        return {
+            'error':
+            (f"Search engine {engine_type!r} requires one of "
+             f"{' / '.join(required_env)} to be set. "
+             f"Set it in your .env / shell / MCP client env config, or use "
+             f"engine_type='arxiv' which needs no API key.")
+        }
 
     # Initialise search engine
     try:
