@@ -1,3 +1,4 @@
+import type { ForkOrigin } from "./types";
 import {
   AbstractChatProvider,
   type TransformMessage,
@@ -194,6 +195,9 @@ export type AgentPart =
 
 /** Rich assistant message; user messages reuse the same shape with content only. */
 export interface AgentMessage {
+  logSeq?: number;
+  forkAfterSeq?: number;
+  forkOrigin?: ForkOrigin;
   role: "user" | "assistant" | "system";
   /**
    * Canonical plain text: the user's message, or (for assistant) the joined
@@ -349,6 +353,8 @@ export class AgentChatProvider extends AbstractChatProvider<
           ? meta.plan_file
           : undefined;
       let out = base;
+      if (typeof meta.fork_after_seq === "number") out = { ...out, forkAfterSeq: meta.fork_after_seq };
+      if (typeof meta.log_seq === "number") out = { ...out, logSeq: meta.log_seq };
       if (durationMs != null) out = { ...out, loopDurationMs: durationMs };
       if (changed?.length) out = { ...out, changedFiles: changed };
       if (planFile) out = { ...out, planFile };
@@ -836,6 +842,9 @@ export interface HistoryPart {
 }
 
 export interface HistoryMessage {
+  log_seq?: number | null;
+  fork_after_seq?: number | null;
+  fork_origin?: ForkOrigin | null;
   role: "user" | "assistant" | "system";
   content: string;
   parts?: HistoryPart[];
@@ -870,6 +879,9 @@ export function historyToAgentMessages(
   if (!rows) return [];
   return rows.map((row) => {
     const msg: AgentMessage = { role: row.role, content: row.content };
+    if (row.log_seq != null) msg.logSeq = row.log_seq;
+    if (row.fork_after_seq != null) msg.forkAfterSeq = row.fork_after_seq;
+    if (row.fork_origin) msg.forkOrigin = row.fork_origin;
     if (typeof row.duration_ms === "number")
       msg.loopDurationMs = row.duration_ms;
     if (row.changed_files && row.changed_files.length > 0)

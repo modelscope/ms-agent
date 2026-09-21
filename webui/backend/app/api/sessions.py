@@ -6,7 +6,7 @@ from fastapi.responses import Response
 
 from app.core.envelope import EnvelopeRoute
 from app.schemas.session import (
-    Artifact, Session, SessionCreate, SessionMessage, SessionPlan, SessionUpdate, SessionModelUpdate
+    Artifact, Session, SessionCreate, SessionMessage, SessionPlan, SessionUpdate, SessionModelUpdate, SessionFork
 )
 
 router = APIRouter(prefix="/api", tags=["sessions"], route_class=EnvelopeRoute)
@@ -24,6 +24,13 @@ def create_session(body: SessionCreate) -> Session:
     from app.backends.ms_agent import sessions
 
     return sessions.create_session(body)
+
+
+@router.post("/sessions/{session_id}/fork", status_code=201)
+def fork_session(session_id: str, body: SessionFork) -> Session:
+    from app.backends.ms_agent import sessions
+
+    return sessions.fork_session(session_id, body)
 
 
 @router.get("/sessions/{session_id}")

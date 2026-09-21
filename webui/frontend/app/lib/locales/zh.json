@@ -60,6 +60,11 @@
     "unreadProject": "有已完成但未查看的对话"
   },
   "chat": {
+    "forkUploadPending": "请等待附件上传或消息提交完成后再分支。",
+    "forkReply": "分支",
+    "forkFrom": "从「{title}」分支",
+    "forkSourceDeleted": "原会话已删除",
+    "forkFailed": "分支创建失败，请重试。",
     "welcomeDesc": "告诉我要做什么，我会拆解 plan、调用工具、把产物写到 workspace。",
     "placeholder": "输入你的任务，Enter 发送，Shift+Enter 换行。",
     "thoughts": "思考",

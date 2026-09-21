@@ -21,7 +21,7 @@ from app.backends.ms_agent.common import pm
 from app.core.filetypes import guess_type, is_binary_ext
 from app.schemas.workspace import WorkspaceFile, WorkspaceFileCreate, WorkspaceFileUpdate
 
-_HIDDEN_TOP = {"sessions"}
+_HIDDEN_TOP = {"sessions", ".fork-staging"}
 
 # Dot-directories that are framework internals and should never appear in the
 # workspace listing. User-facing dot-dirs (like .github) are kept visible.

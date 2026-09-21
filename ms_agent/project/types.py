@@ -56,3 +56,4 @@ class Session:
     created_at: str = field(default_factory=_now_iso)
     updated_at: str = field(default_factory=_now_iso)
     model_provider: str | None = None
+    forked_from: dict | None = None

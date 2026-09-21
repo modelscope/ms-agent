@@ -1,3 +1,4 @@
+import { readComposerDraft, saveComposerDraft, registerComposer } from '~/lib/composerDraft'
 import { App, Button, Dropdown, Tooltip, Typography } from 'antd'
 import type { MenuProps } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -14,6 +15,7 @@ import { useModelChanged } from '~/lib/modelChanged'
 import { useOnMcpSkillChanged, dispatchWorkspaceChanged } from '~/lib/events'
 import type { ChatFileRef } from '~/lib/agentProvider'
 import { useT } from '~/lib/i18n'
+import { clientId } from '~/lib/clientId'
 import type {
   AgentSettings,
   Mcp,
@@ -78,6 +80,8 @@ export interface ThinkingState {
 }
 
 interface ComposerProps {
+  draftKey?: string | null
+  focusOnMount?: boolean
   modelSelection?: SessionModelSelection
   modelSelectionDisabled?: boolean
   onSubmit: (
@@ -129,6 +133,8 @@ function SuggestionDesc({ text }: { text: string }) {
 }
 
 export function Composer({
+  draftKey,
+  focusOnMount,
   modelSelection: providedSelection,
   modelSelectionDisabled = false,
   onSubmit,
@@ -406,8 +412,40 @@ export function Composer({
   const [pickedSkills, setPickedSkills] = useState<
     { key: string; id: string; name: string }[]
   >([])
-  const skillSeqRef = useRef(0)
   const senderRef = useRef<SenderHandle>(null)
+
+  const draftSnapshot = useRef({ text: draft, slots: [] as SlotConfigType[], skills: pickedSkills, files })
+  const draftReady = useRef(false)
+  useEffect(() => {
+    if (!draftKey || draftReady.current) return
+    draftReady.current = true
+    const saved = readComposerDraft(draftKey)
+    if (saved) {
+      setDraft(saved.text)
+      setPickedSkills(saved.skills)
+      setFiles(saved.files)
+      senderRef.current?.insert(saved.slots, 'start')
+      draftSnapshot.current = saved
+    }
+    if (focusOnMount) senderRef.current?.focus()
+  }, [draftKey, focusOnMount])
+  useEffect(() => {
+    draftSnapshot.current = {
+      text: draft, skills: pickedSkills, files,
+      slots: senderRef.current?.getValue()?.slotConfig ?? []
+    }
+  }, [draft, pickedSkills, files])
+  useEffect(() => {
+    if (!draftKey) return
+    const save = () => {
+      const snapshot = draftSnapshot.current
+      if (submitting.current || snapshot.files.some(file => file.status === 'uploading')) return false
+      saveComposerDraft(draftKey, snapshot)
+      return true
+    }
+    const unregister = registerComposer(draftKey, save)
+    return () => { save(); unregister() }
+  }, [draftKey])
 
   // ---- Slash-command suggestion panel ----
   const [suggestOpen, setSuggestOpen] = useState(false)
@@ -484,7 +522,7 @@ export function Composer({
       // key so repeated picks coexist instead of clobbering earlier pills.
       // `formatResult: ''` keeps the pill out of the plain-text value; ids
       // travel via `pickedSkills`.
-      const slotKey = `skill-${item.id}-${skillSeqRef.current++}`
+      const slotKey = `skill-${item.id}-${clientId()}`
       const slashIdx = draft.lastIndexOf('/')
       const replaceChars = slashIdx >= 0 ? draft.slice(slashIdx) : ''
       senderRef.current?.insert(

@@ -1719,6 +1719,14 @@ async def stream(req: ChatRequest) -> AsyncIterator[dict]:
                 for chunk in flushed:
                     yield _delta(chunk)
                 _persist_loop_end()  # durable loop boundary (before the done frame)
+                from ms_agent.session.replay import fork_points
+                log = getattr(getattr(rt, "agent", None), "session_log", None)
+                positions = fork_points(log.records()) if log is not None else []
+                latest = next((r for r in reversed(log.records()) if r.get("role")
+                               and r.get("_source") != "compaction"), {}) if log is not None else {}
+                positions = [p for p in positions if p.assistant_seq == latest.get("seq")]
+                fork_meta = ({"fork_after_seq": positions[-1].after_seq,
+                              "log_seq": positions[-1].assistant_seq} if positions else {})
                 done = ChatChunk(
                     type="done",
                     meta={
@@ -1726,6 +1734,7 @@ async def stream(req: ChatRequest) -> AsyncIterator[dict]:
                         "project_id": project.id,
                         "usage": usage,
                         **_loop_meta(),
+                        **fork_meta,
                         **(await _title_meta()),
                     },
                 )

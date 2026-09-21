@@ -26,6 +26,20 @@ class Session(BaseModel):
     model_id: str = ""
 
 
+class SessionFork(BaseModel):
+    after_seq: int = Field(ge=0, strict=True)
+    request_id: str = Field(min_length=1, max_length=128)
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+
+
+class ForkOrigin(BaseModel):
+    session_id: str
+    project_id: str
+    title: str
+    assistant_seq: int
+    available: bool = True
+
+
 class SessionCreate(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     project_id: str | None = None
@@ -114,6 +128,9 @@ class SessionFile(BaseModel):
 
 
 class SessionMessage(BaseModel):
+    log_seq: int | None = None
+    fork_after_seq: int | None = None
+    fork_origin: ForkOrigin | None = None
     role: str
     content: str
     # Ordered turn view-model rebuilt from the session log so history echoes the
