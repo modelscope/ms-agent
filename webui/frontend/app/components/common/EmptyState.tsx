@@ -54,8 +54,10 @@ const TEXT_GAP: Record<EmptyStateSize, string> = {
 interface Props {
   /** Image & spacing size variant */
   size?: EmptyStateSize
-  /** Illustration variant (defaults to the generic empty box) */
-  art?: EmptyStateArt
+  /** Illustration variant (defaults to the generic empty box). `'none'` drops
+   * the illustration entirely, leaving just the copy and optional action — for
+   * cramped spots (a sidebar group) where the art would crowd the layout. */
+  art?: EmptyStateArt | 'none'
   /** Description text below the empty icon */
   description?: string
   /** Optional action button rendered below the description */
@@ -78,15 +80,19 @@ export function EmptyState({
   className = ''
 }: Props) {
   const { theme } = useTheme()
-  const src = ART[art][theme === 'dark' ? 'dark' : 'light']
+  const showArt = art !== 'none'
+  const src = showArt ? ART[art][theme === 'dark' ? 'dark' : 'light'] : ''
 
   return (
     <div
       className={`flex flex-col items-center justify-center ${PADDING[size]} ${className}`}
     >
-      <img src={src} alt="" className={`${IMG_SIZE[size]} w-auto`} />
+      {showArt && <img src={src} alt="" className={`${IMG_SIZE[size]} w-auto`} />}
       {description && (
-        <p className={`${TEXT_GAP[size]} ${TEXT_SIZE[size]} text-msa-text-3`}>
+        // No illustration above means no gap to open under it.
+        <p
+          className={`${showArt ? TEXT_GAP[size] : ''} ${TEXT_SIZE[size]} text-msa-text-3`}
+        >
           {description}
         </p>
       )}
