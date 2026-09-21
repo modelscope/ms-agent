@@ -4,7 +4,7 @@ ms-agent × nanobot  —  MCP integration test
 
 Validates that the ms-agent MCP server works correctly when spawned
 the same way nanobot would launch it (stdio subprocess from
-config.json mcpServers).
+nanobot_mcp_config.json mcpServers).
 
 nanobot is a Python host, so bare 'python3' works when launched from
 the same virtualenv/conda environment.  The test connects as a generic

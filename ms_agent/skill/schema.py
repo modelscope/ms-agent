@@ -249,7 +249,7 @@ class SkillSchemaParser:
                 or (os.path.splitext(name)[1] in ignored_suffixes))
 
     @staticmethod
-    def parse_skill_directory(directory_path: Path) -> Optional[SkillSchema]:
+    def parse_skill_directory(directory_path: str | Path) -> Optional[SkillSchema]:
         """
         Parse a Skill directory and create a SkillSchema.
 
@@ -259,6 +259,8 @@ class SkillSchemaParser:
         Returns:
             SkillSchema if valid, None otherwise
         """
+        # Accept both str and Path for convenience / robustness.
+        directory_path = Path(directory_path)
         if not directory_path.exists() or not directory_path.is_dir():
             return None
 

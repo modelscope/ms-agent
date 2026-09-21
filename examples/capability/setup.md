@@ -91,7 +91,13 @@ Copy the output and use it as the `command` value in your MCP config.
 
 ## Capability-Specific Dependencies
 
-ms-agent registers all 30 capabilities by default, but different capabilities depend on different Python packages. The base install (`pip install -e .`) covers the framework dependencies (`requirements/framework.txt`). Install extras based on which capabilities you need:
+ms-agent's Capability Gateway registers **31** descriptors in-process; the MCP
+server exposes **30** of them as tools (the parent `lsp_code_server` component
+descriptor is registered but not advertised — its children
+`lsp_check_directory` / `lsp_update_and_check` are). Different capabilities
+depend on different Python packages. The base install (`pip install -e .`)
+covers the framework dependencies (`requirements/framework.txt`). Install
+extras based on which capabilities you need:
 
 
 | Capability                                              | Install command                | Requirements file            |
@@ -99,6 +105,7 @@ ms-agent registers all 30 capabilities by default, but different capabilities de
 | Core (agent chat, file editing, web search, delegation) | `pip install -e .`             | `requirements/framework.txt` |
 | Deep Research / Doc Research / Financial Research       | `pip install -e '.[research]'` | `requirements/research.txt`  |
 | Code Genesis                                            | `pip install -e '.[code]'`     | `requirements/code.txt`      |
+| Video Generation (SingularityCinema)                    | `pip install -e '.[cinema]'`   | `requirements/cinema.txt`    |
 | All capabilities                                        | `pip install -e '.[all]'`      | all of the above             |
 
 
@@ -151,9 +158,10 @@ Since all loads are `override=False`, the **effective priority** (highest to low
 | --------------------- | ------------------------------------------------ | ---------------------------------------------------- |
 | `OPENAI_API_KEY`      | deep_research, delegate_task, code_genesis, etc. | Any OpenAI-compatible provider                       |
 | `OPENAI_BASE_URL`     | deep_research, delegate_task                     | DashScope, OpenAI, or other compatible endpoint      |
-| `MODELSCOPE_API_KEY`  | delegate_task, agent_task                        | For ModelScope API inference                         |
+| `MODELSCOPE_API_KEY`  | `delegate_task`, `submit_agent_task`             | ModelScope API inference (alternative to OPENAI_*)   |
 | `EXA_API_KEY`         | web_search (exa engine)                          | Only needed for `engine_type='exa'`                  |
-| `SERPAPI_API_KEY`     | web_search (serpapi engine)                      | Only needed for `engine_type='serpapi'`              |
+| `SERPAPI_API_KEY`     | web_search (serpapi / google / bing / baidu)     | Only needed for SerpAPI-backed engines               |
+| `TAVILY_API_KEY`      | web_search (tavily engine)                       | Only needed for `engine_type='tavily'`               |
 | `MS_AGENT_OUTPUT_DIR` | replace_file_*, lsp_check_*                      | Workspace root for file operations (defaults to cwd) |
 
 

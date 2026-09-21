@@ -17,6 +17,9 @@ include .dev_scripts/webui/README.md
 include setup.cfg
 prune .agents
 
+# Include Capability Gateway skill package (copied into ms_agent/skills at build)
+recursive-include ms-agent-skills *
+
 # Exclude development files
 global-exclude *.pyc
 global-exclude __pycache__

@@ -20,15 +20,15 @@ if [ ! -d "$SKILL_SRC" ]; then
     exit 1
 fi
 
-mkdir -p "$SKILL_DST"
+mkdir -p "$SKILL_DST/references" "$SKILL_DST/scripts"
 
 cp "$SKILL_SRC/SKILL.md" "$SKILL_DST/"
-cp -r "$SKILL_SRC/references" "$SKILL_DST/" 2>/dev/null || true
-cp -r "$SKILL_SRC/scripts" "$SKILL_DST/" 2>/dev/null || true
+cp -R "$SKILL_SRC/references/." "$SKILL_DST/references/"
+cp -R "$SKILL_SRC/scripts/." "$SKILL_DST/scripts/"
 
 echo "Installed ms-agent skill to $SKILL_DST"
 echo ""
 echo "Next steps:"
-echo "  1. Merge config.json into ~/.nanobot/config.json"
+echo "  1. Merge nanobot_mcp_config.json into ~/.nanobot/config.json"
 echo "  2. Start nanobot:  nanobot agent"
 echo "  3. Test:  python3 test_mcp_tools.py --list"

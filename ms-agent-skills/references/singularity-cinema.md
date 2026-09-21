@@ -44,18 +44,42 @@ Polls status and reports pipeline step completion.
 |---|---|---|---|
 | `task_id` | string | yes | The task_id from submit_video_generation_task |
 
-**Returns:**
+**Returns (running):**
 ```json
 {
   "task_id": "a1b2c3d4",
+  "task_type": "video_generation",
   "status": "running",
+  "created_at": "2026-04-07T14:30:00",
+  "query": "Create a short video about GDP economics",
+  "output_dir": "/path/to/output/video_generation_20260407_143000",
   "completed_steps": ["generate_script", "segment", "generate_audio", "generate_prompts"],
   "total_steps": 9,
   "images_generated": 6,
   "audio_segments": 6,
-  "final_video_ready": false
+  "final_video_ready": false,
+  "log_tail": "..."
 }
 ```
+
+**Returns (terminal):**
+```json
+{
+  "task_id": "a1b2c3d4",
+  "task_type": "video_generation",
+  "status": "completed",
+  "created_at": "2026-04-07T14:30:00",
+  "completed_at": "2026-04-07T14:55:00",
+  "completed_steps": ["generate_script", "segment", "...all 9..."],
+  "total_steps": 9,
+  "images_generated": 8,
+  "audio_segments": 8,
+  "final_video_ready": true
+}
+```
+
+Status values: `running`, `completed`, `failed`, `cancelled`. When terminal,
+includes `completed_at`; when `failed`, includes `error`.
 
 ### Tool: `get_video_generation_result`
 
@@ -70,12 +94,47 @@ Retrieves the final video path and pipeline artifacts.
 {
   "task_id": "a1b2c3d4",
   "status": "completed",
+  "output_dir": "/path/to/output/video_generation_20260407_143000",
   "video_path": "/path/to/output/final_video.mp4",
   "video_size_mb": 45.2,
   "completed_steps": ["generate_script", "segment", "...all 9..."],
+  "total_steps": 9,
   "images_generated": 8,
   "audio_segments": 8,
+  "final_video_ready": true,
   "script": "Script content preview..."
+}
+```
+
+**Returns (still running):**
+```json
+{
+  "task_id": "a1b2c3d4",
+  "status": "running",
+  "message": "Video generation is still in progress. Steps completed: 4/9 (generate_script, segment, generate_audio, generate_prompts)."
+}
+```
+
+**Returns (failed):**
+```json
+{
+  "task_id": "a1b2c3d4",
+  "status": "failed",
+  "error": "..."
+}
+```
+
+**Returns (completed but video missing):**
+```json
+{
+  "task_id": "a1b2c3d4",
+  "status": "completed",
+  "output_dir": "/path/to/output/video_generation_20260407_143000",
+  "video_path": "",
+  "warning": "final_video.mp4 not found in output directory",
+  "completed_steps": ["..."],
+  "total_steps": 9,
+  "final_video_ready": false
 }
 ```
 
@@ -121,6 +180,62 @@ get_video_generation_result(task_id="a1b2c3d4")
 ```
 
 The result includes the video path and script content.
+
+## Sync Tool: `video_generation`
+
+Synchronous version that blocks until video generation completes. **Not
+recommended for MCP clients** — prefer the async trio.
+
+**Estimated Duration:** descriptor `hours`; typical wall-clock ~20 minutes.
+
+### Parameters
+
+Same as `submit_video_generation_task`:
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `query` | string | yes | -- | Description of the video to generate |
+| `config_path` | string | no | bundled | Path to singularity_cinema config |
+| `output_dir` | string | no | auto | Directory for video outputs |
+| `llm_model` | string | no | -- | LLM model name for script generation |
+| `llm_api_key` | string | no | -- | API key for the LLM provider |
+| `llm_base_url` | string | no | -- | OpenAI-compatible base URL |
+| `image_generator_type` | string | no | -- | Provider: `modelscope`, `dashscope`, `google` |
+| `image_generator_model` | string | no | -- | Image generation model name |
+| `image_generator_api_key` | string | no | -- | API key for image generator |
+
+### Returns
+
+On success:
+
+```json
+{
+  "status": "completed",
+  "output_dir": "/path/to/output/video_generation_20260407_143000",
+  "video_path": "/path/to/output/final_video.mp4"
+}
+```
+
+On failure:
+
+```json
+{
+  "status": "failed",
+  "output_dir": "/path/to/output/video_generation_20260407_143000",
+  "error": "..."
+}
+```
+
+## Configuration surface
+
+**Exposed via MCP tool params:** `query`, `config_path`, `output_dir`,
+`llm_model`, `llm_api_key`, `llm_base_url`, `image_generator_type`
+(`modelscope` / `dashscope` / `google`), `image_generator_model`,
+`image_generator_api_key`.
+
+**NOT exposed via MCP** (edit `agent.yaml`, environment variables, or CLI
+instead): `video_generator` (type/model/api_key), `mllm`, `animation_engine`,
+`use_subtitle`, `voice`, CLI `--animation_mode`.
 
 ## Pipeline Steps (9 total)
 
@@ -178,7 +293,8 @@ The video pipeline requires three model types:
   and it picks up from where it left off.
 - To regenerate specific segments, delete the corresponding output files
   and re-run.
-- Different LLM/image models produce varying quality. The README lists
-  verified combinations.
+- Different LLM/image models produce varying quality. See verified combinations
+  in `projects/singularity_cinema/README.md` (relative to the **ms-agent
+  repository root**; not shipped inside the skill package alone).
 - The compose step may appear to hang (no logs) while FFmpeg renders --
   this is normal.

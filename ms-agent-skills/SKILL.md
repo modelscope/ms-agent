@@ -4,7 +4,7 @@ version: 1.0.0
 description: >-
   Access ms-agent's advanced AI capabilities via MCP tools: deep research,
   document research, financial research, code generation, video generation,
-  web search (arxiv/exa/serpapi), LSP code validation (TypeScript/Python/Java),
+  web search (arxiv/exa/serpapi/tavily), LSP code validation (TypeScript/Python/Java),
   concurrent-safe file editing, and agent delegation. All project-level
   capabilities support async submit/check/get patterns. Use when the user
   asks to research a topic, analyze documents, generate code or videos,
@@ -20,11 +20,27 @@ metadata:
     category: ai-tools
 ---
 
-# ms-agent Skills
+# ms-agent Capability Gateway Skill
 
-This skill connects you to the **ms-agent Capability Gateway** — a unified
-interface to ms-agent's projects, components, and atomic tools, exposed as
-MCP tools.
+This is a **single skill package** (`name: ms-agent` in frontmatter) with
+**9 capability reference modules** under `references/`. It connects you to the
+**ms-agent Capability Gateway** — a unified interface to ms-agent's projects,
+components, and atomic tools, exposed as MCP tools.
+
+### Skill identity (`skill_id`)
+
+When loaded by ms-agent's own SkillLoader, `skill_id` equals the directory
+name:
+
+| How loaded | Directory | `skill_id` |
+|---|---|---|
+| Host install (`examples/capability/*/install_skill.sh`) | host `skills/ms-agent/` | `ms-agent` |
+| ms-agent itself (`scripts/install_into_ms_agent.sh`) | `$MS_AGENT_HOME/skills/ms-agent/` (default `~/.ms_agent/skills/ms-agent`) | `ms-agent` |
+| Wheel / `pip install ms-agent` | `ms_agent/skills/ms-agent/` (built-in) | `ms-agent` |
+| Repo folder loaded directly | `ms-agent-skills/` | `ms-agent-skills` |
+
+The frontmatter `name: ms-agent` is the package identifier; `skill_id` follows
+the filesystem directory name at load time.
 
 ## Setup
 
@@ -32,6 +48,13 @@ Verify ms-agent is installed:
 
 ```bash
 python scripts/check_ms_agent.py
+python scripts/validate_capability_index.py
+```
+
+To make this skill discoverable by ms-agent's own SkillCatalog:
+
+```bash
+./scripts/install_into_ms_agent.sh
 ```
 
 The MCP server must be configured in your agent's config. Pick the section
@@ -101,7 +124,7 @@ The tool prefix depends on your agent host:
 | `submit_research_task` | async submit | seconds | [deep-research.md](references/deep-research.md) |
 | `check_research_progress` | async poll | seconds | [deep-research.md](references/deep-research.md) |
 | `get_research_report` | async result | seconds | [deep-research.md](references/deep-research.md) |
-| `deep_research` | sync (blocks) | hours | [deep-research.md](references/deep-research.md) |
+| `deep_research` | sync (blocks) | hours (20–60 min wall) | [deep-research.md](references/deep-research.md) |
 
 ### Document Research
 
@@ -110,7 +133,7 @@ The tool prefix depends on your agent host:
 | `submit_doc_research_task` | async submit | seconds | [doc-research.md](references/doc-research.md) |
 | `check_doc_research_progress` | async poll | seconds | [doc-research.md](references/doc-research.md) |
 | `get_doc_research_report` | async result | seconds | [doc-research.md](references/doc-research.md) |
-| `doc_research` | sync (blocks) | minutes | [doc-research.md](references/doc-research.md) |
+| `doc_research` | sync (blocks) | minutes (5–20 min wall) | [doc-research.md](references/doc-research.md) |
 
 ### Financial Research
 
@@ -119,13 +142,13 @@ The tool prefix depends on your agent host:
 | `submit_fin_research_task` | async submit | seconds | [fin-research.md](references/fin-research.md) |
 | `check_fin_research_progress` | async poll | seconds | [fin-research.md](references/fin-research.md) |
 | `get_fin_research_report` | async result | seconds | [fin-research.md](references/fin-research.md) |
-| `fin_research` | sync (blocks) | hours | [fin-research.md](references/fin-research.md) |
+| `fin_research` | sync (blocks) | hours (20–60 min wall) | [fin-research.md](references/fin-research.md) |
 
 ### Web Search
 
 | Tool | Type | Duration | Reference |
 |------|------|----------|-----------|
-| `web_search` | instant | seconds | [web-search.md](references/web-search.md) |
+| `web_search` | sync | seconds | [web-search.md](references/web-search.md) |
 
 ### Code Generation
 
@@ -134,7 +157,7 @@ The tool prefix depends on your agent host:
 | `submit_code_genesis_task` | async submit | seconds | [code-genesis.md](references/code-genesis.md) |
 | `check_code_genesis_progress` | async poll | seconds | [code-genesis.md](references/code-genesis.md) |
 | `get_code_genesis_result` | async result | seconds | [code-genesis.md](references/code-genesis.md) |
-| `code_genesis` | sync (blocks) | hours | [code-genesis.md](references/code-genesis.md) |
+| `code_genesis` | sync (blocks) | hours (10–30 min wall) | [code-genesis.md](references/code-genesis.md) |
 
 ### Video Generation
 
@@ -143,7 +166,7 @@ The tool prefix depends on your agent host:
 | `submit_video_generation_task` | async submit | seconds | [singularity-cinema.md](references/singularity-cinema.md) |
 | `check_video_generation_progress` | async poll | seconds | [singularity-cinema.md](references/singularity-cinema.md) |
 | `get_video_generation_result` | async result | seconds | [singularity-cinema.md](references/singularity-cinema.md) |
-| `video_generation` | sync (blocks) | hours | [singularity-cinema.md](references/singularity-cinema.md) |
+| `video_generation` | sync (blocks) | hours (~20 min wall) | [singularity-cinema.md](references/singularity-cinema.md) |
 
 ### Agent Delegation
 
@@ -184,7 +207,7 @@ User wants to...
 │   └── submit_fin_research_task → check_fin_research_progress → get_fin_research_report
 │
 ├── Search the web for quick info
-│   └── web_search(query="...", engine_type="arxiv|exa|serpapi")
+│   └── web_search(query="...", engine_type="arxiv|exa|serpapi|tavily")
 │
 ├── Generate a software project from requirements (10-30 min)
 │   └── submit_code_genesis_task → check_code_genesis_progress → get_code_genesis_result
@@ -193,7 +216,7 @@ User wants to...
 │   └── submit_video_generation_task → check_video_generation_progress → get_video_generation_result
 │
 ├── Delegate a complex multi-step task to an AI agent
-│   ├── Short task (< 3 min) → delegate_task(query="...")
+│   ├── Short task (< 5 minutes) → delegate_task(query="...")
 │   └── Long task → submit_agent_task → check_agent_task → get_agent_result
 │
 ├── Validate code for errors
@@ -218,5 +241,10 @@ handling other messages while the task runs in the background.
 3. get_*_result/report(task_id)     → retrieve final result when completed
 4. cancel_*_task(task_id)  → cancel if no longer needed (agent delegation only)
 ```
+
+**Warning — in-process task tracking:** `AsyncTaskManager` is **in-process
+only**. Task IDs are lost if the MCP server process restarts, and orphaned
+subprocesses may remain. Clients must keep the **same MCP server process** for
+the full submit → check → get lifecycle.
 
 Read the reference files for detailed SOP workflows for each capability.

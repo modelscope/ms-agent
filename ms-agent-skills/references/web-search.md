@@ -22,16 +22,17 @@ search engines and optional full-page content fetching.
 |---|---|---|---|---|
 | `query` | string | yes | -- | The search query |
 | `num_results` | integer | no | 5 | Number of results to return |
-| `engine_type` | string | no | `arxiv` | Engine: `arxiv`, `exa`, or `serpapi` |
+| `engine_type` | string | no | `arxiv` | Search engine (see table below) |
 | `fetch_content` | boolean | no | false | Fetch full page content for each result |
 
 ### Engine Selection Guide
 
-| Engine | Best For | API Key Required |
-|---|---|---|
-| `arxiv` | Academic papers, research | No |
-| `exa` | General web, semantic search | Yes (`EXA_API_KEY`) |
-| `serpapi` | Google/Bing results | Yes (`SERPAPI_API_KEY`) |
+| Engine | Aliases | Best For | API Key Required |
+|---|---|---|---|
+| `arxiv` | — | Academic papers, research | No (default) |
+| `exa` | — | General web, semantic search | `EXA_API_KEY` or `EXA_API_KEYS` (comma-separated key pool) |
+| `serpapi` | `serp`, `google`, `bing`, `baidu` | Google/Bing/Baidu results via SerpAPI | `SERPAPI_API_KEY` |
+| `tavily` | — | AI-oriented web search | `TAVILY_API_KEY` |
 
 ### Examples
 
@@ -71,8 +72,8 @@ field with the page text (truncated to 10,000 characters).
 ### Step 1: Choose the Right Engine
 
 - For academic/research questions → `arxiv`
-- For general web info → `exa` or `serpapi`
-- If unsure → start with `arxiv`, fall back to `exa`
+- For general web info → `exa`, `tavily`, or `serpapi` (and aliases)
+- If unsure → start with `arxiv`, fall back to `exa` or `tavily`
 
 ### Step 2: Execute the Search
 
@@ -94,6 +95,8 @@ then `submit_research_task` for a comprehensive deep-dive report.
 ## Notes
 
 - `arxiv` is the default engine because it requires no API key.
+- Aliases `serp`, `google`, `bing`, and `baidu` all route through SerpAPI
+  and require `SERPAPI_API_KEY`.
 - `fetch_content=true` adds latency (fetches each URL via Jina Reader).
   Use it only when summaries are insufficient.
 - Results are returned in the engine's default ranking order.

@@ -41,19 +41,43 @@ Polls the status of a running task. Call periodically (e.g. every 2-5 min).
 |---|---|---|---|
 | `task_id` | string | yes | The task_id from submit_research_task |
 
-**Returns:**
+**Returns (running):**
 ```json
 {
   "task_id": "a1b2c3d4",
+  "task_type": "research",
   "status": "running",
+  "created_at": "2026-03-18T14:30:00",
   "query": "AI agent frameworks 2026",
+  "output_dir": "/path/to/output/deep_research_20260318_143000",
   "evidence_notes": 23,
   "evidence_analyses": 5,
-  "report_available": false
+  "report_available": false,
+  "log_tail": "..."
 }
 ```
 
-Status values: `running`, `completed`, `failed`.
+**Returns (terminal):**
+```json
+{
+  "task_id": "a1b2c3d4",
+  "task_type": "research",
+  "status": "completed",
+  "created_at": "2026-03-18T14:30:00",
+  "completed_at": "2026-03-18T15:15:00",
+  "query": "AI agent frameworks 2026",
+  "output_dir": "/path/to/output/deep_research_20260318_143000",
+  "evidence_notes": 45,
+  "evidence_analyses": 12,
+  "report_available": true,
+  "report_path": "/path/to/final_report.md"
+}
+```
+
+Status values: `running`, `completed`, `failed`, `cancelled`. When terminal,
+includes `completed_at`; when `failed`, includes `error`. Progress fields
+(`evidence_notes`, `evidence_analyses`, `report_available`, `log_tail`) are
+merged from the output directory while running or after completion.
 
 ### Tool: `get_research_report`
 
@@ -72,6 +96,34 @@ Retrieves the full report content once the task is completed.
   "report_path": "/path/to/final_report.md",
   "report_content": "# Research Report\n\n...",
   "truncated": false
+}
+```
+
+**Returns (still running):**
+```json
+{
+  "task_id": "a1b2c3d4",
+  "status": "running",
+  "message": "Research is still in progress. Evidence collected so far: 23 notes, 5 analyses. Please check again later."
+}
+```
+
+**Returns (failed):**
+```json
+{
+  "task_id": "a1b2c3d4",
+  "status": "failed",
+  "error": "..."
+}
+```
+
+**Returns (completed but report missing):**
+```json
+{
+  "task_id": "a1b2c3d4",
+  "status": "completed",
+  "error": "Report file not found in output directory",
+  "output_dir": "/path/to/output/deep_research_20260318_143000"
 }
 ```
 
@@ -123,29 +175,77 @@ Then:
 ### Step 5: Handle Failures
 
 If `status: "failed"`, check the `error` field:
-- Missing API key: ask user to set `OPENAI_API_KEY`
+- Missing API key: check the provider selected by the research configuration. The default OpenAI-compatible configuration uses `OPENAI_API_KEY`; a custom `config_path` may select another provider or supply credentials directly.
 - Config not found: verify ms-agent installation
 - Network errors: suggest retry
 
 ## Sync Tool: `deep_research`
 
 A synchronous version is available but **not recommended** for MCP clients
-because it blocks for 20-60 minutes (most MCP tool timeouts are 30 seconds).
+because it blocks for 20–60 minutes (most MCP tool timeouts are 30 seconds).
 Use only from direct Python API calls or environments with very long timeouts.
+Prefer the async submit/check/get trio.
+
+**Estimated Duration:** descriptor `hours`; typical wall-clock 20–60 minutes.
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `query` | string | yes | The research question or topic |
+| `config_path` | string | no | Path to researcher.yaml (uses bundled default) |
+| `output_dir` | string | no | Where to write outputs (auto-generated if omitted) |
+
+### Returns
+
+On success:
+
+```json
+{
+  "status": "completed",
+  "output_dir": "/path/to/output/deep_research_20260318_143000",
+  "report_path": "/path/to/final_report.md"
+}
+```
+
+On failure:
+
+```json
+{
+  "status": "failed",
+  "output_dir": "/path/to/output/deep_research_20260318_143000",
+  "error": "..."
+}
+```
+
+Config not found:
+
+```json
+{
+  "status": "failed",
+  "error": "Config not found: ..."
+}
+```
 
 ## Output Directory Structure
 
+The capability wrapper inspects evidence counts under `evidence/notes/*.md` and
+`evidence/analyses/*.md`, and locates the report via `final_report.md` first,
+then falls back to the first `report.md` found via recursive search.
+
 ```
 output_dir/
-├── final_report.md          # The completed research report
+├── final_report.md          # Primary report path (preferred)
+├── report.md                # Fallback if final_report.md is absent
 ├── evidence/
-│   ├── index.json           # Evidence index
-│   ├── notes/               # Evidence note cards
-│   └── analyses/            # Interim analysis cards
-└── reports/
-    ├── outline.json          # Report outline
-    └── chapters/             # Chapter drafts
+│   ├── notes/               # Counted by check_research_progress
+│   └── analyses/            # Counted by check_research_progress
+└── ms_agent.log             # Subprocess stderr (log_tail in progress polls)
 ```
+
+Other pipeline artifacts (e.g. `evidence/index.json`, `reports/outline.json`,
+`reports/chapters/`) may exist but are **pipeline-internal** — the capability
+wrapper does not read or count them.
 
 ## Architecture
 
@@ -174,5 +274,5 @@ check_research_progress(task_id)
     └── AsyncTaskManager.check() + counts evidence files
 
 get_research_report(task_id)
-    └── Reads final_report.md content
+    └── Reads final_report.md (or fallback report.md) content
 ```

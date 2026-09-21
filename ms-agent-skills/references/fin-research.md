@@ -39,20 +39,46 @@ Polls status and reports data collection/analysis progress.
 |---|---|---|---|
 | `task_id` | string | yes | The task_id from submit_fin_research_task |
 
-**Returns:**
+**Returns (running):**
 ```json
 {
   "task_id": "a1b2c3d4",
+  "task_type": "fin_research",
   "status": "running",
+  "created_at": "2026-04-07T14:30:00",
+  "query": "Analyze CATL profitability...",
+  "output_dir": "/path/to/output/fin_research_20260407_143000",
   "chapters": 2,
   "data_files": 8,
   "charts": 5,
   "has_plan": true,
   "has_analysis_report": true,
   "has_sentiment_report": false,
-  "report_available": false
+  "report_available": false,
+  "log_tail": "..."
 }
 ```
+
+**Returns (terminal):**
+```json
+{
+  "task_id": "a1b2c3d4",
+  "task_type": "fin_research",
+  "status": "completed",
+  "created_at": "2026-04-07T14:30:00",
+  "completed_at": "2026-04-07T15:20:00",
+  "chapters": 5,
+  "data_files": 12,
+  "charts": 8,
+  "has_plan": true,
+  "has_analysis_report": true,
+  "has_sentiment_report": true,
+  "report_available": true
+}
+```
+
+Status values: `running`, `completed`, `failed`, `cancelled`. When terminal,
+includes `completed_at`; when `failed`, includes `error`.
 
 ### Tool: `get_fin_research_report`
 
@@ -70,9 +96,42 @@ Retrieves the final comprehensive report.
   "status": "completed",
   "report_path": "/path/to/report.md",
   "report_content": "# Financial Analysis Report\n\n...",
+  "truncated": false,
+  "output_dir": "/path/to/output/fin_research_20260407_143000",
   "chapters": 5,
   "data_files": 12,
-  "charts": 8
+  "charts": 8,
+  "has_plan": true,
+  "has_analysis_report": true,
+  "has_sentiment_report": true
+}
+```
+
+**Returns (still running):**
+```json
+{
+  "task_id": "a1b2c3d4",
+  "status": "running",
+  "message": "Financial research is still in progress. Progress: 2 chapters, 8 data files, 5 charts generated."
+}
+```
+
+**Returns (failed):**
+```json
+{
+  "task_id": "a1b2c3d4",
+  "status": "failed",
+  "error": "..."
+}
+```
+
+**Returns (completed but report missing):**
+```json
+{
+  "task_id": "a1b2c3d4",
+  "status": "completed",
+  "error": "Report file not found in output directory",
+  "output_dir": "/path/to/output/fin_research_20260407_143000"
 }
 ```
 
@@ -112,6 +171,43 @@ quantitative analysis report ready."
 
 ```
 get_fin_research_report(task_id="a1b2c3d4")
+```
+
+## Sync Tool: `fin_research`
+
+Synchronous version that blocks until financial research completes. **Not
+recommended for MCP clients** — prefer the async trio.
+
+**Estimated Duration:** descriptor `hours`; typical wall-clock 20–60 minutes.
+
+### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `query` | string | yes | -- | Financial research question |
+| `config_path` | string | no | bundled | Path to fin_research config directory |
+| `output_dir` | string | no | auto | Directory for research outputs |
+
+### Returns
+
+On success:
+
+```json
+{
+  "status": "completed",
+  "output_dir": "/path/to/output/fin_research_20260407_143000",
+  "report_path": "/path/to/report.md"
+}
+```
+
+On failure:
+
+```json
+{
+  "status": "failed",
+  "output_dir": "/path/to/output/fin_research_20260407_143000",
+  "error": "..."
+}
 ```
 
 ## Architecture
@@ -160,8 +256,20 @@ macro indicators (interest rates, money supply).
 
 ## Prerequisites
 
+### Capability descriptor (declared)
+
+The MCP capability declares **`OPENAI_API_KEY`** as its only static
+`requires.env` entry. This is the LLM credential needed to run the workflow.
+
+### Runtime project prerequisites (not in descriptor)
+
+These are needed for full functionality but are validated at runtime, not
+declared on the capability descriptor:
+
 - **Docker** (optional): For sandboxed code execution. Build image with:
-  `bash projects/fin_research/tools/build_jupyter_image.sh`
+  `bash projects/fin_research/tools/build_jupyter_image.sh` — path is relative
+  to the **ms-agent repository root** and is unavailable when only the skill
+  package is copied into another agent host.
 - **Search engines** (optional): For sentiment analysis, configure
   `EXA_API_KEY` or `SERPAPI_API_KEY`. Without search, only quantitative
   analysis is available.

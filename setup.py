@@ -152,6 +152,22 @@ class build_py(_build_py):
 
         webui_packaging.copy_resources(Path(self.build_lib) / 'ms_agent/webui')
 
+        # Copy the Capability Gateway skill package into the built-in skills
+        # tree so ``pip install ms-agent`` ships a discoverable skill
+        # (skill_id = ``ms-agent``) under ``ms_agent/skills/ms-agent/``.
+        skill_src = os.path.join(os.path.dirname(__file__), 'ms-agent-skills')
+        if os.path.isdir(skill_src):
+            skill_dst = os.path.join(self.build_lib, 'ms_agent', 'skills',
+                                     'ms-agent')
+            os.makedirs(os.path.dirname(skill_dst), exist_ok=True)
+            if os.path.exists(skill_dst):
+                shutil.rmtree(skill_dst)
+            shutil.copytree(
+                skill_src,
+                skill_dst,
+                ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '.DS_Store'),
+            )
+
     def get_source_files(self):
         files = super().get_source_files()
         files.extend('webui/' + rel
@@ -185,7 +201,7 @@ class sdist(_sdist):
 
 if __name__ == '__main__':
     print(
-        'Usage: `python setup.py sdist bdist_wheel` or `pip install .[framework]` from source code'
+        'Usage: `python setup.py sdist bdist_wheel` or `pip install .` from source code'
     )
 
     install_requires, deps_link = parse_requirements(
@@ -224,6 +240,7 @@ if __name__ == '__main__':
         keywords='python, agent, LLM',
         url='https://github.com/modelscope/ms-agent',
         packages=find_packages(exclude=('configs', 'demo')),
+        python_requires='>=3.10',
         include_package_data=True,
         cmdclass={
             'build_py': build_py,
@@ -237,6 +254,8 @@ if __name__ == '__main__':
                 # silently degrades to a raw file copy.
                 'agent_hub/default_configs/**/*',
                 'webui/**/*',
+                # Capability Gateway skill package (copied into ms_agent/skills at build).
+                'skills/**/*',
             ],
             '': ['*.h', '*.cpp', '*.cu'],
         },
@@ -245,8 +264,6 @@ if __name__ == '__main__':
             'License :: OSI Approved :: Apache Software License',
             'Operating System :: OS Independent',
             'Programming Language :: Python :: 3',
-            'Programming Language :: Python :: 3.8',
-            'Programming Language :: Python :: 3.9',
             'Programming Language :: Python :: 3.10',
             'Programming Language :: Python :: 3.11',
             'Programming Language :: Python :: 3.12',

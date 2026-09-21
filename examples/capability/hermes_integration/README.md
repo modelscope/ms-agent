@@ -97,7 +97,7 @@ python3 -m ms_agent.capabilities.mcp_server --check
 ./install_skill.sh
 ```
 
-This copies the `ms-agent-skills/` directory into `~/.hermes/skills/ms-agent/` so Hermes can discover and load it via the progressive disclosure system.
+This copies `SKILL.md`, `references/`, and `scripts/` from `ms-agent-skills/` into `~/.hermes/skills/ms-agent/` so Hermes can discover and load it via the progressive disclosure system.
 
 ### Step 3: Configure Hermes
 
