@@ -58,8 +58,9 @@ export default function SettingsLayout() {
     <div className="flex h-screen gap-3 bg-msa-fill-1 p-3 md:gap-4 md:p-[24px]">
       {/* Left panel */}
       <aside className="flex w-[64px] shrink-0 flex-col items-center rounded-2xl md:w-60 md:items-stretch">
-        {/* Brand */}
-        <div className="flex items-center gap-3 px-2 py-3">
+        {/* Brand. No horizontal padding so the logo tile's left edge lines up
+            with the nav rows' box edge below (one left-aligned column). */}
+        <div className="flex items-center gap-3 py-3">
           {/* Logo sits in a white rounded tile (design spec). */}
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-msa-fill-0">
             <img
@@ -85,7 +86,7 @@ export default function SettingsLayout() {
               <NavLink
                 to={it.to}
                 className={({ isActive }) =>
-                  `flex items-center justify-center gap-2.5 rounded-lg p-3.25 text-sm transition-colors md:justify-start ${
+                  `flex items-center justify-center gap-2.5 rounded-[12px] p-3.25 text-sm transition-colors md:justify-start ${
                     isActive
                       ? 'bg-msa-fill-0 font-medium text-msa-text-1'
                       : 'text-msa-text-2 hover:bg-msa-fill-3'

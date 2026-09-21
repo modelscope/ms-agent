@@ -19,7 +19,13 @@ import './app.css'
 import { NProgressHandler } from '~/components/common/NProgressHandler'
 import { renderAntdEmpty } from '~/components/common/EmptyState'
 import { ErrorState } from '~/components/common/ErrorState'
-import { api, ApiError, describeFailure, orThrow, registerApiErrorReporter } from '~/lib/api'
+import {
+  api,
+  ApiError,
+  describeFailure,
+  orThrow,
+  registerApiErrorReporter
+} from '~/lib/api'
 import { getAntdCssHref } from '~/lib/antdStyle.server'
 import { getDesignTokenStyleContent } from '~/lib/designTokens'
 import { SERVER_HOSTED_MODE } from '~/lib/env'
@@ -71,11 +77,13 @@ function langFromAcceptLanguage(header: string): Lang | null {
 }
 
 export async function loader({ request }: { request: Request }) {
-  const recovery = await orThrow(api.getRecoveryStatus().catch((error) => {
-    // Preserve pages that can render without an API, including the SSR package check.
-    if (error instanceof ApiError && error.status === 0) return null
-    throw error
-  }))
+  const recovery = await orThrow(
+    api.getRecoveryStatus().catch((error) => {
+      // Preserve pages that can render without an API, including the SSR package check.
+      if (error instanceof ApiError && error.status === 0) return null
+      throw error
+    })
+  )
   if (recovery?.required && new URL(request.url).pathname !== '/recovery') {
     throw redirect('/recovery')
   }

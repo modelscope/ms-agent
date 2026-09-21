@@ -161,24 +161,27 @@ export default function AppLayout() {
   const seenStampRef = useRef(fetchedAt)
   const askedRef = useRef(false)
   const retriedRef = useRef(false)
-  useEffect(function recoverInterruptedRefresh() {
-    if (revalidator.state === 'loading') {
-      askedRef.current = true
-      return
-    }
-    if (navigation.state !== 'idle') return
-    if (fetchedAt !== seenStampRef.current) {
-      seenStampRef.current = fetchedAt
-      askedRef.current = false
-      retriedRef.current = false
-      return
-    }
-    if (!askedRef.current || retriedRef.current) return
-    // One attempt per dropped refresh: whatever keeps the stamp from advancing
-    // must cost a single extra request, never a loop.
-    retriedRef.current = true
-    revalidate()
-  }, [revalidator.state, navigation.state, fetchedAt, revalidate])
+  useEffect(
+    function recoverInterruptedRefresh() {
+      if (revalidator.state === 'loading') {
+        askedRef.current = true
+        return
+      }
+      if (navigation.state !== 'idle') return
+      if (fetchedAt !== seenStampRef.current) {
+        seenStampRef.current = fetchedAt
+        askedRef.current = false
+        retriedRef.current = false
+        return
+      }
+      if (!askedRef.current || retriedRef.current) return
+      // One attempt per dropped refresh: whatever keeps the stamp from advancing
+      // must cost a single extra request, never a loop.
+      retriedRef.current = true
+      revalidate()
+    },
+    [revalidator.state, navigation.state, fetchedAt, revalidate]
+  )
 
   // Stash the current non-settings location so /settings → Back can jump
   // straight here instead of through the settings sub-nav history.
@@ -234,7 +237,7 @@ export default function AppLayout() {
             lets that single sidebar gutter be the content's left inset. Mobile
             keeps the full padding: there is no sidebar (drawer), and the toggle
             below lives inside this padding. */}
-        <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-[10px] md:pl-0">
+        <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-[12px] md:pl-0">
           {/* Mobile sidebar toggle — opens the drawer (small screens only) */}
           <IconButton
             variant="filled"

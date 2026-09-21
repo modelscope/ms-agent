@@ -271,7 +271,7 @@ export function Sidebar({
                   block
                   icon={<NewChatIcon className="h-5 w-5" />}
                   onClick={openNewChat}
-                  className="!flex !items-center !justify-center !gap-2 !rounded-xl !px-4 !py-2.5 !h-auto !font-medium !text-sm hover:!opacity-90"
+                  className="!flex !items-center !justify-center !gap-2 !rounded-xl !px-4 !py-2.5 !h-auto !font-medium !text-[13px] hover:!opacity-90"
                 >
                   <span>{t.nav.newChatShort}</span>
                 </MsaButton>
@@ -358,7 +358,7 @@ export function Sidebar({
                 label={t.nav.agentSettings}
                 icon={<SettingsIcon className="h-5 w-5" />}
                 onNavigate={onNavigate}
-                className="bg-msa-fill-0 rounded-[12px] !text-sm !font-normal !transition-shadow hover:!bg-msa-fill-0 hover:shadow-[0px_2px_32px_0px_rgba(39,37,76,0.08)]"
+                className="bg-msa-fill-0 rounded-[12px] !text-[13px] !font-normal !transition-shadow hover:!bg-msa-fill-0 hover:shadow-[0px_2px_32px_0px_rgba(39,37,76,0.08)]"
               />
               <a
                 href={REPO_URL}
@@ -419,7 +419,7 @@ function SidebarNavItem({
     <NavLink
       to={to}
       onClick={onNavigate}
-      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-medium text-msa-text-1 transition-colors hover:bg-msa-fill-2 ${className || ''}`}
+      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium text-msa-text-1 transition-colors hover:bg-msa-fill-2 ${className || ''}`}
     >
       <span className="shrink-0 flex items-center">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
@@ -589,9 +589,7 @@ function CollapsedProjectList({
     (sessionsByProject.get(p.id) ?? []).some((s) => s.unread)
   )
   const content = (
-    // 16px on all four sides, composed with the popover container's own 4px:
-    // `pad` covers left/right (and keeps hover-highlighted rows inset equally in
-    // either scrollbar mode), `py-3` covers top/bottom.
+    // 16px on all four sides, including the popover container's own 4px.
     <ScrollArea pad={12} className="max-h-[60vh] w-56 py-3 space-y-1">
       {projects.map((p) => (
         <CollapsedProjectGroup
@@ -695,7 +693,7 @@ function CollapsedProjectGroup({
           }}
         >
           <span
-            className={`min-w-0 truncate text-sm font-semibold text-msa-text-1`}
+            className={`min-w-0 truncate text-[13px] font-semibold text-msa-text-1`}
             title={projectName}
           >
             {projectName}
@@ -833,7 +831,7 @@ function ProjectGroup({
           }}
         >
           <span
-            className={`min-w-0 truncate text-sm font-semibold text-msa-text-1`}
+            className={`min-w-0 truncate text-[13px] font-semibold text-msa-text-1`}
             title={projectName}
           >
             {projectName}
@@ -855,15 +853,13 @@ function ProjectGroup({
       {open && (
         <div className="space-y-1 py-1">
           {sessions.length === 0 ? (
-            // The shared empty state, not a bare "empty" label. `chat` art: this
-            // list holds conversations, so the speech bubble fits where the
-            // generic crate does not. The CTA is the one thing that fixes the
-            // emptiness, so it comes with the state (same pill as ProjectsEmpty),
-            // opening this project's new-chat page rather than prose telling the
-            // user to go find it.
+            // The shared empty state, `art="none"`: inside the cramped sidebar
+            // group the illustration crowds the layout, so this is just the copy
+            // and the CTA that fixes the emptiness (same pill as ProjectsEmpty),
+            // opening this project's new-chat page.
             <EmptyState
               size="sm"
-              art="chat"
+              art="none"
               description={t.sidebar.noSessions}
               action={
                 // EmptyStateAction bakes in `px-6 py-2`, too wide for the narrow
@@ -1023,7 +1019,8 @@ function SessionItem({
         danger: true,
         onClick: handleDeleteSession
       }
-    ]
+    ],
+    expandIcon: <ExpandIcon className="h-3.5 w-3.5 rotate-90 text-msa-text-3" />
   }
 
   // Bind the active highlight to the real browser URL (not NavLink's router
@@ -1042,7 +1039,7 @@ function SessionItem({
         to={to}
         end
         onClick={onNavigate}
-        className={`group flex h-10 items-center gap-1 truncate rounded-lg pl-8 pr-2 text-sm transition-colors ${
+        className={`group flex h-10 items-center gap-1 truncate rounded-lg pl-8 pr-2 text-[13px] transition-colors ${
           active
             ? 'bg-msa-fill-2 font-medium text-msa-text-1'
             : 'text-msa-text-2 hover:bg-msa-fill-2'
