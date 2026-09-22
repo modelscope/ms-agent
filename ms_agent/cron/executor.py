@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -209,5 +210,11 @@ class JobExecutor:
         job_dir = self._output_dir / job_id
         job_dir.mkdir(parents=True, exist_ok=True)
         ts = time.strftime('%Y-%m-%d_%H-%M-%S')
-        out_file = job_dir / f'{ts}.md'
-        out_file.write_text(output, encoding='utf-8')
+        with tempfile.NamedTemporaryFile(
+                mode='w',
+                encoding='utf-8',
+                dir=job_dir,
+                prefix=f'{ts}_{time.time_ns()}_',
+                suffix='.md',
+                delete=False) as out_file:
+            out_file.write(output)
