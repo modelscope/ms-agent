@@ -103,6 +103,7 @@ class ToolOutputPruner:
 
         total_tool_tokens = 0
         pruned_count = 0
+        first_pruned = len(visible)
         for idx in range(len(visible) - 1, -1, -1):
             msg = visible[idx]
             if msg.get('role') != 'tool' or not msg.get('content'):
@@ -117,9 +118,21 @@ class ToolOutputPruner:
                     **msg, 'content': '[Output truncated to save context]'
                 }
                 pruned_count += 1
+                first_pruned = idx
 
         if pruned_count == 0:
             return visible, None
+
+        # Later API usage includes the old tool output. Keep earlier measurements,
+        # but estimate the changed suffix from its new content.
+        for idx in range(first_pruned + 1, len(visible)):
+            msg = visible[idx]
+            if msg.get('role') == 'assistant':
+                visible[idx] = {
+                    k: v
+                    for k, v in msg.items()
+                    if k not in ('prompt_tokens', 'completion_tokens')
+                }
 
         tokens_after = _estimate_total_tokens(visible)
         logger.info(f'[tool_pruner] Pruned {pruned_count} tool outputs '
