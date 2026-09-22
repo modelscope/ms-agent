@@ -64,6 +64,28 @@ class TestParseScheduleInterval:
 
 
 class TestParseScheduleOnce:
+    @pytest.mark.parametrize('timestamp', [
+        '2025-02-29T09:00:00',
+        '2025-13-01T09:00:00',
+        '2025-06-01T24:00:00',
+        '2025-06-01T09:60:00',
+        '2025-06-01T09:00:60',
+        '2025-06-01T09:00:00invalid',
+    ])
+    def test_invalid_iso_timestamp_rejected(self, timestamp):
+        with pytest.raises(ValueError, match='Invalid ISO timestamp'):
+            parse_schedule(timestamp)
+
+    @pytest.mark.parametrize('timestamp', [
+        '2028-02-29T09:00:00',
+        '2025-06-01T09:00:00.123456+08:00',
+        '2025-06-01 09:00:00-05:30',
+    ])
+    def test_valid_iso_timestamp_preserved(self, timestamp):
+        result = parse_schedule(timestamp)
+        assert result.kind == 'once'
+        assert result.run_at == timestamp
+
     def test_iso_timestamp(self):
         result = parse_schedule('2025-06-01T09:00:00')
         assert result.kind == 'once'

@@ -17,6 +17,11 @@ def manager(workspace):
 
 
 class TestJobManagerCRUD:
+    def test_invalid_once_schedule_is_not_saved(self, manager):
+        with pytest.raises(ValueError, match='Invalid ISO timestamp'):
+            manager.create_job(schedule_str='2025-02-30T09:00:00', prompt='invalid date')
+        assert manager.list_jobs() == []
+
     def test_create_job(self, manager):
         job = manager.create_job(schedule_str='every 60s', prompt='hello', name='Test')
         assert job.id
