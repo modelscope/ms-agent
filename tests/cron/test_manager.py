@@ -87,6 +87,42 @@ class TestJobManagerState:
 
 
 class TestJobManagerRecordResult:
+    @pytest.mark.parametrize('success', [True, False])
+    def test_paused_running_job_stays_paused_after_result(self, manager, success):
+        job = manager.create_job(schedule_str='every 60s', prompt='pause during run')
+        job.repeat = RepeatSpec(times=3)
+        manager.repo.save_job(job)
+        manager.mark_running(job.id)
+        assert manager.pause_job(job.id)
+        old_next = manager.get_job(job.id)[1].next_run_at
+
+        manager.record_result(job, ExecutionResult(success=success, duration_ms=10))
+
+        stored_job, state = manager.get_job(job.id)
+        assert state.status == 'paused'
+        assert state.next_run_at != old_next
+        assert state.run_count == 1
+        assert state.last_status == ('ok' if success else 'error')
+        assert stored_job.repeat.completed == 1
+        assert manager.resume_job(job.id)
+        assert manager.get_job(job.id)[1].status == 'scheduled'
+
+    @pytest.mark.parametrize('schedule', ['every 60s', '2099-01-01T00:00:00'])
+    def test_paused_final_run_still_completes(self, manager, schedule):
+        job = manager.create_job(schedule_str=schedule, prompt='final run')
+        if job.schedule.kind == 'interval':
+            job.repeat = RepeatSpec(times=1)
+            manager.repo.save_job(job)
+        manager.mark_running(job.id)
+        assert manager.pause_job(job.id)
+
+        manager.record_result(job, ExecutionResult(success=True))
+
+        state = manager.get_job(job.id)[1]
+        assert state.status == 'completed'
+        assert state.next_run_at is None
+        assert state.run_count == 1
+
     def test_record_success(self, manager):
         job = manager.create_job(schedule_str='every 60s', prompt='ok')
         result = ExecutionResult(success=True, output='done', duration_ms=500)
