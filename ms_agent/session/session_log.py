@@ -38,7 +38,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
 from ms_agent.utils.atomic_file import atomic_write_json
 
@@ -237,7 +237,7 @@ class SessionLog:
         if not self._path.exists():
             self._messages = msgs
             return msgs
-        for line in self._path.read_text(encoding='utf-8').splitlines():
+        for line in self._read_lines():
             line = line.strip()
             if not line:
                 continue
@@ -304,7 +304,7 @@ class SessionLog:
         events: List[Dict[str, Any]] = []
         if not self._path.exists():
             return events
-        for line in self._path.read_text(encoding='utf-8').splitlines():
+        for line in self._read_lines():
             line = line.strip()
             if not line:
                 continue
@@ -325,7 +325,7 @@ class SessionLog:
         errors: List[Dict[str, Any]] = []
         if not self._path.exists():
             return errors
-        for line in self._path.read_text(encoding='utf-8').splitlines():
+        for line in self._read_lines():
             line = line.strip()
             if not line:
                 continue
@@ -345,7 +345,7 @@ class SessionLog:
         perms: List[Dict[str, Any]] = []
         if not self._path.exists():
             return perms
-        for line in self._path.read_text(encoding='utf-8').splitlines():
+        for line in self._read_lines():
             line = line.strip()
             if not line:
                 continue
@@ -366,7 +366,7 @@ class SessionLog:
         out: List[Dict[str, Any]] = []
         if not self._path.exists():
             return out
-        for line in self._path.read_text(encoding='utf-8').splitlines():
+        for line in self._read_lines():
             line = line.strip()
             if not line:
                 continue
@@ -387,7 +387,7 @@ class SessionLog:
         out: List[Dict[str, Any]] = []
         if not self._path.exists():
             return out
-        for line in self._path.read_text(encoding='utf-8').splitlines():
+        for line in self._read_lines():
             line = line.strip()
             if not line:
                 continue
@@ -468,7 +468,7 @@ class SessionLog:
     def _load_all_to_set_seq(self) -> None:
         """Scan the file to find the highest seq number."""
         max_seq = -1
-        for line in self._path.read_text(encoding='utf-8').splitlines():
+        for line in self._read_lines():
             line = line.strip()
             if not line:
                 continue
@@ -527,8 +527,11 @@ class SessionLog:
         """Return the first-line metadata record of the main log, if any."""
         if not self._path.exists():
             return None
-        with open(self._path, 'r', encoding='utf-8') as f:
-            first_line = f.readline().strip()
+        with open(self._path, 'rb') as f:
+            try:
+                first_line = f.readline().decode('utf-8').strip()
+            except UnicodeDecodeError:
+                return None
         if first_line:
             try:
                 record = json.loads(first_line)
@@ -538,10 +541,26 @@ class SessionLog:
                 pass
         return None
 
+    def _read_lines(self) -> Iterator[str]:
+        """Read log lines, skipping records with invalid UTF-8."""
+        with open(self._path, 'rb') as f:
+            for line in f:
+                try:
+                    yield line.decode('utf-8')
+                except UnicodeDecodeError:
+                    continue
+
     def _append_line(self, record: Dict[str, Any]) -> None:
         """Append a single JSON line and flush."""
-        with open(self._path, 'a', encoding='utf-8') as f:
-            f.write(json.dumps(record, ensure_ascii=False) + '\n')
+        data = (json.dumps(record, ensure_ascii=False) + '\n').encode('utf-8')
+        with open(self._path, 'ab+') as f:
+            f.seek(0, os.SEEK_END)
+            if f.tell():
+                f.seek(-1, os.SEEK_END)
+                if f.read(1) != b'\n':
+                    # Keep an interrupted record separate from the next write.
+                    f.write(b'\n')
+            f.write(data)
             f.flush()
             os.fsync(f.fileno())
 
