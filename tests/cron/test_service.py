@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from ms_agent.cron.manager import JobManager
 from ms_agent.cron.service import CronService, PidManager
 from ms_agent.cron.types import CronJobSpec, ExecutionResult
 
@@ -113,6 +114,42 @@ class TestCronServiceHistory:
 
 
 class TestCronServiceCallbacks:
+    @pytest.mark.asyncio
+    async def test_pause_from_another_manager_survives_completion(self, workspace):
+        service = CronService(workspace=workspace)
+        job = service.create_job(schedule_str='every 60s', prompt='pause while running')
+        service.trigger_job(job.id)
+        started = asyncio.Event()
+        release = asyncio.Event()
+        completed = asyncio.Event()
+
+        async def execute(job, config):
+            started.set()
+            await release.wait()
+            return ExecutionResult(success=True, output='ok')
+
+        async def on_complete(job, result):
+            completed.set()
+
+        service.on_job_complete.append(on_complete)
+        with patch.object(service._executor, 'execute', side_effect=execute):
+            try:
+                assert await service.manual_tick() == 1
+                await asyncio.wait_for(started.wait(), timeout=5)
+                # The CLI uses a separate manager to update the shared jobs file.
+                assert JobManager(workspace).pause_job(job.id)
+                release.set()
+                await asyncio.wait_for(completed.wait(), timeout=5)
+
+                state = service.get_job(job.id)[1]
+                assert state.status == 'paused'
+                assert state.run_count == 1
+                assert state.last_status == 'ok'
+                assert service.resume_job(job.id)
+            finally:
+                release.set()
+                await service.stop(force=True)
+
     @pytest.mark.asyncio
     async def test_on_job_start_callback(self, workspace):
         service = CronService(workspace=workspace)

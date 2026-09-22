@@ -156,7 +156,10 @@ class JobManager:
         else:
             next_run = advance_next_run(job.schedule, state.next_run_at or '')
             state.next_run_at = next_run
-            state.status = 'scheduled' if next_run else 'completed'
+            if not next_run:
+                state.status = 'completed'
+            elif state.status != 'paused':
+                state.status = 'scheduled'
 
         self._repo.save_job_and_state(job, state)
 
