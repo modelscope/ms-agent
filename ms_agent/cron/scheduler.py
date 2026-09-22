@@ -83,10 +83,11 @@ class AsyncScheduler:
         self._timer_task = asyncio.ensure_future(self._sleep_and_tick(delay_s))
 
     def _get_earliest_due_ms(self) -> Optional[int]:
-        """Find the earliest next_run_at among enabled, non-paused jobs."""
+        """Find the earliest next_run_at among dispatchable jobs."""
         earliest = None
         for job, state in self._repo.load_all_with_state():
-            if not job.enabled or state.status == 'paused':
+            if not job.enabled or state.status in ('paused', 'running',
+                                                   'completed'):
                 continue
             ms = _iso_to_ms(state.next_run_at)
             if ms is not None and (earliest is None or ms < earliest):

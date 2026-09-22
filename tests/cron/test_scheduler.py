@@ -40,6 +40,42 @@ class TestIsoToMs:
 
 class TestAsyncScheduler:
     @pytest.mark.asyncio
+    @pytest.mark.parametrize('status', ['running', 'completed'])
+    @pytest.mark.parametrize('has_scheduled_job', [False, True])
+    async def test_timer_ignores_non_dispatchable_jobs(
+            self, repo, monkeypatch, status, has_scheduled_job):
+        now = 1800000000000
+        monkeypatch.setattr('ms_agent.cron.scheduler._now_ms', lambda: now)
+        past = datetime.fromtimestamp(
+            (now - 10000) / 1000, timezone.utc).isoformat()
+        repo.save_job_and_state(
+            CronJobSpec(id='inactive', prompt='test'),
+            CronJobState(status=status, next_run_at=past))
+        if has_scheduled_job:
+            future = datetime.fromtimestamp(
+                (now + 30000) / 1000, timezone.utc).isoformat()
+            repo.save_job_and_state(
+                CronJobSpec(id='scheduled', prompt='test'),
+                CronJobState(status='scheduled', next_run_at=future))
+
+        delays = []
+
+        async def on_due(jobs):
+            pytest.fail('No jobs should be dispatched')
+
+        async def capture_delay(delay):
+            delays.append(delay)
+
+        scheduler = AsyncScheduler(repo, on_due=on_due, tick_interval=60)
+        monkeypatch.setattr(scheduler, '_sleep_and_tick', capture_delay)
+        await scheduler.start()
+        try:
+            await asyncio.sleep(0)
+            assert delays == [30 if has_scheduled_job else 60]
+        finally:
+            scheduler.stop()
+
+    @pytest.mark.asyncio
     async def test_start_stop(self, repo):
         due_list = []
 
