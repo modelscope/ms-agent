@@ -174,18 +174,22 @@ class LocalKernelSession:
             return
 
         logger.info('Stopping local ipykernel session...')
-        if self._client:
-            stop_channels_result = self._client.stop_channels()
-            if inspect.isawaitable(stop_channels_result):
-                await stop_channels_result
-        if self._km:
-            shutdown_result = self._km.shutdown_kernel(now=True)
-            if inspect.isawaitable(shutdown_result):
-                await shutdown_result
-        self._client = None
-        self._km = None
-        self.start_ts = None
-        self.execution_count = 0
+        try:
+            if self._client:
+                stop_channels_result = self._client.stop_channels()
+                if inspect.isawaitable(stop_channels_result):
+                    await stop_channels_result
+            if self._km:
+                shutdown_result = self._km.shutdown_kernel(now=True)
+                if inspect.isawaitable(shutdown_result):
+                    await shutdown_result
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            logger.debug('ipykernel stop interrupted', exc_info=True)
+        finally:
+            self._client = None
+            self._km = None
+            self.start_ts = None
+            self.execution_count = 0
 
     async def restart(self) -> None:
         if not self._km:
@@ -494,7 +498,10 @@ class LocalCodeExecutionTool(ToolBase):
         if not self._initialized:
             return
         if self._uses_kernel:
-            await self.kernel_session.stop()
+            try:
+                await self.kernel_session.stop()
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                logger.debug('code executor cleanup interrupted', exc_info=True)
         self._initialized = False
 
     async def _get_tools_inner(self) -> Dict[str, Any]:

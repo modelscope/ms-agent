@@ -7,6 +7,9 @@ recursive-include ms_agent/ *.yaml
 # agent_hub cross-framework conversion templates (markdown, not yaml)
 recursive-include ms_agent/agent_hub/default_configs *
 
+# Bundled harness skills (update-config, …)
+recursive-include ms_agent/skills *
+
 # Include projects
 recursive-include projects *
 

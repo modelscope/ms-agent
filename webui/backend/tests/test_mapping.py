@@ -70,5 +70,6 @@ def test_protocol_and_mask():
     assert _protocol("openai_compat") == "openai"
     assert _protocol("anthropic_messages") == "anthropic"
     assert _mask("") == ""
-    assert _mask("short") == "****"
+    assert _mask("short") == "set"
+    assert _mask("sk-test-acme") == "set"  # 12 chars: no 4+4 leak
     assert _mask("sk-secret-1234567890") == "sk-s****7890"

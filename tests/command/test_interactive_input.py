@@ -122,6 +122,20 @@ class TestInteractiveSession:
         assert turn.action == 'submit'
         assert turn.text == 'expanded prompt'
 
+    @pytest.mark.asyncio
+    async def test_command_exception_stays_in_loop(self):
+        async def boom(ctx):
+            raise TypeError('__class__ assignment only supported for mutable types')
+
+        router = CommandRouter()
+        router.register(CommandDef(name='boom', description='x'), boom)
+        session = InteractiveSession(router)
+        inputs = iter(['/boom', 'still here'])
+        with patch('builtins.input', lambda *a: next(inputs)):
+            turn = await session.run_turn()
+        assert turn.action == 'submit'
+        assert turn.text == 'still here'
+
 
 def _make_agent(config=None):
     """Build an LLMAgent without running its heavy __init__."""
@@ -211,3 +225,64 @@ class TestCallbackWiring:
         cbs = self._input_callbacks(agent)
         assert len(cbs) == 1
         assert cbs[0]._session._router is agent._get_command_router()
+
+
+class TestEnsureLlmReady:
+    def _agent(self):
+        from ms_agent.agent.runtime import Runtime
+        from ms_agent.command import CommandRouter, register_builtin_commands
+        agent = _make_agent({'llm': {'model': 'm'}})
+        agent._interactive = True
+        agent._input_source = None
+        agent._event_sink = None
+        agent._pending_attachments = None
+        agent.runtime = Runtime(llm=None)
+        router = CommandRouter()
+        register_builtin_commands(router)
+        agent._get_command_router = lambda: router
+        agent._stub_llm_for_setup()
+        return agent
+
+    @pytest.mark.asyncio
+    async def test_quit_sets_should_stop(self):
+        agent = self._agent()
+
+        def boom():
+            raise ValueError('No API key found for provider "modelscope"')
+
+        agent.prepare_llm = boom
+        with patch('builtins.input', return_value='/quit'):
+            result = await agent._ensure_llm_ready('hello')
+        assert result is None
+        assert agent.runtime.should_stop is True
+
+    @pytest.mark.asyncio
+    async def test_retries_after_prompt(self):
+        from types import SimpleNamespace
+        agent = self._agent()
+        n = {'i': 0}
+
+        def maybe():
+            n['i'] += 1
+            if n['i'] < 2:
+                raise ValueError('No API key found for provider "modelscope"')
+            agent.llm = SimpleNamespace(config=agent.config, model='m')
+
+        agent.prepare_llm = maybe
+        with patch('builtins.input', return_value='ping'):
+            result = await agent._ensure_llm_ready('first')
+        assert result == 'ping'
+        assert n['i'] == 2
+        assert not getattr(agent.llm, '_setup_stub', False)
+
+    @pytest.mark.asyncio
+    async def test_non_interactive_still_raises(self):
+        agent = self._agent()
+        agent._interactive = False
+
+        def boom():
+            raise ValueError('No API key found for provider "modelscope"')
+
+        agent.prepare_llm = boom
+        with pytest.raises(ValueError, match='No API key found'):
+            await agent._ensure_llm_ready('hi')

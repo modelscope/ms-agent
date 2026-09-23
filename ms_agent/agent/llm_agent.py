@@ -48,7 +48,7 @@ from ms_agent.skill.search import SkillSearchEngine
 from ms_agent.skill.skill_tools import SkillToolSet
 from ms_agent.tools import ToolManager
 from ms_agent.ui.events import (ContentDelta, ContentEnd, ContextCompacted,
-                                ErrorRaised, ImageDelivered, PlanEntry,
+                                ErrorRaised, ImageDelivered, Notice, PlanEntry,
                                 PlanUpdated, ReasoningDelta, ReasoningEnded,
                                 ReasoningStarted, ToolCallCompleted,
                                 ToolCallComposing, ToolCallStarted,
@@ -213,9 +213,10 @@ class LLMAgent(Agent):
     def resolve_enable_snapshots(config: Any) -> bool:
         """Resolve whether to take automatic pre-task snapshots.
 
-        Disabled by default for all agents. An explicit ``enable_snapshots``
-        in config always wins (including string forms like ``\"false\"``
-        coerced to boolean).
+        Default is off: there is no CLI/TUI rollback UI, and snapshotting
+        the work tree (especially ``$HOME``) burns disk. Set
+        ``enable_snapshots: true`` to opt in. An explicit value always wins
+        (including string forms like ``\"false\"`` coerced to boolean).
         """
         if OmegaConf.is_config(config):
             raw = OmegaConf.select(
@@ -266,6 +267,7 @@ class LLMAgent(Agent):
         self.callbacks: List[Callback] = []
         self.tool_manager: Optional[ToolManager] = None
         self.task_manager: Optional[TaskManager] = None
+        self._tools_cleaned = False
         self.memory_tools: List[Memory] = []
         self.rag: Optional[RAG] = None
         self.knowledge_search: Optional[SirchmunkSearch] = None
@@ -971,6 +973,7 @@ class LLMAgent(Agent):
         from ms_agent.plugins.runtime import PluginRuntime
         from ms_agent.utils.workspace_context import resolve_workspace_root
 
+        self._tools_cleaned = False
         self.task_manager = TaskManager()
 
         safety_guard, permission_enforcer, perm_config = self._build_permission_objects(
@@ -1060,13 +1063,36 @@ class LLMAgent(Agent):
                 tool.set_task_manager(self.task_manager)
 
     async def cleanup_tools(self):
-        """Cleanup resources used by the tool manager."""
+        """Best-effort teardown for MCP transports and extra tools.
+
+        ``streamablehttp_client`` (MCP SDK) holds an anyio cancel scope that
+        must be exited by the same task that entered it. Cancelling that
+        owner, or letting ``CancelledError`` leak out of jupyter kernel
+        shutdown, prints a crash-like traceback on TUI ``/quit``. Those
+        errors are teardown noise — swallow them here.
+        """
+        if self._tools_cleaned:
+            return
+        self._tools_cleaned = True
+
+        async def _quiet(awaitable, label: str) -> None:
+            try:
+                await awaitable
+            except asyncio.CancelledError:
+                logger.debug('%s interrupted during cleanup', label)
+            except Exception as exc:  # noqa: BLE001 - never fail the session on teardown
+                logger.debug('%s failed during cleanup: %s', label, exc)
+
         if self.task_manager is not None:
-            self.task_manager.kill_all()
+            try:
+                self.task_manager.kill_all()
+            except Exception:  # noqa: BLE001
+                logger.debug('task_manager.kill_all failed during cleanup',
+                             exc_info=True)
         if self.mcp_runtime is not None:
-            await self.mcp_runtime.stop()
+            await _quiet(self.mcp_runtime.stop(), 'mcp_runtime.stop')
         if self.tool_manager is not None:
-            await self.tool_manager.cleanup()
+            await _quiet(self.tool_manager.cleanup(), 'tool_manager.cleanup')
         # Drain scheduled memory ingestion so a teardown right after the last
         # turn cannot lose its write. Flush only — memory instances are shared
         # across agents of the same store (SharedMemoryManager), so CLOSING
@@ -1078,8 +1104,8 @@ class LLMAgent(Agent):
             if flush is not None:
                 try:
                     await flush(timeout=15)
-                except Exception as e:  # noqa: BLE001 - cleanup is best-effort
-                    logger.warning(f'memory flush on cleanup failed: {e}')
+                except (asyncio.CancelledError, Exception) as e:  # noqa: BLE001
+                    logger.debug('memory flush on cleanup failed: %s', e)
 
     @property
     def stream(self):
@@ -2370,6 +2396,56 @@ class LLMAgent(Agent):
         """Initialize the LLM model from the configuration."""
         self.llm: LLM = LLM.from_config(self.config)
 
+    def _stub_llm_for_setup(self) -> None:
+        """Placeholder so slash commands can run before a key exists."""
+        from types import SimpleNamespace
+        model = str(
+            OmegaConf.select(self.config, 'llm.model', default='') or '')
+        self.llm = SimpleNamespace(
+            config=self.config, model=model, _setup_stub=True)
+
+    def _emit_credential_setup(self, exc: BaseException) -> None:
+        from ms_agent.llm.credentials import missing_api_key_setup_text
+        text = missing_api_key_setup_text(exc)
+        if self._event_sink is not None:
+            self._event_sink.emit(Notice(level='warning', text=text))
+        else:
+            logger.warning(text)
+
+    async def _ensure_llm_ready(self, messages):
+        """Build a real LLM after the first prompt, looping on missing keys."""
+        from ms_agent.llm.credentials import is_missing_api_key_error
+        if not getattr(self.llm, '_setup_stub', False) and self.llm is not None:
+            return messages
+        while True:
+            try:
+                self.prepare_llm()
+                if self.runtime is not None:
+                    self.runtime.llm = self.llm
+                return messages
+            except ValueError as e:
+                if not (self._interactive and is_missing_api_key_error(e)):
+                    raise
+                self._stub_llm_for_setup()
+                if self.runtime is not None:
+                    self.runtime.llm = self.llm
+                self._emit_credential_setup(e)
+                from ms_agent.command.interactive import InteractiveSession
+                session = InteractiveSession(
+                    self._get_command_router(),
+                    source='tui'
+                    if self._input_source is not None else 'cli',
+                    input_source=self._input_source,
+                    event_sink=self._event_sink)
+                turn = await session.run_turn(
+                    messages=None, runtime=self.runtime)
+                if turn.action == 'quit':
+                    self.runtime.should_stop = True
+                    return None
+                if turn.text:
+                    messages = turn.text
+                    self._pending_attachments = turn.attachments
+
     def prepare_runtime(self):
         """Initialize the runtime context."""
         self.runtime: Runtime = Runtime(llm=self.llm)
@@ -2635,7 +2711,14 @@ class LLMAgent(Agent):
             # prompt below and InputCallback registration just after.
             self._interactive = self._resolve_interactive(messages)
             self.register_callback_from_config()
-            self.prepare_llm()
+            from ms_agent.llm.credentials import is_missing_api_key_error
+            try:
+                self.prepare_llm()
+            except ValueError as e:
+                if not (self._interactive and is_missing_api_key_error(e)):
+                    raise
+                self._stub_llm_for_setup()
+                self._emit_credential_setup(e)
             self.prepare_runtime()
             await self.prepare_tools()
             await self.prepare_skills()
@@ -2692,6 +2775,11 @@ class LLMAgent(Agent):
                             'No query provided. Pass --query, pipe input via '
                             'stdin, or run in an interactive terminal.')
                     messages = piped
+
+            messages = await self._ensure_llm_ready(messages)
+            if self.runtime.should_stop:
+                await self.cleanup_tools()
+                return
 
             # Load history and restore state
             restored_from_log = False
@@ -2956,11 +3044,22 @@ class LLMAgent(Agent):
                     self.session_log.set_metadata_field('status', 'error')
                 except Exception:
                     pass
-            if hasattr(self.config, 'help'):
+            # TUI/WebUI already rendered ErrorRaised. The yaml `help` blurb
+            # ("A commonly use config…") is for headless CLI, not a second
+            # crash dump in an interactive session.
+            if self._event_sink is None and hasattr(self.config, 'help'):
                 logger.error(
                     f'[{self.tag}] Runtime error, please follow the instructions:\n\n {self.config.help}'
                 )
             raise e
+        finally:
+            # CancelledError / GeneratorExit skip the Exception handler and
+            # used to leave streamable_http owner tasks for the event-loop
+            # shutdown to cancel — that is what dumps the MCP SDK traceback.
+            try:
+                await self.cleanup_tools()
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                logger.debug('run_loop cleanup_tools failed', exc_info=True)
 
     async def run(
             self, messages: Union[List[Message], str], **kwargs

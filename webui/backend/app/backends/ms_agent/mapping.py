@@ -40,10 +40,15 @@ def _generation_defaults(protocol: str, provider: str) -> dict:
 
 
 def _mask(api_key: str) -> str:
+    """List-safe key presence. Short secrets must not leak a 4+4 prefix/suffix.
+
+    Empty → not configured. Under 16 chars → ``set`` (same granularity as TUI
+    /model list). Longer keys may show first4****last4.
+    """
     if not api_key:
         return ""
-    if len(api_key) <= 8:
-        return "****"
+    if len(api_key) < 16:
+        return "set"
     return f"{api_key[:4]}****{api_key[-4:]}"
 
 

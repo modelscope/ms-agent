@@ -48,3 +48,14 @@ async def test_connect_creates_internal_lock_dir_not_workspace_dot_locks(tmp_pat
 def test_explicit_lock_subdir_still_wins(tmp_path):
     tool = _make(tmp_path, lock_subdir='.mylocks')
     assert tool._lock_dir() == os.path.join(str(tmp_path), '.mylocks')
+
+
+def test_absolute_plan_filename_is_not_joined_under_output_dir(tmp_path):
+    sess = tmp_path / 'sessions' / 'abc'
+    sess.mkdir(parents=True)
+    plan_json = str(sess / 'plan.json')
+    plan_md = str(sess / 'plan.md')
+    tool = _make(tmp_path, plan_filename=plan_json, plan_md_filename=plan_md)
+    paths = tool._paths()
+    assert paths.plan_json == plan_json
+    assert paths.plan_md == plan_md

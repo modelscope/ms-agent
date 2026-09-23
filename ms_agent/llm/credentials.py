@@ -30,6 +30,21 @@ def _cfg_get(config: DictConfig, field: str) -> Optional[str]:
     return value or None
 
 
+def is_missing_api_key_error(exc: BaseException) -> bool:
+    """True when provider routing failed because no key is configured."""
+    return isinstance(exc, ValueError) and 'No API key found' in str(exc)
+
+
+def missing_api_key_setup_text(exc: BaseException) -> str:
+    return (
+        f'{exc}\n\n'
+        'The session stays open — configure a key, then send a message.\n'
+        '  /model provider key <provider> <key>\n'
+        '  /model provider add openai key=... url=...\n'
+        '  /model openai/<model>\n'
+        '  /quit to leave')
+
+
 class CredentialResolver:
 
     @staticmethod

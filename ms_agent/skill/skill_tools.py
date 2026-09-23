@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils.logger import get_logger
 from .catalog import USER_SKILLS_DIR
+from .harness import fill_harness_placeholders
 from .schema import SkillSchemaParser
 
 logger = get_logger()
@@ -34,6 +35,8 @@ class SkillToolSet(ToolBase):
                  search_engine=None):
         super().__init__(config)
         self._catalog = catalog
+        # Agent config (has output_dir); catalog._config is skills-only.
+        catalog._agent_config = config
         self._enable_manage = enable_manage
         self._tool_manager = tool_manager
         self._search_engine = search_engine
@@ -259,7 +262,8 @@ class SkillToolSet(ToolBase):
             'name': skill.name,
             'description': skill.description,
             'skill_dir': str(skill.skill_path),
-            'content': skill.content,
+            'content': fill_harness_placeholders(
+                skill.content, self.config, skill.skill_id),
             'linked_files': {
                 'scripts': [s.name for s in skill.scripts],
                 'references': [r.name for r in skill.references],

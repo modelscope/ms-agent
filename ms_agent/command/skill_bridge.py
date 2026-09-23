@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 from ms_agent.command.router import CommandRouter
 from ms_agent.command.types import (CommandContext, CommandResult,
                                     CommandResultType)
+from ms_agent.skill.harness import fill_harness_placeholders
 
 if TYPE_CHECKING:
     from ms_agent.skill.catalog import SkillCatalog
@@ -64,6 +65,11 @@ def expand_skill(catalog: 'SkillCatalog', name_or_id: str,
         return None
 
     body = _strip_frontmatter(skill.content)
+    body = fill_harness_placeholders(
+        body,
+        getattr(catalog, '_agent_config', None)
+        or getattr(catalog, '_config', None),
+        skill.skill_id)
     body = body.replace('$ARGUMENTS', args)
 
     tail = (

@@ -53,7 +53,7 @@ class Agent(ABC):
                 self.config.output_dir = self.output_dir
         except Exception:
             pass
-        # Merge the work-dir project patch (e.g. a persisted /model override) so
+        # Merge a work-dir ``.ms_agent/config.yaml`` pin if one exists so
         # config overrides round-trip from <work_dir>/.ms_agent/config.yaml —
         # anchored to the project (the work dir), not the config file's
         # directory. This keeps running a shared/template config from picking up

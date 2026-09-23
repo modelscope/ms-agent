@@ -156,8 +156,10 @@ class ProjectManager:
     ) -> Project:
         """Open an existing directory as a project (Codex "use an existing folder").
 
-        Unlike :meth:`create`, the project's identity **is the folder**:
-        ``id = project_key(path)``. Consequences:
+        Unlike :meth:`create`, a brand-new mount uses ``id = project_key(path)``.
+        If this folder is already a registered project — including one created
+        with a random id — that record is returned so TUI and WebUI share one
+        session tree.
 
         - **Dedup by path** — reopening the same folder returns the same project
           (no duplicate), so history is continuous across reopens.
@@ -169,10 +171,10 @@ class ProjectManager:
         from ms_agent.project.paths import project_key
 
         work_dir = str(Path(os.path.expanduser(path)).resolve())
-        project_id = project_key(work_dir)
-        existing = self.get(project_id)
+        existing = self.find_by_path(work_dir)
         if existing is not None:
             return existing
+        project_id = project_key(work_dir)
         project = Project(
             id=project_id,
             name=name or Path(work_dir).name or project_id,
@@ -191,6 +193,25 @@ class ProjectManager:
             return None
         data = store.read()
         return Project(**{k: v for k, v in data.items() if k in Project.__dataclass_fields__}) if data else None
+
+    def find_by_path(self, path: str) -> Project | None:
+        """Return the registered project whose ``path`` is this directory.
+
+        Used so a WebUI ``create()`` project (random id, path = that folder)
+        and a later TUI/WebUI ``open_folder`` of the same directory stay one
+        project. Comparison is on resolved absolute paths.
+        """
+        try:
+            work_dir = str(Path(os.path.expanduser(path)).resolve())
+        except OSError:
+            return None
+        for project in self.list():
+            try:
+                if str(Path(project.path).expanduser().resolve()) == work_dir:
+                    return project
+            except OSError:
+                continue
+        return None
 
     def list(self) -> list[Project]:
         projects: list[Project] = []

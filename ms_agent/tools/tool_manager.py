@@ -372,13 +372,13 @@ class ToolManager:
         if self._managed_client and self.servers:
             try:
                 await self.servers.cleanup()
-            except Exception:  # noqa
+            except (asyncio.CancelledError, Exception):  # noqa
                 pass
         self.servers = None
         for tool in self.extra_tools:
             try:
                 await tool.cleanup()
-            except Exception:  # noqa
+            except (asyncio.CancelledError, Exception):  # noqa
                 pass
 
     def _clear_mcp_index_entries(self) -> None:

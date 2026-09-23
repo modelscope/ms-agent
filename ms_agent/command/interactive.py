@@ -123,9 +123,17 @@ class InteractiveSession:
                 extra={
                     'router': self._router,
                     'messages': messages if messages is not None else [],
+                    # TUI input_source only — never a blocking menu in
+                    # CLI/tests that drive InteractiveSession via input().
+                    'interactive': self._input_source is not None,
                 },
             )
-            result = await self._router.dispatch(ctx)
+            result = None
+            try:
+                result = await self._router.dispatch(ctx)
+            except Exception as exc:  # noqa: BLE001 — command bugs stay in-loop
+                self._emit(f'command failed: {type(exc).__name__}: {exc}')
+                continue
             if result is None:
                 # Unrecognized command — treat it as a normal prompt.
                 return InteractiveTurn(action='submit', text=query)

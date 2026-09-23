@@ -23,6 +23,17 @@ from ms_agent.utils import enhance_error, get_logger
 
 logger = get_logger()
 
+
+def _is_teardown_noise(exc: BaseException) -> bool:
+    """MCP SDK / anyio errors that fire when closing streamable_http."""
+    text = f'{type(exc).__name__}: {exc}'
+    return any(s in text for s in (
+        'cancel scope',
+        'athrow()',
+        'asynchronous generator',
+    ))
+
+
 EncodingErrorHandler = Literal['strict', 'ignore', 'replace']
 
 DEFAULT_ENCODING = 'utf-8'
@@ -500,7 +511,11 @@ class MCPClient(ToolBase):
         except BaseException as exc:  # noqa: BLE001
             if not ready.done():
                 ready.set_exception(exc)
-            elif not isinstance(exc, asyncio.CancelledError):
+            elif isinstance(exc, asyncio.CancelledError):
+                pass
+            elif _is_teardown_noise(exc):
+                logger.debug('MCP server %s closed: %s', server_name, exc)
+            else:
                 logger.warning('MCP server %s dropped: %s', server_name, exc)
         finally:
             self.sessions.pop(server_name, None)
@@ -555,8 +570,15 @@ class MCPClient(ToolBase):
                 await asyncio.wait_for(
                     asyncio.shield(task), timeout=SERVER_STOP_TIMEOUT)
                 return
-            except (asyncio.TimeoutError, asyncio.CancelledError):
-                pass
+            except asyncio.TimeoutError:
+                logger.debug('MCP server %s stop timed out', server_name)
+            except asyncio.CancelledError:
+                # The TUI generator is closing. The owner already has the
+                # shutdown signal — wait it out. Cancelling it here would
+                # athrow() streamablehttp_client from the wrong task.
+                with suppress(BaseException):
+                    await asyncio.shield(task)
+                return
             except BaseException as exc:  # noqa: BLE001
                 logger.debug('MCP server %s stopped with %s', server_name, exc)
                 return
@@ -678,8 +700,13 @@ class MCPClient(ToolBase):
     async def cleanup(self):
         """Clean up resources"""
         for name in list(self._server_tasks):
-            await self.disconnect_server(name)
-        await self.exit_stack.aclose()
+            try:
+                await self.disconnect_server(name)
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                logger.debug('MCP disconnect %s during cleanup', name,
+                             exc_info=True)
+        with suppress(BaseException):
+            await self.exit_stack.aclose()
 
     async def __aenter__(self) -> 'MCPClient':
         try:

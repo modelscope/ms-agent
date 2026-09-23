@@ -108,3 +108,23 @@ def test_edit_file_requires_path():
             assert result == 'Error: `path` is required.'
 
     asyncio.run(_run())
+
+
+def test_init_does_not_require_api_key(tmp_path, monkeypatch):
+    monkeypatch.delenv('MODELSCOPE_API_KEY', raising=False)
+    monkeypatch.delenv('DASHSCOPE_API_KEY', raising=False)
+    cfg = OmegaConf.create({
+        'output_dir': str(tmp_path),
+        'llm': {
+            'service': 'modelscope',
+            'model': 'Qwen/Qwen3-235B-A22B-Instruct-2507',
+            'use_provider_router': True,
+        },
+        'tools': {
+            'file_system': {
+                'mcp': False,
+            },
+        },
+    })
+    fs = FileSystemTool(cfg)
+    assert fs.llm is None

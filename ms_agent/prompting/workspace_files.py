@@ -419,6 +419,146 @@ def write_home_file(name: str, text: str) -> None:
 split_regions = split_profile_regions
 
 
+# ── UI write API (TUI slash commands / WebUI settings pages) ─────────────────
+#
+# Global instructions: edit only the user region under the seeded AGENTS.md
+# header. Project instructions: the private slot <work>/.ms_agent/AGENTS.md —
+# never the repo-root AGENTS.md (AI-native repos commit that file themselves).
+# PROFILE.md: managed ``- Call me:`` line + free region.
+
+_AGENTS = 'AGENTS.md'
+_PROFILE = 'PROFILE.md'
+
+
+def read_global_instruction() -> str:
+    """User region of ``~/.ms_agent/AGENTS.md`` (legacy settings migrated)."""
+    return _migrate_legacy_global_instruction().strip()
+
+
+def write_global_instruction(content: str) -> None:
+    """Replace the user region; keep the seeded header/comments."""
+    _migrate_legacy_global_instruction()
+    text = read_home_file(_AGENTS)
+    body = content.strip()
+    write_home_file(_AGENTS, set_free_region(text, body + '\n' if body else ''))
+
+
+def project_instruction_path(work_dir: str) -> Path:
+    return local_internal_dir(work_dir) / _AGENTS
+
+
+def read_project_instruction(work_dir: str) -> str:
+    """Private slot ``<work>/.ms_agent/AGENTS.md`` (legacy project.instruction
+    migrated). Does not read or write the repo-root ``AGENTS.md``."""
+    path = project_instruction_path(work_dir)
+    try:
+        content = path.read_text(encoding='utf-8')
+    except OSError:
+        content = ''
+    if content.strip():
+        return content
+    return _migrate_legacy_project_instruction(work_dir)
+
+
+def write_project_instruction(work_dir: str, content: str) -> None:
+    """Write the private slot only; never touch ``<work>/AGENTS.md``."""
+    _migrate_legacy_project_instruction(work_dir)
+    body = content.strip()
+    _atomic_write(project_instruction_path(work_dir),
+                  body + '\n' if body else '')
+    # Always drop the leftover JSON field so an empty private file cannot be
+    # re-filled from a stale project.instruction on the next read.
+    _clear_project_instruction_field(work_dir)
+
+
+def read_profile() -> Tuple[str, str]:
+    """``(call_me, free_region)`` from ``~/.ms_agent/PROFILE.md``."""
+    text = read_home_file(_PROFILE)
+    return get_call_me(text), get_free_region(text).strip()
+
+
+def write_profile(*,
+                  call_me: Optional[str] = None,
+                  description: Optional[str] = None) -> Tuple[str, str]:
+    """Update PROFILE.md regions. ``None`` leaves that region unchanged."""
+    text = read_home_file(_PROFILE)
+    if call_me is not None:
+        text = set_call_me(text, call_me)
+    if description is not None:
+        body = description.strip()
+        text = set_free_region(text, body + '\n' if body else '')
+    write_home_file(_PROFILE, text)
+    return get_call_me(text), get_free_region(text).strip()
+
+
+def _migrate_legacy_global_instruction() -> str:
+    """Move settings.json personalization.global_instruction into AGENTS.md."""
+    text = read_home_file(_AGENTS)
+    user_region = get_free_region(text)
+    if user_region.strip():
+        return user_region
+    try:
+        from ms_agent.personalization.settings import PersonalizationSettings
+        from ms_agent.personalization.types import PersonalizationConfig
+        ps = PersonalizationSettings()
+        cur = ps.load()
+        legacy = (cur.global_instruction or '').strip()
+        if not legacy:
+            return user_region
+        text = set_free_region(text, legacy + '\n')
+        write_home_file(_AGENTS, text)
+        ps.save(
+            PersonalizationConfig(
+                global_instruction='',
+                memory_enabled=cur.memory_enabled,
+                memory_backend=cur.memory_backend,
+            ))
+        return get_free_region(text)
+    except Exception:
+        logger.debug(
+            'legacy global_instruction migration skipped', exc_info=True)
+        return user_region
+
+
+def _migrate_legacy_project_instruction(work_dir: str) -> str:
+    """Move Project.instruction into ``.ms_agent/AGENTS.md`` once, then clear it."""
+    path = project_instruction_path(work_dir)
+    try:
+        existing = path.read_text(encoding='utf-8')
+    except OSError:
+        existing = ''
+    if existing.strip():
+        return existing
+    try:
+        from ms_agent.project.manager import ProjectManager
+        pm = ProjectManager(base_dir=str(global_home()))
+        project = pm.find_by_path(work_dir)
+        if project is None:
+            return existing
+        legacy = (project.instruction or '').strip()
+        if not legacy:
+            return existing
+        _atomic_write(path, legacy + '\n')
+        _clear_project_instruction_field(work_dir)
+        return legacy + '\n'
+    except Exception:
+        logger.debug(
+            'legacy project.instruction migration skipped', exc_info=True)
+        return existing
+
+
+def _clear_project_instruction_field(work_dir: str) -> None:
+    try:
+        from ms_agent.project.manager import ProjectManager
+        pm = ProjectManager(base_dir=str(global_home()))
+        project = pm.find_by_path(work_dir)
+        if project is not None and (project.instruction or '').strip():
+            pm.update(project.id, instruction='')
+    except Exception:
+        logger.debug(
+            'clearing leftover project.instruction skipped', exc_info=True)
+
+
 # ── injected block builders (consumed by LLMAgent) ───────────────────────────
 
 
