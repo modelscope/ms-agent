@@ -17,6 +17,7 @@ class SearchEngineType(enum.Enum):
     SERPAPI = 'serpapi'
     ARXIV = 'arxiv'
     TAVILY = 'tavily'
+    YOCOM = 'youcom'
 
 
 # Mapping from engine type to tool name
@@ -25,6 +26,7 @@ ENGINE_TOOL_NAMES: Dict[str, str] = {
     'serpapi': 'serpapi_search',
     'arxiv': 'arxiv_search',
     'tavily': 'tavily_search',
+    'youcom': 'youcom_search',
 }
 
 

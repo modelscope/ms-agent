@@ -7,6 +7,7 @@ from ms_agent.tools.search.arxiv.schema import ArxivSearchRequest
 from ms_agent.tools.search.exa import ExaSearchRequest
 from ms_agent.tools.search.search_base import SearchEngineType, SearchRequest
 from ms_agent.tools.search.serpapi.schema import SerpApiSearchRequest
+from ms_agent.tools.search.youcom.schema import YouSearchRequest
 
 
 class SearchRequestGenerator:
@@ -256,6 +257,54 @@ class ArxivSearchRequestGenerator(SearchRequestGenerator):
         return ArxivSearchRequest(**search_request_d)
 
 
+class YouSearchRequestGenerator(SearchRequestGenerator):
+    """Minimal generator for You.com search requests."""
+
+    def get_args_template(self) -> str:
+        return '{"query": "xxx", "num_results": 5}'
+
+    def get_json_schema(self,
+                        num_queries: int,
+                        is_strict: bool = True) -> Dict[str, Any]:
+        return {
+            'name': 'search_requests',
+            'strict': is_strict,
+            'schema': {
+                'type': 'array',
+                'items': {
+                    'type': 'object',
+                    'properties': {
+                        'query': {
+                            'type': 'string',
+                            'description': (
+                                'An English search query for general web search. '
+                                'Keep queries concise and use natural language.'),
+                        },
+                        'num_results': {
+                            'type': 'integer',
+                            'description': 'Number of results (1-10).',
+                        },
+                        'research_goal': {
+                            'type': 'string',
+                            'description': 'The goal of the research and additional directions',
+                        }
+                    },
+                    'required': ['query', 'num_results', 'research_goal']
+                },
+                'description': f'List of web search queries, max of {num_queries}'
+            }
+        }
+
+    def get_rewrite_prompt(self) -> str:
+        return (
+            "Rewrite the user's request into a search query for You.com web search."
+        )
+
+    def create_request(self,
+                       search_request_d: Dict[str, Any]) -> YouSearchRequest:
+        return YouSearchRequest(**search_request_d)
+
+
 def get_search_request_generator(engine_type: SearchEngineType,
                                  user_prompt: str) -> SearchRequestGenerator:
     """
@@ -277,5 +326,7 @@ def get_search_request_generator(engine_type: SearchEngineType,
         return SerpApiSearchRequestGenerator(user_prompt)
     elif engine_type == SearchEngineType.ARXIV:
         return ArxivSearchRequestGenerator(user_prompt)
+    elif engine_type == SearchEngineType.YOCOM:
+        return YouSearchRequestGenerator(user_prompt)
     else:
         raise ValueError(f'Unsupported search engine type: {engine_type}')

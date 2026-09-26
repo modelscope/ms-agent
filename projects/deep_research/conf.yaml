@@ -1,4 +1,4 @@
-## Search Engine, Supported values: EXA, SERPAPI, ARXIV ##
+## Search Engine, Supported values: EXA, SERPAPI, ARXIV, YOCOM, TAVILY ##
 
 #SEARCH_ENGINE:
 #  engine: exa
@@ -8,6 +8,10 @@
 #  engine: serpapi
 #  serpapi_api_key: $SERPAPI_API_KEY
 #  provider: google
+
+#SEARCH_ENGINE:
+#  engine: youcom
+#  # YDC_API_KEY is optional — leave unset for keyless free tier
 
 SEARCH_ENGINE:
   engine: arxiv
