@@ -8,6 +8,7 @@ from ms_agent.tools.search.arxiv import ArxivSearch
 from ms_agent.tools.search.exa import ExaSearch
 from ms_agent.tools.search.search_base import SearchEngineType
 from ms_agent.tools.search.serpapi import SerpApiSearch
+from ms_agent.tools.search.youcom import YouSearch
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
@@ -135,7 +136,8 @@ def get_web_search_tool(config_file: str):
                            or '')).strip().lower()
     if engine_override and engine_override in (SearchEngineType.EXA.value,
                                                SearchEngineType.SERPAPI.value,
-                                               SearchEngineType.ARXIV.value):
+                                               SearchEngineType.ARXIV.value,
+                                               SearchEngineType.YOCOM.value):
         search_config['engine'] = engine_override
 
     engine_name = (search_config.get('engine', '') or '').lower()
@@ -155,5 +157,7 @@ def get_web_search_tool(config_file: str):
             provider=search_config.get('provider', 'google').lower())
     elif engine_name == SearchEngineType.ARXIV.value:
         return ArxivSearch()
+    elif engine_name == SearchEngineType.YOCOM.value:
+        return YouSearch()
     else:
         return ArxivSearch()

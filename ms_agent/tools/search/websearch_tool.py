@@ -290,6 +290,9 @@ def get_search_engine_class(engine_type: str) -> Type[SearchEngine]:
     elif engine_type == 'tavily':
         from ms_agent.tools.search.tavily import TavilySearch
         return TavilySearch
+    elif engine_type in ('youcom', 'you'):
+        from ms_agent.tools.search.youcom import YouSearch
+        return YouSearch
     else:
         logger.warning(
             f"Unknown search engine '{engine_type}', falling back to arxiv")
@@ -336,6 +339,12 @@ def get_search_engine(engine_type: str,
         return TavilySearch(
             api_key=api_key or os.getenv('TAVILY_API_KEY'),
             request_timeout=float(kwargs.get('request_timeout', 120.0)),
+        )
+    elif engine_type in ('youcom', 'you'):
+        from ms_agent.tools.search.youcom import YouSearch
+        return YouSearch(
+            api_key=api_key or os.getenv('YDC_API_KEY'),
+            request_timeout=float(kwargs.get('request_timeout', 60.0)),
         )
     else:
         logger.warning(

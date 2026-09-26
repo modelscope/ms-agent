@@ -143,11 +143,13 @@ Configure API keys in your environment or directly in YAML files:
 export OPENAI_API_KEY=your_api_key
 export OPENAI_BASE_URL=your-api-url
 
-# Search Engine APIs (for sentiment analysis; you may choose either Exa or SerpApi, both offer a free quota)
+# Search Engine APIs (for sentiment analysis; you may choose Exa, SerpApi, or You.com — all offer free quotas)
 # Exa account registration: https://exa.ai; SerpApi account registration: https://serpapi.com
+# You.com: get a key at https://you.com/platform/api-keys or use keyless (no config needed)
 # If you prefer to run the FinResearch project for testing without configuring a search engine, you may skip this step and refer to the Quick Start section.
 export EXA_API_KEY=your_exa_api_key
 export SERPAPI_API_KEY=your_serpapi_api_key
+# export YDC_API_KEY=your_youcom_api_key  # uncomment to use You.com (optional — keyless free tier works without it)
 ```
 
 Configure the search engine config file path in `searcher.yaml`:
