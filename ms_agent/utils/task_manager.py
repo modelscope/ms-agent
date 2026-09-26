@@ -62,7 +62,7 @@ class TaskManager:
 
     async def complete(self, task_id: str, result: str) -> None:
         task = self._tasks.get(task_id)
-        if task is None:
+        if task is None or task.status != 'running':
             return
         task.status = 'completed'
         task.result = result
@@ -71,7 +71,7 @@ class TaskManager:
 
     async def fail(self, task_id: str, error: str) -> None:
         task = self._tasks.get(task_id)
-        if task is None:
+        if task is None or task.status != 'running':
             return
         task.status = 'failed'
         task.error = error
