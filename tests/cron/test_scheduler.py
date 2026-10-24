@@ -169,3 +169,66 @@ class TestAsyncScheduler:
         scheduler = AsyncScheduler(repo, on_due=on_due, tick_interval=60)
         count = await scheduler.manual_tick()
         assert count == 0
+
+    @pytest.mark.parametrize('status', ['paused', 'running', 'completed'])
+    def test_non_dispatchable_job_does_not_control_next_wake(self, repo, status):
+        past = '2025-01-01T00:00:00+00:00'
+        future = '2099-01-01T00:00:00+00:00'
+        repo.save_job_and_state(
+            CronJobSpec(id='inactive', prompt='test'),
+            CronJobState(status=status, next_run_at=past),
+        )
+        scheduler = AsyncScheduler(repo, on_due=None, tick_interval=60)
+        assert scheduler._get_earliest_due_ms() is None
+
+        repo.save_job_and_state(
+            CronJobSpec(id='future', prompt='test'),
+            CronJobState(status='scheduled', next_run_at=future),
+        )
+        assert scheduler._get_earliest_due_ms() == _iso_to_ms(future)
+
+    @pytest.mark.parametrize('status', ['scheduled', 'error'])
+    def test_dispatchable_job_controls_next_wake(self, repo, status):
+        past = '2025-01-01T00:00:00+00:00'
+        repo.save_job_and_state(
+            CronJobSpec(id='dispatchable', prompt='test'),
+            CronJobState(status=status, next_run_at=past),
+        )
+        scheduler = AsyncScheduler(repo, on_due=None, tick_interval=60)
+        assert scheduler._get_earliest_due_ms() == _iso_to_ms(past)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('status', ['running', 'completed'])
+    async def test_non_dispatchable_job_keeps_normal_poll_interval(
+            self, repo, monkeypatch, status):
+        repo.save_job_and_state(
+            CronJobSpec(id='inactive', prompt='test'),
+            CronJobState(status=status,
+                         next_run_at='2025-01-01T00:00:00+00:00'),
+        )
+        scheduler = AsyncScheduler(repo, on_due=None, tick_interval=60)
+        delays = []
+
+        async def record_delay(delay):
+            delays.append(delay)
+
+        monkeypatch.setattr(scheduler, '_sleep_and_tick', record_delay)
+        await scheduler.start()
+        try:
+            await scheduler._timer_task
+        finally:
+            scheduler.stop()
+        assert delays == [60]
+
+    @pytest.mark.parametrize('status', ['scheduled', 'error'])
+    def test_recovered_job_is_visible_on_next_reload(self, repo, status):
+        job = CronJobSpec(id='recovered', prompt='test')
+        state = CronJobState(status='running',
+                             next_run_at='2025-01-01T00:00:00+00:00')
+        repo.save_job_and_state(job, state)
+        scheduler = AsyncScheduler(repo, on_due=None)
+        assert scheduler._get_earliest_due_ms() is None
+        state.status = status
+        repo.save_state(job.id, state)
+        assert scheduler._get_earliest_due_ms() == _iso_to_ms(state.next_run_at)
+        assert [j.id for j, _ in scheduler._collect_due_jobs()] == [job.id]
