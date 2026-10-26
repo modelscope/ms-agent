@@ -31,8 +31,8 @@ logger = get_logger()
 
 #: The memory section this backend appends to the system prompt. Matched so a
 #: block from an earlier round can be replaced instead of accumulating.
-_LTM_BLOCK_RE = re.compile(
-    r'\n*<long-term-memory>.*?</long-term-memory>', re.DOTALL)
+_LTM_BLOCK_RE = re.compile(r'\n*<long-term-memory>.*?</long-term-memory>',
+                           re.DOTALL)
 
 MEMORY_TOOL_DEF = {
     'tool_name':
@@ -45,14 +45,16 @@ MEMORY_TOOL_DEF = {
         'type': 'object',
         'properties': {
             'action': {
-                'type': 'string',
+                'type':
+                'string',
                 'enum': ['add', 'replace', 'remove'],
                 'description':
                 ('add = append a new entry, replace = replace an existing '
                  'entry, remove = delete an entry'),
             },
             'content': {
-                'type': 'string',
+                'type':
+                'string',
                 'description':
                 ('content to add (add), or the existing content to match '
                  '(replace/remove)'),
@@ -282,6 +284,7 @@ class FileBasedBackend(BaseMemoryBackend):
         self._prompt_snapshot = None
         self._snapshot_dirty = True
         self._file_storage.invalidate_cache()
+        self._facts_storage.invalidate_cache()
 
     # -- LLM injection (backend-specific) ------------------------------
 
