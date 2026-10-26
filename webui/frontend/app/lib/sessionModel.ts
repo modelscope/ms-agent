@@ -64,8 +64,10 @@ export function useSessionModel(sessionId: string | null, initialId: string, ena
         if (sessionId) {
           try { saved.current = (await api.getSession(sessionId, { silent: true })).model_id || '' } catch { /* keep last known selection */ }
         }
-        selected.current = saved.current
-        setModelId(saved.current)
+        if (revision.current === version) {
+          selected.current = saved.current
+          setModelId(saved.current)
+        }
       }
       throw failure
     }).finally(() => { saving.current -= 1 })

@@ -49,6 +49,8 @@
  *   rounded-msa-8  shadow-msa-s  text-msa-sm
  * ================================================================ */
 @theme {
+  --animate-msa-session-dot: msa-session-dot 1.4s ease-in-out infinite;
+
   /* --- Background --- */
   --color-msa-bg-1: var(--msa-bg-1);
   --color-msa-bg-2: var(--msa-bg-2);
@@ -369,6 +371,18 @@ a {
 .msa-loading-defer {
   opacity: 0;
   animation: msa-loading-reveal 150ms ease-out 250ms forwards;
+}
+
+@keyframes msa-session-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+  }
+
+  30% {
+    opacity: 0.9;
+  }
 }
 
 @keyframes msa-agent-gaze-working {

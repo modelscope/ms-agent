@@ -49,7 +49,7 @@ import CaretDownIcon from '~/assets/icons/chevron-down.svg?react'
 import AddIcon from '~/assets/icons/add.svg?react'
 import FolderIcon from '~/assets/icons/folder.svg?react'
 import SendIcon from '~/assets/icons/send.svg?react'
-import MoreIcon from '~/assets/icons/more.svg?react'
+import SlidersIcon from '~/assets/icons/sliders.svg?react'
 import EditIcon from '~/assets/icons/edit.svg?react'
 
 // Sender runs PERMANENTLY in slot mode (structured input): picked skills are
@@ -194,13 +194,14 @@ export function Composer({
   // (container queries on the footer) so the first paint is correct at any width
   // with no SSR/hydration flash; `pillsExpanded` only flips after a user click.
   const [pillsExpanded, setPillsExpanded] = useState(false)
-  const pillsRef = useRef<HTMLDivElement>(null)
+  const pillsMouseDownRef = useRef<MouseEvent | null>(null)
   useEffect(() => {
     if (!pillsExpanded) return
     const handleClickOutside = (e: MouseEvent) => {
-      if (pillsRef.current && !pillsRef.current.contains(e.target as Node)) {
+      if (pillsMouseDownRef.current !== e) {
         setPillsExpanded(false)
       }
+      pillsMouseDownRef.current = null
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
@@ -265,25 +266,41 @@ export function Composer({
   const [globalSkills, setGlobalSkills] = useState<Skill[]>(
     appData?.globalSkills ?? []
   )
-  const [projectMcps, setProjectMcps] = useState<Mcp[]>([])
-  const [projectSkills, setProjectSkills] = useState<Skill[]>([])
+  const projectScope: Scope | null = effectiveProject
+    ? `project:${effectiveProject.id}`
+    : null
+  const [projectMcps, setProjectMcps] = useState<{
+    scope: Scope
+    items: Mcp[]
+  } | null>(null)
+  const [projectSkills, setProjectSkills] = useState<{
+    scope: Scope
+    items: Skill[]
+  } | null>(null)
+  const [projectResourceRevision, setProjectResourceRevision] = useState(0)
   useEffect(() => {
-    if (effectiveProject) {
-      const scope: Scope = `project:${effectiveProject.id}`
-      api
-        .listMcps(scope)
-        .then(setProjectMcps)
-        .catch(() => setProjectMcps([]))
-      api
-        .listSkills(scope)
-        .then(setProjectSkills)
-        .catch(() => setProjectSkills([]))
-    } else {
-      setProjectMcps([])
-      setProjectSkills([])
+    if (!projectScope) return
+    let active = true
+    api
+      .listMcps(projectScope)
+      .then((items) => {
+        if (active) setProjectMcps({ scope: projectScope, items })
+      })
+      .catch(() => {
+        if (active) setProjectMcps({ scope: projectScope, items: [] })
+      })
+    api
+      .listSkills(projectScope)
+      .then((items) => {
+        if (active) setProjectSkills({ scope: projectScope, items })
+      })
+      .catch(() => {
+        if (active) setProjectSkills({ scope: projectScope, items: [] })
+      })
+    return () => {
+      active = false
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveProject?.id])
+  }, [projectScope, projectResourceRevision])
 
   // Re-fetch when MCP/Skill config changes on the same page (e.g. toggled in
   // the project-detail MCPs tab while Composer is mounted above).
@@ -296,19 +313,8 @@ export function Composer({
       .listSkills('global')
       .then(setGlobalSkills)
       .catch(() => setGlobalSkills([]))
-    if (effectiveProject) {
-      const scope: Scope = `project:${effectiveProject.id}`
-      api
-        .listMcps(scope)
-        .then(setProjectMcps)
-        .catch(() => setProjectMcps([]))
-      api
-        .listSkills(scope)
-        .then(setProjectSkills)
-        .catch(() => setProjectSkills([]))
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveProject?.id])
+    setProjectResourceRevision((revision) => revision + 1)
+  }, [])
   useOnMcpSkillChanged(refreshMcpSkill)
 
   // Re-fetch when the model catalog changes elsewhere (Settings → Models, or an
@@ -356,12 +362,18 @@ export function Composer({
   useOnProjectsChanged(refreshProjects)
 
   const mergedMcps = useMemo(
-    () => [...globalMcps, ...projectMcps],
-    [globalMcps, projectMcps]
+    () => [
+      ...globalMcps,
+      ...(projectMcps?.scope === projectScope ? projectMcps.items : [])
+    ],
+    [globalMcps, projectMcps, projectScope]
   )
   const mergedSkills = useMemo(
-    () => [...globalSkills, ...projectSkills],
-    [globalSkills, projectSkills]
+    () => [
+      ...globalSkills,
+      ...(projectSkills?.scope === projectScope ? projectSkills.items : [])
+    ],
+    [globalSkills, projectSkills, projectScope]
   )
 
   // Web-search config is GLOBAL, so it is resolved once by the app layout's
@@ -1408,7 +1420,10 @@ export function Composer({
                           `min-w-24` floor and truncate the label instead of spilling
                           onto a second line. */}
                       <div
-                        ref={pillsRef}
+                        onMouseDownCapture={(e) => {
+                          // React capture includes portaled menus outside the DOM subtree.
+                          pillsMouseDownRef.current = e.nativeEvent
+                        }}
                         className={`flex items-center gap-2.5 ${
                           pillsExpanded
                             ? 'absolute inset-x-0 bottom-0 z-10 min-w-0 flex-nowrap overflow-x-auto bg-msa-bg-1 pt-3 @min-[550px]:static @min-[550px]:overflow-x-visible @min-[550px]:bg-transparent @min-[550px]:pt-0'
@@ -1417,11 +1432,14 @@ export function Composer({
                       >
                         {/* Toggle button: shown only while collapsed */}
                         {!pillsExpanded && (
-                          <IconButton
-                            className="@min-[550px]:hidden"
-                            icon={<MoreIcon className="h-5 w-5" />}
-                            onClick={() => setPillsExpanded(true)}
-                          />
+                          <Tooltip title={t.nav.expand}>
+                            <IconButton
+                              aria-label={t.nav.expand}
+                              className="@min-[550px]:hidden"
+                              icon={<SlidersIcon className="h-5 w-5" />}
+                              onClick={() => setPillsExpanded(true)}
+                            />
+                          </Tooltip>
                         )}
 
                         <div

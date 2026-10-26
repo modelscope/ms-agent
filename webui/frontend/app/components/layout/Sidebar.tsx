@@ -36,7 +36,6 @@ import NewProjectIcon from '~/assets/icons/new-project.svg?react'
 import MoreIcon from '~/assets/icons/more.svg?react'
 import ExpandIcon from '~/assets/icons/expand.svg?react'
 import GithubIcon from '~/assets/icons/github.svg?react'
-import SpinnerIcon from '~/assets/icons/generating.svg?react'
 
 const REPO_URL = 'https://github.com/modelscope/ms-agent'
 
@@ -1059,13 +1058,24 @@ function SessionItem({
             strands the indicator against the right edge, far from the words it
             refers to. The wrapper still absorbs the same slack, so the more-menu
             stays pinned right. */}
-        <span className="flex min-w-0 flex-1 items-center gap-1">
+        <span className="flex min-w-0 flex-1 items-center gap-2">
           <span className="min-w-0 truncate">{session.title}</span>
-          {/* Spinner while the turn runs, dot once it has finished unwatched —
-              the same slot, never both: the dot exists precisely because the
-              spinner went away with nothing left to say the answer arrived. */}
           {isRunning ? (
-            <SpinnerIcon className="h-3 w-3 shrink-0 animate-spin text-msa-text-brand1" />
+            <span
+              role="img"
+              aria-label={t.chat.authExecuting}
+              className="flex h-3 w-3 shrink-0 items-center justify-between text-msa-text-brand1"
+            >
+              <span
+                className="h-[3px] w-[3px] rounded-full bg-current opacity-60 motion-safe:animate-msa-session-dot"
+                style={{ animationDelay: '-0.32s' }}
+              />
+              <span
+                className="h-[3px] w-[3px] rounded-full bg-current opacity-60 motion-safe:animate-msa-session-dot"
+                style={{ animationDelay: '-0.16s' }}
+              />
+              <span className="h-[3px] w-[3px] rounded-full bg-current opacity-60 motion-safe:animate-msa-session-dot" />
+            </span>
           ) : session.unread ? (
             <UnreadDot spinnerSlot label={t.sidebar.unreadSession} />
           ) : null}

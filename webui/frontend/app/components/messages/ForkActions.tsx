@@ -9,7 +9,10 @@ import { useT } from '~/lib/i18n'
 import type { ForkOrigin } from '~/lib/types'
 import { IconButton } from '../common/IconButton'
 
-export function ForkReplyButton({ sessionId, afterSeq }: {
+export function ForkReplyButton({
+  sessionId,
+  afterSeq
+}: {
   sessionId: string
   afterSeq: number
 }) {
@@ -32,9 +35,16 @@ export function ForkReplyButton({ sessionId, afterSeq }: {
       request.current = { seq: afterSeq, id: clientId() }
     }
     try {
-      const child = await api.forkSession(sessionId, afterSeq, request.current.id)
+      const child = await api.forkSession(
+        sessionId,
+        afterSeq,
+        request.current.id
+      )
       revalidator.revalidate()
-      navigate(`/projects/${encodeURIComponent(child.project_id!)}/sessions/${encodeURIComponent(child.id)}`, { state: { focusComposer: true } })
+      navigate(
+        `/projects/${encodeURIComponent(child.project_id!)}/sessions/${encodeURIComponent(child.id)}`,
+        { state: { focusComposer: true } }
+      )
     } catch (error) {
       if (!(error instanceof ApiError)) message.error(t.chat.forkFailed)
     } finally {
@@ -47,7 +57,7 @@ export function ForkReplyButton({ sessionId, afterSeq }: {
       <IconButton
         size="sm"
         aria-label={t.chat.forkReply}
-        icon={<BranchesOutlined />}
+        icon={<BranchesOutlined className="text-sm" />}
         loading={pending}
         disabled={pending}
         onClick={() => void fork()}
@@ -61,15 +71,27 @@ export function ForkDivider({ origin }: { origin: ForkOrigin }) {
   const { t } = useT()
   const label = t.chat.forkFrom.replace('{title}', origin.title)
   return (
-    <div className="my-4 flex w-full items-center gap-3 text-xs text-msa-text-3" data-fork-origin={origin.session_id}>
+    <div
+      className="my-4 flex w-full items-center gap-3 text-xs text-msa-text-3"
+      data-fork-origin={origin.session_id}
+    >
       <span className="h-px min-w-4 flex-1 bg-msa-line-1" />
       {origin.available ? (
         <Link
           className="max-w-[75%] truncate text-msa-text-3 hover:text-msa-text-brand1"
           title={label}
           to={`/projects/${encodeURIComponent(origin.project_id)}/sessions/${encodeURIComponent(origin.session_id)}?at=${origin.assistant_seq}`}
-        >{label}</Link>
-      ) : <span className="max-w-[75%] truncate" title={`${label} · ${t.chat.forkSourceDeleted}`}>{label} · {t.chat.forkSourceDeleted}</span>}
+        >
+          {label}
+        </Link>
+      ) : (
+        <span
+          className="max-w-[75%] truncate"
+          title={`${label} · ${t.chat.forkSourceDeleted}`}
+        >
+          {label} · {t.chat.forkSourceDeleted}
+        </span>
+      )}
       <span className="h-px min-w-4 flex-1 bg-msa-line-1" />
     </div>
   )
