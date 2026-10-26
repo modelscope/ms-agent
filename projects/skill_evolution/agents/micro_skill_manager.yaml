@@ -39,11 +39,9 @@ tools:
   code_executor:
     mcp: false
     implementation: python_env
-    exclude:
-      - notebook_executor
-      - python_executor
-      - reset_executor
-      - get_executor_info
+    include:
+      - shell_executor
+      - file_operation
   file_system:
     mcp: false
     include:

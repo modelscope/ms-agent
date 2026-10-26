@@ -11,7 +11,7 @@ import pytest
 from omegaconf import OmegaConf
 
 from ms_agent.agent.llm_agent import LLMAgent  # noqa: F401 — tools import cycle
-from ms_agent.tools.code.local_code_executor import LocalCodeExecutionTool, LocalKernelSession
+from ms_agent.tools.code.local_code_executor import LocalCodeExecutionTool
 from ms_agent.utils.task_manager import TaskManager
 
 
@@ -20,15 +20,14 @@ def config(root, **scope):
 
 
 @pytest.mark.parametrize('scope', [
+    {},
     {'include': ['shell_executor']},
     {'exclude': ['notebook_executor', 'python_executor', 'reset_executor']},
 ])
-def test_shell_scope_skips_dependency_installation_and_kernel(tmp_path, monkeypatch, scope):
+def test_local_lifecycle_does_not_install_dependencies(tmp_path, monkeypatch, scope):
     def unexpected(*args, **kwargs):
-        pytest.fail('Shell-only initialization must not install dependencies or start a kernel')
-    monkeypatch.setattr(LocalCodeExecutionTool, '_check_dependencies', unexpected)
-    monkeypatch.setattr(LocalKernelSession, 'start', unexpected)
-    monkeypatch.setattr(LocalKernelSession, 'stop', unexpected)
+        pytest.fail('Local tool initialization must not install task dependencies')
+    monkeypatch.setattr('ms_agent.utils.utils.install_package', unexpected)
 
     async def run():
         tool = LocalCodeExecutionTool(config(tmp_path, **scope))
@@ -41,26 +40,6 @@ def test_shell_scope_skips_dependency_installation_and_kernel(tmp_path, monkeypa
             await tool.cleanup()
             await tool.cleanup()
     asyncio.run(run())
-
-
-def test_notebook_opt_in_retains_kernel_lifecycle(tmp_path, monkeypatch):
-    events = []
-    monkeypatch.setattr(LocalCodeExecutionTool, '_check_dependencies', lambda self: {})
-    async def start(self):
-        events.append('start')
-    async def stop(self):
-        events.append('stop')
-    monkeypatch.setattr(LocalKernelSession, 'start', start)
-    monkeypatch.setattr(LocalKernelSession, 'stop', stop)
-
-    async def run():
-        tool = LocalCodeExecutionTool(config(tmp_path, include=['notebook_executor']))
-        await tool.connect()
-        await tool.connect()
-        await tool.cleanup()
-        await tool.cleanup()
-    asyncio.run(run())
-    assert events == ['start', 'stop']
 
 
 @pytest.mark.skipif(os.name == 'nt', reason='POSIX command quoting')

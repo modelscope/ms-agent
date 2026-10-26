@@ -1,6 +1,8 @@
 """History reconstruction: attachment block -> structured user files."""
 from types import SimpleNamespace
 
+import pytest
+
 from app.backends.ms_agent.sessions import (
     _attached_files,
     _reconstruct,
@@ -176,6 +178,31 @@ def _steps(msgs, kind):
         p.step for m in msgs for p in m.parts
         if p.kind == "step" and p.step and p.step.kind == kind
     ]
+
+
+@pytest.mark.parametrize("name", ["python_executor", "notebook_executor"])
+def test_reconstruct_keeps_removed_local_tool_history(tmp_path, name):
+    """Historical calls and current sandbox calls still need terminal cards."""
+    full_name = f"code_executor---{name}"
+    result = '{"success": true, "output": "6"}'
+    rows = [
+        {
+            "seq": 0,
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{
+                "id": "c1",
+                "tool_name": full_name,
+                "arguments": '{"code": "print(6)"}',
+            }],
+        },
+        {"seq": 1, "role": "tool", "tool_call_id": "c1", "content": result},
+    ]
+    terminals = _steps(_reconstruct(rows, _project(tmp_path)), "terminal")
+    assert len(terminals) == 1
+    assert terminals[0].meta["tool"] == full_name
+    assert terminals[0].meta["code"] == "print(6)"
+    assert terminals[0].meta["result"] == result
 
 
 def test_reconstruct_keeps_rule_refused_tool_call(tmp_path):

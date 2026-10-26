@@ -79,41 +79,30 @@ pip install akshare baostock
 
 ### Sandbox Environment
 
-By default, the Collector and Analyst agents use a Docker-based sandbox to safely execute code:
+Collector, Analyst, and Aggregator execute code in Docker sandboxes by default and share data and reports through the output directory. Install the sandbox dependencies and build the image before running the workflow:
 
 ```bash
 pip install ms-enclave docker websocket-client  # https://github.com/modelscope/ms-enclave
 bash projects/fin_research/tools/build_jupyter_image.sh
 ```
 
-If you prefer not to install Docker and related dependencies, you can configure a local code execution tool instead. In both `analyst.yaml` and `collector.yaml`, change the default `tools` configuration to:
+To run entirely in a local environment, replace the entire `tools.code_executor` block in `collector.yaml`, `analyst.yaml`, and `aggregator.yaml` with:
 
 ```yaml
 tools:
   code_executor:
     mcp: false
     implementation: python_env
-    exclude:
-      - python_executor
+    include:
       - shell_executor
-      - file_operation
 ```
 
-With this configuration, code is executed via a Jupyter kernel–based notebook executor that isolates environment variables and supports shell command execution; the necessary dependencies (for data analysis and code execution) will be installed automatically on the first run.
+Update the prompts to match local execution:
 
-If you only need a lighter-weight Python execution environment and do not want to introduce notebook-related dependencies, you can instead use:
+- Collector and Analyst: use `shell_executor` for data analysis and file operations. Remove instructions that require Notebook tools, kernel resets, or persistent Python variables. Each command runs independently and must load the modules and data it needs.
+- Aggregator: replace the sandbox path `/data` in its prompt with the local output directory. Collector and Analyst resolve the `<DATA_ROOT>` placeholder automatically based on the execution mode.
 
-```yaml
-tools:
-  code_executor:
-    mcp: false
-    implementation: python_env
-    exclude:
-      - notebook_executor
-      - file_operation
-```
-
-This configuration uses an independent Python executor together with a shell command executor and is suitable for lightweight code execution scenarios.
+Local mode accesses host resources directly and does not provide sandbox isolation. Install the required analysis dependencies in the local execution environment before running the workflow.
 
 ### Environment Variables
 

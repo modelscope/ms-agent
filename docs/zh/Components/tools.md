@@ -61,7 +61,7 @@ MS-Agent支持很多内部工具：
 
 ### code_executor
 
-代码执行工具，支持基于本地 Python 环境执行代码或基于沙箱环境执行代码。可以在 `tools.code_executor` 下通过配置 `implementation` 字段选择执行环境。
+代码执行工具，支持在沙箱中运行代码，或通过本地子进程执行命令。可以在 `tools.code_executor` 下通过配置 `implementation` 字段选择执行环境。
 
 - 默认或 `implementation: sandbox` 启动沙箱模式：
   - 基于沙箱环境运行代码，支持通过本地 Docker 或远程 HTTP 服务建立沙箱运行环境，主要支持 `docker` 和 `docker_notebook` 两种环境类型，分别适合于无状态的代码运行和需要在对话内保持上下文状态的代码运行。
@@ -69,15 +69,27 @@ MS-Agent支持很多内部工具：
   - 默认会将配置中的 `output_dir` 目录挂载到沙箱内的 `/data`，用于读写持久化文件。
 
 - `implementation: python_env` 时启动本地模式：
-  - 基于本地 Python 环境执行代码，在工具设计上与沙箱环境保持一致，支持 Jupyter Notebook 和 Python 解释器两种执行方式，分别适合于需要在对话内保持上下文状态的代码运行和无状态的代码运行。
-  - 设置 `include: [shell_executor]` 时，不会初始化或安装 Python/Notebook 工具的依赖。WebUI 默认使用这一工具范围。
-  - 启用 `python_executor` 或 `notebook_executor` 前，应在启动 SDK 的 Python 环境中准备所需依赖。WebUI 默认不预装 PyArrow、scikit-learn 和 seaborn，可执行 `pip install pyarrow scikit-learn seaborn` 安装；Notebook 执行另外需要 `pip install ipykernel jupyter-client`。现有逻辑会在初始化时尝试补装缺失的包，这要求该环境有可用的 pip 和网络；离线部署应提前安装。
+  - 提供 `shell_executor` 和 `file_operation`，分别用于执行系统命令和基础文件操作。默认 SDK Agent 和 WebUI 仅启用此工具中的 `shell_executor`。
+  - 使用本地环境中的程序及其依赖，以 `output_dir` 为工作目录。可通过 `shell_env` 配置命令的环境变量，通过 `shell_timeout` 设置默认超时时间。
+  - 工具调用受 Agent 权限策略控制。由于程序直接使用宿主机资源，需要隔离执行环境时应选择沙箱模式。
+
+本地模式配置示例：
+
+```yaml
+tools:
+  code_executor:
+    mcp: false
+    implementation: python_env
+    shell_timeout: 120
+    include:
+      - shell_executor
+```
+
+> 迁移旧版本的本地配置：从 `include` / `exclude` 中移除 `python_executor`、`notebook_executor`、`reset_executor` 和 `get_executor_info`，并按上例启用所需的本地工具。这四个接口仅适用于沙箱模式。原有的 `python_timeout` / `notebook_timeout` 和 `kernel_env` 配置分别改用 `shell_timeout` 和 `shell_env`。
 
 #### notebook_executor
 
 沙箱模式下，该方法对应 `docker_notebook` 类型沙箱环境，可以在 Notebook 内执行代码并保持对话内的上下文；代码可以访问挂载在 `/data` 下的文件，支持在代码中通过`!`前缀执行简单的shell命令。
-
-本地模式下，该方法基于本地 Jupyter Kernel 执行代码，提供对环境变量的隔离，支持对话内的上下文保持，并支持在代码中通过 `!` 前缀执行简单的 shell 命令。相应依赖会在首次运行时自动安装（包括数据分析和代码执行需要的依赖）。
 
 参数：
 
@@ -89,8 +101,6 @@ MS-Agent支持很多内部工具：
 
 沙箱模式下，该方法专用于 `docker` 类型沙箱环境，可以使用沙箱内的 Python 解释器运行代码，适合不需要完整 Notebook 交互能力的执行场景。
 
-本地模式下，该方法基于本地 Python 解释器执行代码，每次调用互相独立，不保留上下文。
-
 参数：
 
 - code: `str`, 需要执行的代码。
@@ -99,9 +109,9 @@ MS-Agent支持很多内部工具：
 
 #### shell_executor
 
-沙箱模式下，该方法专用于 `docker` 类型沙箱环境，该方法使用 bash 在沙箱内执行 shell 命令，支持基本的 shell 操作例如 `ls`、`cd`、`mkdir`、`rm` 等，并可以访问 `/data` 目录下的文件。
+沙箱模式下，该方法在 `docker` 或 `docker_notebook` 容器内执行命令，可通过 `/data` 访问共享文件。
 
-本地模式下，该方法使用本地的 bash 解释器执行 shell 命令，工作目录为配置中的 `output_dir`，支持基本的 shell 操作，但不建议在生产环境中使用。
+本地模式下，该方法在新的系统 Shell 中执行命令（POSIX 使用 `/bin/sh`，Windows 使用 `cmd.exe`），工作目录为配置中的 `output_dir`。每次调用使用独立的进程环境，工作目录和环境变量的临时修改不会延续到下次调用。
 
 参数：
 
@@ -110,7 +120,7 @@ MS-Agent支持很多内部工具：
 
 #### file_operation
 
-沙箱模式下，该方法专用于 `docker` 类型沙箱环境，用于在沙箱内执行基本的文件操作，包括创建、读、写、删除、列出、判断是否存在等。文件路径基于沙箱内部路径，通常建议在挂载目录 `/data` 下进行读写。
+沙箱模式下，该方法在 `docker` 或 `docker_notebook` 容器内执行基本文件操作，包括创建、读、写、删除、列出、判断是否存在等。使用沙箱内部路径，在挂载目录 `/data` 下读写的文件可与宿主机共享。
 
 本地模式下，该方法用于直接对本地文件系统进行基础操作，但所有路径都会被约束在 `output_dir` 目录内部，以避免越权访问。
 
@@ -125,13 +135,9 @@ MS-Agent支持很多内部工具：
 
 沙箱模式下，用于在沙箱环境崩溃或 Notebook 内变量状态混乱时重启沙箱环境或重建内核，清空所有状态。
 
-本地模式下，专用于在 Notebook 执行出现问题时对本地 Jupyter Kernel 进行重启，清空当前会话的所有状态。
-
 #### get_executor_info
 
 沙箱模式下，获取当前沙箱状态与环境的基础信息，例如沙箱 ID、运行状态、资源限制配置和可用工具列表等。
-
-本地模式下，用于获取当前本地 Python 执行环境的基本信息，例如工作目录、是否已初始化、当前执行次数以及运行时长等。
 
 ### MCP工具
 

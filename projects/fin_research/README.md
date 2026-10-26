@@ -93,7 +93,7 @@ pip install akshare baostock
 
 ### Sandbox Setup
 
-The Collector and Analyst agents default use Docker for sandboxed code execution (optional):
+Collector, Analyst, and Aggregator execute code in Docker sandboxes by default and share data and reports through the output directory. Install the sandbox dependencies and build the image before running the workflow:
 
 ```bash
 # install ms-enclave (https://github.com/modelscope/ms-enclave)
@@ -103,34 +103,23 @@ pip install ms-enclave docker websocket-client
 bash projects/fin_research/tools/build_jupyter_image.sh
 ```
 
-If you prefer not to install Docker and related dependencies, you can instead configure the local code execution tool by modifying the default `tools` section in both `analyst.yaml` and `collector.yaml`:
+To run entirely in a local environment, replace the entire `tools.code_executor` block in `collector.yaml`, `analyst.yaml`, and `aggregator.yaml` with:
 
 ```yaml
 tools:
   code_executor:
     mcp: false
     implementation: python_env
-    exclude:
-      - python_executor
+    include:
       - shell_executor
-      - file_operation
 ```
 
-With this configuration, code is executed through a Jupyter kernel–based notebook executor that isolates environment variables and supports running shell commands. The required dependencies (including those for data analysis and code execution) will be installed automatically on the first run.
+Update the prompts to match local execution:
 
-If you want a lighter-weight Python-only execution environment without introducing additional notebook dependencies, you can use:
+- Collector and Analyst: use `shell_executor` for data analysis and file operations. Remove instructions that require Notebook tools, kernel resets, or persistent Python variables. Each command runs independently and must load the modules and data it needs.
+- Aggregator: replace the sandbox path `/data` in its prompt with the local output directory. Collector and Analyst resolve the `<DATA_ROOT>` placeholder automatically based on the execution mode.
 
-```yaml
-tools:
-  code_executor:
-    mcp: false
-    implementation: python_env
-    exclude:
-      - notebook_executor
-      - file_operation
-```
-
-This configuration uses an independent Python executor together with a shell command executor and is suitable for lightweight code execution scenarios.
+Local mode accesses host resources directly and does not provide sandbox isolation. Install the required analysis dependencies in the local execution environment before running the workflow.
 
 ## 🚀 Quickstart
 

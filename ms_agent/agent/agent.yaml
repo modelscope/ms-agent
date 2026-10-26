@@ -97,8 +97,6 @@ tools:
     implementation: python_env
     include:
       - shell_executor
-      - python_executor
-      - notebook_executor
 
 help: |
   A commonly use config, try whatever you want!

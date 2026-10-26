@@ -42,9 +42,9 @@ tools:
   code_executor:
     mcp: false
     implementation: python_env
-    notebook_timeout: 120
+    shell_timeout: 120
     include:
-      - notebook_executor
+      - shell_executor
   todo_list:
     mcp: false
     auto_render_md: true

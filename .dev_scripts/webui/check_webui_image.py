@@ -66,7 +66,7 @@ with tempfile.TemporaryDirectory() as temporary:
     async def shell(command):
         await tool.connect()
         try:
-            assert tool.kernel_session._client is None, 'Shell-only mode started Jupyter'
+            assert not hasattr(tool, 'kernel_session'), 'Local tool must not create a Jupyter kernel'
             result = json.loads(await tool.shell_executor(command))
             assert result['success'], result
         finally:
@@ -99,7 +99,8 @@ with tempfile.TemporaryDirectory() as temporary:
 print('Agent package installation, service isolation and index configuration passed')
 '''
     subprocess.run(['docker', 'exec', name, 'python', '-c', code],
-                   check=True, timeout=120)
+                   check=True,
+                   timeout=120)
 
 
 def main():
@@ -122,15 +123,15 @@ def main():
     assert labels['com.modelscope.ms-agent.wheel-sha256'] == wheel_sha
     name = 'ms-agent-smoke-' + uuid.uuid4().hex[:12]
     volume = name + '-data'
-    label_args = ['--label', args.resource_label] if args.resource_label else []
+    label_args = ['--label', args.resource_label
+                  ] if args.resource_label else []
     docker('volume', 'create', *label_args, volume)
     state = None
     try:
         for scenario in ('normal', 'restart', 'backend', 'frontend'):
             docker('run', *label_args, '--cpus', '2', '--memory', '4g',
-                   '--detach', '--name', name, '--publish',
-                   '127.0.0.1::8000', '--mount',
-                   'type=volume,source=' + volume + ',target=/data',
+                   '--detach', '--name', name, '--publish', '127.0.0.1::8000',
+                   '--mount', 'type=volume,source=' + volume + ',target=/data',
                    args.image)
             try:
                 mapping = docker('port', name, '8000/tcp')

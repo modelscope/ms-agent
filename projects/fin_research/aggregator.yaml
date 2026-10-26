@@ -74,7 +74,8 @@ prompt:
     - Retrieve principle specs, writing specs, or other available specs through the spec_loader server, \
     based on the spec tools currently exposed to you.
     - To reduce the number of conversation turns, multiple tools can be invoked simultaneously within a single turn when necessary.
-    - When using the file_system---write_file tool, pass an empty string ('') to the path argument to use the default working directory.
+    - Use paths relative to the default working directory with the file_system tools. \
+    The code_executor tools run in a Docker sandbox, where the same directory is mounted at /data.
     - Avoid redundant tool calls for file queries or reads when the relevant information has \
     already been loaded or provided in the current context.
     </Tool_Calling_Protocol>
@@ -129,12 +130,22 @@ prompt:
 tools:
   code_executor:
     mcp: false
-    implementation: python_env
-    exclude:
-      - notebook_executor
-      - python_executor
-      - reset_executor
-      - get_executor_info
+    implementation: sandbox
+    sandbox:
+      mode: local
+      type: docker_notebook
+      image: jupyter-kernel-gateway:version1
+      working_dir: /data
+      timeout: 120
+      memory_limit: "1g"
+      cpu_limit: 2.0
+      network_enabled: true
+      tools_config:
+        shell_executor: {}
+        file_operation: {}
+    include:
+      - shell_executor
+      - file_operation
   file_system:
     mcp: false
     include:

@@ -61,7 +61,7 @@ Parameters:
 
 ### code_executor
 
-Code execution tool that can run Python code either in a sandboxed environment or directly in the local Python environment. The behavior is controlled by the `tools.code_executor.implementation` field.
+Code execution tool that runs code in a sandbox or commands in local subprocesses. The behavior is controlled by the `tools.code_executor.implementation` field.
 
 - When omitted or set to `sandbox`:
   - Uses an [ms-enclave](https://github.com/modelscope/ms-enclave) based sandbox. The sandbox can be created locally with Docker or via a remote HTTP service.
@@ -69,14 +69,27 @@ Code execution tool that can run Python code either in a sandboxed environment o
   - The configured `output_dir` on the host is mounted into the sandbox at `/data` so code can read and write persistent artifacts there.
 
 - When set to `python_env`:
-  - Runs code in the local Python environment. The tool API is aligned with the sandbox version and supports both Jupyter-kernel based execution and plain Python interpreter execution.
-  - With `include: [shell_executor]`, no Python/Notebook dependencies are initialized or installed. This is the default WebUI tool scope.
-  - Before enabling `python_executor` or `notebook_executor`, prepare their dependencies in the Python environment that runs the SDK. WebUI does not preinstall PyArrow, scikit-learn or seaborn; install them with `pip install pyarrow scikit-learn seaborn`. Notebook execution also needs `pip install ipykernel jupyter-client`. The existing automatic setup attempts to install missing packages at initialization and requires working pip and network access; preinstall them for offline use.
+  - Provides `shell_executor` for system commands and `file_operation` for basic file operations. The default SDK agent and WebUI expose only `shell_executor` from this tool.
+  - Uses programs and dependencies from the local environment, with `output_dir` as the working directory. Configure command environment variables with `shell_env` and the default timeout with `shell_timeout`.
+  - Tool calls follow the agent's permission policy. Programs access host resources directly, so choose sandbox mode when execution requires isolation.
+
+Example local configuration:
+
+```yaml
+tools:
+  code_executor:
+    mcp: false
+    implementation: python_env
+    shell_timeout: 120
+    include:
+      - shell_executor
+```
+
+> Migrating an older local configuration: remove `python_executor`, `notebook_executor`, `reset_executor`, and `get_executor_info` from `include` / `exclude`, then enable the local tools you need as shown above. These four interfaces apply only to sandbox mode. Replace `python_timeout` / `notebook_timeout` with `shell_timeout`, and `kernel_env` with `shell_env`.
 
 #### notebook_executor
 
 - **Sandbox mode**: Executes code inside a `docker_notebook` sandbox, preserving state (variables, imports, dataframes, etc.) across calls. Files under the mounted data directory are available at `/data/...`, and you can also run simple shell commands from code cells using the standard `!` prefix.
-- **Local mode**: Executes code in a local Jupyter kernel, with environment isolation and state persistence across calls. In the notebook environment you can also use simple shell commands via the standard `!` syntax.
 
 **Parameters**:
 
@@ -87,7 +100,6 @@ Code execution tool that can run Python code either in a sandboxed environment o
 #### python_executor
 
 - **Sandbox mode**: Executes Python code in a `docker`-type sandbox using the sandbox’s Python interpreter, typically used when you do not need full notebook-style interaction.
-- **Local mode**: Executes code with the local Python interpreter in a stateless fashion; each call has its own execution context and does not share variables with previous calls.
 
 **Parameters**:
 
@@ -97,8 +109,8 @@ Code execution tool that can run Python code either in a sandboxed environment o
 
 #### shell_executor
 
-- **Sandbox mode**: Dedicated to `docker`-type sandboxes and executes shell commands inside the sandbox using `bash`, supporting basic operations like `ls`, `cd`, `mkdir`, `rm`, etc., and access to files under `/data`.
-- **Local mode**: Executes shell commands using the local `bash` interpreter with the working directory set to `output_dir`; this is convenient for development but generally not recommended for production.
+- **Sandbox mode**: Executes commands inside a `docker` or `docker_notebook` container. Shared files are available under `/data`.
+- **Local mode**: Executes commands in a new system shell (`/bin/sh` on POSIX, `cmd.exe` on Windows), with the working directory set to `output_dir`. Each call has its own process environment; temporary changes to the working directory or environment variables do not carry over to the next call.
 
 **Parameters**:
 
@@ -107,7 +119,7 @@ Code execution tool that can run Python code either in a sandboxed environment o
 
 #### file_operation
 
-- **Sandbox mode**: Dedicated to `docker`-type sandboxes and performs basic file operations inside the sandbox (create, read, write, delete, list, exists). Paths are interpreted as sandbox-internal paths; in most cases you should work under `/data/...`.
+- **Sandbox mode**: Performs basic file operations inside a `docker` or `docker_notebook` container (create, read, write, delete, list, exists). Paths refer to locations inside the sandbox; files under the mounted `/data` directory are shared with the host.
 - **Local mode**: Performs the same basic file operations on the local filesystem but always constrained under `output_dir` to prevent accessing arbitrary locations.
 
 **Parameters**:
@@ -120,12 +132,10 @@ Code execution tool that can run Python code either in a sandboxed environment o
 #### reset_executor
 
 - **Sandbox mode**: Recreates the sandbox (or restarts the notebook kernel) to clear all variables and session state when the environment becomes unstable.
-- **Local mode**: Restarts the local Jupyter kernel used by `notebook_executor`, dropping all in-memory state.
 
 #### get_executor_info
 
 - **Sandbox mode**: Returns the current sandbox status and configuration summary (such as memory/CPU limits, available tools, etc.).
-- **Local mode**: Returns basic information about the local execution environment (working directory, whether it is initialized, current execution count, uptime, etc.).
 
 ### MCP Tools
 

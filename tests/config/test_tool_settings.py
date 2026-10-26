@@ -37,7 +37,7 @@ def test_interface_defaults_are_below_user_layers(tmp_path):
     # An interface's defaults never leak into a normal SDK resolver.
     plain = ConfigResolver(global_dir=tmp_path / 'other').resolve()
     assert 'todo_list' not in plain.tools
-    assert 'python_executor' in plain.tools.code_executor.include
+    assert list(plain.tools.code_executor.include) == ['shell_executor']
 
 
 @pytest.mark.parametrize('patch', [None, [], {'todo_list': None},
