@@ -23,10 +23,15 @@ class DagWorkflow(Workflow):
         # Build adjacency list graph and in-degree map
         self.graph: Dict[str, List[str]] = defaultdict(list)
         indegree: Dict[str, int] = defaultdict(int)
-        tasks: Set[str] = set(self.config.keys())
+        tasks: Set[str] = {
+            name
+            for name, task_config in self.config.items()
+            if isinstance(task_config, DictConfig)
+            and 'agent_config' in task_config
+        }
 
         for task_name, task_config in self.config.items():
-            if 'next' in task_config:
+            if task_name in tasks and 'next' in task_config:
                 next_tasks = task_config['next']
                 if isinstance(next_tasks, str):
                     next_tasks = [next_tasks]
@@ -34,12 +39,10 @@ class DagWorkflow(Workflow):
                     self.graph[task_name].append(nxt)
                     indegree[nxt] += 1
 
-        self.nodes = set(list(self.graph.keys()) + list(indegree.keys()))
+        self.nodes = tasks
 
         # Find root tasks (indegree==0)
-        self.roots = [
-            t for t in tasks if 'next' in self.config[t] and indegree[t] == 0
-        ]
+        self.roots = [t for t in tasks if indegree[t] == 0]
         if not self.roots:
             raise ValueError('No root task found for DagWorkflow')
 
