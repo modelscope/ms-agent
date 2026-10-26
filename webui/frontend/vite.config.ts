@@ -51,7 +51,9 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5173,
       proxy: {
-        '/api': { target: apiBaseUrl, changeOrigin: true }
+        // Preserve the browser's Host for the backend's same-origin check,
+        // including when Vite selects a different available development port.
+        '/api': { target: apiBaseUrl, changeOrigin: false }
       }
     },
     ssr: {

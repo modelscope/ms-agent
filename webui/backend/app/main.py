@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
     agent_settings,
+    auth,
     chat,
     events,
     instructions,
@@ -21,19 +22,22 @@ from app.api import (
     skills,
     workspace,
 )
+from app.core.auth import AuthMiddleware, WebUIAuth
 from app.core.envelope import error_response, register_exception_handlers
 from app.core.settings import settings
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="ms-agent-webui backend", version="0.2.0")
+    app.state.auth = WebUIAuth(settings)
     app.state.recovery = recovery.RecoveryStatus(required=False)
     app.state.recovery_lock = threading.Lock()
 
     @app.middleware("http")
     async def require_ready(request, call_next):
         if app.state.recovery.required and request.url.path not in {
-            "/api/health", "/api/recovery", "/api/recovery/default-project"
+            "/api/health", "/api/recovery", "/api/recovery/default-project",
+            "/api/auth/status", "/api/auth/login", "/api/auth/logout",
         }:
             return error_response(503, "Restore the default project in the WebUI before continuing.")
         return await call_next(request)
@@ -41,6 +45,9 @@ def create_app() -> FastAPI:
     # Uniform envelope-shaped errors for every route (HTTP / validation / crash).
     register_exception_handlers(app)
 
+    app.add_middleware(
+        AuthMiddleware, auth=app.state.auth, allowed_origins=settings.cors_origin_list,
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -88,6 +95,7 @@ def create_app() -> FastAPI:
         finally:
             skill_index.stop()
 
+    app.include_router(auth.router)
     app.include_router(chat.router)
     app.include_router(events.router)
     app.include_router(presence.router)

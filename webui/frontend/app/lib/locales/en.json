@@ -1,4 +1,16 @@
 {
+  "auth": {
+    "title": "Sign in to MS-Agent",
+    "description": "Enter the credentials set by the person running this instance.",
+    "username": "Username",
+    "password": "Password",
+    "signIn": "Sign in",
+    "signOut": "Sign out",
+    "remember": "Stay signed in for 7 days on this browser.",
+    "invalid": "Incorrect username or password.",
+    "limited": "Too many attempts. Try again in one minute.",
+    "unavailable": "Unable to sign in. Check the connection and try again."
+  },
   "brand": "MS Agent",
   "recovery": {
     "title": "Default project needs recovery",

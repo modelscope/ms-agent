@@ -43,9 +43,12 @@ import {
   useTheme
 } from '~/lib/theme'
 import { ServerEventsBridge } from '~/lib/serverEvents'
+import { authMiddleware, requestAuth } from '~/lib/auth.server'
+import { useAuth, type AuthStatus } from '~/lib/auth'
 import { MsaButton } from './components/common/MsaButton'
 
 interface RootData {
+  auth: AuthStatus
   initialPref: ThemePref
   initialSystemTheme: Theme
   initialLang: Lang
@@ -76,8 +79,11 @@ function langFromAcceptLanguage(header: string): Lang | null {
   return null
 }
 
+export const middleware = [authMiddleware]
+
 export async function loader({ request }: { request: Request }) {
-  const recovery = await orThrow(
+  const auth = requestAuth()
+  const recovery = auth.enabled && !auth.authenticated ? null : await orThrow(
     api.getRecoveryStatus().catch((error) => {
       // Preserve pages that can render without an API, including the SSR package check.
       if (error instanceof ApiError && error.status === 0) return null
@@ -120,6 +126,7 @@ export async function loader({ request }: { request: Request }) {
   const forcedLang: Lang =
     langQuery === 'zh' || langQuery === 'en' ? langQuery : initialLang
   return {
+    auth,
     initialPref: forcedPref,
     initialSystemTheme,
     initialLang: forcedLang,
@@ -237,6 +244,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 function ThemedRoot({ children }: { children: React.ReactNode }) {
+  const auth = useAuth()
   const { antdLocale } = useT()
   const { theme } = useTheme()
   useScrollbarWidthVar()
@@ -256,7 +264,7 @@ function ThemedRoot({ children }: { children: React.ReactNode }) {
         <AntdApp>
           <NProgressHandler />
           <ApiErrorBridge />
-          <ServerEventsBridge />
+          {auth.authenticated ? <ServerEventsBridge /> : null}
           {children}
         </AntdApp>
       </XProvider>

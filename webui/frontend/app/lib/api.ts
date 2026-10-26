@@ -1,4 +1,5 @@
 import { SERVER_API_BASE } from './env'
+import { redirectIfSignedOut, type AuthStatus } from './auth'
 import type {
   AgentSettings,
   Artifact,
@@ -189,9 +190,16 @@ async function json<T>(
   const run = (async () => {
     let res: Response
     try {
+      // An explicit empty header object lets FormData supply its own boundary.
+      const headers = new Headers(init?.headers ?? { 'Content-Type': 'application/json' })
+      if (import.meta.env.SSR) {
+        const { requestCookie } = await import('./auth.server')
+        const cookie = requestCookie()
+        if (cookie) headers.set('Cookie', cookie)
+      }
       res = await fetch(resolve(input), {
-        headers: { 'Content-Type': 'application/json' },
-        ...init
+        ...init,
+        headers
       })
     } catch {
       // Network / connection failure — no HTTP response at all.
@@ -200,6 +208,7 @@ async function json<T>(
       throw err
     }
 
+    redirectIfSignedOut(res)
     // Parse the body once; every endpoint returns the JSON envelope (204s and
     // empty bodies are tolerated for safety).
     const text = await res.text()
@@ -268,6 +277,11 @@ const fp = (path: string) =>
  * useXChat (see app/lib/agentProvider.ts), not this module.
  */
 export const api = {
+  getAuthStatus: () => json<AuthStatus>('/api/auth/status'),
+  login: (username: string, password: string) => json<null>('/api/auth/login', {
+    method: 'POST', body: JSON.stringify({ username, password })
+  }, { silent: true }),
+  logout: () => json<null>('/api/auth/logout', { method: 'POST' }),
   getRecoveryStatus: () => json<RecoveryStatus>('/api/recovery', undefined, { silent: true }),
   repairDefaultProject: () =>
     json<RecoveryStatus>('/api/recovery/default-project', {

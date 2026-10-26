@@ -5,6 +5,7 @@ import {
   type XRequestOptions,
 } from "@ant-design/x-sdk";
 import { ApiError, readFailure } from "~/lib/api";
+import { redirectIfSignedOut } from "~/lib/auth";
 import { dispatchImageDelivery } from "~/lib/imageDelivery";
 import { dispatchWorkspaceChanged } from "~/lib/events";
 
@@ -31,6 +32,7 @@ export const CHAT_STREAM_ERROR = "ChatStreamError";
  * proxying to us, and its HTTP status is not something we control.
  */
 export async function assertChatStream(response: Response): Promise<Response> {
+  redirectIfSignedOut(response);
   const mime = (response.headers.get("content-type") || "")
     .split(";")[0]
     .trim();

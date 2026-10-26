@@ -1,4 +1,16 @@
 {
+  "auth": {
+    "title": "登录 MS-Agent",
+    "description": "请输入此实例配置的用户名和密码。",
+    "username": "用户名",
+    "password": "密码",
+    "signIn": "登录",
+    "signOut": "退出登录",
+    "remember": "在此浏览器保持登录 7 天。",
+    "invalid": "用户名或密码不正确。",
+    "limited": "尝试次数过多，请在一分钟后重试。",
+    "unavailable": "暂时无法登录，请检查连接后重试。"
+  },
   "brand": "MS Agent",
   "recovery": {
     "title": "默认项目需要恢复",

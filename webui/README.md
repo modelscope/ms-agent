@@ -170,8 +170,9 @@ ms-agent ui --no-browser
 ms-agent ui --host 0.0.0.0 --port 8000
 ```
 
-The application has no built-in login. Configure access control through a
-reverse proxy or network settings when sharing it with other users.
+Authentication is off by default for local use. Before exposing the service
+to a network, enable the built-in login below or place it behind an
+authenticated gateway that cannot be bypassed.
 
 | Option | Description |
 | --- | --- |
@@ -188,6 +189,36 @@ reverse proxy or network settings when sharing it with other users.
 Explicit ports must be available and different for the frontend and API. If a
 service exits unexpectedly, the launcher stops the other service and reports
 an error.
+
+## Optional login
+
+MS-Agent is a framework for local agent work. Its WebUI listens on
+`127.0.0.1` by default and opens directly into chat. To require a login, set
+these variables before starting it (or add them to `webui/backend/.env`):
+
+```dotenv
+MS_AGENT_WEBUI_AUTH_ENABLED=true
+MS_AGENT_WEBUI_USERNAME=admin
+MS_AGENT_WEBUI_PASSWORD=replace-with-a-long-unique-password
+```
+
+Restart `ms-agent ui`, then sign in with that username and password. This is
+one account for the instance; there is no registration. The username defaults
+to `admin`, and an enabled instance refuses to start without a password.
+Login lasts seven days, including across service restarts. Use **Settings →
+Sign out** on a shared browser. Changing either credential and restarting
+invalidates existing logins; forgotten credentials can be replaced the same way.
+
+When enabled, login protects both pages and backend APIs, including files,
+settings and conversation streams. Cookies are HttpOnly and SameSite=Lax;
+HTTPS login also sets Secure. Browser writes must come from the same origin
+or an explicit `MS_AGENT_CORS_ORIGINS` entry; wildcard origins are rejected
+when authentication is enabled. Use HTTPS when accessing an instance remotely.
+
+Set `MS_AGENT_WEBUI_AUTH_ENABLED=false` (the default) to open chat without
+logging in. Disabling login does not restrict API access by itself.
+The launcher warns when binding beyond loopback with authentication disabled.
+`MS_AGENT_FRONTEND_HOSTED_MODE` changes visible controls, not access control.
 
 ## Configuration and data
 
