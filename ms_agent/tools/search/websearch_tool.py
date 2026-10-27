@@ -162,7 +162,12 @@ def chunk_text_simple(text: str,
 
 
 class ContentFetcher:
-    """Base interface for content fetching."""
+    """Base interface for content fetching.
+
+    Implementations that issue requests from the local process must reject
+    non-public destinations, for example with
+    :func:`ms_agent.tools.url_safety.is_safe_public_url`.
+    """
 
     def fetch(self, url: str) -> Tuple[str, Dict[str, Any]]:
         """
