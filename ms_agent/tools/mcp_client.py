@@ -69,16 +69,33 @@ DEFAULT_STREAMABLE_HTTP_SSE_READ_TIMEOUT = timedelta(seconds=60 * 5)
 #: Identity, toolchain and network settings pass through; credentials do not.
 #: A server's configured ``env`` is applied on top and wins per key.
 _STDIO_ENV_PASSTHROUGH = (
-    'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'TERM', 'TZ',
-    'LANG', 'LC_ALL', 'LC_CTYPE',
-    'SSL_CERT_FILE', 'SSL_CERT_DIR', 'REQUESTS_CA_BUNDLE',
+    'PATH',
+    'HOME',
+    'USER',
+    'LOGNAME',
+    'SHELL',
+    'TMPDIR',
+    'TERM',
+    'TZ',
+    'LANG',
+    'LC_ALL',
+    'LC_CTYPE',
+    'SSL_CERT_FILE',
+    'SSL_CERT_DIR',
+    'REQUESTS_CA_BUNDLE',
     # ALL_PROXY is deliberately absent: a socks5:// value makes any child
     # whose httpx lacks the socksio extra fail on its FIRST request, and the
     # child's venv is not ours to fix. The scheme-specific variables cover
     # the download-acceleration need without that trap.
-    'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY',
-    'http_proxy', 'https_proxy', 'no_proxy',
-    'UV_INDEX_URL', 'UV_DEFAULT_INDEX', 'PIP_INDEX_URL',
+    'HTTP_PROXY',
+    'HTTPS_PROXY',
+    'NO_PROXY',
+    'http_proxy',
+    'https_proxy',
+    'no_proxy',
+    'UV_INDEX_URL',
+    'UV_DEFAULT_INDEX',
+    'PIP_INDEX_URL',
     'npm_config_registry',
 )
 
@@ -113,8 +130,8 @@ def resolve_stdio_command(command: str) -> str:
         candidate = os.path.join(base, command)
         if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
             return candidate
-    searched = ':'.join([os.environ.get('PATH', '')] +
-                        list(_STDIO_EXTRA_BIN_DIRS))
+    searched = ':'.join([os.environ.get('PATH', '')]
+                        + list(_STDIO_EXTRA_BIN_DIRS))
     raise FileNotFoundError(
         f"stdio MCP command '{command}' was not found on this machine. "
         f'Searched: {searched}')
@@ -145,8 +162,7 @@ def _summarize_tool_error(detail: str) -> str:
         return _PYDANTIC_DOC_LINK.sub('', detail).strip()
 
     lines = [f'- `{field}`: {message}' for field, message in seen.items()]
-    return ('the arguments were rejected by the tool:\n'
-            + '\n'.join(lines)
+    return ('the arguments were rejected by the tool:\n' + '\n'.join(lines)
             + '\nSend each value as its declared JSON type (a number '
             'unquoted, not as a string) and call again.\n\nOriginal error:\n'
             + _PYDANTIC_DOC_LINK.sub('', detail).strip())
@@ -492,7 +508,8 @@ class MCPClient(ToolBase):
         stack = AsyncExitStack()
         try:
             async with stack:
-                session = await self._open_session(stack, server_name, **kwargs)
+                session = await self._open_session(stack, server_name,
+                                                   **kwargs)
                 self.sessions[server_name] = session
                 if not ready.done():
                     ready.set_result(server_name)
@@ -685,7 +702,7 @@ class MCPClient(ToolBase):
         try:
             await self.connect()
             return self
-        except Exception:
+        except BaseException:
             await self.cleanup()
             raise
 
