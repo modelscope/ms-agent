@@ -149,7 +149,10 @@ def compute_next_run(schedule: CronSchedule,
     elif schedule.kind == 'interval':
         from datetime import timedelta
         next_dt = base_time + timedelta(seconds=schedule.interval_seconds)
-        return next_dt.strftime('%Y-%m-%dT%H:%M:%S+00:00')
+        if next_dt.tzinfo is None:
+            next_dt = next_dt.replace(tzinfo=timezone.utc)
+        return next_dt.astimezone(
+            timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+00:00')
 
     elif schedule.kind == 'once':
         return schedule.run_at
@@ -201,6 +204,7 @@ def advance_next_run(schedule: CronSchedule,
             diff_seconds = (now - base).total_seconds()
             steps_needed = int(diff_seconds // schedule.interval_seconds) + 1
             candidate = base + steps_needed * step
-        return candidate.strftime('%Y-%m-%dT%H:%M:%S+00:00')
+        return candidate.astimezone(
+            timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+00:00')
 
     return None
