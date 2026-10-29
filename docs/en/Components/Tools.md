@@ -150,6 +150,52 @@ Supports passing external MCP tools, just write the configuration required by th
       - map_geo
 ```
 
+#### Authenticated Streamable HTTP servers
+
+Streamable HTTP is the default transport: `type` only switches the transport when it is `sse` or `websocket`, and everything else — including omitting `type` — goes through Streamable HTTP. Pass request headers with `headers`:
+
+```yaml
+  my-remote-mcp:
+    mcp: true
+    url: https://mcp.example.com/mcp
+    headers:
+      Authorization: Bearer <YOUR_TOKEN>
+    include:
+      - search
+```
+
+`include` and `exclude` are mutually exclusive; setting both raises an error.
+
+Three things are easy to get wrong:
+
+- **Values in yaml are literal.** There is no environment-variable interpolation in the config layer, so `${VAR}` is not substituted. Do not put a real token in a config file or in version control — read it from the environment and assemble the config instead:
+
+  ```python
+  import os
+
+  from ms_agent.tools.mcp_client import MCPClient
+
+  token = os.environ['MCP_TOKEN']  # Let it fail loudly rather than defaulting to ''
+  mcp_config = {
+      'mcpServers': {
+          'my-remote-mcp': {
+              'url': 'https://mcp.example.com/mcp',
+              'headers': {'Authorization': f'Bearer {token}'},
+              'include': ['search'],
+          }
+      }
+  }
+
+
+  async def main():
+      async with MCPClient(mcp_config) as mcp_client:
+          tools = await mcp_client.get_tools()
+  ```
+
+- **`headers` has no effect on websocket.** That branch only receives `url`, so a configured `headers` is dropped and authentication fails silently.
+
+- **The two kinds of "environment" are unrelated.** `env` on a stdio transport is passed to the **child process**, while `headers` on a remote server is an **HTTP request header**. Do not substitute one for the other.
+
 ## Custom Tools
 
 ### Passing mcp.json
