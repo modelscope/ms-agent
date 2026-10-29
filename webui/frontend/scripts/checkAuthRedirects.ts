@@ -37,6 +37,7 @@ const calls: { path: string; cookie: string | null; contentType: string | null; 
 let releaseAuth!: () => void
 const authGate = new Promise<void>((resolve) => { releaseAuth = resolve })
 let authCalls = 0
+let authenticated = true
 
 globalThis.fetch = async (input, init) => {
   const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url).pathname
@@ -51,7 +52,7 @@ globalThis.fetch = async (input, init) => {
     code: 0,
     message: 'success',
     data: path === '/api/auth/status'
-      ? { enabled: true, authenticated: true, username: cookie }
+      ? { enabled: true, authenticated, username: cookie }
       : null
   })
 }
@@ -60,9 +61,9 @@ try {
   await api.getRecoveryStatus()
   assert.equal(calls.at(-1)?.cookie, null)
   const { authMiddleware, requestAuth, requestCookie } = await import('../app/lib/auth.server')
-  const runRequest = (cookie: string, next: () => Promise<Response>) => authMiddleware({
-    request: new Request('http://localhost/', { headers: { Cookie: cookie } }),
-    url: new URL('http://localhost/'),
+  const runRequest = (cookie: string, next: () => Promise<Response>, href = 'http://localhost/') => authMiddleware({
+    request: new Request(href, { headers: { Cookie: cookie } }),
+    url: new URL(href),
     pattern: '/',
     params: {},
     context: new RouterContextProvider()
@@ -104,6 +105,19 @@ try {
     }
     return new Response('ok')
   })
+
+  // An expired session never reaches the loader: it is sent to the login page
+  // with the in-app path to come back to, stripped of its `.data` suffix.
+  authenticated = false
+  const unreachable = async () => { throw new Error('loader ran while signed out') }
+  const expired = await Promise.resolve(runRequest('visitor=expired', unreachable,
+    'http://localhost/settings/models.data?tab=providers')).catch((error: unknown) => error)
+  assert.ok(expired instanceof Response)
+  assert.equal(expired.headers.get('Location'), '/login?next=%2Fsettings%2Fmodels%3Ftab%3Dproviders')
+  const onLogin = await runRequest('visitor=expired', async () => new Response('ok'),
+    'http://localhost/login?next=%2Fsettings')
+  assert.ok(onLogin instanceof Response)
+  assert.equal(onLogin.status, 200)
 } finally {
   globalThis.fetch = originalFetch
 }
