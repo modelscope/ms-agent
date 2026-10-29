@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { redirect, redirectDocument, type MiddlewareFunction } from 'react-router'
-import { api, ApiError } from './api'
+import { api, ApiError, registerRequestCookieReader } from './api'
 import { AUTH_DISABLED, loginDestination, type AuthStatus } from './auth'
 
 interface RequestAuth {
@@ -15,6 +15,8 @@ const requests = new AsyncLocalStorage<RequestAuth>()
 export function requestCookie() {
   return requests.getStore()?.cookie ?? ''
 }
+
+registerRequestCookieReader(requestCookie)
 
 export function requestAuth() {
   return requests.getStore()?.status ?? AUTH_DISABLED

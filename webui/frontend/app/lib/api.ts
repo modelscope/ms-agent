@@ -171,6 +171,12 @@ export function readFailure(
 // fresh, so mutations + refetches still see up-to-date data).
 const inflightGets = new Map<string, Promise<unknown>>()
 
+let readRequestCookie: (() => string) | null = null
+
+export function registerRequestCookieReader(reader: () => string): void {
+  readRequestCookie = reader
+}
+
 async function json<T>(
   input: RequestInfo,
   init?: RequestInit,
@@ -192,9 +198,8 @@ async function json<T>(
     try {
       // An explicit empty header object lets FormData supply its own boundary.
       const headers = new Headers(init?.headers ?? { 'Content-Type': 'application/json' })
-      if (import.meta.env.SSR) {
-        const { requestCookie } = await import('./auth.server')
-        const cookie = requestCookie()
+      if (typeof window === 'undefined') {
+        const cookie = readRequestCookie?.()
         if (cookie) headers.set('Cookie', cookie)
       }
       res = await fetch(resolve(input), {
