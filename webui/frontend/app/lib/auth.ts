@@ -17,16 +17,28 @@ export function useAuth() {
   return root?.auth ?? AUTH_DISABLED
 }
 
+/** `/login`, including its `.data` single-fetch request and a trailing slash. */
+const LOGIN_PATH = /^\/login(?:\.data)?\/?$/
+
+export function isLoginPath(pathname: string): boolean {
+  return LOGIN_PATH.test(pathname)
+}
+
+/** The login page with the in-app path to return to after signing in. */
+export function loginUrl(next: string): string {
+  return '/login?next=' + encodeURIComponent(next)
+}
+
 /** Only return to a path within this app, never a user-supplied external URL. */
 export function loginDestination(value: string | null): string {
   if (!value?.startsWith('/') || value.startsWith('//') || /[\\\r\n\t]/.test(value))
     return '/'
   const path = new URL(value, 'http://localhost').pathname
-  return /^\/login(?:\.data)?\/?$/.test(path) ? '/' : value
+  return isLoginPath(path) ? '/' : value
 }
 
 export function signInUrl() {
-  return '/login?next=' + encodeURIComponent(window.location.pathname + window.location.search)
+  return loginUrl(window.location.pathname + window.location.search)
 }
 
 export function redirectIfSignedOut(response: Response) {
