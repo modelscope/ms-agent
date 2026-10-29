@@ -89,10 +89,16 @@ def trusted_origin(request: Request, allowed_origins: list[str]) -> bool:
     The proxy preserves the browser's Host. Compare it to Origin (including the
     port) rather than the internal loopback API address. Explicit CORS origins
     also support the documented development setup.
+
+    Without an Origin the decision is an allowlist, not a denylist: `same-site`
+    is a DIFFERENT origin under the same registrable domain, and the session
+    cookie is `SameSite=lax`, so a hostile sibling subdomain would otherwise be
+    able to drive a write. Non-browser clients and direct navigation send no
+    `Sec-Fetch-Site` at all, or `none`, and stay allowed.
     """
     origin = request.headers.get("origin")
     if origin is None:
-        return request.headers.get("sec-fetch-site") != "cross-site"
+        return request.headers.get("sec-fetch-site") in {"same-origin", "none", None}
     if origin in allowed_origins:
         return True
     try:

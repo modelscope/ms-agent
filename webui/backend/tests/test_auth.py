@@ -107,6 +107,10 @@ def test_browser_origins_and_tls_cookie(client):
     assert login(client, headers={"Origin": "https://untrusted.example"}).status_code == 403
     assert login(client, headers={"Origin": "null"}).status_code == 403
     assert login(client, headers={"Sec-Fetch-Site": "cross-site"}).status_code == 403
+    # A sibling subdomain is a different origin, and the cookie is SameSite=lax.
+    assert login(client, headers={"Sec-Fetch-Site": "same-site"}).status_code == 403
+    assert login(client, headers={"Sec-Fetch-Site": "same-origin"}).status_code == 200
+    assert login(client, headers={"Sec-Fetch-Site": "none"}).status_code == 200
     assert login(client, headers={"Origin": "http://localhost:5173"}).status_code == 200
     assert client.post("/api/auth/logout", headers={"Origin": "https://untrusted.example"}).status_code == 403
     # TLS can terminate at the public proxy while the backend uses loopback HTTP.
