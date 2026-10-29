@@ -63,3 +63,17 @@ The above two examples have the same effect and both can conduct multi-turn conv
 - A [more comprehensive example](https://github.com/modelscope/ms-agent/tree/main/examples)
 - DeepResearch [example](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research)
 - CodeGenesis [example](https://github.com/modelscope/ms-agent/blob/main/projects/code_genesis/README.md)
+
+## Using WebUI
+
+You can also manage projects, chat with agents, and inspect tool execution in the browser. With Python 3.12+,
+Node.js 22.22.0+ and pnpm 10.17.1 ready, run:
+
+```shell
+pip install -U "ms-agent[webui]"
+ms-agent ui
+```
+
+In the page that opens, go to **Settings → Model Settings** to configure the model service, then create a project and
+a session. See the [WebUI guide](https://github.com/modelscope/ms-agent/blob/main/webui/README.md#first-time-setup)
+for the full environment setup and usage.
