@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useRevalidator } from 'react-router'
+import { api } from '~/lib/api'
+import { signInUrl } from '~/lib/auth'
 import {
   dispatchMcpSkillChanged,
   dispatchModelsChanged,
@@ -85,9 +87,29 @@ export function ServerEventsBridge() {
     const es = new EventSource('/api/events')
     es.addEventListener('change', onChange)
 
+    // An expired session answers this stream with a JSON 401, and a response
+    // that is not `text/event-stream` fails it permanently rather than being
+    // retried. EventSource cannot read that response, so the `json()` sign-out
+    // redirect never runs: ask the API instead. Settings routes have no other
+    // signal — the presence heartbeat is mounted on the app layout.
+    const onError = () => {
+      if (es.readyState !== EventSource.CLOSED) return
+      api
+        .getAuthStatus({ silent: true })
+        .then((auth) => {
+          if (auth.enabled && !auth.authenticated)
+            window.location.replace(signInUrl())
+        })
+        .catch(() => {
+          // Backend unreachable: a reload will reconnect.
+        })
+    }
+    es.addEventListener('error', onError)
+
     return () => {
       window.clearTimeout(timer)
       es.removeEventListener('change', onChange)
+      es.removeEventListener('error', onError)
       es.close()
     }
   }, [])

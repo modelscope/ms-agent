@@ -282,7 +282,7 @@ const fp = (path: string) =>
  * useXChat (see app/lib/agentProvider.ts), not this module.
  */
 export const api = {
-  getAuthStatus: () => json<AuthStatus>('/api/auth/status'),
+  getAuthStatus: (opts?: JsonOpts) => json<AuthStatus>('/api/auth/status', undefined, opts),
   login: (username: string, password: string) => json<null>('/api/auth/login', {
     method: 'POST', body: JSON.stringify({ username, password })
   }, { silent: true }),
