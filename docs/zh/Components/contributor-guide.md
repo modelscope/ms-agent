@@ -11,9 +11,9 @@ description: Ms-Agent 贡献者指南：如何为 Ms-Agent 贡献工作流和代
 MS-Agent的设计目标是基于单命令或单搜索框模式的端到端工作流Agent框架。并且支持直接加载外部代码和配置：
 
 ```shell
-ms-agent --config local-dir --trust_remote_code true
+ms-agent run --config local-dir --trust_remote_code true
 # or
-ms-agent --config group/model-id --trust_remote_code true
+ms-agent run --config group/model-id --trust_remote_code true
 ```
 
 上面两种方式可以分别从本地或魔搭模型仓库加载配置和代码并运行。在此基础上，针对MS-Agent的二次开发就不局限于直接对github仓库的PR，开发者可以使用我们的基础能力，把代码托管到魔搭模型仓库中，使用者只需要指定仓库id即可使用你的代码工作流。
