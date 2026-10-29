@@ -56,7 +56,11 @@ class RateLimiter:
     async def __aenter__(self):
         """Async context manager entry"""
         await self._semaphore.acquire()
-        await self._wait_if_needed()
+        try:
+            await self._wait_if_needed()
+        except BaseException:
+            self._semaphore.release()
+            raise
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
