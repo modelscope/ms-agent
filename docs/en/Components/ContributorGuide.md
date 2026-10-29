@@ -11,9 +11,9 @@ description: Ms-Agent Contributor Guide
 MS-Agent is designed as an end-to-end workflow Agent framework based on single-command or single-search-box mode. It supports direct loading of external code and configurations:
 
 ```shell
-ms-agent --config local-dir --trust_remote_code true
+ms-agent run --config local-dir --trust_remote_code true
 # or
-ms-agent --config group/model-id --trust_remote_code true
+ms-agent run --config group/model-id --trust_remote_code true
 ```
 
 The two methods above can load configurations and code from local directories or ModelScope model repositories respectively and run them. Based on this, secondary development for MS-Agent is not limited to direct PRs to the GitHub repository. Developers can use our basic capabilities and host their code in ModelScope model repositories. Users only need to specify the repository ID to use your code workflow.
