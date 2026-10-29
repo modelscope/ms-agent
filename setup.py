@@ -253,6 +253,7 @@ if __name__ == '__main__':
                 # get_defaults() returns {} and cross-framework convert
                 # silently degrades to a raw file copy.
                 'agent_hub/default_configs/**/*',
+                'skills/**/*',
                 'webui/**/*',
                 # Capability Gateway skill package (copied into ms_agent/skills at build).
                 'skills/**/*',

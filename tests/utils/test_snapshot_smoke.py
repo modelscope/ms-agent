@@ -356,9 +356,32 @@ class TestLLMAgentSnapshotInterface(unittest.TestCase):
                 Message(role='user', content='do something useful'),
             ]
 
-            # No explicit take_snapshot call — on_task_begin should do it
             asyncio.run(agent.on_task_begin(messages))
+            snaps = list_snapshots(td)
+            self.assertEqual(len(snaps), 1)
+            self.assertIn('do something useful', snaps[0]['message'])
+            self.assertEqual(snaps[0]['message_count'], len(messages))
 
+    def test_on_task_begin_snapshots_when_enabled(self):
+        """enable_snapshots: true still takes a snapshot on task begin."""
+        import asyncio
+        from omegaconf import OmegaConf
+        from ms_agent.agent.llm_agent import LLMAgent
+        from ms_agent.llm.utils import Message
+
+        with tempfile.TemporaryDirectory() as td:
+            _write(os.path.join(td, 'work.txt'), 'v1')
+            cfg = OmegaConf.create({
+                'llm': {'model': 'fake', 'api_key': 'fake', 'model_server': 'openai'},
+                'output_dir': td,
+                'enable_snapshots': True,
+            })
+            agent = LLMAgent(cfg, tag='smoke-test')
+            messages = [
+                Message(role='system', content='sys'),
+                Message(role='user', content='do something useful'),
+            ]
+            asyncio.run(agent.on_task_begin(messages))
             snaps = list_snapshots(td)
             self.assertEqual(len(snaps), 1)
             self.assertIn('do something useful', snaps[0]['message'])

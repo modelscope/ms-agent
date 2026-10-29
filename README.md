@@ -282,7 +282,7 @@ The first run of the default agent may install additional dependencies for local
 Start the terminal interface and enter a task. Use `/help` to see commands for session management and more, and `/quit` to exit:
 
 ```bash
-ms-agent tui
+ms-agent
 ```
 
 <a id="cli"></a>

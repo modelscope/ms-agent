@@ -1,5 +1,6 @@
 import asyncio
 import asyncio.subprocess as ai_subprocess
+import inspect
 import json
 import os
 import shutil
@@ -14,6 +15,28 @@ from ms_agent.utils.artifact_manager import ArtifactManager
 from ms_agent.utils.workspace_context import WorkspaceContext
 
 logger = get_logger()
+
+
+def drop_unknown_call_args(method, call_args: dict) -> dict:
+    """Drop arguments the target function does not accept.
+
+    Models often add ``description``. A function that takes ``**kwargs``
+    keeps every field.
+    """
+    try:
+        params = inspect.signature(method).parameters
+    except (TypeError, ValueError):
+        return call_args
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        return call_args
+    allowed = {
+        name
+        for name, p in params.items()
+        if p.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                      inspect.Parameter.KEYWORD_ONLY)
+    }
+    return {key: value for key, value in call_args.items() if key in allowed}
+
 
 #: Ambient variables a POSIX command may read without them carrying anything
 #: the agent should not have. The environment is built as an allow-list rather
@@ -360,6 +383,7 @@ class LocalCodeExecutionTool(ToolBase):
             call_args = dict(tool_args or {})
             if '__call_id' in call_args and 'call_id' not in call_args:
                 call_args['call_id'] = call_args.pop('__call_id')
+            call_args = drop_unknown_call_args(method, call_args)
             return await method(**call_args)
         except AttributeError:
             return json.dumps(

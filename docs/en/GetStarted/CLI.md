@@ -78,9 +78,10 @@ agent YAML configuration. Existing snapshots are retained when this is disabled.
 
 ## tui — Terminal UI
 
-Launch an interactive UI in the terminal.
+Launch an interactive UI in the terminal. With no subcommand, `ms-agent` is the same as `ms-agent tui`.
 
 ```shell
+ms-agent
 ms-agent tui --config path/to/agent.yaml
 ```
 

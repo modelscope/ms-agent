@@ -2,7 +2,9 @@
 """RichEventSink: renders the AgentEvent stream and tracks status state."""
 from io import StringIO
 
+import rich.live
 from rich.console import Console
+from rich.markdown import Markdown
 
 from ms_agent.tui.renderer import RichEventSink
 from ms_agent.tui.state import TuiState
@@ -28,7 +30,7 @@ def test_content_stream_renders_text():
     sink.emit(ContentDelta('Hello '))
     sink.emit(ContentDelta('world'))
     sink.emit(ContentEnd())
-    assert 'Hello world' in _out(console)
+    assert _out(console).count('Hello world') == 1
 
 
 def test_tool_call_and_result_render():
@@ -158,3 +160,132 @@ def test_nested_holds_flush_once_at_the_outermost_release():
             sink.emit(Notice(level='success', text='inner'))
         assert 'inner' not in _out(console)  # inner exit must NOT flush
     assert 'inner' in _out(console)
+
+
+def _rendered(renderable, width: int) -> str:
+    buf = StringIO()
+    Console(file=buf, force_terminal=False, width=width, height=50).print(
+        renderable)
+    return buf.getvalue()
+
+
+def test_unavailable_label_is_bold_and_the_rest_is_plain():
+    sink, console, _ = _sink()
+    captured = {}
+    original = console.print
+
+    def _spy(*args, **kwargs):
+        captured['args'] = args
+        return original(*args, **kwargs)
+
+    console.print = _spy
+    sink.emit(
+        Notice(
+            level='info',
+            text=('API key: not required\n'
+                  'UNAVAILABLE: Package `arxiv` is not installed.')))
+    body = captured['args'][0].renderable
+    assert body.plain.startswith('API key: not required')
+    assert '[bold]' not in body.plain
+    bold = [
+        span for span in body.spans
+        if getattr(span.style, 'bold', None) or span.style == 'bold'
+    ]
+    assert len(bold) == 1
+    assert body.plain[bold[0].start:bold[0].end] == 'UNAVAILABLE'
+
+
+def test_stream_window_is_only_the_last_screen():
+    console = Console(file=StringIO(), force_terminal=True, width=10, height=5)
+    sink = RichEventSink(console, TuiState())
+    window = sink._stream_window('HEAD' + ('x' * 200) + 'TAIL')
+    body = _rendered(window, 10).rstrip('\n')
+    assert 'TAIL' in body
+    assert 'HEAD' not in body
+    assert len(body.split('\n')) <= 4  # height - 1
+
+
+def test_live_refreshes_one_screen_then_typesets_once():
+    """A tall reply must not be the Live renderable, and the title is printed
+    once, after the refresh thread has been joined."""
+    events = []
+
+    class _Thread:
+        def join(self, timeout=None):
+            events.append('join')
+
+    class _Live:
+        def __init__(self, *args, **kwargs):
+            self.kwargs = kwargs
+            self.updates = []
+            self._refresh_thread = _Thread()
+            events.append(('live', kwargs))
+
+        def start(self):
+            events.append('start')
+
+        def update(self, renderable):
+            self.updates.append(renderable)
+            events.append(('update', renderable))
+
+        def stop(self):
+            events.append('stop')
+
+    console = Console(file=StringIO(), force_terminal=True, width=10, height=5)
+    sink = RichEventSink(console, TuiState())
+    original = console.print
+
+    def _spy(*args, **kwargs):
+        events.append(('print', args[0] if args else None))
+        return original(*args, **kwargs)
+
+    console.print = _spy
+    real = rich.live.Live
+    rich.live.Live = _Live
+    try:
+        sink.emit(ContentDelta('HEAD' + ('y' * 200) + 'TAIL'))
+        sink.emit(ContentEnd())
+    finally:
+        rich.live.Live = real
+
+    live = next(item[1] for item in events if item[0] == 'live')
+    assert live['vertical_overflow'] == 'crop'
+    assert live['transient'] is True
+    assert live['redirect_stdout'] is False
+    assert live['redirect_stderr'] is False
+    updated = next(item[1] for item in events if item[0] == 'update')
+    shown = _rendered(updated, 10)
+    assert 'TAIL' in shown and 'HEAD' not in shown
+    assert events.index('stop') < events.index('join')
+    markdown_at = next(
+        i for i, item in enumerate(events)
+        if item[0] == 'print' and isinstance(item[1], Markdown))
+    assert events.index('join') < markdown_at
+    titles = [
+        item[1] for item in events
+        if item[0] == 'print' and isinstance(item[1], str) and 'Assistant' in item[1]
+    ]
+    assert len(titles) == 1
+    assert sink._live is None
+
+
+def test_release_joins_refresh_thread_before_returning():
+    import sys
+    console = Console(file=StringIO(), force_terminal=True, width=20, height=8)
+    sink = RichEventSink(console, TuiState())
+    stdout = sys.stdout
+    try:
+        sink.emit(ContentDelta('partial reply'))
+        live = sink._live
+        thread = live._refresh_thread
+        assert thread is not None and thread.is_alive()
+        assert sys.stdout is stdout  # Live must not steal stdout
+        sink.release_terminal()
+        assert not thread.is_alive()
+        assert sink._live is None
+        assert sys.stdout is stdout
+    finally:
+        sink.release_terminal()
+    out = _out(console)
+    assert out.count('Assistant') == 1
+    assert 'partial reply' in out

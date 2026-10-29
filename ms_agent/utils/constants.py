@@ -1,6 +1,10 @@
 from dataclasses import dataclass
 from typing import Dict, Optional
 
+# Chat model id examples and project defaults point at. If inference
+# returns 400, pick another current chat model. Do not pin a retired id.
+DEFAULT_MODELSCOPE_CHAT_MODEL = 'Qwen/Qwen3.8-Flash-Next'
+
 # The default output dir when explicitly referenced in legacy configs.
 # When ``output_dir`` is omitted, ``resolve_workspace_root()`` uses cwd instead.
 DEFAULT_OUTPUT_DIR = './output'

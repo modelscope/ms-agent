@@ -73,9 +73,10 @@ ms-agent run --config path/to/agent.yaml --query "你好"
 
 ## tui — 终端交互界面
 
-在终端启动交互式界面。
+在终端启动交互式界面。不带子命令时，`ms-agent` 与 `ms-agent tui` 相同。
 
 ```shell
+ms-agent
 ms-agent tui --config path/to/agent.yaml
 ```
 

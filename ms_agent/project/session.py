@@ -204,3 +204,36 @@ class SessionManager:
         data.update(asdict(session))
         data['status'] = session.status.value
         store.write(data)
+
+
+def persist_logged_session_model(config, model: str,
+                                 provider: str | None) -> bool:
+    """Write this conversation's model onto its ``session.json``.
+
+    The global default (``settings.json`` ``default_model``) is a separate
+    write. New chats copy that default; reopening this chat reads the fields
+    stored here and does not change the default. Returns False when ``config``
+    is not pointed at a SessionManager directory.
+    """
+    from omegaconf import OmegaConf
+
+    raw = OmegaConf.select(config, 'session_log.dir', default='') or ''
+    session_dir = Path(str(raw)).expanduser()
+    if (not raw or session_dir.parent.name != 'sessions'
+            or session_dir.parent.parent.parent.name != 'projects'):
+        return False
+    project_id = session_dir.parent.parent.name
+    home = session_dir.parent.parent.parent.parent
+    from ms_agent.project.manager import ProjectManager
+    project = ProjectManager(str(home), auto_initialize=False).get(project_id)
+    if project is None:
+        return False
+    manager = SessionManager(project, base_dir=home, auto_initialize=False)
+    if manager.get(session_dir.name) is None:
+        return False
+    manager.update(
+        session_dir.name,
+        model=model or None,
+        model_provider=provider or None,
+    )
+    return True

@@ -37,14 +37,15 @@ class FakeMCPClient:
     def list_connected_servers(self) -> list[str]:
         return list(self.sessions.keys())
 
-    async def connect_single_server(self, server_name: str, server_config: dict):
+    async def connect_single_server(self, server_name: str, server_config: dict,
+                                    **kwargs):
         self.connect_calls.append(server_name)
         if server_config.get('fail_connect') or server_config.get('command') == 'x':
             raise ConnectionError(f'connect failed: {server_name}')
         self.sessions[server_name] = object()
         return server_name
 
-    async def disconnect_server(self, server_name: str):
+    async def disconnect_server(self, server_name: str, **kwargs):
         self.sessions.pop(server_name, None)
 
     async def get_tools_for_server(self, server_name: str) -> List[Tool]:
@@ -73,6 +74,10 @@ class FakeMCPClient:
 
     async def call_tool(self, server_name: str, tool_name: str, tool_args: dict):
         self.call_tool_calls += 1
+        if getattr(self, 'call_cancel', False):
+            raise asyncio.CancelledError()
+        if getattr(self, 'call_group', False):
+            raise ExceptionGroup('mcp', [ConnectionError('broken pipe')])
         if getattr(self, 'call_raises', False):
             raise ConnectionError('broken pipe')
         if getattr(self, 'call_timeout', False):
@@ -435,6 +440,116 @@ def test_classify_mcp_failure():
     assert classify_mcp_failure(ConnectionError('x')) == 'hard'
     assert classify_mcp_failure(BrokenPipeError()) == 'hard'
     assert classify_mcp_failure(ValueError('bad arg')) == 'none'
+    grouped = ExceptionGroup('mcp', [ConnectionError('broken pipe')])
+    assert classify_mcp_failure(grouped) == 'hard'
+
+
+@pytest.mark.asyncio
+async def test_dead_server_group_is_a_tool_error_not_a_failed_turn():
+    client = FakeMCPClient()
+    client.call_group = True
+    runtime = MCPRuntime(
+        mcp_client=client,  # type: ignore[arg-type]
+        config=_resolved(('fetch', {'command': 'echo'})),
+        owns_client=False,
+    )
+    tm = _make_tool_manager(client, runtime)
+    await tm.connect()
+    runtime.bind_tool_manager(tm)
+    await runtime.start()
+    await runtime.sync_tools()
+
+    result = await tm.single_call_tool({
+        'tool_name': 'fetch---demo_tool',
+        'arguments': {},
+    })
+    assert result['is_error'] is True
+    assert runtime.get_server('fetch').status == 'degraded'
+
+
+@pytest.mark.asyncio
+async def test_cancelled_tool_call_still_propagates():
+    client = FakeMCPClient()
+    client.call_cancel = True
+    runtime = MCPRuntime(
+        mcp_client=client,  # type: ignore[arg-type]
+        config=_resolved(('fetch', {'command': 'echo'})),
+        owns_client=False,
+    )
+    tm = _make_tool_manager(client, runtime)
+    await tm.connect()
+    runtime.bind_tool_manager(tm)
+    await runtime.start()
+    await runtime.sync_tools()
+
+    with pytest.raises(asyncio.CancelledError):
+        await tm.single_call_tool({
+            'tool_name': 'fetch---demo_tool',
+            'arguments': {},
+        })
+
+
+@pytest.mark.asyncio
+async def test_disconnect_notice_once_when_server_becomes_unusable():
+    from ms_agent.agent.llm_agent import LLMAgent
+
+    client = FakeMCPClient()
+    runtime = MCPRuntime(
+        mcp_client=client,  # type: ignore[arg-type]
+        config=_resolved(('fetch', {'command': 'echo'})),
+        owns_client=False,
+    )
+    await runtime.start()
+    agent = LLMAgent.__new__(LLMAgent)
+    agent.mcp_runtime = runtime
+
+    class _Sink:
+        def __init__(self):
+            self.texts = []
+
+        def emit(self, event):
+            self.texts.append(event.text)
+
+    agent._event_sink = _Sink()
+    exc = ConnectionError('connection closed')
+    await agent._on_mcp_failure(
+        'fetch', 'call_tool', 'connection closed', exc=exc)
+    await agent._on_mcp_failure(
+        'fetch', 'call_tool', 'connection closed', exc=exc)
+    assert agent._event_sink.texts == []
+    assert agent._mcp_fp is None
+    assert 'fetch' in agent._mcp_reconnect_names
+
+
+@pytest.mark.asyncio
+async def test_timeout_notice_waits_for_the_degrade_threshold():
+    from ms_agent.agent.llm_agent import LLMAgent
+
+    client = FakeMCPClient()
+    runtime = MCPRuntime(
+        mcp_client=client,  # type: ignore[arg-type]
+        config=_resolved(('fetch', {'command': 'echo'})),
+        owns_client=False,
+    )
+    await runtime.start()
+    agent = LLMAgent.__new__(LLMAgent)
+    agent.mcp_runtime = runtime
+
+    class _Sink:
+        def __init__(self):
+            self.texts = []
+
+        def emit(self, event):
+            self.texts.append(event.text)
+
+    agent._event_sink = _Sink()
+    for _ in range(DEGRADED_FAILURE_THRESHOLD - 1):
+        await agent._on_mcp_failure(
+            'fetch', 'call_tool', 'timeout', exc=TimeoutError('timeout'))
+    assert agent._event_sink.texts == []
+    await agent._on_mcp_failure(
+        'fetch', 'call_tool', 'timeout', exc=TimeoutError('timeout'))
+    assert agent._event_sink.texts == []
 
 
 def test_is_connection_error():
@@ -578,3 +693,336 @@ def _make_tool_manager(client, runtime, hook_runtime=None):
     )
     tm._skip_mcp_reindex = True
     return tm
+
+
+@pytest.mark.asyncio
+async def test_start_probes_servers_together(monkeypatch):
+    monkeypatch.setattr('ms_agent.mcp.runtime.MCP_PROBE_TIMEOUT', 1)
+
+    class SlowClient(FakeMCPClient):
+
+        async def connect_single_server(self, server_name: str, server_config: dict,
+                                        **kwargs):
+            await asyncio.sleep(0.2)
+            return await super().connect_single_server(
+                server_name, server_config, **kwargs)
+
+    client = SlowClient()
+    runtime = MCPRuntime(
+        mcp_client=client,  # type: ignore[arg-type]
+        config=_resolved(
+            ('a', {'command': 'echo'}),
+            ('b', {'command': 'echo'}),
+        ),
+        owns_client=False,
+    )
+    started = asyncio.get_running_loop().time()
+    await runtime.start()
+    elapsed = asyncio.get_running_loop().time() - started
+    assert elapsed < 0.35
+    assert runtime.get_server('a').status == 'connected'
+    assert runtime.get_server('b').status == 'connected'
+
+
+@pytest.mark.asyncio
+async def test_start_leaves_a_slow_stdio_server_running(monkeypatch):
+    """A cold stdio process must not hold startup, and is not a failure yet."""
+    monkeypatch.setattr('ms_agent.mcp.runtime.MCP_TURN_WAIT', 0.05)
+
+    class HungClient(FakeMCPClient):
+
+        def __init__(self):
+            super().__init__()
+            self.budgets: dict[str, float] = {}
+
+        async def connect_single_server(self, server_name: str, server_config: dict,
+                                        **kwargs):
+            self.budgets[server_name] = kwargs.get('startup_timeout')
+            if server_name == 'slow':
+                await asyncio.Event().wait()
+            return await super().connect_single_server(
+                server_name, server_config, **kwargs)
+
+    from ms_agent.tools.mcp_client import DEFAULT_SERVER_STARTUP_TIMEOUT
+
+    client = HungClient()
+    runtime = MCPRuntime(
+        mcp_client=client,  # type: ignore[arg-type]
+        config=_resolved(
+            ('slow', {'command': 'echo'}),
+            ('good', {'command': 'echo'}),
+        ),
+        owns_client=False,
+    )
+    started = asyncio.get_running_loop().time()
+    try:
+        await runtime.start()
+        elapsed = asyncio.get_running_loop().time() - started
+        assert elapsed < 0.4
+        assert runtime.get_server('good').status == 'connected'
+        slow = runtime.get_server('slow')
+        assert slow.status == 'connecting'
+        assert slow.last_error is None
+        assert not runtime.is_callable('slow')
+        assert client.is_connected('good')
+        assert not client.is_connected('slow')
+        assert client.budgets['slow'] == DEFAULT_SERVER_STARTUP_TIMEOUT
+    finally:
+        await runtime._cancel_probes()
+
+
+@pytest.mark.asyncio
+async def test_apply_config_does_not_reprobe_a_recorded_failure():
+    client = FakeMCPClient()
+    config = ResolvedMCPConfig(mcp_servers={
+        'bad': {'command': 'x'},
+        'good': {'command': 'echo'},
+    })
+    runtime = MCPRuntime(
+        mcp_client=client,  # type: ignore[arg-type]
+        config=config,
+        connect_policy='skip',
+        owns_client=False,
+    )
+    await runtime.start()
+    assert client.connect_calls.count('bad') == 1
+    await runtime.apply_config(ResolvedMCPConfig(mcp_servers={
+        'bad': {'command': 'x'},
+        'good': {'command': 'echo'},
+        'extra': {'command': 'echo'},
+    }))
+    assert client.connect_calls.count('bad') == 1
+    assert client.is_connected('extra')
+    assert runtime.get_server('bad').status == 'error'
+    assert runtime.get_server('bad').last_error == 'connect failed: bad'
+
+
+@pytest.mark.asyncio
+async def test_apply_config_reconnects_a_degraded_server():
+    client = FakeMCPClient()
+    runtime = MCPRuntime(
+        mcp_client=client,  # type: ignore[arg-type]
+        config=_resolved(('fetch', {'command': 'echo'})),
+        owns_client=False,
+    )
+    await runtime.start()
+    assert client.is_connected('fetch')
+    runtime.get_server('fetch').status = 'degraded'
+    before = len(client.connect_calls)
+    await runtime.apply_config(_resolved(('fetch', {'command': 'echo'})))
+    assert len(client.connect_calls) > before
+    assert runtime.get_server('fetch').status == 'connected'
+    assert client.is_connected('fetch')
+
+
+@pytest.mark.asyncio
+async def test_apply_config_leaves_a_healthy_server_connected():
+    client = FakeMCPClient()
+    runtime = MCPRuntime(
+        mcp_client=client,  # type: ignore[arg-type]
+        config=_resolved(
+            ('fetch', {'command': 'echo'}),
+            ('docs', {'command': 'echo'}),
+        ),
+        owns_client=False,
+    )
+    await runtime.start()
+    docs_session = client.sessions['docs']
+    runtime.get_server('fetch').status = 'degraded'
+    await runtime.apply_config(
+        _resolved(
+            ('fetch', {'command': 'echo'}),
+            ('docs', {'command': 'echo'}),
+        ))
+    assert client.connect_calls.count('docs') == 1
+    assert client.sessions['docs'] is docs_session
+    assert client.connect_calls.count('fetch') == 2
+    assert runtime.get_server('fetch').status == 'connected'
+
+
+@pytest.mark.asyncio
+async def test_remote_handshake_still_stops_at_the_probe_cap(monkeypatch):
+    monkeypatch.setattr('ms_agent.mcp.runtime.MCP_PROBE_TIMEOUT', 0.05)
+    monkeypatch.setattr('ms_agent.mcp.runtime.MCP_TURN_WAIT', 1)
+
+    class HungRemote(FakeMCPClient):
+
+        async def connect_single_server(self, server_name: str, server_config: dict,
+                                        **kwargs):
+            self.connect_calls.append(server_name)
+            self.budget = kwargs.get('startup_timeout')
+            await asyncio.Event().wait()
+
+    client = HungRemote()
+    runtime = MCPRuntime(
+        mcp_client=client,  # type: ignore[arg-type]
+        config=_resolved(('remote', {'url': 'http://127.0.0.1:9/mcp'})),
+        owns_client=False,
+    )
+    started = asyncio.get_running_loop().time()
+    await runtime.start()
+    elapsed = asyncio.get_running_loop().time() - started
+    assert elapsed < 0.4
+    remote = runtime.get_server('remote')
+    assert remote.status == 'error'
+    assert remote.last_error == '0.05秒内没有连上'
+    assert client.budget == 0.05
+    assert not runtime.is_callable('remote')
+
+
+@pytest.mark.asyncio
+async def test_stdio_that_finishes_late_joins_the_next_turn(monkeypatch):
+    monkeypatch.setattr('ms_agent.mcp.runtime.MCP_TURN_WAIT', 0.05)
+
+    class Delayed(FakeMCPClient):
+
+        def __init__(self):
+            super().__init__()
+            self.release = asyncio.Event()
+
+        async def connect_single_server(self, server_name: str, server_config: dict,
+                                        **kwargs):
+            if server_name == 'slow':
+                await self.release.wait()
+            return await super().connect_single_server(
+                server_name, server_config, **kwargs)
+
+    client = Delayed()
+    runtime = MCPRuntime(
+        mcp_client=client,  # type: ignore[arg-type]
+        config=_resolved(('slow', {'command': 'npx'})),
+        owns_client=False,
+    )
+    try:
+        await runtime.start()
+        assert runtime.get_server('slow').status == 'connecting'
+        assert not runtime.is_callable('slow')
+        client.release.set()
+        for _ in range(20):
+            if runtime.get_server('slow').status == 'connected':
+                break
+            await asyncio.sleep(0.01)
+        await runtime.refresh_for_turn(wait=False)
+        assert runtime.get_server('slow').status == 'connected'
+        assert runtime.is_callable('slow')
+        assert runtime.get_server('slow').process_exited is False
+    finally:
+        await runtime._cancel_probes()
+
+
+@pytest.mark.asyncio
+async def test_dead_stdio_drops_tools_and_does_not_retry_forever(monkeypatch):
+    monkeypatch.setattr('ms_agent.mcp.runtime.MCP_TURN_WAIT', 0.05)
+
+    class ThenHang(FakeMCPClient):
+
+        def __init__(self):
+            super().__init__()
+            self.block = False
+
+        async def connect_single_server(self, server_name: str, server_config: dict,
+                                        **kwargs):
+            if self.block:
+                self.connect_calls.append(server_name)
+                await asyncio.Event().wait()
+            return await super().connect_single_server(
+                server_name, server_config, **kwargs)
+
+    client = ThenHang()
+    runtime = MCPRuntime(
+        mcp_client=client,  # type: ignore[arg-type]
+        config=_resolved(('box', {'command': 'npx'})),
+        owns_client=False,
+    )
+    try:
+        await runtime.start()
+        assert runtime.get_server('box').status == 'connected'
+        client.sessions.pop('box')
+        client.block = True
+        await runtime.refresh_for_turn()
+        state = runtime.get_server('box')
+        assert state.process_exited is True
+        assert state.status == 'connecting'
+        assert state.tool_count == 0
+        assert not runtime.is_callable('box')
+        started = client.connect_calls.count('box')
+        await runtime.refresh_for_turn()
+        assert client.connect_calls.count('box') == started
+    finally:
+        await runtime._cancel_probes()
+
+
+@pytest.mark.asyncio
+async def test_dead_stdio_is_noticed_while_the_session_is_still_registered():
+    """The child can be gone before the owner task drops the session."""
+
+    class StillRegistered(FakeMCPClient):
+
+        def __init__(self):
+            super().__init__()
+            self._dead = False
+
+        def stdio_process_exited(self, name):
+            del name
+            if self._dead:
+                self._dead = False
+                return True
+            return False
+
+    client = StillRegistered()
+    runtime = MCPRuntime(
+        mcp_client=client,  # type: ignore[arg-type]
+        config=_resolved(('box', {'command': 'npx'})),
+        owns_client=False,
+    )
+    await runtime.start()
+    assert client.is_connected('box')
+    client._dead = True
+    await runtime.refresh_for_turn()
+    assert client.connect_calls.count('box') == 2
+    assert runtime.get_server('box').status == 'connected'
+    await runtime.refresh_for_turn()
+    assert client.connect_calls.count('box') == 2
+
+
+@pytest.mark.asyncio
+async def test_a_failed_reconnect_stays_failed_until_retry():
+    class ThenFail(FakeMCPClient):
+
+        def __init__(self):
+            super().__init__()
+            self.fail = False
+
+        async def connect_single_server(self, server_name: str, server_config: dict,
+                                        **kwargs):
+            if self.fail:
+                self.connect_calls.append(server_name)
+                raise ConnectionError('gone')
+            return await super().connect_single_server(
+                server_name, server_config, **kwargs)
+
+    client = ThenFail()
+    runtime = MCPRuntime(
+        mcp_client=client,  # type: ignore[arg-type]
+        config=_resolved(('box', {'command': 'npx'})),
+        owns_client=False,
+    )
+    await runtime.start()
+    client.sessions.pop('box')
+    client.fail = True
+    await runtime.refresh_for_turn()
+    state = runtime.get_server('box')
+    assert state.status == 'error'
+    assert state.process_exited is True
+    assert state.last_error == 'gone'
+    assert not runtime.is_callable('box')
+    failed = client.connect_calls.count('box')
+    await runtime.refresh_for_turn()
+    assert client.connect_calls.count('box') == failed
+
+    client.fail = False
+    await runtime.retry_server('box')
+    assert runtime.get_server('box').status == 'connected'
+    assert runtime.get_server('box').process_exited is False
+    assert runtime.is_callable('box')
+    assert client.connect_calls.count('box') == failed + 1

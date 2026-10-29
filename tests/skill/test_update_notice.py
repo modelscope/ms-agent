@@ -90,7 +90,8 @@ class TestNoticeWording:
         injector = SkillPromptInjector(cat, update_notice=True)
         section = injector.build_skill_prompt_section()
         assert 'skill-update notice' in section
-        assert 'LATEST one is authoritative' in section
+        assert 'skills_list' in section
+        assert 'FULL' not in section
 
     def test_hint_absent_by_default(self, tmp_path):
         cat = _catalog(tmp_path)

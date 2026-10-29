@@ -170,3 +170,30 @@ class TestProjectManager:
         assert again is not None
         assert again.path == project.path
         assert again.instruction == 'be terse'
+
+    def test_find_by_path_returns_create_project(self, pm, tmp_path):
+        folder = tmp_path / 'webui-created'
+        folder.mkdir()
+        created = pm.create(name='From WebUI', path=str(folder),
+                            init_workspace=False)
+        found = pm.find_by_path(str(folder))
+        assert found is not None
+        assert found.id == created.id
+
+    def test_open_folder_reuses_create_project_id(self, pm, tmp_path):
+        """TUI --work-dir on a WebUI-created project must not mint a path-key."""
+        from ms_agent.project.paths import project_key
+        folder = tmp_path / 'shared-workspace'
+        folder.mkdir()
+        created = pm.create(
+            name='WebUI', path=str(folder), init_workspace=False)
+        opened = pm.open_folder(str(folder))
+        assert opened.id == created.id
+        assert opened.id != project_key(str(folder))
+        matching = [p for p in pm.list() if p.path == str(folder.resolve())]
+        assert len(matching) == 1
+
+    def test_open_folder_on_default_project_path_keeps_default(self, pm):
+        default = pm.get_default_project()
+        opened = pm.open_folder(default.path)
+        assert opened.id == DEFAULT_PROJECT_ID

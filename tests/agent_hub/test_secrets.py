@@ -58,6 +58,10 @@ class TestVendorTokenPatterns(unittest.TestCase):
             ("huggingface", "hf_XyZ1a2B3c4D5e6F7g8H9"),
             ("npm", "npm_XyZ1a2B3c4D5e6F7g8H9"),
             ("shopify", "shpat_XyZ1a2B3c4D5e6F7g8H9"),
+            ("tavily", "tvly-THIS-IS-MY-SECRET"),
+            ("modelscope", "ms-9f3c7ab2e81d04a6"),
+            ("modelscope_uuid",
+             "ms-8f3a2b1c-4d5e-6f70-8192-a3b4c5d6e7f8"),
         )
         for label, token in samples:
             with self.subTest(vendor=label):
@@ -77,6 +81,24 @@ class TestVendorTokenPatterns(unittest.TestCase):
             f'curl -H "Authorization: Bearer {SK_KEY}" https://api.example.com')
         self.assertNotIn(SK_KEY, out)
         self.assertTrue(hits)
+
+    def test_tavily_and_modelscope_prefixes_alone(self):
+        """A Got: line may contain only the token, with no secret-shaped word."""
+        for token in ("tvly-THIS-IS-MY-SECRET", "ms-9f3c7ab2e81d04a6"):
+            with self.subTest(token=token[:8]):
+                out, hits = redact_text(token)
+                self.assertNotIn(token, out)
+                self.assertIn("[REDACTED:api_key]", out)
+                self.assertTrue(hits)
+
+    def test_ms_product_names_are_not_keys(self):
+        for text in ("ms-agent-skills", "ms-agent-webui-frontend",
+                     "use ms-agent-align-e2e for the run",
+                     "ms-agent_20260726_101010"):
+            with self.subTest(text=text):
+                out, hits = redact_text(text)
+                self.assertEqual(out, text)
+                self.assertEqual(hits, ())
 
     def test_sk_prefix_needs_a_left_boundary(self):
         """``sk-`` inside an ordinary word is not a credential."""
@@ -154,6 +176,8 @@ class TestDocumentedPlaceholdersSurvive(unittest.TestCase):
         "See https://example.com/docs?api_key=&model=qwen3-max",
         # placeholder spellings
         "OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxx",
+        "TAVILY_API_KEY=tvly-xxxxxxxxxxxxxxxx",
+        "MODELSCOPE_API_KEY=ms-xxxxxxxxxxxxxxxx",
         "api_key: sk-your-key-here",
         'token = "changeme123456"',
         # data fields that are NOT credentials
