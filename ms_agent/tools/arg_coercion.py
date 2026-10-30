@@ -99,8 +99,8 @@ def _coerce_value(value: Any, schema: Any) -> Any:
                                                             dict) else None
         if not isinstance(properties, dict):
             for key in ('anyOf', 'oneOf', 'allOf'):
-                for branch in (schema.get(key) or ()) if isinstance(
-                        schema, dict) else ():
+                for branch in (schema.get(key) or
+                               ()) if isinstance(schema, dict) else ():
                     if isinstance(branch, dict) and isinstance(
                             branch.get('properties'), dict):
                         properties = branch['properties']
@@ -108,16 +108,20 @@ def _coerce_value(value: Any, schema: Any) -> Any:
                 if properties:
                     break
         if isinstance(properties, dict):
-            return {
+            coerced = {
                 k: (_coerce_value(v, properties[k]) if k in properties else v)
                 for k, v in value.items()
             }
+            return (coerced if any(coerced[k] is not v
+                                   for k, v in value.items()) else value)
         return value
 
     if isinstance(value, list) and 'array' in types:
         items = schema.get('items') if isinstance(schema, dict) else None
         if isinstance(items, dict):
-            return [_coerce_value(item, items) for item in value]
+            coerced = [_coerce_value(item, items) for item in value]
+            return (coerced if any(
+                new is not old for new, old in zip(coerced, value)) else value)
         return value
 
     # An int where the schema wants a float is already valid JSON-schema-wise,
@@ -152,9 +156,9 @@ def coerce_arguments(
     for key, value in arguments.items():
         if key in properties:
             new_value = _coerce_value(value, properties[key])
-            if new_value is not value and new_value != value:
-                changed = True
-            elif type(new_value) is not type(value):
+            # Recursive coercion preserves identity when unchanged. Equality
+            # would discard nested type changes because 3 == 3.0 in Python.
+            if new_value is not value:
                 changed = True
             out[key] = new_value
         else:
