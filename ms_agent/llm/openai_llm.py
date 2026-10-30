@@ -437,46 +437,40 @@ class OpenAI(LLM):
 
         Note:
             - **Content Merging**: Textual content (`content`, `reasoning_content`) is appended cumulatively.
-            - **Tool Call Merging**: If the same tool call index appears in consecutive chunks,
-              its `arguments` and `tool_name` will be updated incrementally.
+            - **Tool Call Merging**: Calls are matched by index, including multiple
+              calls in one chunk and calls interleaved across chunks.
             - If a new tool call index is found, it will be added as a new entry in `tool_calls`.
         """
         if not pre_message_chunk:
-            return message_chunk
-        message = deepcopy(pre_message_chunk)
-        message.reasoning_content += message_chunk.reasoning_content
-        message.content += message_chunk.content
+            message = deepcopy(message_chunk)
+            if message_chunk.tool_calls:
+                message.tool_calls = []
+        else:
+            message = deepcopy(pre_message_chunk)
+            message.reasoning_content += message_chunk.reasoning_content
+            message.content += message_chunk.content
         if message_chunk.tool_calls:
-            if message.tool_calls:
-                if message.tool_calls[-1]['index'] == message_chunk.tool_calls[
-                        0]['index']:
-                    if message_chunk.tool_calls[0]['id']:
-                        message.tool_calls[-1][
-                            'id'] = message_chunk.tool_calls[0]['id']
-                    if message_chunk.tool_calls[0]['arguments']:
-                        if message.tool_calls[-1]['arguments']:
-                            message.tool_calls[-1][
-                                'arguments'] += message_chunk.tool_calls[0][
-                                    'arguments']
-                        else:
-                            # message.tool_calls[-1]['arguments'] may be None
-                            message.tool_calls[-1][
-                                'arguments'] = message_chunk.tool_calls[0][
-                                    'arguments']
-                    if message_chunk.tool_calls[0]['tool_name']:
-                        message.tool_calls[-1][
-                            'tool_name'] = message_chunk.tool_calls[0][
-                                'tool_name']
-                else:
-                    message.tool_calls.append(
-                        ToolCall(
-                            id=message_chunk.tool_calls[0]['id'],
-                            arguments=message_chunk.tool_calls[0]['arguments'],
-                            type='function',
-                            tool_name=message_chunk.tool_calls[0]['tool_name'],
-                            index=message_chunk.tool_calls[0]['index']))
-            else:
-                message.tool_calls = message_chunk.tool_calls
+            if not message.tool_calls:
+                message.tool_calls = []
+            calls_by_index = {
+                call['index']: call
+                for call in message.tool_calls
+            }
+            for delta in message_chunk.tool_calls:
+                call = calls_by_index.get(delta['index'])
+                if call is None:
+                    call = deepcopy(delta)
+                    call['type'] = call.get('type') or 'function'
+                    message.tool_calls.append(call)
+                    calls_by_index[delta['index']] = call
+                    continue
+                if delta['id']:
+                    call['id'] = delta['id']
+                if delta['arguments']:
+                    call['arguments'] = (call['arguments']
+                                         or '') + delta['arguments']
+                if delta['tool_name']:
+                    call['tool_name'] = delta['tool_name']
         return message
 
     def _stream_continue_generate(self,
