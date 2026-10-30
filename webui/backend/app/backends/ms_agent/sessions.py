@@ -390,7 +390,12 @@ def list_messages(sid: str) -> list[SessionMessage]:
                 title=source.name if source else origin["title"],
                 assistant_seq=origin["assistant_seq"], available=source is not None)
         if origin and message.plan_file and message.log_seq is not None and message.log_seq <= origin["assistant_seq"]:
-            message.plan_file = str(sm.sessions_dir / session.id / "plan.md")
+            # The branch only has a plan when the forked prefix carried a
+            # todo_write snapshot (ms_agent.project.fork._copy_plan); a
+            # render-only turn leaves none, and pointing at a missing file
+            # would show an empty plan chip.
+            inherited = sm.sessions_dir / session.id / "plan.md"
+            message.plan_file = str(inherited) if inherited.exists() else None
     # A turn in flight has its finished rounds on disk AND replayed on the live
     # stream. Flag the trailing message so an attached viewer drops this copy
     # and renders the turn once, not twice.
