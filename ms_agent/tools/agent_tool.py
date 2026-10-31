@@ -1226,8 +1226,18 @@ class AgentTool(ToolBase):
         else:
             runner = _run_and_collect
 
+        async def run_with_stream_cleanup():
+            try:
+                return await runner()
+            except BaseException as exc:
+                if _writer is not None:
+                    error = ('cancelled' if isinstance(
+                        exc, asyncio.CancelledError) else str(exc))
+                    _writer.on_error(error)
+                raise
+
         if not self._enable_stats:
-            result = await runner()
+            result = await run_with_stream_cleanup()
             if not spec.run_in_process:
                 self._save_transcript(result, runtime_agent_tag)
             if _writer is not None:
@@ -1241,7 +1251,7 @@ class AgentTool(ToolBase):
         status = 'completed'
         result = None
         try:
-            result = await runner()
+            result = await run_with_stream_cleanup()
             if not spec.run_in_process:
                 self._save_transcript(result, runtime_agent_tag)
             if _writer is not None:

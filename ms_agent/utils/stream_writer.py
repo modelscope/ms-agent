@@ -3,7 +3,7 @@
 SubAgentStreamWriter — incremental JSONL writer for sub-agent execution progress.
 
 When a parent agent calls a sub-agent via AgentTool, the sub-agent produces messages
-incrementally. This writer appends new messages to a JSONL file on every chunk event,
+incrementally. This writer appends completed messages to a JSONL file,
 allowing external tools (e.g. ``tail -f``) or the parent agent itself to watch the
 sub-agent's progress in real time.
 
@@ -38,7 +38,8 @@ class SubAgentStreamWriter:
     Each instance owns exactly one file.  It deduplicates history by tracking
     how many messages have already been written (``_last_written_count``), so
     calling ``on_chunk(full_history)`` multiple times is safe — only the newly
-    appended messages are written.
+    appended messages are written. The last message can still be growing across
+    chunks; it is held until a following message arrives or the run finishes.
 
     All public methods are safe to call from multiple threads.
     """
@@ -48,6 +49,7 @@ class SubAgentStreamWriter:
         self._tool_name: str = tool_name
         self._lock = threading.Lock()
         self._last_written_count: int = 0
+        self._pending_message: Any = None
         self._closed: bool = False
         self._agent_tag: Optional[str] = None
         self._file = None  # opened lazily in on_start
@@ -90,7 +92,7 @@ class SubAgentStreamWriter:
                 self._file = None
 
     def on_chunk(self, history: Any) -> None:
-        """Append only new messages from *history* since the last call.
+        """Append completed messages and retain the latest streaming tail.
 
         Args:
             history: The full accumulated message list returned by a streaming
@@ -103,14 +105,10 @@ class SubAgentStreamWriter:
         with self._lock:
             if self._closed or self._file is None:
                 return
-            for msg in messages[self._last_written_count:]:
-                self._write_line({
-                    'type': 'message',
-                    'index': self._last_written_count,
-                    'message': _msg_to_dict(msg),
-                    'ts': _now_iso(),
-                })
-                self._last_written_count += 1
+            for msg in messages[self._last_written_count:-1]:
+                self._write_message(msg)
+            if len(messages) > self._last_written_count:
+                self._pending_message = messages[-1]
 
     def on_end(self, history: Any) -> None:
         """Flush any remaining messages, write footer record, then close.
@@ -123,6 +121,7 @@ class SubAgentStreamWriter:
         with self._lock:
             if self._closed:
                 return
+            self._flush_pending()
             self._closed = True
             if self._file is not None:
                 try:
@@ -152,6 +151,7 @@ class SubAgentStreamWriter:
         with self._lock:
             if self._closed:
                 return
+            self._flush_pending()
             self._closed = True
             if self._file is not None:
                 try:
@@ -172,6 +172,21 @@ class SubAgentStreamWriter:
                     self._file = None
 
     # ── private helpers ────────────────────────────────────────────────────
+
+    def _write_message(self, msg: Any) -> None:
+        self._write_line({
+            'type': 'message',
+            'index': self._last_written_count,
+            'message': _msg_to_dict(msg),
+            'ts': _now_iso(),
+        })
+        self._last_written_count += 1
+
+    def _flush_pending(self) -> None:
+        # Caller holds the lock, including during cancellation/error shutdown.
+        if self._pending_message is not None and self._file is not None:
+            self._write_message(self._pending_message)
+            self._pending_message = None
 
     def _write_line(self, record: Dict[str, Any]) -> None:
         """Serialize *record* as JSON and append a newline.
