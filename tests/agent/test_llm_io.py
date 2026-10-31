@@ -382,3 +382,34 @@ def test_interrupt_preserves_shared_or_released_connection(http_version, closed)
     io.interrupt_stream(stream)
     network.get_extra_info.assert_not_called()
     stream.close.assert_called_once()
+
+
+@run_async
+async def test_stream_trace_preserves_multi_chunk_model_response(tmp_path):
+    from ms_agent.utils.stream_writer import SubAgentStreamWriter
+
+    events = []
+    for delta in [{'content': 'H'}, {'content': 'ello'}, {}]:
+        events.append('data: ' + json.dumps({
+            'id': 'trace', 'object': 'chat.completion.chunk', 'created': 0,
+            'model': 'probe', 'choices': [{'index': 0, 'delta': delta,
+                'finish_reason': None if delta else 'stop'}],
+        }) + '\n\n')
+    events.append('data: [DONE]\n\n')
+    agent = make_agent(lambda request: httpx.Response(
+        200, content=''.join(events),
+        headers={'Content-Type': 'text/event-stream'}))
+    writer = SubAgentStreamWriter(str(tmp_path), 'trace', 'worker')
+    writer.on_start('worker')
+    try:
+        async for history in LLMAgent.step.__wrapped__(
+                agent, [Message(role='user', content='Say hello')]):
+            writer.on_chunk(history)
+        writer.on_end(history)
+    finally:
+        agent.llm.client.close()
+    with open(writer.stream_path, encoding='utf-8') as stream:
+        rows = [json.loads(line) for line in stream]
+    messages = [row['message'] for row in rows if row['type'] == 'message']
+    assert messages[-1]['content'] == 'Hello'
+    assert rows[-1]['total_messages'] == len(history)
