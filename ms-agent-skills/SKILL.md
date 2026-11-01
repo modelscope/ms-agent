@@ -4,7 +4,7 @@ version: 1.0.0
 description: >-
   Access ms-agent's advanced AI capabilities via MCP tools: deep research,
   document research, financial research, code generation, video generation,
-  web search (arxiv/exa/serpapi/tavily), LSP code validation (TypeScript/Python/Java),
+  web search (arxiv/exa/serpapi/tavily/outcrawl), LSP code validation (TypeScript/Python/Java),
   concurrent-safe file editing, and agent delegation. All project-level
   capabilities support async submit/check/get patterns. Use when the user
   asks to research a topic, analyze documents, generate code or videos,
@@ -207,7 +207,7 @@ User wants to...
 │   └── submit_fin_research_task → check_fin_research_progress → get_fin_research_report
 │
 ├── Search the web for quick info
-│   └── web_search(query="...", engine_type="arxiv|exa|serpapi|tavily")
+│   └── web_search(query="...", engine_type="arxiv|exa|serpapi|tavily|outcrawl")
 │
 ├── Generate a software project from requirements (10-30 min)
 │   └── submit_code_genesis_task → check_code_genesis_progress → get_code_genesis_result
