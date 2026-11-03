@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any, Dict, Iterable, Optional
 
 from ms_agent.llm.utils import Message
+from .atomic_file import atomic_write_json
 from .logger import get_logger
 
 logger = get_logger()
@@ -80,8 +81,7 @@ async def append_stats(path: str, record: Dict[str, Any]) -> None:
 
         record.setdefault('created_at', datetime.utcnow().isoformat())
         data.append(record)
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=True, indent=2)
+        atomic_write_json(path, data, ensure_ascii=True, indent=2)
 
 
 def build_timing_record(
