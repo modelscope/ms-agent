@@ -645,8 +645,6 @@ class TuiApp:
                 style=f'bold {blues[i % len(blues)]}')
 
         llm = getattr(self.config, 'llm', None)
-        tools = list(self.config.tools.keys()) if getattr(
-            self.config, 'tools', None) else []
         home = os.path.expanduser('~')
         wd = self.work_dir.replace(home, '~') if home else self.work_dir
         if len(wd) > 38:
@@ -656,8 +654,8 @@ class TuiApp:
         info.add_column()
         info.add_row(
             'model', str(getattr(llm, 'model', '') or '').strip() or '?')
-        info.add_row('tools', ', '.join(tools) or '[dim]none[/]')
-        info.add_row('perm', f'[yellow]{self.permission_mode}[/]')
+        info.add_row(
+            'permission', f'[yellow]{self.permission_mode}[/]')
         info.add_row('dir', f'[dim]{wd}[/]')
         info_panel = Panel(
             info,
@@ -673,7 +671,9 @@ class TuiApp:
         self.console.print()
         self.console.print(banner)
         self.console.print(
-            '  [dim]/help  /sessions  /resume  /new  /quit[/]\n')
+            '  [dim]/help  /sessions  /resume  /new  /quit[/]')
+        self.console.print(
+            '  [dim]Load an agent template: ms-agent --agent <agent_id>[/]\n')
 
     def _render_sessions(self) -> None:
         sessions = self._sm.list()

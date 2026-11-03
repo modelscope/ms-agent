@@ -85,12 +85,25 @@ class TestMcpCommand:
         assert 'No MCP servers' not in result.content
 
     @pytest.mark.asyncio
-    async def test_missing_args_is_focused(self):
+    async def test_json_subcommand_points_at_add(self):
         result = await make_router().dispatch(
-            make_ctx('/mcp json', MockRuntime()))
-        assert 'Need: /mcp json <file.json>' in result.content
-        assert 'Got:  /mcp json' in result.content
-        assert '/mcp add' not in result.content
+            make_ctx('/mcp json servers.json', MockRuntime()))
+        assert 'Need: /mcp add <file.json>' in result.content
+        assert 'Got:  /mcp json servers.json' in result.content
+
+    @pytest.mark.asyncio
+    async def test_add_json_file(self, isolate_home, tmp_path):
+        src = tmp_path / 'servers.json'
+        src.write_text(
+            '{"mcpServers": {"docs": {"url": "https://example/mcp"}}}',
+            encoding='utf-8')
+        added = await make_router().dispatch(
+            make_ctx(f'/mcp add {src}', MockRuntime()))
+        assert 'Imported 1 server(s).' in added.content
+        listed = await make_router().dispatch(
+            make_ctx('/mcp list global', MockRuntime()))
+        assert 'docs' in listed.content
+        assert 'https://example/mcp' in listed.content
 
     @pytest.mark.asyncio
     async def test_add_list_disable_global(self, isolate_home):

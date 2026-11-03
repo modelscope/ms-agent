@@ -18,12 +18,6 @@ CMD_QUIT = CommandDef(
     aliases=('exit', ),
 )
 
-CMD_TOOLS = CommandDef(
-    name='tools',
-    description='List configured tools',
-    category='info',
-)
-
 CMD_COMPACT = CommandDef(
     name='compact',
     description='Compress conversation context',
@@ -67,44 +61,6 @@ async def cmd_quit(ctx: CommandContext) -> CommandResult:
     if ctx.runtime:
         ctx.runtime.should_stop = True
     return CommandResult(type=CommandResultType.QUIT, content='Goodbye.')
-
-
-def _is_tool_entry(tools_config, key: str) -> bool:
-    if key.startswith('_'):
-        return False
-    from omegaconf import DictConfig
-    val = tools_config[key]
-    return isinstance(val, (dict, DictConfig))
-
-
-async def cmd_tools(ctx: CommandContext) -> CommandResult:
-    if not ctx.runtime or not ctx.runtime.llm:
-        return CommandResult(
-            type=CommandResultType.MESSAGE, content='No active agent.')
-
-    config = ctx.runtime.llm.config
-    tools_config = getattr(config, 'tools', None)
-    if not tools_config:
-        return CommandResult(
-            type=CommandResultType.MESSAGE, content='No tools configured.')
-
-    tool_names = [k for k in tools_config if _is_tool_entry(tools_config, k)]
-    if not tool_names:
-        return CommandResult(
-            type=CommandResultType.MESSAGE, content='No tools configured.')
-
-    failures = getattr(
-        getattr(ctx.runtime, 'tool_manager', None), 'connect_failures',
-        None) or {}
-    lines = [f'Configured tools ({len(tool_names)}):']
-    for name in sorted(tool_names):
-        reason = failures.get(name) if isinstance(failures, dict) else None
-        if reason:
-            lines.append(f'  • {name}  {reason}')
-        else:
-            lines.append(f'  • {name}')
-    return CommandResult(
-        type=CommandResultType.MESSAGE, content='\n'.join(lines))
 
 
 async def cmd_compact(ctx: CommandContext) -> CommandResult:
@@ -258,6 +214,5 @@ async def cmd_context(ctx: CommandContext) -> CommandResult:
 def register_context_commands(router: CommandRouter) -> None:
     router.register(CMD_USAGE, cmd_usage)
     router.register(CMD_QUIT, cmd_quit)
-    router.register(CMD_TOOLS, cmd_tools)
     router.register(CMD_COMPACT, cmd_compact)
     router.register(CMD_CONTEXT, cmd_context)

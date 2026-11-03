@@ -36,13 +36,6 @@ class TestHelpTextLiesAboutHome:
         _assert_live_home(run_slash('/search').content, isolated_home)
 
     @pytest.mark.usability
-    def test_instruction_help_mentions_effective_home(
-            self, isolated_home, work_dir):
-        _assert_live_home(
-            run_slash('/instruction', runtime_for(work_dir)).content,
-            isolated_home)
-
-    @pytest.mark.usability
     def test_profile_help_mentions_effective_home(self, isolated_home):
         _assert_live_home(run_slash('/profile').content, isolated_home)
 
@@ -230,41 +223,22 @@ class TestBareShowsStatusThenUsage:
         assert text.index('Engine:') < text.lower().index('usage:')
 
 
-class TestMemoryBackendSemantics:
-    """``/memory global on`` does not touch the current project.
-    ``/memory backend`` is the same: omit-scope writes only the global
-    default. The current folder needs ``/memory project backend``.
-    """
+class TestMemoryBackendHidden:
+    """Memory on/off stays. Backend selection is not a slash command."""
 
     @pytest.mark.usability
-    def test_backend_without_scope_does_not_rewrite_existing_project(
+    def test_backend_command_does_not_rewrite_settings(
             self, isolated_home, work_dir):
         TuiApp._open_project(str(work_dir))
         rt = runtime_for(work_dir)
-        run_slash('/memory project backend file', rt)
-        # Same command family, still in the project: omit-scope should only
-        # change the global default for *new* folders, like `/memory global on`.
-        result = run_slash('/memory backend vector', rt)
-        assert 'this project is unchanged' in result.content
+        result = run_slash('/memory backend file', rt)
+        assert 'Unknown memory action' in result.content
+        assert 'vector' not in result.content.lower()
         project = ProjectManager(base_dir=str(isolated_home)).find_by_path(
             str(work_dir))
-        data = json.loads((isolated_home / 'settings.json').read_text())
-        assert data['personalization']['memory_backend'] == 'vector'
-        assert project.memory_backend == 'file'
-
-    @pytest.mark.usability
-    def test_project_backend_updates_only_this_folder(
-            self, isolated_home, work_dir):
-        TuiApp._open_project(str(work_dir))
-        rt = runtime_for(work_dir)
-        run_slash('/memory backend file', rt)
-        result = run_slash('/memory project backend vector', rt)
-        assert 'Project memory backend → vector' in result.content
-        project = ProjectManager(base_dir=str(isolated_home)).find_by_path(
-            str(work_dir))
-        data = json.loads((isolated_home / 'settings.json').read_text())
-        assert data['personalization']['memory_backend'] == 'file'
-        assert project.memory_backend == 'vector'
+        assert project.memory_backend != 'vector'
+        status = run_slash('/memory', rt)
+        assert 'backend=' not in status.content
 
 
 class TestWebuiPartialPut:

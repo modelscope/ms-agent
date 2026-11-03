@@ -32,12 +32,20 @@ class TuiCMD(CLICommand):
     @staticmethod
     def define_args(parsers: argparse.ArgumentParser):
         parser: argparse.ArgumentParser = parsers.add_parser(TuiCMD.name)
-        parser.add_argument(
+        agent_config = parser.add_mutually_exclusive_group()
+        agent_config.add_argument(
             '--config',
             type=str,
             default=None,
             help='Path to an agent.yaml (or a task dir / modelscope id). '
             'Defaults to the built-in agent.yaml.')
+        agent_config.add_argument(
+            '--agent',
+            type=str,
+            default=None,
+            help='Load an agent template: a ModelScope repo id, or a local '
+            'agent.yaml / task directory. Same loader as --config. '
+            'Example: ms-agent --agent <agent_id>')
         parser.add_argument(
             '--work-dir',
             '--work_dir',
@@ -87,7 +95,7 @@ class TuiCMD(CLICommand):
     def execute(self):
         import importlib.resources as importlib_resources
 
-        config = self.args.config
+        config = self.args.config or self.args.agent
         explicit_config = bool(config)
         if not config:
             # Fall back to the packaged default agent.yaml.

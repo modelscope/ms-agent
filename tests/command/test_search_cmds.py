@@ -49,17 +49,17 @@ class TestSearchCommand:
     async def test_list_marks_current(self):
         result = await make_router().dispatch(make_ctx('/search list'))
         assert '* tavily' in result.content
-        assert 'arxiv' in result.content
+        assert 'arxiv' not in result.content.lower()
 
     @pytest.mark.asyncio
     async def test_engine_writes_settings_json(self, isolate_home):
         result = await make_router().dispatch(
-            make_ctx('/search engine arxiv'))
-        assert 'Engine → arxiv' in result.content
+            make_ctx('/search engine exa'))
+        assert 'Engine → exa' in result.content
         assert '/new' not in result.content
         assert 'restart' not in result.content
         data = json.loads((isolate_home / 'settings.json').read_text())
-        assert data['tools']['web_search']['engine'] == 'arxiv'
+        assert data['tools']['web_search']['engine'] == 'exa'
 
     @pytest.mark.asyncio
     async def test_key_is_per_engine(self, isolate_home):
@@ -84,10 +84,12 @@ class TestSearchCommand:
         assert 'exa_api_key' not in data['tools']['web_search']
 
     @pytest.mark.asyncio
-    async def test_arxiv_rejects_key(self):
-        await make_router().dispatch(make_ctx('/search engine arxiv'))
-        result = await make_router().dispatch(make_ctx('/search key nope'))
-        assert 'does not use an API key' in result.content
+    async def test_arxiv_is_not_an_option(self, isolate_home):
+        result = await make_router().dispatch(make_ctx('/search engine arxiv'))
+        assert 'Unknown search engine: arxiv' in result.content
+        assert 'tavily' in result.content
+        assert 'arxiv, ' not in result.content
+        assert not (isolate_home / 'settings.json').exists()
 
     @pytest.mark.asyncio
     async def test_disable(self, isolate_home):
@@ -100,26 +102,12 @@ class TestSearchCommand:
     async def test_missing_package_stays_keyless_and_says_how_to_install(
             self, monkeypatch):
         def missing(engine):
-            return {'arxiv': 'arxiv', 'exa': 'exa-py'}.get(engine)
+            return {'exa': 'exa-py'}.get(engine)
 
         monkeypatch.setattr(
             'ms_agent.tools.search.availability._missing_pip', missing)
-        await make_router().dispatch(make_ctx('/search engine arxiv'))
-        status = await make_router().dispatch(make_ctx('/search'))
-        sentence = (
-            'UNAVAILABLE: Package `arxiv` is not installed. '
-            'Run: pip install arxiv, then restart ms-agent.')
-        assert 'API key: not required' in status.content
-        assert sentence in status.content
-        head = status.content.split('usage:')[0].splitlines()
-        assert head[3] == sentence
-
         listed = await make_router().dispatch(make_ctx('/search list'))
-        arxiv_row = next(line for line in listed.content.splitlines()
-                         if ' arXiv ' in line)
-        assert 'key=n/a' in arxiv_row
-        assert 'keyless-ok' in arxiv_row
-        assert sentence in arxiv_row
+        assert 'arxiv' not in listed.content.lower()
         tavily_row = next(line for line in listed.content.splitlines()
                           if ' Tavily ' in line)
         assert 'keyless-ok' in tavily_row

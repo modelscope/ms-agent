@@ -300,16 +300,14 @@ class TestSearchLedger:
         assert '* exa' in listed.content
         assert 'key=set' in listed.content
 
-    def test_c3_arxiv_rejects_key(self, isolated_home, webui):
-        run_slash('/search engine arxiv')
-        result = run_slash('/search key nope')
-        assert 'does not use an API key' in result.content
-        block = _settings(isolated_home)['tools']['web_search']
-        assert 'arxiv_api_key' not in block
-        providers = {p.id: p for p in webui.search.list_providers()}
-        assert providers['arxiv'].requires_key is False
-        ui = webui.search.get_settings()
-        assert ui.provider == 'arxiv'
+    def test_c3_arxiv_is_not_a_search_option(self, isolated_home):
+        result = run_slash('/search engine arxiv')
+        assert 'Unknown search engine: arxiv' in result.content
+        listed = run_slash('/search list')
+        assert 'arxiv' not in listed.content.lower()
+        data = _settings(isolated_home)
+        block = data.get('tools', {}).get('web_search', {})
+        assert block.get('engine') != 'arxiv'
 
     def test_c5_enable_disable(self, isolated_home, webui):
         run_slash('/search disable')
@@ -329,55 +327,24 @@ class TestSearchLedger:
 
 
 # ---------------------------------------------------------------------------
-# D / period 2 — instructions + profile
+# D / period 2 — profile
 # ---------------------------------------------------------------------------
 
 
 class TestInstructionAndProfile:
-    def test_d1_d2_global_instruction_shared(self, isolated_home, webui):
-        result = run_slash('/instruction global Always answer in French.')
-        assert 'saved' in result.content.lower()
-        text = (isolated_home / 'AGENTS.md').read_text(encoding='utf-8')
-        assert 'Always answer in French.' in text
-        assert text.lstrip().startswith('---')
-        from app.schemas.instruction import InstructionUpsert
-        ui = webui.instructions.get_instruction('global')
-        assert 'Always answer in French.' in ui.content
-        webui.instructions.upsert_instruction(
-            'global', InstructionUpsert(content='Be terse.'))
-        shown = run_slash('/instruction global')
-        assert 'Be terse.' in shown.content
-
-    def test_d3_project_instruction_never_writes_repo_root(
-            self, isolated_home, work_dir, webui):
-        root = work_dir / 'AGENTS.md'
-        root.write_text('# team\nkeep me at root\n', encoding='utf-8')
-        rt = runtime_for(work_dir)
-        TuiApp._open_project(str(work_dir))
-        run_slash('/instruction project This project uses FastAPI.', rt)
-        private = work_dir / '.ms_agent' / 'AGENTS.md'
-        assert private.read_text(encoding='utf-8').strip() == (
-            'This project uses FastAPI.')
-        assert root.read_text(encoding='utf-8') == '# team\nkeep me at root\n'
-        shown = run_slash('/instruction', rt)
-        assert 'FastAPI' in shown.content
-        assert 'never writes' in shown.content.lower() or 'Repo-root' in shown.content
-
-    def test_d4_d6_profile_fields_independent(self, isolated_home, webui):
-        run_slash('/profile callme Alice')
-        run_slash('/profile about I work on agents.')
+    def test_d4_profile_show_points_at_shared_files(self, isolated_home, webui):
+        from app.schemas.profile import ProfileUpsert
+        webui.profile.update_profile(
+            ProfileUpsert(
+                agent_calls_user='Alice', description='I work on agents.'))
         shown = run_slash('/profile')
-        assert 'Alice' in shown.content
-        assert 'I work on agents.' in shown.content
+        assert 'AGENTS.md' in shown.content
+        assert 'PROFILE.md' in shown.content
+        assert str(isolated_home / 'PROFILE.md') in shown.content
+        rejected = run_slash('/profile set Bob')
+        assert 'only shows' in rejected.content.lower()
         ui = webui.profile.get_profile()
         assert ui.agent_calls_user == 'Alice'
-        assert 'I work on agents.' in (ui.description or '')
-        run_slash('/profile callme clear')
-        call_text = (isolated_home / 'PROFILE.md').read_text(encoding='utf-8')
-        assert 'Alice' not in call_text
-        assert 'I work on agents.' in call_text
-        ui = webui.profile.get_profile()
-        assert not ui.agent_calls_user
         assert 'I work on agents.' in (ui.description or '')
 
 
@@ -511,15 +478,12 @@ class TestMemoryLedger:
         from ms_agent.project.manager import ProjectManager
         TuiApp._open_project(str(work_dir))
         rt = runtime_for(work_dir)
-        run_slash('/memory backend vector', rt)
-        data = _settings(isolated_home)
-        assert data['personalization']['memory_backend'] == 'vector'
+        rejected = run_slash('/memory backend file', rt)
+        assert 'Unknown memory action' in rejected.content
+        assert 'vector' not in rejected.content.lower()
         pm = ProjectManager(base_dir=str(isolated_home))
         project = pm.find_by_path(str(work_dir))
-        assert project.memory_backend != 'vector'
-        run_slash('/memory project backend vector', rt)
-        project = pm.find_by_path(str(work_dir))
-        assert project.memory_backend == 'vector'
+        pm.update(project.id, memory_enabled=True, memory_backend='vector')
         run_slash('/memory on', rt)
         assert OmegaConf.select(rt.config, 'memory', default=None) is None
         memory_md = work_dir / '.ms_agent' / 'memory' / 'MEMORY.md'

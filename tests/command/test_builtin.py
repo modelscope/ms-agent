@@ -85,8 +85,12 @@ class TestBuiltinCommands:
         assert '/mcp' in result.content
         assert '/skills' in result.content
         assert '/search' in result.content
-        assert '/instruction' in result.content
+        assert '/instruction' not in result.content
         assert '/profile' in result.content
+        assert '/tools' not in result.content
+        assert '(abort' not in result.content
+        assert '(exit)' not in result.content
+        assert 'ms-agent --agent' in result.content
 
     @pytest.mark.asyncio
     async def test_help_alias(self, router):

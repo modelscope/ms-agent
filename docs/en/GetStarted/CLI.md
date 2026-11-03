@@ -83,11 +83,13 @@ Launch an interactive UI in the terminal. With no subcommand, `ms-agent` is the 
 ```shell
 ms-agent
 ms-agent tui --config path/to/agent.yaml
+ms-agent --agent owner/agent-id
 ```
 
 | Argument | Description | Default |
 | --- | --- | --- |
 | `--config` | Path to an `agent.yaml` (or a task dir / ModelScope id) | built-in `agent.yaml` |
+| `--agent` | Load an agent template. A ModelScope repo id, or a local `agent.yaml` / task directory. Same loader as `--config`; do not pass both | built-in `agent.yaml` |
 | `--work-dir`, `--work_dir` | Working/project directory (== `output_dir`) | current directory |
 | `--env` | Path to a `.env` file | `./.env` |
 | `--permission_mode` | Permission mode for tool calls: `ask` (confirm uncertain calls with you) / `auto` (a model decides them) / `full-access` (allow them). Older names `restricted`, `interactive`, `strict`, and `delegate` are still accepted | `ask` |

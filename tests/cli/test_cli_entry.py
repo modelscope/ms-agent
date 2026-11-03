@@ -118,6 +118,32 @@ def test_explicit_ui_is_not_rewritten_to_tui(monkeypatch):
     assert dispatched == {'ui': True}
 
 
+def test_agent_flag_is_explicit_template(monkeypatch):
+    monkeypatch.setattr(sys, 'argv', ['ms-agent', '--agent', 'org/demo-agent'])
+    captured = {}
+
+    def _main(config, **kwargs):
+        captured['config'] = config
+        captured['explicit'] = kwargs.get('explicit_config')
+
+    import ms_agent.tui.app as app
+    monkeypatch.setattr(app, 'main', _main)
+    run_cmd()
+    assert captured['config'] == 'org/demo-agent'
+    assert captured['explicit'] is True
+
+
+def test_agent_and_config_are_mutually_exclusive(monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys, 'argv',
+        ['ms-agent', '--agent', 'org/demo-agent', '--config', 'agent.yaml'])
+
+    with pytest.raises(SystemExit) as exc_info:
+        run_cmd()
+    assert exc_info.value.code == 2
+    assert 'not allowed with argument' in capsys.readouterr().err
+
+
 def test_unknown_word_still_prints_help(monkeypatch):
     monkeypatch.setattr(sys, 'argv', ['ms-agent', 'not-a-command'])
     monkeypatch.setattr(

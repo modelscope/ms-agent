@@ -1,4 +1,4 @@
-"""Tests for new builtin commands: /usage, /model, /config, /quit, /tools, /compact, /context."""
+"""Tests for builtin commands: /usage, /model, /config, /quit, /compact, /context."""
 import json
 import pytest
 from dataclasses import dataclass, field
@@ -913,46 +913,10 @@ class TestQuit:
 
 class TestTools:
     @pytest.mark.asyncio
-    async def test_lists_tools(self):
-        router = make_router()
-        ctx = make_ctx('/tools', runtime=MockRuntime())
-        result = await router.dispatch(ctx)
-        assert 'file_system' in result.content
-        assert 'web_search' in result.content
-        assert 'code_executor' in result.content
-        assert '3' in result.content
-
-    @pytest.mark.asyncio
-    async def test_excludes_plugins_key(self):
-        router = make_router()
-        ctx = make_ctx('/tools', runtime=MockRuntime())
-        result = await router.dispatch(ctx)
-        assert 'plugins' not in result.content
-
-    @pytest.mark.asyncio
-    async def test_connect_failure_is_not_listed_as_ready(self):
-        runtime = MockRuntime()
-        runtime.tool_manager = type('Mgr', (), {
-            'connect_failures': {
-                'web_search':
-                'UNAVAILABLE: Package `arxiv` is not installed. '
-                'Run: pip install arxiv, then restart ms-agent.',
-            },
-        })()
+    async def test_tools_command_removed(self):
         result = await make_router().dispatch(
-            make_ctx('/tools', runtime=runtime))
-        file_row = next(line for line in result.content.splitlines()
-                        if 'file_system' in line)
-        assert 'UNAVAILABLE' not in file_row
-        assert '• web_search  UNAVAILABLE: Package `arxiv`' in result.content
-        assert '• code_executor' in result.content
-
-    @pytest.mark.asyncio
-    async def test_no_runtime(self):
-        router = make_router()
-        ctx = make_ctx('/tools', runtime=None)
-        result = await router.dispatch(ctx)
-        assert 'No active agent' in result.content
+            make_ctx('/tools', runtime=MockRuntime()))
+        assert result is None
 
 
 class TestCompact:
@@ -1067,13 +1031,13 @@ class TestAllCommandsRegistered:
         assert 'model' in all_names
         assert 'config' in all_names
         assert 'quit' in all_names
-        assert 'tools' in all_names
+        assert 'tools' not in all_names
         assert 'compact' in all_names
         assert 'context' in all_names
         assert 'mcp' in all_names
         assert 'skills' in all_names
         assert 'search' in all_names
-        assert 'instruction' in all_names
+        assert 'instruction' not in all_names
         assert 'profile' in all_names
         assert 'memory' in all_names
 
@@ -1081,7 +1045,7 @@ class TestAllCommandsRegistered:
         router = make_router()
         cmds = router.list_commands('cli')
         total = sum(len(v) for v in cmds.values())
-        assert total == 18
+        assert total == 16
 
 
 class TestModelProbe:

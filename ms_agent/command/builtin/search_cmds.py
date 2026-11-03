@@ -6,6 +6,9 @@ from ms_agent.command.types import (CommandContext, CommandDef, CommandResult,
                                     CommandResultType)
 from ms_agent.command.usage import (arg_error, ledger_file, status_then_usage)
 
+_HIDDEN_SEARCH_ENGINES = frozenset({'arxiv'})
+
+
 CMD_SEARCH = CommandDef(
     name='search',
     description='Show or set the web-search engine',
@@ -18,7 +21,7 @@ def _usage() -> str:
         'usage:\n'
         '  /search\n'
         '  /search list\n'
-        '  /search engine <tavily|exa|serpapi|arxiv>\n'
+        '  /search engine <tavily|exa|serpapi>\n'
         '  /search key <value>\n'
         '  /search key clear\n'
         '  /search enable|disable\n'
@@ -85,6 +88,8 @@ async def cmd_search(ctx: CommandContext) -> CommandResult:
         lines = ['Search engines:']
         current = mgr.get().engine
         for row in mgr.list_engines():
+            if row['id'] in _HIDDEN_SEARCH_ENGINES:
+                continue
             mark = '*' if row['id'] == current else ' '
             key = 'key=set' if row['has_key'] else (
                 'key=n/a' if not row['requires_key'] else 'key=missing')
@@ -117,9 +122,21 @@ async def cmd_search(ctx: CommandContext) -> CommandResult:
     if action == 'engine':
         if not rest:
             return arg_error(
-                '/search engine <tavily|exa|serpapi|arxiv>', ctx=ctx)
+                '/search engine <tavily|exa|serpapi>', ctx=ctx)
+        engine = rest[0].strip().lower()
+        visible = [
+            row['id'] for row in mgr.list_engines()
+            if row['id'] not in _HIDDEN_SEARCH_ENGINES
+        ]
+        if engine not in visible:
+            return CommandResult(
+                type=CommandResultType.MESSAGE,
+                content=(
+                    f'Unknown search engine: {engine}. '
+                    f'Supported: {", ".join(visible)}'),
+            )
         try:
-            cur = mgr.set_engine(rest[0])
+            cur = mgr.set_engine(engine)
         except ValueError as exc:
             return CommandResult(
                 type=CommandResultType.MESSAGE, content=str(exc))

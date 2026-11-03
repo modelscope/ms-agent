@@ -34,14 +34,21 @@ def _mcp_usage() -> str:
         '  /mcp retry <name>\n'
         '  /mcp add <name> [global|project] command=<cmd>\n'
         '  /mcp add <name> [global|project] url=<url>\n'
+        '  /mcp add <file.json>\n'
         '  /mcp update <name> [global|project] command=<cmd>|url=<url>\n'
-        '  /mcp json <file.json>\n'
         '  /mcp enable|disable|remove <name> [global|project]\n'
         'Omitting scope on add writes this folder (project). '
         '`global` is every folder on this machine.\n'
         f'This machine: {ledger_file("mcp.json")}. '
         'This folder: <work>/.ms_agent/mcp.json.'
     )
+
+
+def _is_mcp_json_file(token: str) -> bool:
+    import os
+    return (
+        token.lower().endswith('.json')
+        or os.path.isfile(os.path.expanduser(token)))
 
 
 def _skill_usage() -> str:
@@ -438,12 +445,10 @@ async def cmd_mcp(ctx: CommandContext) -> CommandResult:
         return await _mcp_retry(ctx, tokens, mgr)
 
     if action == 'json':
-        if not tokens:
-            return arg_error('/mcp json <file.json>', ctx=ctx)
-        n = mgr.import_cursor_format(tokens[0])
-        return CommandResult(
-            type=CommandResultType.MESSAGE,
-            content=f'Imported {n} server(s).',
+        return arg_error(
+            '/mcp add <file.json>',
+            reason='Pass the JSON file to /mcp add',
+            ctx=ctx,
         )
 
     if action in ('enable', 'disable', 'remove'):
@@ -474,12 +479,30 @@ async def cmd_mcp(ctx: CommandContext) -> CommandResult:
     if action == 'add':
         rest, fields = _split_kv(tokens)
         scope, rest, explicit = _parse_named_scope(rest, default='project')
+        if not fields and len(rest) == 1 and _is_mcp_json_file(rest[0]):
+            import os
+            path = os.path.expanduser(rest[0])
+            if not os.path.isfile(path):
+                return CommandResult(
+                    type=CommandResultType.MESSAGE,
+                    content=f'File not found: {rest[0]}',
+                )
+            try:
+                n = mgr.import_cursor_format(path)
+            except (OSError, ValueError) as exc:
+                return CommandResult(
+                    type=CommandResultType.MESSAGE, content=str(exc))
+            return CommandResult(
+                type=CommandResultType.MESSAGE,
+                content=f'Imported {n} server(s).',
+            )
         miss = _need_work(scope, work)
         if miss:
             return miss
         if not rest:
             return arg_error(
-                '/mcp add <name> [global|project] command=<cmd>|url=<url>',
+                '/mcp add <name> [global|project] command=<cmd>|url=<url> '
+                'or /mcp add <file.json>',
                 ctx=ctx,
             )
         name = ' '.join(rest)
@@ -520,7 +543,7 @@ async def cmd_mcp(ctx: CommandContext) -> CommandResult:
         )
 
     return arg_error(
-        '/mcp list|get|retry|add|update|json|enable|disable|remove ...',
+        '/mcp list|get|retry|add|update|enable|disable|remove ...',
         reason=f'Unknown mcp action {action!r}',
         note='Type /mcp for all commands',
         ctx=ctx,
