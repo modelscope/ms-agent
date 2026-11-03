@@ -1,3 +1,4 @@
+import { DecisionModelSettings } from '~/components/common/DecisionModelSettings'
 import { Input, Radio } from 'antd'
 import { useCallback, useEffect, useState } from 'react'
 import {
@@ -70,6 +71,7 @@ export default function PersonalizationSettings() {
 
   return (
     <div className="space-y-8">
+      <DecisionModelSettings />
       {/* Personalization instructions */}
       <section>
         <div className="mb-3 text-base font-semibold text-msa-text-1">

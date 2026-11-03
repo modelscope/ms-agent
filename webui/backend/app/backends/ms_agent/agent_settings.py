@@ -15,6 +15,26 @@ def _ps():
     return PersonalizationSettings(global_dir=home())
 
 
+async def test_decision_connection(provider: str, model: str) -> dict:
+    """Explicit, tiny paid probe; never changes defaults or session profiles."""
+    from app.backends.errors import BadRequest
+    from ms_agent.config.decision import DecisionSettings
+    from ms_agent.decision.types import DecisionError, DecisionRequest
+    client = None
+    try:
+        settings = DecisionSettings(home())
+        cfg = settings.snapshot(value={'provider': provider, 'model': model})
+        client = settings.client(cfg)
+        response = await client.decide(DecisionRequest(
+            {'value': 2}, {'valid': {'type': 'noul', 'instructions': 'Is value equal to two?'}}), timeout=5)
+        return {'ok': True, 'elapsed_ms': round(response.elapsed_ms), 'model': response.model or model}
+    except (ValueError, DecisionError) as exc:
+        raise BadRequest(str(exc)) from None
+    finally:
+        if client is not None:
+            await client.aclose()
+
+
 def get_settings() -> AgentSettings:
     # default_model_id is a base64 Model.id (provider+name), matching /api/models
     # so the frontend can highlight the selected model.
@@ -25,7 +45,19 @@ def get_settings() -> AgentSettings:
     backend = cfg.memory_backend if cfg.memory_backend in ("file", "vector") else "file"
     mem_cfg = sidecar.get("agent_settings", "memory_models", {}) or {}
     embed_mode = mem_cfg.get("embed_mode")
+    from ms_agent.config.decision import DecisionSettings
+    decisions = DecisionSettings(home())
+    selection = decisions.get()
+    try:
+        decisions.snapshot()
+        available = True
+    except ValueError:
+        available = False
     return AgentSettings(
+        default_execution_mode=selection['default_execution_mode'],
+        decision_provider_id=selection['decision'].get('provider'),
+        decision_model=selection['decision'].get('model'),
+        decision_available=available,
         default_provider_id=provider,
         default_model_id=default_model_id,
         default_memory_enabled=bool(cfg.memory_enabled),
@@ -48,6 +80,20 @@ def update_settings(body: AgentSettings) -> AgentSettings:
 
     patch = body.model_dump(exclude_unset=True)
     with settings_lock():
+        from ms_agent.config.decision import DecisionSettings
+        decisions = DecisionSettings(home())
+        if any(key in patch for key in ('default_execution_mode', 'decision_provider_id', 'decision_model')):
+            cfg = decisions.get()['decision']
+            if 'decision_provider_id' in patch:
+                cfg['provider'] = patch['decision_provider_id']
+                cfg.pop('base_url', None)
+            if 'decision_model' in patch:
+                cfg['model'] = patch['decision_model']
+            try:
+                decisions.update(default_execution_mode=patch.get('default_execution_mode'),
+                                 decision=cfg if any(k in patch for k in ('decision_provider_id', 'decision_model')) else None)
+            except ValueError as exc:
+                raise BadRequest(str(exc)) from None
         if "default_model_id" in patch:
             if body.default_model_id:
                 try:

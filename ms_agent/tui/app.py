@@ -271,6 +271,12 @@ class TuiApp:
         OmegaConf.update(cfg, 'session_log.dir', sess_dir, merge=True)
         OmegaConf.update(
             cfg, 'session_log.session_key', session.session_key, merge=True)
+        OmegaConf.update(
+            cfg, 'execution.mode', session.execution_mode, merge=True)
+        if session.execution_mode == 'decision':
+            session = self._sm.prepare_execution(session.id)
+            OmegaConf.update(
+                cfg, 'decision', session.execution_profile, merge=False)
         self.config = cfg  # keep the app reference in sync for banners/views
         self.session = session
         self.state.session_name = session.name

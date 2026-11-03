@@ -151,6 +151,12 @@ def fork_points(records: list[dict], *, require_checkpoint: bool = True) -> list
         if kind == 'metadata':
             continue
         if role == 'user':
+            if row.get('decision_feedback') or row.get('context_summary'):
+                # Internal review continues the same user task. Its rejected
+                # candidate answer must never become a branchable completion.
+                final, checkpoint = None, False
+                end = seq
+                continue
             finish()
             has_user, failed, final, checkpoint = True, False, None, False
             pending.clear()

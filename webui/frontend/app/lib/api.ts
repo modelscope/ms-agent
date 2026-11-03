@@ -353,6 +353,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body)
     }),
+  updateSessionExecutionMode: (id: string, mode: 'standard' | 'decision') =>
+    json<Session>(`/api/sessions/${pid(id)}/execution-mode`, {
+      method: 'PATCH', body: JSON.stringify({ execution_mode: mode })
+    }),
   updateSessionModel: (id: string, modelId: string) =>
     json<{ session: Session; settings: AgentSettings }>(`/api/sessions/${pid(id)}/model`, {
       method: 'PATCH',
@@ -708,6 +712,10 @@ export const api = {
     json<Model>(`/api/models/${pid(id)}/vision/retry`, { method: 'POST' }),
 
   getAgentSettings: () => json<AgentSettings>('/api/agent-settings'),
+  testDecisionConnection: (provider: string, model: string) =>
+    json<{ ok: boolean; elapsed_ms: number }>('/api/agent-settings/decision/test', {
+      method: 'POST', body: JSON.stringify({ provider, model })
+    }),
   putAgentSettings: (body: Partial<AgentSettings>) =>
     json<AgentSettings>('/api/agent-settings', {
       method: 'PUT',

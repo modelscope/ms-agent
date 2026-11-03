@@ -1,3 +1,4 @@
+import { useSessionMode } from '~/lib/sessionMode'
 import { Button } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router'
@@ -28,6 +29,8 @@ interface Props {
   /** `null` = new-chat mode; a string = existing session (detail) mode. */
   sessionId: string | null
   initialModelId?: string
+  initialExecutionMode?: 'standard' | 'decision'
+  initialExecutionLocked?: boolean
   /** Auto-submit this message once on mount (carried draft from overview). */
   autoSubmitMessage?: string
   /** Files attached to the auto-submitted draft (carried from overview). */
@@ -50,6 +53,8 @@ export function ChatView({
   project,
   sessionId,
   initialModelId,
+  initialExecutionMode,
+  initialExecutionLocked,
   autoSubmitMessage,
   autoSubmitFiles,
   autoSubmitSegments,
@@ -129,6 +134,12 @@ export function ChatView({
     sessionId
       ? (initialModelId ?? '')
       : (appData?.agentSettings.default_model_id ?? '')
+  )
+  const modeSelection = useSessionMode(
+    activeSessionId,
+    sessionId ? (initialExecutionMode ?? 'standard') : (appData?.agentSettings.default_execution_mode ?? 'standard'),
+    initialExecutionLocked ?? false,
+    !!appData?.agentSettings.decision_available
   )
   const isNewChat = activeSessionId === null
   const showWorkspace = activeProject !== null
@@ -305,6 +316,7 @@ export function ChatView({
           draftKey={activeSessionId}
           focusOnMount={!!location.state?.focusComposer}
           modelSelection={modelSelection}
+          modeSelection={modeSelection}
           modelSelectionDisabled={isNewChat && ctx.loading}
           project={activeProject}
           onSubmit={ctx.submit}
@@ -328,6 +340,7 @@ export function ChatView({
         draftKey={activeSessionId}
         focusOnMount={!!location.state?.focusComposer}
         modelSelection={modelSelection}
+          modeSelection={modeSelection}
         modelSelectionDisabled={isNewChat && ctx.loading}
         project={activeProject}
         onSubmit={ctx.submit}
@@ -349,6 +362,7 @@ export function ChatView({
       key={sessionId ?? 'new'}
       sessionId={sessionId}
       prepareModel={modelSelection.ready}
+      prepareExecutionMode={modeSelection.ready}
       projectId={projectId}
       workspaceOpen={railOpen}
       autoSubmitMessage={prefill}

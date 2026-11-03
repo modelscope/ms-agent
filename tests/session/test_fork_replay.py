@@ -284,6 +284,7 @@ def test_completion_checkpoint_follows_stop_hook(tmp_path, decision):
     agent._hook_runtime = SimpleNamespace(is_empty=False, run_stop=AsyncMock(
         return_value=HookResult(action=decision, reason='Finish checking')))
     agent.loop_callback = AsyncMock()
+    agent.add_memory = AsyncMock()
     asyncio.run(agent.after_tool_call(ContextAssembler(log).assemble()))
     assert bool(fork_points(log.records())) == (decision == 'allow')
     assert agent.runtime.should_stop == (decision == 'allow')
@@ -310,7 +311,7 @@ def test_resume_waits_for_new_input_before_compaction_and_execution(tmp_path):
     agent.tag, agent.load_cache = 'test', True
     agent.session_log = log
     agent.runtime = Runtime()
-    agent.tool_manager = SimpleNamespace(extra_tools=[])
+    agent.tool_manager = SimpleNamespace(extra_tools=[], get_tools=AsyncMock(return_value=[]))
     agent._skill_runtime, agent._event_sink = None, None
     agent.memory_tools = []
     agent._resolve_interactive = lambda _: True
@@ -321,7 +322,7 @@ def test_resume_waits_for_new_input_before_compaction_and_execution(tmp_path):
         setattr(agent, method, Mock())
     for method in ('prepare_tools', 'prepare_skills', 'load_memory', 'prepare_rag',
                    'prepare_knowledge_search', '_attach_memory_recall', 'add_memory',
-                   'on_task_end', 'cleanup_tools'):
+                   'on_task_end', 'cleanup_tools', '_prepare_decision'):
         setattr(agent, method, AsyncMock())
     agent._attach_prompt_update_notice = lambda _: None
     agent._attach_model_switch_notice = lambda _: None

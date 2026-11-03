@@ -105,6 +105,8 @@ def session_to_schema(session) -> SessionSchema:
         unread=bool(meta.get("unread", False)),
         category=meta.get("category", ""),
         model_id=encode_model_id(*key) if key else "",
+        execution_mode=getattr(session, 'execution_mode', 'standard'),
+        execution_mode_locked=bool(getattr(session, 'execution_mode_locked_at', None)),
     )
 
 

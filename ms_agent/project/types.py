@@ -57,3 +57,7 @@ class Session:
     updated_at: str = field(default_factory=_now_iso)
     model_provider: str | None = None
     forked_from: dict | None = None
+    execution_mode: str = 'standard'
+    execution_mode_locked_at: str | None = None
+    execution_profile: dict | None = None
+    execution_profile_version: int = 1

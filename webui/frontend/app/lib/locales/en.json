@@ -549,5 +549,26 @@
     "newChat": "New chat",
     "session": "Session",
     "project": "Project"
+  },
+  "decisionMode": {
+    "title": "Execution mode",
+    "standard": "Standard",
+    "decision": "Decision",
+    "standardDescription": "Use your selected model and the standard execution flow.",
+    "decisionDescription": "Add execution reviews and semantic context compression for longer tasks.",
+    "locked": "This conversation has started. Create a new conversation to change its mode.",
+    "configure": "Configure decision model",
+    "settingsTitle": "Decision model",
+    "settingsDescription": "Use a configured provider for typed decisions. Your main chat model and permissions stay independent. Applies to new conversations.",
+    "provider": "Decision provider",
+    "model": "Decision model name",
+    "save": "Save",
+    "saved": "Decision model saved",
+    "review": "Reviewing execution evidence",
+    "intervened": "Rechecking an execution issue",
+    "degraded": "Decision service unavailable; using standard handling",
+    "compacted": "Context compressed",
+    "test": "Test connection (uses tokens)",
+    "connected": "Decision service is connected"
   }
 }

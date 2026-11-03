@@ -6,7 +6,7 @@ from fastapi.responses import Response
 
 from app.core.envelope import EnvelopeRoute
 from app.schemas.session import (
-    Artifact, Session, SessionCreate, SessionMessage, SessionPlan, SessionUpdate, SessionModelUpdate, SessionFork
+    Artifact, Session, SessionCreate, SessionMessage, SessionPlan, SessionUpdate, SessionModelUpdate, SessionFork, SessionExecutionModeUpdate
 )
 
 router = APIRouter(prefix="/api", tags=["sessions"], route_class=EnvelopeRoute)
@@ -121,3 +121,9 @@ def update_session_model(session_id: str, body: SessionModelUpdate) -> dict:
     from app.backends.ms_agent import sessions
 
     return sessions.update_session_model(session_id, body.model_id)
+
+
+@router.patch("/sessions/{session_id}/execution-mode")
+def update_execution_mode(session_id: str, body: SessionExecutionModeUpdate) -> Session:
+    from app.backends.ms_agent import sessions
+    return sessions.update_execution_mode(session_id, body.execution_mode)

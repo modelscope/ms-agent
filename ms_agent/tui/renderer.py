@@ -254,6 +254,14 @@ class RichEventSink:
         self._print(
             f'[{self.theme.notice_info}]· context compacted{detail} ·[/]')
 
+    def _on_decision_activity(self, ev) -> None:
+        if ev.action == 'intervene':
+            self._print('[dim]· checking execution evidence ·[/]')
+        elif ev.action == 'degraded':
+            self._print(
+                '[dim]· decision service unavailable; continuing with standard handling ·[/]'
+            )
+
     def _on_notice(self, ev) -> None:
         if ev.level == 'info':
             # Command output (/help, /model, /config …): a subtle panel; when

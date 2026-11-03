@@ -188,6 +188,9 @@ def _resolve_or_create(req: ChatRequest):
         found = find_session(req.session_id)
         if found:
             project, session, _sm = found
+            if req.execution_mode is not None and req.execution_mode != session.execution_mode:
+                from app.backends.errors import Conflict
+                raise Conflict('The conversation mode cannot be overridden by a chat request.')
             _touch_session(project, session.id)
             return project, session
         from app.backends.errors import NotFound
@@ -198,7 +201,7 @@ def _resolve_or_create(req: ChatRequest):
         project = resolve_project(None)  # unknown id -> default project
     from app.backends.ms_agent import session_models
 
-    session = session_models.create(project, model_id=req.model_id)
+    session = session_models.create(project, model_id=req.model_id, execution_mode=req.execution_mode)
     return project, session
 
 
@@ -568,6 +571,14 @@ class _TurnMapper:
                 "index": int(payload.get("index") or 0),
                 "arguments_len": int(payload.get("arguments_len") or 0),
             })]
+        if t == "decision_activity":
+            if payload.get('action') not in ('intervene', 'degraded'):
+                return []
+            return [ChatChunk(type="step", meta={"kind": "decision", **{
+                key: payload.get(key, '') for key in ('phase', 'action', 'reason', 'evidence_id')
+            }})]
+        if t == "context_compacted":
+            return [ChatChunk(type="step", meta={"kind": "decision", "action": "compacted"})]
         if t == "image_delivered":
             # What actually happened to one attached image on this request.
             # Until this existed the fact was knowable only inside the transport

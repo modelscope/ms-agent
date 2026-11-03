@@ -328,3 +328,14 @@ class JsonlEventSink:
                 self._f.close()
             except Exception:
                 pass
+
+
+@dataclass(frozen=True)
+class DecisionActivity(AgentEvent):
+    """An optional decision was checked, applied, or unavailable."""
+    EVENT_TYPE: ClassVar[str] = 'decision_activity'
+    phase: str = ''
+    action: str = ''
+    reason: str = ''
+    evidence_id: str = ''
+    elapsed_ms: float = 0
