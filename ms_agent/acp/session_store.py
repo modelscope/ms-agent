@@ -78,11 +78,12 @@ class ACPSessionStore:
         meta: dict | None = None,
     ) -> ACPSessionEntry:
         """Create a new session backed by a freshly loaded agent."""
-        if len(self._sessions) >= self.max_sessions:
+        while len(self._sessions) >= self.max_sessions:
             evicted_id = self._evict_lru()
             if evicted_id is None:
                 raise MaxSessionsError(self.max_sessions)
             await self._cleanup_session(evicted_id)
+            # Another request may have filled the slot during cleanup.
 
         if not config_path or not os.path.exists(config_path):
             raise ConfigError(f'Config not found: {config_path}')
