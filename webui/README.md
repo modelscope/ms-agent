@@ -113,7 +113,7 @@ printed in the terminal. Press **Ctrl-C** to stop the service.
 For ModelScope, obtain an API key from the [access token page](https://modelscope.cn/my/myaccesstoken).
 
 1. Open **Settings → Models**, select **ModelScope → Edit**, enter your API key, and save. Built-in providers already have an endpoint. For another OpenAI-compatible service, use **Add provider** to enter its Base URL and key.
-2. Click **Add model** under that provider and enter a model ID supported by the service, such as `Qwen/Qwen3-235B-A22B-Instruct-2507`. Availability and quotas depend on your provider account.
+2. Click **Add model** under that provider and enter a model ID supported by the service, such as `Qwen/Qwen3.8-Flash-Next`. If that id returns 400, enter another chat model the provider currently serves. Availability and quotas depend on your provider account.
 3. Return to chat, use the default project or create one, select the new model below the input, and send your first message. Attach files or images when relevant.
 4. Configure a project workspace, skills, and MCP tools as needed.
 

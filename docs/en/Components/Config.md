@@ -38,7 +38,7 @@ llm:
   # Large model service backend
   service: modelscope
   # Model id
-  model: Qwen/Qwen3-235B-A22B-Instruct-2507
+  model: Qwen/Qwen3.8-Flash-Next
   # Model api_key
   modelscope_api_key:
   # Model base_url

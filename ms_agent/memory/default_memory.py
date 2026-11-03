@@ -741,7 +741,12 @@ class DefaultMemory(Memory):
             mem0_config['embedder'] = embedder
         if llm:
             mem0_config['llm'] = llm
-        logger.info(f'Memory config: {mem0_config}')
+        logger.info(
+            'Memory config ready: vector=%s embedder=%s llm=%s',
+            vector_store.get('provider') if vector_store else None,
+            embedder.get('provider') if isinstance(embedder, dict) else None,
+            llm.get('provider') if isinstance(llm, dict) else None,
+        )
         # Prompt content is too long, default logging reduces readability
         custom_fact_extraction_prompt = getattr(
             self.config.memory.default_memory, 'fact_retrieval_prompt',

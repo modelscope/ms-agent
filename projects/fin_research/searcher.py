@@ -9,6 +9,7 @@ from ms_agent.llm import Message
 from ms_agent.llm.openai import OpenAIChat
 from ms_agent.tools.search_engine import get_web_search_tool
 from ms_agent.utils import get_logger
+from ms_agent.utils.constants import DEFAULT_MODELSCOPE_CHAT_MODEL
 from ms_agent.workflow.deep_research.research_workflow_beta import \
     ResearchWorkflowBeta
 
@@ -35,7 +36,7 @@ class SearchAgent(CodeAgent):
                 base_url = getattr(llm_config, 'openai_base_url',
                                    '') or os.getenv('OPENAI_BASE_URL')
                 model = getattr(llm_config, 'model',
-                                '') or 'Qwen/Qwen3-235B-A22B-Instruct-2507'
+                                '') or DEFAULT_MODELSCOPE_CHAT_MODEL
                 self.chat_client = OpenAIChat(
                     api_key=api_key, base_url=base_url, model=model)
             else:

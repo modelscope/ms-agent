@@ -13,6 +13,7 @@ falls back to blocking ``input()`` in an executor, so the TUI stays scriptable.
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 from typing import TYPE_CHECKING, Optional
 
@@ -21,6 +22,49 @@ from ms_agent.tui.theme import DEFAULT_THEME, Theme
 
 if TYPE_CHECKING:
     from ms_agent.command.router import CommandRouter
+
+# Bracketed paste wraps the clipboard in these markers. If they leak into the
+# line (the terminal was not in paste mode) they must not become part of the
+# command. The caret form is how a cooked terminal echoes the same bytes.
+_PASTE_MARKERS = (
+    '\x1b[200~',
+    '\x1b[201~',
+    '^[[200~',
+    '^[[201~',
+)
+# Cursor Position Report. A cooked terminal echoes it as text, so
+# ``^[[8;8R/mcp list`` would otherwise be sent to the model.
+_CPR_RE = re.compile(r'(?:\x1b\[\d+;\d+R|\^\[\[\d+;\d+R)')
+
+
+def _strip_terminal_noise(line: str) -> str:
+    for marker in _PASTE_MARKERS:
+        line = line.replace(marker, '')
+    return _CPR_RE.sub('', line)
+
+
+def split_prompt_lines(text: str) -> list:
+    """Split one paste into the lines the command loop should see.
+
+    prompt_toolkit returns a multiline paste as a single string. Fed through
+    whole, ``/model`` treats the next line as part of the model id. A trailing
+    empty line (the paste ended on Enter) is not itself a command. A cursor
+    position report (``^[[8;8R``) is terminal noise, not part of the command.
+    """
+    cleaned = (text or '').replace('\r\n', '\n').replace('\r', '\n')
+    if '\n' not in cleaned:
+        return [_strip_terminal_noise(cleaned)]
+    lines = cleaned.split('\n')
+    if lines and lines[-1] == '':
+        lines.pop()
+    kept = []
+    for line in lines:
+        stripped = _strip_terminal_noise(line)
+        # A line that was only a cursor report must not be sent.
+        if stripped == '' and line != '':
+            continue
+        kept.append(stripped)
+    return kept or ['']
 
 
 def slash_matches(router, text: str):
@@ -49,11 +93,17 @@ class PromptToolkitInput:
                  state: TuiState,
                  router: Optional['CommandRouter'] = None,
                  theme: Theme = DEFAULT_THEME,
-                 console: object = None) -> None:
+                 console: object = None,
+                 renderer: object = None) -> None:
         self._state = state
         self._router = router
         self._theme = theme
         self._console = console  # rich Console, for the pre-prompt divider
+        # RichEventSink. Released before prompt_toolkit draws, so Live's
+        # refresh thread is not still writing when raw mode starts.
+        self._renderer = renderer
+        # Lines left over from a multiline paste. Each becomes its own prompt.
+        self._queued: list = []
         self._session = self._build_session()
 
     def _build_session(self):
@@ -108,6 +158,7 @@ class PromptToolkitInput:
                 history=InMemoryHistory(),
                 completer=_SlashCompleter(),
                 complete_while_typing=True,
+                # Up and down walk this history.
                 bottom_toolbar=self._toolbar,
                 placeholder=HTML(
                     '<ansibrightblack>Type a message'
@@ -115,6 +166,11 @@ class PromptToolkitInput:
                 style=style)
         except Exception:
             return None
+
+    def note_model(self, model: str) -> None:
+        """Refresh the status-bar model after a command mutates it."""
+        if model:
+            self._state.model = str(model)
 
     def _toolbar(self):
         s = self._state
@@ -133,15 +189,43 @@ class PromptToolkitInput:
         return HTML(
             f'<b><ansicyan>{self._theme.prompt_symbol}</ansicyan></b> ')
 
+    def _release_terminal(self) -> None:
+        renderer = self._renderer
+        if renderer is None:
+            return
+        release = getattr(renderer, 'release_terminal', None)
+        if release is not None:
+            release()
+
     async def read_prompt(self, prompt: str = '❯ ') -> str:
         # The TUI owns its prompt presentation; the caller's ``prompt`` arg is
         # only a fallback hint for the non-interactive path.
+        # Live must be fully stopped before prompt_toolkit enables raw mode
+        # and bracketed paste. A queued paste line skips the divider, but
+        # still waits out a region left up by the turn that just finished.
+        self._release_terminal()
+        if self._queued:
+            return self._queued.pop(0)
         if self._session is not None and sys.stdin.isatty():
             # A subtle full-width divider separates the input from the
             # conversation above (Claude Code style).
             if self._console is not None:
                 from rich.rule import Rule
                 self._console.print(Rule(style='grey30'))
-            return await self._session.prompt_async(self._message())
+            # prompt_toolkit owns Ctrl-C while the line is being edited.
+            # After it returns, the TUI handler covers the stream that follows.
+            sigint = getattr(self, '_sigint', None)
+            if sigint is not None:
+                sigint._streaming = False
+            try:
+                text = await self._session.prompt_async(self._message())
+            finally:
+                if sigint is not None:
+                    sigint._arm_turn_sigint()
+                    sigint._streaming = True
+            lines = split_prompt_lines(text)
+            if len(lines) > 1:
+                self._queued.extend(lines[1:])
+            return lines[0] if lines else ''
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, input, prompt)

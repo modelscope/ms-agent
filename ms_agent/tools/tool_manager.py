@@ -38,6 +38,58 @@ from ms_agent.utils.constants import TOOL_PLUGIN_NAME
 
 logger = get_logger()
 
+
+def _must_propagate(exc: BaseException) -> bool:
+    """Cancellation and unknown base exceptions still leave the tool call.
+
+    An ExceptionGroup from a dead MCP transport is not one of those: it used
+    to escape ``except Exception`` and end the turn as a generic failure.
+    """
+    if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt, SystemExit,
+                        GeneratorExit)):
+        return True
+    if type(exc).__name__ in ('ExceptionGroup', 'BaseExceptionGroup'):
+        members = getattr(exc, 'exceptions', None)
+        if isinstance(members, tuple) and members:
+            return all(_must_propagate(item) for item in members)
+        return False
+    return not isinstance(exc, Exception)
+
+
+def _config_key(tool: ToolBase) -> Optional[str]:
+    """The ``tools.<key>`` name /tools lists, when this object has one."""
+    named = getattr(tool, 'SERVER_NAME', None)
+    if isinstance(named, str) and named:
+        return named
+    return {
+        'FileSystemTool': 'file_system',
+        'CodeExecutionTool': 'code_executor',
+        'LocalCodeExecutionTool': 'code_executor',
+        'ImageReaderTool': 'image_reader',
+        'ImageGenerator': 'image_generator',
+        'VideoGenerator': 'video_generator',
+        'LocalSearchTool': 'local_search',
+    }.get(type(tool).__name__)
+
+
+def _connect_failure_text(tool: ToolBase, exc: BaseException) -> str:
+    """One line for /tools. Package installs stay on the search sentence."""
+    if type(tool).__name__ == 'WebSearchTool':
+        from ms_agent.config.search_settings import requires_key
+        from ms_agent.tools.search.availability import notices_for_engines
+        notice = notices_for_engines(
+            getattr(tool, '_engine_types', ()) or (),
+            getattr(tool, '_api_keys', {}) or {},
+            requires_key,
+        )
+        if notice:
+            return notice
+    line = ' '.join(str(exc).split())
+    if len(line) > 120:
+        line = line[:119] + '…'
+    return f'UNAVAILABLE: {line}'
+
+
 MAX_TOOL_NAME_LEN = int(os.getenv('MAX_TOOL_NAME_LEN', 64))
 # Default wait around each tool invocation (seconds). Override via config.tool_call_timeout or TOOL_CALL_TIMEOUT.
 TOOL_CALL_TIMEOUT = int(os.getenv('TOOL_CALL_TIMEOUT', 120))
@@ -173,6 +225,9 @@ class ToolManager:
         self.mcp_success_handler = mcp_success_handler
 
         self.extra_tools: List[ToolBase] = []
+        # config key -> one-line reason. /tools reads this. MCP servers are
+        # not recorded here; /mcp list already shows those.
+        self.connect_failures: Dict[str, str] = {}
         self.has_split_task_tool = False
         if hasattr(config, 'tools') and hasattr(config.tools,
                                                 'image_generator'):
@@ -351,6 +406,7 @@ class ToolManager:
               and self.mcp_config.get('mcpServers')):
             logger.warning_once(
                 'mcp package not installed; MCP tools disabled for this run')
+        self.connect_failures = {}
         for tool in self.extra_tools:
             try:
                 await tool.connect()
@@ -358,6 +414,10 @@ class ToolManager:
                 logger.warning(
                     f'Tool {getattr(tool, "name", type(tool).__name__)} '
                     f'failed to connect: {e}; disabling.')
+                key = _config_key(tool)
+                if key:
+                    self.connect_failures[key] = _connect_failure_text(
+                        tool, e)
 
         # reindex_tool() self-gates its MCP portion on _skip_mcp_reindex, so it
         # is always safe to call here: extra tools get indexed in every path,
@@ -372,13 +432,13 @@ class ToolManager:
         if self._managed_client and self.servers:
             try:
                 await self.servers.cleanup()
-            except Exception:  # noqa
+            except (asyncio.CancelledError, Exception):  # noqa
                 pass
         self.servers = None
         for tool in self.extra_tools:
             try:
                 await tool.cleanup()
-            except Exception:  # noqa
+            except (asyncio.CancelledError, Exception):  # noqa
                 pass
 
     def _clear_mcp_index_entries(self) -> None:
@@ -428,25 +488,44 @@ class ToolManager:
         """Map what the model asked for onto a registered tool.
 
         Some models reach for the server segment alone — ``code_executor``
-        instead of ``code_executor---shell_executor`` — and used to get an
-        AssertionError wrapped in a traceback, which says nothing about what
-        the name should have been. When the shorthand picks out exactly one
-        tool there is no ambiguity to resolve, so the call proceeds and the
-        result carries a note; otherwise it is reported as not found, with
-        candidates.
+        instead of ``code_executor---shell_executor`` — or for the tool
+        segment alone — ``skills_list`` instead of ``skills---skills_list``.
+        When that shorthand picks out exactly one registered name, the call
+        proceeds and the result carries a note. A fuzzy neighbour is not
+        renamed.
 
         Returns ``(resolved_name, note)``; ``resolved_name`` is ``None`` when
         nothing matched.
         """
         if tool_name in self._tool_index:
             return tool_name, ''
-        prefix = f'{tool_name}{self.TOOL_SPLITER}'
+        splitter = self.TOOL_SPLITER
+        prefix = f'{tool_name}{splitter}'
         matches = [key for key in self._tool_index if key.startswith(prefix)]
         if len(matches) == 1:
-            return matches[0], (
-                f'Note: "{tool_name}" was resolved to "{matches[0]}". '
-                'Use the exact tool name in subsequent calls.')
+            return matches[0], self._resolved_note(tool_name, matches[0])
+        # A unique prefix is the only shorthand that may have several tools
+        # under one server. A written name that is exactly one registered
+        # suffix (``skills_list`` → ``skills---skills_list``) is the same
+        # kind of correction. Anything else, including a fuzzy neighbour,
+        # stays an error.
+        if not matches:
+            # Same segment call_tool receives: everything after the first
+            # separator. A tool id may itself contain ``---``.
+            suffix_matches = [
+                key for key in self._tool_index
+                if splitter in key and self._registered_tool_suffix(
+                    key, splitter) == tool_name
+            ]
+            if len(suffix_matches) == 1:
+                return suffix_matches[0], self._resolved_note(
+                    tool_name, suffix_matches[0])
         return None, ''
+
+    @staticmethod
+    def _resolved_note(asked: str, resolved: str) -> str:
+        return (f'Note: "{asked}" was resolved to "{resolved}". '
+                'Use the exact tool name in subsequent calls.')
 
     def _unknown_tool_message(self, tool_name: str) -> str:
         """Say what to call instead, rather than how the lookup failed."""
@@ -831,7 +910,9 @@ class ToolManager:
                     'is_error':
                     True,
                 }
-            except Exception as e:
+            except BaseException as e:
+                if _must_propagate(e):
+                    raise
                 import traceback
                 tb_str = traceback.format_exc()
                 logger.warning(tb_str)

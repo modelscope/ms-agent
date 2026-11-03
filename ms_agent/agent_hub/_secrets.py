@@ -67,6 +67,11 @@ class Finding(NamedTuple):
 _VENDOR_TOKEN_RE = re.compile(
     r'(?<![A-Za-z0-9_\-])(?:'
     r'sk-(?:ant-|proj-|svc-|or-v1-)?[A-Za-z0-9_\-]{12,}'  # OpenAI / Anthropic
+    r'|tvly-[A-Za-z0-9_\-]{12,}'  # Tavily
+    # Compact token or UUID. Hyphenated names (``ms-agent-skills``) are not keys.
+    r'|ms-(?:[A-Za-z0-9]{12,}'
+    r'|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}'
+    r'-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})'  # ModelScope
     r'|gh[pousr]_[A-Za-z0-9]{12,}'  # GitHub  / OpenRouter / DashScope
     r'|github_pat_[A-Za-z0-9_]{12,}'  # GitHub fine-grained PAT
     r'|glpat-[A-Za-z0-9_\-]{12,}'  # GitLab
@@ -478,7 +483,8 @@ def _redact_base64(text: str, hits: list) -> str:
 # deliberately over-matches (``monkey`` contains ``key``) -- a gate, not a rule.
 # The base64 pass is NOT gated: an encoded payload carries no textual signal.
 _PREFILTER_RE = re.compile(
-    r'(?:sk-|gh[pousr]_|github_pat_|glpat-|xox[baprs]-|AKIA|AIza|hf_|npm_|'
+    r'(?:sk-|tvly-|ms-|gh[pousr]_|github_pat_|glpat-|xox[baprs]-|AKIA|AIza|'
+    r'hf_|npm_|'
     r'shpat_|eyJ|[Bb]earer|://|'
     r'key|keys|token|tokens|secret|secrets|password|passwd|credential|'
     r'credentials|authorization|cookie|cookies)', re.IGNORECASE)

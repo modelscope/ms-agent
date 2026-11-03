@@ -25,7 +25,8 @@ Focus on:
 - Relevant files: Files read, edited, or created
 
 Preserve verbatim, never rewrite or drop: the LATEST <system-reminder>
-skill-update notice, if any (it is the authoritative current skill list),
+skill-update notice, if any (the system prompt's skill list may be stale;
+skills_list is current),
 and the LATEST <system-reminder> notice about changed workspace/prompt
 files, if any (it explains why earlier conversation may reference outdated
 file contents). Other <system-reminder> blocks (e.g. retrieved memories)

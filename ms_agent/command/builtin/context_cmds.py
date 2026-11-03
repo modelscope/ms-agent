@@ -93,9 +93,16 @@ async def cmd_tools(ctx: CommandContext) -> CommandResult:
         return CommandResult(
             type=CommandResultType.MESSAGE, content='No tools configured.')
 
+    failures = getattr(
+        getattr(ctx.runtime, 'tool_manager', None), 'connect_failures',
+        None) or {}
     lines = [f'Configured tools ({len(tool_names)}):']
     for name in sorted(tool_names):
-        lines.append(f'  • {name}')
+        reason = failures.get(name) if isinstance(failures, dict) else None
+        if reason:
+            lines.append(f'  • {name}  {reason}')
+        else:
+            lines.append(f'  • {name}')
     return CommandResult(
         type=CommandResultType.MESSAGE, content='\n'.join(lines))
 

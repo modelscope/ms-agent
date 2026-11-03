@@ -82,6 +82,11 @@ class TestBuiltinCommands:
         assert result.type == CommandResultType.MESSAGE
         assert '/stop' in result.content
         assert '/help' in result.content
+        assert '/mcp' in result.content
+        assert '/skills' in result.content
+        assert '/search' in result.content
+        assert '/instruction' in result.content
+        assert '/profile' in result.content
 
     @pytest.mark.asyncio
     async def test_help_alias(self, router):

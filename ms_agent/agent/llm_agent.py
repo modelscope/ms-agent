@@ -48,7 +48,7 @@ from ms_agent.skill.search import SkillSearchEngine
 from ms_agent.skill.skill_tools import SkillToolSet
 from ms_agent.tools import ToolManager
 from ms_agent.ui.events import (ContentDelta, ContentEnd, ContextCompacted,
-                                ErrorRaised, ImageDelivered, PlanEntry,
+                                ErrorRaised, ImageDelivered, Notice, PlanEntry,
                                 PlanUpdated, ReasoningDelta, ReasoningEnded,
                                 ReasoningStarted, ToolCallCompleted,
                                 ToolCallComposing, ToolCallStarted,
@@ -72,6 +72,16 @@ _MISSING_ENABLE_SNAPSHOTS = object()
 # metadata (not this literal), so the placeholder never needs localization.
 INTERRUPTED_PLACEHOLDER = '[interrupted]'
 _INTERRUPTED_TOOL_RESULT = '[Interrupted: tool execution was cancelled]'
+# One keyless episode prints the setup paragraph once. Startup and the
+# first message share that copy. Building a client, or clearing a key,
+# ends the episode so the next one can speak.
+_credential_notice_sent = False
+
+
+def reset_credential_notice() -> None:
+    """End the current keyless episode so the next one can speak once."""
+    global _credential_notice_sent
+    _credential_notice_sent = False
 
 
 def build_partial_round_records(
@@ -213,9 +223,10 @@ class LLMAgent(Agent):
     def resolve_enable_snapshots(config: Any) -> bool:
         """Resolve whether to take automatic pre-task snapshots.
 
-        Disabled by default for all agents. An explicit ``enable_snapshots``
-        in config always wins (including string forms like ``\"false\"``
-        coerced to boolean).
+        Default is off: there is no CLI/TUI rollback UI, and snapshotting
+        the work tree (especially ``$HOME``) burns disk. Set
+        ``enable_snapshots: true`` to opt in. An explicit value always wins
+        (including string forms like ``\"false\"`` coerced to boolean).
         """
         if OmegaConf.is_config(config):
             raw = OmegaConf.select(
@@ -266,6 +277,7 @@ class LLMAgent(Agent):
         self.callbacks: List[Callback] = []
         self.tool_manager: Optional[ToolManager] = None
         self.task_manager: Optional[TaskManager] = None
+        self._tools_cleaned = False
         self.memory_tools: List[Memory] = []
         self.rag: Optional[RAG] = None
         self.knowledge_search: Optional[SirchmunkSearch] = None
@@ -335,6 +347,12 @@ class LLMAgent(Agent):
         # session sidecar or the first build). Drift against this baseline
         # fires a durable update notice on the next user turn.
         self._prompt_surface: Optional[Dict[str, str]] = None
+        # TUI assigns this. Called after the user turn is in hand and before
+        # it is persisted, and once before the opening create_messages.
+        # None on WebUI and every other host.
+        self._on_user_turn = None
+        self._llm_fp: Optional[str] = None
+        self._mcp_fp: Optional[str] = None
 
     async def prepare_skills(self):
         """Initialize the skill system from config.skills.
@@ -398,6 +416,16 @@ class LLMAgent(Agent):
         if getattr(self, '_plugin_runtime', None) is not None:
             self._plugin_runtime.skill_runtime = self._skill_runtime
             self._plugin_runtime._sync_skill_runtime(self.config)
+        self._publish_skill_runtime()
+
+    def _publish_skill_runtime(self) -> None:
+        """Slash commands see Runtime, the same way they see MCP.
+
+        Disk scan stays the fallback until a session has loaded skills.
+        """
+        session = getattr(self, 'runtime', None)
+        if session is not None and self._skill_runtime is not None:
+            session._skill_runtime = self._skill_runtime
 
         # Wire /skill-name slash commands. Without this the SkillCommandBridge
         # is never registered and `/skill-id args` falls through to the model as
@@ -992,6 +1020,7 @@ class LLMAgent(Agent):
         from ms_agent.plugins.runtime import PluginRuntime
         from ms_agent.utils.workspace_context import resolve_workspace_root
 
+        self._tools_cleaned = False
         self.task_manager = TaskManager()
 
         safety_guard, permission_enforcer, perm_config = self._build_permission_objects(
@@ -1032,6 +1061,15 @@ class LLMAgent(Agent):
             hook_registries,
         )
         mcp_rt = self.mcp_runtime
+        if mcp_rt is not None and getattr(self, 'runtime', None) is not None:
+            # Slash commands only see this Runtime, not the agent. The failure
+            # record /mcp list and /mcp get read lives on the MCP runtime.
+            self.runtime._mcp_runtime = mcp_rt
+        # The TUI still has to show its prompt. Waiting here would put a
+        # cold npx in front of the first keystroke. That session waits on
+        # the first message instead. A one-shot run has no later message,
+        # so it waits now, and only for a few seconds.
+        wait_for_mcp = getattr(self, '_on_user_turn', None) is None
         if mcp_rt is not None and plugin_mcp_servers:
             from ms_agent.config.mcp_schema import ResolvedMCPConfig
             merged_servers = {
@@ -1040,7 +1078,9 @@ class LLMAgent(Agent):
             }
             merged_servers.update(plugin_mcp_servers)
             await mcp_rt.apply_config(
-                ResolvedMCPConfig(mcp_servers=merged_servers))
+                ResolvedMCPConfig(mcp_servers=merged_servers),
+                wait=wait_for_mcp,
+            )
 
         self.tool_manager = ToolManager(
             self.config,
@@ -1054,7 +1094,7 @@ class LLMAgent(Agent):
             permission_config=perm_config,
             trust_remote_code=self.trust_remote_code,
             mcp_callable_check=mcp_rt.is_callable if mcp_rt else None,
-            mcp_failure_handler=mcp_rt.record_failure if mcp_rt else None,
+            mcp_failure_handler=self._on_mcp_failure if mcp_rt else None,
             mcp_unavailable_detail=mcp_rt.unavailable_detail
             if mcp_rt else None,
             mcp_success_handler=mcp_rt.record_success if mcp_rt else None,
@@ -1071,8 +1111,10 @@ class LLMAgent(Agent):
         if not self.runtime.session_id:
             self.runtime.session_id = hook_runtime.session_id
         if mcp_rt is not None and not mcp_rt.is_started:
-            await mcp_rt.start()
+            await mcp_rt.start(wait=wait_for_mcp)
         await self.tool_manager.connect()
+        if self.runtime is not None:
+            self.runtime.tool_manager = self.tool_manager
         if mcp_rt is not None:
             mcp_rt.bind_tool_manager(self.tool_manager)
             await mcp_rt.sync_tools()
@@ -1081,13 +1123,36 @@ class LLMAgent(Agent):
                 tool.set_task_manager(self.task_manager)
 
     async def cleanup_tools(self):
-        """Cleanup resources used by the tool manager."""
+        """Best-effort teardown for MCP transports and extra tools.
+
+        ``streamablehttp_client`` (MCP SDK) holds an anyio cancel scope that
+        must be exited by the same task that entered it. Cancelling that
+        owner, or letting ``CancelledError`` leak out of jupyter kernel
+        shutdown, prints a crash-like traceback on TUI ``/quit``. Those
+        errors are teardown noise — swallow them here.
+        """
+        if self._tools_cleaned:
+            return
+        self._tools_cleaned = True
+
+        async def _quiet(awaitable, label: str) -> None:
+            try:
+                await awaitable
+            except asyncio.CancelledError:
+                logger.debug('%s interrupted during cleanup', label)
+            except Exception as exc:  # noqa: BLE001 - never fail the session on teardown
+                logger.debug('%s failed during cleanup: %s', label, exc)
+
         if self.task_manager is not None:
-            self.task_manager.kill_all()
+            try:
+                self.task_manager.kill_all()
+            except Exception:  # noqa: BLE001
+                logger.debug('task_manager.kill_all failed during cleanup',
+                             exc_info=True)
         if self.mcp_runtime is not None:
-            await self.mcp_runtime.stop()
+            await _quiet(self.mcp_runtime.stop(), 'mcp_runtime.stop')
         if self.tool_manager is not None:
-            await self.tool_manager.cleanup()
+            await _quiet(self.tool_manager.cleanup(), 'tool_manager.cleanup')
         # Drain scheduled memory ingestion so a teardown right after the last
         # turn cannot lose its write. Flush only — memory instances are shared
         # across agents of the same store (SharedMemoryManager), so CLOSING
@@ -1099,8 +1164,15 @@ class LLMAgent(Agent):
             if flush is not None:
                 try:
                     await flush(timeout=15)
-                except Exception as e:  # noqa: BLE001 - cleanup is best-effort
-                    logger.warning(f'memory flush on cleanup failed: {e}')
+                except (asyncio.CancelledError, Exception) as e:  # noqa: BLE001
+                    logger.debug('memory flush on cleanup failed: %s', e)
+            note = getattr(tool, 'user_notice', None)
+            if note:
+                self._emit_user_notice(str(note))
+                try:
+                    tool.user_notice = None
+                except Exception:
+                    logger.debug('clear memory notice failed', exc_info=True)
 
     @property
     def stream(self):
@@ -2403,9 +2475,192 @@ class LLMAgent(Agent):
 
         yield messages
 
+    def _emit_user_notice(self, text: str) -> None:
+        """One line the user can act on. Not a log-level change."""
+        if self._event_sink is not None:
+            from ms_agent.ui.events import Notice
+            self._event_sink.emit(Notice(level='warning', text=text))
+            return
+        logger.error(text)
+
+    async def _on_mcp_failure(
+        self,
+        name: str,
+        phase: str,
+        message: str,
+        *,
+        tool_name: str | None = None,
+        exc: BaseException | None = None,
+    ) -> None:
+        """Count an MCP failure and, once it is unusable, reconnect later.
+
+        The chat stays quiet. ``/mcp list`` shows the status. Quit still
+        cleans up quietly.
+        """
+        runtime = self.mcp_runtime
+        if runtime is None:
+            return
+        degraded = await runtime.record_failure(
+            name, phase, message, tool_name=tool_name, exc=exc)
+        if not degraded:
+            return
+        # Config is unchanged, so the next turn would skip MCP apply.
+        # Clear the fingerprint and name the server so that turn reconnects.
+        self._mcp_fp = None
+        pending = getattr(self, '_mcp_reconnect_names', None)
+        if pending is None:
+            pending = set()
+            self._mcp_reconnect_names = pending
+        pending.add(name)
+
     def prepare_llm(self):
         """Initialize the LLM model from the configuration."""
         self.llm: LLM = LLM.from_config(self.config)
+        from ms_agent.llm.runtime_token import llm_runtime_token
+        self._llm_fp = llm_runtime_token(self.config)
+        # A client exists, so the next keyless episode may speak again.
+        reset_credential_notice()
+
+    def _stub_llm_for_setup(self) -> None:
+        """Placeholder so slash commands can run before a key exists."""
+        from types import SimpleNamespace
+        model = str(
+            OmegaConf.select(self.config, 'llm.model', default='') or '')
+        self.llm = SimpleNamespace(
+            config=self.config, model=model, _setup_stub=True)
+
+    def _emit_credential_setup(self, exc: BaseException) -> None:
+        # Startup and the first message of one keyless episode share this copy.
+        global _credential_notice_sent
+        if _credential_notice_sent:
+            return
+        _credential_notice_sent = True
+        from ms_agent.llm.credentials import missing_api_key_setup_text
+        service = str(
+            OmegaConf.select(self.config, 'llm.service', default='') or '')
+        text = missing_api_key_setup_text(exc, service)
+        if self._event_sink is not None:
+            from ms_agent.ui.events import Notice
+            self._event_sink.emit(Notice(level='warning', text=text))
+        else:
+            logger.warning(text)
+
+    def _emit_pending_turn_resume(self) -> None:
+        """The parked sentence is going out now that a client can be built."""
+        from ms_agent.llm.credentials import PENDING_TURN_RESUME
+        if self._event_sink is not None:
+            from ms_agent.ui.events import Notice
+            # Not ``info``: that level is drawn as a command panel. This is
+            # one status line, same weight as the other dim notices.
+            self._event_sink.emit(
+                Notice(level='status', text=PENDING_TURN_RESUME))
+        else:
+            logger.info(PENDING_TURN_RESUME)
+
+    def _llm_credentials_present(self) -> bool:
+        """True when a client can be built, so the waiting sentence can run."""
+        from ms_agent.llm.llm import LLM
+        try:
+            LLM.from_config(self.config)
+        except Exception:
+            return False
+        return True
+
+    def _bind_memory_llm(self) -> None:
+        """Point memory tools at the client that was just built."""
+        for orch in list(getattr(self, 'memory_tools', None) or []):
+            set_llm = getattr(orch, 'set_llm', None)
+            if set_llm is None or self.llm is None:
+                continue
+            try:
+                set_llm(self.llm)
+            except Exception:
+                logger.debug('memory llm rebind skipped', exc_info=True)
+
+    async def _ensure_llm_ready(self, messages):
+        """Build a real LLM after the first prompt, looping on missing keys."""
+        from ms_agent.llm.credentials import client_rejected_missing_key
+        if not getattr(self.llm, '_setup_stub', False) and self.llm is not None:
+            return messages
+        self._credential_reprompted = False
+        waited = False
+        while True:
+            try:
+                self.prepare_llm()
+                if self.runtime is not None:
+                    self.runtime.llm = self.llm
+                self._bind_memory_llm()
+                if (waited and not self._credential_reprompted
+                        and isinstance(messages, str) and messages.strip()):
+                    self._emit_pending_turn_resume()
+                return messages
+            except Exception as e:
+                if not (self._interactive and client_rejected_missing_key(e)):
+                    raise
+                waited = True
+                self._stub_llm_for_setup()
+                if self.runtime is not None:
+                    self.runtime.llm = self.llm
+                self._emit_credential_setup(e)
+                from ms_agent.command.interactive import InteractiveSession
+                session = InteractiveSession(
+                    self._get_command_router(),
+                    source='tui'
+                    if self._input_source is not None else 'cli',
+                    input_source=self._input_source,
+                    event_sink=self._event_sink)
+                turn = await session.run_turn(
+                    messages=None,
+                    runtime=self.runtime,
+                    retry_when=self._llm_credentials_present)
+                if turn.action == 'quit':
+                    self.runtime.should_stop = True
+                    return None
+                if turn.text:
+                    messages = turn.text
+                    self._pending_attachments = turn.attachments
+                    self._credential_reprompted = True
+
+    async def _hold_turn_until_llm_ready(self, messages, step_end_len) -> None:
+        """A cleared key waits the same way a session that never had one does.
+
+        The line that arrived with no client is not sent and not logged.
+        The next line the user submits is, once a client can be built.
+        Slash commands keep working. Quit ends the session. The turn is
+        not failed, and the yellow setup panel is not used.
+        """
+        if not getattr(self.llm, '_setup_stub', False):
+            return
+        pending = None
+        query = ''
+        if (len(messages) > step_end_len
+                and getattr(messages[-1], 'role', None) == 'user'):
+            pending = messages[step_end_len:]
+            content = pending[-1].content
+            query = content if isinstance(content, str) else ''
+            self._pending_attachments = getattr(
+                pending[-1], 'attachments', None)
+            del messages[step_end_len:]
+        try:
+            ready = await self._ensure_llm_ready(query)
+        except Exception:
+            if pending is not None:
+                messages.extend(pending)
+            raise
+        if self.runtime.should_stop or ready is None:
+            self.runtime.should_stop = True
+            return
+        if pending is not None and not getattr(
+                self, '_credential_reprompted', False):
+            messages.extend(pending)
+            return
+        if isinstance(ready, str) and ready:
+            messages.append(
+                Message(
+                    role='user',
+                    content=ready,
+                    attachments=getattr(self, '_pending_attachments', None)
+                    or []))
 
     def prepare_runtime(self):
         """Initialize the runtime context."""
@@ -2431,10 +2686,16 @@ class LLMAgent(Agent):
 
         config, _messages = read_history(self.output_dir, self.tag)
         if config is not None and _messages is not None:
+            # The yaml on disk has no keys. Fill them from settings / mcp.json
+            # so this legacy resume does not ask for the key again.
+            from ms_agent.utils.history_secrets import refill_history_config
+            refill_history_config(config, getattr(self, 'output_dir', None))
             if hasattr(config, 'runtime'):
                 runtime = Runtime(llm=self.llm)
                 runtime.from_dict(config.runtime)
                 delattr(config, 'runtime')
+                if self.mcp_runtime is not None:
+                    runtime._mcp_runtime = self.mcp_runtime
             else:
                 runtime = self.runtime
             if _messages[-1].role == 'tool':
@@ -2672,7 +2933,14 @@ class LLMAgent(Agent):
             # prompt below and InputCallback registration just after.
             self._interactive = self._resolve_interactive(messages)
             self.register_callback_from_config()
-            self.prepare_llm()
+            from ms_agent.llm.credentials import client_rejected_missing_key
+            try:
+                self.prepare_llm()
+            except Exception as e:
+                if not (self._interactive and client_rejected_missing_key(e)):
+                    raise
+                self._stub_llm_for_setup()
+                self._emit_credential_setup(e)
             self.prepare_runtime()
             await self.prepare_tools()
             await self.prepare_skills()
@@ -2715,6 +2983,8 @@ class LLMAgent(Agent):
                             await self.cleanup_tools()
                             return
                         messages = turn.text
+                        if self._on_user_turn is not None:
+                            await self._on_user_turn(None)
                         # create_messages() below builds the user Message from
                         # this string, so hand the turn's attachments over
                         # out-of-band rather than widening that signature.
@@ -2729,6 +2999,11 @@ class LLMAgent(Agent):
                             'No query provided. Pass --query, pipe input via '
                             'stdin, or run in an interactive terminal.')
                     messages = piped
+
+            messages = await self._ensure_llm_ready(messages)
+            if self.runtime.should_stop:
+                await self.cleanup_tools()
+                return
 
             # Load history and restore state
             restored_from_log = False
@@ -2814,6 +3089,13 @@ class LLMAgent(Agent):
                     self.log_output('[' + message.role + ']:')
                     self.log_output(message.content)
             while not self.runtime.should_stop:
+                # A cleared key leaves a placeholder. Wait here, before
+                # step(), the same way a session that never had a key waits.
+                if getattr(self.llm, '_setup_stub', False):
+                    await self._hold_turn_until_llm_ready(
+                        messages, len(messages))
+                    if self.runtime.should_stop:
+                        break
                 # Rebuild context view from SessionLog (non-destructive
                 # compression). This is the canonical history for the round, so
                 # it must run before the per-round augmentations below.
@@ -2914,6 +3196,14 @@ class LLMAgent(Agent):
                     await self.loop_callback('after_tool_call', messages)
                 else:
                     await self.after_tool_call(messages)
+                    if (self._on_user_turn is not None
+                            and len(messages) > step_end_len):
+                        await self._on_user_turn(messages)
+                    # Drop happened on this line. Hold before the line is logged,
+                    # so a missing key matches a session that never had one.
+                    await self._hold_turn_until_llm_ready(messages, step_end_len)
+                    if self.runtime.should_stop:
+                        break
                 resume_waiting = False
                 # New user turn (interactive multi-turn): attach the durable
                 # augmentations BEFORE the slice below persists them — same
@@ -3004,11 +3294,22 @@ class LLMAgent(Agent):
                     self.session_log.set_metadata_field('status', 'error')
                 except Exception:
                     pass
-            if hasattr(self.config, 'help'):
+            # TUI/WebUI already rendered ErrorRaised. The yaml `help` blurb
+            # ("A commonly use config…") is for headless CLI, not a second
+            # crash dump in an interactive session.
+            if self._event_sink is None and hasattr(self.config, 'help'):
                 logger.error(
                     f'[{self.tag}] Runtime error, please follow the instructions:\n\n {self.config.help}'
                 )
             raise e
+        finally:
+            # CancelledError / GeneratorExit skip the Exception handler and
+            # used to leave streamable_http owner tasks for the event-loop
+            # shutdown to cancel — that is what dumps the MCP SDK traceback.
+            try:
+                await self.cleanup_tools()
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                logger.debug('run_loop cleanup_tools failed', exc_info=True)
 
     async def run(
             self, messages: Union[List[Message], str], **kwargs

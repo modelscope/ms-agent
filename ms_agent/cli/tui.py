@@ -78,6 +78,7 @@ class TuiCMD(CLICommand):
         import importlib.resources as importlib_resources
 
         config = self.args.config
+        explicit_config = bool(config)
         if not config:
             # Fall back to the packaged default agent.yaml.
             default_config = importlib_resources.files('ms_agent').joinpath(
@@ -94,4 +95,5 @@ class TuiCMD(CLICommand):
             work_dir=self.args.work_dir,
             emit_events=self.args.emit_events,
             mcp_server_file=self.args.mcp_server_file,
+            explicit_config=explicit_config,
         )

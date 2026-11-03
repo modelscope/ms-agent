@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional, Union
 
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
+from ms_agent.tools.code.local_code_executor import drop_unknown_call_args
 from ms_agent.tools.code.sandbox_manager import SandboxManagerFactory
 from ms_agent.utils import get_logger
 from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR
@@ -505,7 +506,7 @@ class CodeExecutionTool(ToolBase):
 
         try:
             method = getattr(self, tool_name)
-            return await method(**tool_args)
+            return await method(**drop_unknown_call_args(method, tool_args or {}))
         except AttributeError:
             return json.dumps(
                 {

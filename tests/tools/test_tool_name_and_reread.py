@@ -36,6 +36,33 @@ def test_ambiguous_shorthand_is_not_guessed():
     assert resolved is None
 
 
+def test_unique_suffix_resolves_with_the_same_note():
+    manager = _manager_with(
+        ['skills---skills_list', 'code_executor---shell_executor'])
+    resolved, note = manager._resolve_tool_name('skills_list')
+    assert resolved == 'skills---skills_list'
+    assert 'resolved to' in note
+    assert 'skills---skills_list' in note
+
+
+def test_tool_segment_containing_separator_is_the_suffix():
+    manager = _manager_with(['srv---alpha---beta'])
+    resolved, note = manager._resolve_tool_name('alpha---beta')
+    assert resolved == 'srv---alpha---beta'
+    assert 'resolved to' in note
+    assert manager._resolve_tool_name('beta')[0] is None
+
+
+def test_shared_suffix_is_not_guessed():
+    manager = _manager_with(['a---skills_list', 'b---skills_list'])
+    assert manager._resolve_tool_name('skills_list')[0] is None
+
+
+def test_fuzzy_neighbour_is_not_renamed():
+    manager = _manager_with(['code_executor---shell_executor'])
+    assert manager._resolve_tool_name('shell_command')[0] is None
+
+
 def test_unknown_name_reports_candidates_not_a_traceback():
     manager = _manager_with(
         ['file_system---read_file', 'file_system---write_file'])

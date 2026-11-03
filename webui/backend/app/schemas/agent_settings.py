@@ -18,20 +18,21 @@ class AgentSettings(BaseModel):
     default_provider_id: str | None = None
     default_model_id: str | None = None
 
-    # Inherited by newly-created projects.
-    default_memory_enabled: bool = True
-    default_memory_backend: MemoryBackend = "file"
+    # Inherited by newly-created projects. None on PUT = leave unchanged
+    # (a missing bool must not fall back to True and silently turn memory on).
+    default_memory_enabled: bool | None = None
+    default_memory_backend: MemoryBackend | None = None
 
     # Vector-memory model configuration. All None = follow the conversation
     # model/provider — explicit values pin fact extraction / embeddings to a
     # model of the user's choosing, independent of what chat uses.
     memory_llm_provider_id: str | None = None
     memory_llm_model: str | None = None
-    memory_embed_mode: MemoryEmbedMode = "provider"
+    memory_embed_mode: MemoryEmbedMode | None = None
     memory_embed_provider_id: str | None = None
     memory_embed_model: str | None = None
     memory_recall_top_k: int | None = None
 
     # Global auto-attach masters — projects can override per-scope.
-    global_mcp_auto_attach: bool = True
-    global_skill_auto_attach: bool = True
+    global_mcp_auto_attach: bool | None = None
+    global_skill_auto_attach: bool | None = None

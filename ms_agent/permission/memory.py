@@ -1,8 +1,8 @@
 """PermissionMemory: persist user ``allow_always`` decisions across sessions.
 
 Two storage scopes:
-  - Project: ``.ms_agent/permission_memory.json``
-  - Global:  ``~/.ms_agent/permission_memory.json``
+  - Project: ``<work>/.ms_agent/permission_memory.json``
+  - Global:  ``<MS_AGENT_HOME>/permission_memory.json`` (default ``~/.ms_agent``)
 
 Session-level memory (``allow_session``) lives only in-process.
 """
@@ -45,8 +45,8 @@ class PermissionMemory:
         if global_path is not None:
             self._global_file = Path(global_path)
         else:
-            self._global_file = Path.home(
-            ) / '.ms_agent' / 'permission_memory.json'
+            from ms_agent.project.paths import global_home
+            self._global_file = global_home() / 'permission_memory.json'
 
         self._project_entries: list[MemoryEntry] = []
         self._global_entries: list[MemoryEntry] = []

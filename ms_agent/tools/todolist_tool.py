@@ -107,9 +107,17 @@ class TodoListTool(ToolBase):
         _ensure_dir(self._lock_dir())
 
     def _paths(self) -> _PlanPaths:
+        # Absolute filenames (WebUI / TUI session dirs) win; relative ones
+        # stay under output_dir as a project-shared plan.
+        plan_json = self._plan_filename
+        plan_md = self._plan_md_filename
+        if not os.path.isabs(plan_json):
+            plan_json = os.path.join(self.output_dir, plan_json)
+        if not os.path.isabs(plan_md):
+            plan_md = os.path.join(self.output_dir, plan_md)
         return _PlanPaths(
-            plan_json=os.path.join(self.output_dir, self._plan_filename),
-            plan_md=os.path.join(self.output_dir, self._plan_md_filename),
+            plan_json=plan_json,
+            plan_md=plan_md,
             lock_dir=self._lock_dir(),
         )
 

@@ -11,6 +11,8 @@ import pytest
 
 from ms_agent.cli.agent import AgentCMD
 from ms_agent.cli.cli import run_cmd
+from ms_agent.cli.tui import TuiCMD
+from ms_agent.cli.ui import UICMD
 
 
 def test_agent_upload_positional_path_is_rejected(monkeypatch, capsys):
@@ -80,3 +82,49 @@ def test_non_agent_command_keeps_unknown_args(monkeypatch):
 
     run_cmd()
     assert dispatched.get('ok')
+
+
+def test_bare_ms_agent_starts_tui(monkeypatch):
+    monkeypatch.setattr(sys, 'argv', ['ms-agent'])
+    dispatched = {}
+    monkeypatch.setattr(
+        TuiCMD, 'execute', lambda self: dispatched.setdefault('ok', True))
+
+    run_cmd()
+    assert dispatched.get('ok')
+
+
+def test_bare_options_are_tui_options(monkeypatch):
+    monkeypatch.setattr(sys, 'argv', ['ms-agent', '--work-dir', '/tmp/work'])
+    seen = {}
+
+    def _execute(self):
+        seen['work_dir'] = self.args.work_dir
+
+    monkeypatch.setattr(TuiCMD, 'execute', _execute)
+    run_cmd()
+    assert seen['work_dir'] == '/tmp/work'
+
+
+def test_explicit_ui_is_not_rewritten_to_tui(monkeypatch):
+    monkeypatch.setattr(sys, 'argv', ['ms-agent', 'ui'])
+    dispatched = {}
+    monkeypatch.setattr(
+        UICMD, 'execute', lambda self: dispatched.setdefault('ui', True))
+    monkeypatch.setattr(
+        TuiCMD, 'execute', lambda self: dispatched.setdefault('tui', True))
+
+    run_cmd()
+    assert dispatched == {'ui': True}
+
+
+def test_unknown_word_still_prints_help(monkeypatch):
+    monkeypatch.setattr(sys, 'argv', ['ms-agent', 'not-a-command'])
+    monkeypatch.setattr(
+        TuiCMD, 'execute',
+        lambda self: (_ for _ in ()).throw(
+            AssertionError('tui must not start')))
+
+    with pytest.raises(SystemExit) as exc_info:
+        run_cmd()
+    assert exc_info.value.code == 2
