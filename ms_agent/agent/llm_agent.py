@@ -10,7 +10,7 @@ import sys
 import threading
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import aclosing, contextmanager
 from copy import deepcopy
 from omegaconf import DictConfig, OmegaConf
 from pathlib import Path
@@ -2851,9 +2851,11 @@ class LLMAgent(Agent):
                 pre_step_len = len(messages)
                 if not resume_waiting:
                     try:
-                        async for messages in self.step(messages):
-                            messages = self._apply_pending_rollback(messages)
-                            yield messages
+                        async with aclosing(self.step(messages)) as steps:
+                            async for messages in steps:
+                                messages = self._apply_pending_rollback(
+                                    messages)
+                                yield messages
                     except (asyncio.CancelledError, GeneratorExit):
                         # The turn was interrupted mid-round (task cancelled, or the
                         # consumer closed the generator). Round persistence below
@@ -3020,9 +3022,11 @@ class LLMAgent(Agent):
                     self.config, 'generation_config.stream', True, merge=True)
 
                 async def stream_generator():
-                    async for _chunk in self.run_loop(
-                            messages=messages, **kwargs):
-                        yield _chunk
+                    async with aclosing(
+                            self.run_loop(messages=messages,
+                                          **kwargs)) as chunks:
+                        async for _chunk in chunks:
+                            yield _chunk
 
                 return stream_generator()
             else:
