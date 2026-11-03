@@ -2,6 +2,7 @@
 import asyncio
 import time
 from collections import deque
+from functools import partial
 from typing import Callable
 
 from ms_agent.utils import get_logger
@@ -128,7 +129,8 @@ class RateLimiter:
             else:
                 # Execute sync function in thread pool
                 loop = asyncio.get_event_loop()
-                return await loop.run_in_executor(None, func, *args, **kwargs)
+                return await loop.run_in_executor(
+                    None, partial(func, *args, **kwargs))
 
     def get_stats(self) -> dict:
         """
