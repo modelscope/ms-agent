@@ -240,6 +240,13 @@ def get_content_fetcher(fetcher_type: str = 'jina_reader',
             include_usage=bool(
                 kwargs.get('tavily_extract_include_usage', False)),
         )
+    if fetcher_type == 'outcrawl_scrape':
+        from ms_agent.tools.search.outcrawl.fetcher import \
+            OutcrawlScrapeFetcher
+        return OutcrawlScrapeFetcher(
+            api_key=kwargs.get('outcrawl_api_key'),
+            timeout=float(kwargs.get('timeout', 45.0)),
+        )
     # Future: add more fetchers
     # elif fetcher_type == 'docling':
     #     return DoclingContentFetcher(**kwargs)
@@ -271,7 +278,7 @@ def get_search_engine_class(engine_type: str) -> Type[SearchEngine]:
     Get search engine class by type.
 
     Args:
-        engine_type: One of 'exa', 'serpapi', 'arxiv'
+        engine_type: One of 'exa', 'serpapi', 'arxiv', 'tavily', 'outcrawl'
 
     Returns:
         SearchEngine class (not instance)
@@ -290,6 +297,9 @@ def get_search_engine_class(engine_type: str) -> Type[SearchEngine]:
     elif engine_type == 'tavily':
         from ms_agent.tools.search.tavily import TavilySearch
         return TavilySearch
+    elif engine_type == 'outcrawl':
+        from ms_agent.tools.search.outcrawl import OutcrawlSearch
+        return OutcrawlSearch
     else:
         logger.warning(
             f"Unknown search engine '{engine_type}', falling back to arxiv")
@@ -304,7 +314,7 @@ def get_search_engine(engine_type: str,
     Get search engine instance by type.
 
     Args:
-        engine_type: One of 'exa', 'serpapi', 'arxiv'
+        engine_type: One of 'exa', 'serpapi', 'arxiv', 'tavily', 'outcrawl'
         api_key: API key for the search engine (if required).
             For Exa, this can be a comma-separated string of multiple keys
             to enable automatic key rotation on credit exhaustion.
@@ -337,6 +347,12 @@ def get_search_engine(engine_type: str,
             api_key=api_key or os.getenv('TAVILY_API_KEY'),
             request_timeout=float(kwargs.get('request_timeout', 120.0)),
         )
+    elif engine_type == 'outcrawl':
+        from ms_agent.tools.search.outcrawl import OutcrawlSearch
+        return OutcrawlSearch(
+            api_key=api_key or os.getenv('OUTCRAWL_API_KEY'),
+            request_timeout=float(kwargs.get('request_timeout', 60.0)),
+        )
     else:
         logger.warning(
             f"Unknown search engine '{engine_type}', falling back to arxiv")
@@ -361,7 +377,7 @@ def build_search_request(engine_type: str,
 class WebSearchTool(ToolBase):
     """
     Unified web search tool for agents. It can search the web and fetch page content.
-    - Search via multiple engines (Exa, SerpAPI, Arxiv, Tavily)
+    - Search via multiple engines (Exa, SerpAPI, Arxiv, Tavily, Outcrawl)
     - Dynamic tool definitions based on configured engines
     - Auto-fetch and parse page content
     - Configurable content fetcher (jina_reader, docling, etc.)
@@ -372,7 +388,7 @@ class WebSearchTool(ToolBase):
         # Single engine mode:
         tools:
           web_search:
-            engine: exa  # or 'serpapi', 'arxiv'
+            engine: exa  # or 'serpapi', 'arxiv', 'tavily', 'outcrawl'
             api_key: xxxxxxxx
             fetcher: jina_reader
             fetch_content: true
@@ -386,6 +402,7 @@ class WebSearchTool(ToolBase):
               - arxiv    # Provides arxiv_search tool
             exa_api_key: $EXA_API_KEY
             serpapi_api_key: $SERPAPI_API_KEY
+            outcrawl_api_key: $OUTCRAWL_API_KEY
             fetch_content: true
             # Optional: asyncio deadline per URL (omit = auto from fetch_timeout/retries).
             # per_url_fetch_timeout: 0
@@ -394,7 +411,7 @@ class WebSearchTool(ToolBase):
     SERVER_NAME = 'web_search'
 
     # Registry of supported search engines
-    SUPPORTED_ENGINES = ('exa', 'serpapi', 'arxiv', 'tavily')
+    SUPPORTED_ENGINES = ('exa', 'serpapi', 'arxiv', 'tavily', 'outcrawl')
 
     # Process-wide (class-level) usage tracking for summarization calls.
     # This is intentionally separate from LLMAgent usage totals.
@@ -510,6 +527,9 @@ class WebSearchTool(ToolBase):
             'tavily': (getattr(tool_cfg, 'tavily_api_key', None)
                        or os.getenv('TAVILY_API_KEY'))
             if tool_cfg else os.getenv('TAVILY_API_KEY'),
+            'outcrawl': (getattr(tool_cfg, 'outcrawl_api_key', None)
+                         or os.getenv('OUTCRAWL_API_KEY'))
+            if tool_cfg else os.getenv('OUTCRAWL_API_KEY'),
         }
 
         # Tavily search defaults from optional `tavily:` sub-block in YAML
@@ -531,6 +551,10 @@ class WebSearchTool(ToolBase):
         self._tavily_request_timeout = float(
             getattr(tool_cfg, 'tavily_request_timeout', 120.0)
             or 120.0) if tool_cfg else 120.0
+
+        self._outcrawl_request_timeout = float(
+            getattr(tool_cfg, 'outcrawl_request_timeout', 60.0)
+            or 60.0) if tool_cfg else 60.0
 
         # SerpApi provider (google, bing, baidu)
         self._serpapi_provider = getattr(tool_cfg, 'serpapi_provider',
@@ -767,6 +791,11 @@ class WebSearchTool(ToolBase):
                         api_key=self._api_keys.get('tavily'),
                         request_timeout=self._tavily_request_timeout,
                     )
+                elif engine_type == 'outcrawl':
+                    self._engines[engine_type] = engine_cls(
+                        api_key=self._api_keys.get('outcrawl'),
+                        request_timeout=self._outcrawl_request_timeout,
+                    )
                 else:  # arxiv
                     self._engines[engine_type] = engine_cls()
 
@@ -783,6 +812,7 @@ class WebSearchTool(ToolBase):
             'timeout': self._fetch_timeout,
             'retries': self._fetch_retries,
             'tavily_api_key': self._api_keys.get('tavily'),
+            'outcrawl_api_key': self._api_keys.get('outcrawl'),
             'direct_fetch_fallback': self._jina_direct_fetch_fallback,
             'direct_fetch_timeout': self._jina_direct_fetch_timeout,
             'playwright_fetch_fallback': self._jina_playwright_fetch_fallback,
@@ -1629,3 +1659,7 @@ class WebSearchTool(ToolBase):
     async def tavily_search(self, **kwargs) -> str:
         """Search using Tavily engine."""
         return await self._execute_search('tavily', kwargs)
+
+    async def outcrawl_search(self, **kwargs) -> str:
+        """Search using Outcrawl engine."""
+        return await self._execute_search('outcrawl', kwargs)
