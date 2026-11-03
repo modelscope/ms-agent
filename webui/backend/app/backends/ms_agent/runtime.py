@@ -239,7 +239,8 @@ def _ask_timeout_for(permission_mode: str | None) -> float | None:
     is the opposite statement, and there a bound is what keeps an unattended
     session from parking on a question no one will read.
     """
-    if (permission_mode or "").strip().lower() in ("auto", "full", "full_access"):
+    if (permission_mode or "").strip().lower().replace("_", "-") in (
+            "auto", "full", "full-access", "strict"):
         return FULL_ACCESS_ASK_TIMEOUT_S
     return None
 

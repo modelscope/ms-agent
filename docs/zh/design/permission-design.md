@@ -121,11 +121,13 @@
 
 **三种模式说明：**
 
-| 模式 | SafetyGuard `ask` 处理 | Enforcer 行为 | 适用场景 |
+| 模式 | SafetyGuard `ask`（拿不准） | Enforcer 行为 | 适用场景 |
 |------|----------------------|--------------|----------|
-| `auto` | 按 category 分类：input 替换→allow, output 替换/解析失败/cd+write/变量展开→deny, 读超范围→看 read_policy | **blacklist deny** → 其余 allow（无弹窗） | 容器/沙箱/无人值守 |
-| `strict` | 全部 → deny | **blacklist deny** → 其余 allow | 高安全要求、无沙箱、无人值守 |
-| `interactive` | 保持 ask → 交给 handler | 完整流程（blacklist→whitelist→memory→handler.ask） | 有人值守（CLI/Web/TUI） |
+| `ask` | 保持 ask，问用户 | 完整流程（blacklist→whitelist→memory→handler.ask） | 有人值守（CLI/Web/TUI） |
+| `auto` | 交给模型或独立 agent 决策；结果仍不确定且有人在场时再问用户，否则拒绝 | **blacklist deny** → 其余 allow（安全疑点不走这条） | 替用户决策 |
+| `full-access` | 全部放行 | **blacklist deny** → 其余 allow | 只拦明确危险的调用 |
+
+旧名仍可用：`restricted` / `interactive` → `ask`，`delegate` → `auto`，`strict` → `full-access`（行为已改为放行，不再拒绝拿不准的调用）。明确的安全拒绝在三种模式下都不放行。网络类 ask rule（`curl` / `ssh` 等）在任何模式下仍要确认。
 
 ---
 
@@ -138,7 +140,7 @@
 ```python
 @dataclass(frozen=True)
 class PermissionConfig:
-    mode: Literal['auto', 'strict', 'interactive']  # 兼容旧名 restricted → interactive
+    mode: Literal['ask', 'auto', 'full-access']  # 旧名 restricted/interactive → ask，strict → full-access
     whitelist: tuple[str, ...]      # 允许规则
     blacklist: tuple[str, ...]      # 拒绝规则
     safety: SafetyConfig            # 安全底线配置（传给 SafetyGuard）
@@ -1279,7 +1281,7 @@ WPK 的 `_shell_looks_network()` 硬编码阻止 curl/wget/ssh 等命令。这�
 ```yaml
 permission:
   # --- 外层：用户意图 ---
-  mode: auto  # auto | strict | interactive（兼容旧名 restricted → interactive）
+  mode: ask  # ask | auto | full-access（旧名 restricted/interactive → ask，strict → full-access）
 
   whitelist:
     - "file_system---read_file"

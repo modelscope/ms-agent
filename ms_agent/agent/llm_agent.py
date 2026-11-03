@@ -932,21 +932,24 @@ class LLMAgent(Agent):
         - An explicitly injected handler (``set_permission_handler`` / the
           ``permission_handler`` kwarg) always wins — this is how the TUI /
           WebUI / Server supply their own confirmation UI.
-        - ``interactive`` (alias ``restricted``) in an interactive terminal
-          session -> ``CLIPermissionHandler`` (the ``[y/s/a/e/n]`` prompt),
-          so non-whitelisted tools actually ask the user.
-        - Everything else (``auto`` / ``strict`` / non-interactive) ->
-          ``AutoPermissionHandler`` (SafetyGuard still enforces the floor).
+        - ``ask`` (aliases ``restricted`` / ``interactive``) in an interactive
+          terminal session -> ``CLIPermissionHandler`` (the ``[y/s/a/e/n]``
+          prompt), so non-whitelisted tools actually ask the user. ``auto``
+          uses the same prompt so an uncertain model decision can escalate.
+        - ``full-access`` and non-interactive runs -> ``AutoPermissionHandler``
+          (SafetyGuard still enforces the floor).
         """
         if self._permission_handler is not None:
             return self._permission_handler
         from ms_agent.permission import (AutoPermissionHandler,
-                                         CLIPermissionHandler)
+                                         CLIPermissionHandler,
+                                         normalize_permission_mode)
 
-        # ``PermissionConfig.from_dict`` already normalizes ``restricted`` ->
-        # ``interactive``; accept both so a direct caller passing the raw alias
-        # still gets the interactive prompt (not a silent AutoPermissionHandler).
-        if mode in ('interactive', 'restricted') and self._interactive:
+        try:
+            canonical = normalize_permission_mode(mode)
+        except ValueError:
+            canonical = mode
+        if canonical in ('ask', 'auto') and self._interactive:
             return CLIPermissionHandler()
         return AutoPermissionHandler()
 
@@ -978,10 +981,27 @@ class LLMAgent(Agent):
 
         handler = self._select_permission_handler(perm_config.mode)
         memory = PermissionMemory(project_path=workspace_root)
+        provider = getattr(self, '_permission_decision_provider', None)
+        if provider is None and perm_config.mode == 'auto':
+            provider = self._default_permission_provider(perm_config)
         enforcer = PermissionEnforcer(
-            config=perm_config, handler=handler, memory=memory)
+            config=perm_config,
+            handler=handler,
+            memory=memory,
+            provider=provider,
+        )
 
         return safety_guard, enforcer, perm_config
+
+    def _default_permission_provider(self, perm_config):
+        """The session model, unless config asks for a separate approver."""
+        if perm_config.decision_provider == 'agent':
+            return None
+        llm = getattr(self, 'llm', None)
+        if llm is None or getattr(llm, '_setup_stub', False):
+            return None
+        from ms_agent.permission.provider import LlmDecisionProvider
+        return LlmDecisionProvider(llm)
 
     def set_permission_handler(self, handler) -> None:
         """Inject a custom PermissionHandler (TUI/WebUI/Server) before run."""
@@ -992,14 +1012,13 @@ class LLMAgent(Agent):
 
         Mutates the live ToolManager + enforcer so the next tool call uses the
         new mode without rebuilding the agent (``PermissionConfig`` is frozen,
-        so a replaced copy is swapped in). ``restricted`` normalizes to
-        ``interactive`` (the canonical asking mode).
+        so a replaced copy is swapped in). ``restricted`` and ``interactive``
+        normalize to ``ask``; ``strict`` normalizes to ``full-access``.
         """
         from dataclasses import replace
-        mode = {'restricted': 'interactive'}.get(mode, mode)
-        if mode not in ('auto', 'strict', 'interactive'):
-            raise ValueError(f"Unknown permission mode '{mode}' "
-                             '(auto | restricted | strict | interactive)')
+        from ms_agent.permission.config import normalize_permission_mode
+
+        mode = normalize_permission_mode(mode)
         tm = self.tool_manager
         if tm is not None:
             tm._permission_mode = mode
@@ -1009,6 +1028,9 @@ class LLMAgent(Agent):
             enf = getattr(tm, '_permission_enforcer', None)
             if enf is not None and getattr(enf, '_config', None) is not None:
                 enf._config = replace(enf._config, mode=mode)
+                if (mode == 'auto' and getattr(enf, '_provider', None) is None):
+                    enf._provider = self._default_permission_provider(
+                        enf._config)
         return mode
 
     async def prepare_tools(self):

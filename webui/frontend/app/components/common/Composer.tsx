@@ -184,7 +184,7 @@ export function Composer({
   const [filesExpanded, setFilesExpanded] = useState(false)
   // Drives the project-picker caret flip (antd Dropdown owns the panel).
   const [projectMenuOpen, setProjectMenuOpen] = useState(false)
-  // Project-level authorization mode selector (restricted / full access).
+  // Project-level authorization mode selector (ask / auto / full-access).
   const [permMenuOpen, setPermMenuOpen] = useState(false)
   // Optimistic override after a switch — reset when the project changes.
   const [permModeLocal, setPermModeLocal] = useState<PermissionMode | null>(
@@ -663,7 +663,7 @@ export function Composer({
   // wins until the project changes). Persisted project-side; live runtimes are
   // hot-switched by the backend, so it applies to the current turn's next call.
   const permMode: PermissionMode =
-    permModeLocal ?? effectiveProject?.permission_mode ?? 'restricted'
+    permModeLocal ?? effectiveProject?.permission_mode ?? 'ask'
   useEffect(() => {
     setPermModeLocal(null)
   }, [effectiveProjectId])
@@ -1487,22 +1487,29 @@ export function Composer({
                               selectedKeys: [permMode],
                               items: [
                                 {
-                                  key: 'restricted',
+                                  key: 'ask',
                                   label: t.home.permAlwaysAsk,
-                                  onClick: () => switchPermMode('restricted')
+                                  onClick: () => switchPermMode('ask')
                                 },
                                 {
                                   key: 'auto',
-                                  label: t.home.permFullAccess,
+                                  label: t.home.permDecide,
                                   onClick: () => switchPermMode('auto')
+                                },
+                                {
+                                  key: 'full-access',
+                                  label: t.home.permFullAccess,
+                                  onClick: () => switchPermMode('full-access')
                                 }
                               ]
                             }}
                           >
                             <PillButton open={permMenuOpen}>
-                              {permMode === 'auto'
+                              {permMode === 'full-access'
                                 ? t.home.permFullAccess
-                                : t.home.permAlwaysAsk}
+                                : permMode === 'auto'
+                                  ? t.home.permDecide
+                                  : t.home.permAlwaysAsk}
                             </PillButton>
                           </Dropdown>
 

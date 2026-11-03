@@ -9,6 +9,15 @@ def subparser_func(args):
     return TuiCMD(args)
 
 
+def _permission_mode(value: str) -> str:
+    from ms_agent.permission.config import normalize_permission_mode
+
+    try:
+        return normalize_permission_mode(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
 class TuiCMD(CLICommand):
     """Terminal UI: a lightweight REPL over the LLMAgent lifecycle.
 
@@ -45,11 +54,12 @@ class TuiCMD(CLICommand):
             help='Path to a .env file (defaults to ./.env).')
         parser.add_argument(
             '--permission_mode',
-            type=str,
-            default='restricted',
-            choices=['auto', 'strict', 'restricted', 'interactive'],
-            help='Permission mode for tool calls. Default `restricted` so '
-            'non-whitelisted tools ask for confirmation.')
+            type=_permission_mode,
+            default='ask',
+            help='Permission mode for tool calls: ask (confirm uncertain '
+            'calls with you), auto (a model decides them), full-access '
+            '(allow them). Default `ask`. Older names restricted, '
+            'interactive, strict, delegate are accepted.')
         parser.add_argument(
             '--trust_remote_code',
             action='store_true',

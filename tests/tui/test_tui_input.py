@@ -40,14 +40,14 @@ def test_satisfies_input_source_protocol():
 
 
 def test_toolbar_shows_state():
-    state = TuiState(model='qwen3.7-plus', perm='restricted',
+    state = TuiState(model='qwen3.7-plus', perm='ask',
                      session_name='my-session')
     state.total_prompt_tokens = 100
     state.total_completion_tokens = 20
     tb = PromptToolkitInput(state)._toolbar()
     assert 'qwen3.7-plus' in tb
     assert '120 tok' in tb
-    assert 'restricted' in tb
+    assert 'ask' in tb
     assert 'my-session' in tb
 
 

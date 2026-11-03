@@ -85,7 +85,7 @@ ms-agent tui --config path/to/agent.yaml
 | `--config` | `agent.yaml` 路径（或任务目录 / ModelScope id） | 内置 `agent.yaml` |
 | `--work-dir`, `--work_dir` | 工作/项目目录（等同 `output_dir`） | 当前目录 |
 | `--env` | `.env` 文件路径 | `./.env` |
-| `--permission_mode` | 工具调用权限模式：`auto` / `strict` / `restricted` / `interactive` | `restricted` |
+| `--permission_mode` | 工具调用权限模式：`ask`（拿不准的问你）/ `auto`（拿不准的交给模型决策）/ `full-access`（拿不准的放行）。旧名 `restricted`、`interactive`、`strict`、`delegate` 仍可用 | `ask` |
 | `--trust_remote_code` | 允许加载配置引用的外部代码（开关） | `false` |
 | `--mcp-server-file`, `--mcp_server_file` | MCP servers JSON 文件路径 | `None` |
 | `--emit-events`, `--emit_events` | 将结构化 AgentEvent 以 JSON Lines 追加到该文件 | `None` |

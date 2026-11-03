@@ -90,7 +90,7 @@ ms-agent tui --config path/to/agent.yaml
 | `--config` | Path to an `agent.yaml` (or a task dir / ModelScope id) | built-in `agent.yaml` |
 | `--work-dir`, `--work_dir` | Working/project directory (== `output_dir`) | current directory |
 | `--env` | Path to a `.env` file | `./.env` |
-| `--permission_mode` | Permission mode for tool calls: `auto` / `strict` / `restricted` / `interactive` | `restricted` |
+| `--permission_mode` | Permission mode for tool calls: `ask` (confirm uncertain calls with you) / `auto` (a model decides them) / `full-access` (allow them). Older names `restricted`, `interactive`, `strict`, and `delegate` are still accepted | `ask` |
 | `--trust_remote_code` | Allow loading external code referenced by the config (flag) | `false` |
 | `--mcp-server-file`, `--mcp_server_file` | Path to an MCP servers JSON file | `None` |
 | `--emit-events`, `--emit_events` | Also append every structured AgentEvent as JSON lines to this file | `None` |

@@ -5,9 +5,9 @@
 
 export type MemoryBackend = 'file' | 'vector'
 
-/** Project-level tool authorization: 'restricted' = every non-whitelisted
- * tool asks (default), 'auto' = full access, no asks. */
-export type PermissionMode = 'restricted' | 'auto'
+/** Project-level tool authorization: 'ask' confirms uncertain calls (default),
+ * 'auto' lets a model decide them, 'full-access' allows them. */
+export type PermissionMode = 'ask' | 'auto' | 'full-access'
 
 export interface Project {
   id: string

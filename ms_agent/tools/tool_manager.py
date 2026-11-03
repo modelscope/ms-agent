@@ -745,7 +745,7 @@ class ToolManager:
                                     f'Blocked by safety policy (requires confirmation): {resolved.reason}',
                                     'is_error': True
                                 }
-                            # interactive mode: force the enforcer to confirm with
+                            # ask mode: force the enforcer to confirm with
                             # the user; whitelist/memory must not bypass a safety
                             # ask (REVIEW P1-2) — except for the categories a
                             # user can reasonably settle once for a project,

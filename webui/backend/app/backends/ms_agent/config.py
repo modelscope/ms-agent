@@ -722,21 +722,47 @@ _PERMISSION_WHITELIST = [
 ]
 
 
+def read_project_permission_mode(meta: dict | None) -> str:
+    """Canonical mode for a project sidecar.
+
+    Sidecars written before the rename stored ``restricted`` (ask the user)
+    and ``auto`` (full access) and have no ``permission_mode_v``. Those map
+    to ``ask`` and ``full-access``. A write stamps version 2, after which
+    ``auto`` means the model decides uncertain calls.
+    """
+    meta = meta or {}
+    raw = meta.get("permission_mode")
+    legacy = int(meta.get("permission_mode_v") or 1) < 2
+    if legacy:
+        value = (raw or "restricted").strip().lower()
+        if value in ("", "restricted", "interactive", "ask"):
+            return "ask"
+        if value in ("auto", "full", "full_access", "full-access", "strict"):
+            return "full-access"
+        return "ask"
+    from ms_agent.permission.config import normalize_permission_mode
+
+    try:
+        return normalize_permission_mode(raw or "ask")
+    except ValueError:
+        return "ask"
+
+
 def _apply_webui_permission(config, project_mode: str | None = None):
-    """Default this phase to the SDK's restricted (ask) mode.
+    """Default this phase to ask mode.
 
     Non-whitelisted tools suspend on the session's WebPermissionHandler, which
     surfaces an authorization card over SSE and times out to deny. Explicit
     `permission.*` from settings.json / project config still wins — we only
     fill blanks. ``project_mode`` is the UI's per-project override (the
-    composer's restricted/full-access selector, stored in the project sidecar):
-    an explicit user choice, so it beats the fill-blanks default."""
+    composer's ask / auto / full-access selector, already canonical): an
+    explicit user choice, so it beats the fill-blanks default."""
     from omegaconf import OmegaConf
 
-    if project_mode in ("restricted", "auto"):
+    if project_mode in ("ask", "auto", "full-access"):
         OmegaConf.update(config, "permission.mode", project_mode, merge=True)
     elif OmegaConf.select(config, "permission.mode", default=None) is None:
-        OmegaConf.update(config, "permission.mode", "restricted", merge=True)
+        OmegaConf.update(config, "permission.mode", "ask", merge=True)
     if OmegaConf.select(config, "permission.whitelist", default=None) is None:
         OmegaConf.update(
             config, "permission.whitelist", list(_PERMISSION_WHITELIST), merge=True
@@ -1053,7 +1079,7 @@ def _build_agent(project, session, *, event_sink, input_source, mcp_config=None,
     from app.backends.ms_agent import sidecar
 
     meta = _read_metadata("projects", project.id, {}) or {}
-    cfg = _apply_webui_permission(cfg, meta.get("permission_mode"))
+    cfg = _apply_webui_permission(cfg, read_project_permission_mode(meta))
 
     # Route-A shaping (see tui/app.py::_prepare_config).
     shaping = {

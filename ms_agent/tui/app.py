@@ -94,8 +94,13 @@ class TuiApp:
             config, permission_mode, self.work_dir, self._project)
         self.config = config
 
-        mode = str(
+        from ms_agent.permission.config import normalize_permission_mode
+        raw_mode = str(
             getattr(getattr(config, 'permission', None), 'mode', 'auto'))
+        try:
+            mode = normalize_permission_mode(raw_mode)
+        except ValueError:
+            mode = raw_mode
         self.permission_mode = mode
         self._model = str(
             getattr(getattr(config, 'llm', None), 'model', '') or '')
@@ -348,8 +353,10 @@ class TuiApp:
         # a WebUI-seeded settings.json still does not MCP-connect todo_list.
         OmegaConf.update(config, 'tools.todo_list.mcp', False, merge=True)
         if permission_mode:
+            from ms_agent.permission.config import normalize_permission_mode
             OmegaConf.update(
-                config, 'permission.mode', permission_mode, merge=True)
+                config, 'permission.mode',
+                normalize_permission_mode(permission_mode), merge=True)
         # The agent auto-adds InputCallback for interactive runs; drop any
         # listed one so restarts across session switches never double-register.
         cbs = [
@@ -422,18 +429,24 @@ class TuiApp:
                 ctx.runtime.should_stop = True
             return CommandResult(type=CommandResultType.QUIT, content='')
 
+        usage = (
+            'usage: /permission <ask|auto|full-access>\n'
+            '  ask          confirm uncertain calls with you\n'
+            '  auto         a model decides uncertain calls\n'
+            '  full-access  allow uncertain calls')
+
         async def _permission(ctx):
             arg = (ctx.args or '').strip().lower()
-            if arg not in ('auto', 'strict', 'restricted', 'interactive'):
+            if not arg:
                 return CommandResult(
                     type=CommandResultType.MESSAGE,
-                    content=(f'permission mode: {self.state.perm}\n'
-                             'usage: /permission <auto|restricted|strict>'))
+                    content=f'permission mode: {self.state.perm}\n{usage}')
             try:
                 mode = self.agent.set_permission_mode(arg)
             except ValueError as e:
                 return CommandResult(
-                    type=CommandResultType.MESSAGE, content=str(e))
+                    type=CommandResultType.MESSAGE,
+                    content=f'{e}\n{usage}')
             self.state.perm = mode
             self.permission_mode = mode
             return CommandResult(
@@ -443,7 +456,8 @@ class TuiApp:
         self.router.register(
             CommandDef(
                 name='permission',
-                description='Show or switch permission mode',
+                description=('Show or switch permission mode '
+                             '(ask, auto, full-access)'),
                 category='config',
                 aliases=('mode', )), _permission)
         self.router.register(

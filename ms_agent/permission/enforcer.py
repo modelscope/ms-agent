@@ -48,10 +48,12 @@ class PermissionEnforcer:
         config: PermissionConfig,
         handler: PermissionHandler | None = None,
         memory: PermissionMemory | None = None,
+        provider=None,
     ) -> None:
         self._config = config
         self._handler = handler or AutoPermissionHandler()
         self._memory = memory or PermissionMemory()
+        self._provider = provider
         self._matcher = PermissionMatcher()
         # Parallel tool calls (asyncio.gather in ToolManager.parallel_call_tool)
         # reach the handler concurrently. Whether that is safe is the HANDLER's
@@ -112,6 +114,67 @@ class PermissionEnforcer:
         """
         return not isinstance(self._handler, AutoPermissionHandler)
 
+    async def _decide_for_user(
+        self,
+        tool_name: str,
+        tool_args: dict[str, Any],
+        *,
+        context: str,
+        call_id: str,
+    ) -> PermissionDecision:
+        """Let the configured model or agent settle one uncertain call.
+
+        ``allow_once`` and ``deny`` are final. ``uncertain``, a timeout, or a
+        missing provider escalates to the user when someone can answer, and
+        otherwise refuses. A failure is never treated as permission.
+        """
+        from .provider import ProviderDecision, request_provider_decision
+
+        suggestions = generate_suggestions(tool_name, tool_args)
+        if self._provider is None:
+            provider_decision = ProviderDecision(
+                'uncertain', 'No permission decision provider is configured')
+        else:
+            provider_decision = await request_provider_decision(
+                self._provider,
+                tool_name=tool_name,
+                tool_args=tool_args,
+                context=context,
+                suggestions=suggestions,
+                timeout=self._config.provider_timeout,
+            )
+
+        if provider_decision.action == 'allow_once':
+            return PermissionDecision(
+                action='allow',
+                reason=(provider_decision.reason
+                        or 'Decided for you: allow once'),
+            )
+        if provider_decision.action == 'deny':
+            return PermissionDecision(
+                action='deny',
+                reason=(provider_decision.feedback
+                        or provider_decision.reason
+                        or 'Decided for you: deny'),
+            )
+
+        uncertain = (provider_decision.reason
+                     or 'The decision provider was uncertain')
+        if self._can_ask_human():
+            response = await self._ask_user(
+                forced=True,
+                tool_name=tool_name,
+                tool_args=tool_args,
+                context=uncertain,
+                suggestions=suggestions,
+                call_id=call_id,
+            )
+            return self._process_response(response, tool_name, tool_args)
+        return PermissionDecision(
+            action='deny',
+            reason=f'Auto mode was uncertain: {uncertain}',
+        )
+
     def _handler_accepts(self, param: str) -> bool:
         try:
             sig = inspect.signature(self._handler.ask)
@@ -150,6 +213,13 @@ class PermissionEnforcer:
                     action='allow',
                     reason='Allowed by remembered permission',
                 )
+            if self._config.mode == 'auto':
+                return await self._decide_for_user(
+                    tool_name,
+                    tool_args,
+                    context=force_decision.reason or '',
+                    call_id=call_id,
+                )
             suggestions = generate_suggestions(tool_name, tool_args)
             response = await self._ask_user(
                 forced=not rememberable,
@@ -177,12 +247,14 @@ class PermissionEnforcer:
             # written to gate would be worse than refusing.
             return PermissionDecision(
                 action='deny',
-                reason=(f'Ask rule matched: {ask_rule}; no interactive '
-                        'handler is attached to confirm it'),
+                reason=(f'Ask rule matched: {ask_rule}; no ask handler is '
+                        'attached to confirm it'),
             )
 
-        # 2. Auto / strict mode → allow (safety handled by SafetyGuard + ask_resolver)
-        if self._config.mode in ('auto', 'strict') and not ask_rule:
+        # 2. auto / full-access → allow. Uncertain safety calls never reach
+        # this branch: full-access already turned them into allow, and auto
+        # hands them to the decision provider via ``force_decision``.
+        if self._config.mode in ('auto', 'full-access') and not ask_rule:
             return PermissionDecision(
                 action='allow',
                 reason=f'{self._config.mode.capitalize()} mode')
