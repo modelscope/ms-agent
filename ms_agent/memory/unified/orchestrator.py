@@ -349,7 +349,9 @@ class MemoryOrchestrator(Memory):
         status['pending'] = sum(1 for t in self._pending if not t.done())
         return status
 
-    def _set_status(self, state: str, count: Optional[int] = None,
+    def _set_status(self,
+                    state: str,
+                    count: Optional[int] = None,
                     error: Optional[str] = None) -> None:
         self._status.update(
             state=state,
@@ -376,9 +378,8 @@ class MemoryOrchestrator(Memory):
             self._ledger = set(self._ledger_order)
         return self._ledger
 
-    def _ledger_delta(
-            self, msg_dicts: List[Dict[str,
-                                       Any]]) -> List[Dict[str, Any]]:
+    def _ledger_delta(self,
+                      msg_dicts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Conversational messages not yet ingested, in order. Repeated
         identical texts dedup to their first occurrence — a repeat carries no
         new fact, and it keeps the ledger content-addressed (stable across
@@ -396,7 +397,8 @@ class MemoryOrchestrator(Memory):
             delta.append(m)
         return delta
 
-    def _ledger_mark(self, msg_dicts: List[Dict[str, Any]],
+    def _ledger_mark(self,
+                     msg_dicts: List[Dict[str, Any]],
                      persist: bool = True) -> None:
         seen = self._ledger_load()
         added = False
@@ -460,8 +462,14 @@ class MemoryOrchestrator(Memory):
         tool_name: str,
         arguments: Dict[str, Any],
     ) -> str:
-        backend = await self._ensure_started()
-        return await backend.handle_tool_call(tool_name, arguments)
+        if self._closed:
+            return json.dumps({'error': 'memory is closed'})
+        async with _store_lock(self.mem_config.base_dir):
+            # close() may retire this instance while the tool waits its turn.
+            if self._closed:
+                return json.dumps({'error': 'memory is closed'})
+            backend = await self._ensure_started()
+            return await backend.handle_tool_call(tool_name, arguments)
 
     # ------------------------------------------------------------------
     # Cache
@@ -511,10 +519,11 @@ class MemoryOrchestrator(Memory):
         await self.flush_pending()
         if retire:
             self._closed = True
-        if self._backend is not None and self._started:
-            async with _store_lock(self.mem_config.base_dir):
+        async with _store_lock(self.mem_config.base_dir):
+            # A store operation may still be awaiting backend.start().
+            if self._backend is not None and self._started:
                 await self._backend.close()
-            self._started = False
+                self._started = False
 
     async def close(self) -> None:
         await self._shutdown_backend(retire=True)
