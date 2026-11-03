@@ -113,6 +113,11 @@ async def cmd_compact(ctx: CommandContext) -> CommandResult:
         return CommandResult(
             type=CommandResultType.MESSAGE, content='No messages available.')
 
+    compact = ctx.extra.get('compact_context')
+    if compact is not None:
+        return CommandResult(
+            type=CommandResultType.MESSAGE, content=await compact(messages))
+
     from copy import deepcopy
     original_messages = messages
     messages = deepcopy(messages)

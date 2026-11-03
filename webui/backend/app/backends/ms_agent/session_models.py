@@ -45,6 +45,10 @@ def validate_selection(provider: str, model: str, data: dict | None = None,
     data = data if data is not None else model_link._load()
     metadata = metadata if metadata is not None else sidecar._load()
     entry = (data.get("providers") or {}).get(provider) or {}
+    decision = data.get('decision') or {}
+    if (model.startswith('decision-model') or model.lower().startswith('jev')
+            or (decision.get('provider'), decision.get('model')) == (provider, model)):
+        raise BadRequest('Decision models cannot be used as the conversation model.')
     legacy_llm = data.get("llm") or {}
     legacy_only = "providers" not in data and (legacy_llm.get("provider"), legacy_llm.get("model")) == (provider, model)
     if not provider or not model or (model not in (entry.get("models") or []) and not legacy_only):
@@ -53,7 +57,7 @@ def validate_selection(provider: str, model: str, data: dict | None = None,
         raise BadRequest("This provider is disabled. Enable it or select another model.")
 
 
-def create(project, *, name: str = "", model_id: str | None = None):
+def create(project, *, name: str = "", model_id: str | None = None, execution_mode: str | None = None):
     manager = sm_for(project)
     with manager.transaction_lock(), settings_lock(), sidecar.transaction_lock():
         data = model_link._load()
@@ -66,7 +70,7 @@ def create(project, *, name: str = "", model_id: str | None = None):
             key = model_link.active_model(data)
         if all(key):
             validate_selection(*key, data=data)
-        return manager.create(name=name, model_provider=key[0], model=key[1])
+        return manager.create(name=name, model_provider=key[0], model=key[1], execution_mode=execution_mode)
 
 
 def migrate(project, session):
@@ -119,4 +123,10 @@ def prepare(project, session) -> tuple[object, ModelSnapshot]:
         effective = copy.deepcopy(data)
         effective["llm"] = llm
         effective["default_model"] = f"{key[0]}/{key[1]}"
+        try:
+            current = manager.prepare_execution(current.id)
+        except ValueError as exc:
+            raise BadRequest(str(exc)) from None
+        effective['execution'] = {'mode': current.execution_mode}
+        effective['decision'] = copy.deepcopy(current.execution_profile or {})
         return current, ModelSnapshot(key, effective, metadata)

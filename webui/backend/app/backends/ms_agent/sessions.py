@@ -84,7 +84,12 @@ def create_session(body: SessionCreate) -> Session:
             None)  # unknown id -> default (mock is lenient)
     from app.backends.ms_agent import session_models
 
-    session = session_models.create(project, name=body.title, model_id=body.model_id)
+    try:
+        session = session_models.create(project, name=body.title, model_id=body.model_id,
+                                        execution_mode=body.execution_mode)
+    except ValueError as exc:
+        from app.backends.errors import BadRequest
+        raise BadRequest(str(exc)) from None
     if body.preview:
         sidecar.merge("sessions", session.id, {"preview": body.preview})
     return session_to_schema(session)
@@ -668,6 +673,22 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
             parts.append(SessionPart(kind="text", text=text))
 
     for row in rows:
+        if row.get('decision_feedback') or row.get('context_summary'):
+            continue
+        if row.get('_type') == 'compaction_event':
+            transaction = row.get('transaction_id')
+            if transaction and not any(r.get('_type') == 'compaction_commit'
+                                       and r.get('transaction_id') == transaction for r in rows):
+                continue
+            parts.append(SessionPart(kind='step', step=SessionStep(kind='decision', meta={
+                'action': 'compacted', 'before_tokens': row.get('tokens_before', 0),
+                'after_tokens': row.get('tokens_after', 0)})))
+            continue
+        if row.get('_type') == 'decision_event':
+            if row.get('action') in ('intervene', 'degraded'):
+                parts.append(SessionPart(kind='step', step=SessionStep(kind='decision', meta={
+                    key: row.get(key, '') for key in ('phase', 'action', 'reason', 'evidence_id')})))
+            continue
         if row.get("_type") == "loop_end":
             # Persisted loop boundary: carries the wall-clock duration for this
             # turn (its seq lands after the turn's rows, before the next user
@@ -1194,3 +1215,18 @@ def update_session_model(sid: str, model_id: str) -> dict:
     with manager.transaction_lock(), settings_lock():
         saved = session_models.change(project, sid, model_id)
         return {"session": session_to_schema(saved), "settings": agent_settings.get_settings()}
+
+
+def update_execution_mode(sid: str, value: str) -> Session:
+    from ms_agent.project.session import ExecutionModeLocked
+    from app.backends.errors import BadRequest
+    found = find_session(sid)
+    if not found:
+        raise NotFound("Conversation not found.")
+    _, _, manager = found
+    try:
+        return session_to_schema(manager.set_execution_mode(sid, value))
+    except ExecutionModeLocked:
+        raise Conflict("execution_mode_locked") from None
+    except ValueError as exc:
+        raise BadRequest(str(exc)) from None

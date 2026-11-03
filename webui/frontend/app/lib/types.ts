@@ -35,7 +35,11 @@ export interface Project {
   created_at: string
 }
 
+export type ExecutionMode = 'standard' | 'decision'
+
 export interface Session {
+  execution_mode?: ExecutionMode
+  execution_mode_locked?: boolean
   id: string
   title: string
   project_id?: string | null
@@ -320,6 +324,10 @@ export interface GenerationDefaults {
 }
 
 export interface AgentSettings {
+  default_execution_mode?: ExecutionMode
+  decision_provider_id?: string | null
+  decision_model?: string | null
+  decision_available?: boolean
   default_provider_id: string | null
   default_model_id: string | null
   default_memory_enabled: boolean

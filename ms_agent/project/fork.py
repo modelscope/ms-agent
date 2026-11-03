@@ -128,12 +128,27 @@ def fork_session(manager, session_id: str, *, after_seq: int,
             atomic_write_json(counter_path, counters, fsync=True)
             title = name.strip() if name else f'{base_name[:150]} ({index})'
             child = Session(
-                id=child_id, project_id=source.project_id, name=title,
-                session_key=child_key, model=source.model, model_provider=source.model_provider,
-                forked_from={'session_id': source.id, 'title': source.name,
-                             'after_seq': after_seq, 'assistant_seq': point.assistant_seq,
-                             'group_id': group, 'base_name': base_name, 'index': index,
-                             'request_id': request_id},
+                id=child_id,
+                project_id=source.project_id,
+                name=title,
+                session_key=child_key,
+                model=source.model,
+                model_provider=source.model_provider,
+                execution_mode=source.execution_mode,
+                execution_mode_locked_at=source.execution_mode_locked_at
+                or now,
+                execution_profile=source.execution_profile,
+                execution_profile_version=source.execution_profile_version,
+                forked_from={
+                    'session_id': source.id,
+                    'title': source.name,
+                    'after_seq': after_seq,
+                    'assistant_seq': point.assistant_seq,
+                    'group_id': group,
+                    'base_name': base_name,
+                    'index': index,
+                    'request_id': request_id
+                },
             )
             atomic_write_json(stage / manager.META_FILE, asdict(child), fsync=True)
             os.rename(stage, manager.sessions_dir / child.id)

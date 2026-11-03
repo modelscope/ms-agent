@@ -549,5 +549,26 @@
     "newChat": "新对话",
     "session": "对话",
     "project": "项目"
+  },
+  "decisionMode": {
+    "title": "执行模式",
+    "standard": "标准模式",
+    "decision": "决策模式",
+    "standardDescription": "使用当前模型和标准执行流程，适合日常问答与一般任务。",
+    "decisionDescription": "加入执行复核和语义上下文压缩，适合步骤较多、工具输出较长的任务。",
+    "locked": "本会话已开始，模式已固定。新建会话可重新选择。",
+    "configure": "配置决策模型",
+    "settingsTitle": "决策模型",
+    "settingsDescription": "复用已配置供应商进行结构化判断，主聊天模型与权限独立设置。更改对新会话生效。",
+    "provider": "决策模型供应商",
+    "model": "决策模型名称",
+    "save": "保存",
+    "saved": "决策模型已保存",
+    "review": "正在核对执行证据",
+    "intervened": "发现执行问题，正在复核",
+    "degraded": "决策服务暂不可用，使用标准处理",
+    "compacted": "已压缩上下文",
+    "test": "测试连接（消耗少量 token）",
+    "connected": "决策服务连接正常"
   }
 }

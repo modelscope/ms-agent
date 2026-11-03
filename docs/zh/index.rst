@@ -19,6 +19,7 @@ MS-Agent 官方文档
 
    Components/config
    Components/llm-agent
+   Components/decision-mode
    Components/workflow
    Components/supported-models
    Components/multimodal-support

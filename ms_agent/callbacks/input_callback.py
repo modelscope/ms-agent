@@ -30,6 +30,7 @@ class InputCallback(Callback):
         input_source: object = None,
         event_sink: object = None,
         persist_context: object = None,
+        compact_context: object = None,
     ):
         super().__init__(config)
         if command_router is None:
@@ -41,7 +42,8 @@ class InputCallback(Callback):
             source='tui' if input_source is not None else 'cli',
             input_source=input_source,
             event_sink=event_sink,
-            persist_context=persist_context)
+            persist_context=persist_context,
+            compact_context=compact_context)
 
     @staticmethod
     def _build_default_router() -> 'CommandRouter':

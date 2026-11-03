@@ -1007,6 +1007,8 @@ def _build_agent(project, session, *, event_sink, input_source, mcp_config=None,
         global_dir=h, project_root=project.path, defaults={"tools": DEFAULT_TOOLS})
     sdir = session_dir(project, session)
     session_overrides = {
+        "execution": {"mode": getattr(session, 'execution_mode', 'standard')},
+        "decision": getattr(session, 'execution_profile', None) or {},
         # ① align the runtime SessionLog with the SessionManager session dir
         "session_log": {
             "dir": sdir,

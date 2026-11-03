@@ -45,6 +45,7 @@ class ChatMessage(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    execution_mode: Literal["standard", "decision"] | None = None
     model_id: str | None = None
     session_id: str | None = None
     project_id: str | None = None

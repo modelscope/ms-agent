@@ -1,3 +1,4 @@
+from typing import Literal
 from datetime import datetime
 
 from pydantic import BaseModel, Field
@@ -24,6 +25,8 @@ class Session(BaseModel):
     category: str = ""
     # This conversation's selection, independent of the new-chat default.
     model_id: str = ""
+    execution_mode: Literal["standard", "decision"] = "standard"
+    execution_mode_locked: bool = False
 
 
 class SessionFork(BaseModel):
@@ -45,6 +48,11 @@ class SessionCreate(BaseModel):
     project_id: str | None = None
     preview: str = ""
     model_id: str | None = None
+    execution_mode: Literal["standard", "decision"] | None = None
+
+
+class SessionExecutionModeUpdate(BaseModel):
+    execution_mode: Literal["standard", "decision"]
 
 
 class SessionModelUpdate(BaseModel):

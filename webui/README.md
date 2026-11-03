@@ -129,6 +129,12 @@ ms-agent ui
 
 First change to the directory where you saved them. Model configuration and sessions persist, so you do not need to enter your API key again. If you installed Node.js through nvm, check `node --version` in the new terminal. If the command is missing, run `source "$HOME/.nvm/nvm.sh"` first.
 
+## Decision mode (experimental)
+
+Configure a System One provider and model under **Settings → Personalization → Decision model**, for example Bailian `decision-model-preview`. Select **Decision** above the composer before the first message. The mode locks when execution starts. An explicit selection becomes the new-chat default; restoring an existing conversation does not change that default.
+
+Decision mode selects tool outputs when needed while keeping originals recoverable, and reviews evidence when execution looks repetitive or the agent is about to finish. Insufficient selection falls back to an LLM summary. Chat models and tool permissions remain separate. Benefits depend on the task and model; this experimental feature does not guarantee better speed or accuracy. See [SDK configuration, execution boundaries and validation](../docs/en/Components/DecisionMode.md).
+
 ## Branch a conversation
 
 Click **Branch** beside the copy button below a completed reply to

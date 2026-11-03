@@ -75,6 +75,7 @@ export interface ChatComposerCtx {
 interface ChatPanelProps {
   sessionId: string | null
   prepareModel?: () => Promise<string>
+  prepareExecutionMode?: () => Promise<'standard' | 'decision'>
   projectId: string | null
   /**
    * Whether the workspace rail is open in side-by-side (lg) mode. When true
@@ -168,6 +169,7 @@ function toThinkingTasks(tasks: SessionPlanTask[]): ThinkingTask[] {
 export function ChatPanel({
   sessionId,
   prepareModel,
+  prepareExecutionMode,
   projectId,
   workspaceOpen,
   onOpenStep,
@@ -521,7 +523,7 @@ export function ChatPanel({
     files?: ChatFileRef[],
     segments?: MessageSegment[]
   ) => {
-    const modelId = await prepareModel?.()
+    const [modelId, executionMode] = await Promise.all([prepareModel?.(), prepareExecutionMode?.()])
     const text = value.trim()
     const attached = files?.length ? files : undefined
     setStoppedLocally(false)
@@ -557,6 +559,7 @@ export function ChatPanel({
       session_id: sidRef.current,
       project_id: effectiveProjectId,
       model_id: sidRef.current ? undefined : modelId,
+      execution_mode: sidRef.current ? undefined : executionMode,
       message: { role: 'user', content, files: attached }
     })
   }

@@ -53,6 +53,8 @@ export async function loader({ params }: Route.LoaderArgs) {
     project,
     session,
     sessionId,
+    sessionExecutionMode: session?.execution_mode,
+    sessionExecutionLocked: session?.execution_mode_locked,
     sessionModelId: session?.model_id || '',
     // Whether a background turn's result is still unacknowledged — opening this
     // page is the acknowledgement, so the flag is only carried here to decide
@@ -70,6 +72,8 @@ export default function ProjectSessionPage() {
     project,
     sessionId,
     sessionModelId,
+    sessionExecutionMode,
+    sessionExecutionLocked,
     sessionUnread,
     messages,
     plan,
@@ -87,6 +91,8 @@ export default function ProjectSessionPage() {
     <ChatView
       key={sessionId}
       initialModelId={sessionModelId}
+      initialExecutionMode={sessionExecutionMode}
+      initialExecutionLocked={sessionExecutionLocked}
       project={project}
       sessionId={sessionId}
       initialMessages={initialMessages}

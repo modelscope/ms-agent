@@ -92,6 +92,14 @@ class SessionLog:
         """Append multiple messages.  Returns list of seq numbers."""
         return [self.append(m) for m in messages]
 
+    def record_decision(self, event: Dict[str, Any]) -> None:
+        """Append diagnostic/state data without feeding it back to the model."""
+        self._append_line({
+            **event, '_type': 'decision_event',
+            'seq': self._next_seq(),
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+
     def record_compaction(self, event: Dict[str, Any]) -> None:
         """Record a compaction event (non-destructive marker)."""
         seq = self._next_seq()
@@ -118,11 +126,17 @@ class SessionLog:
         self.record_compaction({**event, 'transaction_id': transaction,
                                 'message_count': len(messages)})
         try:
-            seqs = [self.append({
-                **{k: v for k, v in msg.items()
-                   if k not in ('seq', 'timestamp', '_compaction_id')},
-                '_source': 'compaction', '_compaction_id': transaction,
-            }) for msg in messages]
+            seqs = [
+                self.append({
+                    **{
+                        k: v
+                        for k, v in msg.items() if k not in ('seq', 'timestamp', '_compaction_id')
+                    },
+                    'origin_seq': msg.get('origin_seq', msg.get('seq')),
+                    '_source': 'compaction',
+                    '_compaction_id': transaction,
+                }) for msg in messages
+            ]
             self._append_line({
                 '_type': 'compaction_commit', 'seq': self._next_seq(),
                 'transaction_id': transaction,

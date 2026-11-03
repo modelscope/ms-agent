@@ -14,7 +14,17 @@ MemoryBackend = Literal["file", "vector"]
 MemoryEmbedMode = Literal["provider", "local"]
 
 
+class DecisionConnectionTest(BaseModel):
+    provider: str
+    model: str
+
+
 class AgentSettings(BaseModel):
+    default_execution_mode: Literal["standard", "decision"] = "standard"
+    decision_provider_id: str | None = None
+    decision_model: str | None = None
+    decision_available: bool = False
+
     default_provider_id: str | None = None
     default_model_id: str | None = None
 

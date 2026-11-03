@@ -273,6 +273,8 @@ class LLMAgent(Agent):
         self.runtime: Optional[Runtime] = None
         self.session_log: Optional[SessionLog] = None
         self.context_assembler: Optional[ContextAssembler] = None
+        self._decision_client = None
+        self._decision_supervisor = None
         self.max_chat_round: int = 0
         self.load_cache = kwargs.get('load_cache', False)
         self.config.load_cache = self.load_cache
@@ -732,6 +734,7 @@ class LLMAgent(Agent):
                         self.callbacks.append(callbacks_mapping[_callback](
                             self.config,
                             persist_context=self._persist_manual_compaction,
+                            compact_context=self._compact_context,
                             command_router=self._get_command_router(),
                             input_source=self._input_source,
                             event_sink=self._event_sink))
@@ -748,6 +751,7 @@ class LLMAgent(Agent):
                 input_cls(
                     self.config,
                     persist_context=self._persist_manual_compaction,
+                    compact_context=self._compact_context,
                     command_router=self._get_command_router(),
                     input_source=self._input_source,
                     event_sink=self._event_sink))
@@ -778,9 +782,66 @@ class LLMAgent(Agent):
     async def on_tool_call(self, messages: List[Message]):
         await self.loop_callback('on_tool_call', messages)
 
-    async def after_tool_call(self, messages: List[Message]):
+    async def after_tool_call(self, messages: List[Message], **kwargs):
         assistant = messages[-1]
         would_stop = assistant.role == 'assistant' and not assistant.tool_calls
+        supervisor = getattr(self, '_decision_supervisor', None)
+        rule_feedback = False
+        if supervisor is not None:
+            from ms_agent.callbacks.repetition_guard import RepetitionGuardCallback
+            from ms_agent.decision.evidence import evidence
+            snapshot = evidence(self.session_log.records())
+            for callback in self.callbacks:
+                if not isinstance(callback, RepetitionGuardCallback):
+                    continue
+                prior = [
+                    r for r in self.session_log.records()
+                    if r.get('_type') == 'decision_event' and r.get('task_id')
+                    == snapshot.task_id and r.get('phase') == 'process'
+                    and r.get('action') == 'intervene'
+                ]
+                if getattr(callback, '_decision_task',
+                           None) != snapshot.task_id:
+                    callback._warnings_given = sum(
+                        r.get('reason') == 'repetition_rule' for r in prior)
+                    callback._warned_keys.clear()
+                    callback._decision_task = snapshot.task_id
+                callback._decision_evaluated = True
+                if would_stop or (
+                        len(prior) >= supervisor.options['max_reflections']
+                        and callback._warnings_given < callback.max_warnings):
+                    continue
+                start = next(
+                    (i for i in range(len(messages) - 1, -1, -1)
+                     if messages[i].role == 'user'
+                     and not getattr(messages[i], '_decision_feedback', False)
+                     and not getattr(messages[i], '_context_summary', False)),
+                    0)
+                current_task = messages[start:]
+                count = len(current_task)
+                await callback.after_tool_call(self.runtime, current_task)
+                if len(current_task) > count:
+                    rule_feedback = True
+                    for msg in current_task[count:]:
+                        msg._decision_feedback = True
+                    messages.extend(current_task[count:])
+                    self.session_log.record_decision({
+                        'task_id':
+                        snapshot.task_id,
+                        'phase':
+                        'process',
+                        'action':
+                        'stopped' if self.runtime.should_stop else 'intervene',
+                        'reason':
+                        'repetition_rule',
+                        'tool_count':
+                        len(snapshot.tools),
+                        'tool_round_count':
+                        snapshot.tool_round_count
+                    })
+            if rule_feedback:
+                await self.loop_callback('after_tool_call', messages)
+                return
 
         hook_runtime = getattr(self, '_hook_runtime', None)
         if would_stop and hook_runtime is not None and not hook_runtime.is_empty:
@@ -797,13 +858,32 @@ class LLMAgent(Agent):
             )
             if stop.action in ('block', 'deny'):
                 append_stop_blocking_feedback(messages, stop.reason)
+                messages[-1]._decision_feedback = True
                 self.runtime.should_stop = False
                 self.runtime.stop_hook_active = True
                 await self.loop_callback('after_tool_call', messages)
                 return
             apply_hook_result_to_messages(messages, stop, hook_event='Stop')
 
+        if supervisor is not None:
+            feedback = await supervisor.check(
+                finishing=would_stop,
+                reply=assistant.content
+                if isinstance(assistant.content, str) else '',
+                hard_stop=self.runtime.should_stop
+                or self.runtime.round >= self.max_chat_round)
+            if feedback:
+                message = Message(role='user', content=feedback)
+                message._decision_feedback = True
+                messages.append(message)
+                self.runtime.should_stop = False
+                await self.loop_callback('after_tool_call', messages)
+                return
         if would_stop:
+            # Only accepted replies become durable memory; a correction can
+            # invalidate a candidate answer. This still precedes input waiting.
+            await self.add_memory(
+                messages, add_type='add_after_step', **kwargs)
             self.runtime.should_stop = True
             if self.session_log is not None:
                 self.session_log.record_turn_checkpoint(
@@ -819,6 +899,10 @@ class LLMAgent(Agent):
             messages (List[Message]): Current message history.
         """
         for callback in self.callbacks:
+            if point == 'after_tool_call' and getattr(
+                    callback, '_decision_evaluated', False):
+                callback._decision_evaluated = False
+                continue
             await getattr(callback, point)(self.runtime, messages)
 
     async def parallel_tool_call(self,
@@ -1082,6 +1166,8 @@ class LLMAgent(Agent):
 
     async def cleanup_tools(self):
         """Cleanup resources used by the tool manager."""
+        if self._decision_client is not None:
+            await self._decision_client.aclose()
         if self.task_manager is not None:
             self.task_manager.kill_all()
         if self.mcp_runtime is not None:
@@ -1832,9 +1918,28 @@ class LLMAgent(Agent):
     def _persist_manual_compaction(self, messages: List[Message]) -> None:
         if self.session_log is not None:
             self.session_log.commit_compaction(
-                [self._msg_to_dict(m) for m in messages],
-                {'strategy': 'manual_tool_pruner',
-                 'boundary_before': self.session_log.last_consolidated})
+                [self._msg_to_dict(m) for m in messages], {
+                    'strategy': 'manual_compaction',
+                    'boundary_before': self.session_log.last_consolidated
+                })
+
+    async def _compact_context(self, messages: List[Message]) -> str:
+        """Manual compaction uses the same summary path, never age pruning."""
+        from ms_agent.session.strategies.decision_compactor import DecisionContextCompactor
+        if self.session_log is None or self.context_assembler is None:
+            return 'Context compaction requires session logging.'
+        assembler = ContextAssembler(
+            self.session_log,
+            [DecisionContextCompactor(self.llm, log=self.session_log)], {
+                **self.context_assembler.config, 'force_summary': True
+            }, self._make_memory_flush_callback())
+        before = self.session_log.last_consolidated
+        messages[:] = await assembler.aassemble()
+        return (
+            'Context summarized; original history remains available.'
+            if self.session_log.last_consolidated != before else
+            'No safe context reduction is available; required evidence was retained.'
+        )
 
     def _checkpoint_state(self) -> dict:
         state = {'active_model': self.session_log.active_model}
@@ -1844,6 +1949,70 @@ class LLMAgent(Agent):
             except (OSError, ValueError):
                 pass
         return state
+
+    async def _prepare_decision(self):
+        from ms_agent.config.decision import DecisionSettings, profile
+        from ms_agent.project.paths import global_home
+        from ms_agent.tools.context_read import ContextReadTool
+        if self.session_log is None:
+            if getattr(
+                    getattr(self.config, 'execution', None), 'mode',
+                    'standard') == 'decision':
+                raise ValueError('Decision mode requires session logging')
+            return
+        # Original-history reads also serve standard summaries, keeping the
+        # tool schema stable across execution modes.
+        tool = ContextReadTool(self.config, self.session_log)
+        self.tool_manager.register_tool(tool)
+        await self.tool_manager.index_extra_tool(tool)
+        if getattr(
+                getattr(self.config, 'execution', None), 'mode',
+                'standard') != 'decision':
+            return
+        from ms_agent.decision.service import ManagedDecisionClient
+        from ms_agent.decision.supervisor import DecisionSupervisor
+        from ms_agent.session.strategies.decision_compactor import DecisionContextCompactor
+        settings = DecisionSettings(global_home())
+        raw = getattr(self.config, 'decision', None)
+        cfg = profile(
+            OmegaConf.to_container(raw, resolve=True) if raw else settings.
+            snapshot())
+        if not cfg.get('base_url'):
+            cfg = settings.snapshot(value=cfg)
+        self._decision_client = ManagedDecisionClient(
+            lambda: settings.client(cfg))
+        self._decision_supervisor = DecisionSupervisor(
+            self._decision_client,
+            cfg['supervision'],
+            self.session_log,
+            self._emit_decision,
+            is_current=lambda: getattr(self, '_rollback_messages', None) is
+            None and not self.runtime.should_stop)
+        if self.context_assembler is not None and self.context_assembler.strategies:
+            # Decision mode never falls back to age/position pruning, even
+            # when a legacy config explicitly listed that strategy.
+            self.context_assembler.strategies = [
+                DecisionContextCompactor(
+                    self.llm,
+                    client=self._decision_client
+                    if cfg['context']['enabled'] else None,
+                    options=cfg['context'],
+                    log=self.session_log,
+                    emit=self._emit_decision)
+            ]
+
+    def _emit_decision(self, payload):
+        from ms_agent.ui.events import DecisionActivity
+        if self._event_sink is not None:
+            self._event_sink.emit(
+                DecisionActivity(
+                    **{
+                        key: payload[key]
+                        for key in ('phase', 'action', 'reason', 'evidence_id',
+                                    'elapsed_ms') if key in payload
+                    }))
+        if payload.get('phase') == 'context' and self.session_log is not None:
+            self.session_log.record_decision(payload)
 
     def _init_session_log(self) -> None:
         """Create SessionLog and ContextAssembler if session logging is enabled.
@@ -1859,19 +2028,15 @@ class LLMAgent(Agent):
               # Token budget passed to the ContextAssembler:
               context_limit: 128000    # max tokens kept in the live window
               reserved_buffer: 20000   # headroom left for the next response
-              prune_protect: 40000     # recent tokens never tool-pruned
 
             # Non-destructive context compaction (rebuilt every loop round).
             compaction:
               enabled: true            # default true; false -> no strategies
               context_limit: 128000    # overrides session_log.context_limit
               reserved_buffer: 20000
-              strategies:              # default: both, in this order
-                - name: tool_output_pruner
-                  enabled: true
-                  prune_protect: 40000 # recent tokens exempt from pruning
+              strategies:              # optional; summary is the default
                 - name: summary_compactor
-                  enabled: true        # needs an LLM; summarizes old turns
+                  enabled: true        # bounded summary, no age pruning
 
         With ``compaction.enabled: false`` the assembler is created with an
         empty strategy list (history is still logged, just never compressed).
@@ -1913,7 +2078,7 @@ class LLMAgent(Agent):
             self.context_assembler = ContextAssembler(
                 session_log=self.session_log,
                 strategies=[],
-                config={},
+                config=self._build_assembler_config(compaction_cfg, session_cfg),
             )
             return
 
@@ -1940,12 +2105,16 @@ class LLMAgent(Agent):
                 if name == 'tool_output_pruner':
                     strategies.append(ToolOutputPruner())
                 elif name == 'summary_compactor':
-                    strategies.append(SummaryCompactor(llm=self.llm))
+                    from ms_agent.session.strategies.decision_compactor import DecisionContextCompactor
+                    strategies.append(
+                        DecisionContextCompactor(
+                            self.llm, log=self.session_log))
                 else:
                     logger.warning(f'Unknown compaction strategy: {name}')
             return strategies
 
-        return [ToolOutputPruner(), SummaryCompactor(llm=self.llm)]
+        from ms_agent.session.strategies.decision_compactor import DecisionContextCompactor
+        return [DecisionContextCompactor(self.llm, log=self.session_log)]
 
     def _build_assembler_config(self, compaction_cfg, session_cfg):
         """Merge compaction params from ``compaction`` and ``session_log``."""
@@ -1977,12 +2146,10 @@ class LLMAgent(Agent):
     def _make_memory_flush_callback(self):
         """Create a callback that flushes memory before context compaction."""
 
-        def _flush(discarded_messages):
+        async def _flush(discarded_messages):
             for memory_tool in self.memory_tools:
                 orchestrator = memory_tool
                 if hasattr(orchestrator, 'flush'):
-                    import asyncio
-
                     from ms_agent.llm.utils import Message as _Msg
                     msgs = [
                         _Msg(
@@ -1991,11 +2158,7 @@ class LLMAgent(Agent):
                             tool_calls=m.get('tool_calls'),
                         ) for m in discarded_messages
                     ]
-                    try:
-                        loop = asyncio.get_running_loop()
-                        loop.create_task(orchestrator.flush(msgs))
-                    except RuntimeError:
-                        asyncio.run(orchestrator.flush(msgs))
+                    await orchestrator.flush(msgs)
 
         return _flush
 
@@ -2161,7 +2324,9 @@ class LLMAgent(Agent):
         # UserPromptSubmit for multi-turn user input (InputCallback path)
         hook_runtime = getattr(self, '_hook_runtime', None)
         if (hook_runtime is not None and not hook_runtime.is_empty and messages
-                and messages[-1].role == 'user' and self.runtime.round > 0):
+                and messages[-1].role == 'user' and self.runtime.round > 0
+                and not getattr(messages[-1], '_decision_feedback', False)
+                and not getattr(messages[-1], '_context_summary', False)):
             prompt_text = extract_latest_user_prompt(messages)
             submit = await hook_runtime.run_user_prompt_submit(prompt_text)
             if submit.action in ('deny', 'block'):
@@ -2184,6 +2349,22 @@ class LLMAgent(Agent):
         if (not self.load_cache) or messages[-1].role != 'assistant':
             await self.on_generate_response(messages)
             tools = await self.tool_manager.get_tools()
+
+            assembler = getattr(self, 'context_assembler', None)
+            if assembler is not None:
+                from ms_agent.session.strategies.decision_compactor import (
+                    ContextBudgetExceeded, count_tokens)
+                budget = int(assembler.config.get(
+                    'context_limit', 128000)) - int(
+                        assembler.config.get('reserved_buffer', 20000))
+                extra = len(
+                    json.dumps(tools, ensure_ascii=False,
+                               default=str).encode()) // 3
+                if count_tokens([self._msg_to_dict(m) for m in messages],
+                                extra) >= budget:
+                    raise ContextBudgetExceeded(
+                        'Context exceeds capacity after prompt augmentation; start a new conversation or reduce the input'
+                    )
 
             if self.stream:
                 if self.stream_output:
@@ -2586,6 +2767,9 @@ class LLMAgent(Agent):
             d['reasoning_duration'] = msg._reasoning_duration
         if getattr(msg, '_duration_ms', None) is not None:
             d['duration_ms'] = msg._duration_ms
+        for key in ('decision_feedback', 'context_summary', 'origin_seq'):
+            if hasattr(msg, '_' + key):
+                d[key] = getattr(msg, '_' + key)
         if getattr(msg, 'is_error', False):
             d['is_error'] = True
         prompt_tokens = int(getattr(msg, 'prompt_tokens', 0) or 0)
@@ -2680,6 +2864,7 @@ class LLMAgent(Agent):
             await self.prepare_rag()
             await self.prepare_knowledge_search()
             self._init_session_log()
+            await self._prepare_decision()
             self.runtime.tag = self.tag
 
             self.task_manager = TaskManager()
@@ -2809,6 +2994,18 @@ class LLMAgent(Agent):
             resume_waiting = bool(restored_from_log and messages
                                   and messages[-1].role == 'assistant'
                                   and not messages[-1].tool_calls)
+            if resume_waiting and getattr(self, '_decision_supervisor',
+                                          None) is not None:
+                originals = [
+                    r for r in self.session_log.records()
+                    if r.get('role') and r.get('_source') != 'compaction'
+                ]
+                last = originals[-1] if originals else {}
+                resume_waiting = bool(
+                    last.get('interrupted') or last.get('errored') or any(
+                        r.get('_type') == 'turn_checkpoint'
+                        and r.get('assistant_seq') == last.get('seq')
+                        for r in self.session_log.records()))
             for message in messages:
                 if message.role != 'system':
                     self.log_output('[' + message.role + ']:')
@@ -2818,14 +3015,21 @@ class LLMAgent(Agent):
                 # compression). This is the canonical history for the round, so
                 # it must run before the per-round augmentations below.
                 if (not resume_waiting and self.context_assembler is not None
-                        and self.runtime.round > 0):
+                        and self.session_log.get_visible_messages()):
                     # Detect real compaction via last_consolidated advancing
                     # (assemble() only advances it when a strategy consolidated
                     # the window — see ContextAssembler.assemble).
                     _lc_before = (
                         self.session_log.last_consolidated
                         if self.session_log is not None else 0)
-                    messages = self.context_assembler.assemble()
+                    _tools = await self.tool_manager.get_tools()
+                    self.context_assembler.config['extra_tokens'] = len(
+                        json.dumps(_tools, default=str,
+                                   ensure_ascii=False).encode('utf-8')) // 3
+                    messages = await self.context_assembler.aassemble(
+                        is_current=lambda: getattr(self, '_rollback_messages',
+                                                   None) is None and not self.
+                        runtime.should_stop)
                     if (self._event_sink is not None
                             and self.session_log is not None and
                             self.session_log.last_consolidated > _lc_before):
@@ -2893,27 +3097,11 @@ class LLMAgent(Agent):
                     for msg in messages[pre_step_len:step_end_len]:
                         self.session_log.append(self._msg_to_dict(msg))
 
-                # Ingest memory here — before after_tool_call, which blocks on
-                # the next prompt in interactive mode (running afterwards made
-                # 'add_after_step' mean "after the *next* step": round N was
-                # only ingested once round N+1 arrived, a single-round session
-                # never at all, and the ingested list already carried the next
-                # user turn). Only on a CLOSING round — an assistant reply with
-                # no tool calls, i.e. the turn is complete. Tool rounds are
-                # intermediate state, not durable conversational truth, and
-                # ingesting every round made memory cost O(rounds x history):
-                # a 4-round tool-calling answer paid ~4 extraction-LLM calls
-                # where one covers it (the closing ingest sees the whole turn).
-                if (not resume_waiting and messages and messages[-1].role == 'assistant'
-                        and not messages[-1].tool_calls):
-                    await self.add_memory(
-                        messages, add_type='add_after_step', **kwargs)
-
                 if resume_waiting:
                     self.runtime.should_stop = True
                     await self.loop_callback('after_tool_call', messages)
                 else:
-                    await self.after_tool_call(messages)
+                    await self.after_tool_call(messages, **kwargs)
                 resume_waiting = False
                 # New user turn (interactive multi-turn): attach the durable
                 # augmentations BEFORE the slice below persists them — same
@@ -2922,7 +3110,8 @@ class LLMAgent(Agent):
                 # query strips reminder blocks so notices never pollute it).
                 commit_surface = None
                 commit_model = None
-                if len(messages) > step_end_len:
+                if (len(messages) > step_end_len and not getattr(
+                        messages[-1], '_decision_feedback', False)):
                     commit_surface = self._attach_prompt_update_notice(
                         messages)
                     commit_model = self._attach_model_switch_notice(messages)
@@ -3009,6 +3198,9 @@ class LLMAgent(Agent):
                     f'[{self.tag}] Runtime error, please follow the instructions:\n\n {self.config.help}'
                 )
             raise e
+        finally:
+            if getattr(self, '_decision_client', None) is not None:
+                await self._decision_client.aclose()
 
     async def run(
             self, messages: Union[List[Message], str], **kwargs

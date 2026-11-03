@@ -165,6 +165,11 @@ export function StepCard({
   const running = meta.status === 'running'
 
   switch (step.kind) {
+    case 'decision':
+      return <StepCardShell icon={<MemoryIcon className="h-4 w-4" />}>
+        {meta.action === 'degraded' ? t.decisionMode.degraded : meta.action === 'compacted' ? t.decisionMode.compacted : t.decisionMode.intervened}
+      </StepCardShell>
+
     case 'terminal':
       return (
         <TerminalStepCard step={step} onOpenStep={onOpenStep} isLast={isLast} />

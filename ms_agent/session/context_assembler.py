@@ -90,6 +90,61 @@ class ContextAssembler:
         self.config: Dict[str, Any] = config or {}
         self._memory_flush_callback = memory_flush_callback
 
+    async def aassemble(self, *, is_current=None) -> List[Message]:
+        """Build candidates off-log and publish only against the same source view."""
+        import inspect
+        from ms_agent.decision.evidence import digest
+        for strategy in self.strategies:
+            all_msgs = self.session_log.get_all_messages()
+            before = _slice_visible(all_msgs,
+                                    self.session_log.last_consolidated)
+            revision = digest(before)
+            if hasattr(strategy, 'aapply'):
+                visible, meta = await strategy.aapply(before, all_msgs,
+                                                      self.config)
+            else:
+                from ms_agent.llm.io import run_in_llm_executor
+                visible, meta = await run_in_llm_executor(
+                    lambda: strategy.apply(before, all_msgs, self.config))
+            current = self.session_log.get_visible_messages()
+            if digest(current) != revision or (is_current is not None
+                                               and not is_current()):
+                continue
+            if meta is None:
+                continue
+            if self._memory_flush_callback is not None:
+                retained = {
+                    r.get('origin_seq', r.get('seq')): r
+                    for r in visible
+                    if r.get('origin_seq', r.get('seq')) is not None
+                }
+                originals = {
+                    r.get('seq'): r
+                    for r in all_msgs if r.get('_source') != 'compaction'
+                }
+                discarded = []
+                for row in before:
+                    source = row.get('origin_seq', row.get('seq'))
+                    kept = retained.get(source)
+                    if (source in originals and not row.get('context_summary')
+                            and
+                        (kept is None
+                         or kept.get('content') != row.get('content'))):
+                        discarded.append(originals[source])
+                flushed = self._memory_flush_callback(discarded)
+                if inspect.isawaitable(flushed):
+                    await flushed
+            if (digest(self.session_log.get_visible_messages()) != revision
+                    or (is_current is not None and not is_current())):
+                continue
+            event = {
+                **meta, 'strategy': meta.get('strategy', strategy.name),
+                'boundary_before': self.session_log.last_consolidated,
+                'boundary_after': before[-1].get('seq', 0) if before else 0
+            }
+            self.session_log.commit_compaction(visible, event)
+        return _dicts_to_messages(self.session_log.get_visible_messages())
+
     def assemble(self) -> List[Message]:
         """Build the LLM-visible message list.
 
@@ -203,6 +258,9 @@ def _dicts_to_messages(dicts: List[Dict[str, Any]]) -> List[Message]:
                     # they were sent and invisible from the next round on.
                     attachments=d.get('attachments') or [],
                 ))
+            for key in ('decision_feedback', 'context_summary', 'origin_seq'):
+                if key in d:
+                    setattr(result[-1], '_' + key, d[key])
         else:
             result.append(Message(role='user', content=str(d)))
     return result

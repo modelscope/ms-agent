@@ -80,9 +80,19 @@ class SessionManager:
         return self._sessions_dir
 
     @locked(lambda self, *args, **kwargs: self._projects_root)
-    def create(self, name: str = '', model: str | None = None,
-               model_provider: str | None = None) -> Session:
+    def create(self,
+               name: str = '',
+               model: str | None = None,
+               model_provider: str | None = None,
+               execution_mode: str | None = None) -> Session:
         self.initialize()
+        from ms_agent.config.decision import DecisionSettings, mode
+        decision_settings = DecisionSettings(self._base)
+        execution_mode = mode(
+            execution_mode
+            or decision_settings.get()['default_execution_mode'])
+        if execution_mode == 'decision':
+            decision_settings.snapshot()
         session_id = uuid.uuid4().hex[:12]
         session_key = f'session_{session_id}'
         session = Session(
@@ -92,9 +102,67 @@ class SessionManager:
             model=model,
             model_provider=model_provider,
             session_key=session_key,
+            execution_mode=execution_mode,
         )
         self._save_meta(session)
         return session
+
+    def execution_locked(self, session: Session) -> bool:
+        if session.execution_mode_locked_at:
+            return True
+        path = self._sessions_dir / session.id / f'{session.session_key}.jsonl'
+        if not path.exists():
+            return False
+        from ms_agent.session.replay import read_records
+        return any(
+            r.get('role') and r.get('_source') != 'compaction'
+            for r in read_records(path))
+
+    @locked(lambda self, *args, **kwargs: self._projects_root)
+    def set_execution_mode(self, session_id: str, value: str) -> Session:
+        from ms_agent.config.decision import DecisionSettings, mode
+        value = mode(value)
+        current = self.get(session_id)
+        if current is None:
+            raise ValueError('Conversation not found')
+        if self.execution_locked(current):
+            if current.execution_mode != value:
+                raise ExecutionModeLocked('execution_mode_locked')
+            return current
+        settings = DecisionSettings(self._base)
+        from ms_agent.utils.file_lock import file_lock
+        with file_lock(settings.path):
+            if value == 'decision':
+                settings.snapshot()
+            updated = replace(
+                current, execution_mode=value, updated_at=_now_iso())
+            self._save_meta(updated)
+            try:
+                settings.update(default_execution_mode=value)
+            except Exception:
+                self._save_meta(current)
+                raise
+        return updated
+
+    @locked(lambda self, *args, **kwargs: self._projects_root)
+    def prepare_execution(self, session_id: str) -> Session:
+        """Freeze an execution profile before work starts; never update defaults."""
+        from ms_agent.config.decision import DecisionSettings
+        current = self.get(session_id)
+        if current is None:
+            raise ValueError('Conversation not found')
+        if current.execution_mode_locked_at:
+            if current.execution_profile_version != 1:
+                raise ValueError('Unsupported execution profile version')
+            return current
+        cfg = DecisionSettings(self._base).snapshot(
+        ) if current.execution_mode == 'decision' else None
+        updated = replace(
+            current,
+            execution_mode_locked_at=_now_iso(),
+            execution_profile=cfg)
+        self._save_meta(updated)
+        return updated
 
     def fork(self, session_id: str, *, after_seq: int, name: str | None = None,
              request_id: str | None = None) -> Session:
@@ -112,7 +180,17 @@ class SessionManager:
             return None
         if 'status' in data and isinstance(data['status'], str):
             data['status'] = SessionStatus(data['status'])
-        return Session(**{k: v for k, v in data.items() if k in Session.__dataclass_fields__})
+        session = Session(**{
+            k: v
+            for k, v in data.items() if k in Session.__dataclass_fields__
+        })
+        if not session.execution_mode_locked_at and self.execution_locked(
+                session):
+            # Legacy conversations have no profile fields and are standard.
+            # Expose their existing lock without rewriting history on a read.
+            session = replace(
+                session, execution_mode_locked_at=session.created_at)
+        return session
 
     def list(self) -> list[Session]:
         sessions: list[Session] = []
@@ -130,8 +208,9 @@ class SessionManager:
                 try:
                     if 'status' in data and isinstance(data['status'], str):
                         data['status'] = SessionStatus(data['status'])
-                    sessions.append(Session(**{k: v for k, v in data.items()
-                                              if k in Session.__dataclass_fields__}))
+                    session = self.get(entry.name)
+                    if session is not None:
+                        sessions.append(session)
                 except (TypeError, KeyError, ValueError):
                     pass
         sessions.sort(key=lambda s: s.created_at, reverse=True)
@@ -147,6 +226,10 @@ class SessionManager:
         old = self.get(session_id)
         if old is None:
             raise ValueError(f'Session {session_id} not found')
+        if any(key.startswith('execution_') for key in kwargs):
+            raise ValueError(
+                'Use set_execution_mode or prepare_execution to change execution settings'
+            )
         kwargs['updated_at'] = old.updated_at if preserve_updated_at else _now_iso()
         if 'status' in kwargs and isinstance(kwargs['status'], str):
             kwargs['status'] = SessionStatus(kwargs['status'])
@@ -204,3 +287,7 @@ class SessionManager:
         data.update(asdict(session))
         data['status'] = session.status.value
         store.write(data)
+
+
+class ExecutionModeLocked(ValueError):
+    pass
