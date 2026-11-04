@@ -145,3 +145,75 @@ class TestCronServiceCallbacks:
 
         assert len(completed) == 1
         assert completed[0] == (job.id, True)
+
+
+class TestCronServiceSchedulerWake:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('manual', [False, True])
+    async def test_recurring_completion_rearms_before_poll_deadline(
+            self, workspace, monkeypatch, manual):
+        from datetime import datetime, timezone
+        from ms_agent.cron import parser, scheduler
+
+        now = datetime(2099, 1, 1, tzinfo=timezone.utc)
+
+        class FrozenDatetime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return now.astimezone(tz)
+
+        monkeypatch.setattr(parser, 'datetime', FrozenDatetime)
+        monkeypatch.setattr(scheduler, '_now_ms',
+                            lambda: int(now.timestamp() * 1000))
+        service = CronService(workspace=workspace)
+        job = service.create_job(schedule_str='every 2s', prompt='test')
+        state = service.manager.repo.load_state(job.id)
+        state.next_run_at = '2098-12-31T23:59:59+00:00'
+        state.status = 'running'
+        service.manager.repo.save_state(job.id, state)
+        other = service.create_job(schedule_str='every 2s', prompt='still running')
+        other_state = service.manager.repo.load_state(other.id)
+        other_state.status = 'running'
+        other_state.next_run_at = state.next_run_at
+        service.manager.repo.save_state(other.id, other_state)
+        delays = []
+
+        async def record_delay(delay):
+            delays.append(delay)
+            await asyncio.Event().wait()
+
+        monkeypatch.setattr(service._scheduler, '_sleep_and_tick', record_delay)
+        monkeypatch.setattr(service._executor, 'execute',
+                            AsyncMock(return_value=ExecutionResult(success=True)))
+        await service.start()
+        try:
+            await asyncio.sleep(0)
+            assert delays == [60]
+            if manual:
+                await service.run_job_now(job.id)
+            else:
+                await service._execute_job(job, state)
+            await asyncio.sleep(0)
+            assert service.manager.repo.load_state(job.id).status == 'scheduled'
+            assert delays == [60, 1]
+            assert service.manager.repo.load_state(other.id).status == 'running'
+        finally:
+            await service.stop()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('manual', [False, True])
+    async def test_completion_does_not_restart_stopped_scheduler(
+            self, workspace, monkeypatch, manual):
+        service = CronService(workspace=workspace)
+        job = service.create_job(schedule_str='every 2s', prompt='test')
+        monkeypatch.setattr(service._executor, 'execute',
+                            AsyncMock(return_value=ExecutionResult(success=True)))
+        await service.start()
+        await service.stop()
+        state = service.manager.repo.load_state(job.id)
+        if manual:
+            await service.run_job_now(job.id)
+        else:
+            await service._execute_job(job, state)
+        assert not service._scheduler.running
+        assert service._scheduler._timer_task is None

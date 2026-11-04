@@ -290,6 +290,7 @@ class CronService:
             result = await self._executor.execute(job, config)
 
         self._manager.record_result(job, result)
+        self._scheduler.reschedule()
 
         for cb in self.on_job_complete:
             try:
@@ -397,6 +398,7 @@ class CronService:
             result = await self._executor.execute(job, config)
 
         self._manager.record_result(job, result)
+        self._scheduler.reschedule()
 
         for cb in self.on_job_complete:
             try:
