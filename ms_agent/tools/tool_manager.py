@@ -14,9 +14,9 @@ from copy import copy
 from types import TracebackType
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
-from ms_agent.llm.utils import Tool, ToolCall
-from ms_agent.tools.arg_coercion import coerce_arguments
+from ms_agent.llm.utils import Tool, ToolCall, ToolResult
 from ms_agent.tools.agent_tool import AgentTool
+from ms_agent.tools.arg_coercion import coerce_arguments
 from ms_agent.tools.base import ToolBase
 from ms_agent.tools.code import CodeExecutionTool, LocalCodeExecutionTool
 from ms_agent.tools.filesystem_tool import FileSystemTool
@@ -453,7 +453,8 @@ class ToolManager:
         import difflib
 
         available = sorted(self._tool_index)
-        close = difflib.get_close_matches(tool_name, available, n=3, cutoff=0.4)
+        close = difflib.get_close_matches(
+            tool_name, available, n=3, cutoff=0.4)
         if not close:
             prefix = f'{tool_name}{self.TOOL_SPLITER}'
             close = [k for k in available if k.startswith(prefix)][:3]
@@ -614,8 +615,9 @@ class ToolManager:
                 # index; leaving a quoted number quoted just moves the failure
                 # to the tool, which reports it in terms of its own validator.
                 if isinstance(tool_args, dict):
-                    coerced = coerce_arguments(
-                        tool_args, (tool_spec or {}).get('parameters'))
+                    coerced = coerce_arguments(tool_args,
+                                               (tool_spec
+                                                or {}).get('parameters'))
                     if coerced is not tool_args:
                         tool_args = coerced
                         tool_info['arguments'] = tool_args
@@ -759,6 +761,13 @@ class ToolManager:
                 # said it bounds itself (see ToolBase.max_output_chars).
                 if isinstance(response, str):
                     response = _truncate_tool_output(response, tool_ins)
+                elif (tool_ins is self.servers and isinstance(response, dict)
+                      and 'structuredContent' in response):
+                    # MCP's structured envelope must not bypass the existing
+                    # model-text budget. Keep its original data for callers.
+                    response = dict(response)
+                    response['result'] = _truncate_tool_output(
+                        ToolResult.from_raw(response).text, tool_ins)
 
                 if (self.mcp_success_handler is not None
                         and tool_ins is self.servers):

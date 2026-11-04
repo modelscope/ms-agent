@@ -3,6 +3,7 @@ from __future__ import annotations
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import asyncio
 import copy
+import json
 import os
 import re
 import shutil
@@ -69,16 +70,33 @@ DEFAULT_STREAMABLE_HTTP_SSE_READ_TIMEOUT = timedelta(seconds=60 * 5)
 #: Identity, toolchain and network settings pass through; credentials do not.
 #: A server's configured ``env`` is applied on top and wins per key.
 _STDIO_ENV_PASSTHROUGH = (
-    'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'TERM', 'TZ',
-    'LANG', 'LC_ALL', 'LC_CTYPE',
-    'SSL_CERT_FILE', 'SSL_CERT_DIR', 'REQUESTS_CA_BUNDLE',
+    'PATH',
+    'HOME',
+    'USER',
+    'LOGNAME',
+    'SHELL',
+    'TMPDIR',
+    'TERM',
+    'TZ',
+    'LANG',
+    'LC_ALL',
+    'LC_CTYPE',
+    'SSL_CERT_FILE',
+    'SSL_CERT_DIR',
+    'REQUESTS_CA_BUNDLE',
     # ALL_PROXY is deliberately absent: a socks5:// value makes any child
     # whose httpx lacks the socksio extra fail on its FIRST request, and the
     # child's venv is not ours to fix. The scheme-specific variables cover
     # the download-acceleration need without that trap.
-    'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY',
-    'http_proxy', 'https_proxy', 'no_proxy',
-    'UV_INDEX_URL', 'UV_DEFAULT_INDEX', 'PIP_INDEX_URL',
+    'HTTP_PROXY',
+    'HTTPS_PROXY',
+    'NO_PROXY',
+    'http_proxy',
+    'https_proxy',
+    'no_proxy',
+    'UV_INDEX_URL',
+    'UV_DEFAULT_INDEX',
+    'PIP_INDEX_URL',
     'npm_config_registry',
 )
 
@@ -113,8 +131,8 @@ def resolve_stdio_command(command: str) -> str:
         candidate = os.path.join(base, command)
         if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
             return candidate
-    searched = ':'.join([os.environ.get('PATH', '')] +
-                        list(_STDIO_EXTRA_BIN_DIRS))
+    searched = ':'.join([os.environ.get('PATH', '')]
+                        + list(_STDIO_EXTRA_BIN_DIRS))
     raise FileNotFoundError(
         f"stdio MCP command '{command}' was not found on this machine. "
         f'Searched: {searched}')
@@ -145,8 +163,7 @@ def _summarize_tool_error(detail: str) -> str:
         return _PYDANTIC_DOC_LINK.sub('', detail).strip()
 
     lines = [f'- `{field}`: {message}' for field, message in seen.items()]
-    return ('the arguments were rejected by the tool:\n'
-            + '\n'.join(lines)
+    return ('the arguments were rejected by the tool:\n' + '\n'.join(lines)
             + '\nSend each value as its declared JSON type (a number '
             'unquoted, not as a string) and call again.\n\nOriginal error:\n'
             + _PYDANTIC_DOC_LINK.sub('', detail).strip())
@@ -201,8 +218,12 @@ class MCPClient(ToolBase):
                 'different approach or tell the user the server is down.')
         response = await session.call_tool(tool_name, tool_args)
 
+        # Older MCP SDK responses may not expose structuredContent. An empty
+        # object is still a result, so distinguish it from an absent value.
+        structured_content = getattr(response, 'structuredContent', None)
         texts = []
         resources = []
+        has_text = False
         if response.isError:
             sep = '\n\n'
             if all(isinstance(item, str) for item in response.content):
@@ -211,25 +232,45 @@ class MCPClient(ToolBase):
                 detail = sep.join(
                     getattr(item, 'text', str(item))
                     for item in response.content)
+            if not detail.strip() and structured_content is not None:
+                detail = json.dumps(structured_content, ensure_ascii=False)
             # Marked as an error rather than returned as ordinary text. A
             # failure reported only in prose reaches the model with no error
             # flag and reaches the UI with no failed step, so a call that was
             # refused looks like a call that answered.
-            return {
+            result = {
                 'result':
                 (f'execute tool call error: [{server_name}]{tool_name}, '
                  f'{_summarize_tool_error(detail)}'),
                 'is_error':
                 True,
             }
+            if structured_content is not None:
+                result['structuredContent'] = structured_content
+            return result
         for content in response.content:
             if content.type == 'text':
                 texts.append(content.text)
+                has_text = has_text or bool(content.text.strip())
             elif content.type == 'resource':
                 import json5
                 json_str = content.resource.model_dump_json(by_alias=True)
                 texts.append(json_str)
                 resources.append(json5.loads(json_str))
+
+        if structured_content is not None:
+            # Servers SHOULD also send serialized text for compatibility, but
+            # it is optional. Supply it only when readable text is missing.
+            if not has_text:
+                texts.insert(
+                    0, json.dumps(structured_content, ensure_ascii=False))
+            result = {
+                'result': '\n\n'.join(texts),
+                'structuredContent': structured_content,
+            }
+            if resources:
+                result['resources'] = resources
+            return result
 
         if resources:
             return {'text': '\n\n'.join(texts), 'resources': resources}
@@ -492,7 +533,8 @@ class MCPClient(ToolBase):
         stack = AsyncExitStack()
         try:
             async with stack:
-                session = await self._open_session(stack, server_name, **kwargs)
+                session = await self._open_session(stack, server_name,
+                                                   **kwargs)
                 self.sessions[server_name] = session
                 if not ready.done():
                     ready.set_result(server_name)
