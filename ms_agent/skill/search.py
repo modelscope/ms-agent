@@ -85,4 +85,6 @@ class SkillSearchEngine:
 
         if docs:
             self._retriever.index(docs, ids)
+        else:
+            self._retriever.reset()
         self._index_version = current_version
