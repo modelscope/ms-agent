@@ -72,7 +72,8 @@ class PythonImportParser(BaseImportParser):
                 imports.append(info)
 
         # Pattern 2: import ...
-        import_pattern = r'^\s*import\s+([\w.,\s]+)'
+        # Horizontal whitespace keeps the match within the import's line.
+        import_pattern = r'^[ \t\f]*import[ \t\f]+([\w., \t\f]+)'
         for match in re.finditer(import_pattern, code_content, re.MULTILINE):
             infos = self._extract_simple_import(match)
             imports.extend(infos)
