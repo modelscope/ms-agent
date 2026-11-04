@@ -57,6 +57,51 @@ class TestTaskManager(unittest.IsolatedAsyncioTestCase):
         tm.kill(task_id)
         self.assertEqual(tm._tasks[task_id].status, 'killed')
 
+    async def test_late_completion_preserves_killed_task(self):
+        tm = TaskManager()
+        task_id = tm.register('shell', 'shell_executor', 'cancelled command')
+        tm.kill(task_id)
+        ended_at = tm.get_task(task_id).ended_at
+
+        await tm.complete(task_id, 'watcher finished after cancellation')
+
+        self.assertEqual(tm.get_task(task_id).status, 'killed')
+        self.assertEqual(tm.get_task(task_id).ended_at, ended_at)
+        self.assertIsNone(tm.get_task(task_id).result)
+        self.assertEqual(tm.drain_notifications(), [])
+
+    async def test_late_failure_preserves_killed_task(self):
+        tm = TaskManager()
+        task_id = tm.register('agent', 'worker', 'cancelled agent')
+        tm.kill(task_id)
+        ended_at = tm.get_task(task_id).ended_at
+
+        await tm.fail(task_id, 'subprocess exited without result')
+
+        self.assertEqual(tm.get_task(task_id).status, 'killed')
+        self.assertEqual(tm.get_task(task_id).ended_at, ended_at)
+        self.assertIsNone(tm.get_task(task_id).error)
+        self.assertEqual(tm.drain_notifications(), [])
+
+    async def test_late_callbacks_preserve_finished_task(self):
+        for initial_status in ('completed', 'failed'):
+            for callback in ('complete', 'fail'):
+                with self.subTest(initial_status=initial_status, callback=callback):
+                    tm = TaskManager()
+                    task_id = tm.register('agent', 'worker', 'finished agent')
+                    if initial_status == 'completed':
+                        await tm.complete(task_id, 'original result')
+                    else:
+                        await tm.fail(task_id, 'original error')
+                    self.assertEqual(len(tm.drain_notifications()), 1)
+                    task = tm.get_task(task_id)
+                    original = (task.status, task.result, task.error, task.ended_at)
+
+                    await getattr(tm, callback)(task_id, 'late callback')
+
+                    self.assertEqual((task.status, task.result, task.error, task.ended_at), original)
+                    self.assertEqual(tm.drain_notifications(), [])
+
     def test_kill_all(self):
         tm = TaskManager()
         ids = [tm.register('agent', 'tool', f'task {i}') for i in range(3)]
