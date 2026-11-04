@@ -25,6 +25,7 @@ from ms_agent.llm import thinking as T
         ('https://api.moonshot.cn/v1', 'moonshot'),
         ('https://api.minimaxi.com/v1', 'minimax'),
         ('https://openrouter.ai/api/v1', 'openrouter'),
+        ('https://api.atlascloud.ai/v1', 'atlascloud'),
         ('https://api.openai.com/v1', 'openai'),
         ('https://vllm.internal.corp:8000/v1', 'unknown'),
     ],
@@ -202,6 +203,24 @@ def test_minimax_always_asks_for_the_reasoning_to_be_split_out():
     for base in ('https://api-inference.modelscope.cn/v1',
                  'https://openrouter.ai/api/v1'):
         assert 'reasoning_split' not in str(T.plan('auto', base_url=base))
+
+
+def test_atlascloud_offers_only_the_tiers_its_whole_catalog_accepts():
+    # `high` and `xhigh` are the only two no model on the gateway rejects, so
+    # anything weaker clamps down onto `high` rather than erroring on part of
+    # the catalog -- and `off`, which has no spelling that works everywhere,
+    # lands on the weakest thinking tier instead of collapsing into silence.
+    base = 'https://api.atlascloud.ai/v1'
+    strongest = T.plan('xhigh', base_url=base)
+    assert strongest['params'] == {'reasoning_effort': 'xhigh'}
+    for weak in ('minimal', 'low', 'medium'):
+        plan = T.plan(weak, base_url=base)
+        assert plan['effective'] == 'high'
+        assert plan['params'] == {'reasoning_effort': 'high'}
+    assert T.plan('max', base_url=base)['effective'] == 'xhigh'
+    assert T.plan('off', base_url=base)['effective'] == 'high'
+    # `auto` still says nothing, which is the one setting every model accepts.
+    assert T.plan('auto', base_url=base)['params'] == {}
 
 
 def test_openrouter_uses_its_own_unified_object():
