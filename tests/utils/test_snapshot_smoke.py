@@ -168,6 +168,58 @@ class TestRestoreSnapshot(unittest.TestCase):
             self.assertTrue(ok)
             self.assertEqual(mc, 7)
 
+    def test_restore_removes_files_added_in_later_snapshots(self):
+        with tempfile.TemporaryDirectory() as td:
+            original = os.path.join(td, 'original.txt')
+            added = os.path.join(td, 'nested', 'added.txt')
+            untracked = os.path.join(td, 'untracked.txt')
+            _write(original, 'v1')
+            h1 = take_snapshot(td, 'first state', message_count=2)
+            self.assertIsNotNone(h1)
+
+            _write(original, 'v2')
+            _write(added, 'added later')
+            h2 = take_snapshot(td, 'second state', message_count=4)
+            self.assertIsNotNone(h2)
+            _write(untracked, 'not in either snapshot')
+
+            ok, mc = restore_snapshot(td, h1)
+            self.assertTrue(ok)
+            self.assertEqual(mc, 2)
+            self.assertEqual(_read(original), 'v1')
+            self.assertFalse(os.path.exists(added))
+            self.assertEqual(_read(untracked), 'not in either snapshot')
+            self.assertEqual([s['hash'] for s in list_snapshots(td)], [h2, h1])
+
+            ok, mc = restore_snapshot(td, h2)
+            self.assertTrue(ok)
+            self.assertEqual(mc, 4)
+            self.assertEqual(_read(original), 'v2')
+            self.assertEqual(_read(added), 'added later')
+            self.assertEqual(_read(untracked), 'not in either snapshot')
+
+    def test_restore_preserves_later_history_and_restores_existing_history(self):
+        for cache_dir in ('.ms_agent/memory', '.memory'):
+            with self.subTest(cache_dir=cache_dir), tempfile.TemporaryDirectory() as td:
+                artifact = os.path.join(td, 'work.txt')
+                existing = os.path.join(td, cache_dir, 'existing.json')
+                later = os.path.join(td, cache_dir, 'later.json')
+                _write(artifact, 'v1')
+                _write(existing, 'original history')
+                h1 = take_snapshot(td, 'first state')
+                self.assertIsNotNone(h1)
+
+                _write(artifact, 'v2')
+                _write(existing, 'modified history')
+                _write(later, 'later history')
+                self.assertIsNotNone(take_snapshot(td, 'second state'))
+
+                ok, _ = restore_snapshot(td, h1)
+                self.assertTrue(ok)
+                self.assertEqual(_read(artifact), 'v1')
+                self.assertEqual(_read(existing), 'original history')
+                self.assertEqual(_read(later), 'later history')
+
     def test_restore_deleted_file(self):
         """A file deleted after snapshot is recreated on restore."""
         with tempfile.TemporaryDirectory() as td:

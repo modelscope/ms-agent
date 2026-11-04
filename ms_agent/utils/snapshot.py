@@ -220,7 +220,7 @@ def list_snapshots(output_dir: str) -> list[dict]:
 
 def restore_snapshot(output_dir: str, commit_hash: str) -> tuple[bool, int]:
     """
-    Restore output_dir to the state at commit_hash.
+    Restore tracked work products and cached state at commit_hash.
 
     Returns (success, message_count) where message_count is the number of
     messages in history at snapshot time (0 if unknown).
@@ -233,6 +233,14 @@ def restore_snapshot(output_dir: str, commit_hash: str) -> tuple[bool, int]:
         _git(['checkout', commit_hash, '--', '.'],
              work_tree=output_dir,
              git_dir=git_dir)
+        # Remove later work products, but preserve later history caches so
+        # LLMAgent.rollback can still read and truncate conversation history.
+        paths = [
+            '.', ':(exclude,literal).ms_agent/memory',
+            ':(exclude,literal).memory'
+        ]
+        command = ['checkout', '--no-overlay', commit_hash, '--'] + paths
+        _git(command, work_tree=output_dir, git_dir=git_dir)
         logger.info(f'[snapshot] Restored to {commit_hash}')
         meta = _load_meta(output_dir)
         message_count = meta.get(commit_hash, {}).get('message_count', 0)
