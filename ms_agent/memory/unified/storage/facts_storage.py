@@ -46,6 +46,7 @@ class FactsStorage:
         self.confidence_threshold = config.confidence_threshold
         self.security_scan = config.security_scan
         self._cache: Optional[Dict[str, Any]] = None
+        self._cache_stat: Optional[tuple] = None
 
     # ------------------------------------------------------------------
     # MemoryStorage protocol
@@ -209,12 +210,21 @@ class FactsStorage:
         )
 
     def _load(self) -> Dict[str, Any]:
-        if self._cache is not None:
+        # Facts are a prompt source too: external edits and deletions must
+        # invalidate cached data just as they do for MEMORY.md.
+        try:
+            st = self.facts_path.stat()
+            stat_key = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            stat_key = None
+        if (self._cache is not None and stat_key is not None
+                and self._cache_stat == stat_key):
             return self._cache
-        if self.facts_path.exists():
+        if stat_key is not None:
             try:
                 data = json.loads(self.facts_path.read_text(encoding='utf-8'))
                 self._cache = data
+                self._cache_stat = stat_key
                 return data
             except (json.JSONDecodeError, OSError) as e:
                 logger.warning(
@@ -225,11 +235,18 @@ class FactsStorage:
             'facts': []
         }
         self._cache = default
+        self._cache_stat = None
         return default
 
     def _save(self, data: Dict[str, Any]) -> None:
         atomic_write_json(self.facts_path, data)
         self._cache = data
+        try:
+            st = self.facts_path.stat()
+            self._cache_stat = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            self._cache_stat = None
 
     def invalidate_cache(self) -> None:
         self._cache = None
+        self._cache_stat = None
