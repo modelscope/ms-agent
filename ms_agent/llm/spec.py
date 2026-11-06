@@ -238,6 +238,16 @@ class ProviderRegistry:
                 keywords=[],
                 capabilities=openai_caps,
             ),
+            ProviderSpec(
+                name='cheaperinference',
+                display_name='Cheaper Inference',
+                transport=TRANSPORT_OPENAI_COMPAT,
+                api_key_env=['CHEAPER_INFERENCE_API_KEY'],
+                default_base_url='https://api.cheaperinference.com/v1',
+                base_url_env=['CHEAPER_INFERENCE_BASE_URL'],
+                keywords=[],
+                capabilities=openai_caps,
+            ),
         ]
         for spec in builtins:
             self.register(spec)
