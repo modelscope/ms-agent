@@ -23,9 +23,11 @@ from ms_agent.llm.utils import Message
 
 class ResponseBody(httpx.SyncByteStream):
 
-    def __init__(self, stream, *, wait_for_body=False, protocol='openai'):
+    def __init__(self, stream, *, wait_for_body=False, protocol='openai',
+                 deltas=None):
         self.stream = stream
         self.protocol = protocol
+        self.deltas = deltas
         self.entered = threading.Event()
         self.release = threading.Event()
         self.closed = threading.Event()
@@ -66,7 +68,9 @@ class ResponseBody(httpx.SyncByteStream):
                 yield json.dumps(message).encode()
             return
         if self.stream:
-            for delta, reason in [({'content': 'OK'}, None), ({}, 'stop')]:
+            deltas = self.deltas if self.deltas is not None else [
+                ({'content': 'OK'}, None), ({}, 'stop')]
+            for delta, reason in deltas:
                 chunk = {
                     'id': 'probe', 'object': 'chat.completion.chunk',
                     'created': 0, 'model': 'probe',
@@ -189,6 +193,57 @@ async def mock_request(protocol, *, stream=True, legacy=False,
     async with running(request.agent, request.release_headers, body.release) as task:
         request.task = task
         yield request
+
+
+@pytest.mark.parametrize('legacy', [False, True])
+def test_streaming_parallel_tool_calls_keep_all_indices(legacy):
+    body = ResponseBody(True, deltas=[
+        ({'tool_calls': [{
+            'index': 0, 'id': 'call_a', 'type': 'function',
+            'function': {'name': 'alpha', 'arguments': '{"x":'},
+        }]}, None),
+        ({'tool_calls': [
+            {'index': 0, 'function': {'arguments': '1'}},
+            {'index': 1, 'id': 'call_b', 'type': 'function',
+             'function': {'name': 'beta', 'arguments': '{"y":2}'}},
+        ]}, None),
+        ({'tool_calls': [
+            {'index': 0, 'function': {'arguments': '}'}},
+        ]}, None),
+        ({}, 'tool_calls'),
+    ])
+    requests = []
+
+    def handle(request):
+        requests.append(json.loads(request.content))
+        return httpx.Response(200, stream=body, headers={
+            'Content-Type': 'text/event-stream'})
+
+    agent = make_agent(handle, legacy=legacy,
+                       base_url='http://127.0.0.1/v1')
+    tools = [{
+        'server_name': None, 'tool_name': name, 'description': name,
+        'parameters': {'type': 'object',
+                       'properties': {argument: {'type': 'integer'}},
+                       'required': [argument]},
+    } for name, argument in [('alpha', 'x'), ('beta', 'y')]]
+    try:
+        chunks = list(agent.llm.generate(
+            [Message(role='user', content='Call alpha and beta')],
+            tools=tools, stream=True))
+        calls = chunks[-1].tool_calls
+        assert isinstance(agent.llm.client, openai.OpenAI)
+        assert len(requests) == 1
+        assert requests[0]['stream'] is True
+        assert body.closed.is_set()
+        assert [(call['index'], call['id'], call['tool_name'],
+                 call['arguments']) for call in calls] == [
+            (0, 'call_a', 'alpha', '{"x":1}'),
+            (1, 'call_b', 'beta', '{"y":2}'),
+        ]
+    finally:
+        body.close()
+        agent.llm.client.close()
 
 
 @pytest.mark.parametrize('stream', [True, False])
