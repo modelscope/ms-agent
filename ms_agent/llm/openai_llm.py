@@ -452,7 +452,7 @@ class OpenAI(LLM):
 
         Note:
             - **Content Merging**: Textual content (`content`, `reasoning_content`) is appended cumulatively.
-            - **Tool Call Merging**: If the same tool call index appears in consecutive chunks,
+            - **Tool Call Merging**: If the same tool call index appears across chunks,
               its `arguments` and `tool_name` will be updated incrementally.
             - If a new tool call index is found, it will be added as a new entry in `tool_calls`.
         """
@@ -466,33 +466,30 @@ class OpenAI(LLM):
         message.content += message_chunk.content
         if message_chunk.tool_calls:
             if message.tool_calls:
-                if message.tool_calls[-1]['index'] == message_chunk.tool_calls[
-                        0]['index']:
-                    if message_chunk.tool_calls[0]['id']:
-                        message.tool_calls[-1][
-                            'id'] = message_chunk.tool_calls[0]['id']
-                    if message_chunk.tool_calls[0]['arguments']:
-                        if message.tool_calls[-1]['arguments']:
-                            message.tool_calls[-1][
-                                'arguments'] += message_chunk.tool_calls[0][
-                                    'arguments']
+                for tool_call_chunk in message_chunk.tool_calls:
+                    tool_call = next(
+                        (call for call in message.tool_calls
+                         if call['index'] == tool_call_chunk['index']), None)
+                    if tool_call is None:
+                        message.tool_calls.append(
+                            ToolCall(
+                                id=tool_call_chunk['id'],
+                                arguments=tool_call_chunk['arguments'],
+                                type='function',
+                                tool_name=tool_call_chunk['tool_name'],
+                                index=tool_call_chunk['index']))
+                        continue
+                    if tool_call_chunk['id']:
+                        tool_call['id'] = tool_call_chunk['id']
+                    if tool_call_chunk['arguments']:
+                        if tool_call['arguments']:
+                            tool_call['arguments'] += tool_call_chunk[
+                                'arguments']
                         else:
-                            # message.tool_calls[-1]['arguments'] may be None
-                            message.tool_calls[-1][
-                                'arguments'] = message_chunk.tool_calls[0][
-                                    'arguments']
-                    if message_chunk.tool_calls[0]['tool_name']:
-                        message.tool_calls[-1][
-                            'tool_name'] = message_chunk.tool_calls[0][
-                                'tool_name']
-                else:
-                    message.tool_calls.append(
-                        ToolCall(
-                            id=message_chunk.tool_calls[0]['id'],
-                            arguments=message_chunk.tool_calls[0]['arguments'],
-                            type='function',
-                            tool_name=message_chunk.tool_calls[0]['tool_name'],
-                            index=message_chunk.tool_calls[0]['index']))
+                            tool_call['arguments'] = tool_call_chunk[
+                                'arguments']
+                    if tool_call_chunk['tool_name']:
+                        tool_call['tool_name'] = tool_call_chunk['tool_name']
             else:
                 message.tool_calls = message_chunk.tool_calls
         return message
