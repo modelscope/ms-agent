@@ -13,6 +13,8 @@ export interface TurnSplit {
   processParts: AgentPart[]
   /** The turn's final answer: its trailing text block, once the loop is done. */
   summary: TextPart | null
+  /** Upkeep notices after the final answer must not hide it inside the fold. */
+  trailingNotices: AgentPart[]
 }
 
 /**
@@ -27,13 +29,22 @@ export interface TurnSplit {
 export function splitTurn(parts: AgentPart[], streaming: boolean): TurnSplit {
   const interrupted = parts.some((p) => p.kind === 'interrupted')
   const loopDone = !streaming && !interrupted
-  const last = parts[parts.length - 1]
+  let summaryIdx = parts.length - 1
+  // A compaction recorded between turns can follow an already-finished answer.
+  // It is not model output and must not push that answer into the process fold.
+  while (summaryIdx >= 0) {
+    const part = parts[summaryIdx]
+    if (part.kind !== 'step' || part.step.kind !== 'context_compaction') break
+    summaryIdx--
+  }
+  const last = parts[summaryIdx]
   const hasSummary =
     loopDone && last != null && last.kind === 'text' && !!last.text
   return {
     interrupted,
     loopDone,
-    processParts: hasSummary ? parts.slice(0, parts.length - 1) : parts,
-    summary: hasSummary ? (last as TextPart) : null
+    processParts: hasSummary ? parts.slice(0, summaryIdx) : parts,
+    summary: hasSummary ? (last as TextPart) : null,
+    trailingNotices: hasSummary ? parts.slice(summaryIdx + 1) : []
   }
 }

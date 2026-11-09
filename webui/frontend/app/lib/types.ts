@@ -53,6 +53,7 @@ export interface Session {
   category?: string
   // The model this session last ran on; reopening it selects that model again.
   model_id?: string
+  reasoning_efforts?: Record<string, ReasoningEffort>
 }
 
 export interface ForkOrigin {
@@ -281,6 +282,31 @@ export interface Provider {
   created_at: string
 }
 
+export type ReasoningEffort =
+  | 'auto' | 'off' | 'on' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+export interface CatalogMetadata {
+  source: 'models.dev'
+  revision: string
+  provider_id: string
+  context_limit: number | null
+  input_limit: number | null
+  output_limit: number | null
+  input_modalities: string[]
+  output_modalities: string[]
+  reasoning: boolean | null
+  tool_call: boolean | null
+}
+
+export interface ContextBudget {
+  context_limit: number
+  model_context_limit: number | null
+  input_limit: number | null
+  output_reserve: number
+  compression_threshold: number
+  compression_ratio: number
+}
+
 export interface Model {
   id: string
   provider_id: string
@@ -288,35 +314,32 @@ export interface Model {
   display_name: string
   is_builtin: boolean
   advanced_params: Record<string, unknown>
-  /**
-   * Whether this model may be shown image attachments. Tri-state: `null` means
-   * nobody has said, and the SDK decides (provider capability, then learning
-   * from a refusal). Not a boolean — collapsing "unset" into `false` would make
-   * a vision-capable model silently ignore attachments.
-   */
+  /** User override only; null leaves capability resolution to the SDK. */
   supports_vision: boolean | null
+  effective_supports_vision: boolean
+  context_limit: number | null
+  catalog: CatalogMetadata | null
+  context_budget: ContextBudget | null
+  generation_defaults: GenerationDefaults | null
   created_at: string
 }
 
-/**
- * Read-only preview of what the runtime will send for a provider/model before
- * the user overrides anything. Only about thinking on purpose: sampling knobs
- * are ignored by reasoning models, so surfacing them would advertise settings
- * that do nothing.
- */
+/** SDK-resolved capabilities and saved defaults, also available for unsaved IDs. */
 export interface GenerationDefaults {
-  /** Canonical knob value currently in effect (`auto` unless configured). */
   effort: string
-  /** Accepted values, weakest to strongest. */
-  effort_options: string[]
-  /** `effort` after clamping to what this endpoint supports. */
+  /** Only these values may be offered by normal thinking controls. */
+  effort_options: ReasoningEffort[]
   effective: string
-  /** What actually goes on the wire; `{}` means the model's own default. */
   wire_params: Record<string, unknown>
-  /** Endpoint dialect: `dashscope`, `deepseek`, `unknown`, ... */
   family: string
-  /** Raw keys this endpoint also accepts, shown as an example. */
   extra_hint: string
+  reasoning: boolean | null
+  reasoning_control: 'effort' | 'toggle' | 'budget' | 'none' | 'unknown'
+  raw_override: boolean
+  configuration_error: string
+  catalog: CatalogMetadata | null
+  context_budget: ContextBudget | null
+  effective_supports_vision: boolean
 }
 
 export interface AgentSettings {
@@ -366,4 +389,37 @@ export interface SearchSettingsUpdate {
   provider: string
   /** Omit to keep the stored key, '' to clear it, text to replace it. */
   api_key?: string
+}
+
+export interface CatalogVersion {
+  revision: string | null
+  fetched_at: string | null
+  location?: 'cache' | 'bundled'
+  available?: boolean
+}
+export interface CatalogStatus {
+  active: CatalogVersion
+  pending: CatalogVersion | null
+  policy: 'auto' | 'local' | 'bundled'
+  result?: string
+  updating: boolean
+}
+
+export interface ContextStatus {
+  pending?: { id: string; status: string } | null
+  resuming?: boolean
+  snapshot: {
+    estimated: boolean
+    input_tokens: number
+    context_limit: number
+    input_limit: number | null
+    output_reserve: number
+    compression_threshold: number | null
+    ratio: number | null
+    buckets: Record<string, number>
+    measured_at: string
+  } | null
+  operation: { id?: string; status: 'running' | 'completed' | 'failed' | 'cancelled' | 'blocked' | 'interrupted' | 'not_needed'; trigger?: string; memory_status?: string } | null
+  can_compact: boolean
+  busy?: boolean
 }

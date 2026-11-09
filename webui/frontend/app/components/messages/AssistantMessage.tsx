@@ -5,6 +5,7 @@ import { ThoughtsFlow } from './ThoughtsFlow'
 import { TaskPlan } from './TaskPlan'
 import { ToolBatch } from './ToolBatch'
 import { ToolComposing } from './ToolComposing'
+import { StepCard } from './StepCard'
 import { TurnProcess } from './TurnProcess'
 import { splitTurn } from './turnSplit'
 import { ArtifactFiles } from './ArtifactFiles'
@@ -15,7 +16,7 @@ type StepPart = Extract<AgentPart, { kind: 'step' }>
 type RenderGroup =
   | { kind: 'steps'; parts: StepPart[]; endIdx: number; group: unknown }
   | { kind: 'composing'; parts: StepPart[]; endIdx: number }
-  | { kind: 'single'; part: Exclude<AgentPart, StepPart>; endIdx: number }
+  | { kind: 'single'; part: AgentPart; endIdx: number }
 
 /** History-replayed approved authorizations render nothing (the adjacent
  * tool step shows the invocation) — exclude them from grouping so the
@@ -37,6 +38,11 @@ function groupParts(parts: AgentPart[]): RenderGroup[] {
   const groups: RenderGroup[] = []
   parts.forEach((part, i) => {
     if (part.kind === 'step') {
+      if (part.step.kind === 'context_compaction') {
+        // Upkeep is a plain notice, never a tool accordion or tool count.
+        groups.push({ kind: 'single', part, endIdx: i })
+        return
+      }
       const prev = groups[groups.length - 1]
       const group = part.step.meta.group
       // Not a tool round: nothing has run. Kept in its own group so it never
@@ -153,7 +159,7 @@ export function AssistantMessage({
   // An interrupted turn produced no summary — it stays in the "processing"
   // presentation forever (per spec), so the partial work isn't hidden behind a
   // "processed" header that never really happened.
-  const { loopDone, processParts, summary } = splitTurn(parts, streaming)
+  const { loopDone, processParts, summary, trailingNotices } = splitTurn(parts, streaming)
 
   const renderParts = (source: AgentPart[], frozen: boolean) =>
     groupParts(source).map((g, gi) => {
@@ -163,7 +169,10 @@ export function AssistantMessage({
       // into the finished "processed" card are all history — keep them closed.
       const isLast =
         !frozen &&
-        !source.slice(g.endIdx + 1).some((p) => p.kind !== 'interrupted')
+        !source.slice(g.endIdx + 1).some((p) =>
+          p.kind !== 'interrupted' &&
+          !(p.kind === 'step' && p.step.kind === 'context_compaction')
+        )
       if (g.kind === 'composing') {
         // A placeholder is only ever truthful in one position: the tail of a turn
         // that is still streaming. Anywhere else it outlived the call it stood
@@ -187,6 +196,9 @@ export function AssistantMessage({
         )
       }
       const part = g.part
+      if (part.kind === 'step') {
+        return <StepCard key={key} step={part.step} />
+      }
       if (part.kind === 'thought') {
         return (
           <ThoughtsFlow
@@ -272,6 +284,7 @@ export function AssistantMessage({
         <ErrorCard key={`err-${i}`} text={p.text} recoverable={p.recoverable} />
       ))}
       {summary && <Markdown content={summary.text} streaming={false} />}
+      {renderParts(trailingNotices, true)}
       {/* The turn's deliverables (files written/edited this loop) close the
           message, after the summary. */}
       {loopDone && deliverables.length > 0 && (
