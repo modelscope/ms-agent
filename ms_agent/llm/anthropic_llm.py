@@ -5,9 +5,12 @@ from omegaconf import DictConfig, OmegaConf
 from typing import Any, Dict, Generator, Iterator, List, Optional, Union
 
 from ms_agent.llm import LLM
+from ms_agent.llm.cost import (response_usage, set_response_usage,
+                               update_usage_snapshot)
 from ms_agent.llm.io import OpenedStream, interrupt_stream
-from ms_agent.llm.thinking import create_with_thinking_fallback
-from ms_agent.llm.utils import Message, Tool, ToolCall
+from ms_agent.llm.thinking import (THINKING_PARAM_KEYS, apply_effort,
+                                   create_with_thinking_fallback)
+from ms_agent.llm.utils import Message, Tool, ToolCall, normalize_finish_reason
 from ms_agent.utils import assert_package_exist, get_logger, retry
 from ms_agent.utils.constants import get_service_config
 
@@ -140,6 +143,8 @@ class Anthropic(LLM):
         if not api_key:
             raise ValueError('Anthropic API key is required.')
 
+        self.provider_id = config.llm.get('service') or ''
+        self.base_url = base_url
         self._is_dashscope = bool(base_url and 'dashscope' in base_url.lower())
 
         if self._is_dashscope:
@@ -251,43 +256,23 @@ class Anthropic(LLM):
             system = formatted_messages[0]['content']
             formatted_messages = formatted_messages[1:]
 
-        max_tokens = kwargs.pop('max_tokens', 16000)
-
-        enable_thinking = bool(kwargs.pop('enable_thinking', False))
-        thinking_budget = kwargs.pop('thinking_budget', None)
-        thinking_type = kwargs.pop('thinking_type', None)
-
-        raw_extra_body = kwargs.pop('extra_body', {}) or {}
-        extra_body = dict(raw_extra_body) if isinstance(raw_extra_body,
-                                                        dict) else {}
-        enable_thinking = bool(
-            extra_body.pop('enable_thinking', enable_thinking))
-        thinking_budget = extra_body.pop('thinking_budget',
-                                         thinking_budget) or max_tokens
-        thinking_type = extra_body.pop('thinking_type', thinking_type)
-        for _k in ('show_reasoning', 'reasoning_output'):
-            extra_body.pop(_k, None)
-
+        kwargs = apply_effort(
+            kwargs,
+            base_url=str(
+                getattr(self, 'base_url', getattr(self.client, 'base_url',
+                                                  ''))),
+            protocol='anthropic',
+            provider_id=getattr(self, 'provider_id', ''),
+            model=self.model)
         params = {
             'model': self.model,
             'messages': formatted_messages,
-            'max_tokens': max_tokens
+            'max_tokens': kwargs.pop('max_tokens', 16000),
         }
-
-        if thinking_type == 'adaptive':
-            params['thinking'] = {'type': 'adaptive'}
-        elif enable_thinking:
-            params['thinking'] = {
-                'type': 'enabled',
-                'budget_tokens': thinking_budget,
-            }
-
         if system:
             params['system'] = system
         if tools:
             params['tools'] = tools
-        if extra_body:
-            kwargs['extra_body'] = extra_body
         params.update(kwargs)
 
         def _send(**call):
@@ -320,7 +305,11 @@ class Anthropic(LLM):
         stream = args.pop('stream', False)
 
         sig_params = inspect.signature(self.client.messages.create).parameters
-        filtered_args = {k: v for k, v in args.items() if k in sig_params}
+        filtered_args = {
+            k: v
+            for k, v in args.items()
+            if k in sig_params or k in THINKING_PARAM_KEYS
+        }
 
         completion = self._call_llm(messages, formatted_tools, stream,
                                     **filtered_args)
@@ -348,13 +337,24 @@ class Anthropic(LLM):
             try:
                 full_content = ''
                 full_thinking = ''
+                usage_snapshot = {}
                 for event in stream:
                     event_type = getattr(event, 'type')
                     if event_type == 'message_start':
                         msg = event.message
                         current_message.id = msg.id
+                        update_usage_snapshot(usage_snapshot,
+                                              getattr(msg, 'usage', None))
                         tool_call_id_map = {}
                         yield current_message
+                    elif event_type == 'message_delta':
+                        update_usage_snapshot(usage_snapshot,
+                                              getattr(event, 'usage', None))
+                        reason = getattr(
+                            getattr(event, 'delta', None), 'stop_reason', None)
+                        if reason:
+                            current_message.finish_reason = normalize_finish_reason(
+                                reason)
                     elif event_type == 'content_block_delta':
                         if event.delta.type == 'thinking_delta':
                             full_thinking += event.delta.thinking
@@ -364,10 +364,11 @@ class Anthropic(LLM):
                             current_message.content = full_content
                         yield current_message
                     elif event_type == 'message_stop':
-                        final_msg = getattr(event, 'message')
-                        full_content = ''
+                        final_msg = getattr(event, 'message', None)
+                        full_content = '' if final_msg else full_content
                         used_tool_call_ids = set()
-                        for idx, block in enumerate(event.message.content):
+                        for idx, block in enumerate(
+                                getattr(final_msg, 'content', [])):
                             if block is None:
                                 continue
                             if block.type == 'text':
@@ -385,12 +386,17 @@ class Anthropic(LLM):
                                 used_tool_call_ids.add(tool_call_id)
                         current_message.content = full_content
                         current_message.partial = False
-                        current_message.completion_tokens = getattr(
-                            final_msg.usage, 'output_tokens',
-                            current_message.completion_tokens)
-                        current_message.prompt_tokens = getattr(
-                            final_msg.usage, 'input_tokens',
-                            current_message.prompt_tokens)
+                        reason = getattr(final_msg, 'stop_reason', None)
+                        if reason:
+                            current_message.finish_reason = normalize_finish_reason(
+                                reason)
+                        update_usage_snapshot(
+                            usage_snapshot, getattr(final_msg, 'usage', None))
+                        set_response_usage(
+                            current_message,
+                            usage_snapshot or None,
+                            protocol='anthropic',
+                            model=getattr(self, 'model', ''))
 
                         yield current_message
             finally:
@@ -435,9 +441,14 @@ class Anthropic(LLM):
             content=content,
             reasoning_content=reasoning_content,
             tool_calls=tool_calls if tool_calls else None,
+            finish_reason=normalize_finish_reason(
+                getattr(completion, 'stop_reason', None)),
             id=completion.id,
-            prompt_tokens=completion.usage.input_tokens,
-            completion_tokens=completion.usage.output_tokens,
+            **response_usage(
+                getattr(completion, 'usage', None),
+                protocol='anthropic',
+                model=getattr(completion, 'model', ''),
+                response_id=completion.id),
         )
 
 

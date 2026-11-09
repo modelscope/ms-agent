@@ -24,10 +24,13 @@ from dataclasses import replace
 from typing import Any, Dict, Generator, Iterable, List, Optional, Union
 
 from ms_agent.llm import multimodal
-from ms_agent.llm.io import interrupt_stream
-from ms_agent.llm.thinking import apply_effort, create_with_thinking_fallback
+from ms_agent.llm.cost import (merge_usage, normalize_usage, response_usage,
+                               set_response_usage, update_openai_usage)
+from ms_agent.llm.io import create_owned_response, interrupt_stream
+from ms_agent.llm.thinking import (THINKING_PARAM_KEYS, apply_effort,
+                                   create_with_thinking_fallback)
 from ms_agent.llm.transport.base import Transport
-from ms_agent.llm.utils import Message, Tool, ToolCall
+from ms_agent.llm.utils import Message, Tool, ToolCall, normalize_finish_reason
 from ms_agent.llm.vision import create_with_vision_fallback
 from ms_agent.llm.vision import delivery_reason as vision_delivery_reason
 from ms_agent.utils import MAX_CONTINUE_RUNS, assert_package_exist, get_logger
@@ -72,7 +75,9 @@ class OpenAICompatTransport(Transport):
         strip_reasoning_tags: bool = False,
         vision: Optional['multimodal.VisionOptions'] = None,
         vision_supported: bool = True,
+        provider_id: str = '',
     ):
+        self.provider_id = provider_id
         assert_package_exist('openai')
         import openai
 
@@ -92,7 +97,9 @@ class OpenAICompatTransport(Transport):
         self.base_url = self._normalize_base_url(base_url)
         self.client = openai.OpenAI(api_key=api_key, base_url=self.base_url)
         self.args: Dict = dict(generation_config or {})
-        self.max_continue_runs = max_continue_runs or MAX_CONTINUE_RUNS
+        self.max_continue_runs = (
+            MAX_CONTINUE_RUNS
+            if max_continue_runs is None else max_continue_runs)
         self._strip_reasoning_tags = strip_reasoning_tags
         # The streaming response currently being iterated, exposed so interrupt()
         # can close it from another thread when the consumer abandons the stream.
@@ -286,9 +293,9 @@ class OpenAICompatTransport(Transport):
             role = formatted_message.get('role')
             if role == 'assistant':
                 pending_tool_ids = [
-                    tc.get('id') for tc in (formatted_message.get('tool_calls')
-                                            or []) if isinstance(tc, dict)
-                    and tc.get('id')
+                    tc.get('id')
+                    for tc in (formatted_message.get('tool_calls') or [])
+                    if isinstance(tc, dict) and tc.get('id')
                 ]
             elif role == 'tool' and not formatted_message.get('tool_call_id'):
                 if pending_tool_ids:
@@ -373,7 +380,11 @@ class OpenAICompatTransport(Transport):
         # own tier. `reasoning_effort` is a real OpenAI parameter, so it survives
         # the filter below and reaches `_call_llm` intact; continuation calls
         # re-lower from the same canonical value.
-        args = {key: value for key, value in args.items() if key in parameters}
+        args = {
+            key: value
+            for key, value in args.items()
+            if key in parameters or key in THINKING_PARAM_KEYS
+        }
 
         # Format tools once and thread the formatted list through the
         # continuation chain. (Passing the raw tools into a continuation call
@@ -381,7 +392,10 @@ class OpenAICompatTransport(Transport):
         formatted_tools = self.format_tools(tools)
         completion = self._call_llm(messages, formatted_tools, **args)
 
-        max_continue_runs = max_continue_runs or self.max_continue_runs
+        # None inherits the configured total-call limit. Both 0 and 1
+        # permit only the initial request; internal counters must not be negative.
+        limit = self.max_continue_runs if max_continue_runs is None else max_continue_runs
+        max_continue_runs = max(1, int(limit))
         if stream:
             gen = self._stream_continue_generate(messages, completion,
                                                  formatted_tools,
@@ -414,6 +428,9 @@ class OpenAICompatTransport(Transport):
         underlying HTTP response unblocks that read (it raises inside ``next()``,
         which the caller discards). A no-op when nothing is streaming.
         """
+        cancelled = getattr(self, '_request_cancel', None)
+        if cancelled is not None:
+            cancelled.set()
         stream = self._active_stream
         interrupt_stream(stream)
         if self._active_stream is stream:
@@ -472,7 +489,10 @@ class OpenAICompatTransport(Transport):
         # that decides the spelling is known. Thinking is also per-model and a
         # refusal is a hard 400. Both live in llm/thinking.py.
         kwargs = apply_effort(
-            kwargs, base_url=str(getattr(self.client, 'base_url', '')))
+            kwargs,
+            base_url=str(getattr(self.client, 'base_url', '')),
+            provider_id=getattr(self, 'provider_id', ''),
+            model=self.model)
 
         # Images are the other per-model hard-400: a text-only model rejects the
         # whole request rather than ignoring the image blocks, which would make
@@ -486,8 +506,17 @@ class OpenAICompatTransport(Transport):
             if isinstance(m, dict))
 
         def create(messages, **params):
-            result = self.client.chat.completions.create(
-                model=self.model, messages=messages, tools=tools, **params)
+            resource = self.client.chat.completions
+            result = (
+                resource.create(
+                    model=self.model, messages=messages, tools=tools, **params)
+                if is_streaming else create_owned_response(
+                    resource,
+                    self,
+                    model=self.model,
+                    messages=messages,
+                    tools=tools,
+                    **params))
             if is_streaming:
                 # Keep the actual HTTP stream, before the fallback layers wrap
                 # it in generators. Closing a wrapper before its first next()
@@ -516,26 +545,13 @@ class OpenAICompatTransport(Transport):
         """Token total of a usage object; -1 for None (so any real usage wins)."""
         if usage_obj is None:
             return -1
-        return (getattr(usage_obj, 'prompt_tokens', 0) or 0) + \
-            (getattr(usage_obj, 'completion_tokens', 0) or 0)
+        usage = normalize_usage(usage_obj)
+        return usage['prompt_tokens'] + usage['completion_tokens']
 
     @staticmethod
     def _extract_cache_info(usage_obj: Any) -> tuple:
-        if not usage_obj:
-            return 0, 0
-        details = getattr(usage_obj, 'prompt_tokens_details', None)
-        if details is None and isinstance(usage_obj, dict):
-            details = usage_obj.get('prompt_tokens_details')
-        if details is None:
-            return 0, 0
-        if isinstance(details, dict):
-            cached = int(details.get('cached_tokens', 0) or 0)
-            created = int(details.get('cache_creation_input_tokens', 0) or 0)
-        else:
-            cached = int(getattr(details, 'cached_tokens', 0) or 0)
-            created = int(
-                getattr(details, 'cache_creation_input_tokens', 0) or 0)
-        return cached, created
+        usage = normalize_usage(usage_obj)
+        return usage['cached_tokens'], usage['cache_creation_input_tokens']
 
     @staticmethod
     def _extract_reasoning_tokens(usage_obj: Any) -> int:
@@ -558,6 +574,9 @@ class OpenAICompatTransport(Transport):
         if not pre_message_chunk:
             return message_chunk
         message = deepcopy(pre_message_chunk)
+        merge_usage(message, message_chunk)
+        if message_chunk.finish_reason:
+            message.finish_reason = message_chunk.finish_reason
         # Coalesce to '' first: either side can be None (first chunk of a tool
         # call / reasoning, or a prior message without reasoning content), and
         # None += str raises TypeError.
@@ -604,61 +623,80 @@ class OpenAICompatTransport(Transport):
                                   max_runs: Optional[int] = None,
                                   **kwargs) -> Generator[Message, None, None]:
         flag = self._continue_flag
+        # LLMAgent replaces messages[-1] on every yield. Keep the continuation
+        # prefix independent of that live UI/history accumulator.
+        prefix = deepcopy(messages[-1]) if getattr(messages[-1], flag,
+                                                   False) else None
+        if prefix is not None:
+            # The previous call's finish reason says nothing about this call.
+            prefix.finish_reason = ''
         message = None
+        usage = None
+        usage_complete = False
         # _call_llm tracks the raw HTTP stream for interruption. Also close its
         # fallback wrappers on normal end, error, or GeneratorExit.
         try:
-            for chunk in completion:
+            chunks = iter(completion)
+            for chunk in chunks:
+                usage = update_openai_usage(usage,
+                                            getattr(chunk, 'usage', None))
                 message_chunk = self._stream_format_output_message(chunk)
                 message = self._merge_stream_message(message, message_chunk)
+                if getattr(chunk, 'usage', None) is not None:
+                    set_response_usage(
+                        message,
+                        usage,
+                        model=getattr(self, 'model', ''),
+                        complete=False)
                 if chunk.choices and chunk.choices[0].finish_reason:
                     # Usage may arrive in this finish chunk (e.g. DeepSeek) or in
                     # a separate trailing usage-only chunk (OpenAI/DashScope/
                     # ModelScope, whose finish chunk may carry a zeroed usage).
                     # Consider both and take the one with real token counts.
-                    usage = getattr(chunk, 'usage', None)
-                    try:
-                        next_chunk = next(completion)
-                        trailing = getattr(next_chunk, 'usage', None)
-                    except (StopIteration, AttributeError):
-                        trailing = None
-                    if self._usage_total(trailing) > self._usage_total(usage):
-                        usage = trailing
-                    if usage is not None:
-                        message.prompt_tokens += getattr(
-                            usage, 'prompt_tokens', 0) or 0
-                        message.completion_tokens += getattr(
-                            usage, 'completion_tokens', 0) or 0
-                        cached, created = self._extract_cache_info(usage)
-                        message.cached_tokens += cached
-                        message.cache_creation_input_tokens += created
-                        message.reasoning_tokens += \
-                            self._extract_reasoning_tokens(usage)
-                    first_run = not messages[-1].to_dict().get(flag, False)
+                    for next_chunk in chunks:
+                        usage = update_openai_usage(
+                            usage, getattr(next_chunk, 'usage', None))
+                    usage_complete = True
+                    set_response_usage(
+                        message, usage, model=getattr(self, 'model', ''))
+                    first_run = prefix is None
                     if self.continue_gen_mode and chunk.choices[
                             0].finish_reason in [
                                 'length', 'null'
-                            ] and (max_runs is None or max_runs != 0):
+                            ] and (max_runs is None or max_runs > 0):
                         logger.info(
                             f'finish_reason: {chunk.choices[0].finish_reason}, '
                             f'continue generate.')
+                        if prefix is not None:
+                            messages[-1] = deepcopy(prefix)
                         completion = self._call_llm_for_continue_gen(
                             messages, message, tools, **kwargs)
-                        for chunk in self._stream_continue_generate(
-                                messages, completion, tools,
-                                max_runs - 1 if max_runs is not None else None,
-                                **kwargs):
-                            if first_run:
-                                yield self._merge_stream_message(
-                                    messages[-1], chunk)
-                            else:
-                                yield chunk
+                        yield from self._stream_continue_generate(
+                            messages, completion, tools,
+                            max_runs - 1 if max_runs is not None else None,
+                            **kwargs)
+                        return  # never re-yield the pre-continuation usage/text
                     elif not first_run:
+                        messages[-1] = deepcopy(prefix)
                         self._merge_partial_message(messages, message)
                         setattr(messages[-1], flag, False)
                         message = messages[-1]
-                yield message
+                        prefix = None
+                yield self._merge_stream_message(
+                    prefix, message) if prefix else message
+            if message is not None and not usage_complete:
+                usage_complete = True
+                set_response_usage(
+                    message, usage, model=getattr(self, 'model', ''))
+                yield self._merge_stream_message(
+                    prefix, message) if prefix else message
         finally:
+            if message is not None and usage is not None and not usage_complete:
+                set_response_usage(
+                    message,
+                    usage,
+                    model=getattr(self, 'model', ''),
+                    complete=False)
             self._close_stream(completion)
             self.interrupt()
             self._active_stream = None
@@ -670,7 +708,8 @@ class OpenAICompatTransport(Transport):
         content = ''
         if completion_chunk.choices and completion_chunk.choices[0].delta:
             content = completion_chunk.choices[0].delta.content
-            reasoning_content = _reasoning_of(completion_chunk.choices[0].delta)
+            reasoning_content = _reasoning_of(
+                completion_chunk.choices[0].delta)
             if completion_chunk.choices[0].delta.tool_calls:
                 func = completion_chunk.choices[0].delta.tool_calls
                 tool_calls = [
@@ -689,10 +728,10 @@ class OpenAICompatTransport(Transport):
             content=content,
             reasoning_content=reasoning_content,
             tool_calls=tool_calls,
-            id=completion_chunk.id,
-            prompt_tokens=getattr(completion_chunk.usage, 'prompt_tokens', 0),
-            completion_tokens=getattr(completion_chunk.usage,
-                                      'completion_tokens', 0))
+            finish_reason=normalize_finish_reason(
+                getattr(completion_chunk.choices[0], 'finish_reason', None
+                        ) if completion_chunk.choices else None),
+            id=completion_chunk.id)
 
     # ------------------------------------------------------------------ #
     # non-streaming + continuation
@@ -712,31 +751,26 @@ class OpenAICompatTransport(Transport):
                     tool_name=tool_call.function.name) for idx, tool_call in
                 enumerate(completion.choices[0].message.tool_calls)
             ]
-        usage = getattr(completion, 'usage', None)
-        cached, created = OpenAICompatTransport._extract_cache_info(usage)
-        reasoning = OpenAICompatTransport._extract_reasoning_tokens(usage)
         return Message(
             role='assistant',
             content=content,
             reasoning_content=reasoning_content,
             tool_calls=tool_calls,
+            finish_reason=normalize_finish_reason(
+                getattr(completion.choices[0], 'finish_reason', None)),
             id=completion.id,
-            prompt_tokens=completion.usage.prompt_tokens,
-            cached_tokens=cached,
-            cache_creation_input_tokens=created,
-            completion_tokens=completion.usage.completion_tokens,
-            reasoning_tokens=reasoning)
+            **response_usage(
+                getattr(completion, 'usage', None),
+                model=getattr(completion, 'model', ''),
+                response_id=completion.id))
 
     @staticmethod
     def _merge_partial_message(messages: List[Message], new_message: Message):
         messages[-1].reasoning_content += new_message.reasoning_content
         messages[-1].content += new_message.content
-        messages[-1].prompt_tokens += new_message.prompt_tokens
-        messages[-1].cached_tokens += new_message.cached_tokens
-        messages[-1].cache_creation_input_tokens += \
-            new_message.cache_creation_input_tokens
-        messages[-1].completion_tokens += new_message.completion_tokens
-        messages[-1].reasoning_tokens += new_message.reasoning_tokens
+        # Unlike a delta merge, this is a new call (even if its reason is unknown).
+        messages[-1].finish_reason = new_message.finish_reason
+        merge_usage(messages[-1], new_message)
         if new_message.tool_calls:
             if messages[-1].tool_calls:
                 messages[-1].tool_calls += new_message.tool_calls
@@ -759,7 +793,12 @@ class OpenAICompatTransport(Transport):
         if messages[-1].to_dict().get(flag, False):
             self._merge_partial_message(messages, new_message)
         else:
-            if messages[-1].content != new_message.content:
+            if (messages[-1].role == 'assistant'
+                    and messages[-1].id == new_message.id
+                    and messages[-1].content == new_message.content):
+                # Replace a live stream snapshot with its FINAL usage record.
+                messages[-1] = new_message
+            else:
                 messages.append(new_message)
             setattr(messages[-1], flag, True)
         messages[-1].api_calls += 1
@@ -785,7 +824,7 @@ class OpenAICompatTransport(Transport):
         new_message = self._format_output_message(completion)
         if self.continue_gen_mode and completion.choices[0].finish_reason in [
                 'length', 'null'
-        ] and (max_runs is None or max_runs != 0):
+        ] and (max_runs is None or max_runs > 0):
             logger.info(
                 f'finish_reason: {completion.choices[0].finish_reason}, '
                 f'continue generate.')
