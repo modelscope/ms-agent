@@ -145,6 +145,65 @@ in that browser tab when you return, but is not saved across a page refresh.
 Sessions have independent histories and share the project's current files,
 settings and memory. Branching does not copy or roll back the workspace.
 
+## Model capabilities and context
+
+The SDK ships a validated models.dev snapshot, so model capabilities and budgets
+work offline. Source WebUI installations also check for updates at startup
+(at most once per 24 hours after success, with an 8-second network timeout).
+Downloads live in `$MS_AGENT_HOME/cache/models.dev/v1`, outside the checkout;
+failed updates keep the current local data. Installed wheels and images use local
+data by default. **Settings → Models → Update catalog** is available in both
+installations; a newly downloaded version takes effect after a service restart.
+The settings page identifies the current and pending versions. TUI can reuse the
+SDK service, but its update controls are not connected yet.
+
+Set `MS_AGENT_MODEL_CATALOG=local` to skip automatic checks while allowing manual
+updates, or `bundled` to use only the bundled snapshot and disable updates.
+`ms-agent ui --skip-install` also suppresses automatic catalog checks. Queries,
+package builds and `pip install -e .` do not fetch the catalog. A source update or
+package upgrade takes effect on restart; the newer compatible bundled/cache
+snapshot is selected. Models absent from the catalog can still be added manually.
+Catalog entries do not guarantee access through your provider account.
+
+Use the reasoning selector in model settings or beside the chat model selector.
+Each conversation remembers its setting for each model. An explicit change also
+updates the default for new conversations; opening an existing conversation does
+not change that default. Only supported choices are offered. Native thinking
+parameters in Advanced JSON take priority and disable the shortcut with an
+explanation.
+
+Image understanding supports **Auto / On / Off**. Auto uses the catalog, defaulting
+to off for unknown models. Existing explicit choices are preserved; choose Auto to
+restore detection. Unsupported images are not sent as pixels: the UI warns and
+passes file paths instead. A manual override is available for custom deployments.
+Listed audio/video/PDF capabilities describe the model, not native upload support in
+this interface.
+
+The context setting can reduce the model window or supply a limit for an unknown
+model. Clear it to restore defaults. Automatic compression starts near 85% of the
+effective window, or earlier for input limits and output reservation. The circle
+beside the attachment button shows the last assembled context estimate. Open it to
+inspect system prompt, tool definitions and message usage, and choose **Compress
+context**. Output reservation is separate from consumed input; estimates are
+invalidated when the model or configuration changes.
+
+Manual compression runs without adding a user message. It shares SDK logic with
+automatic compression and the SDK `/compact` command; WebUI slash-command routing
+is not yet provided. Closing the page leaves compression running; Stop cancels it.
+The conversation keeps a completion marker with its source and estimated counts.
+Original history stays on disk. A failed summary retains the previous window;
+if it exceeds the hard budget, **Retry compression and continue** resumes the
+saved request without duplicating it. An oversized latest message may require a
+larger model/window or a shorter new message.
+
+Memory and summaries serve different purposes. An enabled memory backend may
+extract durable facts before compaction; ordinary memory failures do not block
+a valid summary and retain retry sources. System instructions are retained and
+refreshed rather than replaced by a summary. Summaries use a separate economical
+reasoning setting and can omit facts; save important evidence in project files.
+Usage is recorded independently of successful compaction. Cost estimates are
+marked complete, partial or unknown and are not shown in the UI yet.
+
 ## Edit project files
 
 Open a project's workspace to create files or folders, rename entries in place,
