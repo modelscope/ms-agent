@@ -59,6 +59,7 @@ class SessionLog:
 
         self._metadata: Optional[Dict[str, Any]] = None
         self._messages: Optional[List[Dict[str, Any]]] = None
+        self._committed_boundary: int = 0
         self._seq: int = 0
         self._records: Optional[List[Dict[str, Any]]] = None
 
@@ -109,50 +110,128 @@ class SessionLog:
             self._records = read_records(self._path)
         return self._records
 
-    def commit_compaction(self, messages: List[Dict[str, Any]],
-                          event: Dict[str, Any]) -> None:
-        """Publish a new context only after all of its records are durable."""
-        if not messages:
-            return
-        transaction = uuid.uuid4().hex
-        self.record_compaction({**event, 'transaction_id': transaction,
-                                'message_count': len(messages)})
-        try:
-            seqs = [self.append({
-                **{k: v for k, v in msg.items()
-                   if k not in ('seq', 'timestamp', '_compaction_id')},
-                '_source': 'compaction', '_compaction_id': transaction,
-            }) for msg in messages]
-            self._append_line({
-                '_type': 'compaction_commit', 'seq': self._next_seq(),
-                'transaction_id': transaction,
-                'context_start': seqs[0], 'context_end': seqs[-1],
-            })
-            self.last_consolidated = seqs[0]
-        finally:
-            self._messages = None
-
-    def record_turn_checkpoint(self, round: int, state: dict | None = None) -> None:
+    def record_turn_checkpoint(self,
+                               round: int,
+                               state: dict | None = None) -> None:
         """Persist the successful reply before waiting for another user input."""
         from ms_agent.session.replay import fork_points
         points = fork_points(self.records(), require_checkpoint=False)
         if not points:
             return
         point = points[-1]
-        if any(r.get('_type') == 'turn_checkpoint'
-               and r.get('assistant_seq') == point.assistant_seq for r in self.records()):
+        if any(
+                r.get('_type') == 'turn_checkpoint'
+                and r.get('assistant_seq') == point.assistant_seq
+                for r in self.records()):
             return
         # Never checkpoint an earlier reply while the latest user turn is open.
-        original = [r for r in self.records() if r.get('role')
-                    and r.get('_source') != 'compaction']
+        original = [
+            r for r in self.records()
+            if r.get('role') and r.get('_source') != 'compaction'
+        ]
         if not original or original[-1].get('seq') != point.assistant_seq:
             return
         self._append_line({
-            '_type': 'turn_checkpoint', 'seq': self._next_seq(),
-            'status': 'completed', 'assistant_seq': point.assistant_seq,
-            'context_start': self.last_consolidated, 'round': round,
+            '_type': 'turn_checkpoint',
+            'seq': self._next_seq(),
+            'status': 'completed',
+            'assistant_seq': point.assistant_seq,
+            'context_start': self.last_consolidated,
+            'round': round,
             'state': state or {},
         })
+
+    def record_context_operation(self, event: Dict[str, Any]) -> None:
+        self._append_line({
+            **event, '_type': 'context_operation',
+            'seq': self._next_seq(),
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+
+    def get_context_operations(self) -> List[Dict[str, Any]]:
+        operations = {}
+        for line in self._path.read_text(
+                encoding='utf-8', errors='replace').splitlines():
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(record,
+                          dict) and record.get('_type') == 'context_operation':
+                operations[record['id']] = record
+        return list(operations.values())
+
+    def record_memory_flush(self, event: Dict[str, Any]) -> None:
+        """Persist extraction progress independently of the active window."""
+        self._append_line({
+            **event, '_type': 'memory_flush',
+            'seq': self._next_seq(),
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+
+    def get_memory_flushes(self) -> List[Dict[str, Any]]:
+        """Latest state per extraction batch; source seqs refer to original rows."""
+        batches = {}
+        for line in self._path.read_text(
+                encoding='utf-8', errors='replace').splitlines():
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(record,
+                          dict) and record.get('_type') == 'memory_flush':
+                batches[record['id']] = record
+        return list(batches.values())
+
+    def commit_compaction(self, messages: List[Dict[str, Any]],
+                          event: Dict[str, Any]) -> None:
+        """Publish an entire replacement window in one durable log record.
+
+        The JSONL record is the commit, including its boundary and event. A
+        torn record cannot publish a partial window; a complete record needs
+        no second metadata write to become recoverable. Original rows remain
+        untouched. As with append(), the caller owns the session writer.
+        """
+        if not messages:
+            raise ValueError('Cannot commit an empty context window')
+        seq = self._next_seq()
+        timestamp = datetime.now(timezone.utc).isoformat()
+        window = [{
+            **m, 'seq': self._next_seq(),
+            'timestamp': timestamp,
+            '_source': 'compaction'
+        } for m in messages]
+        record = {
+            **event, '_type': 'compaction_event',
+            'seq': seq,
+            'timestamp': timestamp,
+            'status': 'completed',
+            'window': window,
+            'window_start': window[0]['seq']
+        }
+        try:
+            self._append_line(record)
+        finally:
+            # An fsync error has an uncertain outcome. Always re-read the log
+            # before another operation, including when the writer stays alive.
+            self._messages = None
+            self._committed_boundary = 0
+
+    @staticmethod
+    def _committed_window(record: Dict[str, Any]) -> List[Dict[str, Any]]:
+        window = record.get('window')
+        if (record.get('_type') != 'compaction_event'
+                or record.get('status') != 'completed'
+                or not isinstance(window, list) or not window):
+            return []
+        start = record.get('window_start')
+        if not isinstance(start, int):
+            return []
+        if any(not isinstance(m, dict) or m.get('seq') != start
+               + i or m.get('_source') != 'compaction' or not m.get('role')
+               for i, m in enumerate(window)):
+            return []
+        return window
 
     def record_error(self, event: Dict[str, Any]) -> None:
         """Record an error event — a non-message, display-only marker.
@@ -250,7 +329,8 @@ class SessionLog:
     def last_consolidated(self) -> int:
         from ms_agent.session.replay import committed_records
         _, start = committed_records(self.records())
-        return start if start is not None else self._read_meta().get('last_consolidated', 0)
+        return start if start is not None else self._read_meta().get(
+            'last_consolidated', 0)
 
     @last_consolidated.setter
     def last_consolidated(self, value: int) -> None:
@@ -292,6 +372,32 @@ class SessionLog:
         self._messages = msgs
         return msgs
 
+    def resume_pending_context(self) -> None:
+        pending = self.get_metadata().get('pending_context')
+        if not pending or pending.get('status') != 'paused':
+            raise ValueError('No paused context request to resume')
+        rows = self.get_all_messages()
+        tail = pending['tail_seq']
+        if any(
+                m.get('role') == 'user'
+                and m.get('_origin_seq', m['seq']) > tail for m in rows):
+            raise ValueError(
+                'The paused request was superseded by a newer message')
+        seals = [
+            m.get('_origin_seq', m['seq']) for m in rows
+            if m.get('errored') and m.get('_origin_seq', m['seq']) > tail
+        ]
+        self._append_line({
+            '_type': 'context_resume',
+            'seq': self._next_seq(),
+            'seal_seqs': seals,
+            'request_id': pending['id']
+        })
+        self._messages = None
+        self.set_metadata_field('pending_context', {
+            **pending, 'status': 'resuming'
+        })
+
     def record_image_delivery(self, entries: List[Dict[str, Any]]) -> None:
         """Record what became of a turn's images.
 
@@ -309,6 +415,36 @@ class SessionLog:
             'entries': entries,
         })
         self._messages = None  # force a reload so the merge is applied
+
+    def record_usage(self, record: Dict[str, Any]) -> None:
+        """An independent append-only journal: a failed window commit cannot lose usage."""
+        from ms_agent.utils.file_lock import file_lock
+        path = self._dir / f'{self.session_key}.usage.jsonl'
+        payload = {
+            **record, 'recorded_at': datetime.now(timezone.utc).isoformat()
+        }
+        with file_lock(path):
+            self._append_json_line(path, payload)
+
+    def get_usage_records(self) -> List[Dict[str, Any]]:
+        """Latest snapshot per response, including old logs without a journal."""
+        records = {}
+        for row in [*self.get_all_messages(), *self.get_compaction_events()]:
+            for record in row.get('usage_records') or []:
+                identity = record.get('record_id')
+                if identity:
+                    records[identity] = record
+        path = self._dir / f'{self.session_key}.usage.jsonl'
+        if path.exists():
+            for line in path.read_text(
+                    encoding='utf-8', errors='replace').splitlines():
+                try:
+                    record = json.loads(line)
+                except (ValueError, TypeError):
+                    continue
+                if isinstance(record, dict) and record.get('record_id'):
+                    records[record['record_id']] = record
+        return list(records.values())
 
     def get_visible_messages(self) -> List[Dict[str, Any]]:
         """Messages whose ``seq >= last_consolidated`` (the LLM window).
@@ -329,7 +465,8 @@ class SessionLog:
         events: List[Dict[str, Any]] = []
         if not self._path.exists():
             return events
-        for line in self._path.read_text(encoding='utf-8').splitlines():
+        for line in self._path.read_text(
+                encoding='utf-8', errors='replace').splitlines():
             line = line.strip()
             if not line:
                 continue
@@ -338,7 +475,10 @@ class SessionLog:
             except json.JSONDecodeError:
                 continue
             if record.get('_type') == 'compaction_event':
-                events.append(record)
+                if 'window' not in record or self._committed_window(record):
+                    events.append(
+                        {k: v
+                         for k, v in record.items() if k != 'window'})
         return events
 
     def get_errors(self) -> List[Dict[str, Any]]:
@@ -350,7 +490,8 @@ class SessionLog:
         errors: List[Dict[str, Any]] = []
         if not self._path.exists():
             return errors
-        for line in self._path.read_text(encoding='utf-8').splitlines():
+        for line in self._path.read_text(
+                encoding='utf-8', errors='replace').splitlines():
             line = line.strip()
             if not line:
                 continue
@@ -370,7 +511,8 @@ class SessionLog:
         perms: List[Dict[str, Any]] = []
         if not self._path.exists():
             return perms
-        for line in self._path.read_text(encoding='utf-8').splitlines():
+        for line in self._path.read_text(
+                encoding='utf-8', errors='replace').splitlines():
             line = line.strip()
             if not line:
                 continue
@@ -391,7 +533,8 @@ class SessionLog:
         out: List[Dict[str, Any]] = []
         if not self._path.exists():
             return out
-        for line in self._path.read_text(encoding='utf-8').splitlines():
+        for line in self._path.read_text(
+                encoding='utf-8', errors='replace').splitlines():
             line = line.strip()
             if not line:
                 continue
@@ -412,7 +555,8 @@ class SessionLog:
         out: List[Dict[str, Any]] = []
         if not self._path.exists():
             return out
-        for line in self._path.read_text(encoding='utf-8').splitlines():
+        for line in self._path.read_text(
+                encoding='utf-8', errors='replace').splitlines():
             line = line.strip()
             if not line:
                 continue
@@ -429,6 +573,10 @@ class SessionLog:
         meta = self._read_meta()
         all_msgs = self.get_all_messages()
         return {
+            **{
+                key: meta[key]
+                for key in ('context_snapshot', 'pending_context') if key in meta
+            },
             'session_key': self.session_key,
             'created_at': meta.get('created_at', ''),
             'title': meta.get('title', ''),
@@ -453,6 +601,7 @@ class SessionLog:
         self._metadata = None
         self._messages = None
         self._records = None
+        self._committed_boundary = 0
 
     # ------------------------------------------------------------------
     # Internals
@@ -496,13 +645,17 @@ class SessionLog:
     def _load_all_to_set_seq(self) -> None:
         """Scan the file to find the highest seq number."""
         max_seq = -1
-        for line in self._path.read_text(encoding='utf-8').splitlines():
+        for line in self._path.read_text(
+                encoding='utf-8', errors='replace').splitlines():
             line = line.strip()
             if not line:
                 continue
             try:
                 record = json.loads(line)
                 s = record.get('seq', -1)
+                window = self._committed_window(record)
+                if window:
+                    s = max(s, window[-1]['seq'])
                 if s > max_seq:
                     max_seq = s
             except json.JSONDecodeError:
@@ -567,10 +720,20 @@ class SessionLog:
         return None
 
     def _append_line(self, record: Dict[str, Any]) -> None:
-        """Append a single JSON line and flush."""
+        """Append and fsync, isolating a torn last line from the next record."""
         self._records = None
-        with open(self._path, 'a', encoding='utf-8') as f:
-            f.write(json.dumps(record, ensure_ascii=False) + '\n')
+        self._append_json_line(self._path, record)
+
+    @staticmethod
+    def _append_json_line(path, record):
+        payload = (json.dumps(record, ensure_ascii=False)
+                   + '\n').encode('utf-8')
+        with open(path, 'ab+') as f:
+            if f.tell():
+                f.seek(-1, os.SEEK_END)
+                if f.read(1) != b'\n':
+                    f.write(b'\n')
+            f.write(payload)
             f.flush()
             os.fsync(f.fileno())
 

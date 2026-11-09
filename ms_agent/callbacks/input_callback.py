@@ -60,8 +60,14 @@ class InputCallback(Callback):
             runtime.should_stop = True
             return
         runtime.should_stop = False
+        if turn.action == 'resume_context':
+            runtime.resume_pending_context()
+            runtime.resume_context_requested = True
+            return
+        # A new instruction supersedes a paused request, but leaves its history.
+        clear = getattr(runtime, 'clear_pending_context', None)
+        if clear is not None:
+            clear()
         messages.append(
             Message(
-                role='user',
-                content=turn.text,
-                attachments=turn.attachments))
+                role='user', content=turn.text, attachments=turn.attachments))

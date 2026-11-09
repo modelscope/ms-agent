@@ -22,7 +22,9 @@ logger = get_logger()
 def _estimate_tokens(text: str) -> int:
     if not text:
         return 0
-    return len(text) // 4
+    # Conservative for CJK and other non-ASCII text, rather than /4 everywhere.
+    non_ascii = sum(ord(c) > 127 for c in text)
+    return (len(text) - non_ascii + 3) // 4 + non_ascii
 
 
 def _estimate_message_tokens(msg: Dict[str, Any]) -> int:
@@ -41,7 +43,8 @@ def _estimate_message_tokens(msg: Dict[str, Any]) -> int:
     one, so the compactor re-appends it, the estimate never drops, and every
     subsequent round pays for another summary LLM call.
     """
-    total = 0
+    total = 4 + len(msg.get('attachments')
+                    or []) * multimodal.IMAGE_TOKEN_ESTIMATE
     content = msg.get('content', '')
     if content:
         total += multimodal.estimate_content_tokens(content, _estimate_tokens)
@@ -54,7 +57,8 @@ def _estimate_message_tokens(msg: Dict[str, Any]) -> int:
     return total
 
 
-def _estimate_total_tokens(messages: List[Dict[str, Any]]) -> int:
+def _estimate_total_tokens(messages: List[Dict[str, Any]],
+                           tool_tokens: int = 0) -> int:
     """Estimate total tokens, preferring real API usage data when available.
 
     ``prompt_tokens`` on an assistant message already accounts for all
@@ -63,16 +67,66 @@ def _estimate_total_tokens(messages: List[Dict[str, Any]]) -> int:
     """
     for i in range(len(messages) - 1, -1, -1):
         msg = messages[i]
-        if msg.get('role') != 'assistant':
+        if msg.get('role') != 'assistant' or msg.get('_usage_invalidated'):
             continue
-        pt = int(msg.get('prompt_tokens', 0) or 0)
-        ct = int(msg.get('completion_tokens', 0) or 0)
+        records = msg.get('usage_records') or []
+        # A continued answer's summed input is billing usage, not context size.
+        usage = records[-1]['usage'] if records else msg
+        pt = int(usage.get('prompt_tokens', 0) or 0)
+        ct = int(usage.get('completion_tokens', 0) or 0)
         if pt or ct:
             base = pt + ct
             tail = sum(_estimate_message_tokens(m) for m in messages[i + 1:])
-            return base + tail
+            # A replaced system prompt (or changed media) before this anchor
+            # can exceed the previous call even without any appended messages.
+            return max(
+                base + tail, tool_tokens
+                + sum(_estimate_message_tokens(m) for m in messages))
 
-    return sum(_estimate_message_tokens(m) for m in messages)
+    return tool_tokens + sum(_estimate_message_tokens(m) for m in messages)
+
+
+def invalidate_usage(messages):
+    """Keep billing evidence, but discard usage anchors for a changed window."""
+    for msg in messages:
+        msg['_usage_invalidated'] = True
+
+
+def compression_threshold(config):
+    context = config.get('context_limit', 128000)
+    threshold = (
+        context - config['reserved_buffer']
+        if config.get('reserved_buffer') is not None else int(context * 0.85))
+    return min(
+        config.get('input_limit', context),
+        config.get('compression_threshold', threshold))
+
+
+def protected_indices(messages):
+    """Protect instructions/media/latest user and the last atomic tool exchange."""
+    protected = {
+        i
+        for i, m in enumerate(messages) if m.get('role') == 'system'
+        or m.get('attachments') or m.get('hook_attachments')
+        or multimodal.has_image_blocks(m.get('content'))
+    }
+    users = [i for i, m in enumerate(messages) if m.get('role') == 'user']
+    if users:
+        protected.add(users[-1])
+    if messages:
+        protected.add(len(messages) - 1)
+    # An assistant tool call and all consecutive results form one atomic group.
+    for i, msg in enumerate(messages):
+        if not msg.get('tool_calls'):
+            continue
+        group = {i}
+        j = i + 1
+        while j < len(messages) and messages[j].get('role') == 'tool':
+            group.add(j)
+            j += 1
+        if group & protected:
+            protected.update(group)
+    return protected
 
 
 class ToolOutputPruner:
@@ -92,17 +146,16 @@ class ToolOutputPruner:
         all_msgs: List[Dict[str, Any]],
         config: Dict[str, Any],
     ) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
-        context_limit = config.get('context_limit', 128000)
-        reserved = config.get('reserved_buffer', 20000)
         protect = config.get('prune_protect', 40000)
-
-        tokens_before = _estimate_total_tokens(visible)
-        usable = context_limit - reserved
-        if tokens_before < usable:
+        tokens_before = _estimate_total_tokens(visible,
+                                               config.get('tool_tokens', 0))
+        if tokens_before < compression_threshold(config):
             return visible, None
 
+        protected = protected_indices(visible)
         total_tool_tokens = 0
         pruned_count = 0
+        replacement = '[Output truncated to save context]'
         for idx in range(len(visible) - 1, -1, -1):
             msg = visible[idx]
             if msg.get('role') != 'tool' or not msg.get('content'):
@@ -112,16 +165,17 @@ class ToolOutputPruner:
                 content = json.dumps(content, ensure_ascii=False)
             tokens = _estimate_tokens(content)
             total_tool_tokens += tokens
-            if total_tool_tokens > protect:
-                visible[idx] = {
-                    **msg, 'content': '[Output truncated to save context]'
-                }
+            if (idx not in protected and total_tool_tokens > protect
+                    and tokens > _estimate_tokens(replacement)):
+                visible[idx] = {**msg, 'content': replacement}
                 pruned_count += 1
 
         if pruned_count == 0:
             return visible, None
 
-        tokens_after = _estimate_total_tokens(visible)
+        invalidate_usage(visible)
+        tokens_after = _estimate_total_tokens(visible,
+                                              config.get('tool_tokens', 0))
         logger.info(f'[tool_pruner] Pruned {pruned_count} tool outputs '
                     f'({tokens_before} -> {tokens_after} tokens)')
 

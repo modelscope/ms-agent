@@ -19,7 +19,13 @@ Pure stdlib; no front-end dependencies.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
+
+
+@dataclass(frozen=True)
+class ResumeContext:
+    """Resume a paused request without adding another user message."""
 
 
 @runtime_checkable
@@ -31,7 +37,7 @@ class InputSource(Protocol):
     callers (``InteractiveSession``) translate those into a quit turn.
     """
 
-    async def read_prompt(self, prompt: str = '>>> ') -> str:
+    async def read_prompt(self, prompt: str = '>>> ') -> str | ResumeContext:
         ...
 
     # Optional: sources that can carry non-text parts (a WebUI composer with

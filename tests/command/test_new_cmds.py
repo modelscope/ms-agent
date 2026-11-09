@@ -926,7 +926,7 @@ class TestCompact:
         ctx = make_ctx('/compact', runtime=MockRuntime())
         ctx.extra['messages'] = None
         result = await router.dispatch(ctx)
-        assert 'No messages' in result.content
+        assert 'active session log' in result.content
 
     @pytest.mark.asyncio
     async def test_with_messages_no_session_module(self):
@@ -940,11 +940,16 @@ class TestCompact:
 
     @pytest.mark.asyncio
     async def test_alias_compress(self):
+        from unittest.mock import AsyncMock
         msgs = [Message(role='system', content='hi')]
         router = make_router()
-        ctx = make_ctx('/compress', runtime=MockRuntime(), messages=msgs)
+        runtime = MockRuntime()
+        runtime.compact_context = AsyncMock(return_value={'status': 'completed'})
+        ctx = make_ctx('/compress', runtime=runtime, messages=msgs)
         result = await router.dispatch(ctx)
-        assert result is not None
+        runtime.compact_context.assert_awaited_once_with(force=True, trigger='slash')
+        assert 'Context compacted' in result.content
+        assert len(msgs) == 1  # The next user input still appends to the live list.
 
 
 class TestContext:
