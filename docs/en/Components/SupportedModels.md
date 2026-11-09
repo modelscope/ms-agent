@@ -48,3 +48,5 @@ llm:
 ```
 
 > If you have other model providers, please assist in updating this documentation.
+
+For catalog updates, context budgets, compaction and usage records, see [Model catalog and context compaction](ModelCatalog.md).

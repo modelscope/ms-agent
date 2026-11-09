@@ -6,9 +6,9 @@ from dataclasses import asdict, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ms_agent.utils.file_lock import locked
 from ms_agent.project.store import JSONFileStore
 from ms_agent.project.types import Project, Session, SessionStatus, _now_iso
+from ms_agent.utils.file_lock import locked
 
 if TYPE_CHECKING:
     from ms_agent.session.session_log import SessionLog
@@ -25,11 +25,16 @@ class SessionManager:
 
     META_FILE = 'session.json'
 
-    def __init__(self, project: Project, *, base_dir: str | Path | None = None,
-                 auto_initialize: bool = True, require_project: bool = False) -> None:
+    def __init__(self,
+                 project: Project,
+                 *,
+                 base_dir: str | Path | None = None,
+                 auto_initialize: bool = True,
+                 require_project: bool = False) -> None:
         from ms_agent.project.paths import global_home
         self._project = project
-        self._base = Path(base_dir).expanduser().resolve() if base_dir is not None else global_home().resolve()
+        self._base = Path(base_dir).expanduser().resolve(
+        ) if base_dir is not None else global_home().resolve()
         self._projects_root = self._base / 'projects'
         self._sessions_dir = self._projects_root / project.id / 'sessions'
         self._legacy_dir = Path(project.path) / '.ms-agent' / 'sessions'
@@ -41,7 +46,9 @@ class SessionManager:
     def _check_project(self) -> None:
         if self._require_project:
             from ms_agent.project.manager import ProjectManager
-            if ProjectManager(str(self._base), auto_initialize=False).get(self._project.id) is None:
+            if ProjectManager(
+                    str(self._base), auto_initialize=False).get(
+                        self._project.id) is None:
                 raise ValueError(f'Project {self._project.id} not found')
 
     @locked(lambda self: self._projects_root)
@@ -54,13 +61,17 @@ class SessionManager:
             for source in self._legacy_dir.rglob('*'):
                 if not source.is_file():
                     continue
-                target = self._sessions_dir / source.relative_to(self._legacy_dir)
+                target = self._sessions_dir / source.relative_to(
+                    self._legacy_dir)
                 if target.exists():
                     if source.read_bytes() != target.read_bytes():
-                        raise ValueError('Conflicting legacy session data; originals were preserved')
+                        raise ValueError(
+                            'Conflicting legacy session data; originals were preserved'
+                        )
                     continue
                 target.parent.mkdir(parents=True, exist_ok=True)
-                fd, temporary = tempfile.mkstemp(dir=target.parent, prefix='.migration-')
+                fd, temporary = tempfile.mkstemp(
+                    dir=target.parent, prefix='.migration-')
                 os.close(fd)
                 try:
                     shutil.copyfile(source, temporary)
@@ -80,8 +91,11 @@ class SessionManager:
         return self._sessions_dir
 
     @locked(lambda self, *args, **kwargs: self._projects_root)
-    def create(self, name: str = '', model: str | None = None,
-               model_provider: str | None = None) -> Session:
+    def create(self,
+               name: str = '',
+               model: str | None = None,
+               model_provider: str | None = None,
+               reasoning_efforts: dict | None = None) -> Session:
         self.initialize()
         session_id = uuid.uuid4().hex[:12]
         session_key = f'session_{session_id}'
@@ -91,17 +105,26 @@ class SessionManager:
             name=name or f'Session {session_id[:6]}',
             model=model,
             model_provider=model_provider,
+            reasoning_efforts=reasoning_efforts or {},
             session_key=session_key,
         )
         self._save_meta(session)
         return session
 
-    def fork(self, session_id: str, *, after_seq: int, name: str | None = None,
+    def fork(self,
+             session_id: str,
+             *,
+             after_seq: int,
+             name: str | None = None,
              request_id: str | None = None) -> Session:
         """Branch after a completed reply without changing its source session."""
         from ms_agent.project.fork import fork_session
-        return fork_session(self, session_id, after_seq=after_seq,
-                            name=name, request_id=request_id)
+        return fork_session(
+            self,
+            session_id,
+            after_seq=after_seq,
+            name=name,
+            request_id=request_id)
 
     def get(self, session_id: str) -> Session | None:
         store = self._meta_store(session_id)
@@ -112,7 +135,10 @@ class SessionManager:
             return None
         if 'status' in data and isinstance(data['status'], str):
             data['status'] = SessionStatus(data['status'])
-        return Session(**{k: v for k, v in data.items() if k in Session.__dataclass_fields__})
+        return Session(**{
+            k: v
+            for k, v in data.items() if k in Session.__dataclass_fields__
+        })
 
     def list(self) -> list[Session]:
         sessions: list[Session] = []
@@ -130,8 +156,13 @@ class SessionManager:
                 try:
                     if 'status' in data and isinstance(data['status'], str):
                         data['status'] = SessionStatus(data['status'])
-                    sessions.append(Session(**{k: v for k, v in data.items()
-                                              if k in Session.__dataclass_fields__}))
+                    sessions.append(
+                        Session(
+                            **{
+                                k: v
+                                for k, v in data.items()
+                                if k in Session.__dataclass_fields__
+                            }))
                 except (TypeError, KeyError, ValueError):
                     pass
         sessions.sort(key=lambda s: s.created_at, reverse=True)
@@ -141,13 +172,18 @@ class SessionManager:
         return self.update(session_id, status=status)
 
     @locked(lambda self, *args, **kwargs: self._projects_root)
-    def update(self, session_id: str, *, preserve_updated_at: bool = False,
+    def update(self,
+               session_id: str,
+               *,
+               preserve_updated_at: bool = False,
                **kwargs: object) -> Session:
         self._check_project()
         old = self.get(session_id)
         if old is None:
             raise ValueError(f'Session {session_id} not found')
-        kwargs['updated_at'] = old.updated_at if preserve_updated_at else _now_iso()
+        kwargs[
+            'updated_at'] = old.updated_at if preserve_updated_at else _now_iso(
+            )
         if 'status' in kwargs and isinstance(kwargs['status'], str):
             kwargs['status'] = SessionStatus(kwargs['status'])
         new = replace(old, **kwargs)
@@ -155,12 +191,15 @@ class SessionManager:
         return new
 
     @locked(lambda self, *args, **kwargs: self._projects_root)
-    def update_if(self, session_id: str, *, expected: dict, **kwargs) -> Session | None:
+    def update_if(self, session_id: str, *, expected: dict,
+                  **kwargs) -> Session | None:
         with self.transaction_lock():
             current = self.get(session_id)
             if current is None:
                 return None
-            if any(getattr(current, key) != value for key, value in expected.items()):
+            if any(
+                    getattr(current, key) != value
+                    for key, value in expected.items()):
                 return current
             return self.update(session_id, **kwargs)
 

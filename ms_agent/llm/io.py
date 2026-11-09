@@ -65,3 +65,35 @@ class OpenedStream:
 
     def close(self):
         self.__exit__(None, None, None)
+
+
+def create_owned_response(resource, owner, **kwargs):
+    """Expose response ownership before synchronous JSON parsing blocks on body I/O.
+
+    Both SDKs provide with_streaming_response without changing the wire's
+    stream=false request. Custom resources can keep their ordinary create API.
+    """
+    import inspect
+    import threading
+    from types import SimpleNamespace
+
+    if inspect.getattr_static(resource, 'with_streaming_response',
+                              None) is None:
+        return resource.create(**kwargs)
+    cancelled = threading.Event()
+    owner._request_cancel = cancelled
+    active = None
+    try:
+        with resource.with_streaming_response.create(**kwargs) as raw:
+            active = SimpleNamespace(
+                response=raw.http_response, close=raw.close)
+            owner._active_stream = active
+            if cancelled.is_set():
+                interrupt_stream(active)
+                raise asyncio.CancelledError()
+            return raw.parse()
+    finally:
+        if getattr(owner, '_active_stream', None) is active:
+            owner._active_stream = None
+        if getattr(owner, '_request_cancel', None) is cancelled:
+            owner._request_cancel = None

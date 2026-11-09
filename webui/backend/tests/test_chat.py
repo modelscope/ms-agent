@@ -3,6 +3,8 @@ import asyncio
 import json
 import os
 
+import pytest
+
 from app.backends.ms_agent import chat
 from app.backends.ms_agent import runtime as rt_mod
 from app.schemas.chat import ChatFile, ChatMessage, ChatRequest
@@ -258,6 +260,67 @@ def test_turn_mapper_maps_new_protocol():
     assert er[0].meta == {"message": "APIError: 401", "recoverable": False}
     # Unhandled events (content_end, ...) yield nothing.
     assert m.map({"type": "content_end"}) == []
+
+
+@pytest.mark.parametrize("payload, usage", [
+    ({"before_tokens": 12000, "after_tokens": 4000},
+     {"before_tokens": 12000, "after_tokens": 4000}),
+    ({"before_tokens": 12000, "after_tokens": 0},
+     {"before_tokens": 12000, "after_tokens": 0}),
+    ({}, {}),
+    ({"before_tokens": 0, "after_tokens": 0}, {}),
+    ({"before_tokens": None, "after_tokens": None}, {}),
+    ({"before_tokens": 12000}, {}),
+    ({"before_tokens": "12000", "after_tokens": 4000}, {}),
+    ({"before_tokens": True, "after_tokens": False}, {}),
+    ({"before_tokens": 12000, "after_tokens": -1}, {}),
+])
+def test_context_compaction_is_a_display_only_step(payload, usage):
+    chunks = chat._TurnMapper().map({"type": "context_compacted", **payload})
+    assert [c.model_dump() for c in chunks] == [{
+        "type": "step", "content": "",
+        "meta": {"kind": "context_compaction", **usage},
+    }]
+
+
+@pytest.mark.parametrize("outcome", [
+    {"status": "retained"}, {"status": "failed"}, {"status": "error"},
+    {"status": "cancelled"}, {"status": "pending"},
+    {"error": "summary failed"}, {"is_error": True}, {"success": False},
+])
+def test_context_compaction_does_not_claim_an_unsuccessful_attempt(outcome):
+    assert chat._TurnMapper().map({
+        "type": "context_compacted", "before_tokens": 12000,
+        "after_tokens": 4000, **outcome,
+    }) == []
+
+
+def test_context_compaction_preserves_reasoning_and_tool_round_state():
+    mapper = chat._TurnMapper()
+    mapper.map({"type": "reasoning_started", "_ts": 10})
+    thought = mapper.map({"type": "reasoning_delta", "text": "thinking", "_ts": 11})[0]
+    notice = mapper.map({"type": "context_compacted", "_ts": 12})
+    assert [c.type for c in notice] == ["step"]  # no thought close or done
+    continued = mapper.map({"type": "reasoning_delta", "text": " still", "_ts": 13})[0]
+    assert thought.meta["block"] == continued.meta["block"]
+    close = mapper.map({"type": "reasoning_ended", "_ts": 14})[0]
+    assert close.meta["duration"] == 4
+
+    def start(call_id):
+        return mapper.map({
+            "type": "tool_call_started", "call_id": call_id,
+            "name": "file_system---read_file", "arguments": {"path": "a.txt"},
+        })[0]
+
+    first = start("c1")
+    mapper.map({"type": "context_compacted"})
+    second = start("c2")
+    assert first.meta["group"] == second.meta["group"] == 1
+    for call_id in ("c1", "c2"):
+        completed = mapper.map({"type": "tool_call_completed", "call_id": call_id})[0]
+        assert completed.meta["group"] == 1
+        assert completed.meta["arguments"] == {"path": "a.txt"}
+    assert start("c3").meta["group"] == 2
 
 
 def test_turn_mapper_maps_permission_request_to_authorization_step():
@@ -1919,6 +1982,52 @@ class _FakeRunTask:
 
     def done(self):
         return self._done
+
+
+@pytest.mark.parametrize("reattach", [False, True])
+async def test_compaction_stream_continues_until_the_real_turn_end(monkeypatch, reattach):
+    from ms_agent.ui.events import ContentDelta, ContextCompacted
+
+    fake_rt = _FakeRuntime()
+    monkeypatch.setattr(chat.registry, "is_starting", lambda sid: False)
+    monkeypatch.setattr(chat.registry, "is_generating", lambda sid: True)
+    if reattach:
+        await fake_rt.turn_lock.acquire()
+        # Buffered before attach: a reload must see the same notice as live.
+        fake_rt.sink.emit(ContextCompacted(before_tokens=12000, after_tokens=4000))
+        monkeypatch.setattr(chat.registry, "peek", lambda sid: fake_rt)
+        stream = chat.attach("sid-1")
+    else:
+        async def get_runtime(project, session):
+            return fake_rt
+
+        monkeypatch.setattr(chat.registry, "get", get_runtime)
+        monkeypatch.setattr(chat, "_resolve_or_create", lambda req:
+                            (_FakeProject(), _FakeSession()))
+        stream = chat.stream(ChatRequest(
+            session_id="sid-1", message=ChatMessage(role="user", content="hi")))
+        assert json.loads((await asyncio.wait_for(anext(stream), timeout=2))["data"])["type"] == "session"
+    try:
+        assert json.loads((await asyncio.wait_for(anext(stream), timeout=2))["data"])["type"] == "turn"
+        if not reattach:
+            fake_rt.sink.emit(ContextCompacted(before_tokens=12000, after_tokens=4000))
+        notice = json.loads((await asyncio.wait_for(anext(stream), timeout=2))["data"])
+        assert notice == {
+            "type": "step", "content": "",
+            "meta": {"kind": "context_compaction", "before_tokens": 12000,
+                     "after_tokens": 4000, "trigger": "auto", "memory_status": "skipped"},
+        }
+        assert fake_rt.turn_lock.locked()
+        assert fake_rt.watchers == 1
+        fake_rt.sink.emit(ContentDelta(text="reply after compaction"))
+        reply = json.loads((await asyncio.wait_for(anext(stream), timeout=2))["data"])
+        assert reply["type"] == "text" and reply["content"] == "reply after compaction"
+        fake_rt.sink.push({"type": rt_mod.TURN_END})
+        assert json.loads((await asyncio.wait_for(anext(stream), timeout=2))["data"])["type"] == "done"
+        assert [frame async for frame in stream] == []
+        assert fake_rt.watchers == 0
+    finally:
+        await stream.aclose()
 
 
 async def test_stream_maps_and_terminates(monkeypatch):

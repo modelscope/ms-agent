@@ -242,6 +242,24 @@ class ProviderRegistry:
         for spec in builtins:
             self.register(spec)
 
+        # Keep the original ten identities, endpoints and order untouched.
+        # Catalog metadata alone is not a transport compatibility guarantee.
+        from .model_catalog import compatible_providers
+        for provider in compatible_providers():
+            if self.get(provider['id']) is not None:
+                continue
+            self.register(
+                ProviderSpec(
+                    name=provider['id'],
+                    display_name=provider['name'],
+                    transport=TRANSPORT_OPENAI_COMPAT,
+                    api_key_env=provider['env'],
+                    default_base_url=provider['api'],
+                    # No fuzzy keywords, aliases, continuation or cache promises.
+                    capabilities=ProviderCapabilities.from_list(
+                        ['tool_call', 'streaming']),
+                ))
+
 
 _registry: Optional[ProviderRegistry] = None
 

@@ -53,7 +53,11 @@ class ResponseAdapter:
             cache_creation_tokens=message.cache_creation_input_tokens,
             reasoning_tokens=message.reasoning_tokens,
         )
-        return LLMResponse(content_blocks=blocks, usage=usage, id=message.id)
+        return LLMResponse(
+            content_blocks=blocks,
+            usage=usage,
+            id=message.id,
+            finish_reason=message.finish_reason)
 
     @staticmethod
     def to_message(response: LLMResponse) -> Message:
@@ -83,6 +87,7 @@ class ResponseAdapter:
             reasoning_content=response.thinking,
             tool_calls=tool_calls or [],
             id=response.id,
+            finish_reason=response.finish_reason,
             prompt_tokens=response.usage.prompt_tokens,
             completion_tokens=response.usage.completion_tokens,
             cached_tokens=response.usage.cached_tokens,

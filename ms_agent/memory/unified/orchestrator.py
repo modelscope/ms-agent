@@ -105,8 +105,8 @@ def _content_hash(msg: Dict[str, Any]) -> str:
 def _ingestable_hashes(msg_dicts: List[Dict[str, Any]]) -> Set[str]:
     return {
         _content_hash(m)
-        for m in msg_dicts
-        if m.get('role') in _INGEST_ROLES and m.get('content')
+        for m in msg_dicts if m.get('role') in _INGEST_ROLES
+        and m.get('content') and not m.get('context_summary')
     }
 
 
@@ -320,7 +320,8 @@ class MemoryOrchestrator(Memory):
             # has nothing to do with the file, so this stays off the screen.
             logger.error(
                 '[orchestrator] memory ingest failed, nothing was persisted '
-                'for this turn: %s: %s', type(e).__name__, e)
+                'for this turn: %s: %s',
+                type(e).__name__, e)
             self._set_status('error', error=f'{type(e).__name__}: {e}')
             return 0
         finally:
@@ -363,7 +364,9 @@ class MemoryOrchestrator(Memory):
         status['pending'] = sum(1 for t in self._pending if not t.done())
         return status
 
-    def _set_status(self, state: str, count: Optional[int] = None,
+    def _set_status(self,
+                    state: str,
+                    count: Optional[int] = None,
                     error: Optional[str] = None) -> None:
         self._status.update(
             state=state,
@@ -390,9 +393,8 @@ class MemoryOrchestrator(Memory):
             self._ledger = set(self._ledger_order)
         return self._ledger
 
-    def _ledger_delta(
-            self, msg_dicts: List[Dict[str,
-                                       Any]]) -> List[Dict[str, Any]]:
+    def _ledger_delta(self,
+                      msg_dicts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Conversational messages not yet ingested, in order. Repeated
         identical texts dedup to their first occurrence — a repeat carries no
         new fact, and it keeps the ledger content-addressed (stable across
@@ -401,7 +403,8 @@ class MemoryOrchestrator(Memory):
         delta: List[Dict[str, Any]] = []
         batch: Set[str] = set()
         for m in msg_dicts:
-            if m.get('role') not in _INGEST_ROLES or not m.get('content'):
+            if (m.get('role') not in _INGEST_ROLES or not m.get('content')
+                    or m.get('context_summary')):
                 continue
             h = _content_hash(m)
             if h in seen or h in batch:
@@ -410,7 +413,8 @@ class MemoryOrchestrator(Memory):
             delta.append(m)
         return delta
 
-    def _ledger_mark(self, msg_dicts: List[Dict[str, Any]],
+    def _ledger_mark(self,
+                     msg_dicts: List[Dict[str, Any]],
                      persist: bool = True) -> None:
         seen = self._ledger_load()
         added = False
@@ -440,13 +444,18 @@ class MemoryOrchestrator(Memory):
     # Flush (pre-compression)
     # ------------------------------------------------------------------
 
-    async def flush(self, messages: List[Message]) -> None:
+    async def flush(self, messages: List[Message]) -> str:
         if not self.mem_config.enabled or self._closed:
-            return
+            return 'skipped'
         async with _store_lock(self.mem_config.base_dir):
             backend = await self._ensure_started()
-            msg_dicts = _messages_to_dicts(messages)
-            await backend.on_pre_compress(msg_dicts)
+            msg_dicts = [
+                m for m in _messages_to_dicts(messages)
+                if m.get('role') != 'system' and not m.get('context_summary')
+            ]
+            if msg_dicts:
+                return await backend.on_pre_compress(msg_dicts) or 'unchanged'
+            return 'unchanged'
 
     # ------------------------------------------------------------------
     # Search
@@ -637,6 +646,8 @@ def _messages_to_dicts(messages: List[Message]) -> List[Dict[str, Any]]:
             # ``_dicts_to_messages``.
             if getattr(m, 'attachments', None):
                 d['attachments'] = m.attachments
+            if getattr(m, 'context_summary', False):
+                d['context_summary'] = True
             result.append(d)
         else:
             result.append({'role': 'user', 'content': str(m)})

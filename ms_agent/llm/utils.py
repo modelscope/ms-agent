@@ -47,6 +47,16 @@ def collect_response(response):
     return msg
 
 
+def normalize_finish_reason(reason: Optional[str]) -> str:
+    """Normalize explicit provider reasons, never infer completion from text."""
+    return {
+        'max_tokens': 'length',
+        'max_output_tokens': 'length',
+        'end_turn': 'stop',
+        'stop_sequence': 'stop',
+    }.get(reason, reason or '')
+
+
 @dataclass
 class Message:
     role: Literal['system', 'user', 'assistant', 'tool']
@@ -94,6 +104,10 @@ class Message:
     # reasoning/thinking tokens (subset of completion_tokens for thinking models)
     reasoning_tokens: int = 0
 
+    # One record per API response, not per stream chunk or continued answer.
+    # Persistence/diagnostics only; never sent to a model provider.
+    usage_records: List[Dict[str, Any]] = field(default_factory=list)
+
     api_calls: int = 1
 
     # role=tool: extra payload for UIs / SSE only; omitted from LLM API via to_dict_clean().
@@ -131,6 +145,11 @@ class Message:
     # the images are visible again.
     attachments: List[Dict[str, Any]] = field(default_factory=list)
 
+    # Output metadata only: '' means unknown/not yet finished. Token limits
+    # normalize to 'length', natural stops to 'stop'; other reasons stay native.
+    # For continued generation this describes the last API call, not the prefix.
+    finish_reason: str = ''
+
     def to_dict(self):
         return asdict(self)
 
@@ -156,7 +175,12 @@ class Message:
         rm = [
             'completion_tokens',
             'prompt_tokens',
+            'cached_tokens',
+            'cache_creation_input_tokens',
+            'reasoning_tokens',
+            'usage_records',
             'api_calls',
+            'finish_reason',
             'tool_detail',
             'hook_attachments',
             'is_error',

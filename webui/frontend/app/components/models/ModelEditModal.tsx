@@ -1,26 +1,28 @@
-import { App, AutoComplete, Form, Input, Modal, Select, Typography } from 'antd'
-import { useEffect, useMemo, useState } from 'react'
+import { App, AutoComplete, Form, Input, InputNumber, Modal, Select, Typography } from 'antd'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { CodeEditor } from '~/components/common/CodeEditor'
-import { MsaSwitch } from '~/components/common/MsaSwitch'
+import { effortLabel, thinkingHint } from './ModelCapabilities'
 import { api } from '~/lib/api'
+import { dispatchModelsChanged } from '~/lib/events'
 import { useT } from '~/lib/i18n'
-import type { GenerationDefaults, Model, Provider } from '~/lib/types'
+import type { GenerationDefaults, Model, Provider, ReasoningEffort } from '~/lib/types'
 
-/**
- * Params the runtime applies on its own, rendered into the editor so the box
- * starts as a working example instead of an empty `{}`.
- *
- * Only the canonical `reasoning_effort` knob is pre-filled, never the lowered
- * wire form: writing the wire form back would freeze today's dialect into the
- * model's saved settings, and the whole point of the knob is that the SDK
- * re-decides the dialect per endpoint. `auto` means "no opinion", so saving it
- * unchanged is a genuine no-op.
- */
-function draftParams(defaults: GenerationDefaults | null): string {
-  return JSON.stringify(
-    { reasoning_effort: defaults?.effort ?? 'auto' },
-    null,
-    2
+function parseParams(json: string): Record<string, unknown> | null {
+  try {
+    const value: unknown = JSON.parse(json || '{}')
+    return value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : null
+  } catch {
+    return null
+  }
+}
+
+function sameParams(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  // Whitespace and top-level key order in the escape hatch are not changes.
+  const keys = Object.keys(a)
+  return keys.length === Object.keys(b).length && keys.every(
+    (key) => Object.hasOwn(b, key) && JSON.stringify(a[key]) === JSON.stringify(b[key])
   )
 }
 
@@ -96,16 +98,8 @@ interface FormValues {
   provider_id: string
   name: string
   display_name: string
-  /**
-   * Whether this model may be shown image attachments.
-   *
-   * Deliberately on the CREATE form rather than buried in advanced settings:
-   * whether a model can read a picture is not predictable from its name (on one
-   * provider `qwen3.8-max` can and `qwen3.7-max` cannot), so the person adding
-   * the model is the one who knows. Left untouched it stays unset, and the SDK
-   * decides — provider capability first, then learning from a refusal.
-   */
-  supports_vision: boolean
+  supports_vision: 'auto' | 'on' | 'off'
+  context_limit: number | null
 }
 
 export function ModelEditModal({
@@ -116,15 +110,53 @@ export function ModelEditModal({
   onClose,
   onSaved
 }: Props) {
-  const { t } = useT()
+  const { t, lang } = useT()
   const { message } = App.useApp()
   const [form] = Form.useForm<FormValues>()
   const [advancedJson, setAdvancedJson] = useState('{}')
   const [submitting, setSubmitting] = useState(false)
+  const submitPending = useRef(false)
   const [modelOptions, setModelOptions] = useState<string[]>([])
   const [loadingModels, setLoadingModels] = useState(false)
-  const [defaults, setDefaults] = useState<GenerationDefaults | null>(null)
-  const [providerId, setProviderId] = useState('')
+  const [lookup, setLookup] = useState<{
+    key: string
+    data: GenerationDefaults | null
+    failed: boolean
+  } | null>(null)
+  const initialized = useRef<string | null>(null)
+  const original = useRef<Model | null>(null)
+  const providerId = Form.useWatch('provider_id', form) ?? ''
+  const modelName = (Form.useWatch('name', form) ?? '').trim()
+  const contextLimit = Form.useWatch('context_limit', form)
+  const lookupKey = JSON.stringify([providerId, modelName])
+  const matchingLookup = lookup?.key === lookupKey ? lookup : null
+  const defaults = matchingLookup?.data ?? (
+    original.current?.provider_id === providerId && original.current?.name === modelName
+      ? original.current.generation_defaults
+      : null
+  )
+  const catalog = defaults?.catalog ?? null
+  const budget = defaults?.context_budget ?? null
+  const modelLimit = catalog?.context_limit ?? budget?.model_context_limit ?? null
+  const lookupPending = !!providerId && !!modelName && !matchingLookup
+  const advanced = useMemo(() => parseParams(advancedJson), [advancedJson])
+  const advancedChanged = advanced !== null && !sameParams(advanced, original.current?.advanced_params ?? {})
+  // An absent canonical key is automatic, including after deleting it in JSON.
+  // The lookup describes SAVED effective settings, not this unsaved draft.
+  const effort = typeof advanced?.reasoning_effort === 'string'
+    ? advanced.reasoning_effort
+    : 'auto'
+  const effortOptions = defaults?.effort_options ?? []
+  const canChooseEffort = defaults?.reasoning !== false && defaults?.reasoning_control !== 'none' && effortOptions.length > 0
+  const catalogVision = catalog?.input_modalities.length
+    ? catalog.input_modalities.includes('image')
+    : null
+  // A saved manual override is not an automatic capability result.
+  const autoVision = catalogVision ?? (
+    original.current?.supports_vision == null ? defaults?.effective_supports_vision : null
+  )
+  const formatTokens = (value: number | null | undefined) =>
+    value == null ? t.modelsAdmin.unknown : value.toLocaleString(lang)
 
   const isEdit = !!model
 
@@ -135,58 +167,47 @@ export function ModelEditModal({
     [modelOptions]
   )
 
-  useEffect(() => {
-    if (!open) return
-    if (model) {
-      form.setFieldsValue({
-        provider_id: model.provider_id,
-        name: model.name,
-        display_name: model.display_name,
-        supports_vision: model.supports_vision ?? false
-      })
-      setProviderId(model.provider_id)
-      // An existing model keeps whatever it was saved with; only a model that
-      // has never been configured gets the pre-filled draft (below, once the
-      // effective defaults arrive).
-      setAdvancedJson(
-        Object.keys(model.advanced_params ?? {}).length
-          ? JSON.stringify(model.advanced_params, null, 2)
-          : ''
-      )
-    } else {
-      const pid = defaultProvider?.id ?? providers[0]?.id ?? ''
-      form.setFieldsValue({
-        provider_id: pid,
-        name: '',
-        display_name: '',
-        supports_vision: false
-      })
-      setProviderId(pid)
-      setAdvancedJson('')
+  useEffect(function initializeDraft() {
+    if (!open) {
+      initialized.current = null
+      return
     }
-    setDefaults(null)
+    const pid = model?.provider_id ?? defaultProvider?.id ?? providers[0]?.id ?? ''
+    const identity = model?.id ?? `new:${pid}`
+    // Catalog refreshes must not reset edits in an already-open form.
+    if (initialized.current === identity) return
+    initialized.current = identity
+    original.current = model
+    form.resetFields()
+    form.setFieldsValue({
+      provider_id: pid,
+      name: model?.name ?? '',
+      display_name: model?.display_name ?? '',
+      supports_vision: model?.supports_vision == null
+        ? 'auto' : model.supports_vision ? 'on' : 'off',
+      context_limit: model?.context_limit ?? null
+    })
+    setAdvancedJson(JSON.stringify(model?.advanced_params ?? {}, null, 2))
+    setLookup(null)
   }, [open, model, defaultProvider, providers, form])
 
-  // The dialect (and therefore what the box should show) is decided by the
-  // provider's endpoint, so re-resolve whenever the provider changes. Failure
-  // degrades to the plain empty object the box always had.
-  useEffect(() => {
-    if (!open || !providerId) return
+  useEffect(function lookupCapabilities() {
+    if (!open || !providerId || !modelName) return
     let cancelled = false
-    api
-      .getGenerationDefaults(providerId, model?.name ?? '', { silent: true })
-      .then((d) => {
-        if (cancelled) return
-        setDefaults(d)
-        setAdvancedJson((current) => (current ? current : draftParams(d)))
-      })
-      .catch(() => {
-        if (!cancelled) setAdvancedJson((current) => current || '{}')
-      })
-    return () => {
+    const timer = setTimeout(() => {
+      api.getGenerationDefaults(providerId, modelName, { silent: true, fresh: true })
+        .then((data) => {
+          if (!cancelled) setLookup({ key: lookupKey, data, failed: false })
+        })
+        .catch(() => {
+          if (!cancelled) setLookup({ key: lookupKey, data: null, failed: true })
+        })
+    }, 250)
+    return function cancelLookup() {
       cancelled = true
+      clearTimeout(timer)
     }
-  }, [open, providerId, model])
+  }, [open, providerId, modelName, lookupKey])
 
   // Add mode only: pull available model ids from the provider's standard
   // /models endpoint for autocomplete. Failure degrades silently to empty.
@@ -196,12 +217,12 @@ export function ModelEditModal({
       setLoadingModels(false)
       return
     }
-    const providerId = defaultProvider?.id ?? providers[0]?.id
     if (!providerId) {
       setModelOptions([])
       return
     }
     let cancelled = false
+    setModelOptions([])
     setLoadingModels(true)
     api
       .listProviderModels(providerId, { silent: true })
@@ -217,49 +238,67 @@ export function ModelEditModal({
     return () => {
       cancelled = true
     }
-  }, [open, model, defaultProvider, providers])
+  }, [open, isEdit, providerId])
+
+  const changeEffort = (value: string) => {
+    // JSON and the selector share ONE source of truth. Invalid JSON is never
+    // discarded to make a selector change, and discovery never edits this draft.
+    if (!advanced || !effortOptions.includes(value as ReasoningEffort)) return
+    setAdvancedJson(JSON.stringify({ ...advanced, reasoning_effort: value }, null, 2))
+  }
 
   const submit = async () => {
-    const v = await form.validateFields()
-    let advanced: Record<string, unknown> = {}
+    if (submitPending.current) return
+    submitPending.current = true
+    let v: FormValues
     try {
-      const parsed = JSON.parse(advancedJson || '{}')
-      if (typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new Error('Must be a JSON object')
-      }
-      advanced = parsed
-    } catch (e) {
-      message.error(`${t.resources.jsonInvalid} (${(e as Error).message})`)
+      v = await form.validateFields()
+    } catch {
+      submitPending.current = false
       return
+    }
+    if (!advanced) {
+      submitPending.current = false
+      message.error(t.resources.jsonInvalid)
+      return
+    }
+    const baseline = original.current
+    const patch: Parameters<typeof api.updateModel>[1] = {}
+    const vision = v.supports_vision === 'auto' ? null : v.supports_vision === 'on'
+    if (v.display_name !== (baseline?.display_name ?? '')) patch.display_name = v.display_name
+    if (vision !== (baseline?.supports_vision ?? null)) patch.supports_vision = vision
+    if ((v.context_limit ?? null) !== (baseline?.context_limit ?? null)) {
+      patch.context_limit = v.context_limit ?? null
+    }
+    const initialParams = baseline?.advanced_params ?? {}
+    if (!sameParams(advanced, initialParams)) {
+      const { reasoning_effort: selectedEffort, ...otherParams } = advanced
+      const { reasoning_effort: _initialEffort, ...initialOtherParams } = initialParams
+      if (
+        typeof selectedEffort === 'string' &&
+        effortOptions.includes(selectedEffort as ReasoningEffort) &&
+        sameParams(otherParams, initialOtherParams)
+      ) {
+        // Canonical-only edits let the server merge the one key, preserving
+        // advanced settings changed elsewhere since this dialog was opened.
+        patch.reasoning_effort = selectedEffort as ReasoningEffort
+      } else {
+        // Explicit JSON edits (including removing the canonical key) retain the
+        // full escape hatch, without a second thinking state overwriting them.
+        patch.advanced_params = advanced
+      }
     }
     setSubmitting(true)
     try {
-      let saved: Model
-      // The switch is a plain boolean, default off, and is always sent. It used
-      // to need a "was it touched?" guard because an unset model stored `null`
-      // ("let the SDK decide") which a Switch can only draw as OFF — so saving
-      // an unrelated field could turn that display artifact into a real `false`.
-      // There is no `null` state any more: unset simply means off, so writing
-      // it back changes nothing and the guard is gone with it.
-      if (model) {
-        saved = await api.updateModel(model.id, {
-          display_name: v.display_name,
-          advanced_params: advanced,
-          supports_vision: v.supports_vision
-        })
-      } else {
-        saved = await api.createModel({
-          provider_id: v.provider_id,
-          name: v.name,
-          display_name: v.display_name,
-          advanced_params: advanced,
-          supports_vision: v.supports_vision
-        })
-      }
+      const saved = baseline
+        ? Object.keys(patch).length ? await api.updateModel(baseline.id, patch) : baseline
+        : await api.createModel({ provider_id: v.provider_id, name: v.name.trim(), ...patch })
+      dispatchModelsChanged()
       onSaved(saved)
     } catch {
       // API errors surface via the global toast (see root ApiErrorBridge).
     } finally {
+      submitPending.current = false
       setSubmitting(false)
     }
   }
@@ -267,7 +306,7 @@ export function ModelEditModal({
   return (
     <Modal
       open={open}
-      onCancel={onClose}
+      onCancel={submitting ? undefined : onClose}
       title={
         isEdit ? t.modelsAdmin.editModelTitle : t.modelsAdmin.addModelTitle
       }
@@ -275,10 +314,12 @@ export function ModelEditModal({
       cancelText={t.modelsAdmin.cancel}
       onOk={submit}
       okButtonProps={{ loading: submitting }}
+      cancelButtonProps={{ disabled: submitting }}
       destroyOnHidden
       width={480}
+      styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }}
     >
-      <Form form={form} layout="vertical">
+      <Form form={form} layout="vertical" disabled={submitting}>
         <Form.Item
           label={t.modelsAdmin.apiProviderLabel}
           name="provider_id"
@@ -296,13 +337,20 @@ export function ModelEditModal({
         <Form.Item
           label={t.modelsAdmin.modelName}
           name="name"
-          rules={[{ required: true, max: 160 }]}
+          rules={[{ required: true, whitespace: true, max: 160 }]}
           extra={
-            // No colour here: `Form.Item`'s extra slot already paints antd's
-            // description colour — the same token `Typography type="secondary"`
-            // uses for the hint under the JSON editor, so the two match without
-            // naming a value. Only the size is overridden.
-            <span className="text-[11px]">{t.modelsAdmin.modelNameHint}</span>
+            <div className="text-[11px]">
+              <div>{t.modelsAdmin.modelNameHint}</div>
+              <div role="status" title={catalog?.revision}>
+                {!modelName ? t.modelsAdmin.catalogPrompt
+                  : lookupPending ? t.modelsAdmin.catalogLoading
+                    : matchingLookup?.failed ? t.modelsAdmin.defaultsUnavailable
+                      : catalog ? t.modelsAdmin.catalogKnown
+                        .replace('{source}', catalog.source)
+                        .replace('{provider}', catalog.provider_id)
+                        : t.modelsAdmin.catalogUnknown}
+              </div>
+            </div>
           }
         >
           {isEdit ? (
@@ -347,16 +395,95 @@ export function ModelEditModal({
           <Input />
         </Form.Item>
         <Form.Item
-          label={t.modelsAdmin.supportsVisionLabel}
-          name="supports_vision"
-          valuePropName="checked"
+          label={t.modelsAdmin.thinkingLabel}
+          htmlFor="model-thinking-effort"
           extra={
-            <span className="text-[11px]">
-              {t.modelsAdmin.supportsVisionHint}
-            </span>
+            <div className="text-[11px]" id="model-thinking-hint">
+              <div>{thinkingHint(defaults, t)}</div>
+              {defaults?.raw_override ? (
+                <div className="text-msa-text-2">{t.modelsAdmin.thinkingRawOverride}</div>
+              ) : null}
+              {advancedChanged ? (
+                <div>{t.modelsAdmin.thinkingPending}</div>
+              ) : defaults && canChooseEffort && !defaults.raw_override && !lookupPending ? (
+                <div>{t.modelsAdmin.thinkingEffective.replace('{value}', effortLabel(defaults.effective, t))}</div>
+              ) : null}
+              {advanced?.reasoning_effort !== undefined && defaults && !effortOptions.includes(effort as ReasoningEffort) ? (
+                <div>{t.modelsAdmin.thinkingUnavailableOption}</div>
+              ) : null}
+            </div>
           }
         >
-          <MsaSwitch />
+          <Select
+            id="model-thinking-effort"
+            aria-label={t.modelsAdmin.thinkingLabel}
+            aria-describedby="model-thinking-hint"
+            value={canChooseEffort ? effort : undefined}
+            placeholder={defaults?.reasoning === false ? t.modelsAdmin.thinkingUnsupported
+              : defaults?.reasoning === true && defaults.reasoning_control === 'none'
+                ? t.modelsAdmin.thinkingFixed : t.modelsAdmin.unknown}
+            labelRender={({ value }) => effortLabel(String(value), t)}
+            options={effortOptions.map((value) => ({ value, label: effortLabel(value, t) }))}
+            disabled={!canChooseEffort || !advanced || lookupPending || submitting}
+            loading={lookupPending}
+            onChange={changeEffort}
+          />
+        </Form.Item>
+        <Form.Item
+          label={t.modelsAdmin.supportsVisionLabel}
+          name="supports_vision"
+          extra={
+            <div className="text-[11px]">
+              <div>{autoVision == null || lookupPending
+                ? t.modelsAdmin.visionAutoPending
+                : t.modelsAdmin.visionAutoResult.replace('{value}', effortLabel(autoVision ? 'on' : 'off', t))}</div>
+              {catalogVision === false ? <div>{t.modelsAdmin.visionNotSupported}</div> : null}
+              {catalog ? (
+                <div className="mt-1">
+                  {t.modelsAdmin.catalogModalities
+                    .replace('{input}', catalog.input_modalities.join(', ') || t.modelsAdmin.unknown)
+                    .replace('{output}', catalog.output_modalities.join(', ') || t.modelsAdmin.unknown)}
+                  <div>{t.modelsAdmin.catalogModalitiesHint}</div>
+                </div>
+              ) : null}
+            </div>
+          }
+        >
+          <Select
+            aria-label={t.modelsAdmin.supportsVisionLabel}
+            options={(['auto', 'on', 'off'] as const).map((value) => ({
+              value, label: effortLabel(value, t)
+            }))}
+          />
+        </Form.Item>
+        <Form.Item
+          label={t.modelsAdmin.contextLabel}
+          name="context_limit"
+          rules={[{ type: 'number', min: 1024, max: modelLimit ?? 100_000_000 }]}
+          extra={
+            <div className="text-[11px]">
+              <div className="mt-1 flex flex-wrap gap-x-3">
+                <span>{t.modelsAdmin.contextModelLimit.replace('{tokens}', formatTokens(modelLimit))}</span>
+                <span>{t.modelsAdmin.contextBudget.replace('{tokens}', formatTokens(budget?.context_limit))}</span>
+              </div>
+              <div>{t.modelsAdmin.contextHint}</div>
+              {(contextLimit ?? null) !== (original.current?.context_limit ?? null) ? (
+                <div>{t.modelsAdmin.contextPending}</div>
+              ) : budget ? (
+                <div>{t.modelsAdmin.contextCompressionAt.replace('{tokens}', formatTokens(budget.compression_threshold))}</div>
+              ) : null}
+            </div>
+          }
+        >
+          <InputNumber
+            aria-label={t.modelsAdmin.contextLabel}
+            className="!w-full"
+            min={1024}
+            max={modelLimit ?? 100_000_000}
+            precision={0}
+            changeOnBlur={false}
+            placeholder={t.modelsAdmin.contextDefault}
+          />
         </Form.Item>
         <Form.Item label={t.modelsAdmin.advancedJson}>
           <div className="overflow-hidden rounded-md border border-msa-line-1">
@@ -365,40 +492,17 @@ export function ModelEditModal({
               onChange={setAdvancedJson}
               language="json"
               height={140}
+              readOnly={submitting}
             />
           </div>
           <Typography.Paragraph
             type="secondary"
             className="!mt-1 !mb-0 !text-[11px]"
           >
-            {/* Two lines, not five: what you may set, then what is actually
-                being sent. Everything else about vendor quirks lives in the
-                user guide — a settings dialog is not the place to explain that
-                neighbouring tiers collapse. */}
             {t.modelsAdmin.generationParamsHint}
-            {defaults && (
-              <>
-                {' '}
-                {t.modelsAdmin.thinkingKnobHint.replace(
-                  '{options}',
-                  defaults.effort_options.join(' / ')
-                )}
-                <br />
-                {/* What the knob resolves to on THIS endpoint. Computed by the
-                    same SDK call the request path uses, so it can't drift. */}
-                {Object.keys(defaults.wire_params).length
-                  ? t.modelsAdmin.thinkingWireOn.replace(
-                      '{json}',
-                      JSON.stringify(defaults.wire_params)
-                    )
-                  : t.modelsAdmin.thinkingWireNone}
-                {defaults.extra_hint &&
-                  ` · ${t.modelsAdmin.thinkingExtraHint.replace(
-                    '{keys}',
-                    defaults.extra_hint
-                  )}`}
-              </>
-            )}
+            {defaults?.extra_hint ? ` · ${t.modelsAdmin.thinkingExtraHint.replace(
+              '{keys}', defaults.extra_hint
+            )}` : null}
           </Typography.Paragraph>
         </Form.Item>
       </Form>

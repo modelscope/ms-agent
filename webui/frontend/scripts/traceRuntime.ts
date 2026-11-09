@@ -28,6 +28,7 @@ import { nodeFileTrace } from '@vercel/nft'
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import net from 'node:net'
+import os from 'node:os'
 import path from 'node:path'
 
 const root = process.cwd()
@@ -37,7 +38,11 @@ const out = path.join(root, 'build-runtime')
  *  SSR bundle dynamically (`await import(SERVER_BUILD.href)`) from a URL built
  *  at runtime, which is exactly the shape nft cannot follow — so the bundle is
  *  named here as a second entry rather than left to be discovered. */
-const ENTRIES = ['build/server/index.js', 'server.js']
+const ENTRIES = ['build/server/index.js', 'server.js',
+  // Rolldown emits __require("style-to-js") through an IIFE-wrapped
+  // createRequire. nft cannot follow that alias; seed this small dependency
+  // explicitly, including its root symlink and transitive imports.
+  'node_modules/style-to-js/cjs/index.js']
 
 /** Copied whole, not traced: `build/client` is served to browsers as opaque
  *  files (nft has no reason to know they exist), and `package.json` is what
@@ -103,11 +108,16 @@ async function verify(): Promise<void> {
   // the API is *reachably absent*. Pointing the app at a port something else
   // happens to hold would have it render whatever that answers.
   const [port, closed] = await freePorts(2)
-  const child = spawn(process.execPath, ['./server.js'], {
-    cwd: out,
+  // Outside the checkout: Node must not resolve missing dependencies from
+  // an ancestor node_modules left over by the development environment.
+  const isolated = fs.mkdtempSync(path.join(os.tmpdir(), 'ms-agent-runtime-'))
+  fs.cpSync(out, isolated, { recursive: true, verbatimSymlinks: true })
+  const child = spawn(process.execPath, ['--no-global-search-paths', './server.js'], {
+    cwd: isolated,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
       ...process.env,
+      NODE_PATH: '',
       NODE_ENV: 'production',
       HOST: '127.0.0.1',
       PORT: String(port),
@@ -170,6 +180,7 @@ async function verify(): Promise<void> {
         })
       })
     }
+    fs.rmSync(isolated, { recursive: true, force: true })
   }
 }
 

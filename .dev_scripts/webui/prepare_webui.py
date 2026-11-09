@@ -5,6 +5,7 @@ import argparse
 import os
 import shutil
 import subprocess
+import sys
 import webui_packaging as packaging
 from pathlib import Path
 
@@ -19,7 +20,19 @@ def main():
         help='Reuse a verified, unchanged frontend build')
     parser.add_argument(
         '--sdk-sha', help='Commit to record in release artifacts')
+    parser.add_argument(
+        '--update-model-catalog',
+        action='store_true',
+        help='Explicitly refresh models.dev before release preparation; '
+        'otherwise validate the fixed offline snapshot')
     args = parser.parse_args()
+    catalog_command = [
+        sys.executable,
+        str(ROOT / '.dev_scripts/update_model_catalog.py')
+    ]
+    if not args.update_model_catalog:
+        catalog_command.append('--check')
+    subprocess.run(catalog_command, cwd=ROOT, check=True)
     if not args.skip_build:
         node = shutil.which('node')
         pnpm = shutil.which('pnpm')

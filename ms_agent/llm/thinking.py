@@ -1,10 +1,12 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
-"""One semantic knob for "how hard should the model think", plus the fallback
-for models that refuse to be asked at all.
+"""Model-aware thinking plans shared by interfaces and request transports.
 
-Every vendor spells thinking differently and none of them spells it the same way
-for long. Per-model real tiers, from each vendor's own docs and cross-checked
-against opencode's model catalog (both agree line for line), 2026-08-18:
+Offline catalog descriptors select controls; allowlisted protocol adapters lower
+those controls. Raw parameters win. Missing metadata retains the historical
+family fallback below, NOT a promise of per-model support. Catalog hits with
+``auto`` never change provider defaults. See :func:`plan` for the public API.
+
+Historical fallback reference (2026-08-18), superseded by catalog descriptors:
 
 =================  ==================================  ====================  ========
 model / endpoint   modern field                        DISTINCT tiers        default
@@ -78,8 +80,9 @@ from urllib.parse import urlparse
 
 #: Wire keys that carry a thinking request, in any vendor's spelling. Used both
 #: to strip a request back down and to recognise a refusal.
-THINKING_PARAM_KEYS = ('enable_thinking', 'thinking_budget', 'thinking',
-                       'reasoning_effort', 'reasoning')
+THINKING_PARAM_KEYS = ('enable_thinking', 'thinking_budget', 'thinking_type',
+                       'thinking', 'reasoning_effort', 'reasoning',
+                       'output_config', 'chat_template_kwargs')
 
 #: The canonical knob callers set, in ``generation_config``.
 EFFORT_KEY = 'reasoning_effort'
@@ -133,7 +136,6 @@ MODELS_REFUSING_THINKING: set = set()
 #: repair) both misses the point and poisons every later request for the model.
 MODELS_REQUIRING_THINKING: set = set()
 
-
 # --------------------------------------------------------------------------- #
 # Endpoint families
 # --------------------------------------------------------------------------- #
@@ -144,6 +146,9 @@ MODELS_REQUIRING_THINKING: set = set()
 #: host substring -> family name.
 _HOST_FAMILIES = (
     ('dashscope.aliyuncs.com', 'dashscope'),
+    ('dashscope-intl.aliyuncs.com', 'dashscope'),
+    ('dashscope-us.aliyuncs.com', 'dashscope'),
+    ('dashscope-sg.aliyuncs.com', 'dashscope'),
     ('maas.aliyuncs.com', 'dashscope'),  # ATokenPlan et al. speak DashScope
     ('api-inference.modelscope.cn', 'modelscope'),
     ('api.deepseek.com', 'deepseek'),
@@ -153,13 +158,43 @@ _HOST_FAMILIES = (
     ('api.moonshot.cn', 'moonshot'),  # CN
     ('api.moonshot.ai', 'moonshot'),  # international, per Moonshot's docs
     ('api.kimi.com', 'moonshot'),
-    ('api.minimax', 'minimax'),
+    ('api.minimaxi.com', 'minimax'),
+    ('api.minimax.io', 'minimax'),
+    ('api.minimax.cn', 'minimax'),
     ('openrouter.ai', 'openrouter'),
     ('api.openai.com', 'openai'),
+    ('generativelanguage.googleapis.com', 'google'),
+    ('api.x.ai', 'openai'),
 )
 
+_PROVIDER_FAMILIES = {
+    'openai': 'openai',
+    'xai': 'openai',
+    'dashscope': 'dashscope',
+    'bailian': 'dashscope',
+    'alibaba': 'dashscope',
+    'alibaba-cn': 'dashscope',
+    'modelscope': 'modelscope',
+    'deepseek': 'deepseek',
+    'zhipu': 'zhipu',
+    'zhipuai': 'zhipu',
+    'zhipuai-coding-plan': 'zhipu',
+    'zai': 'zhipu',
+    'zai-coding-plan': 'zhipu',
+    'moonshot': 'moonshot',
+    'moonshotai': 'moonshot',
+    'moonshotai-cn': 'moonshot',
+    'kimi': 'moonshot',
+    'minimax': 'minimax',
+    'minimax-cn': 'minimax',
+    'openrouter': 'openrouter',
+    'google': 'google',
+}
 
-def endpoint_family(base_url: str, protocol: str = '') -> str:
+
+def endpoint_family(base_url: str,
+                    protocol: str = '',
+                    provider_id: str = '') -> str:
     """Which dialect of "thinking" this endpoint speaks.
 
     ``anthropic`` wins over the host: a vendor's Anthropic-compatible gateway
@@ -170,9 +205,9 @@ def endpoint_family(base_url: str, protocol: str = '') -> str:
         return 'anthropic'
     host = (urlparse(base_url or '').hostname or str(base_url or '')).lower()
     for needle, family in _HOST_FAMILIES:
-        if needle in host:
+        if host == needle or host.endswith('.' + needle):
             return family
-    return 'unknown'
+    return _PROVIDER_FAMILIES.get((provider_id or '').lower(), 'unknown')
 
 
 #: Tiers each family actually accepts, weakest to strongest. A request outside
@@ -244,8 +279,7 @@ def offered_tiers(family: str) -> Tuple[str, ...]:
         # `on` is an alias of the single thinking tier, and it is the honest
         # word for a knob with two positions.
         return ('auto', 'off', 'on')
-    return ('auto', ) + tuple(
-        sorted(supported, key=lambda t: EFFORT_RANKS[t]))
+    return ('auto', ) + tuple(sorted(supported, key=lambda t: EFFORT_RANKS[t]))
 
 
 def normalize_effort(raw: Any) -> Optional[str]:
@@ -260,7 +294,8 @@ def normalize_effort(raw: Any) -> Optional[str]:
         return 'high' if raw else 'off'
     if not isinstance(raw, str):
         return None
-    key = raw.strip().lower().replace('-', '').replace('_', '').replace(' ', '')
+    key = raw.strip().lower().replace('-', '').replace('_',
+                                                       '').replace(' ', '')
     if key in ('', 'auto', 'default', 'inherit'):
         return 'auto'
     key = _EFFORT_ALIASES.get(key, key)
@@ -333,11 +368,11 @@ def lower_effort(tier: str, family: str) -> Dict[str, Any]:
     elif family == 'minimax':
         # `adaptive` rather than `enabled`: M3 decides per request whether the
         # reasoning is worth it, which is what "on" should mean for an agent.
-        _merge_extra_body(
-            params,
-            {'thinking': {
+        _merge_extra_body(params, {
+            'thinking': {
                 'type': 'disabled' if tier == 'off' else 'adaptive'
-            }})
+            }
+        })
     elif family in ('deepseek', 'zhipu'):
         if tier == 'off':
             # NOT `reasoning_effort: none`, even though the newer models accept
@@ -357,12 +392,13 @@ def lower_effort(tier: str, family: str) -> Dict[str, Any]:
         params[EFFORT_KEY] = 'none' if tier == 'off' else tier
     elif family == 'openrouter':
         # OpenRouter's own unified object; `enabled: false` is how it says off.
-        _merge_extra_body(
-            params, {'reasoning': {
+        _merge_extra_body(params, {
+            'reasoning': {
                 'enabled': False
             } if tier == 'off' else {
                 'effort': tier
-            }})
+            }
+        })
     else:  # openai, unknown
         params[EFFORT_KEY] = 'none' if tier == 'off' else tier
     return params
@@ -394,115 +430,368 @@ def output_format_params(family: str) -> Dict[str, Any]:
 
 
 def auto_params(family: str) -> Dict[str, Any]:
-    """What ``auto`` sends. Almost always nothing — see the module docstring.
+    """Historical fallback for uncatalogued DashScope models only.
 
-    Two endpoints get an explicit ``true`` anyway:
-
-    * ``anthropic`` — our Messages transport has no way to say "no opinion": it
-      always writes a ``thinking`` block, and absent means ``disabled``. Claude
-      would then never think.
-    * ``dashscope`` — its older commercial hybrids (qwen-plus, qwen-turbo,
-      qwen-flash, qwen3-max) default thinking OFF, and those are exactly the
-      cheap models people leave selected. Newer qwen3.5+ default it on, where
-      the flag is a redundant no-op (probed: 258 vs 276 characters of reasoning
-      with and without it).
+    Catalog hits always inherit the provider default. Messages API requests now
+    support omission, so unknown Anthropic models are not forcibly enabled.
     """
-    if family in ('anthropic', 'dashscope'):
+    if family == 'dashscope':
         return {'extra_body': {'enable_thinking': True}}
     return {}
 
 
-def _drop_conflicts(params: Dict[str, Any],
-                    existing: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """Yield to whatever the caller wrote by hand.
+def _catalog_model(provider_id: str, model: str,
+                   base_url: str) -> Optional[dict]:
+    """Optional, offline metadata; an unavailable snapshot is not a call failure."""
+    try:
+        from ms_agent.llm.model_catalog import get_model
+        return get_model(provider_id, model, base_url=base_url)
+    except (ImportError, OSError, ValueError):
+        return None
 
-    Two degrees of yielding, because the raw keys mean different things:
 
-    * A **switch** key (``enable_thinking``, ``thinking``, ``reasoning``) means
-      the caller is driving thinking themselves, so we contribute NOTHING —
-      adding a tier next to their ``enable_thinking: false`` would ask for a
-      depth and a shutdown in the same request.
-    * ``thinking_budget`` is only a depth, so the switch may still go out; but
-      our effort must not, because DashScope rejects that exact pair
-      ("'reasoning_effort' and 'thinking_budget' cannot be set simultaneously")
-      — and ``thinking_budget`` is precisely what the settings hint invites
-      people to add by hand, so the two suggestions would collide.
-    """
-    if not params or not isinstance(existing, dict):
-        return params
-    extra = existing.get('extra_body')
-    present = set(existing) | (set(extra) if isinstance(extra, dict) else set())
-    switches = set(THINKING_PARAM_KEYS) - {EFFORT_KEY} - set(_EFFORT_CONFLICTS)
-    if present & switches:
+def _raw_params(existing: Optional[dict]) -> dict:
+    raw = dict(existing or {})
+    extra = raw.pop('extra_body', None)
+    if isinstance(extra, dict):
+        raw.update(extra)  # SDK extra_body overrides native keyword arguments
+    return raw
+
+
+def _drop_conflicts(params: dict, existing: Optional[dict]) -> dict:
+    raw = _raw_params(existing)
+    # The top-level effort is the canonical input, but effort in extra_body is
+    # an explicit wire override and must also suppress generated controls.
+    extra = (existing or {}).get('extra_body') or {}
+    switches = set(THINKING_PARAM_KEYS) - {EFFORT_KEY, 'thinking_budget'}
+    if raw.keys() & switches or EFFORT_KEY in extra:
         return {}
-    if present.isdisjoint(_EFFORT_CONFLICTS):
-        return params
-    return {k: v for k, v in params.items() if k != EFFORT_KEY}
+    if 'thinking_budget' in raw:
+        # Preserve a Qwen switch with a positive request, never a generated off
+        # beside a hand-written budget. All other depth controls yield.
+        body = params.get('extra_body') or {}
+        if body.get('enable_thinking') is True:
+            return {'extra_body': {'enable_thinking': True}}
+        return {}
+    return params
+
+
+def _model_controls(meta: dict, family: str) -> tuple:
+    """Advertise only descriptors supported by the transport's known wire shapes."""
+    if meta.get('reasoning') is False:
+        return 'none', ['auto'], {}, False
+    descriptors = meta.get('reasoning_options')
+    if not isinstance(descriptors, list):
+        return 'unknown', list(offered_tiers(family)), {}, False
+    if not descriptors:
+        return 'none', ['auto'], {}, False
+    toggle = any(
+        isinstance(d, dict) and d.get('type') == 'toggle' for d in descriptors)
+    values = []
+    bounds = {}
+    budget = False
+    for descriptor in descriptors:
+        if not isinstance(descriptor, dict):
+            continue
+        if descriptor.get('type') == 'effort':
+            for value in descriptor.get('values') or []:
+                # null is a catalog spelling of off, not the canonical default.
+                tier = 'off' if value is None else normalize_effort(value)
+                if tier in EFFORT_TIERS and tier not in values:
+                    values.append(tier)
+        elif descriptor.get('type') == 'budget_tokens':
+            budget = True
+            for key in ('min', 'max'):
+                value = descriptor.get(key)
+                if isinstance(value, int) and not isinstance(value, bool):
+                    bounds['budget_' + key] = value
+    # Google here is Chat Completions, NOT native generateContent. Its proven
+    # effort bridge is usable; native toggle/budget objects are not.
+    if family == 'google':
+        values = [v for v in values if v in ('low', 'medium', 'high')]
+        toggle, budget, bounds = False, False, {}
+    elif family in ('unknown', 'openai'):
+        # Only the effort dialect is implemented, including none when the
+        # descriptor explicitly confirms a switch alongside effort levels.
+        toggle, budget, bounds = toggle and bool(values), False, {}
+    elif family in ('modelscope', 'minimax'):
+        values, budget, bounds = [], False, {}
+    elif family in ('deepseek', 'zhipu', 'moonshot'):
+        budget, bounds = False, {}
+    if values:
+        options = ['auto']
+        if toggle or 'off' in values:
+            options.append('off')
+        options.extend(
+            sorted((v for v in values if v != 'off'), key=EFFORT_RANKS.get))
+        return 'effort', options, bounds, toggle
+    if budget:
+        return 'budget', ['auto'] + (['off'] if toggle else
+                                     []) + ['on'], bounds, toggle
+    if toggle:
+        return 'toggle', ['auto', 'off', 'on'], bounds, toggle
+    return 'unknown', ['auto'], {}, False
+
+
+def _model_wire(tier: str, family: str, model: str, control: str,
+                toggle: bool) -> dict:
+    """Allowlisted wire shapes; capability data chooses controls, not keys."""
+    off = tier == 'off'
+    effort = control == 'effort'
+    if family == 'anthropic':
+        if off:
+            return {'thinking': {'type': 'disabled'}}
+        if effort:
+            name = model.lower().split('/')[-1].replace('.', '-')
+            legacy_budget = name == 'claude-opus-4-5' or name.startswith(
+                'claude-opus-4-5-')
+            return {
+                'thinking': {
+                    'type': 'enabled' if legacy_budget else 'adaptive'
+                },
+                'output_config': {
+                    'effort': tier
+                }
+            }
+        return {'thinking': {'type': 'enabled'}}  # budget filled below
+    if family == 'openrouter':
+        reasoning = ({
+            'enabled': False
+        } if off else {
+            'effort': tier
+        } if effort else {
+            'enabled': True
+        })
+        return {'extra_body': {'reasoning': reasoning}}
+    if family == 'dashscope':
+        # Alibaba's hosted DeepSeek/GLM/Kimi do not speak Qwen's boolean.
+        hosted = model.lower().split('/')[-1].startswith(
+            ('deepseek-', 'glm-', 'kimi-'))
+        switch = ({
+            'thinking': {
+                'type': 'disabled' if off else 'enabled'
+            }
+        } if hosted else {
+            'enable_thinking': not off
+        })
+        wire = {'extra_body': switch} if (toggle or off) else {}
+        if effort and not off:
+            wire[EFFORT_KEY] = tier
+        return wire
+    if family in ('deepseek', 'zhipu', 'moonshot'):
+        wire = {}
+        if toggle or off:
+            wire['extra_body'] = {
+                'thinking': {
+                    'type': 'disabled' if off else 'enabled'
+                }
+            }
+        if effort and not off:
+            wire[EFFORT_KEY] = tier
+        return wire
+    if family in ('minimax', 'modelscope'):
+        return lower_effort('off' if off else 'high', family)
+    return {EFFORT_KEY: 'none' if off else tier}
+
+
+def _positive_int(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(f'{name} must be a positive integer')
+    return value
+
+
+def _anthropic_params(wire: dict, existing: Optional[dict], meta: dict,
+                      bounds: dict) -> dict:
+    """Normalize legacy aliases and enforce budget < this call's max_tokens.
+
+    Native raw objects win over legacy aliases, which win over the canonical
+    knob. Invalid explicit budgets fail locally rather than being silently
+    rewritten; generated budgets fit both the call and catalog output limits.
+    """
+    raw = _raw_params(existing)
+    native = raw.get('thinking')
+    thinking = native if isinstance(native, dict) else wire.get('thinking')
+    if native is None and any(
+            k in raw
+            for k in ('enable_thinking', 'thinking_type', 'thinking_budget')):
+        enabled = raw.get('enable_thinking', True)
+        disabled = enabled is False or str(enabled).lower() in ('false', '0',
+                                                                'off')
+        kind = raw.get('thinking_type')
+        if disabled or kind == 'disabled':
+            thinking = {'type': 'disabled'}
+        elif kind == 'adaptive':
+            thinking = {'type': 'adaptive'}
+        else:
+            thinking = {'type': 'enabled'}
+            if 'thinking_budget' in raw:
+                thinking['budget_tokens'] = raw['thinking_budget']
+        wire['thinking'] = thinking
+    # The family fallback used to produce this alias. Normalize it here too.
+    body = wire.get('extra_body') or {}
+    if 'enable_thinking' in body:
+        thinking = {
+            'type': 'enabled' if body['enable_thinking'] else 'disabled'
+        }
+        wire = {'thinking': thinking}
+    if not isinstance(thinking, dict) or thinking.get('type') != 'enabled':
+        return wire
+    thinking = dict(thinking)
+    minimum = max(1024, bounds.get('budget_min', 1024))
+    output_limit = (meta.get('limit') or {}).get('output')
+    explicit_budget = 'budget_tokens' in thinking
+    if native is not None and not explicit_budget:
+        raise ValueError('thinking.enabled requires an explicit budget_tokens')
+    budget = thinking.get('budget_tokens', max(4096, minimum))
+    budget = _positive_int(budget, 'thinking.budget_tokens')
+    max_tokens = raw.get('max_tokens')
+    if max_tokens is None:
+        max_tokens = max(16000, budget + 1) if explicit_budget else 16000
+        if isinstance(output_limit, int) and output_limit > 0:
+            max_tokens = min(max_tokens, output_limit)
+        wire['max_tokens'] = max_tokens
+    max_tokens = _positive_int(max_tokens, 'max_tokens')
+    ceiling = min(max_tokens - 1, bounds.get('budget_max', max_tokens - 1))
+    if isinstance(output_limit, int) and output_limit > 0:
+        ceiling = min(ceiling, output_limit - 1)
+        if max_tokens > output_limit:
+            raise ValueError('max_tokens exceeds the catalog output limit')
+    if not explicit_budget:
+        budget = min(budget, ceiling)
+    if budget < minimum or budget > ceiling:
+        raise ValueError('thinking budget must meet its bounds and be less '
+                         'than max_tokens and the model output limit')
+    thinking['budget_tokens'] = budget
+    if native is None:
+        wire['thinking'] = thinking
+    return wire
 
 
 def plan(effort: Any,
          *,
          base_url: str = '',
          protocol: str = '',
+         provider_id: str = '',
+         model: str = '',
          existing: Optional[Dict[str, Any]] = None) -> dict:
-    """Resolve a canonical effort into a wire plan, without sending anything.
+    """Shared UI/wire plan. ``params`` are merged into the caller's raw params.
 
-    Returns ``{'family', 'requested', 'effective', 'params', 'extra_hint'}``.
-    ``effective`` is the clamped tier, or ``'auto'``. ``existing`` is the
-    request (or stored params) the plan will be merged into, so conflicting raw
-    keys are honoured here rather than discovered on the wire. Shared by the
-    transports and by the WebUI, so what the settings page shows is what
-    actually ships.
+    Adds ``effort_options``, tri-state ``reasoning``, ``reasoning_control`` and
+    optional ``budget_min``/``budget_max`` to the original return fields. Empty
+    controls and false capability are authoritative. Missing controls retain the
+    family fallback, but auto on ANY catalog hit sends no depth/switch opinion.
+    Unsupported off is never disguised as minimal; it resolves to auto.
     """
-    family = endpoint_family(base_url, protocol)
-    requested = normalize_effort(effort)
-    if requested is None:
-        requested = 'auto'
+    family = endpoint_family(base_url, protocol, provider_id)
+    meta = _catalog_model(provider_id, model, str(base_url)) if model else None
+    requested = normalize_effort(effort) or 'auto'
+    control, options, bounds, toggle = ('unknown', list(offered_tiers(family)),
+                                        {}, False)
+    if meta is not None:
+        control, options, bounds, toggle = _model_controls(meta, family)
+    effective, wire = 'auto', {}
     if requested == 'auto':
-        effective, wire = 'auto', auto_params(family)
-    else:
+        if meta is None:
+            wire = auto_params(family)
+    elif meta is None or (control == 'unknown' and len(options) > 1):
         effective = clamp_effort(
             requested, _FAMILY_TIERS.get(family, _FAMILY_TIERS['unknown']))
         wire = lower_effort(effective, family)
-    # Where the reasoning is delivered is a separate question from how much of
-    # it to do, so it survives `auto` and rides along with every tier.
-    for key, value in output_format_params(family).items():
-        if key == 'extra_body':
-            _merge_extra_body(wire, value)
+    elif requested == 'off' and 'off' not in options:
+        pass
+    elif len(options) > 1:
+        if control in ('budget', 'toggle'):
+            effective = 'off' if requested == 'off' else 'on'
         else:
-            wire.setdefault(key, value)
-    return {
+            effective = clamp_effort(requested, tuple(options[1:]))
+        wire = _model_wire(effective, family, model, control, toggle)
+        if (control == 'budget' and effective == 'on' and not toggle
+                and family == 'dashscope'
+                and not (_raw_params(existing).keys() &
+                         (set(THINKING_PARAM_KEYS) - {EFFORT_KEY}))):
+            minimum = max(1, bounds.get('budget_min', 1))
+            ceiling = bounds.get('budget_max', 4096)
+            raw = _raw_params(existing)
+            output = raw.get('max_completion_tokens', raw.get('max_tokens'))
+            if output is not None:
+                ceiling = min(ceiling, _positive_int(output, 'max_tokens') - 1)
+            model_output = (meta.get('limit') or {}).get('output')
+            if isinstance(model_output, int) and model_output > 0:
+                ceiling = min(ceiling, model_output - 1)
+            budget = min(max(4096, minimum), ceiling)
+            if budget < minimum:
+                raise ValueError(
+                    'Output limit leaves no room for the thinking budget')
+            wire = {'extra_body': {'thinking_budget': budget}}
+    wire = _drop_conflicts(wire, existing)
+    if family == 'anthropic':
+        wire = _anthropic_params(wire, existing, meta or {}, bounds)
+    # Format is independent of depth. Never override a hand-written format.
+    if (meta or {}).get('reasoning') is not False:
+        for key, value in output_format_params(family).items():
+            if key == 'extra_body':
+                raw_extra = (existing or {}).get('extra_body') or {}
+                _merge_extra_body(
+                    wire,
+                    {k: v
+                     for k, v in value.items() if k not in raw_extra})
+            else:
+                wire.setdefault(key, value)
+    result = {
         'family': family,
         'requested': requested,
         'effective': effective,
-        'params': _drop_conflicts(wire, existing),
+        'params': wire,
         'extra_hint': FAMILY_EXTRA_HINTS.get(family, ''),
+        'effort_options': options,
+        'reasoning': (meta or {}).get('reasoning'),
+        'reasoning_control': control,
+        **bounds,
     }
+    for key in ('catalog_provider', 'catalog_revision'):
+        if meta is not None and key in meta:
+            result[key] = meta[key]
+    return result
 
 
-def apply_effort(kwargs: Dict[str, Any], *, base_url: str,
-                 protocol: str = '') -> Dict[str, Any]:
-    """Replace the canonical knob in ``kwargs`` with this endpoint's wire shape.
-
-    Runs even when no knob was set, because "unset" IS ``auto`` and on two
-    endpoints auto has something to say (see :func:`auto_params`) — an absent
-    key must not mean a different thing from an explicit ``auto``.
-
-    The canonical key is always removed, so a value like ``auto`` or ``off``
-    never reaches a vendor that would reject it. Anything the caller set by hand
-    wins: raw wire keys already present are left exactly as they are, because
-    the raw form is the escape hatch and a user who reached for it means it.
-    """
-    effort = kwargs.get(EFFORT_KEY, 'auto')
-    resolved = plan(effort,
-                    base_url=base_url,
-                    protocol=protocol,
-                    existing={k: v
-                              for k, v in kwargs.items() if k != EFFORT_KEY})
-    if EFFORT_KEY not in kwargs and not resolved['params']:
-        return kwargs  # nothing to say and nothing to strip
+def apply_effort(kwargs: Dict[str, Any],
+                 *,
+                 base_url: str = '',
+                 protocol: str = '',
+                 provider_id: str = '',
+                 model: str = '') -> Dict[str, Any]:
+    """Lower once per request. Raw overrides win; kwargs.model takes priority."""
+    resolved = plan(
+        kwargs.get(EFFORT_KEY, 'auto'),
+        base_url=base_url,
+        protocol=protocol,
+        provider_id=provider_id,
+        model=kwargs.get('model') or model,
+        existing={k: v
+                  for k, v in kwargs.items() if k != EFFORT_KEY})
     out = dict(kwargs)
     out.pop(EFFORT_KEY, None)
+    if resolved['family'] == 'anthropic':
+        # Aliases are SDK inputs, never additional Messages API body fields.
+        aliases = ('enable_thinking', 'thinking_budget', 'thinking_type',
+                   'show_reasoning', 'reasoning_output')
+        for key in aliases:
+            out.pop(key, None)
+        if isinstance(out.get('extra_body'), dict):
+            out['extra_body'] = {
+                k: v
+                for k, v in out['extra_body'].items() if k not in aliases
+            }
+            if not out['extra_body']:
+                out.pop('extra_body')
+    else:
+        # These are extension body fields, not OpenAI Python keyword arguments.
+        # Let the SDK signature filter keep them until this lowering step.
+        for key in THINKING_PARAM_KEYS:
+            if key != EFFORT_KEY and key in out:
+                value = out.pop(key)
+                if key not in (out.get('extra_body') or {}):
+                    _merge_extra_body(out, {key: value})
     existing_extra = out.get('extra_body') or {}
     for key, value in resolved['params'].items():
         if key == 'extra_body':
@@ -511,7 +800,7 @@ def apply_effort(kwargs: Dict[str, Any], *, base_url: str,
                     _merge_extra_body(out, {sub_key: sub_value})
         elif key not in out:
             out[key] = value
-    return out
+    return kwargs if out == kwargs else out
 
 
 # --------------------------------------------------------------------------- #
@@ -631,8 +920,17 @@ def without_thinking(kwargs: Dict[str, Any]) -> Dict[str, Any]:
             k: v
             for k, v in extra.items() if k not in THINKING_PARAM_KEYS
         }
-        new_extra['enable_thinking'] = False
+        if isinstance(extra.get('thinking'), dict):
+            new_extra['thinking'] = {'type': 'disabled'}
+        elif isinstance(extra.get('reasoning'), dict):
+            new_extra['reasoning'] = {'enabled': False}
+        else:
+            new_extra['enable_thinking'] = False
         cleaned['extra_body'] = new_extra
+    elif isinstance(kwargs.get('thinking'), dict) or 'output_config' in kwargs:
+        cleaned['thinking'] = {'type': 'disabled'}
+    elif isinstance(kwargs.get('reasoning'), dict):
+        cleaned['reasoning'] = {'effort': 'none'}
     else:
         cleaned['enable_thinking'] = False
     return cleaned

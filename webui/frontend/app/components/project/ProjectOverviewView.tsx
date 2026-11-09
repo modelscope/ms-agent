@@ -1,3 +1,4 @@
+import type { ReasoningEffort } from '~/lib/types'
 import './ProjectOverviewView.css'
 import {
   App,
@@ -93,13 +94,15 @@ export function ProjectOverviewView({
     text: string,
     files?: ChatFileRef[],
     segments?: MessageSegment[],
-    modelId?: string
+    modelId?: string,
+    reasoningEffort?: ReasoningEffort
   ) => {
     const session = await api.createSession({
       title: text.slice(0, 60) || 'New chat',
       project_id: project.id,
       preview: text,
-      model_id: modelId
+      model_id: modelId,
+      reasoning_effort: reasoningEffort
     })
     // Refresh the sidebar's session list BEFORE leaving: the app layout no
     // longer revalidates on a route change (see its `shouldRevalidate`), so

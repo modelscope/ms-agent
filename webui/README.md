@@ -145,6 +145,91 @@ in that browser tab when you return, but is not saved across a page refresh.
 Sessions have independent histories and share the project's current files,
 settings and memory. Branching does not copy or roll back the workspace.
 
+<a id="model-capabilities-and-context"></a>
+
+## Models and context
+
+### Catalog updates
+
+WebUI uses the models.dev snapshot bundled with the SDK to look up model
+capabilities, context limits and prices. Models missing from the catalog can
+still be added manually. Access depends on your provider account and endpoint.
+
+| Installation | Default update behavior |
+| --- | --- |
+| Source checkout, including `pip install -e .` | Check at WebUI startup; reuse a successful check for 24 hours and retry a failed check after 15 minutes |
+| Wheel or image | Use bundled data or a newer compatible local cache |
+| Either installation | Choose **Settings → Models → Update catalog** to download data, then restart the service to apply it |
+
+Update requests have an 8-second timeout. Downloads go to
+`$MS_AGENT_HOME/cache/models.dev/v1`; failed updates leave the current local data
+available. Settings shows the active catalog and any version awaiting a restart.
+On restart, the SDK selects the newer compatible bundle or cache.
+
+`MS_AGENT_MODEL_CATALOG` controls updates:
+
+| Value | Behavior |
+| --- | --- |
+| `auto` (default) | Apply the installation-specific defaults above |
+| `local` | Skip startup checks; allow manual updates |
+| `bundled` | Use only the bundled snapshot; disable updates |
+
+`ms-agent ui --skip-install` also skips automatic catalog checks. Installing with
+pip, querying metadata and building packages do not download a catalog. TUI
+update controls are not available yet.
+
+### Thinking and images
+
+Choose a reasoning setting in model settings or beside the chat model selector.
+Each conversation remembers the choice for each model. Changing it also updates
+the default for new conversations; returning to an existing conversation restores
+its saved choice. Only supported settings are listed. Native thinking parameters
+in Advanced JSON take priority and disable the shortcut.
+
+Image understanding supports **Auto / On / Off**. Auto reads the catalog and is
+off for unknown models. Existing On/Off choices are preserved; select Auto to
+restore detection. When image understanding is off, WebUI warns and passes file
+paths rather than image pixels. Use On for a custom deployment known to support
+images. Catalog audio, video and PDF labels describe model capabilities; those
+native upload formats are not supported by this interface.
+
+### Context usage and compression
+
+The circle to the left of the attachment button shows estimated usage for the
+last assembled request. Click it to view system prompt, tool definition and
+message usage, or choose **Compress context**. Output reservation is shown
+separately. Changing the model or configuration clears the old estimate until
+the next request.
+
+The context limit in model settings can reduce a known model's window or provide
+a limit for an unknown model. Clear it to restore defaults. Automatic compression
+normally starts near 85% of the effective window, or earlier when input limits
+and output reservation require it.
+
+Manual and automatic compression use the same SDK operation as `/compact`.
+WebUI does not yet route slash commands. Compression runs without adding a user
+message, continues if you leave the page, and can be cancelled with Stop. On
+completion, the history shows the trigger and estimated token counts before and
+after compression. Original messages remain in the session log.
+
+If summarization fails, the previous context is retained. When that context is
+too large to send, **Retry compression and continue** resumes the saved request
+without adding a duplicate message. If the latest input alone is too large,
+shorten it or choose a larger model/window.
+
+### Memory and usage records
+
+When project memory is enabled, compression can first extract durable facts.
+An ordinary memory failure retains the previous memory and retry sources while
+allowing a valid summary to commit. System instructions are reloaded before the
+next request. Summaries use a separate, lower-cost reasoning setting and may
+omit details; keep important evidence in project files.
+
+The SDK records response usage independently of successful compaction. Cost
+estimates are marked complete, partial or unknown; amounts are not shown in
+WebUI. See [Model catalog and context compaction](../docs/en/Components/ModelCatalog.md)
+for storage, recovery and pricing details.
+
 ## Edit project files
 
 Open a project's workspace to create files or folders, rename entries in place,

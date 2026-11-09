@@ -1,6 +1,7 @@
 from typing import Literal
 
 from pydantic import BaseModel, Field
+from app.schemas.model import ReasoningEffort
 
 
 class ChatFile(BaseModel):
@@ -46,6 +47,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     model_id: str | None = None
+    reasoning_effort: ReasoningEffort | None = None
     session_id: str | None = None
     project_id: str | None = None
     # The CURRENT turn's user message. Conversation context is NOT taken from
@@ -63,7 +65,9 @@ class ChatChunk(BaseModel):
                about once a second, so a reload keeps counting). Its final frame
                is empty and carries `meta.duration` (whole seconds).
     - task:    declares/updates a todo task (meta: id, label, status)
-    - step:    a step card nested under a task (meta: kind, task_id?, status?)
+    - step:    an inline card (meta.kind). context_compaction is a display-only
+               completion notice with optional before_tokens/after_tokens;
+               it carries no tool group/status and does not end the turn.
     - session: emitted once at turn start when the session exists (meta:
                session_id, project_id) so the client can refresh its lists
                immediately, before the turn (and title) complete

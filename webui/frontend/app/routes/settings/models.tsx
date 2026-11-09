@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { AddProviderModal } from '~/components/models/AddProviderModal'
 import { ModelEditModal } from '~/components/models/ModelEditModal'
+import { CatalogSettings } from '~/components/models/CatalogSettings'
+import { ModelCapabilities } from '~/components/models/ModelCapabilities'
 import { ProviderTags } from '~/components/models/ProviderTags'
 import { ProviderLogo } from '~/components/models/ProviderLogo'
 import { EmptyState, EmptyStateAction } from '~/components/common/EmptyState'
@@ -180,6 +182,7 @@ export default function ModelsSettings() {
 
   return (
     <div className="flex h-full flex-col">
+      <CatalogSettings />
       {/* Default model picker */}
       <section className="mb-6 shrink-0">
         <div className="mb-3 text-base font-semibold text-msa-text-1">
@@ -595,20 +598,31 @@ function ProviderDetail({
                 >
                   {m.name}
                 </div>
+                <ModelCapabilities model={m} />
               </div>
               <Tooltip title={t.modelsAdmin.editModel}>
-                <EditIcon
-                  className="h-5 w-5 shrink-0 cursor-pointer text-msa-text-3 transition-colors hover:text-msa-purple-6"
+                <button
+                  type="button"
+                  aria-label={`${t.modelsAdmin.editModel}: ${m.display_name || m.name}`}
+                  className="shrink-0 cursor-pointer border-none bg-transparent p-0 text-msa-text-3 transition-colors hover:text-msa-purple-6 focus-visible:outline focus-visible:outline-msa-line-3"
                   onClick={() => onEditModel(m)}
-                />
+                >
+                  <EditIcon className="h-5 w-5" />
+                </button>
               </Tooltip>
               <Popconfirm
-                title={t.modelsAdmin.confirmDelete}
+                title={t.modelsAdmin.deleteNamedModel.replace('{name}', m.display_name || m.name)}
                 okType="danger"
                 onConfirm={() => onDeleteModel(m)}
               >
                 <Tooltip title={t.modelsAdmin.deleteModel}>
-                  <DeleteIcon className="h-5 w-5 shrink-0 cursor-pointer text-msa-text-3 transition-colors hover:text-msa-purple-6" />
+                  <button
+                    type="button"
+                    aria-label={`${t.modelsAdmin.deleteModel}: ${m.display_name || m.name}`}
+                    className="shrink-0 cursor-pointer border-none bg-transparent p-0 text-msa-text-3 transition-colors hover:text-msa-purple-6 focus-visible:outline focus-visible:outline-msa-line-3"
+                  >
+                    <DeleteIcon className="h-5 w-5" />
+                  </button>
                 </Tooltip>
               </Popconfirm>
             </div>

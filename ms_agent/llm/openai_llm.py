@@ -12,9 +12,12 @@ from openai.types.chat.chat_completion_message_tool_call import (
 from typing import Any, Dict, Generator, Iterable, List, Optional
 
 from ms_agent.llm import LLM, multimodal
+from ms_agent.llm.cost import (merge_usage, normalize_usage, response_usage,
+                               set_response_usage, update_openai_usage)
 from ms_agent.llm.io import interrupt_stream
-from ms_agent.llm.thinking import apply_effort, create_with_thinking_fallback
-from ms_agent.llm.utils import Message, Tool, ToolCall
+from ms_agent.llm.thinking import (THINKING_PARAM_KEYS, apply_effort,
+                                   create_with_thinking_fallback)
+from ms_agent.llm.utils import Message, Tool, ToolCall, normalize_finish_reason
 from ms_agent.llm.vision import create_with_vision_fallback
 from ms_agent.llm.vision import delivery_reason as vision_delivery_reason
 from ms_agent.utils import (MAX_CONTINUE_RUNS, assert_package_exist,
@@ -75,8 +78,9 @@ class OpenAI(LLM):
         assert_package_exist('openai')
         import openai
         self.model: str = config.llm.model
-        self.max_continue_runs = getattr(config.llm, 'max_continue_runs',
-                                         None) or MAX_CONTINUE_RUNS
+        self.provider_id = config.llm.get('service') or ''
+        limit = getattr(config.llm, 'max_continue_runs', None)
+        self.max_continue_runs = MAX_CONTINUE_RUNS if limit is None else limit
         # Resolution: explicit arg -> config field -> env var -> service
         # default. The env fallback keeps `service: openai` working with a
         # `.env` that only sets OPENAI_BASE_URL/OPENAI_API_KEY (matching the
@@ -104,9 +108,8 @@ class OpenAI(LLM):
         self.base_url = base_url or ''
         self._active_stream = None
 
-        # Image attachments (legacy non-router path). Resolution mirrors the
-        # router's: an explicit per-model switch wins, else the service's
-        # declared capability, else runtime learning from a refusal.
+        # Image attachments (legacy non-router path). Explicit per-model flags
+        # win, then offline model modalities; provider flags are not evidence.
         from ms_agent.llm.spec import get_registry
         from ms_agent.llm.vision import resolve_supports_vision
         self._vision = multimodal.VisionOptions.from_config(config)
@@ -273,13 +276,14 @@ class OpenAI(LLM):
         if not stream:
             args.pop('stream_options', None)
 
-        # Lower the canonical knob first: the Responses path below reads
-        # `reasoning_effort` straight into `reasoning.effort`, so it must see a
-        # real OpenAI tier rather than a canonical `auto`/`off`.
-        args = apply_effort(
-            args, base_url=str(getattr(self.client, 'base_url', '')))
-
         if self._use_responses_api:
+            # Responses reads the native tier directly; Chat Completions lowers
+            # once in _call_llm, including direct calls and continuations.
+            args = apply_effort(
+                args,
+                base_url=str(getattr(self.client, 'base_url', '')),
+                provider_id=getattr(self, 'provider_id', ''),
+                model=self.model)
             if stream:
                 return self._responses_stream_generate(messages, tools, **args)
             else:
@@ -287,10 +291,17 @@ class OpenAI(LLM):
 
         parameters = inspect.signature(
             self.client.chat.completions.create).parameters
-        args = {key: value for key, value in args.items() if key in parameters}
+        args = {
+            key: value
+            for key, value in args.items()
+            if key in parameters or key in THINKING_PARAM_KEYS
+        }
         completion = self._call_llm(messages, self.format_tools(tools), **args)
 
-        max_continue_runs = max_continue_runs or self.max_continue_runs
+        # None inherits the configured total-call limit. Both 0 and 1
+        # permit only the initial request; internal counters must not be negative.
+        limit = self.max_continue_runs if max_continue_runs is None else max_continue_runs
+        max_continue_runs = max(1, int(limit))
         if stream:
             return self._stream_continue_generate(messages, completion, tools,
                                                   max_continue_runs - 1,
@@ -355,13 +366,19 @@ class OpenAI(LLM):
         if is_streaming and stream_options_config.get('include_usage', True):
             kwargs.setdefault('stream_options', {})['include_usage'] = True
 
+        kwargs = apply_effort(
+            kwargs,
+            base_url=str(getattr(self.client, 'base_url', '')),
+            provider_id=getattr(self, 'provider_id', ''),
+            model=self.model)
+
         # Thinking is per-model and a refusal is a hard 400 (see llm/thinking.py).
         # Image content is a per-model hard 400 on text-only models; retry once
         # with the images folded into text and remember the model. Composes with
         # the thinking fallback (each retries for its own reason).
         sent_images = any(
-            multimodal.has_image_blocks(m.get('content'))
-            for m in messages if isinstance(m, dict))
+            multimodal.has_image_blocks(m.get('content')) for m in messages
+            if isinstance(m, dict))
 
         def create(messages, **params):
             result = self.client.chat.completions.create(
@@ -393,21 +410,8 @@ class OpenAI(LLM):
 
         OpenAI/DashScope format: usage.prompt_tokens_details.{cached_tokens, cache_creation_input_tokens}
         """
-        if not usage_obj:
-            return 0, 0
-        details = getattr(usage_obj, 'prompt_tokens_details', None)
-        if details is None and isinstance(usage_obj, dict):
-            details = usage_obj.get('prompt_tokens_details')
-        if details is None:
-            return 0, 0
-        if isinstance(details, dict):
-            cached = int(details.get('cached_tokens', 0) or 0)
-            created = int(details.get('cache_creation_input_tokens', 0) or 0)
-        else:
-            cached = int(getattr(details, 'cached_tokens', 0) or 0)
-            created = int(
-                getattr(details, 'cache_creation_input_tokens', 0) or 0)
-        return cached, created
+        usage = normalize_usage(usage_obj)
+        return usage['cached_tokens'], usage['cache_creation_input_tokens']
 
     @staticmethod
     def _extract_reasoning_tokens(usage_obj: Any) -> int:
@@ -444,6 +448,9 @@ class OpenAI(LLM):
         if not pre_message_chunk:
             return message_chunk
         message = deepcopy(pre_message_chunk)
+        merge_usage(message, message_chunk)
+        if message_chunk.finish_reason:
+            message.finish_reason = message_chunk.finish_reason
         message.reasoning_content += message_chunk.reasoning_content
         message.content += message_chunk.content
         if message_chunk.tool_calls:
@@ -496,50 +503,56 @@ class OpenAI(LLM):
         Yields:
             Message: Incremental chunks of the generated message.
         """
+        # LLMAgent replaces messages[-1] on every yield; it is not a stable prefix.
+        prefix = deepcopy(messages[-1]) if messages[-1].partial else None
+        if prefix is not None:
+            # The previous call's finish reason says nothing about this call.
+            prefix.finish_reason = ''
         message = None
-        for chunk in completion:
+        usage = None
+        chunks = iter(completion)
+        for chunk in chunks:
+            usage = update_openai_usage(usage, getattr(chunk, 'usage', None))
             message_chunk = self._stream_format_output_message(chunk)
             message = self._merge_stream_message(message, message_chunk)
             # chunk[-2]: chunk with finish_reason and last contents
             # chunk[-1]: chunk with usage only
             if chunk.choices and chunk.choices[0].finish_reason:
-                try:
-                    next_chunk = next(completion)
-                    usage = getattr(next_chunk, 'usage', None)
-                    message.prompt_tokens += next_chunk.usage.prompt_tokens
-                    cached, created = self._extract_cache_info(usage)
-                    message.cached_tokens += cached
-                    message.cache_creation_input_tokens += created
-                    message.completion_tokens += next_chunk.usage.completion_tokens
-                    message.reasoning_tokens += self._extract_reasoning_tokens(
-                        usage)
-                except (StopIteration, AttributeError):
-                    # The stream may end without a final usage chunk, which is acceptable.
-                    pass
-                first_run = not messages[-1].to_dict().get('partial', False)
+                for next_chunk in chunks:
+                    usage = update_openai_usage(
+                        usage, getattr(next_chunk, 'usage', None))
+                set_response_usage(
+                    message, usage, model=getattr(self, 'model', ''))
+                first_run = prefix is None
                 if chunk.choices[0].finish_reason in [
                         'length', 'null'
-                ] and (max_runs is None or max_runs != 0):
+                ] and (max_runs is None or max_runs > 0):
                     logger.info(
                         f'finish_reason: {chunk.choices[0].finish_reason}, continue generate.'
                     )
+                    if prefix is not None:
+                        messages[-1] = deepcopy(prefix)
                     completion = self._call_llm_for_continue_gen(
                         messages, message, tools, **kwargs)
-                    for chunk in self._stream_continue_generate(
-                            messages, completion, tools,
-                            max_runs - 1 if max_runs is not None else None,
-                            **kwargs):
-                        if first_run:
-                            yield self._merge_stream_message(
-                                messages[-1], chunk)
-                        else:
-                            yield chunk
+                    yield from self._stream_continue_generate(
+                        messages, completion, tools,
+                        max_runs - 1 if max_runs is not None else None,
+                        **kwargs)
+                    return  # never re-yield the pre-continuation usage/text
                 elif not first_run:
+                    messages[-1] = deepcopy(prefix)
                     self._merge_partial_message(messages, message)
                     messages[-1].partial = False
                     message = messages[-1]
+                    prefix = None
 
-            yield message
+            yield self._merge_stream_message(prefix,
+                                             message) if prefix else message
+        if message is not None and not message.usage_records:
+            set_response_usage(
+                message, usage, model=getattr(self, 'model', ''))
+            yield self._merge_stream_message(prefix,
+                                             message) if prefix else message
 
     @staticmethod
     def _stream_format_output_message(completion_chunk) -> Message:
@@ -576,10 +589,10 @@ class OpenAI(LLM):
             content=content,
             reasoning_content=reasoning_content,
             tool_calls=tool_calls,
-            id=completion_chunk.id,
-            prompt_tokens=getattr(completion_chunk.usage, 'prompt_tokens', 0),
-            completion_tokens=getattr(completion_chunk.usage,
-                                      'completion_tokens', 0))
+            finish_reason=normalize_finish_reason(
+                getattr(completion_chunk.choices[0], 'finish_reason', None
+                        ) if completion_chunk.choices else None),
+            id=completion_chunk.id)
 
     @staticmethod
     def _format_output_message(completion) -> Message:
@@ -608,20 +621,18 @@ class OpenAI(LLM):
                     tool_name=tool_call.function.name) for idx, tool_call in
                 enumerate(completion.choices[0].message.tool_calls)
             ]
-        usage = getattr(completion, 'usage', None)
-        cached, created = OpenAI._extract_cache_info(usage)
-        reasoning = OpenAI._extract_reasoning_tokens(usage)
         return Message(
             role='assistant',
             content=content,
             reasoning_content=reasoning_content,
             tool_calls=tool_calls,
+            finish_reason=normalize_finish_reason(
+                getattr(completion.choices[0], 'finish_reason', None)),
             id=completion.id,
-            prompt_tokens=completion.usage.prompt_tokens,
-            cached_tokens=cached,
-            cache_creation_input_tokens=created,
-            completion_tokens=completion.usage.completion_tokens,
-            reasoning_tokens=reasoning)
+            **response_usage(
+                getattr(completion, 'usage', None),
+                model=getattr(completion, 'model', ''),
+                response_id=completion.id))
 
     @staticmethod
     def _merge_partial_message(messages: List[Message], new_message: Message):
@@ -633,12 +644,9 @@ class OpenAI(LLM):
         """
         messages[-1].reasoning_content += new_message.reasoning_content
         messages[-1].content += new_message.content
-        messages[-1].prompt_tokens += new_message.prompt_tokens
-        messages[-1].cached_tokens += new_message.cached_tokens
-        messages[
-            -1].cache_creation_input_tokens += new_message.cache_creation_input_tokens
-        messages[-1].completion_tokens += new_message.completion_tokens
-        messages[-1].reasoning_tokens += new_message.reasoning_tokens
+        # Unlike a delta merge, this is a new call (even if its reason is unknown).
+        messages[-1].finish_reason = new_message.finish_reason
+        merge_usage(messages[-1], new_message)
         if new_message.tool_calls:
             if messages[-1].tool_calls:
                 messages[-1].tool_calls += new_message.tool_calls
@@ -671,7 +679,12 @@ class OpenAI(LLM):
         else:
             # In platforms Bailian, setting `message.partial = True` indicates that the message
             #         is not yet complete and may be continued in the next generation step.
-            if messages[-1].content != new_message.content:
+            if (messages[-1].role == 'assistant'
+                    and messages[-1].id == new_message.id
+                    and messages[-1].content == new_message.content):
+                # Replace a live stream snapshot with its FINAL usage record.
+                messages[-1] = new_message
+            else:
                 messages.append(new_message)
             messages[-1].partial = True
         messages[-1].api_calls += 1
@@ -701,7 +714,7 @@ class OpenAI(LLM):
         new_message = self._format_output_message(completion)
         if completion.choices[0].finish_reason in [
                 'length', 'null'
-        ] and (max_runs is None or max_runs != 0):
+        ] and (max_runs is None or max_runs > 0):
             logger.info(
                 f'finish_reason: {completion.choices[0].finish_reason}， continue generate.'
             )
@@ -822,7 +835,10 @@ class OpenAI(LLM):
         kwargs: Dict[str, Any] = {}
 
         reasoning_effort = args.get('reasoning_effort')
-        reasoning_summary = args.get('reasoning_summary', 'auto')
+        # No implicit reasoning object for auto/non-reasoning models. Explicit
+        # summaries and raw Responses objects remain advanced overrides.
+        reasoning_summary = args.get('reasoning_summary',
+                                     'auto' if reasoning_effort else None)
         if reasoning_effort or reasoning_summary:
             reasoning: Dict[str, Any] = {}
             if reasoning_effort:
@@ -841,6 +857,10 @@ class OpenAI(LLM):
             kwargs['stream_options'] = args['stream_options']
         if args.get('previous_response_id') is not None:
             kwargs['previous_response_id'] = args['previous_response_id']
+        if args.get('reasoning') is not None:
+            kwargs['reasoning'] = args['reasoning']
+        if args.get('extra_body') is not None:
+            kwargs['extra_body'] = args['extra_body']
 
         include = args.get('include')
         if include is not None:
@@ -884,6 +904,20 @@ class OpenAI(LLM):
                         arguments=arguments,
                     ))
         return tool_calls if tool_calls else None
+
+    @staticmethod
+    def _extract_finish_reason_from_response(response) -> str:
+        """Translate Responses status/details without assuming incomplete = length."""
+        status = getattr(response, 'status', None)
+        if status == 'completed':
+            return 'stop'
+        if status == 'incomplete':
+            details = getattr(response, 'incomplete_details', None)
+            reason = (
+                details.get('reason') if isinstance(details, dict) else
+                getattr(details, 'reason', None))
+            return normalize_finish_reason(reason) or 'incomplete'
+        return status or ''
 
     @staticmethod
     def _extract_usage_from_response(response) -> tuple:
@@ -968,8 +1002,6 @@ class OpenAI(LLM):
         text = getattr(response, 'output_text', '') or ''
         reasoning = self._extract_reasoning_summaries_from_response(response)
         resp_tool_calls = self._extract_tool_calls_from_response(response)
-        prompt_tokens, completion_tokens = self._extract_usage_from_response(
-            response)
         passback = self._collect_passback_items(response)
 
         return Message(
@@ -978,9 +1010,12 @@ class OpenAI(LLM):
             reasoning_content=reasoning,
             tool_calls=resp_tool_calls,
             _responses_output_items=passback,
+            finish_reason=self._extract_finish_reason_from_response(response),
             id=getattr(response, 'id', ''),
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
+            **response_usage(
+                getattr(response, 'usage', None),
+                model=getattr(self, 'model', ''),
+                response_id=getattr(response, 'id', '')),
         )
 
     @staticmethod
@@ -1060,7 +1095,7 @@ class OpenAI(LLM):
                     current_message.content = streamed_text
                     yield current_message
 
-            elif event_type == 'response.completed':
+            elif event_type in ('response.completed', 'response.incomplete'):
                 final_response = getattr(event, 'response', None)
 
             elif event_type == 'response.failed':
@@ -1082,11 +1117,13 @@ class OpenAI(LLM):
             passback = self._collect_passback_items(final_response)
             if passback:
                 current_message._responses_output_items = passback
-            prompt_tokens, completion_tokens = self._extract_usage_from_response(
-                final_response)
-            current_message.prompt_tokens = prompt_tokens
-            current_message.completion_tokens = completion_tokens
             current_message.id = getattr(final_response, 'id', '')
+            current_message.finish_reason = self._extract_finish_reason_from_response(
+                final_response)
+            set_response_usage(
+                current_message,
+                getattr(final_response, 'usage', None),
+                model=getattr(self, 'model', ''))
             yield current_message
         elif response_error_msg:
             logger.error(f'Responses API failed: {response_error_msg}')
