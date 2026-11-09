@@ -102,9 +102,3 @@ Records retain raw usage fields, requested and response models, and the catalog 
 - Missing usage or prices, incomplete streams and unsupported cache TTL pricing retain known amounts with a `partial` or `unknown` status. Missing values are not treated as zero.
 
 `complete` means the fields required for the catalog estimate are available. Plans, discounts and other provider billing rules still require reconciliation. Amounts are not currently shown in WebUI.
-
-## Validation
-
-Regression tests cover commit failures, log recovery, budgets, chunking, failed-source retry, usage normalization, cancellation and API behavior. End-to-end checks also need to cover real model configuration, tools and images, automatic and manual compaction, Stop, reload, restart and pending-request retry.
-
-Validate wheels, sdists and images from the same candidate source, including resource integrity, installed startup and offline queries. Source tests do not replace installed-package checks.
