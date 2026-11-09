@@ -3,6 +3,7 @@ import asyncio
 import functools
 import re
 import time
+from contextlib import aclosing
 from typing import (Any, AsyncGenerator, Callable, Optional, Tuple, Type,
                     TypeVar, Union)
 
@@ -115,8 +116,9 @@ def async_retry(max_attempts: int = 3,
 
             for attempt in range(1, max_attempts + 1):
                 try:
-                    async for item in func(*args, **kwargs):
-                        yield item
+                    async with aclosing(func(*args, **kwargs)) as stream:
+                        async for item in stream:
+                            yield item
                     return
                 except exceptions as e:
                     import traceback
