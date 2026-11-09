@@ -11,6 +11,8 @@ class ToolCall(TypedDict, total=False):
     type: str = 'function'
     tool_name: str = ''
     arguments: str = '{}'
+    # Provider data to replay verbatim, e.g. Gemini's thought signature.
+    extra_content: Optional[Dict[str, Any]] = None
 
 
 class Tool(TypedDict, total=False):
@@ -143,6 +145,7 @@ class Message:
                         json.loads(tool_call['arguments'])
                 except Exception:
                     tool_call['arguments'] = '{}'
+                extra_content = tool_call.get('extra_content')
                 raw_dict['tool_calls'][idx] = {
                     'id': tool_call['id'],
                     'type': tool_call['type'],
@@ -151,6 +154,9 @@ class Message:
                         'arguments': tool_call['arguments'],
                     }
                 }
+                if extra_content:
+                    raw_dict['tool_calls'][idx][
+                        'extra_content'] = extra_content
         required = ['content', 'role']
         # Never send UI-only fields to model providers.
         rm = [
