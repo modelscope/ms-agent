@@ -13,18 +13,6 @@ uv build --python 3.12
 uvx --from twine==6.2.0 twine check dist/*.whl dist/*.tar.gz
 ```
 
-The package also includes a fixed models.dev snapshot, its SHA256 manifest and
-upstream MIT license. To refresh it during release preparation, use
-`python .dev_scripts/webui/prepare_webui.py --update-model-catalog`. Without that
-option, preparation and wheel/sdist builds only validate the bundled data and
-never fetch it. Images inherit the same data from the wheel and default to local catalog data.
-Source WebUI startup can refresh its separate SDK HOME cache; runtime updates never
-rewrite the snapshot packaged by this build. The SDK query API is `ms_agent.llm.model_catalog.get_model`.
-For an offline update, run `python .dev_scripts/update_model_catalog.py --input
-FILE --fetched-at ORIGINAL_ISO_TIMESTAMP`; `--check` verifies the fixed bundle.
-The update script normalizes the final newline before computing the snapshot
-hash, so repository text-format hooks cannot invalidate the manifest.
-
 Preparation installs locked frontend dependencies, builds CSS and frontend
 output, then records file hashes and the SDK version/commit in
 `webui/RESOURCE-MANIFEST.json`. Use `--skip-build` to reuse an unchanged, validated
@@ -39,6 +27,29 @@ and `ms-agent ui` builds the frontend in a writable cache on first use.
 Editable SDK installation builds in the checkout when first started.
 Published packages must pass the release checker, which requires prebuilt
 resources. An existing but invalid release manifest is always an error.
+
+## Update the model catalog
+
+Packages include the models.dev snapshot, its SHA256 manifest and the upstream
+MIT license. Preparation and wheel/sdist builds validate the tracked data.
+To download a new snapshot during preparation, run:
+
+```bash
+python .dev_scripts/webui/prepare_webui.py --update-model-catalog
+```
+
+To import a previously downloaded snapshot, preserve its original fetch time:
+
+```bash
+python .dev_scripts/update_model_catalog.py --input FILE --fetched-at ORIGINAL_ISO_TIMESTAMP
+python .dev_scripts/update_model_catalog.py --check
+```
+
+The update script normalizes the final newline before computing the hash so
+repository formatting hooks leave the manifest valid. Images use the data in
+the wheel. Source WebUI startup may update a separate SDK HOME cache; runtime
+updates leave the tracked snapshot unchanged. SDK callers can query a model
+with `ms_agent.llm.model_catalog.get_model`.
 
 ## Package inputs
 

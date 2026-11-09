@@ -145,64 +145,90 @@ in that browser tab when you return, but is not saved across a page refresh.
 Sessions have independent histories and share the project's current files,
 settings and memory. Branching does not copy or roll back the workspace.
 
-## Model capabilities and context
+<a id="model-capabilities-and-context"></a>
 
-The SDK ships a validated models.dev snapshot, so model capabilities and budgets
-work offline. Source WebUI installations also check for updates at startup
-(at most once per 24 hours after success, with an 8-second network timeout).
-Downloads live in `$MS_AGENT_HOME/cache/models.dev/v1`, outside the checkout;
-failed updates keep the current local data. Installed wheels and images use local
-data by default. **Settings → Models → Update catalog** is available in both
-installations; a newly downloaded version takes effect after a service restart.
-The settings page identifies the current and pending versions. TUI can reuse the
-SDK service, but its update controls are not connected yet.
+## Models and context
 
-Set `MS_AGENT_MODEL_CATALOG=local` to skip automatic checks while allowing manual
-updates, or `bundled` to use only the bundled snapshot and disable updates.
-`ms-agent ui --skip-install` also suppresses automatic catalog checks. Queries,
-package builds and `pip install -e .` do not fetch the catalog. A source update or
-package upgrade takes effect on restart; the newer compatible bundled/cache
-snapshot is selected. Models absent from the catalog can still be added manually.
-Catalog entries do not guarantee access through your provider account.
+### Catalog updates
 
-Use the reasoning selector in model settings or beside the chat model selector.
-Each conversation remembers its setting for each model. An explicit change also
-updates the default for new conversations; opening an existing conversation does
-not change that default. Only supported choices are offered. Native thinking
-parameters in Advanced JSON take priority and disable the shortcut with an
-explanation.
+WebUI uses the models.dev snapshot bundled with the SDK to look up model
+capabilities, context limits and prices. Models missing from the catalog can
+still be added manually. Access depends on your provider account and endpoint.
 
-Image understanding supports **Auto / On / Off**. Auto uses the catalog, defaulting
-to off for unknown models. Existing explicit choices are preserved; choose Auto to
-restore detection. Unsupported images are not sent as pixels: the UI warns and
-passes file paths instead. A manual override is available for custom deployments.
-Listed audio/video/PDF capabilities describe the model, not native upload support in
-this interface.
+| Installation | Default update behavior |
+| --- | --- |
+| Source checkout, including `pip install -e .` | Check at WebUI startup; reuse a successful check for 24 hours and retry a failed check after 15 minutes |
+| Wheel or image | Use bundled data or a newer compatible local cache |
+| Either installation | Choose **Settings → Models → Update catalog** to download data, then restart the service to apply it |
 
-The context setting can reduce the model window or supply a limit for an unknown
-model. Clear it to restore defaults. Automatic compression starts near 85% of the
-effective window, or earlier for input limits and output reservation. The circle
-beside the attachment button shows the last assembled context estimate. Open it to
-inspect system prompt, tool definitions and message usage, and choose **Compress
-context**. Output reservation is separate from consumed input; estimates are
-invalidated when the model or configuration changes.
+Update requests have an 8-second timeout. Downloads go to
+`$MS_AGENT_HOME/cache/models.dev/v1`; failed updates leave the current local data
+available. Settings shows the active catalog and any version awaiting a restart.
+On restart, the SDK selects the newer compatible bundle or cache.
 
-Manual compression runs without adding a user message. It shares SDK logic with
-automatic compression and the SDK `/compact` command; WebUI slash-command routing
-is not yet provided. Closing the page leaves compression running; Stop cancels it.
-The conversation keeps a completion marker with its source and estimated counts.
-Original history stays on disk. A failed summary retains the previous window;
-if it exceeds the hard budget, **Retry compression and continue** resumes the
-saved request without duplicating it. An oversized latest message may require a
-larger model/window or a shorter new message.
+`MS_AGENT_MODEL_CATALOG` controls updates:
 
-Memory and summaries serve different purposes. An enabled memory backend may
-extract durable facts before compaction; ordinary memory failures do not block
-a valid summary and retain retry sources. System instructions are retained and
-refreshed rather than replaced by a summary. Summaries use a separate economical
-reasoning setting and can omit facts; save important evidence in project files.
-Usage is recorded independently of successful compaction. Cost estimates are
-marked complete, partial or unknown and are not shown in the UI yet.
+| Value | Behavior |
+| --- | --- |
+| `auto` (default) | Apply the installation-specific defaults above |
+| `local` | Skip startup checks; allow manual updates |
+| `bundled` | Use only the bundled snapshot; disable updates |
+
+`ms-agent ui --skip-install` also skips automatic catalog checks. Installing with
+pip, querying metadata and building packages do not download a catalog. TUI
+update controls are not available yet.
+
+### Thinking and images
+
+Choose a reasoning setting in model settings or beside the chat model selector.
+Each conversation remembers the choice for each model. Changing it also updates
+the default for new conversations; returning to an existing conversation restores
+its saved choice. Only supported settings are listed. Native thinking parameters
+in Advanced JSON take priority and disable the shortcut.
+
+Image understanding supports **Auto / On / Off**. Auto reads the catalog and is
+off for unknown models. Existing On/Off choices are preserved; select Auto to
+restore detection. When image understanding is off, WebUI warns and passes file
+paths rather than image pixels. Use On for a custom deployment known to support
+images. Catalog audio, video and PDF labels describe model capabilities; those
+native upload formats are not supported by this interface.
+
+### Context usage and compression
+
+The circle to the left of the attachment button shows estimated usage for the
+last assembled request. Click it to view system prompt, tool definition and
+message usage, or choose **Compress context**. Output reservation is shown
+separately. Changing the model or configuration clears the old estimate until
+the next request.
+
+The context limit in model settings can reduce a known model's window or provide
+a limit for an unknown model. Clear it to restore defaults. Automatic compression
+normally starts near 85% of the effective window, or earlier when input limits
+and output reservation require it.
+
+Manual and automatic compression use the same SDK operation as `/compact`.
+WebUI does not yet route slash commands. Compression runs without adding a user
+message, continues if you leave the page, and can be cancelled with Stop. On
+completion, the history shows the trigger and estimated token counts before and
+after compression. Original messages remain in the session log.
+
+If summarization fails, the previous context is retained. When that context is
+too large to send, **Retry compression and continue** resumes the saved request
+without adding a duplicate message. If the latest input alone is too large,
+shorten it or choose a larger model/window.
+
+### Memory and usage records
+
+When project memory is enabled, compression can first extract durable facts.
+An ordinary memory failure retains the previous memory and retry sources while
+allowing a valid summary to commit. System instructions are reloaded before the
+next request. Summaries use a separate, lower-cost reasoning setting and may
+omit details; keep important evidence in project files.
+
+The SDK records response usage independently of successful compaction. Cost
+estimates are marked complete, partial or unknown; amounts are not shown in
+WebUI. See [Model catalog and context compaction](../docs/en/Components/ModelCatalog.md)
+for storage, recovery and pricing details.
 
 ## Edit project files
 
