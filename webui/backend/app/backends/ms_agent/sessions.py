@@ -84,7 +84,8 @@ def create_session(body: SessionCreate) -> Session:
             None)  # unknown id -> default (mock is lenient)
     from app.backends.ms_agent import session_models
 
-    session = session_models.create(project, name=body.title, model_id=body.model_id)
+    session = session_models.create(project, name=body.title, model_id=body.model_id,
+                                    reasoning_effort=body.reasoning_effort)
     if body.preview:
         sidecar.merge("sessions", session.id, {"preview": body.preview})
     return session_to_schema(session)
@@ -369,6 +370,8 @@ def list_messages(sid: str) -> list[SessionMessage]:
             extra += log.get_skill_invocations()
         if hasattr(log, "get_loop_ends"):
             extra += log.get_loop_ends()
+        if hasattr(log, "get_compaction_events"):
+            extra += log.get_compaction_events()
     except Exception:
         rows, extra = [], []
     stream = sorted([*rows, *extra], key=lambda r: r.get("seq", 0))
@@ -544,7 +547,10 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
     the synthetic summary row) are skipped: history shows the original
     timeline. ``system`` and plain ``tool`` rows are otherwise dropped.
     """
-    from app.backends.ms_agent.chat import is_placeholder_content
+    from app.backends.ms_agent.chat import (
+        _context_compaction_meta,
+        is_placeholder_content,
+    )
 
     # Saved context copies must not replace original tool results in the UI.
     rows = [row for row in rows if row.get("_source") != "compaction"]
@@ -672,7 +678,28 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
         else:
             parts.append(SessionPart(kind="text", text=text))
 
+    compaction_parts: dict[str, SessionPart] = {}
     for row in rows:
+        if row.get("_source") == "compaction":
+            # Compacted-view re-appends duplicate earlier rows for the LLM
+            # window only; replaying them would double the timeline.
+            continue
+        if row.get("_type") == "compaction_event":
+            meta = _context_compaction_meta(row)
+            if meta is not None:
+                # Keep the marker at its seq within the CURRENT turn. Flushing
+                # here would split the answer from its user/loop_end metadata.
+                kind = meta.pop("kind")
+                operation_id = meta.get("operation_id")
+                prior = compaction_parts.get(operation_id) if operation_id else None
+                if prior is not None:
+                    prior.step.meta.update({k: v for k, v in meta.items() if k != "before_tokens"})
+                else:
+                    part = SessionPart(kind="step", step=SessionStep(kind=kind, meta=meta))
+                    parts.append(part)
+                    if operation_id:
+                        compaction_parts[operation_id] = part
+            continue
         if row.get("_type") == "loop_end":
             # Persisted loop boundary: carries the wall-clock duration for this
             # turn (its seq lands after the turn's rows, before the next user
@@ -1199,3 +1226,12 @@ def update_session_model(sid: str, model_id: str) -> dict:
     with manager.transaction_lock(), settings_lock():
         saved = session_models.change(project, sid, model_id)
         return {"session": session_to_schema(saved), "settings": agent_settings.get_settings()}
+
+
+def update_session_thinking(sid: str, model_id: str, effort: str) -> Session:
+    from app.backends.ms_agent import session_models
+    found = find_session(sid)
+    if not found:
+        raise NotFound('Conversation not found.')
+    project, _, _ = found
+    return session_to_schema(session_models.change_thinking(project, sid, model_id, effort))

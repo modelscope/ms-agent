@@ -67,10 +67,8 @@ def test_thinking_defaults_speak_up_only_where_silence_means_off(monkeypatch):
     # DashScope: qwen-plus/turbo/flash and qwen3-max default thinking OFF.
     assert cfg.thinking_plan("openai", "dashscope")["params"] == {
         "extra_body": {"enable_thinking": True}}
-    # Anthropic protocol: our Messages transport writes `thinking: disabled`
-    # when the flag is absent, so Claude would never think.
-    assert cfg.thinking_plan("anthropic", "deepseek")["params"] == {
-        "extra_body": {"enable_thinking": True}}
+    # Unknown Anthropic deployments inherit their own defaults.
+    assert cfg.thinking_plan("anthropic", "deepseek")["params"] == {}
 
 
 def test_the_dialect_follows_the_endpoint_not_the_provider_id(monkeypatch):
@@ -114,8 +112,7 @@ def test_generation_defaults_shows_what_will_actually_be_sent(monkeypatch):
         dashscope="https://dashscope.aliyuncs.com/compatible-mode/v1",
         deepseek="https://api.deepseek.com",
         modelscope="https://api-inference.modelscope.cn/v1")
-    assert _generation_defaults("anthropic", "deepseek") == {
-        "extra_body": {"enable_thinking": True}}
+    assert _generation_defaults("anthropic", "deepseek") == {}
     assert _generation_defaults("openai", "dashscope") == {
         "extra_body": {"enable_thinking": True}}
     # Nothing shipped -> nothing shown, rather than advertising a false we

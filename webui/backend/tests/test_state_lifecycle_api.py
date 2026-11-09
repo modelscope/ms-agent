@@ -153,3 +153,40 @@ def test_deleting_provider_drops_it_from_the_order(client):
     assert _provider_ids(client)[0] == 'temp'
     assert client.delete('/api/providers/temp').status_code == 200
     assert 'temp' not in _provider_ids(client)
+
+
+def test_thinking_is_session_scoped_and_turn_snapshot_is_immutable(client):
+    from app.backends.ms_agent import session_models, sidecar, config
+    from app.backends.ms_agent.common import find_session
+
+    model = client.post('/api/models', json={'provider_id': 'dashscope', 'name': 'qwen3.8-flash'}).json()['data']
+    mid = model['id']
+    a, b = [client.post('/api/sessions', json={'title': label, 'model_id': mid}).json()['data'] for label in ('A', 'B')]
+    change = lambda sid, effort: client.patch(f'/api/sessions/{sid}/thinking', json={'model_id': mid, 'reasoning_effort': effort})
+    assert change(a['id'], 'off').status_code == 200
+    project, session, manager = find_session(a['id'])
+    _, frozen = session_models.prepare(project, session)
+    assert change(b['id'], 'low').status_code == 200
+    assert client.get(f"/api/sessions/{a['id']}").json()['data']['reasoning_efforts'][mid] == 'off'
+    assert client.get(f"/api/sessions/{b['id']}").json()['data']['reasoning_efforts'][mid] == 'low'
+    assert sidecar.get('models', mid)['advanced_params']['reasoning_effort'] == 'low'
+    # Resolving an existing conversation must not mutate the global default.
+    _, current = session_models.prepare(project, manager.get(a['id']))
+    for snapshot in (frozen, current):
+        token = config._model_snapshot.set(snapshot)
+        try:
+            assert config._webui_generation_params('dashscope', 'qwen3.8-flash')['reasoning_effort'] == 'off'
+        finally:
+            config._model_snapshot.reset(token)
+    assert sidecar.get('models', mid)['advanced_params']['reasoning_effort'] == 'low'
+    other = client.post('/api/models', json={'provider_id': 'dashscope', 'name': 'qwen3.8-max'}).json()['data']['id']
+    assert client.patch(f"/api/sessions/{a['id']}/model", json={'model_id': other}).status_code == 200
+    assert change(a['id'], 'off').status_code == 400
+    restored = client.patch(f"/api/sessions/{a['id']}/model", json={'model_id': mid}).json()['data']['session']
+    assert restored['reasoning_efforts'][mid] == 'off'
+    # SDK metadata, rather than frontend-local state, survives a fresh read.
+    assert manager.get(a['id']).reasoning_efforts['dashscope']['qwen3.8-flash'] == 'off'
+    assert client.patch(f'/api/models/{mid}', json={'advanced_params': {'extra_body': {'reasoning_effort': 'low'}}}).status_code == 200
+    defaults = client.get('/api/models/generation-defaults', params={'provider_id': 'dashscope', 'model': 'qwen3.8-flash'}).json()['data']
+    assert defaults['raw_override'] is True
+    assert change(a['id'], 'low').status_code == 400

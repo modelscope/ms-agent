@@ -5,6 +5,7 @@ from pathlib import Path
 
 os.environ["MS_AGENT_HOME"] = tempfile.mkdtemp(prefix="ms_agent_test_home_")
 os.environ.setdefault("LOG_LEVEL", "ERROR")
+os.environ["MS_AGENT_MODEL_CATALOG"] = "local"
 
 import pytest
 

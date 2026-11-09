@@ -87,6 +87,7 @@ def test_unrelated_corruption_still_fails_startup(lost_home, content):
     metadata = home / 'projects/_default/.ms_agent/project.json'
     metadata.write_text(content)
     with pytest.raises(ValueError):
-        create_app()
+        with TestClient(create_app()):
+            pass
     assert metadata.read_text() == content
     assert not (home / 'backups').exists()

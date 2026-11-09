@@ -218,7 +218,7 @@ def get_provider_secret(pid: str) -> tuple[str, str, str]:
             spec = next(s for s in _specs() if s.name == pid)
             override = custom.get(pid, {}) or {}
             base_url = override.get("base_url") or spec.default_base_url or ""
-            protocol = _protocol(spec.transport)
+            protocol = override.get("protocol") or _protocol(spec.transport)
             return base_url, protocol, override.get("api_key", "") or ""
         if pid in custom:
             entry = custom[pid] or {}
