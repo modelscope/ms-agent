@@ -182,3 +182,89 @@ def test_plain_text_is_all_free_region():
     r0, r1, r2 = wf.split_profile_regions('just some intro text\n')
     assert r0 == '' and r1 == ''
     assert r2 == 'just some intro text\n'
+
+
+# ── UI write API (TUI / WebUI) ───────────────────────────────────────────────
+
+
+def test_global_instruction_writes_user_region(home):
+    wf.write_global_instruction('Always answer in French.')
+    text = (home / 'AGENTS.md').read_text(encoding='utf-8')
+    assert text.lstrip().startswith('---')
+    assert 'Always answer in French.' in text
+    assert wf.read_global_instruction() == 'Always answer in French.'
+    block = wf.global_instructions_block()
+    assert 'Always answer in French.' in block
+    assert 'legacy:settings.json' not in block
+
+
+def test_global_instruction_migrates_settings_then_clears(home):
+    from ms_agent.personalization.settings import PersonalizationSettings
+    from ms_agent.personalization.types import PersonalizationConfig
+    PersonalizationSettings().save(
+        PersonalizationConfig(global_instruction='你的名字是小黑'))
+    assert wf.read_global_instruction() == '你的名字是小黑'
+    assert PersonalizationSettings().load().global_instruction == ''
+    assert '你的名字是小黑' in (home / 'AGENTS.md').read_text('utf-8')
+
+
+def test_project_instruction_writes_private_slot_only(home, tmp_path):
+    work = tmp_path / 'repo'
+    work.mkdir()
+    root = work / 'AGENTS.md'
+    root.write_text('# team file\nDo not touch.\n', encoding='utf-8')
+    wf.write_project_instruction(str(work), 'This project uses uv.')
+    private = work / '.ms_agent' / 'AGENTS.md'
+    assert private.read_text(encoding='utf-8').strip() == 'This project uses uv.'
+    assert root.read_text(encoding='utf-8') == '# team file\nDo not touch.\n'
+    assert wf.read_project_instruction(str(work)).strip() == 'This project uses uv.'
+    block = wf.project_instructions_block(str(work))
+    assert 'Do not touch' in block
+    assert 'This project uses uv.' in block
+    assert block.index('Do not touch') < block.index('This project uses uv.')
+
+
+def test_project_instruction_migrates_project_json(home, tmp_path):
+    from ms_agent.project.manager import ProjectManager
+    work = tmp_path / 'legacy-proj'
+    work.mkdir()
+    created = ProjectManager(base_dir=str(home)).create(
+        name='Legacy', path=str(work), instruction='老项目规矩',
+        init_workspace=False)
+    got = wf.read_project_instruction(str(work))
+    assert got.strip() == '老项目规矩'
+    assert (work / '.ms_agent' / 'AGENTS.md').read_text('utf-8').strip() == '老项目规矩'
+    assert (ProjectManager(base_dir=str(home)).get(created.id).instruction
+            or '') == ''
+    assert not (work / 'AGENTS.md').exists()
+
+
+def test_write_project_clears_stale_instruction_field(home, tmp_path):
+    from ms_agent.project.manager import ProjectManager
+    work = tmp_path / 'both'
+    work.mkdir()
+    pm = ProjectManager(base_dir=str(home))
+    created = pm.create(
+        name='Both', path=str(work), instruction='stale-json',
+        init_workspace=False)
+    (work / '.ms_agent').mkdir(parents=True)
+    (work / '.ms_agent' / 'AGENTS.md').write_text('from-file\n', encoding='utf-8')
+    wf.write_project_instruction(str(work), '')
+    assert (pm.get(created.id).instruction or '') == ''
+    assert wf.read_project_instruction(str(work)).strip() == ''
+
+
+def test_profile_write_call_me_and_about(home):
+    wf.write_profile(call_me='Alice', description='Mostly agent work.')
+    call_me, about = wf.read_profile()
+    assert call_me == 'Alice'
+    assert about == 'Mostly agent work.'
+    text = (home / 'PROFILE.md').read_text(encoding='utf-8')
+    assert '- Call me: Alice' in text
+    assert 'Mostly agent work.' in text
+    block = wf.profile_block()
+    assert 'Alice' in block and 'Mostly agent work.' in block
+    wf.write_profile(call_me='')
+    call_me, about = wf.read_profile()
+    assert call_me == ''
+    assert about == 'Mostly agent work.'

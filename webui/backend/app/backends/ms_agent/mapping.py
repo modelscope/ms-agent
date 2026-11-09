@@ -50,7 +50,10 @@ def _mask(api_key: str) -> str:
 def project_to_schema(project) -> ProjectSchema:
     from ms_agent.project.types import DEFAULT_PROJECT_ID
 
-    from app.backends.ms_agent.config import _project_memory_models
+    from app.backends.ms_agent.config import (
+        _project_memory_models,
+        read_project_permission_mode,
+    )
 
     meta = sidecar.get("projects", project.id, {}) or {}
     # The EFFECTIVE group, not the raw sidecar: a project saved without an
@@ -86,7 +89,7 @@ def project_to_schema(project) -> ProjectSchema:
         memory_recall_top_k=mem.get("recall_top_k"),
         mcp_auto_attach=meta.get("mcp_auto_attach", True),
         skill_auto_attach=meta.get("skill_auto_attach", True),
-        permission_mode=meta.get("permission_mode", "restricted"),
+        permission_mode=read_project_permission_mode(meta),
         created_at=project.created_at,
     )
 

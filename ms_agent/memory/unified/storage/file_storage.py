@@ -35,6 +35,7 @@ class FileMemoryStorage:
         self.memory_path = self.base_dir / config.memory_path
         self.char_limit = config.char_limit
         self.security_scan = config.security_scan
+        self.user_notice: Optional[str] = None
         self._content_cache: Optional[str] = None
         # (mtime_ns, size) of the file the cache was read from. External
         # writers exist (the WebUI memory editor, hand edits) and MEMORY.md
@@ -95,19 +96,23 @@ class FileMemoryStorage:
     # ------------------------------------------------------------------
 
     def _add_entry(self, content: str) -> bool:
+        self.user_notice = None
         current = self._read()
         lines = [line for line in current.splitlines() if line.strip()]
         deduped = list(dict.fromkeys(lines + [content.strip()]))
         new_content = '\n'.join(deduped) + '\n'
         if len(new_content) > self.char_limit:
+            from ms_agent.memory.unified.user_notice import CHAR_LIMIT_NOTICE
+            self.user_notice = CHAR_LIMIT_NOTICE
             logger.warning(
-                f'[file_storage] MEMORY.md would exceed char limit '
-                f'({len(new_content)} > {self.char_limit}), skipping add')
+                '[file_storage] MEMORY.md would exceed char limit '
+                '(%s > %s), skipping add', len(new_content), self.char_limit)
             return False
         self._write(new_content)
         return True
 
     def replace_entry(self, old_content: str, new_content: str) -> bool:
+        self.user_notice = None
         if self.security_scan:
             safe, reason = scan_content(new_content)
             if not safe:
@@ -119,12 +124,15 @@ class FileMemoryStorage:
             return False
         updated = current.replace(old_content.strip(), new_content.strip(), 1)
         if len(updated) > self.char_limit:
+            from ms_agent.memory.unified.user_notice import CHAR_LIMIT_NOTICE
+            self.user_notice = CHAR_LIMIT_NOTICE
             logger.warning('[file_storage] Replace would exceed char limit')
             return False
         self._write(updated)
         return True
 
     def remove_entry(self, content: str) -> bool:
+        self.user_notice = None
         current = self._read()
         target = content.strip()
         lines = current.splitlines()
@@ -144,8 +152,10 @@ class FileMemoryStorage:
                     f'[file_storage] Full replace blocked: {reason}')
                 return False
         if len(content) > self.char_limit:
+            from ms_agent.memory.unified.user_notice import CHAR_LIMIT_NOTICE
             content = content[:self.char_limit]
-            logger.warning('[file_storage] Truncated to char limit')
+            self.user_notice = CHAR_LIMIT_NOTICE
+            logger.error(CHAR_LIMIT_NOTICE)
         self._write(content)
         return True
 
@@ -187,7 +197,14 @@ class FileMemoryStorage:
         return content
 
     def _write(self, content: str) -> None:
-        atomic_write_text(self.memory_path, content)
+        try:
+            atomic_write_text(self.memory_path, content)
+        except OSError as exc:
+            from ms_agent.memory.unified.user_notice import disk_notice
+            self.user_notice = disk_notice(exc)
+            raise
+        else:
+            self.user_notice = None
         self._content_cache = content
         try:
             st = self.memory_path.stat()

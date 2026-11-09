@@ -119,8 +119,9 @@ class FileSystemTool(ToolBase):
             False)
         if not self.trust_remote_code:
             self.allow_read_all_files = False
-        if hasattr(self.config, 'llm'):
-            self.llm: LLM = LLM.from_config(self.config)
+        # Built at first abbreviated-read, not here: a missing API key must
+        # not block ToolManager (TUI setup still needs slash commands).
+        self.llm = None
         index_dir = getattr(config, 'index_cache_dir', DEFAULT_INDEX_DIR)
         self.index_dir = os.path.join(self.output_dir, index_dir)
         self.system = self.SYSTEM_FOR_ABBREVIATIONS
@@ -1004,6 +1005,11 @@ class FileSystemTool(ToolBase):
             return {'result': text, 'attachments': image_refs}
         return text
 
+    def _ensure_llm(self) -> LLM:
+        if self.llm is None:
+            self.llm = LLM.from_config(self.config)
+        return self.llm
+
     async def _read_files_abbreviated(self, paths: list[str]) -> str:
         results = {}
 
@@ -1024,6 +1030,7 @@ class FileSystemTool(ToolBase):
                 with open(target_path_real, 'r', encoding='utf-8') as f:
                     content = f.read()
 
+                llm = self._ensure_llm()
                 messages = [
                     Message(role='system', content=self.system),
                     Message(
@@ -1031,7 +1038,7 @@ class FileSystemTool(ToolBase):
                         content='The content to be abbreviated:\n\n'
                         + content),
                 ]
-                response = self.llm.generate(messages=messages, stream=False)
+                response = llm.generate(messages=messages, stream=False)
                 os.makedirs(os.path.dirname(index_file), exist_ok=True)
                 with open(index_file, 'w', encoding='utf-8') as f:
                     f.write(response.content)

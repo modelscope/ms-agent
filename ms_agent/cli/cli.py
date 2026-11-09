@@ -1,4 +1,5 @@
 import argparse
+import sys
 
 from ms_agent.cli.a2a_cmd import A2ACmd, A2ARegistryCmd
 from ms_agent.cli.acp_cmd import ACPCmd, ACPRegistryCmd
@@ -12,6 +13,19 @@ from ms_agent.cli.tui import TuiCMD
 from ms_agent.cli.ui import UICMD
 
 
+def _with_default_tui(argv):
+    """``ms-agent`` with no subcommand is the terminal UI.
+
+    A bare invocation, or one whose first token is an option, is parsed as
+    ``ms-agent tui <those options>``. A leading word stays a subcommand, so a
+    typo still prints help instead of starting the UI.
+    """
+    rest = list(argv[1:])
+    if not rest or rest[0].startswith('-'):
+        return [argv[0], 'tui', *rest]
+    return list(argv)
+
+
 def run_cmd():
     """This is the entrance of the all the cli commands.
 
@@ -19,7 +33,7 @@ def run_cmd():
     """
     parser = argparse.ArgumentParser(
         'ModelScope-agent Command Line tool',
-        usage='ms-agent <command> [<args>]')
+        usage='ms-agent [<command>] [<args>]  (no command starts tui)')
 
     subparsers = parser.add_subparsers(
         help='ModelScope-agent commands helpers')
@@ -38,7 +52,8 @@ def run_cmd():
     PluginCMD.define_args(subparsers)
 
     # unknown args will be handled in config.py
-    args, unknown = parser.parse_known_args()
+    argv = _with_default_tui(sys.argv)
+    args, unknown = parser.parse_known_args(argv[1:])
 
     if not hasattr(args, 'func'):
         parser.print_help()

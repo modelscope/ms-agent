@@ -33,13 +33,12 @@ Exercise caution with skills marked as "warning" or "dangerous".
     UPDATE_NOTICE_HINT = """
 **About skill list updates:**
 The skill list here reflects the state when this session started. Skills
-can be added, removed, enabled, disabled or edited mid-conversation; when
-that happens, a <system-reminder> skill-update notice containing the FULL
-current list appears in the conversation.
-- If any skill-update notice exists, the LATEST one is authoritative and
-  supersedes this list and all earlier notices.
-- Earlier notices may be outdated; that is normal bookkeeping — do not
-  mention notices or list changes to the user unless asked.
+can be added, removed, enabled, disabled or edited mid-conversation. A
+<system-reminder> skill-update notice may appear when that happens. It
+does not contain the skill list. Call `skills_list` for the current
+inventory.
+- skills_list is current. This prompt's list may be stale.
+- Do not mention notices or list changes to the user unless asked.
 """
 
     def __init__(self,

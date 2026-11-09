@@ -125,8 +125,10 @@ class MCPConfigManager:
                     self._load_scope_raw('project'), source='project')
             global_servers = self._normalize_scope(
                 self._load_scope_raw('global'), source='global')
-            project_servers = self._normalize_scope(
-                self._load_scope_raw('project'), source='project')
+            project_servers: Dict[str, Dict[str, Any]] = {}
+            if self.project_root is not None:
+                project_servers = self._normalize_scope(
+                    self._load_scope_raw('project'), source='project')
             from ms_agent.config.mcp_schema import merge_mcp_layers
             return merge_mcp_layers(global_servers, project_servers)
 

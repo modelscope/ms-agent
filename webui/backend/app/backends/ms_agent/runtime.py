@@ -39,6 +39,10 @@ DRIVER_DONE = "__driver_done__"
 class WebInputSource:
     """InputSource whose read_prompt blocks on a queue fed by POST /api/chat.
 
+    ``supports_credential_prompt`` is false: a missing API key must surface as
+    an error with the user message kept in history. The terminal is the
+    surface that pauses the turn and accepts ``/model provider key``.
+
     The first read is the initial prompt (session start / resume next-turn) and
     marks no boundary; every later read means the previous turn finished, so it
     pushes a TURN_END sentinel to the active turn queue before blocking.
@@ -53,6 +57,8 @@ class WebInputSource:
     ``str`` return: widening that return type would ripple through every
     InputSource implementation and every caller. ``log_getter`` is lazy because
     the session log is created when the agent's run loop starts."""
+
+    supports_credential_prompt = False
 
     def __init__(self, queue: "asyncio.Queue", sink: "QueueEventSink",
                  log_getter=None) -> None:
@@ -239,7 +245,8 @@ def _ask_timeout_for(permission_mode: str | None) -> float | None:
     is the opposite statement, and there a bound is what keeps an unattended
     session from parking on a question no one will read.
     """
-    if (permission_mode or "").strip().lower() in ("auto", "full", "full_access"):
+    if (permission_mode or "").strip().lower().replace("_", "-") in (
+            "auto", "full", "full-access", "strict"):
         return FULL_ACCESS_ASK_TIMEOUT_S
     return None
 

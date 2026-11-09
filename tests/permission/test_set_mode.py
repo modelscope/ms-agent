@@ -28,16 +28,17 @@ def _agent_with_enforcer():
 
 def test_switch_updates_toolmanager_and_enforcer():
     agent, tm, enf = _agent_with_enforcer()
-    assert agent.set_permission_mode('strict') == 'strict'
-    assert tm._permission_mode == 'strict'
-    assert tm._permission_config.mode == 'strict'
-    assert enf._config.mode == 'strict'
+    assert agent.set_permission_mode('strict') == 'full-access'
+    assert tm._permission_mode == 'full-access'
+    assert tm._permission_config.mode == 'full-access'
+    assert enf._config.mode == 'full-access'
 
 
-def test_restricted_normalizes_to_interactive():
+def test_restricted_normalizes_to_ask():
     agent, tm, enf = _agent_with_enforcer()
-    assert agent.set_permission_mode('restricted') == 'interactive'
-    assert enf._config.mode == 'interactive'
+    assert agent.set_permission_mode('restricted') == 'ask'
+    assert agent.set_permission_mode('interactive') == 'ask'
+    assert enf._config.mode == 'ask'
 
 
 def test_invalid_mode_raises():

@@ -1,35 +1,14 @@
 """Resolve SafetyGuard ``ask`` decisions based on permission mode.
 
-auto mode:      per-category allow/deny (no interactive prompts)
-strict mode:    all ask → deny
-interactive:    ask unchanged (delegated to handler)
+ask:          unchanged, so the user confirms
+auto:         unchanged, so the model or agent decision provider confirms
+full-access:  allow (uncertain calls pass; a hard deny never reaches here)
 """
 
 from __future__ import annotations
 
-from typing import Literal
-
+from .config import normalize_permission_mode
 from .shell_validator import SafetyDecision
-
-_AUTO_CATEGORY_POLICY: dict[str, Literal['allow', 'deny']] = {
-    'process_input_sub': 'allow',
-    'process_output_sub': 'deny',
-    'parse_failure': 'deny',
-    'cd_write_compound': 'deny',
-    'command_validator': 'deny',
-    'shell_expansion': 'deny',
-    'read_outside_dirs': 'deny',
-    # Running code is what full access is FOR. Refusing every `python3 -c` in
-    # the mode whose whole meaning is "stop asking me" would make the mode
-    # useless, and the confirmation this category exists for is the one an
-    # interactive user gets. What auto mode cannot honestly claim is that it
-    # inspected the code — hence the message on the ask, and the setting-page
-    # copy that says so.
-    'interpreter_exec': 'allow',
-    # A private key does not become less private because the user is not
-    # watching. There is no path here that reads it without someone deciding.
-    'sensitive_read': 'deny',
-}
 
 
 #: Safety confirmations a standing answer may satisfy.
@@ -49,38 +28,21 @@ def resolve_ask(
     mode: str,
     read_policy: str = 'loose',
 ) -> SafetyDecision:
-    """Resolve a SafetyGuard ``ask`` into ``allow`` or ``deny`` (or keep ``ask``).
+    """Resolve a SafetyGuard ``ask`` into ``allow`` or keep ``ask``.
 
-    Only processes decisions with ``action='ask'``; others pass through unchanged.
+    Only processes decisions with ``action='ask'``; others pass through
+    unchanged. ``read_policy`` is accepted so existing callers keep working;
+    full-access allows an out-of-policy read instead of consulting it.
     """
+    del read_policy
     if decision.action != 'ask':
         return decision
 
-    if mode == 'strict':
+    canonical = normalize_permission_mode(mode)
+    if canonical == 'full-access':
         return SafetyDecision(
-            action='deny',
-            reason=f'Denied in strict mode: {decision.reason}',
+            action='allow',
+            reason=f'Allowed in full-access: {decision.reason}',
             category=decision.category,
         )
-
-    if mode == 'interactive':
-        return decision
-
-    # auto mode — resolve by category
-    category = decision.category
-
-    if category == 'read_outside_dirs':
-        action: Literal['allow',
-                        'deny'] = 'allow' if read_policy == 'loose' else 'deny'
-        return SafetyDecision(
-            action=action,
-            reason=decision.reason,
-            category=category,
-        )
-
-    resolved_action = _AUTO_CATEGORY_POLICY.get(category, 'deny')
-    return SafetyDecision(
-        action=resolved_action,
-        reason=decision.reason,
-        category=category,
-    )
+    return decision

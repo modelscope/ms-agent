@@ -203,8 +203,10 @@ def save_history(output_dir: str, task: str, config: DictConfig,
     os.makedirs(cache_dir, exist_ok=True)
     config_file = os.path.join(cache_dir, f'{task}.yaml')
     message_file = os.path.join(cache_dir, f'{task}.json')
+    # The yaml is a turn cache. Keys stay in settings.json / mcp.json.
+    from .history_secrets import config_for_history_disk
     with open(config_file, 'w') as f:
-        OmegaConf.save(config, f)
+        OmegaConf.save(config_for_history_disk(config), f)
     with open(message_file, 'w') as f:
         json.dump([message.to_dict() for message in messages],
                   f,

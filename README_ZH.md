@@ -277,7 +277,7 @@ export MODELSCOPE_API_KEY="your_modelscope_api_key"
 启动终端交互界面，输入任务即可开始。使用 `/help` 查看会话管理等命令，使用 `/quit` 退出：
 
 ```bash
-ms-agent tui
+ms-agent
 ```
 
 <a id="cli"></a>

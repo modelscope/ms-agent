@@ -175,6 +175,7 @@
     "mcpPill": "MCP",
     "skillPill": "Skills",
     "permFullAccess": "Full access",
+    "permDecide": "Decide for me",
     "permAlwaysAsk": "Always ask",
     "searchUnconfigured": "Search not set up",
     "searchUnconfiguredTip": "Web search is on but the current provider has no API key — click to open search settings.",

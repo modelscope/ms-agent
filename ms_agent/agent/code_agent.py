@@ -35,6 +35,8 @@ class CodeAgent(Agent):
         if self.load_cache:
             _config, _messages = self.read_history(inputs)
         if _config is not None and _messages is not None:
+            from ms_agent.utils.history_secrets import refill_history_config
+            refill_history_config(_config, getattr(self, 'output_dir', None))
             self.config = _config
             return _messages
         messages = await self.execute_code(inputs, **kwargs)

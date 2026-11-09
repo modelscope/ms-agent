@@ -181,15 +181,20 @@ class SkillLoader:
                 return cached[1]
 
             content = skill_md.read_text(encoding='utf-8')
-            frontmatter = self.parser.parse_yaml_frontmatter(content)
-            if (not frontmatter or 'name' not in frontmatter
-                    or 'description' not in frontmatter):
+            frontmatter = self.parser.parse_yaml_frontmatter(content) or {}
+            # Presence of SKILL.md is registration (same as WebUI live tree).
+            # Name/description are filled from the directory when omitted so a
+            # TUI ``/skills add`` still shows up on the skills page.
+            name = str(frontmatter.get('name') or skill_dir.name).strip()
+            description = str(
+                frontmatter.get('description') or name).strip() or name
+            if not name:
                 self._discovery_cache[skill_dir] = (fingerprint, None)
                 return None
             descriptor = SkillDescriptor(
                 skill_id=skill_dir.name,
-                name=frontmatter['name'],
-                description=frontmatter['description'],
+                name=name,
+                description=description,
                 content=content,
                 version=frontmatter.get('version', 'latest'),
                 author=frontmatter.get('author'),
