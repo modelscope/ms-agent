@@ -1505,6 +1505,20 @@ class LLMAgent(Agent):
             return False
         return sys.stdin.isatty()
 
+    def _awaits_credentials(self) -> bool:
+        """Whether this surface can pause the turn and collect an API key.
+
+        WebUI sets ``interactive`` so the session stays multi-turn, and its
+        input source cannot host the setup prompt. Only a terminal (TUI input,
+        or CLI stdin) waits. Everywhere else a missing key is an error.
+        """
+        if not self._interactive:
+            return False
+        source = self._input_source
+        if source is None:
+            return True
+        return bool(getattr(source, 'supports_credential_prompt', True))
+
     def _has_restorable_history(self) -> bool:
         """True when this run should resume from the session log rather than
         read an initial prompt.
@@ -2617,7 +2631,8 @@ class LLMAgent(Agent):
                     self._emit_pending_turn_resume()
                 return messages
             except Exception as e:
-                if not (self._interactive and client_rejected_missing_key(e)):
+                if not (self._awaits_credentials()
+                        and client_rejected_missing_key(e)):
                     raise
                 waited = True
                 self._stub_llm_for_setup()
@@ -2959,7 +2974,8 @@ class LLMAgent(Agent):
             try:
                 self.prepare_llm()
             except Exception as e:
-                if not (self._interactive and client_rejected_missing_key(e)):
+                if not (self._awaits_credentials()
+                        and client_rejected_missing_key(e)):
                     raise
                 self._stub_llm_for_setup()
                 self._emit_credential_setup(e)
@@ -3114,6 +3130,10 @@ class LLMAgent(Agent):
                 # A cleared key leaves a placeholder. Wait here, before
                 # step(), the same way a session that never had a key waits.
                 if getattr(self.llm, '_setup_stub', False):
+                    if not self._awaits_credentials():
+                        raise ValueError(
+                            'No API key found for provider. '
+                            'Set config.llm.api_key.')
                     await self._hold_turn_until_llm_ready(
                         messages, len(messages))
                     if self.runtime.should_stop:

@@ -87,7 +87,13 @@ def slash_matches(router, text: str):
 
 
 class PromptToolkitInput:
-    """Async input source with a status bar and slash completion."""
+    """Async input source with a status bar and slash completion.
+
+    ``supports_credential_prompt`` is true: the TUI can pause a turn and take
+    ``/model provider key`` in place.
+    """
+
+    supports_credential_prompt = True
 
     def __init__(self,
                  state: TuiState,

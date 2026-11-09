@@ -118,18 +118,48 @@ def test_explicit_ui_is_not_rewritten_to_tui(monkeypatch):
     assert dispatched == {'ui': True}
 
 
-def test_agent_flag_is_explicit_template(monkeypatch):
-    monkeypatch.setattr(sys, 'argv', ['ms-agent', '--agent', 'org/demo-agent'])
+def test_agent_flag_installs_hub_template(monkeypatch):
+    monkeypatch.setattr(sys, 'argv',
+                        ['ms-agent', '--agent', 'ms-agent/stock_data_agent'])
+    captured = {}
+    installed = {}
+
+    def _main(config, **kwargs):
+        captured['config'] = config
+        captured['explicit'] = kwargs.get('explicit_config')
+
+    def _install(repo):
+        installed['repo'] = repo
+
+    import ms_agent.cli.tui as tui
+    import ms_agent.tui.app as app
+    monkeypatch.setattr(tui, 'install_hub_agent', _install)
+    monkeypatch.setattr(app, 'main', _main)
+    run_cmd()
+    assert installed['repo'] == 'ms-agent/stock_data_agent'
+    assert captured['explicit'] is False
+    assert captured['config'].endswith('agent.yaml')
+
+
+def test_agent_flag_local_path_is_explicit_config(monkeypatch, tmp_path):
+    agent_yaml = tmp_path / 'agent.yaml'
+    agent_yaml.write_text('llm:\n  model: demo\n', encoding='utf-8')
+    monkeypatch.setattr(sys, 'argv', ['ms-agent', '--agent', str(agent_yaml)])
     captured = {}
 
     def _main(config, **kwargs):
         captured['config'] = config
         captured['explicit'] = kwargs.get('explicit_config')
 
+    import ms_agent.cli.tui as tui
     import ms_agent.tui.app as app
+    monkeypatch.setattr(
+        tui, 'install_hub_agent',
+        lambda repo: (_ for _ in ()).throw(
+            AssertionError('local path must not hit the hub')))
     monkeypatch.setattr(app, 'main', _main)
     run_cmd()
-    assert captured['config'] == 'org/demo-agent'
+    assert captured['config'] == str(agent_yaml)
     assert captured['explicit'] is True
 
 

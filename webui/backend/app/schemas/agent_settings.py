@@ -18,8 +18,9 @@ class AgentSettings(BaseModel):
     default_provider_id: str | None = None
     default_model_id: str | None = None
 
-    # Inherited by newly-created projects. None on PUT = leave unchanged
-    # (a missing bool must not fall back to True and silently turn memory on).
+    # Inherited by newly-created projects. An omitted field, and JSON null,
+    # leave the stored value unchanged. Only true/false (or file/vector)
+    # writes it. A missing bool must not fall back to True and turn memory on.
     default_memory_enabled: bool | None = None
     default_memory_backend: MemoryBackend | None = None
 

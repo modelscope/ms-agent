@@ -18,6 +18,35 @@ def _permission_mode(value: str) -> str:
         raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
+def _is_local_agent_config(value: str) -> bool:
+    """True when --agent points at a file or directory on this machine."""
+    from pathlib import Path
+    return Path(value).expanduser().exists()
+
+
+def install_hub_agent(repo: str) -> None:
+    """Install an Agent Hub template into the ms-agent workspace.
+
+    Same chain as ``ms-agent agent download -f ms-agent -r <repo>``:
+    ``cmd_download`` writes the template's AGENTS.md, mcp.json, skills and
+    settings under the global home (``MS_AGENT_HOME`` or ``~/.ms_agent``).
+    """
+    from modelscope_hub.config import HubConfig
+
+    from ms_agent.agent_hub import cmd_download
+
+    hub = HubConfig()
+    code = cmd_download(
+        'ms-agent',
+        repo,
+        endpoint=hub.endpoint,
+        token=hub.token,
+        username='',
+    )
+    if code != 0:
+        raise SystemExit(code)
+
+
 class TuiCMD(CLICommand):
     """Terminal UI: a lightweight REPL over the LLMAgent lifecycle.
 
@@ -43,9 +72,10 @@ class TuiCMD(CLICommand):
             '--agent',
             type=str,
             default=None,
-            help='Load an agent template: a ModelScope repo id, or a local '
-            'agent.yaml / task directory. Same loader as --config. '
-            'Example: ms-agent --agent <agent_id>')
+            help='Install an Agent Hub template and start with it. Copy the '
+            'id from https://www.modelscope.cn/agents. '
+            'Example: ms-agent --agent ms-agent/stock_data_agent. '
+            'A local agent.yaml or task directory is loaded in place.')
         parser.add_argument(
             '--work-dir',
             '--work_dir',
@@ -95,8 +125,18 @@ class TuiCMD(CLICommand):
     def execute(self):
         import importlib.resources as importlib_resources
 
-        config = self.args.config or self.args.agent
+        config = self.args.config
         explicit_config = bool(config)
+        agent = getattr(self.args, 'agent', None)
+        if agent:
+            if _is_local_agent_config(agent):
+                config = agent
+                explicit_config = True
+            else:
+                # Hub id: install AGENTS.md / mcp.json / skills into the
+                # workspace, then start on the built-in agent.yaml so those
+                # files are what the session uses.
+                install_hub_agent(agent)
         if not config:
             # Fall back to the packaged default agent.yaml.
             default_config = importlib_resources.files('ms_agent').joinpath(

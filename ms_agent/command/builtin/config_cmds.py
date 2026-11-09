@@ -569,16 +569,29 @@ async def cmd_model(ctx: CommandContext) -> CommandResult:
                 ctx=ctx,
             )
         only = rest[1] if live and len(rest) > 1 else None
+        # Live /models is a blocking HTTP call. Run it off the event loop so
+        # a slow provider cannot stall the WebUI worker (or the TUI redraw).
+        # The probe itself stays synchronous: TUI, CLI and tests call it
+        # directly and still get the same catalog.
+        if live:
+            import asyncio
+            lines = await asyncio.to_thread(
+                _provider_status_lines, _mgr(), live=True, only=only)
+        else:
+            lines = _provider_status_lines(_mgr(), live=False, only=only)
         return CommandResult(
             type=CommandResultType.MESSAGE,
-            content='\n'.join(
-                _provider_status_lines(_mgr(), live=live, only=only)),
+            content='\n'.join(lines),
         )
     if head == 'provider':
-        return _cmd_model_provider(ctx, parts[1:])
+        import asyncio
+        # Key writes probe the provider before they commit. Same off-loop
+        # rule as /model list live.
+        return await asyncio.to_thread(_cmd_model_provider, ctx, parts[1:])
     if head == 'catalog':
         return _cmd_model_catalog(ctx, parts[1:])
-    return _cmd_model_switch(ctx, arg)
+    import asyncio
+    return await asyncio.to_thread(_cmd_model_switch, ctx, arg)
 
 
 def _secret_model_error(ctx: CommandContext) -> CommandResult:

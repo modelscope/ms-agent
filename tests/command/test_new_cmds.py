@@ -1045,7 +1045,7 @@ class TestAllCommandsRegistered:
         router = make_router()
         cmds = router.list_commands('cli')
         total = sum(len(v) for v in cmds.values())
-        assert total == 16
+        assert total == 15
 
 
 class TestModelProbe:

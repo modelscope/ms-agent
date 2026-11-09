@@ -66,6 +66,49 @@ TUI_RESOLVER_DEFAULTS = {
 }
 
 
+def format_welcome_directory(path: str, width: int, home: str = '') -> str:
+    """Show a working directory in full, wrapping on ``/``.
+
+    ``~`` stands for the home directory. A leading ellipsis is not used:
+    chopping the front of the path leaves a suffix that does not identify
+    the directory.
+    """
+    text = path
+    if home and (text == home or text.startswith(home + os.sep)):
+        text = '~' + text[len(home):]
+    width = max(int(width), 8)
+    if len(text) <= width:
+        return text
+    lines: list[str] = []
+    rest = text
+    while rest:
+        if len(rest) <= width:
+            lines.append(rest)
+            break
+        cut = rest.rfind('/', 0, width + 1)
+        if cut <= 0:
+            lines.append(rest[:width])
+            rest = rest[width:]
+            continue
+        lines.append(rest[:cut + 1])
+        rest = rest[cut + 1:]
+    return '\n'.join(lines)
+
+
+def welcome_value_width(term_width: int, logo_width: int,
+                        label_width: int) -> tuple[int, bool]:
+    """Width for the welcome value column, and whether the panel stacks.
+
+    Side by side with the wordmark only when the value still has room to
+    show a recognizable path. Otherwise the panel sits under the wordmark.
+    """
+    side = term_width - logo_width - 4 - 2 - 4 - 2 - label_width
+    if side >= 36:
+        return side, False
+    stacked = term_width - 2 - 4 - 2 - label_width
+    return max(24, stacked), True
+
+
 class TuiApp:
 
     def __init__(
@@ -646,17 +689,19 @@ class TuiApp:
 
         llm = getattr(self.config, 'llm', None)
         home = os.path.expanduser('~')
-        wd = self.work_dir.replace(home, '~') if home else self.work_dir
-        if len(wd) > 38:
-            wd = '…' + wd[-37:]
+        label = 'directory'
+        term = self.console.size.width or 100
+        value_w, stack = welcome_value_width(term, width, len(label))
+        shown = format_welcome_directory(self.work_dir, value_w, home)
+        from rich.markup import escape
         info = Table.grid(padding=(0, 2))
-        info.add_column(style='blue', justify='right')
-        info.add_column()
+        info.add_column(style='blue', justify='right', vertical='top')
+        info.add_column(vertical='top')
         info.add_row(
             'model', str(getattr(llm, 'model', '') or '').strip() or '?')
         info.add_row(
             'permission', f'[yellow]{self.permission_mode}[/]')
-        info.add_row('dir', f'[dim]{wd}[/]')
+        info.add_row('directory', f'[dim]{escape(shown)}[/]')
         info_panel = Panel(
             info,
             title='[bold bright_blue]ms-agent tui[/]',
@@ -664,16 +709,22 @@ class TuiApp:
             padding=(0, 2),
             expand=False)
 
-        banner = Table.grid(padding=(0, 4))
-        banner.add_column(no_wrap=True, vertical='middle')  # wordmark intact
-        banner.add_column(vertical='middle')
-        banner.add_row(logo, info_panel)
         self.console.print()
-        self.console.print(banner)
+        if stack:
+            self.console.print(logo)
+            self.console.print(info_panel)
+        else:
+            banner = Table.grid(padding=(0, 4))
+            banner.add_column(no_wrap=True, vertical='middle')
+            banner.add_column(vertical='middle')
+            banner.add_row(logo, info_panel)
+            self.console.print(banner)
         self.console.print(
             '  [dim]/help  /sessions  /resume  /new  /quit[/]')
         self.console.print(
-            '  [dim]Load an agent template: ms-agent --agent <agent_id>[/]\n')
+            '  [dim]Agent templates: https://www.modelscope.cn/agents[/]')
+        self.console.print(
+            '  [dim]ms-agent --agent ms-agent/stock_data_agent[/]\n')
 
     def _render_sessions(self) -> None:
         sessions = self._sm.list()

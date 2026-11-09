@@ -58,8 +58,8 @@ class TestHelpTextLiesAboutHome:
 class TestBareCommandShape:
     """Bare ``/cmd`` is the current status, then the usage sheet.
 
-    ``/cmd help`` is usage only. Action commands (/new, /quit, /stop,
-    /compact) and dumps (/help, /config) stay as they are.
+    ``/cmd help`` is usage only. Action commands (/new, /quit, /compact)
+    and dumps (/help, /config) stay as they are.
     """
 
     @pytest.mark.usability

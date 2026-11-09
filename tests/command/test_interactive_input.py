@@ -309,6 +309,51 @@ class TestEnsureLlmReady:
         assert not getattr(agent.llm, '_setup_stub', False)
 
     @pytest.mark.asyncio
+    async def test_web_input_does_not_wait_for_a_key(self):
+        agent = self._agent()
+
+        class _Web:
+            supports_credential_prompt = False
+
+            async def read_prompt(self, prompt=''):
+                raise AssertionError('WebUI must not pause for a key')
+
+        agent._input_source = _Web()
+
+        def boom():
+            raise ValueError('No API key found for provider "modelscope"')
+
+        agent.prepare_llm = boom
+        with pytest.raises(ValueError, match='No API key found'):
+            await agent._ensure_llm_ready('你好')
+
+    @pytest.mark.asyncio
+    async def test_tui_input_still_waits_for_a_key(self):
+        from types import SimpleNamespace
+        agent = self._agent()
+        lines = iter(['/quit'])
+
+        class _Tui:
+            supports_credential_prompt = True
+
+            async def read_prompt(self, prompt=''):
+                return next(lines)
+
+        agent._input_source = _Tui()
+        n = {'i': 0}
+
+        def maybe():
+            n['i'] += 1
+            raise ValueError('No API key found for provider "modelscope"')
+
+        agent.prepare_llm = maybe
+        result = await agent._ensure_llm_ready('hello')
+        assert result is None
+        assert agent.runtime.should_stop is True
+        assert n['i'] == 1
+        assert getattr(agent.llm, '_setup_stub', False)
+
+    @pytest.mark.asyncio
     async def test_non_interactive_still_raises(self):
         agent = self._agent()
         agent._interactive = False

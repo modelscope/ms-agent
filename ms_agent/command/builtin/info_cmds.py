@@ -30,8 +30,8 @@ async def cmd_help(ctx: CommandContext) -> CommandResult:
     lines.extend([
         '',
         'Load an agent template:',
-        '  ms-agent --agent <agent_id>',
-        '  <agent_id> is a ModelScope repo id, or a local agent.yaml / task directory.',
+        '  Copy the id from https://www.modelscope.cn/agents',
+        '  ms-agent --agent ms-agent/stock_data_agent',
     ])
 
     return CommandResult(

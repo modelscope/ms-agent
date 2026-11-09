@@ -33,26 +33,12 @@ class TestBuiltinCommands:
         return r
 
     @pytest.mark.asyncio
-    async def test_stop_sets_should_stop(self, router):
+    async def test_stop_commands_removed(self, router):
         runtime = MockRuntime()
-        ctx = _make_ctx('/stop', router, runtime)
-        result = await router.dispatch(ctx)
-        assert result.type == CommandResultType.MESSAGE
-        assert runtime.should_stop is True
-
-    @pytest.mark.asyncio
-    async def test_stop_is_priority(self, router):
-        assert router.is_priority('/stop')
-
-    @pytest.mark.asyncio
-    async def test_stop_aliases(self, router):
-        runtime = MockRuntime()
-        for alias in ['/abort', '/cancel']:
-            runtime.should_stop = False
-            ctx = _make_ctx(alias, router, runtime)
-            result = await router.dispatch(ctx)
-            assert result is not None
-            assert runtime.should_stop is True
+        for text in ('/stop', '/abort', '/cancel'):
+            ctx = _make_ctx(text, router, runtime)
+            assert await router.dispatch(ctx) is None
+            assert runtime.should_stop is False
 
     @pytest.mark.asyncio
     async def test_new_returns_quit(self, router):
@@ -80,7 +66,9 @@ class TestBuiltinCommands:
         ctx = _make_ctx('/help', router)
         result = await router.dispatch(ctx)
         assert result.type == CommandResultType.MESSAGE
-        assert '/stop' in result.content
+        assert '/stop' not in result.content
+        assert '/abort' not in result.content
+        assert '/cancel' not in result.content
         assert '/help' in result.content
         assert '/mcp' in result.content
         assert '/skills' in result.content

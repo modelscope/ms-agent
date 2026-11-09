@@ -36,6 +36,40 @@ def test_cold_homepage_queries_do_not_rewrite_entities(client):
     assert not list(root.rglob('session.json'))
 
 
+def test_null_switch_leaves_memory_on_for_webui_and_tui(client):
+    """JSON null does not turn memory off. The file the TUI reads stays on.
+
+    An explicit true/false still writes, and a null string pin still clears.
+    """
+    assert client.patch(
+        '/api/agent-settings',
+        json={'default_memory_enabled': True}).status_code == 200
+    assert client.put(
+        '/api/agent-settings',
+        json={'default_memory_enabled': None}).status_code == 200
+    data = client.get('/api/agent-settings').json()['data']
+    assert data['default_memory_enabled'] is True
+
+    from ms_agent.personalization import PersonalizationSettings
+    from app.backends.ms_agent.common import home
+    assert PersonalizationSettings(global_dir=home()).load().memory_enabled is True
+
+    assert client.patch(
+        '/api/agent-settings',
+        json={'memory_llm_model': 'one'}).status_code == 200
+    assert client.patch(
+        '/api/agent-settings',
+        json={'memory_llm_model': None}).status_code == 200
+    data = client.get('/api/agent-settings').json()['data']
+    assert data['memory_llm_model'] is None
+    assert data['default_memory_enabled'] is True
+
+    assert client.patch(
+        '/api/agent-settings',
+        json={'default_memory_enabled': False}).status_code == 200
+    assert client.get('/api/agent-settings').json()['data']['default_memory_enabled'] is False
+
+
 def test_parallel_api_patches_merge_fields_and_last_save_wins(client):
     start = Barrier(2, timeout=5)
 
