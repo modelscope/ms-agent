@@ -102,8 +102,7 @@ class DaemonThreadPoolExecutor(ThreadPoolExecutor):
             thread_name = '%s_%d' % (self._thread_name_prefix
                                      or self, num_threads)
             # Import internal helpers from stdlib to keep behavior consistent.
-            from concurrent.futures.thread import (  # type: ignore
-                _threads_queues, _worker)
+            from concurrent.futures.thread import _worker  # type: ignore
 
             t = threading.Thread(
                 name=thread_name,
@@ -114,4 +113,7 @@ class DaemonThreadPoolExecutor(ThreadPoolExecutor):
             t.daemon = True
             t.start()
             self._threads.add(t)
-            _threads_queues[t] = self._work_queue
+            # Do not register daemon workers in _threads_queues: CPython
+            # joins every registered worker at interpreter exit, even after
+            # shutdown(wait=False). Explicit shutdown(wait=True) still joins
+            # these workers through self._threads.
