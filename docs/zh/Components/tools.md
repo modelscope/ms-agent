@@ -152,6 +152,52 @@ tools:
       - map_geo
 ```
 
+#### 带鉴权的 Streamable HTTP 服务
+
+Streamable HTTP 是默认传输：`type` 仅在取值为 `sse` 或 `websocket` 时切换传输，其余情况（包括不写 `type`）都会走 Streamable HTTP。需要鉴权时用 `headers` 传请求头：
+
+```yaml
+  my-remote-mcp:
+    mcp: true
+    url: https://mcp.example.com/mcp
+    headers:
+      Authorization: Bearer <YOUR_TOKEN>
+    include:
+      - search
+```
+
+`include` 与 `exclude` 互斥，同时配置会直接报错。
+
+有三个地方容易踩坑：
+
+- **yaml 里的值是字面量**。配置层没有环境变量插值，`${VAR}` 不会被替换成实际值。因此不要把真实密钥写进配置文件或版本库，改为在代码中读取环境变量后组装：
+
+  ```python
+  import os
+
+  from ms_agent.tools.mcp_client import MCPClient
+
+  token = os.environ['MCP_TOKEN']  # 取不到就让它报错，不要用空字符串静默降级
+  mcp_config = {
+      'mcpServers': {
+          'my-remote-mcp': {
+              'url': 'https://mcp.example.com/mcp',
+              'headers': {'Authorization': f'Bearer {token}'},
+              'include': ['search'],
+          }
+      }
+  }
+
+
+  async def main():
+      async with MCPClient(mcp_config) as mcp_client:
+          tools = await mcp_client.get_tools()
+  ```
+
+- **`headers` 对 websocket 不生效**。websocket 分支只接收 `url`，配了 `headers` 也会被丢弃，鉴权会静默失效。
+
+- **两种"环境变量"互不相干**：stdio 传输的 `env` 是传给**子进程**的，远端服务的 `headers` 是 **HTTP 请求头**，不要互相套用。
+
 ## 自定义工具
 
 ### 传入mcp.json
