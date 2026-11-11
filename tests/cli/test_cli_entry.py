@@ -11,6 +11,8 @@ import pytest
 
 from ms_agent.cli.agent import AgentCMD
 from ms_agent.cli.cli import run_cmd
+from ms_agent.cli.tui import TuiCMD
+from ms_agent.cli.ui import UICMD
 
 
 def test_agent_upload_positional_path_is_rejected(monkeypatch, capsys):
@@ -80,3 +82,105 @@ def test_non_agent_command_keeps_unknown_args(monkeypatch):
 
     run_cmd()
     assert dispatched.get('ok')
+
+
+def test_bare_ms_agent_starts_tui(monkeypatch):
+    monkeypatch.setattr(sys, 'argv', ['ms-agent'])
+    dispatched = {}
+    monkeypatch.setattr(
+        TuiCMD, 'execute', lambda self: dispatched.setdefault('ok', True))
+
+    run_cmd()
+    assert dispatched.get('ok')
+
+
+def test_bare_options_are_tui_options(monkeypatch):
+    monkeypatch.setattr(sys, 'argv', ['ms-agent', '--work-dir', '/tmp/work'])
+    seen = {}
+
+    def _execute(self):
+        seen['work_dir'] = self.args.work_dir
+
+    monkeypatch.setattr(TuiCMD, 'execute', _execute)
+    run_cmd()
+    assert seen['work_dir'] == '/tmp/work'
+
+
+def test_explicit_ui_is_not_rewritten_to_tui(monkeypatch):
+    monkeypatch.setattr(sys, 'argv', ['ms-agent', 'ui'])
+    dispatched = {}
+    monkeypatch.setattr(
+        UICMD, 'execute', lambda self: dispatched.setdefault('ui', True))
+    monkeypatch.setattr(
+        TuiCMD, 'execute', lambda self: dispatched.setdefault('tui', True))
+
+    run_cmd()
+    assert dispatched == {'ui': True}
+
+
+def test_agent_flag_installs_hub_template(monkeypatch):
+    monkeypatch.setattr(sys, 'argv',
+                        ['ms-agent', '--agent', 'ms-agent/stock_data_agent'])
+    captured = {}
+    installed = {}
+
+    def _main(config, **kwargs):
+        captured['config'] = config
+        captured['explicit'] = kwargs.get('explicit_config')
+
+    def _install(repo):
+        installed['repo'] = repo
+
+    import ms_agent.cli.tui as tui
+    import ms_agent.tui.app as app
+    monkeypatch.setattr(tui, 'install_hub_agent', _install)
+    monkeypatch.setattr(app, 'main', _main)
+    run_cmd()
+    assert installed['repo'] == 'ms-agent/stock_data_agent'
+    assert captured['explicit'] is False
+    assert captured['config'].endswith('agent.yaml')
+
+
+def test_agent_flag_local_path_is_explicit_config(monkeypatch, tmp_path):
+    agent_yaml = tmp_path / 'agent.yaml'
+    agent_yaml.write_text('llm:\n  model: demo\n', encoding='utf-8')
+    monkeypatch.setattr(sys, 'argv', ['ms-agent', '--agent', str(agent_yaml)])
+    captured = {}
+
+    def _main(config, **kwargs):
+        captured['config'] = config
+        captured['explicit'] = kwargs.get('explicit_config')
+
+    import ms_agent.cli.tui as tui
+    import ms_agent.tui.app as app
+    monkeypatch.setattr(
+        tui, 'install_hub_agent',
+        lambda repo: (_ for _ in ()).throw(
+            AssertionError('local path must not hit the hub')))
+    monkeypatch.setattr(app, 'main', _main)
+    run_cmd()
+    assert captured['config'] == str(agent_yaml)
+    assert captured['explicit'] is True
+
+
+def test_agent_and_config_are_mutually_exclusive(monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys, 'argv',
+        ['ms-agent', '--agent', 'org/demo-agent', '--config', 'agent.yaml'])
+
+    with pytest.raises(SystemExit) as exc_info:
+        run_cmd()
+    assert exc_info.value.code == 2
+    assert 'not allowed with argument' in capsys.readouterr().err
+
+
+def test_unknown_word_still_prints_help(monkeypatch):
+    monkeypatch.setattr(sys, 'argv', ['ms-agent', 'not-a-command'])
+    monkeypatch.setattr(
+        TuiCMD, 'execute',
+        lambda self: (_ for _ in ()).throw(
+            AssertionError('tui must not start')))
+
+    with pytest.raises(SystemExit) as exc_info:
+        run_cmd()
+    assert exc_info.value.code == 2

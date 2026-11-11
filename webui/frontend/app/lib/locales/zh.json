@@ -175,6 +175,7 @@
     "mcpPill": "MCP",
     "skillPill": "Skills",
     "permFullAccess": "完全授权",
+    "permDecide": "替我决策",
     "permAlwaysAsk": "总是询问",
     "searchUnconfigured": "搜索未配置",
     "searchUnconfiguredTip": "已开启网页搜索但当前提供方未配置 API key，点击前往搜索设置。",

@@ -70,12 +70,12 @@ pip install 'ms-agent[research]'
 ```bash
 export OPENAI_API_KEY=xxx-xxx
 export OPENAI_BASE_URL=https://api-inference.modelscope.cn/v1/
-export OPENAI_MODEL_ID=Qwen/Qwen3-235B-A22B-Instruct-2507
+export OPENAI_MODEL_ID=Qwen/Qwen3.8-Flash-Next
 
 ```
 * `OPENAI_API_KEY`: (str), API key, 替换 `xxx-xxx`，或使用魔搭ModelScope提供的API key，参考 [ModelScopeAccessToken](https://modelscope.cn/my/myaccesstoken) <br>
 * `OPENAI_BASE_URL`: (str), base url, 或使用`ModelScope API-Inference`：`https://api-inference.modelscope.cn/v1/`  <br>
-* `OPENAI_MODEL_ID`: (str), model id or name, 推荐使用`Qwen/Qwen3-235B-A22B-Instruct-2507`执行复杂研究任务  <br>
+* `OPENAI_MODEL_ID`: (str), model id or name, 推荐使用`Qwen/Qwen3.8-Flash-Next`。如果接口返回 400，请换一个当前可用的对话模型  <br>
 
 
 ### 3. 运行应用

@@ -143,6 +143,7 @@ class MemoryOrchestrator(Memory):
         self._closed = False
         # Background ingestion bookkeeping (see module docstring).
         self._pending: Set[asyncio.Task] = set()
+        self.user_notice: Optional[str] = None
         # Hashes a scheduled ingest has claimed but not yet written. The ledger
         # may not advance past them from anywhere else (see mark_ingested).
         self._inflight: Set[str] = set()
@@ -293,6 +294,7 @@ class MemoryOrchestrator(Memory):
                 delta = self._ledger_delta(msg_dicts)
                 if not delta:
                     self._set_status('ok', count=0)
+                    self.user_notice = None
                     return 0
                 self._set_status('running')
                 result = await backend.on_messages(delta, **kwargs)
@@ -302,13 +304,23 @@ class MemoryOrchestrator(Memory):
                 self._ledger_mark(delta)
                 count = result if isinstance(result, int) else len(delta)
                 self._set_status('ok', count=count)
+                self.user_notice = None
                 return count
         except asyncio.CancelledError:
             self._set_status('error', error='cancelled')
             raise
+        except OSError as exc:
+            from ms_agent.memory.unified.user_notice import disk_notice
+            self.user_notice = disk_notice(exc)
+            logger.error(self.user_notice)
+            self._set_status('error', error='disk')
+            return 0
         except Exception as e:  # noqa: BLE001 - reported via status
-            logger.error(f'[orchestrator] memory ingest failed, nothing was '
-                         f'persisted for this turn: {type(e).__name__}: {e}')
+            # Background extract/backend failures retry next turn. The user
+            # has nothing to do with the file, so this stays off the screen.
+            logger.error(
+                '[orchestrator] memory ingest failed, nothing was persisted '
+                'for this turn: %s: %s', type(e).__name__, e)
             self._set_status('error', error=f'{type(e).__name__}: {e}')
             return 0
         finally:
@@ -339,9 +351,11 @@ class MemoryOrchestrator(Memory):
             return
         done, still = await asyncio.wait(pending, timeout=timeout)
         if still:
-            logger.warning(
-                f'[orchestrator] {len(still)} memory ingest(s) still running '
-                f'after {timeout}s flush timeout')
+            from ms_agent.memory.unified.user_notice import QUIT_WHILE_WRITING
+            self.user_notice = QUIT_WHILE_WRITING
+            logger.debug(
+                '[orchestrator] %s memory ingest(s) still running after %ss '
+                'flush timeout', len(still), timeout)
 
     @property
     def ingest_status(self) -> Dict[str, Any]:

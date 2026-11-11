@@ -152,12 +152,12 @@ if __name__ == '__main__':
     """
     * `api_key` (str), your API key, replace `xxx-xxx` with your actual key. Alternatively, you can use ModelScope API key, refer to https://modelscope.cn/my/myaccesstoken  # noqa
     * `base_url`: (str), the base URL for API requests, `https://api-inference.modelscope.cn/v1/` for ModelScope API-Inference
-    * `model`: (str), the model ID for inference, `Qwen/Qwen3-235B-A22B-Instruct-2507` can be recommended for document research tasks.
+    * `model`: (str), the model ID for inference, `Qwen/Qwen3.8-Flash-Next` is a current chat model. If the service returns 400, choose another chat model it serves now.
     """
     chat_client = OpenAIChat(
         api_key='xxx-xxx',
         base_url='https://api-inference.modelscope.cn/v1/',
-        model='Qwen/Qwen3-235B-A22B-Instruct-2507',
+        model='Qwen/Qwen3.8-Flash-Next',
     )
 
     # Get web-search engine client
@@ -241,12 +241,12 @@ if __name__ == "__main__":
     """
     * `api_key` (str), your API key, replace `xxx-xxx` with your actual key. Alternatively, you can use ModelScope API key, refer to https://modelscope.cn/my/myaccesstoken  # noqa
     * `base_url`: (str), the base URL for API requests, `https://api-inference.modelscope.cn/v1/` for ModelScope API-Inference
-    * `model`: (str), the model ID for inference, `Qwen/Qwen3-235B-A22B-Instruct-2507` can be recommended for document research tasks.
+    * `model`: (str), the model ID for inference, `Qwen/Qwen3.8-Flash-Next` is a current chat model. If the service returns 400, choose another chat model it serves now.
     """
     chat_client = OpenAIChat(
         api_key='xxx-xxx',
         base_url='https://api-inference.modelscope.cn/v1/',
-        model='Qwen/Qwen3-235B-A22B-Instruct-2507',
+        model='Qwen/Qwen3.8-Flash-Next',
         generation_config={'extra_body': {
             'enable_thinking': False
         }})

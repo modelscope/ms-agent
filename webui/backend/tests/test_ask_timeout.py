@@ -5,7 +5,7 @@ from app.backends.ms_agent.runtime import (FULL_ACCESS_ASK_TIMEOUT_S,
                                            _ask_timeout_for)
 
 
-@pytest.mark.parametrize("mode", ["restricted", "interactive", "", None])
+@pytest.mark.parametrize("mode", ["ask", "restricted", "interactive", "", None])
 def test_asking_modes_wait_indefinitely(mode):
     """Someone who chose to be consulted intends to answer. Expiring the
     question answers it for them, as a refusal they never gave and cannot
@@ -13,7 +13,8 @@ def test_asking_modes_wait_indefinitely(mode):
     assert _ask_timeout_for(mode) is None
 
 
-@pytest.mark.parametrize("mode", ["auto", "full", "full_access", "AUTO"])
+@pytest.mark.parametrize(
+    "mode", ["auto", "full", "full_access", "full-access", "strict", "AUTO"])
 def test_full_access_bounds_the_wait(mode):
     """The opposite statement — nobody may be watching at all — so a session
     left running does not park on a question forever."""

@@ -20,8 +20,10 @@ from ms_agent.tools.tool_manager import ToolManager
 PAYLOAD = {'answer': 42, 'label': '中文', 'items': [True, None, 1.5]}
 
 
-async def call_result(response):
+async def call_result(response, output_dir=None):
     client = MCPClient()
+    if output_dir is not None:
+        client.output_dir = str(output_dir)
     session = SimpleNamespace(call_tool=AsyncMock(return_value=response))
     client.sessions['demo'] = session
     raw = await client.call_tool('demo', 'lookup', {'query': 'test'})
@@ -35,7 +37,6 @@ async def call_result(response):
     [],
     [TextContent(type='text', text='')],
     [TextContent(type='text', text='  ')],
-    [ImageContent(type='image', data='AA==', mimeType='image/png')],
 ])
 async def test_structured_result_without_readable_text(payload, content):
     response = CallToolResult(content=content, structuredContent=payload)
@@ -45,6 +46,20 @@ async def test_structured_result_without_readable_text(payload, content):
     assert not result.is_error
     if payload:
         assert '中文' in result.text
+
+
+@pytest.mark.asyncio
+async def test_structured_result_preserves_image_attachment(tmp_path):
+    response = CallToolResult(
+        content=[ImageContent(type='image', data='AA==', mimeType='image/png')],
+        structuredContent=PAYLOAD)
+    result = ToolResult.from_raw(await call_result(response, tmp_path))
+    structured_text, media_text = result.text.split('\n\n', 1)
+    assert json.loads(structured_text) == PAYLOAD
+    assert 'Image returned' in media_text
+    assert result.extra['structuredContent'] == PAYLOAD
+    assert result.attachments[0]['media_type'] == 'image/png'
+    assert (tmp_path / result.attachments[0]['path']).read_bytes() == b'\x00'
 
 
 @pytest.mark.asyncio

@@ -78,18 +78,21 @@ agent YAML configuration. Existing snapshots are retained when this is disabled.
 
 ## tui — Terminal UI
 
-Launch an interactive UI in the terminal.
+Launch an interactive UI in the terminal. With no subcommand, `ms-agent` is the same as `ms-agent tui`.
 
 ```shell
+ms-agent
 ms-agent tui --config path/to/agent.yaml
+ms-agent --agent ms-agent/stock_data_agent
 ```
 
 | Argument | Description | Default |
 | --- | --- | --- |
 | `--config` | Path to an `agent.yaml` (or a task dir / ModelScope id) | built-in `agent.yaml` |
+| `--agent` | Install an Agent Hub template (id copied from https://www.modelscope.cn/agents) into the workspace, then start. A local `agent.yaml` / task directory is loaded in place. Do not pass with `--config` | built-in `agent.yaml` |
 | `--work-dir`, `--work_dir` | Working/project directory (== `output_dir`) | current directory |
 | `--env` | Path to a `.env` file | `./.env` |
-| `--permission_mode` | Permission mode for tool calls: `auto` / `strict` / `restricted` / `interactive` | `restricted` |
+| `--permission_mode` | Permission mode for tool calls: `ask` (confirm uncertain calls with you) / `auto` (a model decides them) / `full-access` (allow them). Older names `restricted`, `interactive`, `strict`, and `delegate` are still accepted | `ask` |
 | `--trust_remote_code` | Allow loading external code referenced by the config (flag) | `false` |
 | `--mcp-server-file`, `--mcp_server_file` | Path to an MCP servers JSON file | `None` |
 | `--emit-events`, `--emit_events` | Also append every structured AgentEvent as JSON lines to this file | `None` |

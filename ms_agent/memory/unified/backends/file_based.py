@@ -250,16 +250,27 @@ class FileBasedBackend(BaseMemoryBackend):
                 safe, reason = scan_content(content)
                 if not safe:
                     return f'添加失败（安全检查）: {reason}'
-            ok = self._file_storage._add_entry(content)
-            result = '已记住' if ok else '添加失败（可能超出字符预算）'
+            try:
+                ok = self._file_storage._add_entry(content)
+            except OSError:
+                return self._file_storage.user_notice or ''
+            notice = self._file_storage.user_notice
+            result = '已记住' if ok else (notice or '添加失败')
         elif action == 'replace':
             if not new_content:
                 result = 'replace 操作需要 new_content 参数'
             else:
-                ok = self._file_storage.replace_entry(content, new_content)
-                result = '已更新' if ok else '更新失败（未找到旧内容或超出字符预算）'
+                try:
+                    ok = self._file_storage.replace_entry(content, new_content)
+                except OSError:
+                    return self._file_storage.user_notice or ''
+                notice = self._file_storage.user_notice
+                result = '已更新' if ok else (notice or '更新失败')
         elif action == 'remove':
-            ok = self._file_storage.remove_entry(content)
+            try:
+                ok = self._file_storage.remove_entry(content)
+            except OSError:
+                return self._file_storage.user_notice or ''
             result = '已删除' if ok else '删除失败'
         else:
             result = f'未知操作: {action}'

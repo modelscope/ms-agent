@@ -319,7 +319,7 @@ export const api = {
       memory_backend: MemoryBackend
       mcp_auto_attach: boolean
       skill_auto_attach: boolean
-      permission_mode: 'restricted' | 'auto'
+      permission_mode: 'ask' | 'auto' | 'full-access'
     }>
   ) =>
     json<Project>(`/api/projects/${pid(id)}`, {

@@ -168,6 +168,8 @@ def _save_project_update(pid: str, body: ProjectUpdate) -> tuple[Project, bool]:
         )
         if getattr(body, k) is not None
     }
+    if body.permission_mode is not None:
+        side["permission_mode_v"] = 2
     if set(MEMORY_MODEL_FIELDS) & body.model_fields_set:
         models = dict(prev_models or {})
         for key in MEMORY_MODEL_FIELDS:
