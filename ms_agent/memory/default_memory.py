@@ -178,7 +178,10 @@ class DefaultMemory(Memory):
             return
         self.cache_messages.pop(msg_id, None)
         if msg_id == self.max_msg_id:
-            self.max_msg_id = max(self.cache_messages.keys())
+            # A rollback can drop every cached block (the incoming history
+            # mismatches from the very first one). -1 is the same empty-store
+            # sentinel load_cache() sets, so the next block is numbered from 0.
+            self.max_msg_id = max(self.cache_messages.keys(), default=-1)
 
         idx = 0
         while idx < len(self.memory_snapshot):
