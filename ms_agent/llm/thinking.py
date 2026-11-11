@@ -155,6 +155,7 @@ _HOST_FAMILIES = (
     ('api.kimi.com', 'moonshot'),
     ('api.minimax', 'minimax'),
     ('openrouter.ai', 'openrouter'),
+    ('api.atlascloud.ai', 'atlascloud'),
     ('api.openai.com', 'openai'),
 )
 
@@ -204,6 +205,17 @@ _FAMILY_TIERS = {
     # Everyone else accepts the whole vocabulary. Endpoints that do not validate
     # it (glm-5.1, glm-5, every Kimi, MiniMax, ModelScope) ignore an unknown
     # value rather than failing, so passing a tier through costs nothing.
+    # The only aggregator here whose vocabulary is narrower than the full set.
+    # Probed 2026-10-09, each value individually against 14 models: `high` and
+    # `xhigh` are the only two no model rejects. `low` is 400 on qwen3.5-flash
+    # and qwen3.7-plus; `medium` on those two plus glm-5.3-flash; `max` on those
+    # two plus minimax-m2.5; `minimal` on minimax-m2.5. `off` is absent for the
+    # same reason and not for lack of a spelling to try -- all three candidates
+    # are rejected by part of the catalog (`reasoning_effort: none` by glm-5.3,
+    # glm-5.3-flash and minimax-m3; `enable_thinking: false` and
+    # `thinking: {type: disabled}` by glm-5.3-flash), so `off` clamps onto the
+    # weakest thinking tier the way it does for Kimi K3.
+    'atlascloud': ('high', 'xhigh'),
     'deepseek': EFFORT_TIERS,
     'zhipu': EFFORT_TIERS,
     'moonshot': EFFORT_TIERS,

@@ -238,6 +238,21 @@ class ProviderRegistry:
                 keywords=[],
                 capabilities=openai_caps,
             ),
+            ProviderSpec(
+                name='atlascloud',
+                display_name='Atlas Cloud',
+                transport=TRANSPORT_OPENAI_COMPAT,
+                api_key_env=['ATLASCLOUD_API_KEY'],
+                default_base_url='https://api.atlascloud.ai/v1',
+                base_url_env=['ATLASCLOUD_BASE_URL'],
+                # No keywords, like OpenRouter: the ids are lab-namespaced
+                # (deepseek-ai/deepseek-v4-flash, zai-org/glm-5.3), so matching
+                # on them would steal names the upstream vendors own -- and
+                # `deepseek-ai/...` already contains DeepSeek's own `deepseek-`
+                # keyword. An aggregator has to be chosen, not guessed.
+                keywords=[],
+                capabilities=openai_caps,
+            ),
         ]
         for spec in builtins:
             self.register(spec)
