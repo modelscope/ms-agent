@@ -14,9 +14,9 @@ from copy import copy
 from types import TracebackType
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
-from ms_agent.llm.utils import Tool, ToolCall
-from ms_agent.tools.arg_coercion import coerce_arguments
+from ms_agent.llm.utils import Tool, ToolCall, ToolResult
 from ms_agent.tools.agent_tool import AgentTool
+from ms_agent.tools.arg_coercion import coerce_arguments
 from ms_agent.tools.base import ToolBase
 from ms_agent.tools.code import CodeExecutionTool, LocalCodeExecutionTool
 from ms_agent.tools.filesystem_tool import FileSystemTool
@@ -838,6 +838,12 @@ class ToolManager:
                 # said it bounds itself (see ToolBase.max_output_chars).
                 if isinstance(response, str):
                     response = _truncate_tool_output(response, tool_ins)
+                elif (tool_ins is self.servers and isinstance(response, dict)
+                      and 'structuredContent' in response):
+                    # Bound model text while retaining the original MCP data.
+                    response = dict(response)
+                    response['result'] = _truncate_tool_output(
+                        ToolResult.from_raw(response).text, tool_ins)
 
                 if (self.mcp_success_handler is not None
                         and tool_ins is self.servers):

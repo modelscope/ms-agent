@@ -379,32 +379,42 @@ class MCPClient(ToolBase):
                 'different approach or tell the user the server is down.')
         response = await session.call_tool(tool_name, tool_args)
 
+        structured = _structured_content(response)
+        contents = response.content or []
         texts = []
         resources = []
         attachments = []
+        has_readable_text = False
         if _tool_call_is_error(response):
             sep = '\n\n'
-            if all(isinstance(item, str) for item in response.content):
-                detail = sep.join(response.content)
+            if all(isinstance(item, str) for item in contents):
+                detail = sep.join(contents)
             else:
                 detail = sep.join(
-                    getattr(item, 'text', str(item))
-                    for item in response.content)
+                    getattr(item, 'text', str(item)) for item in contents)
+            if structured is not None and not detail.strip():
+                detail = json.dumps(
+                    structured, ensure_ascii=False, default=str)
             # Marked as an error rather than returned as ordinary text. A
             # failure reported only in prose reaches the model with no error
             # flag and reaches the UI with no failed step, so a call that was
             # refused looks like a call that answered.
-            return {
+            result = {
                 'result':
                 (f'execute tool call error: [{server_name}]{tool_name}, '
                  f'{_summarize_tool_error(detail)}'),
                 'is_error':
                 True,
             }
-        for content in response.content or []:
+            if structured is not None:
+                result['structuredContent'] = structured
+            return result
+        for content in contents:
             kind = getattr(content, 'type', None)
             if kind == 'text':
                 texts.append(content.text)
+                has_readable_text = has_readable_text or bool(
+                    content.text.strip())
             elif kind == 'resource':
                 import json5
                 json_str = _resource_json(content.resource)
@@ -428,20 +438,23 @@ class MCPClient(ToolBase):
                 texts.append(
                     f'Audio returned ({_content_mime(content)}), saved at {path}.')
 
-        structured = _structured_content(response)
-        if structured is not None and not texts:
-            texts.append(
-                json.dumps(structured, ensure_ascii=False, default=str))
+        if structured is not None and not has_readable_text:
+            texts = [text for text in texts if text.strip()]
+            texts.insert(
+                0, json.dumps(structured, ensure_ascii=False, default=str))
 
         body = '\n\n'.join(texts)
-        if resources or attachments:
+        if structured is not None:
+            result = {'result': body, 'structuredContent': structured}
+        elif resources or attachments:
             result = {'text': body}
-            if resources:
-                result['resources'] = resources
-            if attachments:
-                result['attachments'] = attachments
-            return result
-        return body
+        else:
+            return body
+        if resources:
+            result['resources'] = resources
+        if attachments:
+            result['attachments'] = attachments
+        return result
 
     def _write_media(self, data: str, mime: str, kind: str) -> str:
         """Persist a base64 tool result next to the workspace.

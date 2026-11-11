@@ -241,10 +241,11 @@ async def test_image_audio_and_structured_results_reach_the_caller(tmp_path):
         SimpleNamespace(
             isError=False,
             content=[],
-            structuredContent={'ok': True},
+            structured_content={'ok': True},
         ))
-    text = await client.call_tool('s', 'ping', {})
-    assert '"ok": true' in text
+    result = await client.call_tool('s', 'ping', {})
+    assert '"ok": true' in result['result']
+    assert result['structuredContent'] == {'ok': True}
 
 
 @pytest.mark.asyncio
