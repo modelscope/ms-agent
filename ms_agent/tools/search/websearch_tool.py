@@ -290,6 +290,9 @@ def get_search_engine_class(engine_type: str) -> Type[SearchEngine]:
     elif engine_type == 'tavily':
         from ms_agent.tools.search.tavily import TavilySearch
         return TavilySearch
+    elif engine_type == 'keenable':
+        from ms_agent.tools.search.keenable import KeenableSearch
+        return KeenableSearch
     else:
         logger.warning(
             f"Unknown search engine '{engine_type}', falling back to arxiv")
@@ -337,6 +340,9 @@ def get_search_engine(engine_type: str,
             api_key=api_key or os.getenv('TAVILY_API_KEY'),
             request_timeout=float(kwargs.get('request_timeout', 120.0)),
         )
+    elif engine_type == 'keenable':
+        from ms_agent.tools.search.keenable import KeenableSearch
+        return KeenableSearch(api_key=api_key or os.getenv('KEENABLE_API_KEY'))
     else:
         logger.warning(
             f"Unknown search engine '{engine_type}', falling back to arxiv")
@@ -361,7 +367,7 @@ def build_search_request(engine_type: str,
 class WebSearchTool(ToolBase):
     """
     Unified web search tool for agents. It can search the web and fetch page content.
-    - Search via multiple engines (Exa, SerpAPI, Arxiv, Tavily)
+    - Search via multiple engines (Exa, SerpAPI, Arxiv, Tavily, Keenable)
     - Dynamic tool definitions based on configured engines
     - Auto-fetch and parse page content
     - Configurable content fetcher (jina_reader, docling, etc.)
@@ -394,7 +400,7 @@ class WebSearchTool(ToolBase):
     SERVER_NAME = 'web_search'
 
     # Registry of supported search engines
-    SUPPORTED_ENGINES = ('exa', 'serpapi', 'arxiv', 'tavily')
+    SUPPORTED_ENGINES = ('exa', 'serpapi', 'arxiv', 'tavily', 'keenable')
 
     # Process-wide (class-level) usage tracking for summarization calls.
     # This is intentionally separate from LLMAgent usage totals.
@@ -510,6 +516,9 @@ class WebSearchTool(ToolBase):
             'tavily': (getattr(tool_cfg, 'tavily_api_key', None)
                        or os.getenv('TAVILY_API_KEY'))
             if tool_cfg else os.getenv('TAVILY_API_KEY'),
+            'keenable': (getattr(tool_cfg, 'keenable_api_key', None)
+                         or os.getenv('KEENABLE_API_KEY'))
+            if tool_cfg else os.getenv('KEENABLE_API_KEY'),
         }
 
         # Tavily search defaults from optional `tavily:` sub-block in YAML
@@ -787,6 +796,9 @@ class WebSearchTool(ToolBase):
                         api_key=self._api_keys.get('tavily'),
                         request_timeout=self._tavily_request_timeout,
                     )
+                elif engine_type == 'keenable':
+                    self._engines[engine_type] = engine_cls(
+                        api_key=self._api_keys.get('keenable'))
                 else:  # arxiv
                     self._engines[engine_type] = engine_cls()
 
@@ -1649,3 +1661,7 @@ class WebSearchTool(ToolBase):
     async def tavily_search(self, **kwargs) -> str:
         """Search using Tavily engine."""
         return await self._execute_search('tavily', kwargs)
+
+    async def keenable_search(self, **kwargs) -> str:
+        """Search using Keenable engine."""
+        return await self._execute_search('keenable', kwargs)
