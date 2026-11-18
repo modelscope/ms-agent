@@ -31,6 +31,14 @@ from ms_agent.ui.events import AgentEvent
 
 _UNAVAILABLE = 'UNAVAILABLE'
 
+# Minimum interval between raw flushes while the busy input line is up (append
+# mode). The input line lives on a reserved bottom row behind a DECSTBM scroll
+# region (see busy_input.BusyLineInput), so output physically cannot redraw it —
+# flicker is structurally impossible. Batching tokens to ~30fps is now purely a
+# smoothness/syscall win: fewer, larger writes scroll the region in even steps
+# instead of one tiny scroll per token.
+_APPEND_FLUSH_INTERVAL = 1.0 / 30.0
+
 
 def _bold_unavailable(text: str) -> Text:
     """Bold the word UNAVAILABLE. The rest of a command panel stays plain.
@@ -92,6 +100,20 @@ class RichEventSink:
         # Buffered draws while something else owns the screen (see hold_output).
         # None = draw straight through.
         self._held: Optional[list] = None
+        # Type-ahead capture mode (see set_append_mode). While the busy input
+        # line is pinned at the bottom behind a scroll region
+        # (busy_input.BusyLineInput), the transient Live region's cursor-up
+        # redraws would fight the reserved rows, so streamed assistant text is
+        # appended as raw output instead — it scrolls in the region above the
+        # input line, Claude Code style.
+        self._append_mode = False
+        # Throttled raw-write buffers for append mode (see _append_write). Tokens
+        # accumulate and flush at most ~30fps so the region scrolls in even steps
+        # and syscalls stay low (the reserved input line is never redrawn).
+        self._append_buf = ''
+        self._last_append_flush = 0.0
+        self._reasoning_buf = ''
+        self._last_reasoning_flush = 0.0
 
     # ── sink protocol ──────────────────────────────────────────────────────
 
@@ -142,6 +164,55 @@ class RichEventSink:
         """Stop any in-flight Live region (call on error / turn abort)."""
         self.release_terminal()
 
+    def set_append_mode(self, on: bool) -> None:
+        """Suspend the transient Live region while the busy input line is up.
+
+        With ``on=True`` streamed assistant text is appended as raw output that
+        scrolls in the region above the reserved input line (see
+        busy_input.BusyLineInput) instead of being redrawn in a single-screen Live
+        window. Any Live already running is stopped first so the two rendering
+        strategies never overlap.
+        """
+        on = bool(on)
+        if on == self._append_mode:
+            return
+        if on:
+            self._stop_live()
+        else:
+            # Leaving append mode: land any batched text before the rendering
+            # strategy switches back to the transient Live region.
+            self._flush_append()
+        self._append_mode = on
+
+    def _flush_append(self) -> None:
+        """Write any batched append-mode assistant text now."""
+        if self._append_buf:
+            self.console.file.write(self._append_buf)
+            self.console.file.flush()
+            self._append_buf = ''
+        self._last_append_flush = time.monotonic()
+
+    def _append_write(self, text: str) -> None:
+        """Batch a streamed token, flushing at most ~30fps.
+
+        The input line is on a reserved row output cannot touch, so this is not a
+        flicker fix — it batches many tiny per-token writes into fewer, larger
+        ones so the region scrolls in even steps and syscalls stay low. The buffer
+        is always drained by ``release_terminal`` / ``set_append_mode(False)``, so
+        no text is lost.
+        """
+        self._append_buf += text
+        if time.monotonic() - self._last_append_flush >= _APPEND_FLUSH_INTERVAL:
+            self._flush_append()
+
+    def _flush_reasoning(self) -> None:
+        """Write any batched append-mode reasoning text now (dim, as one run)."""
+        if self._reasoning_buf:
+            self.console.print(
+                Text(self._reasoning_buf, style=self.theme.reasoning), end='')
+            self._reasoning_buf = ''
+        self._last_reasoning_flush = time.monotonic()
+
     def release_terminal(self) -> None:
         """Stop the streaming region and wait until it can no longer write.
 
@@ -150,12 +221,15 @@ class RichEventSink:
         is the only writer. A reply that was still streaming is typeset once
         below the title line already printed above the region.
         """
+        self._flush_append()
         buf = self._content_buf
         self._content_buf = ''
         self._label_shown = False
         terminal = bool(self.console.is_terminal)
         self._stop_live()
-        if terminal and buf.strip():
+        # In append mode the reply already streamed to the transcript verbatim,
+        # so re-typesetting it as Markdown would print the whole thing twice.
+        if terminal and not self._append_mode and buf.strip():
             self.console.print(Markdown(buf))
 
     def _stop_live(self) -> None:
@@ -192,6 +266,25 @@ class RichEventSink:
             return tail[0]
         return Group(*tail)
 
+    # ── user turn (steered echo) ───────────────────────────────────────────
+
+    def _on_user_message(self, ev) -> None:
+        """Draw a user turn the terminal did not echo inline.
+
+        An idle prompt is echoed by prompt_toolkit (the typed line stays on
+        screen), so this stays quiet for it. A steered interjection is folded
+        into the running turn with no prompt echo — without drawing it here the
+        timeline would show the assistant answering a message the user never sees
+        recorded. Rendered as ``❯ <text>`` to match the live prompt's look.
+        """
+        if not getattr(ev, 'steered', False):
+            return
+        # A gap before the user turn, mirroring the assistant header's spacing.
+        self._print()
+        self._print(
+            f'[{self.theme.user}]{self.theme.user_symbol}[/] {escape(ev.text)}')
+        self._last_kind = None
+
     # ── assistant content (streamed) ───────────────────────────────────────
 
     def _on_content_delta(self, ev) -> None:
@@ -205,7 +298,7 @@ class RichEventSink:
             self._label_shown = True
             self._last_kind = 'content'
         self._content_buf += ev.text
-        if self.console.is_terminal:
+        if self.console.is_terminal and not self._append_mode:
             if self._live is None:
                 from rich.live import Live
                 # One screen, erased when the reply finishes. stdout stays
@@ -223,14 +316,19 @@ class RichEventSink:
             # the whole reply once, after this region has stopped.
             self._live.update(self._stream_window(self._content_buf))
         else:
-            # Non-terminal (piped / CI): write raw for clean, scriptable output.
-            self.console.file.write(ev.text)
-            self.console.file.flush()
+            # Non-terminal (piped / CI) writes raw for clean, scriptable output.
+            # Type-ahead capture mode does the same on a terminal, batched to
+            # ~30fps (see _append_write); the raw text scrolls in the region above
+            # the reserved input line, which it never redraws.
+            self._append_write(ev.text)
 
     def _on_content_end(self, ev) -> None:
         terminal = bool(self.console.is_terminal)
+        append_mode = self._append_mode
         self.release_terminal()
-        if not terminal:
+        if not terminal or append_mode:
+            # Raw-streamed text carried no trailing newline; close the line so
+            # the next block starts on a fresh row.
             self.console.file.write('\n')
             self.console.file.flush()
         self._last_kind = None  # next turn starts fresh (input divider spaces it)
@@ -247,12 +345,21 @@ class RichEventSink:
 
     def _on_reasoning_delta(self, ev) -> None:
         if self._reasoning_active and ev.text:
-            # Stream tokens as they arrive (dim), same as assistant content.
-            self.console.print(
-                Text(ev.text, style=self.theme.reasoning), end='')
+            if self._append_mode:
+                # Batch dim reasoning tokens too, so thinking scrolls the region
+                # in even steps like content does (see _append_write).
+                self._reasoning_buf += ev.text
+                if (time.monotonic() - self._last_reasoning_flush
+                        >= _APPEND_FLUSH_INTERVAL):
+                    self._flush_reasoning()
+            else:
+                # Stream tokens as they arrive (dim), same as assistant content.
+                self.console.print(
+                    Text(ev.text, style=self.theme.reasoning), end='')
 
     def _on_reasoning_ended(self, ev) -> None:
         if self._reasoning_active:
+            self._flush_reasoning()
             self.console.print()  # close the streamed thinking block
             self._reasoning_active = False
 
