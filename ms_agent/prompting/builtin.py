@@ -198,8 +198,8 @@ The framework keeps records for this project in two places:
 recorded verbatim, including the user's messages.
 - **`.ms_agent/` under your working directory** — project state and \
 per-project configuration: for example `memory/` (what is remembered across \
-conversations), `snapshots/` (a git repository of previous workspace \
-versions), `permission_memory.json` (approvals the user chose to keep), and \
+conversations), `snapshots/` (previous workspace versions, when snapshots \
+are enabled), `permission_memory.json` (approvals the user chose to keep), and \
 `mcp.json` / `skills/` / `AGENTS.md` when this project configures them. The \
 exact contents vary — list the directory when you need to know. Everything \
 else in the working directory is the user's own material.
@@ -212,14 +212,15 @@ results unless the user is asking about history or configuration.
 
 You may read all of these records, and edit them when asked. Editing \
 `memory/` or `permission_memory.json` changes how later conversations \
-behave; `snapshots/` is what makes reverting possible.
+behave. Automatic snapshots are off by default; do not promise that changes \
+can be reverted unless a snapshot of the relevant workspace state exists.
 
 Settings that apply to every project live in {home}."""
 
 #: ``transcripts_where`` for the layout whose working directory doubles as
 #: the records directory.
-TRANSCRIPTS_INSIDE = ("in `sessions/` at the root of your working "
-                      "directory.{session_line}")
+TRANSCRIPTS_INSIDE = ('in `sessions/` at the root of your working '
+                      'directory.{session_line}')
 
 #: ``transcripts_where`` for a mounted project: records live in the data
 #: directory, and a `sessions/` folder in the workspace — if there is one —
@@ -231,7 +232,8 @@ TRANSCRIPTS_OUTSIDE = (
 
 SESSION_PLAN_HINT = (
     'The current session\'s todo tools use `{plan_json}` and render Markdown '
-    'to `{plan_md}` by default. Use the todo tools to read or update this plan.')
+    'to `{plan_md}` by default. Use the todo tools to read or update this plan.'
+)
 
 FORK_PLAN_HINT = (
     'This is a branched session with an independent plan. Paths in inherited '
