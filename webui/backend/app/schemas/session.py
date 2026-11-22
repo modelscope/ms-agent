@@ -2,6 +2,7 @@ from typing import Literal
 from datetime import datetime
 
 from pydantic import BaseModel, Field
+from app.schemas.model import ReasoningEffort
 
 
 class Session(BaseModel):
@@ -27,6 +28,7 @@ class Session(BaseModel):
     model_id: str = ""
     execution_mode: Literal["standard", "decision"] = "standard"
     execution_mode_locked: bool = False
+    reasoning_efforts: dict[str, str] = Field(default_factory=dict)
 
 
 class SessionFork(BaseModel):
@@ -49,6 +51,7 @@ class SessionCreate(BaseModel):
     preview: str = ""
     model_id: str | None = None
     execution_mode: Literal["standard", "decision"] | None = None
+    reasoning_effort: ReasoningEffort | None = None
 
 
 class SessionExecutionModeUpdate(BaseModel):
@@ -57,6 +60,10 @@ class SessionExecutionModeUpdate(BaseModel):
 
 class SessionModelUpdate(BaseModel):
     model_id: str = Field(min_length=1)
+
+
+class SessionThinkingUpdate(SessionModelUpdate):
+    reasoning_effort: ReasoningEffort
 
 
 class SessionUpdate(BaseModel):
@@ -99,9 +106,10 @@ class SessionPart(BaseModel):
     - thought: ``text`` holds a persisted reasoning block; ``duration`` is its
                elapsed seconds (persisted, so replay shows "thought Ns")
     - tasks:   ``tasks`` holds the plan items (labels + status) as plain text
-    - step:    ``step`` holds one tool-call card, rendered inline in stream
-               order (a tool step carries ``meta.duration_ms``; an authorization
-               step carries ``meta.state`` = approved|rejected for replay)
+    - step:    ``step`` holds an inline card in stream order: a tool step carries
+               ``meta.duration_ms``; authorization carries ``meta.state``;
+               context_compaction carries optional before_tokens/after_tokens
+               and is a display-only notice, not a tool call or turn boundary.
     - error:   ``text`` holds an API/turn error message; ``recoverable`` says
                whether it re-entered model context (turn/API errors do not)
 
@@ -114,6 +122,7 @@ class SessionPart(BaseModel):
     tasks: list[SessionTask] = Field(default_factory=list)
     step: SessionStep | None = None
     recoverable: bool = True
+    code: str = ""
 
 
 class SessionFile(BaseModel):
@@ -136,6 +145,8 @@ class SessionFile(BaseModel):
 
 
 class SessionMessage(BaseModel):
+    message_id: str | None = None
+    turn_id: str | None = None
     log_seq: int | None = None
     fork_after_seq: int | None = None
     fork_origin: ForkOrigin | None = None

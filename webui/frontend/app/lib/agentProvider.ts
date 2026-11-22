@@ -1,4 +1,6 @@
 import type { ForkOrigin } from "./types";
+
+import type { ReasoningEffort } from './types';
 import {
   AbstractChatProvider,
   type TransformMessage,
@@ -65,7 +67,7 @@ export async function assertChatStream(response: Response): Promise<Response> {
  * Must stay in sync with backend/app/schemas/chat.py::ChatChunk.
  */
 export interface AgentChunk {
-  type: "text" | "thought" | "task" | "step" | "session" | "turn" | "error" | "done";
+  type: "text" | "thought" | "task" | "step" | "session" | "turn" | "notice" | "error" | "done" | "input";
   content: string;
   meta?: Record<string, unknown>;
 }
@@ -103,8 +105,11 @@ export type MessageSegment =
 
 export interface AgentInput {
   execution_mode?: "standard" | "decision";
+  input_id?: string;
+  expected_turn_id?: string | null;
   session_id?: string | null;
   model_id?: string;
+  reasoning_effort?: ReasoningEffort;
   project_id?: string | null;
   /** The CURRENT turn's user message. Conversation context is NOT sent — the
    * backend's ms-agent SessionLog (on disk) is the source of truth. */
@@ -143,12 +148,15 @@ export type StepKind =
   | "artifact"
   | "authorization"
   | "tasks"
+  // Display-only notice, not a tool: optional before_tokens/after_tokens in
+  // meta, no group/status/call_id. Does not finish a thought or the turn.
+  | "context_compaction"
   // Transient: the model is still writing a tool call. Never persisted and
   // never replayed — it exists only to fill the streaming gap before
   // `tool_call_started`, and is removed the moment a real step arrives.
   | "tool_composing";
 
-/** A single tool-call step card, rendered inline in stream order. */
+/** An inline tool card or informational notice, rendered in stream order. */
 export interface AgentStep {
   kind: StepKind;
   meta: Record<string, unknown>;
@@ -191,6 +199,7 @@ export type AgentPart =
   // A turn/API failure surfaced as its own alert card (not body text), so it
   // reads as a system-level failure. `recoverable` mirrors whether the error
   // re-entered the model context (turn/API errors: false).
+  | { kind: "notice"; text: string; code?: string }
   | { kind: "error"; text: string; recoverable?: boolean }
   // Marks the exact point where the turn was interrupted (Stop button).
   // Rendered as a muted badge; the partial content before it is real
@@ -199,6 +208,8 @@ export type AgentPart =
 
 /** Rich assistant message; user messages reuse the same shape with content only. */
 export interface AgentMessage {
+  messageId?: string;
+  turnId?: string;
   logSeq?: number;
   forkAfterSeq?: number;
   forkOrigin?: ForkOrigin;
@@ -284,6 +295,7 @@ export class AgentChatProvider extends AbstractChatProvider<
       session_id: requestParams.session_id ?? null,
       model_id: requestParams.model_id,
       execution_mode: requestParams.execution_mode,
+      reasoning_effort: requestParams.reasoning_effort,
       project_id: requestParams.project_id ?? null,
       message: requestParams.message ?? { role: "user", content: "" },
     };
@@ -443,8 +455,14 @@ export function applyChunk(base: AgentMessage, c: AgentChunk): AgentMessage {
       // the finished turn — rebuilt from the message's single
       // `reasoning_content` — showed one block: the same reasoning changed shape
       // the moment the turn stopped running.
-      if (meta.kind !== IMAGE_DELIVERY) finalizeOpenThoughts(parts);
+      // Context upkeep is likewise informational, not evidence that the model
+      // or a tool has finished. Preserve any in-flight thought/composing card.
+      if (meta.kind !== IMAGE_DELIVERY && meta.kind !== CONTEXT_COMPACTION)
+        finalizeOpenThoughts(parts);
       appendStepPart(parts, meta);
+      return { ...base, parts };
+    case "notice":
+      parts.push({ kind: "notice", text: c.content || "", code: String(meta.code || "") });
       return { ...base, parts };
     case "error": {
       // Its own alert card (ErrorCard) rather than body text — a turn/API
@@ -624,6 +642,7 @@ function appendTaskSnapshot(
 }
 
 const COMPOSING = "tool_composing";
+const CONTEXT_COMPACTION = "context_compaction";
 /** A `step` frame that reports something about the REQUEST rather than a step of
  * the round — it renders nothing and must leave the turn's live state alone. */
 const IMAGE_DELIVERY = "image_delivery";
@@ -679,6 +698,11 @@ function appendStepPart(parts: AgentPart[], meta: Record<string, unknown>): void
   // retire while the call was still being written.
   if (meta.kind === IMAGE_DELIVERY) {
     dispatchImageDelivery(String(meta.path ?? ""), String(meta.state ?? ""));
+    return;
+  }
+  if (meta.kind === CONTEXT_COMPACTION) {
+    // No tool merge, placeholder sweep or workspace notification for upkeep.
+    parts.push({ kind: "step", step: { kind: CONTEXT_COMPACTION, meta } });
     return;
   }
   // "Still writing this call" placeholders: one per tool-call index, updated in
@@ -830,23 +854,27 @@ function upsertTask(
  * no elapsed time, so it carries no duration).
  */
 export interface HistoryPart {
-  kind: "text" | "thought" | "tasks" | "step" | "error" | "interrupted";
+  kind: "text" | "thought" | "tasks" | "step" | "notice" | "error" | "interrupted";
   text?: string;
   // kind="thought": persisted elapsed seconds, so replay shows "thought Ns".
   duration?: number;
   // kind="error": whether the error re-entered model context (turn/API: false).
   recoverable?: boolean;
+  code?: string;
   // kind="tasks": the plan items (labels + status), no nested steps.
   tasks?: {
     id: string;
     label: string;
     status: string;
   }[];
-  // kind="step": a single tool-call step (meta.status="error" if it failed).
+  // kind="step": a tool card or notice, including context_compaction with
+  // optional meta.before_tokens/after_tokens (never a tool status or group).
   step?: { kind: string; meta: Record<string, unknown> };
 }
 
 export interface HistoryMessage {
+  message_id?: string | null;
+  turn_id?: string | null;
   log_seq?: number | null;
   fork_after_seq?: number | null;
   fork_origin?: ForkOrigin | null;
@@ -884,6 +912,8 @@ export function historyToAgentMessages(
   if (!rows) return [];
   return rows.map((row) => {
     const msg: AgentMessage = { role: row.role, content: row.content };
+    if (row.message_id) msg.messageId = row.message_id;
+    if (row.turn_id) msg.turnId = row.turn_id;
     if (row.log_seq != null) msg.logSeq = row.log_seq;
     if (row.fork_after_seq != null) msg.forkAfterSeq = row.fork_after_seq;
     if (row.fork_origin) msg.forkOrigin = row.fork_origin;
@@ -937,6 +967,9 @@ export function historyToAgentMessages(
           // Faithful-interrupt badge: marks the exact stop point in replay,
           // matching what the live view showed when the turn was stopped.
           return { kind: "interrupted" };
+        }
+        if (part.kind === "notice") {
+          return { kind: "notice", text: part.text ?? "", code: part.code };
         }
         if (part.kind === "error") {
           // Same alert card as the live path (never body text).

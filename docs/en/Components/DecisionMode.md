@@ -52,7 +52,7 @@ compaction:
   reserved_buffer: 20000
 ```
 
-Set `context_limit` to suit the chat model and reserve room for output with `reserved_buffer`. These example values are not discovered model capabilities. Direct SDK/YAML use takes its mode from explicit configuration. WebUI uses the SDK's `SessionManager.prepare_execution()` for session locking. TUI uses the selected session's mode and freezes its decision profile when starting that session.
+Model catalog limits, explicit context settings and the generation output limit determine the shared input budget. `reserved_buffer` is a legacy compression trigger, not the output reserve. The decision target can tighten this budget but cannot enlarge it. Direct SDK/YAML use takes its mode from explicit configuration. WebUI uses the SDK's `SessionManager.prepare_execution()` for session locking. TUI uses the selected session's mode and freezes its decision profile when starting that session.
 
 `DecisionSettings` validates configuration without probing the service. Decision mode requires session logging and reports an error if it is disabled. Supervision can operate independently when context compaction is disabled.
 
@@ -81,8 +81,10 @@ The budget covers visible messages, tool definitions, reasoning fields and estim
 - Preserve system instructions, user requirements, the latest two complete tool groups, unresolved explicit failures, images and signed messages.
 - Evaluate the complete contents of other tool outputs. Replace an output with a short preview and source reference only when its full-content retention score is at most 0.05.
 - If that candidate meets the target budget, commit it without summarization.
-- Otherwise discard the selection candidate and summarize the pre-selection context with the same main model. Invalid answers, timeouts and unavailable services take this path too. Summarization uses at most four fragments by default and requests that reasoning be disabled.
+- Otherwise discard the selection candidate and summarize the pre-selection context with the same main model. Invalid answers, timeouts and unavailable services take this path too. Summarization reuses the shared bounded summary engine, with at most four model calls by default and a reasoning setting supported by the provider.
 - Commit one transaction only when the candidate reduces context, preserves valid tool exchanges and still matches its source revision. If protected input cannot fit the hard limit, stop explicitly instead of repeatedly compressing the same snapshot or discarding required evidence.
+
+Manual compression uses the same operation as the WebUI context button and `/compact`, preserving decision-mode evidence protection. Memory extraction failures are recorded for retry and do not block a valid context commit; cancellation retains the old window. Steering extends the current task without resetting its review budget.
 
 Original logs remain intact. `context---context_read` reads up to 8,000 characters per page using `ctx:<original seq>:<tool_call_id>`, within the current conversation or its valid branch. Standard mode defaults to bounded summaries. The agent's `/compact` command also summarizes; it does not trim old outputs by age.
 

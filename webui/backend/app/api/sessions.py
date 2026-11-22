@@ -6,7 +6,7 @@ from fastapi.responses import Response
 
 from app.core.envelope import EnvelopeRoute
 from app.schemas.session import (
-    Artifact, Session, SessionCreate, SessionMessage, SessionPlan, SessionUpdate, SessionModelUpdate, SessionFork, SessionExecutionModeUpdate
+    Artifact, Session, SessionCreate, SessionMessage, SessionPlan, SessionUpdate, SessionModelUpdate, SessionFork, SessionExecutionModeUpdate, SessionThinkingUpdate
 )
 
 router = APIRouter(prefix="/api", tags=["sessions"], route_class=EnvelopeRoute)
@@ -127,3 +127,25 @@ def update_session_model(session_id: str, body: SessionModelUpdate) -> dict:
 def update_execution_mode(session_id: str, body: SessionExecutionModeUpdate) -> Session:
     from app.backends.ms_agent import sessions
     return sessions.update_execution_mode(session_id, body.execution_mode)
+@router.patch('/sessions/{session_id}/thinking')
+def update_session_thinking(session_id: str, body: SessionThinkingUpdate) -> Session:
+    from app.backends.ms_agent import sessions
+    return sessions.update_session_thinking(session_id, body.model_id, body.reasoning_effort)
+
+
+@router.get('/sessions/{session_id}/context')
+def context_status(session_id: str) -> dict:
+    from app.backends.ms_agent.context import status
+    return status(session_id)
+
+
+@router.post('/sessions/{session_id}/compact', status_code=202)
+async def compact_session(session_id: str) -> dict:
+    from app.backends.ms_agent.context import start
+    return await start(session_id)
+
+
+@router.post('/sessions/{session_id}/context/retry', status_code=202)
+async def retry_context(session_id: str) -> dict:
+    from app.backends.ms_agent import context
+    return await context.retry(session_id)

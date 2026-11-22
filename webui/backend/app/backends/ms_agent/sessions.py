@@ -86,7 +86,7 @@ def create_session(body: SessionCreate) -> Session:
 
     try:
         session = session_models.create(project, name=body.title, model_id=body.model_id,
-                                        execution_mode=body.execution_mode)
+                                        execution_mode=body.execution_mode, reasoning_effort=body.reasoning_effort)
     except ValueError as exc:
         from app.backends.errors import BadRequest
         raise BadRequest(str(exc)) from None
@@ -132,6 +132,7 @@ def _history_step(
     project=None,
     *,
     has_auth_card: bool = False,
+    attachments: dict[str, list] | None = None,
 ) -> SessionStep | None:
     """Map one persisted assistant tool_call to a step card, or None to drop it.
 
@@ -163,6 +164,8 @@ def _history_step(
     call_id = str(tc.get("id") or "")
     if call_id and call_id in results:
         meta["result"] = results[call_id]
+    if attachments and attachments.get(call_id):
+        meta["attachments"] = attachments[call_id]
     if call_id and call_id in durations:
         meta["duration_ms"] = durations[call_id]
     if call_id and call_id in errored:
@@ -363,17 +366,34 @@ def list_messages(sid: str) -> list[SessionMessage]:
     try:
         log = sm.get_session_log(session)
         rows = log.get_all_messages()
+        for record in log.records():
+            if record.get('_type') != 'input_event':
+                continue
+            item = record.get('input') or {}
+            if item.get('command_delivered'):
+                content = item['request']['message']['content']
+                extra.append({'role': 'user', 'seq': record['seq'],
+                              'content': content, 'message_id': item['input_id'],
+                              'turn_id': item.get('turn_id')})
+            reply = record.get('command_reply')
+            if reply:
+                extra.append({**reply, 'role': 'assistant', 'seq': record['seq'],
+                              'segment_id': reply['message_id']})
         # Display-only records (excluded from the LLM context) are read
         # separately and merged back into the timeline by seq: error records
         # (API/turn errors) and permission records (restricted-mode auth cards).
         if hasattr(log, "get_errors"):
             extra += log.get_errors()
+        if hasattr(log, "get_notices"):
+            extra += log.get_notices()
         if hasattr(log, "get_permissions"):
             extra += log.get_permissions()
         if hasattr(log, "get_skill_invocations"):
             extra += log.get_skill_invocations()
         if hasattr(log, "get_loop_ends"):
             extra += log.get_loop_ends()
+        if hasattr(log, "get_compaction_events"):
+            extra += log.get_compaction_events()
     except Exception:
         rows, extra = [], []
     stream = sorted([*rows, *extra], key=lambda r: r.get("seq", 0))
@@ -395,7 +415,12 @@ def list_messages(sid: str) -> list[SessionMessage]:
                 title=source.name if source else origin["title"],
                 assistant_seq=origin["assistant_seq"], available=source is not None)
         if origin and message.plan_file and message.log_seq is not None and message.log_seq <= origin["assistant_seq"]:
-            message.plan_file = str(sm.sessions_dir / session.id / "plan.md")
+            # The branch only has a plan when the forked prefix carried a
+            # todo_write snapshot (ms_agent.project.fork._copy_plan); a
+            # render-only turn leaves none, and pointing at a missing file
+            # would show an empty plan chip.
+            inherited = sm.sessions_dir / session.id / "plan.md"
+            message.plan_file = str(inherited) if inherited.exists() else None
     # A turn in flight has its finished rounds on disk AND replayed on the live
     # stream. Flag the trailing message so an attached viewer drops this copy
     # and renders the turn once, not twice.
@@ -544,7 +569,10 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
     the synthetic summary row) are skipped: history shows the original
     timeline. ``system`` and plain ``tool`` rows are otherwise dropped.
     """
-    from app.backends.ms_agent.chat import is_placeholder_content
+    from app.backends.ms_agent.chat import (
+        _context_compaction_meta,
+        is_placeholder_content,
+    )
 
     # Saved context copies must not replace original tool results in the UI.
     rows = [row for row in rows if row.get("_source") != "compaction"]
@@ -559,6 +587,10 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
     results: dict[str, str] = {
         str(r.get("tool_call_id") or ""): str(r.get("content") or "")
         for r in rows if r.get("role") == "tool"
+    }
+    attachments = {
+        str(r.get("tool_call_id") or ""): r["attachments"]
+        for r in rows if r.get("role") == "tool" and r.get("attachments")
     }
     # Persisted tool elapsed time by call id (display only), for the step card.
     durations: dict[str, int] = {
@@ -602,6 +634,10 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
     # ``plan_file``), set when the turn rewrote the todo list.
     turn_plan_file: str | None = None
     turn_log_seq: int | None = None
+    segment_id: str | None = None
+    logical_turn: str | None = None
+    skipped = {str(r.get('tool_call_id')) for r in rows
+               if r.get('execution_status') == 'skipped'}
 
     def _perm_key(tool: str, args) -> str:
         # Normalize dict or JSON-string arguments to a canonical form so a
@@ -636,7 +672,7 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
 
     def flush() -> None:
         nonlocal parts, pending_perms, turn_changed, turn_changed_seen
-        nonlocal turn_duration_ms, turn_plan_file, turn_log_seq
+        nonlocal turn_duration_ms, turn_plan_file, turn_log_seq, segment_id
         # Any authorization that never matched a tool step (unusual) still
         # renders, appended in record order so nothing is dropped.
         for rec in pending_perms:
@@ -650,6 +686,8 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
                                      "error") for p in parts):
             messages.append(
                 SessionMessage(role="assistant",
+                               message_id=segment_id,
+                               turn_id=logical_turn,
                                log_seq=turn_log_seq,
                                content=content,
                                parts=parts,
@@ -662,6 +700,7 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
         turn_duration_ms = None
         turn_plan_file = None
         turn_log_seq = None
+        segment_id = None
 
     def append_text(text: str) -> None:
         # Merge consecutive answer rows into the current text block; start a new
@@ -672,22 +711,34 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
         else:
             parts.append(SessionPart(kind="text", text=text))
 
+    compaction_parts: dict[str, SessionPart] = {}
     for row in rows:
         if row.get('decision_feedback') or row.get('context_summary'):
-            continue
-        if row.get('_type') == 'compaction_event':
-            transaction = row.get('transaction_id')
-            if transaction and not any(r.get('_type') == 'compaction_commit'
-                                       and r.get('transaction_id') == transaction for r in rows):
-                continue
-            parts.append(SessionPart(kind='step', step=SessionStep(kind='decision', meta={
-                'action': 'compacted', 'before_tokens': row.get('tokens_before', 0),
-                'after_tokens': row.get('tokens_after', 0)})))
             continue
         if row.get('_type') == 'decision_event':
             if row.get('action') in ('intervene', 'degraded'):
                 parts.append(SessionPart(kind='step', step=SessionStep(kind='decision', meta={
                     key: row.get(key, '') for key in ('phase', 'action', 'reason', 'evidence_id')})))
+            continue
+        if row.get("_source") == "compaction":
+            # Compacted-view re-appends duplicate earlier rows for the LLM
+            # window only; replaying them would double the timeline.
+            continue
+        if row.get("_type") == "compaction_event":
+            meta = _context_compaction_meta(row)
+            if meta is not None:
+                # Keep the marker at its seq within the CURRENT turn. Flushing
+                # here would split the answer from its user/loop_end metadata.
+                kind = meta.pop("kind")
+                operation_id = meta.get("operation_id")
+                prior = compaction_parts.get(operation_id) if operation_id else None
+                if prior is not None:
+                    prior.step.meta.update({k: v for k, v in meta.items() if k != "before_tokens"})
+                else:
+                    part = SessionPart(kind="step", step=SessionStep(kind=kind, meta=meta))
+                    parts.append(part)
+                    if operation_id:
+                        compaction_parts[operation_id] = part
             continue
         if row.get("_type") == "loop_end":
             # Persisted loop boundary: carries the wall-clock duration for this
@@ -716,6 +767,10 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
                     text=str(row.get("message") or ""),
                     recoverable=bool(row.get("recoverable", False)),
                 ))
+            continue
+        if row.get("_type") == "notice":
+            parts.append(SessionPart(kind="notice", text=str(row.get("text") or ""),
+                                     code=str(row.get("code") or "")))
             continue
         if row.get("_type") == "permission":
             # Buffer until its matching tool_call step is emitted (see
@@ -794,11 +849,15 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
                 messages.append(
                     SessionMessage(
                         role="user",
+                        message_id=row.get('message_id') or f"user-{row.get('seq')}",
+                        turn_id=row.get('turn_id'),
                         content=text,
                         files=files,
                         segments=segments,
                     ))
         elif role == "assistant":
+            segment_id = segment_id or row.get('segment_id') or f"assistant-{row.get('seq')}"
+            logical_turn = row.get('turn_id')
             turn_log_seq = row.get("seq")
             # An interrupted round's unsigned partial reasoning is persisted
             # under a display-only key (replaying it would 400 on Anthropic);
@@ -840,7 +899,8 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
                     # Accumulate this loop's written/edited files (plus
                     # "plan.md" for todo writes) for the turn's changed-files
                     # summary.
-                    wpath = _changed_entry(tc, ws, plan_paths)
+                    was_skipped = str(tc.get('id') or '') in skipped
+                    wpath = None if was_skipped else _changed_entry(tc, ws, plan_paths)
                     if wpath and wpath not in turn_changed_seen:
                         turn_changed_seen.add(wpath)
                         turn_changed.append(wpath)
@@ -849,7 +909,7 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
                     # never refreshed in place) — mirrors the live stream, where
                     # every plan update adds a new frozen block. The composer's
                     # pinned panel is the live/aggregated view.
-                    entries = _plan_entries(tc, results)
+                    entries = None if was_skipped else _plan_entries(tc, results)
                     if entries is not None:
                         parts.append(_plan_part(entries))
                         continue
@@ -878,8 +938,12 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
                                          results,
                                          durations,
                                          project,
+                                         attachments=attachments,
                                          has_auth_card=perm is not None)
                     if step is not None:
+                        if was_skipped:
+                            step.meta['status'] = 'skipped'
+                            step.meta.pop('error', None)
                         step.meta["group"] = group_seq
                         parts.append(SessionPart(kind="step", step=step))
             else:
@@ -1110,10 +1174,13 @@ def changed_files_in_rows(
         plan_paths = plan_paths_in_rows(rows, workspace)
     ordered: list[str] = []
     seen: set[str] = set()
+    skipped = {r.get('tool_call_id') for r in rows if r.get('execution_status') == 'skipped'}
     for row in rows:
         if row.get("role") != "assistant":
             continue
         for tc in row.get("tool_calls") or []:
+            if tc.get('id') in skipped:
+                continue
             path = _changed_entry(tc, workspace, plan_paths)
             if path and path not in seen:
                 seen.add(path)
@@ -1168,10 +1235,13 @@ def list_artifacts(sid: str) -> list[Artifact]:
 
     ordered: list[str] = []
     seen: set[str] = set()
+    skipped = {r.get('tool_call_id') for r in rows if r.get('execution_status') == 'skipped'}
     for row in rows:
         if row.get("role") != "assistant":
             continue
         for tc in row.get("tool_calls") or []:
+            if tc.get('id') in skipped:
+                continue
             rel = _changed_entry(tc, ws, plan_paths)
             if rel and rel != "plan.md" and rel not in seen:
                 seen.add(rel)
@@ -1230,3 +1300,12 @@ def update_execution_mode(sid: str, value: str) -> Session:
         raise Conflict("execution_mode_locked") from None
     except ValueError as exc:
         raise BadRequest(str(exc)) from None
+
+
+def update_session_thinking(sid: str, model_id: str, effort: str) -> Session:
+    from app.backends.ms_agent import session_models
+    found = find_session(sid)
+    if not found:
+        raise NotFound('Conversation not found.')
+    project, _, _ = found
+    return session_to_schema(session_models.change_thinking(project, sid, model_id, effort))

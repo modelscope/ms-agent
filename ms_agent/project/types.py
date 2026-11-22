@@ -61,3 +61,6 @@ class Session:
     execution_mode_locked_at: str | None = None
     execution_profile: dict | None = None
     execution_profile_version: int = 1
+
+    # Provider -> model -> saved effort; interface-independent session state.
+    reasoning_efforts: dict[str, dict[str, str]] = field(default_factory=dict)

@@ -1,8 +1,10 @@
 import { Typography } from 'antd'
 import { useEffect, useState } from 'react'
+import { ArtifactStepCard } from './ArtifactStepCard'
 import type { ReactNode } from 'react'
 import { MsaButton } from '~/components/common/MsaButton'
 import { api } from '~/lib/api'
+import { useWorkspaceProjectId } from '~/lib/workspaceFiles'
 import { useT } from '~/lib/i18n'
 import { useCollapseTransition } from '../useCollapseTransition'
 import { deniedNote } from '../authOutcome'
@@ -23,7 +25,7 @@ type ToolState = 'pending' | 'approved' | 'rejected' | 'cancelled'
  */
 export function ToolCallStepCard({
   step,
-  onOpenStep: _onOpenStep,
+  onOpenStep,
   isLast,
   icon,
   title
@@ -38,6 +40,7 @@ export function ToolCallStepCard({
   title?: ReactNode
 }) {
   const { t } = useT()
+  const projectId = useWorkspaceProjectId()
   const meta = step.meta
   const name = String(meta.tool ?? meta.name ?? '')
   const args = meta.arguments
@@ -46,6 +49,9 @@ export function ToolCallStepCard({
       ? JSON.stringify(args, null, 2)
       : String(args ?? '')
   const result = String(meta.result ?? '')
+  const images = (Array.isArray(meta.attachments) ? meta.attachments : [])
+    .filter((a): a is { type: 'image'; path: string } =>
+      a?.type === 'image' && typeof a.path === 'string')
 
   const metaState = (meta.state as ToolState | undefined) ?? null
   const [localState, setLocalState] = useState<ToolState | null>(null)
@@ -232,6 +238,14 @@ export function ToolCallStepCard({
                 </div>
               )
             )}
+
+            {projectId && !denied && images.map((attachment) => (
+              <ArtifactStepCard key={attachment.path} onOpenStep={onOpenStep} step={{
+                kind: 'artifact',
+                meta: { path: attachment.path, name: attachment.path.split('/').pop(),
+                  preview: api.workspaceFileRawUrl(projectId, attachment.path) }
+              }} />
+            ))}
 
             {/* Authorization: pending → deny / always run / run once */}
             {state === 'pending' && (

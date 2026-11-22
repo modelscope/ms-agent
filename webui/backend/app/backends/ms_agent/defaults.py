@@ -1,5 +1,7 @@
 """Default tool scope for WebUI sessions."""
 
+from ms_agent.config.search_settings import DEFAULT_WEB_SEARCH_BLOCK
+
 # WebUI persists missing defaults at startup and before reading settings or
 # starting a turn. The same defaults remain below user settings at runtime.
 DEFAULT_TOOLS: dict = {
@@ -27,7 +29,7 @@ DEFAULT_TOOLS: dict = {
     # silently having no engine until someone visits Settings -> Search. The
     # keyless quota is a small sliding hourly bucket; adding a key lifts it, and
     # a configured key always takes precedence.
-    "web_search": {"mcp": False, "engine": "tavily", "enabled": True},
+    "web_search": dict(DEFAULT_WEB_SEARCH_BLOCK),
 }
 
 # task_control has no WebUI rendering component yet; strip it from any home that

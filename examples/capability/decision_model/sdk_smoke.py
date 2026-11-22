@@ -158,7 +158,7 @@ async def run(args):
                 elapsed = monotonic() - started
                 commits = [
                     r for r in log.records()
-                    if r.get('_type') == 'compaction_commit'
+                    if SessionLog._committed_window(r)
                 ]
                 assert len(
                     commits) == 1, f'{name}: expected one committed view'

@@ -1,6 +1,6 @@
 import { DecisionModelSettings } from '~/components/common/DecisionModelSettings'
 import { Input, Radio } from 'antd'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   MemoryModelConfig,
   type MemoryModelValue
@@ -25,6 +25,9 @@ export default function PersonalizationSettings() {
   const [loaded, setLoaded] = useState(false)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [settings, setSettings] = useState<AgentSettings | null>(null)
+  const settingsVersion = useRef(0)
+  const pendingWrites = useRef(0)
+  const saveQueue = useRef<Promise<unknown>>(Promise.resolve())
 
   const load = useCallback(() => {
     api.getInstruction('global').then((r) => {
@@ -32,7 +35,10 @@ export default function PersonalizationSettings() {
       setLoaded(true)
     })
     api.getProfile().then(setProfile)
-    api.getAgentSettings().then(setSettings)
+    const version = settingsVersion.current
+    api.getAgentSettings().then((next) => {
+      if (!pendingWrites.current && version === settingsVersion.current) setSettings(next)
+    })
   }, [])
 
   useEffect(load, [load])
@@ -61,11 +67,25 @@ export default function PersonalizationSettings() {
 
   const updateSettings = async (patch: Partial<AgentSettings>) => {
     if (!settings) return
+    // Commit the input immediately, so a following Check click sees it. Queue
+    // writes to preserve edit order; background catalog events must not replace
+    // a pending edit with the previous server value.
+    const version = ++settingsVersion.current
+    pendingWrites.current++
+    setSettings((current) => current ? { ...current, ...patch } : current)
+    const write = saveQueue.current.then(() => api.putAgentSettings(patch))
+    saveQueue.current = write.catch(() => {})
     try {
-      const next = await api.putAgentSettings(patch)
-      setSettings(next)
+      const next = await write
+      if (version === settingsVersion.current) setSettings(next)
     } catch {
       // API errors surface via the global toast (see root ApiErrorBridge).
+      if (version === settingsVersion.current) {
+        const next = await api.getAgentSettings()
+        if (version === settingsVersion.current) setSettings(next)
+      }
+    } finally {
+      pendingWrites.current--
     }
   }
 
@@ -131,6 +151,28 @@ export default function PersonalizationSettings() {
             />
           </div>
         </div>
+      </section>
+
+      <section>
+        <div className="mb-4 text-base font-semibold text-msa-text-1">{t.followUp.title}</div>
+        <Radio.Group
+          className="flex! flex-col gap-3"
+          value={settings?.follow_up_behavior ?? 'queue'}
+          disabled={!settings}
+          onChange={e => updateSettings({ follow_up_behavior: e.target.value })}
+        >
+          {(['queue', 'steer'] as const).map(mode => (
+            <label key={mode} className={`rounded-xl border px-4 py-3 transition-colors ${
+              (settings?.follow_up_behavior ?? 'queue') === mode
+                ? 'border-msa-brand bg-msa-fill-1' : 'border-msa-line-1'
+            }`}>
+              <Radio value={mode}>{t.followUp[mode]}</Radio>
+              <p className="mt-1 pl-6 text-xs leading-relaxed text-msa-text-3">
+                {mode === 'queue' ? t.followUp.queueDesc : t.followUp.steerDesc}
+              </p>
+            </label>
+          ))}
+        </Radio.Group>
       </section>
 
       {/* Memory settings */}

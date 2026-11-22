@@ -18,12 +18,6 @@ CMD_QUIT = CommandDef(
     aliases=('exit', ),
 )
 
-CMD_TOOLS = CommandDef(
-    name='tools',
-    description='List configured tools',
-    category='info',
-)
-
 CMD_COMPACT = CommandDef(
     name='compact',
     description='Compress conversation context',
@@ -69,94 +63,26 @@ async def cmd_quit(ctx: CommandContext) -> CommandResult:
     return CommandResult(type=CommandResultType.QUIT, content='Goodbye.')
 
 
-def _is_tool_entry(tools_config, key: str) -> bool:
-    if key.startswith('_'):
-        return False
-    from omegaconf import DictConfig
-    val = tools_config[key]
-    return isinstance(val, (dict, DictConfig))
-
-
-async def cmd_tools(ctx: CommandContext) -> CommandResult:
-    if not ctx.runtime or not ctx.runtime.llm:
-        return CommandResult(
-            type=CommandResultType.MESSAGE, content='No active agent.')
-
-    config = ctx.runtime.llm.config
-    tools_config = getattr(config, 'tools', None)
-    if not tools_config:
-        return CommandResult(
-            type=CommandResultType.MESSAGE, content='No tools configured.')
-
-    tool_names = [k for k in tools_config if _is_tool_entry(tools_config, k)]
-    if not tool_names:
-        return CommandResult(
-            type=CommandResultType.MESSAGE, content='No tools configured.')
-
-    lines = [f'Configured tools ({len(tool_names)}):']
-    for name in sorted(tool_names):
-        lines.append(f'  • {name}')
-    return CommandResult(
-        type=CommandResultType.MESSAGE, content='\n'.join(lines))
-
-
 async def cmd_compact(ctx: CommandContext) -> CommandResult:
-    """Prune old tool outputs from the live context to free tokens.
-
-    Keeps the most recent tool results in full and elides older large ones in
-    place (the same idea as ContextAssembler's ToolOutputPruner, applied on
-    demand). Automatic per-round compaction still runs when session_log +
-    compaction are configured; this is the manual trigger.
-    """
-    messages = ctx.extra.get('messages')
-    if not messages:
-        return CommandResult(
-            type=CommandResultType.MESSAGE, content='No messages available.')
-
-    compact = ctx.extra.get('compact_context')
-    if compact is not None:
-        return CommandResult(
-            type=CommandResultType.MESSAGE, content=await compact(messages))
-
-    from copy import deepcopy
-    original_messages = messages
-    messages = deepcopy(messages)
-    keep_recent = 3
-    prune_threshold = 200
-    tool_idxs = [
-        i for i, m in enumerate(messages) if getattr(m, 'role', None) == 'tool'
-    ]
-    to_prune = tool_idxs[:-keep_recent] if len(tool_idxs) > keep_recent else []
-
-    pruned = 0
-    freed = 0
-    for i in to_prune:
-        m = messages[i]
-        content = m.content if isinstance(m.content, str) else str(m.content
-                                                                   or '')
-        if len(content) > prune_threshold and not content.startswith(
-                '[compacted'):
-            placeholder = f'[compacted tool output: {len(content)} chars elided]'
-            freed += len(content) - len(placeholder)
-            messages[i].content = placeholder
-            pruned += 1
-
-    if pruned == 0:
+    """Use the same durable summary operation as automatic compaction."""
+    operation = getattr(ctx.runtime, 'compact_context', None)
+    if operation is None:
         return CommandResult(
             type=CommandResultType.MESSAGE,
-            content=(f'Nothing to compact ({len(messages)} messages; no large '
-                     f'old tool outputs beyond the last {keep_recent}).'),
-        )
-    persist = ctx.extra.get('persist_context')
-    if persist is not None:
-        persist(messages)
-    original_messages[:] = messages
-    return CommandResult(
-        type=CommandResultType.MESSAGE,
-        content=(
-            f'Compacted {pruned} old tool output(s), ~{freed} chars freed. '
-            f'The {keep_recent} most recent are kept in full.'),
-    )
+            content='Context compaction requires an active session log.')
+    try:
+        result = await operation(force=True, trigger='slash')
+        content = {
+            'completed':
+            'Context compacted. Original history is retained.',
+            'not_needed':
+            'Nothing to compact yet; the current context was retained.',
+            'failed':
+            'Summary failed. Original history is retained; retry /compact.',
+        }.get(result['status'], 'Context compaction is unavailable.')
+    except Exception as error:
+        content = f'Compaction failed ({type(error).__name__}). Original history is retained.'
+    return CommandResult(type=CommandResultType.MESSAGE, content=content)
 
 
 MODEL_CONTEXT_WINDOWS = {
@@ -256,6 +182,5 @@ async def cmd_context(ctx: CommandContext) -> CommandResult:
 def register_context_commands(router: CommandRouter) -> None:
     router.register(CMD_USAGE, cmd_usage)
     router.register(CMD_QUIT, cmd_quit)
-    router.register(CMD_TOOLS, cmd_tools)
     router.register(CMD_COMPACT, cmd_compact)
     router.register(CMD_CONTEXT, cmd_context)

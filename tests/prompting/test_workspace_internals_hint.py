@@ -120,3 +120,25 @@ def test_it_reaches_the_system_prompt(tmp_path):
     agent.session_log = SessionLog(workspace / 'sessions/sid', 'session_sid')
     agent.session_log.set_metadata_field('fork_after_seq', 6)
     assert 'branched session with an independent plan' in agent._build_system_content()
+
+
+def test_system_prompt_does_not_dump_config_playbook(tmp_path, monkeypatch):
+    """86119007: the memory/MCP playbook stays out of the always-on system prompt."""
+    home = tmp_path / 'ms_home'
+    home.mkdir()
+    monkeypatch.setenv('MS_AGENT_HOME', str(home))
+    workspace = tmp_path / 'mounted'
+    workspace.mkdir()
+    records = tmp_path / 'data' / 'projects' / 'p1' / 'sessions' / 'sid'
+    records.mkdir(parents=True)
+
+    section = _agent_for(
+        workspace, session_id='sid',
+        log_dir=records)._build_workspace_internals_section()
+
+    assert '## Configuring memory and MCP' not in section
+    assert '/memory on' not in section
+    assert '/mcp add' not in section
+    assert 'Do not add memory settings to' not in section
+    memory_md = str(workspace.resolve() / '.ms_agent' / 'memory' / 'MEMORY.md')
+    assert memory_md not in section

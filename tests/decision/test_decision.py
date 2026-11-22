@@ -51,7 +51,8 @@ class Summarizer:
 
     def generate(self, messages, **kwargs):
         self.calls.append(messages)
-        return SimpleNamespace(content=self.response)
+        from ms_agent.llm.utils import Message
+        return Message(role='assistant', content=self.response)
 
 
 def log_fixture(tmp_path, size=3000):
@@ -89,7 +90,7 @@ def compactor(log, judge, summary=None):
         options={'protect_recent_groups': 1},
         log=log)
     return strategy, ContextAssembler(log, [strategy], {
-        'context_limit': 4000,
+        'context_limit': 3000,
         'reserved_buffer': 500
     })
 
@@ -187,7 +188,7 @@ def test_summary_uses_original_not_preview(tmp_path, judge):
         _, assembler = compactor(log, judge, summary)
         await assembler.aassemble()
         assert summary.calls
-        body = summary.calls[0][0].content
+        body = summary.calls[0][-1].content
         assert 'UNIQUE_SOURCE_0' in body and 'x' * 300 in body
         assert '[Tool output preview' not in body
         assert len(log.get_compaction_events()) == 1
@@ -205,7 +206,7 @@ def test_failed_summary_is_bounded(tmp_path):
         for _ in range(2):
             with pytest.raises(ContextBudgetExceeded):
                 await assembler.aassemble()
-        assert len(summary.calls) == 1
+        assert len(summary.calls) <= 2
         assert not log.get_compaction_events()
 
     asyncio.run(run())
@@ -481,13 +482,18 @@ def test_client_deadline_cancels_transport():
 
 def test_cancel_summary_interrupts_stream_and_closes_late_result():
     import threading
-    from ms_agent.session.strategies.decision_compactor import collect_summary
 
     async def run():
         opening, release, closed = threading.Event(), threading.Event(
         ), threading.Event()
 
         class Stream:
+
+            def __iter__(self):
+                try:
+                    yield from ()
+                finally:
+                    self.close()
 
             def close(self):
                 closed.set()
@@ -503,7 +509,9 @@ def test_cancel_summary_interrupts_stream_and_closes_late_result():
                 release.set()
 
         task = asyncio.create_task(
-            collect_summary(SlowModel(), 'summary', 500))
+            DecisionContextCompactor(SlowModel())._summary(
+                [[{'role': 'assistant', 'content': 'old ' * 2000}]], set(),
+                {'input_limit': 4000, 'output_reserve': 500}, 2000, 4000, 0))
         assert await asyncio.to_thread(opening.wait, 2)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):

@@ -164,12 +164,41 @@ export function StepCard({
   const open = () => onOpenStep?.(step)
   const running = meta.status === 'running'
 
+  if (meta.status === 'skipped') {
+    return <button type="button" onClick={open}
+      className="flex min-h-9 items-center gap-2 text-left text-xs text-msa-text-3">
+      <span>{String(meta.tool ?? step.kind)}</span>
+      <span>· {t.followUp.skipped}</span>
+    </button>
+  }
+
   switch (step.kind) {
     case 'decision':
       return <StepCardShell icon={<MemoryIcon className="h-4 w-4" />}>
         {meta.action === 'degraded' ? t.decisionMode.degraded : meta.action === 'compacted' ? t.decisionMode.compacted : t.decisionMode.intervened}
       </StepCardShell>
 
+    case 'context_compaction': {
+      const before = meta.before_tokens
+      const after = meta.after_tokens
+      const hasUsage =
+        typeof before === 'number' && Number.isSafeInteger(before) && before > 0 &&
+        typeof after === 'number' && Number.isSafeInteger(after) && after >= 0
+      return (
+        <div className="text-xs leading-5 text-msa-text-3">
+          {t.chat.contextCompacted}
+          {meta.trigger === 'manual' || meta.trigger === 'slash' ? ` · ${t.context.manual}` : meta.trigger === 'auto' ? ` · ${t.context.automatic}` : ''}
+          {hasUsage ? (
+            <span className="ml-2 tabular-nums">
+              {t.chat.contextCompactedTokens
+                .replace('{before}', String(before))
+                .replace('{after}', String(after))}
+            </span>
+          ) : null}
+          {meta.memory_status === 'failed' && <div>{t.context.memoryFailed}</div>}
+        </div>
+      )
+    }
     case 'terminal':
       return (
         <TerminalStepCard step={step} onOpenStep={onOpenStep} isLast={isLast} />

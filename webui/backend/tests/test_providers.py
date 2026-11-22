@@ -134,14 +134,13 @@ def test_available_models_returns_the_discovered_ids(monkeypatch):
     assert seen["base_url"] and seen["protocol"] == "openai"
 
 
-def test_available_models_passes_through_the_empty_degraded_case(monkeypatch):
-    """Discovery is best-effort: fetch_model_ids answers [] for a missing key /
-    network error / non-standard endpoint, and that [] must reach the client as a
-    valid empty response (the UI then offers free-form entry)."""
+def test_available_models_is_empty_when_both_sources_are_unavailable(monkeypatch):
     from app.api.providers import available_models
     from app.core import model_discovery
 
     monkeypatch.setattr(model_discovery, "fetch_model_ids",
+                        lambda *_a, **_k: [])
+    monkeypatch.setattr("ms_agent.llm.model_catalog.list_model_ids",
                         lambda *_a, **_k: [])
     assert available_models("modelscope") == []
 

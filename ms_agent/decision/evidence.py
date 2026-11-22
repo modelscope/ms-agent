@@ -87,9 +87,13 @@ def evidence(rows) -> EvidenceSnapshot:
     start = next(
         (i for i in range(len(rows) - 1, -1, -1)
          if rows[i].get('role') == 'user' and not rows[i].get(
-             'decision_feedback') and not rows[i].get('context_summary')), 0)
+             'decision_feedback') and not rows[i].get('context_summary')
+             and rows[i].get('delivery') != 'steer'), 0)
     task = rows[start] if rows else {}
-    objective = text(task.get('content', ''))
+    objective = '\n'.join(text(r.get('content', '')) for r in rows[start:]
+                          if r.get('role') == 'user'
+                          and not r.get('decision_feedback')
+                          and not r.get('context_summary'))
     result = EvidenceSnapshot(
         str(task.get('seq', '0')),
         objective[:12000],

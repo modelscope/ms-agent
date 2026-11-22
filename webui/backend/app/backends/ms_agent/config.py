@@ -91,12 +91,8 @@ class MemoryConfigError(RuntimeError):
         self.code = code
 
 
-# Embedding models known to work per provider, verified against the exact call
-# shape mem0 sends (``dimensions`` + ``encoding_format=float``). A provider
-# absent here serves no /embeddings at all (verified: DeepSeek and Moonshot
-# 403 it, MiniMax returns no data, a custom Aliyun MaaS endpoint 400s
-# "Model not exist") — which is why "just use the chat provider" needs a
-# fallback: about half of the chat providers cannot embed.
+# Suggested defaults, not a live capability claim: availability depends on
+# the configured endpoint and account. Custom embedding IDs remain supported.
 _KNOWN_EMBED_MODELS: dict[str, str] = {
     "dashscope": "text-embedding-v4",
     "openai": "text-embedding-3-small",
@@ -213,13 +209,15 @@ def _resolve_embedder(settings: dict, mem_cfg: dict) -> dict:
     pid = explicit_pid or (settings.get("llm") or {}).get("provider") or ""
     entry = providers.get(pid) or {}
     model = mem_cfg.get("embed_model") or _KNOWN_EMBED_MODELS.get(pid)
-    if entry.get("api_key") and entry.get("base_url") and model:
+    from ms_agent.llm.credentials import CredentialResolver
+    api_key, base_url = CredentialResolver.resolve_fields(pid, entry)
+    if api_key and base_url and model:
         return {
             "mode": "provider",
             "provider": pid,
             "model": model,
-            "api_key": entry["api_key"],
-            "base_url": entry["base_url"],
+            "api_key": api_key,
+            "base_url": base_url,
             "fallback_reason": None,
         }
 
@@ -333,20 +331,25 @@ def _probe_embed_dimension(desc: dict) -> tuple[int, bool]:
 
     from openai import OpenAI
 
-    client = OpenAI(
-        api_key=desc["api_key"], base_url=desc["base_url"],
-        timeout=30, max_retries=0)
-    native = len(
-        client.embeddings.create(
-            model=desc["model"], input="dimension probe").data[0].embedding)
     try:
-        echoed = len(
-            client.embeddings.create(
-                model=desc["model"], input="dimension probe",
-                dimensions=native).data[0].embedding)
-        return native, echoed == native
-    except Exception:
-        return native, False
+        with OpenAI(api_key=desc["api_key"], base_url=desc["base_url"],
+                    timeout=15, max_retries=0) as client:
+            native = len(client.embeddings.create(
+                model=desc["model"], input="dimension probe").data[0].embedding)
+            if not native:
+                raise ValueError("Empty embedding")
+            try:
+                echoed = len(client.embeddings.create(
+                    model=desc["model"], input="dimension probe",
+                    dimensions=native).data[0].embedding)
+                return native, echoed == native
+            except Exception:
+                return native, False
+    except Exception as exc:
+        # Do not return raw HTTP bodies: gateways can echo credentials there.
+        raise MemoryConfigError("embed_probe_failed",
+            f"Embedding check failed for {desc.get('provider')}/{desc['model']} "
+            f"({type(exc).__name__}). Check the model, endpoint and credentials.") from exc
 
 
 def _openai_compat_base_url(provider: str) -> str | None:
@@ -388,7 +391,7 @@ def _mem0_base_url_key(provider: str) -> str | None:
     return key if key in params else None
 
 
-def _mem0_llm(settings: dict, mem_cfg: dict | None = None) -> dict | None:
+def _mem0_llm(settings: dict, mem_cfg: dict | None = None) -> dict:
     """The mem0 ``llm`` block used for per-round fact extraction.
 
     Defaults to the CONVERSATION model; an explicit choice in settings →
@@ -405,12 +408,13 @@ def _mem0_llm(settings: dict, mem_cfg: dict | None = None) -> dict | None:
     1. the provider already speaks OpenAI → mem0's ``openai`` provider;
     2. else mem0 has a native provider of the same name → use it, with the
        vendor's OpenAI-compatible url from the SDK registry;
-    3. else None — mem0 falls back to its own default, and we warn, because
-       picking a different vendor would mean guessing a model name it serves.
+    3. else a configuration error — never leave mem0 to select its own model.
     """
     mem_cfg = mem_cfg or {}
     override_pid = mem_cfg.get("llm_provider_id")
     override_model = mem_cfg.get("llm_model")
+    if bool(override_pid) != bool(override_model):
+        raise MemoryConfigError("llm_unavailable", "Select both a fact-extraction provider and model.")
     if override_pid and override_model:
         entry = (settings.get("providers") or {}).get(override_pid) or {}
         # Synthesize the same shape the follow-conversation path reads, so
@@ -425,16 +429,21 @@ def _mem0_llm(settings: dict, mem_cfg: dict | None = None) -> dict | None:
         llm = settings.get("llm") or {}
     model = llm.get("model")
     if not model:
-        return None
+        raise MemoryConfigError("llm_unavailable", "No model is configured for memory fact extraction.")
     pid = llm.get("provider") or ""
     entry = (settings.get("providers") or {}).get(pid) or {}
-    api_key = llm.get("api_key") or entry.get("api_key")
+    from ms_agent.llm.credentials import CredentialResolver
+    from ms_agent.llm.spec import TRANSPORT_OPENAI_COMPAT
+    fields = {**entry, **{k: v for k, v in llm.items() if v is not None}}
+    api_key, base_url = CredentialResolver.resolve_fields(pid, fields)
     if not api_key:
-        logger.warning("no api key for memory fact extraction (provider %r)", pid)
-        return None
+        raise MemoryConfigError("llm_unavailable",
+                                f"No API key is available for memory fact extraction ({pid}).")
 
-    if entry.get("protocol") == "openai":
-        base_url = llm.get("base_url") or entry.get("base_url")
+    protocol = fields.get("protocol") or (
+        "openai" if CredentialResolver.provider_spec(pid).transport == TRANSPORT_OPENAI_COMPAT
+        else "anthropic")
+    if protocol == "openai":
         if base_url:
             return {
                 "provider": "openai",
@@ -453,14 +462,9 @@ def _mem0_llm(settings: dict, mem_cfg: dict | None = None) -> dict | None:
             config[base_url_key] = base_url
         return {"provider": pid, "config": config}
 
-    logger.warning(
-        "provider %r speaks %r and mem0 has no native adapter for it; leaving "
-        "the fact-extraction LLM to mem0's default — vector memory will likely "
-        "not be written",
-        pid,
-        entry.get("protocol") or "unknown",
-    )
-    return None
+    raise MemoryConfigError(
+        "llm_protocol_unsupported",
+        f"Memory fact extraction does not support {pid} with protocol {protocol}.")
 
 
 def ensure_embedder_usable(desc: dict) -> None:
@@ -569,6 +573,7 @@ def _mem0_options(project) -> dict:
     (agent build)."""
     settings = _read_settings()
     mem_cfg = _project_memory_models(project)
+    _mem0_llm(settings, mem_cfg)  # fail before probing/writing a store identity
     desc = _resolve_embedder(settings, mem_cfg)
     identity = _resolve_embedder_identity(project, desc)
     return _mem0_options_for(project, settings, mem_cfg, desc, identity)
@@ -632,9 +637,7 @@ def _mem0_options_for(project, settings: dict, mem_cfg: dict, desc: dict,
         # and sits outside the directory that is supposed to hold its data.
         "history_db_path": str(memory_dir(project.path) / "history.db"),
     }
-    llm = _mem0_llm(settings, mem_cfg)
-    if llm is not None:
-        options["llm"] = llm
+    options["llm"] = _mem0_llm(settings, mem_cfg)
     return options
 
 
@@ -669,6 +672,7 @@ def _apply_webui_memory(config, project):
             "add_after_step": {"user_id": pid},
         }
         if backend == "vector":
+            from app.backends.ms_agent.memory_configuration import record_build_error
             recall = (_project_memory_models(project) or {}).get("recall_top_k")
             if isinstance(recall, int) and recall > 0:
                 node["recall_top_k"] = recall
@@ -679,11 +683,15 @@ def _apply_webui_memory(config, project):
                     node["storage"]["backend"] = "mem0"
                     node["mem0"] = options
                     node_ok = True
+                    record_build_error(project, None)
                 except MemoryConfigError as e:
+                    record_build_error(project, e)
                     logger.warning(
                         "vector memory disabled for project %s this session "
                         "(%s): %s", pid, e.code, e)
-                except Exception:
+                except Exception as e:
+                    record_build_error(project, MemoryConfigError(
+                        "memory_build_failed", f"Vector memory could not start ({type(e).__name__})."))
                     logger.warning(
                         "vector memory disabled for project %s this session",
                         pid, exc_info=True)
@@ -722,21 +730,47 @@ _PERMISSION_WHITELIST = [
 ]
 
 
+def read_project_permission_mode(meta: dict | None) -> str:
+    """Canonical mode for a project sidecar.
+
+    Sidecars written before the rename stored ``restricted`` (ask the user)
+    and ``auto`` (full access) and have no ``permission_mode_v``. Those map
+    to ``ask`` and ``full-access``. A write stamps version 2, after which
+    ``auto`` means the model decides uncertain calls.
+    """
+    meta = meta or {}
+    raw = meta.get("permission_mode")
+    legacy = int(meta.get("permission_mode_v") or 1) < 2
+    if legacy:
+        value = (raw or "restricted").strip().lower()
+        if value in ("", "restricted", "interactive", "ask"):
+            return "ask"
+        if value in ("auto", "full", "full_access", "full-access", "strict"):
+            return "full-access"
+        return "ask"
+    from ms_agent.permission.config import normalize_permission_mode
+
+    try:
+        return normalize_permission_mode(raw or "ask")
+    except ValueError:
+        return "ask"
+
+
 def _apply_webui_permission(config, project_mode: str | None = None):
-    """Default this phase to the SDK's restricted (ask) mode.
+    """Default this phase to ask mode.
 
     Non-whitelisted tools suspend on the session's WebPermissionHandler, which
     surfaces an authorization card over SSE and times out to deny. Explicit
     `permission.*` from settings.json / project config still wins — we only
     fill blanks. ``project_mode`` is the UI's per-project override (the
-    composer's restricted/full-access selector, stored in the project sidecar):
-    an explicit user choice, so it beats the fill-blanks default."""
+    composer's ask / auto / full-access selector, already canonical): an
+    explicit user choice, so it beats the fill-blanks default."""
     from omegaconf import OmegaConf
 
-    if project_mode in ("restricted", "auto"):
+    if project_mode in ("ask", "auto", "full-access"):
         OmegaConf.update(config, "permission.mode", project_mode, merge=True)
     elif OmegaConf.select(config, "permission.mode", default=None) is None:
-        OmegaConf.update(config, "permission.mode", "restricted", merge=True)
+        OmegaConf.update(config, "permission.mode", "ask", merge=True)
     if OmegaConf.select(config, "permission.whitelist", default=None) is None:
         OmegaConf.update(
             config, "permission.whitelist", list(_PERMISSION_WHITELIST), merge=True
@@ -748,9 +782,9 @@ def provider_base_url(provider: str) -> str:
     """The endpoint we will actually call for ``provider`` (user override first,
     then the built-in spec's default). The thinking dialect is decided by the
     host, so this — not the provider id — is what the SDK needs."""
-    provider = (provider or "").lower()
-    entry = (_read_settings().get("providers") or {}).get(provider) or {}
-    return entry.get("base_url") or _openai_compat_base_url(provider) or ""
+    from ms_agent.config.model_settings import resolve_model_settings
+
+    return resolve_model_settings(_read_settings(), provider, "").get("base_url") or ""
 
 
 def thinking_plan(
@@ -758,6 +792,7 @@ def thinking_plan(
     provider: str,
     effort: Any = "auto",
     existing: dict | None = None,
+    model: str = "",
 ) -> dict:
     """What the SDK will send for ``effort`` on this provider's endpoint.
 
@@ -775,6 +810,8 @@ def thinking_plan(
     return plan(effort,
                 base_url=provider_base_url(provider),
                 protocol=(protocol or "").lower(),
+                provider_id=provider,
+                model=model,
                 existing=existing)
 
 
@@ -915,6 +952,11 @@ def _apply_webui_generation_params(config):
     if supports_vision is not None:
         OmegaConf.update(
             config, "llm.supports_vision", supports_vision, merge=True)
+    from app.backends.ms_agent.mapping import encode_model_id
+
+    meta = _read_metadata("models", encode_model_id(provider, model)) or {}
+    if meta.get("context_limit") is not None:
+        OmegaConf.update(config, "llm.context_limit", meta["context_limit"], merge=True)
     return config
 
 
@@ -939,43 +981,6 @@ def session_has_history(project, session) -> bool:
 _MCP_META = frozenset({
     "source", "meta", "_scope", "mcp", "implementation", "trust_remote_code", "_removed",
 })
-
-
-def _mcp_reachable(server: dict, timeout: float = 2.0) -> bool:
-    """Cheap pre-flight so an unreachable MCP can't break the chat turn.
-
-    Remote servers: TCP-connect to host:port. stdio servers: the command must
-    resolve on PATH (or be an existing file). Reachable-but-broken servers still
-    pass (rare); the common 'wrong/dead URL or missing command' case is dropped.
-    """
-    import shutil
-    import socket
-    from urllib.parse import urlparse
-
-    url = server.get("url")
-    if url:
-        try:
-            u = urlparse(url)
-            if not u.hostname:
-                return False
-            port = u.port or (443 if u.scheme in ("https", "wss") else 80)
-            with socket.create_connection((u.hostname, port), timeout=timeout):
-                return True
-        except Exception:
-            return False
-    command = server.get("command")
-    if command:
-        return bool(shutil.which(command)) or os.path.isfile(command)
-    return True  # unknown shape — don't drop
-
-
-def _healthy_mcp_config(mcp_config: dict | None) -> dict:
-    servers = (mcp_config or {}).get("mcpServers") or {}
-    healthy = {name: s for name, s in servers.items() if _mcp_reachable(s)}
-    dropped = set(servers) - set(healthy)
-    if dropped:
-        logger.warning("skipping unreachable MCP server(s): %s", ", ".join(sorted(dropped)))
-    return {"mcpServers": healthy} if healthy else {}
 
 
 def build_agent(project, session, *, event_sink, input_source, mcp_config=None,
@@ -1055,7 +1060,7 @@ def _build_agent(project, session, *, event_sink, input_source, mcp_config=None,
     from app.backends.ms_agent import sidecar
 
     meta = _read_metadata("projects", project.id, {}) or {}
-    cfg = _apply_webui_permission(cfg, meta.get("permission_mode"))
+    cfg = _apply_webui_permission(cfg, read_project_permission_mode(meta))
 
     # Route-A shaping (see tui/app.py::_prepare_config).
     shaping = {
@@ -1110,14 +1115,10 @@ def _build_agent(project, session, *, event_sink, input_source, mcp_config=None,
     except Exception:
         logger.debug("skill change tracker baseline failed", exc_info=True)
 
-    # MCP: use the SDK's standard mcp_config path (enabled servers only) — far
-    # more robust to invalid servers than injecting an MCPRuntime (whose remote
-    # client teardown throws cross-task anyio errors). The registry pre-probes
-    # servers (connect+initialize) and passes only healthy ones as `mcp_config`;
-    # fall back to a cheap TCP check for direct callers (tests). Live
-    # enable/disable is sacrificed — a toggle applies on the next session build.
+    # Optional MCP preparation is isolated in the SDK. Independent health
+    # probes must not permanently remove tools from an otherwise live session.
     if mcp_config is None:
-        mcp_config = _healthy_mcp_config(resolve_mcp_config(h, project.path, None))
+        mcp_config = resolve_mcp_config(h, project.path, None)
 
     resume = session_has_history(project, session)
     agent = LLMAgent(

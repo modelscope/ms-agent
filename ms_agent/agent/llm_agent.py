@@ -25,6 +25,7 @@ from ms_agent.llm.llm import LLM
 from ms_agent.llm.message_text import (append_text, flatten_message_text,
                                        prepend_text)
 from ms_agent.llm.utils import Message, ToolResult
+from ms_agent.llm.vision import _as_bool
 from ms_agent.memory import Memory, get_memory_meta_safe, memory_mapping
 from ms_agent.memory.memory_manager import SharedMemoryManager
 from ms_agent.personalization.injector import PersonalizationInjector
@@ -34,7 +35,6 @@ from ms_agent.project.paths import global_home
 from ms_agent.prompting import workspace_files
 from ms_agent.prompting.builtin import (BASE_AGENT_PROMPT, LIVE_FILES_HINT,
                                         MEMORY_TOOL_GUIDANCE)
-from ms_agent.llm.vision import _as_bool
 from ms_agent.prompting.model_switch import (capability_signature,
                                              render_capability_change_notice)
 from ms_agent.rag.base import RAG
@@ -48,7 +48,7 @@ from ms_agent.skill.search import SkillSearchEngine
 from ms_agent.skill.skill_tools import SkillToolSet
 from ms_agent.tools import ToolManager
 from ms_agent.ui.events import (ContentDelta, ContentEnd, ContextCompacted,
-                                ErrorRaised, ImageDelivered, PlanEntry,
+                                ErrorRaised, ImageDelivered, Notice, PlanEntry,
                                 PlanUpdated, ReasoningDelta, ReasoningEnded,
                                 ReasoningStarted, ToolCallCompleted,
                                 ToolCallComposing, ToolCallStarted,
@@ -72,6 +72,16 @@ _MISSING_ENABLE_SNAPSHOTS = object()
 # metadata (not this literal), so the placeholder never needs localization.
 INTERRUPTED_PLACEHOLDER = '[interrupted]'
 _INTERRUPTED_TOOL_RESULT = '[Interrupted: tool execution was cancelled]'
+# One keyless episode prints the setup paragraph once. Startup and the
+# first message share that copy. Building a client, or clearing a key,
+# ends the episode so the next one can speak.
+_credential_notice_sent = False
+
+
+def reset_credential_notice() -> None:
+    """End the current keyless episode so the next one can speak once."""
+    global _credential_notice_sent
+    _credential_notice_sent = False
 
 
 def build_partial_round_records(
@@ -213,9 +223,10 @@ class LLMAgent(Agent):
     def resolve_enable_snapshots(config: Any) -> bool:
         """Resolve whether to take automatic pre-task snapshots.
 
-        Disabled by default for all agents. An explicit ``enable_snapshots``
-        in config always wins (including string forms like ``\"false\"``
-        coerced to boolean).
+        Default is off: there is no CLI/TUI rollback UI, and snapshotting
+        the work tree (especially ``$HOME``) burns disk. Set
+        ``enable_snapshots: true`` to opt in. An explicit value always wins
+        (including string forms like ``\"false\"`` coerced to boolean).
         """
         if OmegaConf.is_config(config):
             raw = OmegaConf.select(
@@ -266,6 +277,7 @@ class LLMAgent(Agent):
         self.callbacks: List[Callback] = []
         self.tool_manager: Optional[ToolManager] = None
         self.task_manager: Optional[TaskManager] = None
+        self._tools_cleaned = False
         self.memory_tools: List[Memory] = []
         self.rag: Optional[RAG] = None
         self.knowledge_search: Optional[SirchmunkSearch] = None
@@ -321,6 +333,7 @@ class LLMAgent(Agent):
         # the terminal — the enabling seam for the native (route-A) lifecycle.
         # When None, the legacy sync console_io / input() path is used.
         self._input_source = kwargs.get('input_source', None)
+        self._input_controller = kwargs.get('input_controller', None)
 
         # Attachments belonging to the FIRST user turn, parked between the
         # interactive read in run_loop and create_messages (whose input is a
@@ -337,6 +350,12 @@ class LLMAgent(Agent):
         # session sidecar or the first build). Drift against this baseline
         # fires a durable update notice on the next user turn.
         self._prompt_surface: Optional[Dict[str, str]] = None
+        # TUI assigns this. Called after the user turn is in hand and before
+        # it is persisted, and once before the opening create_messages.
+        # None on WebUI and every other host.
+        self._on_user_turn = None
+        self._llm_fp: Optional[str] = None
+        self._mcp_fp: Optional[str] = None
 
     async def prepare_skills(self):
         """Initialize the skill system from config.skills.
@@ -400,6 +419,16 @@ class LLMAgent(Agent):
         if getattr(self, '_plugin_runtime', None) is not None:
             self._plugin_runtime.skill_runtime = self._skill_runtime
             self._plugin_runtime._sync_skill_runtime(self.config)
+        self._publish_skill_runtime()
+
+    def _publish_skill_runtime(self) -> None:
+        """Slash commands see Runtime, the same way they see MCP.
+
+        Disk scan stays the fallback until a session has loaded skills.
+        """
+        session = getattr(self, 'runtime', None)
+        if session is not None and self._skill_runtime is not None:
+            session._skill_runtime = self._skill_runtime
 
         # Wire /skill-name slash commands. Without this the SkillCommandBridge
         # is never registered and `/skill-id args` falls through to the model as
@@ -459,7 +488,8 @@ class LLMAgent(Agent):
             if self._skill_runtime is not None:
                 skill_section = self._skill_runtime.build_skill_section()
             else:
-                skill_section = self._skill_injector.build_skill_prompt_section()
+                skill_section = self._skill_injector.build_skill_prompt_section(
+                )
             if skill_section:
                 content += '\n\n' + skill_section
 
@@ -475,10 +505,10 @@ class LLMAgent(Agent):
         would be false. The directory-existence check is only the fallback for
         callers that run without a session log.
         """
-        from ms_agent.prompting.builtin import (TRANSCRIPTS_INSIDE,
-                                                TRANSCRIPTS_OUTSIDE,
+        from ms_agent.prompting.builtin import (FORK_PLAN_HINT,
                                                 SESSION_PLAN_HINT,
-                                                FORK_PLAN_HINT,
+                                                TRANSCRIPTS_INSIDE,
+                                                TRANSCRIPTS_OUTSIDE,
                                                 WORKSPACE_RECORDS_HINT)
         from ms_agent.utils.workspace_context import resolve_workspace_root
 
@@ -514,9 +544,10 @@ class LLMAgent(Agent):
             session_dir = Path(directory).name if directory else None
             if not session_dir:
                 session_dir = getattr(self.runtime, 'session_id', None)
-            transcripts_where = TRANSCRIPTS_INSIDE.format(session_line=(
-                f' This conversation is `sessions/{session_dir}/`.'
-                if session_dir else ''))
+            transcripts_where = TRANSCRIPTS_INSIDE.format(
+                session_line=(
+                    f' This conversation is `sessions/{session_dir}/`.'
+                    if session_dir else ''))
         else:
             transcripts_where = TRANSCRIPTS_OUTSIDE.format(
                 session_dir=str(Path(directory)))
@@ -528,13 +559,16 @@ class LLMAgent(Agent):
             plan_json = getattr(todo, 'plan_filename', None)
             plan_md = getattr(todo, 'plan_md_filename', None)
             if plan_json and plan_md:
-                output_dir = str(getattr(self.config, 'output_dir', workspace_root))
+                output_dir = str(
+                    getattr(self.config, 'output_dir', workspace_root))
                 section += '\n\n' + SESSION_PLAN_HINT.format(
-                    plan_json=os.path.abspath(os.path.join(output_dir, plan_json)),
+                    plan_json=os.path.abspath(
+                        os.path.join(output_dir, plan_json)),
                     plan_md=os.path.abspath(os.path.join(output_dir, plan_md)))
                 get_metadata = getattr(
                     getattr(self, 'session_log', None), 'get_metadata', None)
-                if get_metadata and get_metadata().get('fork_after_seq') is not None:
+                if get_metadata and get_metadata().get(
+                        'fork_after_seq') is not None:
                     section += ' ' + FORK_PLAN_HINT
         return section
 
@@ -734,7 +768,6 @@ class LLMAgent(Agent):
                         self.callbacks.append(callbacks_mapping[_callback](
                             self.config,
                             persist_context=self._persist_manual_compaction,
-                            compact_context=self._compact_context,
                             command_router=self._get_command_router(),
                             input_source=self._input_source,
                             event_sink=self._event_sink))
@@ -751,7 +784,6 @@ class LLMAgent(Agent):
                 input_cls(
                     self.config,
                     persist_context=self._persist_manual_compaction,
-                    compact_context=self._compact_context,
                     command_router=self._get_command_router(),
                     input_source=self._input_source,
                     event_sink=self._event_sink))
@@ -783,6 +815,9 @@ class LLMAgent(Agent):
         await self.loop_callback('on_tool_call', messages)
 
     async def after_tool_call(self, messages: List[Message], **kwargs):
+        if await self._consume_steering(messages):
+            await self.loop_callback('after_tool_call', messages)
+            return
         assistant = messages[-1]
         would_stop = assistant.role == 'assistant' and not assistant.tool_calls
         supervisor = getattr(self, '_decision_supervisor', None)
@@ -872,6 +907,11 @@ class LLMAgent(Agent):
                 if isinstance(assistant.content, str) else '',
                 hard_stop=self.runtime.should_stop
                 or self.runtime.round >= self.max_chat_round)
+            # A correction arriving during review takes precedence over
+            # feedback computed from the earlier task state.
+            if await self._consume_steering(messages):
+                await self.loop_callback('after_tool_call', messages)
+                return
             if feedback:
                 message = Message(role='user', content=feedback)
                 message._decision_feedback = True
@@ -880,15 +920,82 @@ class LLMAgent(Agent):
                 await self.loop_callback('after_tool_call', messages)
                 return
         if would_stop:
-            # Only accepted replies become durable memory; a correction can
-            # invalidate a candidate answer. This still precedes input waiting.
-            await self.add_memory(
-                messages, add_type='add_after_step', **kwargs)
+            # Stop hooks can await arbitrary work. Recheck after that await,
+            # then close admission synchronously with the final decision.
+            if await self._consume_steering(messages):
+                await self.loop_callback('after_tool_call', messages)
+                return
+            controller = getattr(self, '_input_controller', None)
+            if controller is not None:
+                controller.finish()
+            await self.add_memory(messages, add_type='add_after_step', **kwargs)
             self.runtime.should_stop = True
             if self.session_log is not None:
                 self.session_log.record_turn_checkpoint(
                     self.runtime.round, self._checkpoint_state())
         await self.loop_callback('after_tool_call', messages)
+
+    def _prepare_controlled_input(self, messages):
+        controller = getattr(self, '_input_controller', None)
+        if not controller or not controller.active_input or not messages:
+            return
+        message = messages[-1]
+        item = controller.inputs[controller.active_input]
+        if (message.role != 'user' or item['state'] != 'pending'
+                or getattr(message, 'input_id', None)):
+            return
+        message.input_id = item['input_id']
+        message._input_prepared = True
+        from ms_agent.hooks.context import HookAttachment
+        message.hook_attachments = [
+            HookAttachment(**a)
+            for a in item['prepared'].get('hook_attachments', [])
+        ]
+
+    def _append_session_message(self, message):
+        controller = getattr(self, '_input_controller', None)
+        row = self._msg_to_dict(message)
+        if controller is not None:
+            seq = controller.append_message(row)
+            input_id = getattr(message, 'input_id', None)
+            if seq is not None and input_id and self._event_sink is not None:
+                from ms_agent.ui.events import InputDelivered
+                self._event_sink.emit(
+                    InputDelivered(
+                        input_id=input_id,
+                        turn_id=controller.active_turn,
+                        segment_id=controller.segment_id,
+                        message=controller.inputs[input_id]['request']
+                        ['message']))
+            return seq
+        return self.session_log.append(row)
+
+    async def _consume_steering(self, messages):
+        controller = getattr(self, '_input_controller', None)
+        if controller is None or not controller.has_steering():
+            return False
+        from uuid import uuid4
+
+        from ms_agent.hooks.context import HookAttachment
+        items = controller.take_steering()
+        for item in items:
+            prepared = item['prepared']
+            message = Message(
+                role='user',
+                content=prepared['prompt'],
+                attachments=prepared.get('attachments') or [])
+            message.input_id = item['input_id']
+            message._input_prepared = True
+            message.hook_attachments = [
+                HookAttachment(**a)
+                for a in prepared.get('hook_attachments', [])
+            ]
+            messages.append(message)
+            await self._attach_memory_recall(messages)
+            controller.segment_id = uuid4().hex
+            self._append_session_message(message)
+        self.runtime.should_stop = False
+        return True
 
     async def loop_callback(self, point, messages: List[Message]):
         """
@@ -962,7 +1069,8 @@ class LLMAgent(Agent):
             messages.append(results[index])
         return messages
 
-    def _emit_tool_completed(self, message: Message, duration_s: float) -> None:
+    def _emit_tool_completed(self, message: Message,
+                             duration_s: float) -> None:
         """Report one finished tool call to the UI (and the plan it may carry)."""
         if self._event_sink is None:
             return
@@ -975,8 +1083,14 @@ class LLMAgent(Agent):
                 call_id=str(getattr(message, 'tool_call_id', '') or ''),
                 name=str(getattr(message, 'name', '') or ''),
                 result=content or '',
+                attachments=list(message.attachments or []),
                 error=(content or 'tool call failed') if is_error else None,
-                duration_s=round(duration_s, 3)))
+                duration_s=round(duration_s, 3),
+                execution_status=getattr(message, 'execution_status',
+                                         'completed'),
+                skip_reason=getattr(message, 'skip_reason', None)))
+        if getattr(message, 'execution_status', None) == 'skipped':
+            return
         # todo/split_task tool results drive the plan panel.
         plan = self._extract_plan_from_tool_result(message)
         if plan is not None:
@@ -988,21 +1102,24 @@ class LLMAgent(Agent):
         - An explicitly injected handler (``set_permission_handler`` / the
           ``permission_handler`` kwarg) always wins — this is how the TUI /
           WebUI / Server supply their own confirmation UI.
-        - ``interactive`` (alias ``restricted``) in an interactive terminal
-          session -> ``CLIPermissionHandler`` (the ``[y/s/a/e/n]`` prompt),
-          so non-whitelisted tools actually ask the user.
-        - Everything else (``auto`` / ``strict`` / non-interactive) ->
-          ``AutoPermissionHandler`` (SafetyGuard still enforces the floor).
+        - ``ask`` (aliases ``restricted`` / ``interactive``) in an interactive
+          terminal session -> ``CLIPermissionHandler`` (the ``[y/s/a/e/n]``
+          prompt), so non-whitelisted tools actually ask the user. ``auto``
+          uses the same prompt so an uncertain model decision can escalate.
+        - ``full-access`` and non-interactive runs -> ``AutoPermissionHandler``
+          (SafetyGuard still enforces the floor).
         """
         if self._permission_handler is not None:
             return self._permission_handler
         from ms_agent.permission import (AutoPermissionHandler,
-                                         CLIPermissionHandler)
+                                         CLIPermissionHandler,
+                                         normalize_permission_mode)
 
-        # ``PermissionConfig.from_dict`` already normalizes ``restricted`` ->
-        # ``interactive``; accept both so a direct caller passing the raw alias
-        # still gets the interactive prompt (not a silent AutoPermissionHandler).
-        if mode in ('interactive', 'restricted') and self._interactive:
+        try:
+            canonical = normalize_permission_mode(mode)
+        except ValueError:
+            canonical = mode
+        if canonical in ('ask', 'auto') and self._interactive:
             return CLIPermissionHandler()
         return AutoPermissionHandler()
 
@@ -1034,10 +1151,27 @@ class LLMAgent(Agent):
 
         handler = self._select_permission_handler(perm_config.mode)
         memory = PermissionMemory(project_path=workspace_root)
+        provider = getattr(self, '_permission_decision_provider', None)
+        if provider is None and perm_config.mode == 'auto':
+            provider = self._default_permission_provider(perm_config)
         enforcer = PermissionEnforcer(
-            config=perm_config, handler=handler, memory=memory)
+            config=perm_config,
+            handler=handler,
+            memory=memory,
+            provider=provider,
+        )
 
         return safety_guard, enforcer, perm_config
+
+    def _default_permission_provider(self, perm_config):
+        """The session model, unless config asks for a separate approver."""
+        if perm_config.decision_provider == 'agent':
+            return None
+        llm = getattr(self, 'llm', None)
+        if llm is None or getattr(llm, '_setup_stub', False):
+            return None
+        from ms_agent.permission.provider import LlmDecisionProvider
+        return LlmDecisionProvider(llm)
 
     def set_permission_handler(self, handler) -> None:
         """Inject a custom PermissionHandler (TUI/WebUI/Server) before run."""
@@ -1048,14 +1182,14 @@ class LLMAgent(Agent):
 
         Mutates the live ToolManager + enforcer so the next tool call uses the
         new mode without rebuilding the agent (``PermissionConfig`` is frozen,
-        so a replaced copy is swapped in). ``restricted`` normalizes to
-        ``interactive`` (the canonical asking mode).
+        so a replaced copy is swapped in). ``restricted`` and ``interactive``
+        normalize to ``ask``; ``strict`` normalizes to ``full-access``.
         """
         from dataclasses import replace
-        mode = {'restricted': 'interactive'}.get(mode, mode)
-        if mode not in ('auto', 'strict', 'interactive'):
-            raise ValueError(f"Unknown permission mode '{mode}' "
-                             '(auto | restricted | strict | interactive)')
+
+        from ms_agent.permission.config import normalize_permission_mode
+
+        mode = normalize_permission_mode(mode)
         tm = self.tool_manager
         if tm is not None:
             tm._permission_mode = mode
@@ -1065,6 +1199,10 @@ class LLMAgent(Agent):
             enf = getattr(tm, '_permission_enforcer', None)
             if enf is not None and getattr(enf, '_config', None) is not None:
                 enf._config = replace(enf._config, mode=mode)
+                if (mode == 'auto'
+                        and getattr(enf, '_provider', None) is None):
+                    enf._provider = self._default_permission_provider(
+                        enf._config)
         return mode
 
     async def prepare_tools(self):
@@ -1076,6 +1214,7 @@ class LLMAgent(Agent):
         from ms_agent.plugins.runtime import PluginRuntime
         from ms_agent.utils.workspace_context import resolve_workspace_root
 
+        self._tools_cleaned = False
         self.task_manager = TaskManager()
 
         safety_guard, permission_enforcer, perm_config = self._build_permission_objects(
@@ -1116,6 +1255,15 @@ class LLMAgent(Agent):
             hook_registries,
         )
         mcp_rt = self.mcp_runtime
+        if mcp_rt is not None and getattr(self, 'runtime', None) is not None:
+            # Slash commands only see this Runtime, not the agent. The failure
+            # record /mcp list and /mcp get read lives on the MCP runtime.
+            self.runtime._mcp_runtime = mcp_rt
+        # The TUI still has to show its prompt. Waiting here would put a
+        # cold npx in front of the first keystroke. That session waits on
+        # the first message instead. A one-shot run has no later message,
+        # so it waits now, and only for a few seconds.
+        wait_for_mcp = getattr(self, '_on_user_turn', None) is None
         if mcp_rt is not None and plugin_mcp_servers:
             from ms_agent.config.mcp_schema import ResolvedMCPConfig
             merged_servers = {
@@ -1124,7 +1272,9 @@ class LLMAgent(Agent):
             }
             merged_servers.update(plugin_mcp_servers)
             await mcp_rt.apply_config(
-                ResolvedMCPConfig(mcp_servers=merged_servers))
+                ResolvedMCPConfig(mcp_servers=merged_servers),
+                wait=wait_for_mcp,
+            )
 
         self.tool_manager = ToolManager(
             self.config,
@@ -1138,7 +1288,7 @@ class LLMAgent(Agent):
             permission_config=perm_config,
             trust_remote_code=self.trust_remote_code,
             mcp_callable_check=mcp_rt.is_callable if mcp_rt else None,
-            mcp_failure_handler=mcp_rt.record_failure if mcp_rt else None,
+            mcp_failure_handler=self._on_mcp_failure if mcp_rt else None,
             mcp_unavailable_detail=mcp_rt.unavailable_detail
             if mcp_rt else None,
             mcp_success_handler=mcp_rt.record_success if mcp_rt else None,
@@ -1155,8 +1305,10 @@ class LLMAgent(Agent):
         if not self.runtime.session_id:
             self.runtime.session_id = hook_runtime.session_id
         if mcp_rt is not None and not mcp_rt.is_started:
-            await mcp_rt.start()
+            await mcp_rt.start(wait=wait_for_mcp)
         await self.tool_manager.connect()
+        if self.runtime is not None:
+            self.runtime.tool_manager = self.tool_manager
         if mcp_rt is not None:
             mcp_rt.bind_tool_manager(self.tool_manager)
             await mcp_rt.sync_tools()
@@ -1165,15 +1317,40 @@ class LLMAgent(Agent):
                 tool.set_task_manager(self.task_manager)
 
     async def cleanup_tools(self):
-        """Cleanup resources used by the tool manager."""
-        if self._decision_client is not None:
-            await self._decision_client.aclose()
+        """Best-effort teardown for MCP transports and extra tools.
+
+        ``streamablehttp_client`` (MCP SDK) holds an anyio cancel scope that
+        must be exited by the same task that entered it. Cancelling that
+        owner, or letting ``CancelledError`` leak out of jupyter kernel
+        shutdown, prints a crash-like traceback on TUI ``/quit``. Those
+        errors are teardown noise — swallow them here.
+        """
+        if self._tools_cleaned:
+            return
+        self._tools_cleaned = True
+
+        async def _quiet(awaitable, label: str) -> None:
+            try:
+                await awaitable
+            except asyncio.CancelledError:
+                logger.debug('%s interrupted during cleanup', label)
+            except Exception as exc:  # noqa: BLE001 - never fail the session on teardown
+                logger.debug('%s failed during cleanup: %s', label, exc)
+
         if self.task_manager is not None:
-            self.task_manager.kill_all()
+            try:
+                self.task_manager.kill_all()
+            except Exception:  # noqa: BLE001
+                logger.debug(
+                    'task_manager.kill_all failed during cleanup',
+                    exc_info=True)
         if self.mcp_runtime is not None:
-            await self.mcp_runtime.stop()
+            await _quiet(self.mcp_runtime.stop(), 'mcp_runtime.stop')
+        if getattr(self, '_decision_client', None) is not None:
+            await _quiet(self._decision_client.aclose(), 'decision client')
+
         if self.tool_manager is not None:
-            await self.tool_manager.cleanup()
+            await _quiet(self.tool_manager.cleanup(), 'tool_manager.cleanup')
         # Drain scheduled memory ingestion so a teardown right after the last
         # turn cannot lose its write. Flush only — memory instances are shared
         # across agents of the same store (SharedMemoryManager), so CLOSING
@@ -1185,8 +1362,16 @@ class LLMAgent(Agent):
             if flush is not None:
                 try:
                     await flush(timeout=15)
-                except Exception as e:  # noqa: BLE001 - cleanup is best-effort
-                    logger.warning(f'memory flush on cleanup failed: {e}')
+                except (asyncio.CancelledError,
+                        Exception) as e:  # noqa: BLE001
+                    logger.debug('memory flush on cleanup failed: %s', e)
+            note = getattr(tool, 'user_notice', None)
+            if note:
+                self._emit_user_notice(str(note))
+                try:
+                    tool.user_notice = None
+                except Exception:
+                    logger.debug('clear memory notice failed', exc_info=True)
 
     @property
     def stream(self):
@@ -1334,7 +1519,8 @@ class LLMAgent(Agent):
         """
         if self._event_sink is None:
             return
-        for index, call in enumerate(getattr(message, 'tool_calls', None) or []):
+        for index, call in enumerate(
+                getattr(message, 'tool_calls', None) or []):
             if not isinstance(call, dict):
                 continue
             name = str(call.get('tool_name') or '')
@@ -1393,9 +1579,12 @@ class LLMAgent(Agent):
         if self.session_log is not None:
             try:
                 self.session_log.record_image_delivery([{
-                    'path': getattr(d, 'path', ''),
-                    'state': getattr(d, 'state', ''),
-                    'reason': getattr(d, 'reason', ''),
+                    'path':
+                    getattr(d, 'path', ''),
+                    'state':
+                    getattr(d, 'state', ''),
+                    'reason':
+                    getattr(d, 'reason', ''),
                 } for d in deliveries])
             except Exception:  # noqa: BLE001 — bookkeeping must not fail a turn
                 logger.warning('persist image delivery failed', exc_info=True)
@@ -1496,6 +1685,20 @@ class LLMAgent(Agent):
         if configured:
             return False
         return sys.stdin.isatty()
+
+    def _awaits_credentials(self) -> bool:
+        """Whether this surface can pause the turn and collect an API key.
+
+        WebUI sets ``interactive`` so the session stays multi-turn, and its
+        input source cannot host the setup prompt. Only a terminal (TUI input,
+        or CLI stdin) waits. Everywhere else a missing key is an error.
+        """
+        if not self._interactive:
+            return False
+        source = self._input_source
+        if source is None:
+            return True
+        return bool(getattr(source, 'supports_credential_prompt', True))
 
     def _has_restorable_history(self) -> bool:
         """True when this run should resume from the session log rather than
@@ -1919,33 +2122,16 @@ class LLMAgent(Agent):
         if self.session_log is not None:
             self.session_log.commit_compaction(
                 [self._msg_to_dict(m) for m in messages], {
-                    'strategy': 'manual_compaction',
+                    'strategy': 'manual_tool_pruner',
                     'boundary_before': self.session_log.last_consolidated
                 })
-
-    async def _compact_context(self, messages: List[Message]) -> str:
-        """Manual compaction uses the same summary path, never age pruning."""
-        from ms_agent.session.strategies.decision_compactor import DecisionContextCompactor
-        if self.session_log is None or self.context_assembler is None:
-            return 'Context compaction requires session logging.'
-        assembler = ContextAssembler(
-            self.session_log,
-            [DecisionContextCompactor(self.llm, log=self.session_log)], {
-                **self.context_assembler.config, 'force_summary': True
-            }, self._make_memory_flush_callback())
-        before = self.session_log.last_consolidated
-        messages[:] = await assembler.aassemble()
-        return (
-            'Context summarized; original history remains available.'
-            if self.session_log.last_consolidated != before else
-            'No safe context reduction is available; required evidence was retained.'
-        )
 
     def _checkpoint_state(self) -> dict:
         state = {'active_model': self.session_log.active_model}
         for name in ('prompt_surface', 'skill_surface'):
             try:
-                state[name] = json.loads((self.session_log.directory / f'{name}.json').read_text())
+                state[name] = json.loads(
+                    (self.session_log.directory / f'{name}.json').read_text())
             except (OSError, ValueError):
                 pass
         return state
@@ -2027,16 +2213,17 @@ class LLMAgent(Agent):
               session_key: my-session  # default: random session_<hex>
               # Token budget passed to the ContextAssembler:
               context_limit: 128000    # max tokens kept in the live window
-              reserved_buffer: 20000   # headroom left for the next response
+              reserved_buffer: 20000   # legacy compression trigger buffer
 
             # Non-destructive context compaction (rebuilt every loop round).
             compaction:
               enabled: true            # default true; false -> no strategies
               context_limit: 128000    # overrides session_log.context_limit
               reserved_buffer: 20000
-              strategies:              # optional; summary is the default
+              strategies:
                 - name: summary_compactor
-                  enabled: true        # bounded summary, no age pruning
+                  enabled: true
+              # tool_output_pruner is opt-in: it may remove unique evidence.
 
         With ``compaction.enabled: false`` the assembler is created with an
         empty strategy list (history is still logged, just never compressed).
@@ -2067,7 +2254,10 @@ class LLMAgent(Agent):
 
         session_key = getattr(session_cfg, 'session_key',
                               None) if session_cfg else None
-        self.session_log = SessionLog(session_dir, session_key=session_key)
+        controller = getattr(self, '_input_controller', None)
+        self.session_log = (
+            controller.log if controller is not None else SessionLog(
+                session_dir, session_key=session_key))
 
         compaction_cfg = getattr(self.config, 'compaction', None)
         compaction_enabled = (
@@ -2078,7 +2268,8 @@ class LLMAgent(Agent):
             self.context_assembler = ContextAssembler(
                 session_log=self.session_log,
                 strategies=[],
-                config=self._build_assembler_config(compaction_cfg, session_cfg),
+                config=self._build_assembler_config(compaction_cfg,
+                                                    session_cfg),
             )
             return
 
@@ -2105,16 +2296,12 @@ class LLMAgent(Agent):
                 if name == 'tool_output_pruner':
                     strategies.append(ToolOutputPruner())
                 elif name == 'summary_compactor':
-                    from ms_agent.session.strategies.decision_compactor import DecisionContextCompactor
-                    strategies.append(
-                        DecisionContextCompactor(
-                            self.llm, log=self.session_log))
+                    strategies.append(SummaryCompactor(llm=self.llm))
                 else:
                     logger.warning(f'Unknown compaction strategy: {name}')
             return strategies
 
-        from ms_agent.session.strategies.decision_compactor import DecisionContextCompactor
-        return [DecisionContextCompactor(self.llm, log=self.session_log)]
+        return [SummaryCompactor(llm=self.llm)]
 
     def _build_assembler_config(self, compaction_cfg, session_cfg):
         """Merge compaction params from ``compaction`` and ``session_log``."""
@@ -2138,27 +2325,185 @@ class LLMAgent(Agent):
                         if pp is not None:
                             config['prune_protect'] = pp
 
-        config.setdefault('context_limit', 128000)
-        config.setdefault('reserved_buffer', 20000)
-        config.setdefault('prune_protect', 40000)
+        from ms_agent.llm.context_budget import resolve_context_budget
+        config.update(resolve_context_budget(self.config))
+        config['model'] = getattr(
+            getattr(self.config, 'llm', None), 'model', '')
+        config.setdefault('prune_protect',
+                          min(40000, config['compression_threshold'] // 3))
+        for key in ('summary_prompt', 'summary_max_tokens',
+                    'summary_input_tokens', 'summary_input_char_limit',
+                    'summary_max_calls', 'summary_reasoning_effort'):
+            value = getattr(compaction_cfg, key, None)
+            if value is not None:
+                config[key] = value
         return config
 
+    async def compact_context(self, *, force=False, trigger='auto'):
+        """Shared automatic, button and slash path. The caller owns the session.
+
+        Manual callers wait for the input boundary; this method never appends
+        a user prompt or runs the main conversation model after summarizing.
+        """
+        import uuid
+
+        from ms_agent.session.context_assembler import ContextBudgetExceeded
+        if self.context_assembler is None or self.session_log is None:
+            return {'status': 'unavailable'}
+        assembler = self.context_assembler
+        config = self._build_assembler_config(
+            getattr(self.config, 'compaction', None),
+            getattr(self.config, 'session_log', None))
+        tools = await self.tool_manager.get_tools()
+        from ms_agent.session.strategies.tool_pruner import _estimate_tokens
+        config['tool_tokens'] = _estimate_tokens(
+            json.dumps(tools, ensure_ascii=False)) if tools else 0
+        config.update(
+            force_compaction=force,
+            trigger=trigger,
+            operation_id=uuid.uuid4().hex)
+        assembler.config = config
+        # Explicit manual requests can summarize even if automatic upkeep is off.
+        original_strategies = assembler.strategies
+        if force:
+            from ms_agent.session.strategies.decision_compactor import DecisionContextCompactor
+            if getattr(getattr(self.config, 'execution', None), 'mode',
+                       'standard') == 'decision':
+                strategy = next((s for s in original_strategies if isinstance(
+                    s, DecisionContextCompactor)), None)
+                if strategy is None:
+                    raw = getattr(getattr(self.config, 'decision', None),
+                                  'context', None)
+                    strategy = DecisionContextCompactor(
+                        self.llm, log=self.session_log,
+                        options=OmegaConf.to_container(raw) if raw else None)
+                assembler.strategies = [strategy]
+            else:
+                assembler.strategies = [SummaryCompactor(self.llm)]
+        for strategy in assembler.strategies:
+            if hasattr(strategy, 'llm'):
+                strategy.llm = self.llm
+        operation = {
+            'id': config['operation_id'],
+            'trigger': trigger,
+            'status': 'running'
+        }
+        # Automatic no-ops should not create an event on every model round.
+        if force:
+            self.session_log.record_context_operation(operation)
+        try:
+            from ms_agent.llm.cost import usage_scope
+            with usage_scope(self.session_log.record_usage, self.config,
+                             'compaction'):
+                messages = await assembler.assemble_async(
+                    is_current=lambda: getattr(self, '_rollback_messages', None)
+                    is None and (force or not self.runtime.should_stop))
+            events = [
+                e for e in self.session_log.get_compaction_events()
+                if e.get('operation_id') == operation['id']
+                and e.get('status') == 'completed'
+            ]
+            status = 'completed' if events else ('failed' if any(
+                getattr(s, 'last_result', '') == 'failed'
+                for s in assembler.strategies) else 'not_needed')
+            operation['status'] = status
+            if events:
+                operation.update(
+                    before_tokens=events[0]['tokens_before'],
+                    after_tokens=events[-1]['tokens_after'],
+                    memory_status=events[-1].get('memory',
+                                                 {}).get('status', 'skipped'))
+                if self._event_sink is not None:
+                    self._event_sink.emit(
+                        ContextCompacted(
+                            before_tokens=operation['before_tokens'],
+                            after_tokens=operation['after_tokens'],
+                            operation_id=operation['id'],
+                            trigger=trigger,
+                            memory_status=operation['memory_status']))
+            return {**operation, 'messages': messages}
+        except asyncio.CancelledError:
+            operation['status'] = 'cancelled'
+            raise
+        except ContextBudgetExceeded:
+            operation['status'] = 'blocked'
+            if trigger == 'auto':
+                rows = self.session_log.get_visible_messages()
+                self.session_log.set_metadata_field(
+                    'pending_context', {
+                        'id':
+                        operation['id'],
+                        'status':
+                        'paused',
+                        'tail_seq':
+                        max((m.get('_origin_seq', m['seq']) for m in rows),
+                            default=-1)
+                    })
+            raise
+        except Exception:
+            operation['status'] = 'failed'
+            raise
+        finally:
+            assembler.strategies = original_strategies
+            if force or trigger != 'auto' or operation[
+                    'status'] != 'not_needed':
+                self.session_log.record_context_operation(operation)
+
+    async def _step_with_usage(self, messages):
+        from ms_agent.llm.cost import usage_scope
+        sink = self.session_log.record_usage if self.session_log is not None else None
+        with usage_scope(sink, self.config, 'conversation'):
+            async for result in self.step(messages):
+                yield result
+
+    async def update_context_snapshot(self, messages):
+        try:
+            return await self._update_context_snapshot(messages)
+        except Exception:
+            logger.debug('Context usage estimate unavailable', exc_info=True)
+            return None
+
+    async def _update_context_snapshot(self, messages):
+        """Publish SDK estimates at request/response boundaries, never per token."""
+        from ms_agent.llm.context_budget import resolve_model_metadata
+        from ms_agent.session.context_status import context_snapshot
+        from ms_agent.ui.events import ContextUpdated
+        if self.session_log is None or self.context_assembler is None:
+            return None
+        tools = await self.tool_manager.get_tools()
+        llm = getattr(self.config, 'llm', {})
+        metadata = resolve_model_metadata(self.config) or {}
+        rows = self.session_log.get_visible_messages()
+        snapshot = context_snapshot(
+            messages,
+            self.context_assembler.config,
+            tools=tools,
+            model=llm.get('model', ''),
+            provider=llm.get('service', ''),
+            catalog_revision=metadata.get('catalog_revision'),
+            signature=getattr(self, '_context_config_signature', ''),
+            window_start=self.session_log.last_consolidated,
+            tail_seq=rows[-1]['seq'] if rows else -1)
+        self.session_log.set_metadata_field('context_snapshot', snapshot)
+        if self._event_sink is not None:
+            self._event_sink.emit(ContextUpdated(snapshot=snapshot))
+        return snapshot
+
     def _make_memory_flush_callback(self):
-        """Create a callback that flushes memory before context compaction."""
+        """Attempt memory extraction before the independent context commit."""
 
         async def _flush(discarded_messages):
+            from ms_agent.session.context_assembler import _dicts_to_messages
+
+            outcomes = []
             for memory_tool in self.memory_tools:
-                orchestrator = memory_tool
-                if hasattr(orchestrator, 'flush'):
-                    from ms_agent.llm.utils import Message as _Msg
-                    msgs = [
-                        _Msg(
-                            role=m.get('role', 'user'),
-                            content=m.get('content', ''),
-                            tool_calls=m.get('tool_calls'),
-                        ) for m in discarded_messages
-                    ]
-                    await orchestrator.flush(msgs)
+                if hasattr(memory_tool, 'flush'):
+                    # Use the same restore path as model context: tool-result
+                    # ids/names, arguments, reasoning and media must survive.
+                    msgs = _dicts_to_messages(deepcopy(discarded_messages))
+                    outcomes.append(await memory_tool.flush(msgs))
+            return ('updated' if 'updated' in outcomes else 'unchanged' if any(
+                o != 'skipped' for o in outcomes) else 'skipped')
 
         return _flush
 
@@ -2259,6 +2604,18 @@ class LLMAgent(Agent):
         after its caller has gone, the worker closes that response instead of
         abandoning it. The lock covers only ownership transfer, never I/O.
         """
+        from ms_agent.llm.context_budget import (_output_token_parameter,
+                                                 resolve_context_budget)
+        from ms_agent.session.context_assembler import check_context_budget
+
+        budget = resolve_context_budget(self.config)
+        check_context_budget([self._msg_to_dict(m) for m in messages], budget,
+                             tools)
+        generation = getattr(self.config, 'generation_config', {}) or {}
+        output_kwargs = {}
+        output_key = _output_token_parameter(self.config)
+        if not generation.get(output_key):
+            output_kwargs[output_key] = budget['output_reserve']
         lock = threading.Lock()
         llm = self.llm
         abandoned = False
@@ -2266,7 +2623,7 @@ class LLMAgent(Agent):
 
         def generate():
             nonlocal response
-            result = llm.generate(messages, tools=tools)
+            result = llm.generate(messages, tools=tools, **output_kwargs)
             with lock:
                 discard = abandoned
                 if not discard:
@@ -2314,6 +2671,7 @@ class LLMAgent(Agent):
         Returns:
             List[Message]: Updated message history after this step.
         """
+        self._prepare_controlled_input(messages)
         messages = deepcopy(messages)
         messages = self._append_task_notifications(messages)
         from ms_agent.hooks.context import (apply_hook_result_to_messages,
@@ -2326,7 +2684,8 @@ class LLMAgent(Agent):
         if (hook_runtime is not None and not hook_runtime.is_empty and messages
                 and messages[-1].role == 'user' and self.runtime.round > 0
                 and not getattr(messages[-1], '_decision_feedback', False)
-                and not getattr(messages[-1], '_context_summary', False)):
+                and not getattr(messages[-1], '_context_summary', False)
+                and getattr(self, '_input_controller', None) is None):
             prompt_text = extract_latest_user_prompt(messages)
             submit = await hook_runtime.run_user_prompt_submit(prompt_text)
             if submit.action in ('deny', 'block'):
@@ -2346,25 +2705,11 @@ class LLMAgent(Agent):
             apply_hook_result_to_messages(
                 messages, submit, hook_event='UserPromptSubmit')
 
-        if (not self.load_cache) or messages[-1].role != 'assistant':
+        generated_response = (
+            not self.load_cache) or messages[-1].role != 'assistant'
+        if generated_response:
             await self.on_generate_response(messages)
             tools = await self.tool_manager.get_tools()
-
-            assembler = getattr(self, 'context_assembler', None)
-            if assembler is not None:
-                from ms_agent.session.strategies.decision_compactor import (
-                    ContextBudgetExceeded, count_tokens)
-                budget = int(assembler.config.get(
-                    'context_limit', 128000)) - int(
-                        assembler.config.get('reserved_buffer', 20000))
-                extra = len(
-                    json.dumps(tools, ensure_ascii=False,
-                               default=str).encode()) // 3
-                if count_tokens([self._msg_to_dict(m) for m in messages],
-                                extra) >= budget:
-                    raise ContextBudgetExceeded(
-                        'Context exceeds capacity after prompt augmentation; start a new conversation or reduce the input'
-                    )
 
             if self.stream:
                 if self.stream_output:
@@ -2384,23 +2729,20 @@ class LLMAgent(Agent):
                 _gen = await self._generate_response(messages, tools)
                 _NO_MORE = object()
                 _stopped = threading.Event()
+                _stream_lock = threading.Lock()
 
                 def _next_chunk(_g=_gen):
-                    # Step the BLOCKING sync LLM stream off the event loop, so
-                    # each chunk flushes incrementally (SSE / UI) and the server
-                    # stays responsive during generation. Awaited sequentially,
-                    # so the generator is only ever touched by one thread at a
-                    # time. (Without this the whole event loop is frozen for the
-                    # entire generation and everything arrives at once.)
-                    try:
-                        return next(_g)
-                    except StopIteration:
-                        return _NO_MORE
-                    finally:
-                        # A cancelled await leaves next() running in its worker.
-                        # Close the iterator there once that read has unwound.
+                    # Cancellation must never close an iterator during its worker's next().
+                    with _stream_lock:
                         if _stopped.is_set():
-                            self._close_llm_stream(_llm, _g)
+                            return _NO_MORE
+                        try:
+                            return next(_g)
+                        except StopIteration:
+                            return _NO_MORE
+                        finally:
+                            if _stopped.is_set():
+                                self._close_llm_stream(None, _g)
 
                 try:
                     while True:
@@ -2440,11 +2782,12 @@ class LLMAgent(Agent):
                         # timer and the persisted `reasoning_duration` read this
                         # boundary. Mirrors the content branch above.
                         if (_printed_reasoning_header
-                                and not _printed_reasoning_footer
-                                and self._is_writing_tool_call(_response_message)):
+                                and not _printed_reasoning_footer and
+                                self._is_writing_tool_call(_response_message)):
                             self._emit_reasoning_end()
                             _printed_reasoning_footer = True
-                        self._emit_tool_composing(_response_message, _composing)
+                        self._emit_tool_composing(_response_message,
+                                                  _composing)
                         if not _reported_images:
                             # After the first chunk, not before it: the payload's
                             # delivery record is written while formatting, and a
@@ -2463,7 +2806,12 @@ class LLMAgent(Agent):
                         # what became of them is still worth saying.
                         self._record_image_deliveries(messages)
                         _reported_images = True
-                    self._close_llm_stream(_llm, _gen)
+                    self._close_llm_stream(_llm)
+                    if _stream_lock.acquire(blocking=False):
+                        try:
+                            self._close_llm_stream(None, _gen)
+                        finally:
+                            _stream_lock.release()
                 if self.stream_output:
                     if _printed_reasoning_header and not _printed_reasoning_footer:
                         self._emit_reasoning_end()
@@ -2496,6 +2844,12 @@ class LLMAgent(Agent):
                     self.log_output('[assistant]:')
                     self.log_output(_response_message.content)
 
+            # Price the individual responses BEFORE save_history/SessionLog.
+            from ms_agent.llm.cost import price_usage_records
+            price_usage_records(_response_message, self.config)
+            for record in _response_message.usage_records:
+                self.log_output('[usage_cost] '
+                                + json.dumps(record, ensure_ascii=False))
             # Response generated
             self.handle_new_response(messages, _response_message)
             await self.on_tool_call(messages)
@@ -2507,6 +2861,8 @@ class LLMAgent(Agent):
         self.save_history(messages)
 
         if _response_message.tool_calls:
+            controller = getattr(self, '_input_controller', None)
+            skip_tools = controller is not None and controller.has_steering()
             if self._event_sink is not None:
                 for tc in _response_message.tool_calls:
                     self._event_sink.emit(
@@ -2519,7 +2875,15 @@ class LLMAgent(Agent):
             # emits its own ToolCallCompleted / PlanUpdated as it finishes —
             # inside parallel_tool_call, not after the batch, so one call held
             # up by an approval doesn't hold back its finished siblings.
-            messages = await self.parallel_tool_call(messages)
+            if skip_tools:
+                from ms_agent.session.input_controller import \
+                    skipped_tool_result
+                for call in _response_message.tool_calls:
+                    result = skipped_tool_result(call)
+                    messages.append(result)
+                    self._emit_tool_completed(result, 0)
+            else:
+                messages = await self.parallel_tool_call(messages)
 
         # usage
         # NOTE: token accounting must run BEFORE after_tool_call. The interactive
@@ -2532,6 +2896,10 @@ class LLMAgent(Agent):
             getattr(_response_message, 'cache_creation_input_tokens', 0) or 0)
         reasoning_tokens = getattr(_response_message, 'reasoning_tokens',
                                    0) or 0
+        if not generated_response:
+            # Restoring a saved assistant is not a new API response/charge.
+            prompt_tokens = completion_tokens = cached_tokens = 0
+            cache_creation_input_tokens = reasoning_tokens = 0
 
         async with LLMAgent.TOKEN_LOCK:
             LLMAgent.TOTAL_PROMPT_TOKENS += prompt_tokens
@@ -2584,9 +2952,191 @@ class LLMAgent(Agent):
 
         yield messages
 
+    def _emit_user_notice(self, text: str) -> None:
+        """One line the user can act on. Not a log-level change."""
+        if self._event_sink is not None:
+            self._event_sink.emit(Notice(level='warning', text=text))
+            return
+        logger.error(text)
+
+    async def _on_mcp_failure(
+        self,
+        name: str,
+        phase: str,
+        message: str,
+        *,
+        tool_name: str | None = None,
+        exc: BaseException | None = None,
+    ) -> None:
+        """Count an MCP failure and, once it is unusable, reconnect later.
+
+        The chat stays quiet. ``/mcp list`` shows the status. Quit still
+        cleans up quietly.
+        """
+        runtime = self.mcp_runtime
+        if runtime is None:
+            return
+        degraded = await runtime.record_failure(
+            name, phase, message, tool_name=tool_name, exc=exc)
+        if not degraded:
+            return
+        # Config is unchanged, so the next turn would skip MCP apply.
+        # Clear the fingerprint and name the server so that turn reconnects.
+        self._mcp_fp = None
+        pending = getattr(self, '_mcp_reconnect_names', None)
+        if pending is None:
+            pending = set()
+            self._mcp_reconnect_names = pending
+        pending.add(name)
+
     def prepare_llm(self):
         """Initialize the LLM model from the configuration."""
         self.llm: LLM = LLM.from_config(self.config)
+        from ms_agent.llm.runtime_token import llm_runtime_token
+        self._llm_fp = llm_runtime_token(self.config)
+        # A client exists, so the next keyless episode may speak again.
+        reset_credential_notice()
+
+    def _stub_llm_for_setup(self) -> None:
+        """Placeholder so slash commands can run before a key exists."""
+        from types import SimpleNamespace
+        model = str(
+            OmegaConf.select(self.config, 'llm.model', default='') or '')
+        self.llm = SimpleNamespace(
+            config=self.config, model=model, _setup_stub=True)
+
+    def _emit_credential_setup(self, exc: BaseException) -> None:
+        # Startup and the first message of one keyless episode share this copy.
+        global _credential_notice_sent
+        if _credential_notice_sent:
+            return
+        _credential_notice_sent = True
+        from ms_agent.llm.credentials import missing_api_key_setup_text
+        service = str(
+            OmegaConf.select(self.config, 'llm.service', default='') or '')
+        text = missing_api_key_setup_text(exc, service)
+        if self._event_sink is not None:
+            self._event_sink.emit(Notice(level='warning', text=text))
+        else:
+            logger.warning(text)
+
+    def _emit_pending_turn_resume(self) -> None:
+        """The parked sentence is going out now that a client can be built."""
+        from ms_agent.llm.credentials import PENDING_TURN_RESUME
+        if self._event_sink is not None:
+
+            # Not ``info``: that level is drawn as a command panel. This is
+            # one status line, same weight as the other dim notices.
+            self._event_sink.emit(
+                Notice(level='status', text=PENDING_TURN_RESUME))
+        else:
+            logger.info(PENDING_TURN_RESUME)
+
+    def _llm_credentials_present(self) -> bool:
+        """True when a client can be built, so the waiting sentence can run."""
+        from ms_agent.llm.llm import LLM
+        try:
+            LLM.from_config(self.config)
+        except Exception:
+            return False
+        return True
+
+    def _bind_memory_llm(self) -> None:
+        """Point memory tools at the client that was just built."""
+        for orch in list(getattr(self, 'memory_tools', None) or []):
+            set_llm = getattr(orch, 'set_llm', None)
+            if set_llm is None or self.llm is None:
+                continue
+            try:
+                set_llm(self.llm)
+            except Exception:
+                logger.debug('memory llm rebind skipped', exc_info=True)
+
+    async def _ensure_llm_ready(self, messages):
+        """Build a real LLM after the first prompt, looping on missing keys."""
+        from ms_agent.llm.credentials import client_rejected_missing_key
+        if not getattr(self.llm, '_setup_stub',
+                       False) and self.llm is not None:
+            return messages
+        self._credential_reprompted = False
+        waited = False
+        while True:
+            try:
+                self.prepare_llm()
+                if self.runtime is not None:
+                    self.runtime.llm = self.llm
+                self._bind_memory_llm()
+                if (waited and not self._credential_reprompted
+                        and isinstance(messages, str) and messages.strip()):
+                    self._emit_pending_turn_resume()
+                return messages
+            except Exception as e:
+                if not (self._awaits_credentials()
+                        and client_rejected_missing_key(e)):
+                    raise
+                waited = True
+                self._stub_llm_for_setup()
+                if self.runtime is not None:
+                    self.runtime.llm = self.llm
+                self._emit_credential_setup(e)
+                from ms_agent.command.interactive import InteractiveSession
+                session = InteractiveSession(
+                    self._get_command_router(),
+                    source='tui' if self._input_source is not None else 'cli',
+                    input_source=self._input_source,
+                    event_sink=self._event_sink)
+                turn = await session.run_turn(
+                    messages=None,
+                    runtime=self.runtime,
+                    retry_when=self._llm_credentials_present)
+                if turn.action == 'quit':
+                    self.runtime.should_stop = True
+                    return None
+                if turn.text:
+                    messages = turn.text
+                    self._pending_attachments = turn.attachments
+                    self._credential_reprompted = True
+
+    async def _hold_turn_until_llm_ready(self, messages, step_end_len) -> None:
+        """A cleared key waits the same way a session that never had one does.
+
+        The line that arrived with no client is not sent and not logged.
+        The next line the user submits is, once a client can be built.
+        Slash commands keep working. Quit ends the session. The turn is
+        not failed, and the yellow setup panel is not used.
+        """
+        if not getattr(self.llm, '_setup_stub', False):
+            return
+        pending = None
+        query = ''
+        if (len(messages) > step_end_len
+                and getattr(messages[-1], 'role', None) == 'user'):
+            pending = messages[step_end_len:]
+            content = pending[-1].content
+            query = content if isinstance(content, str) else ''
+            self._pending_attachments = getattr(pending[-1], 'attachments',
+                                                None)
+            del messages[step_end_len:]
+        try:
+            ready = await self._ensure_llm_ready(query)
+        except Exception:
+            if pending is not None:
+                messages.extend(pending)
+            raise
+        if self.runtime.should_stop or ready is None:
+            self.runtime.should_stop = True
+            return
+        if pending is not None and not getattr(self, '_credential_reprompted',
+                                               False):
+            messages.extend(pending)
+            return
+        if isinstance(ready, str) and ready:
+            messages.append(
+                Message(
+                    role='user',
+                    content=ready,
+                    attachments=getattr(self, '_pending_attachments', None)
+                    or []))
 
     def prepare_runtime(self):
         """Initialize the runtime context."""
@@ -2612,10 +3162,16 @@ class LLMAgent(Agent):
 
         config, _messages = read_history(self.output_dir, self.tag)
         if config is not None and _messages is not None:
+            # The yaml on disk has no keys. Fill them from settings / mcp.json
+            # so this legacy resume does not ask for the key again.
+            from ms_agent.utils.history_secrets import refill_history_config
+            refill_history_config(config, getattr(self, 'output_dir', None))
             if hasattr(config, 'runtime'):
                 runtime = Runtime(llm=self.llm)
                 runtime.from_dict(config.runtime)
                 delattr(config, 'runtime')
+                if self.mcp_runtime is not None:
+                    runtime._mcp_runtime = self.mcp_runtime
             else:
                 runtime = self.runtime
             if _messages[-1].role == 'tool':
@@ -2659,6 +3215,17 @@ class LLMAgent(Agent):
         return user_id, agent_id, run_id, memory_type
 
     async def add_memory(self, messages: List[Message], add_type, **kwargs):
+        from ms_agent.llm.cost import usage_scope
+        log = getattr(self, 'session_log', None)
+        with usage_scope(log.record_usage if log else None, self.config,
+                         'memory'):
+            return await self._add_memory(messages, add_type, **kwargs)
+
+    async def _add_memory(self, messages: List[Message], add_type, **kwargs):
+        messages = [
+            m for m in messages
+            if not getattr(m, '_decision_feedback', False)
+        ]
         if hasattr(self.config, 'memory') and self.config.memory:
             for tool, (_, memory_config) in zip(self.memory_tools,
                                                 self.config.memory.items()):
@@ -2741,6 +3308,11 @@ class LLMAgent(Agent):
         usage data for accurate overflow detection.
         """
         d: Dict[str, Any] = {'role': msg.role, 'content': msg.content or ''}
+        for key in ('input_id', 'turn_id', 'message_id', 'segment_id',
+                    'execution_status', 'skip_reason', '_input_prepared'):
+            value = getattr(msg, key, None)
+            if value is not None:
+                d[key] = value
         if msg.tool_calls:
             d['tool_calls'] = msg.tool_calls
         # Image refs must survive to disk: the SessionLog is the source of truth
@@ -2780,6 +3352,18 @@ class LLMAgent(Agent):
             d['completion_tokens'] = completion_tokens
         if prompt_tokens or completion_tokens:
             d['tokens'] = prompt_tokens + completion_tokens
+        for key in ('cached_tokens', 'cache_creation_input_tokens',
+                    'reasoning_tokens', 'usage_records', 'id',
+                    '_responses_output_items'):
+            value = getattr(msg, key, None)
+            if value:
+                d[key] = deepcopy(value)
+        if getattr(msg, 'hook_attachments', None):
+            d['hook_attachments'] = msg.to_dict()['hook_attachments']
+        if getattr(msg, '_usage_invalidated', False):
+            d['_usage_invalidated'] = True
+        if getattr(msg, 'context_summary', False):
+            d['context_summary'] = True
         return d
 
     def _persist_partial_round(self,
@@ -2825,13 +3409,43 @@ class LLMAgent(Agent):
                     msg._reasoning_duration = dur
                     break
         try:
-            rows = [
-                self._msg_to_dict(msg) for msg in messages[pre_step_len:]
-            ]
+            rows = [self._msg_to_dict(msg) for msg in messages[pre_step_len:]]
             for record in build_partial_round_records(rows, marker=marker):
                 self.session_log.append(record)
         except Exception:
             logger.warning('persist partial round failed', exc_info=True)
+
+    def _report_mcp_availability(self, messages):
+        failures = getattr(
+            getattr(self.tool_manager, 'servers', None), 'startup_failures',
+            {})
+        if not failures or not messages or messages[-1].role != 'user':
+            return messages
+        from ms_agent.ui.events import Notice
+
+        detail = '\n'.join(f'{name}: {reason}'
+                           for name, reason in failures.items())
+        if self._event_sink is not None:
+            self._event_sink.emit(
+                Notice(level='warning', text=detail, code='mcp_unavailable'))
+        if self.session_log is not None:
+            self.session_log.record_notice({
+                'text': detail,
+                'level': 'warning',
+                'code': 'mcp_unavailable'
+            })
+        # External diagnostics are for the UI, never instructions for the LLM.
+        # This fixed capability notice is added before pre_step_len so it does
+        # not become durable conversation history or survive a reconnection.
+        return [
+            *messages,
+            Message(
+                role='system',
+                content=
+                ('Some optional MCP servers are unavailable this session. '
+                 'Continue using available tools; do not claim to have used the '
+                 'missing capabilities.'))
+        ]
 
     async def run_loop(self, messages: Union[List[Message], str],
                        **kwargs) -> AsyncGenerator[Any, Any]:
@@ -2856,8 +3470,21 @@ class LLMAgent(Agent):
             # prompt below and InputCallback registration just after.
             self._interactive = self._resolve_interactive(messages)
             self.register_callback_from_config()
-            self.prepare_llm()
+            from ms_agent.llm.credentials import client_rejected_missing_key
+            try:
+                self.prepare_llm()
+            except Exception as e:
+                if not (self._awaits_credentials()
+                        and client_rejected_missing_key(e)):
+                    raise
+                self._stub_llm_for_setup()
+                self._emit_credential_setup(e)
             self.prepare_runtime()
+            self.runtime.compact_context = self.compact_context
+            self.runtime.resume_pending_context = lambda: self.session_log.resume_pending_context(
+            )
+            self.runtime.clear_pending_context = lambda: self.session_log.set_metadata_field(
+                'pending_context', None) if self.session_log else None
             await self.prepare_tools()
             await self.prepare_skills()
             await self.load_memory()
@@ -2900,6 +3527,8 @@ class LLMAgent(Agent):
                             await self.cleanup_tools()
                             return
                         messages = turn.text
+                        if self._on_user_turn is not None:
+                            await self._on_user_turn(None)
                         # create_messages() below builds the user Message from
                         # this string, so hand the turn's attachments over
                         # out-of-band rather than widening that signature.
@@ -2914,6 +3543,11 @@ class LLMAgent(Agent):
                             'No query provided. Pass --query, pipe input via '
                             'stdin, or run in an interactive terminal.')
                     messages = piped
+
+            messages = await self._ensure_llm_ready(messages)
+            if self.runtime.should_stop:
+                await self.cleanup_tools()
+                return
 
             # Load history and restore state
             restored_from_log = False
@@ -2940,6 +3574,7 @@ class LLMAgent(Agent):
             if self.runtime.round == 0 and not restored_from_log:
                 # New task: create standardized messages first
                 messages = await self.create_messages(messages)
+                self._prepare_controlled_input(messages)
 
                 hook_runtime = getattr(self, '_hook_runtime', None)
                 if hook_runtime is not None:
@@ -2949,7 +3584,8 @@ class LLMAgent(Agent):
                 await self.on_task_begin(messages)
 
                 # UserPromptSubmit — first user message
-                if hook_runtime is not None and not hook_runtime.is_empty:
+                if (hook_runtime is not None and not hook_runtime.is_empty
+                        and getattr(self, '_input_controller', None) is None):
                     from ms_agent.hooks.context import (
                         apply_hook_result_to_messages,
                         extract_latest_user_prompt)
@@ -2984,7 +3620,7 @@ class LLMAgent(Agent):
                 # Seed SessionLog with initial messages
                 if self.session_log is not None:
                     for msg in messages:
-                        self.session_log.append(self._msg_to_dict(msg))
+                        self._append_session_message(msg)
                     # Baseline the model here, not on the second turn: a switch
                     # made between turn 1 and turn 2 is exactly the case the
                     # notice exists for, and recording late would miss it.
@@ -3011,51 +3647,59 @@ class LLMAgent(Agent):
                     self.log_output('[' + message.role + ']:')
                     self.log_output(message.content)
             while not self.runtime.should_stop:
+                # A cleared key leaves a placeholder. Wait here, before
+                # step(), the same way a session that never had a key waits.
+                if getattr(self.llm, '_setup_stub', False):
+                    if not self._awaits_credentials():
+                        raise ValueError('No API key found for provider. '
+                                         'Set config.llm.api_key.')
+                    await self._hold_turn_until_llm_ready(
+                        messages, len(messages))
+                    if self.runtime.should_stop:
+                        break
                 # Rebuild context view from SessionLog (non-destructive
                 # compression). This is the canonical history for the round, so
                 # it must run before the per-round augmentations below.
-                if (not resume_waiting and self.context_assembler is not None
-                        and self.session_log.get_visible_messages()):
-                    # Detect real compaction via last_consolidated advancing
-                    # (assemble() only advances it when a strategy consolidated
-                    # the window — see ContextAssembler.assemble).
-                    _lc_before = (
-                        self.session_log.last_consolidated
-                        if self.session_log is not None else 0)
-                    _tools = await self.tool_manager.get_tools()
-                    self.context_assembler.config['extra_tokens'] = len(
-                        json.dumps(_tools, default=str,
-                                   ensure_ascii=False).encode('utf-8')) // 3
-                    messages = await self.context_assembler.aassemble(
-                        is_current=lambda: getattr(self, '_rollback_messages',
-                                                   None) is None and not self.
-                        runtime.should_stop)
-                    if (self._event_sink is not None
-                            and self.session_log is not None and
-                            self.session_log.last_consolidated > _lc_before):
-                        self._event_sink.emit(ContextCompacted())
+                resume_requested = getattr(self.runtime,
+                                           'resume_context_requested', False)
+                self.runtime.resume_context_requested = False
+                closed_tail = messages and messages[
+                    -1].role == 'assistant' and not messages[-1].tool_calls
+                if self.context_assembler is not None and (not closed_tail or
+                                                           resume_requested):
+                    pre_step_len = len(messages)
+                    result = await self.compact_context(
+                        trigger='retry' if resume_requested else 'auto')
+                    messages = result['messages']
 
                 messages = self._apply_pending_rollback(messages)
+                if not resume_waiting:
+                    await self._consume_steering(messages)
                 if not resume_waiting:
                     if self.task_manager is not None:
                         notifications = self.task_manager.drain_notifications()
                         if notifications:
                             messages.append(
                                 Message(
-                                    role='user', content='\n'.join(notifications)))
+                                    role='user',
+                                    content='\n'.join(notifications)))
                     if self._skill_runtime:
-                        self._skill_runtime.maybe_refresh_system_prompt(messages)
+                        self._skill_runtime.maybe_refresh_system_prompt(
+                            messages)
                     messages = await self.condense_memory(messages)
                     # If assistant and tool content can be ignored, add memory earlier to reduce running time.
-                    self._schedule_add_memory_after_task(
-                        messages, timestamp='early')
+                    if getattr(self, '_input_controller', None) is None:
+                        self._schedule_add_memory_after_task(
+                            messages, timestamp='early')
 
                 # Captured right before step() so only genuine step outputs are
                 # appended to the SessionLog (ephemeral injections are excluded).
+                messages = self._report_mcp_availability(messages)
+                await self.update_context_snapshot(messages)
                 pre_step_len = len(messages)
                 if not resume_waiting:
                     try:
-                        async for messages in self.step(messages):
+                        async for messages in self._step_with_usage(messages):
                             messages = self._apply_pending_rollback(messages)
                             yield messages
                     except (asyncio.CancelledError, GeneratorExit):
@@ -3080,7 +3724,8 @@ class LLMAgent(Agent):
                         for _mem_tool in self.memory_tools:
                             if hasattr(_mem_tool, 'mark_ingested'):
                                 try:
-                                    _mem_tool.mark_ingested(messages[pre_step_len:])
+                                    _mem_tool.mark_ingested(
+                                        messages[pre_step_len:])
                                 except Exception:  # noqa: E722 - never mask cancel
                                     pass
                         raise
@@ -3095,13 +3740,36 @@ class LLMAgent(Agent):
                 step_end_len = len(messages)
                 if self.session_log is not None:
                     for msg in messages[pre_step_len:step_end_len]:
-                        self.session_log.append(self._msg_to_dict(msg))
+                        self._append_session_message(msg)
+
+                await self.update_context_snapshot(messages)
+
+                if self.session_log is not None:
+                    pending = self.session_log.get_metadata().get(
+                        'pending_context')
+                    if pending and pending.get('status') == 'resuming':
+                        self.session_log.set_metadata_field(
+                            'pending_context', None)
 
                 if resume_waiting:
                     self.runtime.should_stop = True
                     await self.loop_callback('after_tool_call', messages)
                 else:
                     await self.after_tool_call(messages, **kwargs)
+                    steering_added = (
+                        len(messages) > step_end_len
+                        and getattr(messages[-1], '_input_prepared', False))
+                    if (self._on_user_turn is not None
+                            and len(messages) > step_end_len
+                            and not steering_added
+                            and not getattr(messages[-1], '_decision_feedback', False)):
+                        await self._on_user_turn(messages)
+                    # Drop happened on this line. Hold before the line is logged,
+                    # so a missing key matches a session that never had one.
+                    await self._hold_turn_until_llm_ready(
+                        messages, step_end_len)
+                    if self.runtime.should_stop:
+                        break
                 resume_waiting = False
                 # New user turn (interactive multi-turn): attach the durable
                 # augmentations BEFORE the slice below persists them — same
@@ -3110,8 +3778,10 @@ class LLMAgent(Agent):
                 # query strips reminder blocks so notices never pollute it).
                 commit_surface = None
                 commit_model = None
-                if (len(messages) > step_end_len and not getattr(
-                        messages[-1], '_decision_feedback', False)):
+                if (len(messages) > step_end_len
+                        and not getattr(messages[-1], '_decision_feedback', False)
+                        and not getattr(messages[-1], '_input_prepared', False)):
+                    self._prepare_controlled_input(messages)
                     commit_surface = self._attach_prompt_update_notice(
                         messages)
                     commit_model = self._attach_model_switch_notice(messages)
@@ -3122,7 +3792,7 @@ class LLMAgent(Agent):
                 # message) and the round counter, so a later resume picks up here.
                 if self.session_log is not None:
                     for msg in messages[step_end_len:]:
-                        self.session_log.append(self._msg_to_dict(msg))
+                        self._append_session_message(msg)
                     self.session_log.round = self.runtime.round
                 if commit_surface is not None:
                     # Only now is the notice durably part of the turn — an
@@ -3162,6 +3832,34 @@ class LLMAgent(Agent):
             import traceback
 
             logger.warning(traceback.format_exc())
+            from ms_agent.session.context_assembler import \
+                ContextBudgetExceeded
+            if isinstance(
+                    e, ContextBudgetExceeded) and self.session_log is not None:
+                pending = self.session_log.get_metadata().get(
+                    'pending_context')
+                if not pending or pending.get('status') != 'paused':
+                    import uuid
+                    rows = self.session_log.get_visible_messages()
+                    identity = uuid.uuid4().hex
+                    self.session_log.set_metadata_field(
+                        'pending_context', {
+                            'id':
+                            identity,
+                            'status':
+                            'paused',
+                            'tail_seq':
+                            max((m.get('_origin_seq', m['seq']) for m in rows),
+                                default=-1)
+                        })
+                    self.session_log.record_context_operation({
+                        'id':
+                        identity,
+                        'trigger':
+                        'auto',
+                        'status':
+                        'blocked'
+                    })
             # Seal the round FIRST. A raised turn leaves the log tail on a
             # `user`/`tool` row, and run_loop's resume guard only skips the
             # model call when the tail is `assistant` — so the next request
@@ -3193,14 +3891,22 @@ class LLMAgent(Agent):
                     self.session_log.set_metadata_field('status', 'error')
                 except Exception:
                     pass
-            if hasattr(self.config, 'help'):
+            # TUI/WebUI already rendered ErrorRaised. The yaml `help` blurb
+            # ("A commonly use config…") is for headless CLI, not a second
+            # crash dump in an interactive session.
+            if self._event_sink is None and hasattr(self.config, 'help'):
                 logger.error(
                     f'[{self.tag}] Runtime error, please follow the instructions:\n\n {self.config.help}'
                 )
             raise e
         finally:
-            if getattr(self, '_decision_client', None) is not None:
-                await self._decision_client.aclose()
+            # CancelledError / GeneratorExit skip the Exception handler and
+            # used to leave streamable_http owner tasks for the event-loop
+            # shutdown to cancel — that is what dumps the MCP SDK traceback.
+            try:
+                await self.cleanup_tools()
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                logger.debug('run_loop cleanup_tools failed', exc_info=True)
 
     async def run(
             self, messages: Union[List[Message], str], **kwargs

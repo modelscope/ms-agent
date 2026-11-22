@@ -1,8 +1,10 @@
-import { InputNumber, Radio, Select } from 'antd'
-import { useEffect, useMemo, useState } from 'react'
+import { AutoComplete, Button, InputNumber, Radio, Select } from 'antd'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router'
 import { api } from '~/lib/api'
+import { useOnModelsChanged } from '~/lib/events'
 import { useT } from '~/lib/i18n'
-import type { Model, Provider } from '~/lib/types'
+import type { MemoryModelCheckResult, MemoryProviderOption, Model, Provider } from '~/lib/types'
 
 /** The per-project (or default) memory-model group, API field names. */
 export interface MemoryModelValue {
@@ -42,8 +44,7 @@ export function memoryModelErrors(value: MemoryModelValue): MemoryModelErrors {
   // model must be named (there is no "leave blank for default" anymore).
   if (
     value.memory_embed_mode === 'provider' &&
-    value.memory_embed_provider_id &&
-    !value.memory_embed_model
+    (!value.memory_embed_provider_id || !value.memory_embed_model?.trim())
   )
     errors.embedModel = true
   return errors
@@ -54,6 +55,40 @@ interface Props {
   onChange: (patch: Partial<MemoryModelValue>) => void
   /** Fields to flag as invalid (set by the parent on a failed submit). */
   errors?: MemoryModelErrors
+}
+
+/** Keep typing local: settings auto-save only a committed model id. */
+function ModelInput({ value, onCommit, options, invalid, refresh }: {
+  value: string | null
+  onCommit: (value: string | null) => void
+  options: { value: string; label?: string }[]
+  invalid?: boolean
+  refresh: () => void
+}) {
+  const { t } = useT()
+  const [draft, setDraft] = useState(value ?? '')
+  const focused = useRef(false)
+  useEffect(() => {
+    if (!focused.current) setDraft(value ?? '')
+  }, [value])
+  return <AutoComplete
+    size="small"
+    className="min-w-48"
+    value={draft}
+    options={options}
+    status={invalid ? 'error' : undefined}
+    placeholder={t.personalization.memoryModelPlaceholder}
+    onChange={setDraft}
+    onFocus={() => { focused.current = true; refresh() }}
+    onBlur={() => {
+      focused.current = false
+      const next = draft.trim() || null
+      if (next !== value) onCommit(next)
+    }}
+    onSelect={(next) => { setDraft(next); onCommit(next) }}
+    showSearch={{ filterOption: (input, option) =>
+      (option?.value ?? '').toLowerCase().includes(input.toLowerCase()) }}
+  />
 }
 
 /**
@@ -67,18 +102,66 @@ export function MemoryModelConfig({ value, onChange, errors }: Props) {
   const { t } = useT()
   const [providers, setProviders] = useState<Provider[]>([])
   const [models, setModels] = useState<Model[]>([])
+  const [availability, setAvailability] = useState<MemoryProviderOption[]>([])
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [check, setCheck] = useState<MemoryModelCheckResult | null>(null)
+  const [checkFailed, setCheckFailed] = useState(false)
+  const [checking, setChecking] = useState(false)
+  const alive = useRef(false)
+  const sequence = useRef(0)
+  const request = useRef<AbortController | null>(null)
+  const refresh = useCallback(() => {
+    const seq = ++sequence.current
+    Promise.all([api.listProviders(), api.listModels(), api.listMemoryProviders()])
+      .then(([ps, ms, info]) => {
+        if (!alive.current || seq !== sequence.current) return
+        setProviders(ps.filter((p) => p.enabled))
+        setModels(ms)
+        setAvailability(info)
+        setLoadFailed(false)
+      })
+      .catch(() => {
+        if (alive.current && seq === sequence.current) setLoadFailed(true)
+      })
+  }, [])
+  useOnModelsChanged(refresh)
 
   useEffect(() => {
-    // Pick among registered providers/models instead of re-entering creds.
-    api
-      .listProviders()
-      .then((p) => setProviders(p.filter((x) => x.enabled)))
-      .catch(() => setProviders([]))
-    api
-      .listModels()
-      .then(setModels)
-      .catch(() => setModels([]))
-  }, [])
+    alive.current = true
+    refresh()
+    window.addEventListener('focus', refresh)
+    return () => {
+      alive.current = false
+      sequence.current++
+      request.current?.abort()
+      window.removeEventListener('focus', refresh)
+    }
+  }, [refresh])
+  const configKey = JSON.stringify([
+    value.memory_llm_provider_id, value.memory_llm_model,
+    value.memory_embed_mode, value.memory_embed_provider_id, value.memory_embed_model
+  ])
+  useEffect(() => {
+    request.current?.abort()
+    setChecking(false)
+    setCheck(null)
+    setCheckFailed(false)
+  }, [configKey])
+  const verify = async () => {
+    request.current?.abort()
+    const controller = new AbortController()
+    request.current = controller
+    setChecking(true)
+    setCheckFailed(false)
+    try {
+      const result = await api.checkMemoryModels({ ...value, probe: true }, controller.signal)
+      if (!controller.signal.aborted) setCheck(result)
+    } catch {
+      if (!controller.signal.aborted) setCheckFailed(true)
+    } finally {
+      if (!controller.signal.aborted) setChecking(false)
+    }
+  }
 
   const providerOptions = useMemo(
     () => providers.map((p) => ({ value: p.id, label: p.name || p.id })),
@@ -101,8 +184,13 @@ export function MemoryModelConfig({ value, onChange, errors }: Props) {
   }, [providers, value.memory_embed_mode, value.memory_embed_provider_id])
   const modelOptionsFor = (providerId: string | null) =>
     models
-      .filter((m) => m.provider_id === providerId)
+      .filter((m) => m.provider_id === providerId && m.purpose !== 'embedding')
       .map((m) => ({ value: m.name, label: m.display_name || m.name }))
+  const embeddingOptions = (availability.find((p) => p.id === value.memory_embed_provider_id)
+    ?.embedding_models ?? []).map((name) => ({ value: name }))
+  const missingCredentials = availability.some((p) =>
+    !p.credentials_available && (p.id === value.memory_llm_provider_id ||
+      (value.memory_embed_mode === 'provider' && p.id === value.memory_embed_provider_id)))
 
   const llmChoice = value.memory_llm_provider_id ? 'custom' : 'follow'
   // Two choices only. "Follow the conversation provider" is deliberately gone:
@@ -115,6 +203,16 @@ export function MemoryModelConfig({ value, onChange, errors }: Props) {
 
   return (
     <div className="space-y-4">
+      <div className="text-xs text-msa-text-3">
+        {t.personalization.memoryDirectInput}{' '}
+        <Link to="/settings/models" target="_blank" rel="noreferrer">
+          {t.personalization.memoryConfigureProviders}
+        </Link>
+        {loadFailed && <div role="alert">{t.personalization.memoryCatalogFailed}</div>}
+        {missingCredentials && <div role="alert" className="text-msa-text-danger">
+          {t.personalization.memoryCredentialsMissing}
+        </div>}
+      </div>
       {/* Fact-extraction model — which LLM turns conversation into memory rows. */}
       <div>
         <div className="flex flex-wrap items-center gap-3">
@@ -150,15 +248,13 @@ export function MemoryModelConfig({ value, onChange, errors }: Props) {
                   })
                 }
               />
-              <Select
-                size="small"
-                className="min-w-48"
-                showSearch
-                status={errors?.llmModel ? 'error' : undefined}
-                placeholder={t.personalization.memoryModelPlaceholder}
-                value={value.memory_llm_model ?? undefined}
+              <ModelInput
+                key={`llm:${value.memory_llm_provider_id}`}
+                invalid={errors?.llmModel}
+                value={value.memory_llm_model}
                 options={modelOptionsFor(value.memory_llm_provider_id)}
-                onChange={(v) => onChange({ memory_llm_model: v })}
+                onCommit={(v) => onChange({ memory_llm_model: v })}
+                refresh={refresh}
               />
               {errors?.llmModel && (
                 <span className="w-full text-xs text-msa-text-danger">
@@ -215,15 +311,13 @@ export function MemoryModelConfig({ value, onChange, errors }: Props) {
                   })
                 }
               />
-              <Select
-                size="small"
-                className="min-w-48"
-                showSearch
-                status={errors?.embedModel ? 'error' : undefined}
-                placeholder={t.personalization.memoryModelPlaceholder}
-                value={value.memory_embed_model ?? undefined}
-                options={modelOptionsFor(value.memory_embed_provider_id)}
-                onChange={(v) => onChange({ memory_embed_model: v })}
+              <ModelInput
+                key={`embedding:${value.memory_embed_provider_id}`}
+                invalid={errors?.embedModel}
+                value={value.memory_embed_model}
+                options={embeddingOptions}
+                onCommit={(v) => onChange({ memory_embed_model: v })}
+                refresh={refresh}
               />
               {errors?.embedModel && (
                 <span className="w-full text-xs text-msa-text-danger">
@@ -241,6 +335,14 @@ export function MemoryModelConfig({ value, onChange, errors }: Props) {
       </div>
 
       {/* Recall count — how many recalled memories are injected per turn. */}
+      <div className="space-y-1 text-xs text-msa-text-3">
+        <Button size="small" loading={checking} onClick={verify}>
+          {t.personalization.memoryVerify}
+        </Button>
+        <div>{check?.verified ? t.personalization.memoryVerified : t.personalization.memoryUnverified}</div>
+        {check?.errors.map((error) => <div key={error.code} role="alert" className="text-msa-text-danger">{error.message}</div>)}
+        {checkFailed && <div role="alert">{t.personalization.memoryCheckFailed}</div>}
+      </div>
       <div className="flex items-center gap-3">
         <span className="text-sm text-msa-text-2">
           {t.personalization.memoryRecallLabel}

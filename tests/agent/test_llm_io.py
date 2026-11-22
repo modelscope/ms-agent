@@ -274,6 +274,42 @@ async def test_cancel_during_stream_read_interrupts_and_closes_iterator(legacy, 
 
 @pytest.mark.parametrize('protocol', ['openai', 'anthropic'])
 @run_async
+async def test_cancel_does_not_close_iterator_until_next_has_unwound(protocol):
+    async with mock_request(protocol, wait_for='body') as r:
+        release_next = threading.Event()
+        iterator_closed = threading.Event()
+        premature_close = threading.Event()
+        generate = r.agent.llm.generate
+
+        class TrackedIterator:
+            def __init__(self, chunks):
+                self.chunks = chunks
+
+            def __next__(self):
+                try:
+                    return next(self.chunks)
+                finally:
+                    release_next.wait(2)
+
+            def close(self):
+                if not release_next.is_set():
+                    premature_close.set()
+                self.chunks.close()
+                iterator_closed.set()
+
+        r.agent.llm.generate = lambda *a, **kw: TrackedIterator(generate(*a, **kw))
+        try:
+            await reached(r.body.entered)
+            await cancel(r.task)
+            assert not premature_close.is_set()
+            assert not iterator_closed.is_set()
+        finally:
+            release_next.set()
+        await reached(iterator_closed)
+
+
+@pytest.mark.parametrize('protocol', ['openai', 'anthropic'])
+@run_async
 async def test_request_timeout_propagates_without_blocking_event_loop(protocol):
     async with mock_request(protocol, error=httpx.ReadTimeout) as r:
         await reached(r.headers_entered)
@@ -309,10 +345,13 @@ async def test_slow_model_does_not_starve_host_executor(wait_for_body, protocol)
             asyncio.to_thread(lambda: 'session storage'), .5) == 'session storage'
 
 
-@pytest.mark.parametrize('protocol', ['openai', 'anthropic'])
-@pytest.mark.parametrize('legacy', [False, True])
+@pytest.mark.parametrize('protocol,legacy,stream', [
+    ('openai', False, True), ('anthropic', False, True),
+    ('openai', True, True), ('anthropic', True, True),
+    ('openai', False, False), ('anthropic', False, False),
+])
 @run_async
-async def test_cancel_stalled_tcp_read_releases_model_worker(monkeypatch, protocol, legacy):
+async def test_cancel_stalled_tcp_read_releases_model_worker(monkeypatch, protocol, legacy, stream):
     """A mock close can release an Event while a real socket stays in recv()."""
     release, reading = threading.Event(), threading.Event()
 
@@ -324,7 +363,7 @@ async def test_cancel_stalled_tcp_read_releases_model_worker(monkeypatch, protoc
         def do_POST(self):
             self.rfile.read(int(self.headers['Content-Length']))
             self.send_response(200)
-            self.send_header('Content-Type', 'text/event-stream')
+            self.send_header('Content-Type', 'text/event-stream' if stream else 'application/json')
             self.send_header('Connection', 'close')
             self.end_headers()
             self.wfile.flush()
@@ -352,7 +391,7 @@ async def test_cancel_stalled_tcp_read_releases_model_worker(monkeypatch, protoc
     try:
         with ThreadPoolExecutor(max_workers=1) as pool:
             monkeypatch.setattr(io, '_executor', pool)
-            agent = make_agent(legacy=legacy, protocol=protocol,
+            agent = make_agent(legacy=legacy, protocol=protocol, stream=stream,
                                base_url=f'http://127.0.0.1:{server.server_port}',
                                http_client=httpx.Client(event_hooks={'response': [mark_response]}))
             async with running(agent, release) as task:

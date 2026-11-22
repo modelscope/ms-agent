@@ -69,12 +69,12 @@ pip install 'ms-agent[research]'
 ```bash
 export OPENAI_API_KEY=xxx-xxx
 export OPENAI_BASE_URL=https://api-inference.modelscope.cn/v1/
-export OPENAI_MODEL_ID=Qwen/Qwen3-235B-A22B-Instruct-2507
+export OPENAI_MODEL_ID=Qwen/Qwen3.8-Flash-Next
 
 ```
 * `OPENAI_API_KEY`: (str), your API key, replace `xxx-xxx` with your actual key. Alternatively, you can use ModelScope API key, refer to [ModelScopeAccessToken](https://modelscope.cn/my/myaccesstoken) <br>
 * `OPENAI_BASE_URL`: (str), the base URL for API requests, `https://api-inference.modelscope.cn/v1/` for ModelScope API-Inference <br>
-* `OPENAI_MODEL_ID`: (str), the model ID for inference, `Qwen/Qwen3-235B-A22B-Instruct-2507` can be recommended for document research tasks. <br>
+* `OPENAI_MODEL_ID`: (str), the model ID for inference, `Qwen/Qwen3.8-Flash-Next` is a current chat model. If the service returns 400, choose another chat model it serves now. <br>
 
 
 ### 3. Run Application

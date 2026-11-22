@@ -56,6 +56,7 @@ export async function loader({ params }: Route.LoaderArgs) {
     sessionExecutionMode: session?.execution_mode,
     sessionExecutionLocked: session?.execution_mode_locked,
     sessionModelId: session?.model_id || '',
+    sessionReasoningEfforts: session?.reasoning_efforts,
     // Whether a background turn's result is still unacknowledged — opening this
     // page is the acknowledgement, so the flag is only carried here to decide
     // whether that write (and its sidebar repaint) is needed at all.
@@ -74,6 +75,7 @@ export default function ProjectSessionPage() {
     sessionModelId,
     sessionExecutionMode,
     sessionExecutionLocked,
+    sessionReasoningEfforts,
     sessionUnread,
     messages,
     plan,
@@ -93,6 +95,7 @@ export default function ProjectSessionPage() {
       initialModelId={sessionModelId}
       initialExecutionMode={sessionExecutionMode}
       initialExecutionLocked={sessionExecutionLocked}
+      initialReasoningEfforts={sessionReasoningEfforts}
       project={project}
       sessionId={sessionId}
       initialMessages={initialMessages}

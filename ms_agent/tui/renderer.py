@@ -16,7 +16,7 @@ import json
 import re
 import time
 from contextlib import contextmanager
-from rich.console import Console
+from rich.console import Console, Group
 from rich.markdown import Markdown
 from rich.markup import escape
 from rich.panel import Panel
@@ -28,6 +28,31 @@ from ms_agent.tui.state import TuiState
 from ms_agent.tui.theme import DEFAULT_THEME, Theme
 from ms_agent.tui.tool_view import tool_header, tool_summary
 from ms_agent.ui.events import AgentEvent
+
+_UNAVAILABLE = 'UNAVAILABLE'
+
+# Minimum interval between raw flushes while the busy input line is up (append
+# mode). The input line lives on a reserved bottom row behind a DECSTBM scroll
+# region (see busy_input.BusyLineInput), so output physically cannot redraw it —
+# flicker is structurally impossible. Batching tokens to ~30fps is now purely a
+# smoothness/syscall win: fewer, larger writes scroll the region in even steps
+# instead of one tiny scroll per token.
+_APPEND_FLUSH_INTERVAL = 1.0 / 30.0
+
+
+def _bold_unavailable(text: str) -> Text:
+    """Bold the word UNAVAILABLE. The rest of a command panel stays plain.
+
+    Command text is not markup, so a ``[bold]`` tag would print literally.
+    """
+    body = Text()
+    parts = re.split(f'({_UNAVAILABLE})', text or '')
+    for part in parts:
+        if part == _UNAVAILABLE:
+            body.append(part, style='bold')
+        else:
+            body.append(part)
+    return body
 
 _KEY_LINE = re.compile(r'^\s*[\w.\-]+:(\s|$)')
 
@@ -75,6 +100,20 @@ class RichEventSink:
         # Buffered draws while something else owns the screen (see hold_output).
         # None = draw straight through.
         self._held: Optional[list] = None
+        # Type-ahead capture mode (see set_append_mode). While the busy input
+        # line is pinned at the bottom behind a scroll region
+        # (busy_input.BusyLineInput), the transient Live region's cursor-up
+        # redraws would fight the reserved rows, so streamed assistant text is
+        # appended as raw output instead — it scrolls in the region above the
+        # input line, Claude Code style.
+        self._append_mode = False
+        # Throttled raw-write buffers for append mode (see _append_write). Tokens
+        # accumulate and flush at most ~30fps so the region scrolls in even steps
+        # and syscalls stay low (the reserved input line is never redrawn).
+        self._append_buf = ''
+        self._last_append_flush = 0.0
+        self._reasoning_buf = ''
+        self._last_reasoning_flush = 0.0
 
     # ── sink protocol ──────────────────────────────────────────────────────
 
@@ -122,15 +161,129 @@ class RichEventSink:
         self.console.print(*args, **kwargs)
 
     def finalize(self) -> None:
-        """Tear down any in-flight Live region (call on error / turn abort)."""
-        if self._live is not None:
-            try:
-                self._live.stop()
-            except Exception:
-                pass
-            self._live = None
+        """Stop any in-flight Live region (call on error / turn abort)."""
+        self.release_terminal()
+
+    def set_append_mode(self, on: bool) -> None:
+        """Suspend the transient Live region while the busy input line is up.
+
+        With ``on=True`` streamed assistant text is appended as raw output that
+        scrolls in the region above the reserved input line (see
+        busy_input.BusyLineInput) instead of being redrawn in a single-screen Live
+        window. Any Live already running is stopped first so the two rendering
+        strategies never overlap.
+        """
+        on = bool(on)
+        if on == self._append_mode:
+            return
+        if on:
+            self._stop_live()
+        else:
+            # Leaving append mode: land any batched text before the rendering
+            # strategy switches back to the transient Live region.
+            self._flush_append()
+        self._append_mode = on
+
+    def _flush_append(self) -> None:
+        """Write any batched append-mode assistant text now."""
+        if self._append_buf:
+            self.console.file.write(self._append_buf)
+            self.console.file.flush()
+            self._append_buf = ''
+        self._last_append_flush = time.monotonic()
+
+    def _append_write(self, text: str) -> None:
+        """Batch a streamed token, flushing at most ~30fps.
+
+        The input line is on a reserved row output cannot touch, so this is not a
+        flicker fix — it batches many tiny per-token writes into fewer, larger
+        ones so the region scrolls in even steps and syscalls stay low. The buffer
+        is always drained by ``release_terminal`` / ``set_append_mode(False)``, so
+        no text is lost.
+        """
+        self._append_buf += text
+        if time.monotonic() - self._last_append_flush >= _APPEND_FLUSH_INTERVAL:
+            self._flush_append()
+
+    def _flush_reasoning(self) -> None:
+        """Write any batched append-mode reasoning text now (dim, as one run)."""
+        if self._reasoning_buf:
+            self.console.print(
+                Text(self._reasoning_buf, style=self.theme.reasoning), end='')
+            self._reasoning_buf = ''
+        self._last_reasoning_flush = time.monotonic()
+
+    def release_terminal(self) -> None:
+        """Stop the streaming region and wait until it can no longer write.
+
+        ``Live.stop`` only signals the refresh thread; it does not join it.
+        Joining here means the next owner of the terminal (the input prompt)
+        is the only writer. A reply that was still streaming is typeset once
+        below the title line already printed above the region.
+        """
+        self._flush_append()
+        buf = self._content_buf
         self._content_buf = ''
         self._label_shown = False
+        terminal = bool(self.console.is_terminal)
+        self._stop_live()
+        # In append mode the reply already streamed to the transcript verbatim,
+        # so re-typesetting it as Markdown would print the whole thing twice.
+        if terminal and not self._append_mode and buf.strip():
+            self.console.print(Markdown(buf))
+
+    def _stop_live(self) -> None:
+        live = self._live
+        if live is None:
+            return
+        self._live = None
+        # Grab the thread first: stop() drops the reference without joining.
+        thread = getattr(live, '_refresh_thread', None)
+        try:
+            live.stop()
+        except Exception:
+            pass
+        if thread is not None:
+            try:
+                thread.join()
+            except RuntimeError:
+                pass
+
+    def _stream_window(self, text: str):
+        """The last screen of ``text``.
+
+        Live's ``crop`` keeps the top of a renderable, so the renderable
+        itself has to be the tail. One screen (minus a row, so the refresh
+        does not scroll) is all that gets redrawn each frame.
+        """
+        width = max(1, self.console.size.width)
+        height = max(1, self.console.size.height - 1)
+        lines = list(Text(text).wrap(self.console, width))
+        tail = lines[-height:] if lines else []
+        if not tail:
+            return Text('')
+        if len(tail) == 1:
+            return tail[0]
+        return Group(*tail)
+
+    # ── user turn (steered echo) ───────────────────────────────────────────
+
+    def _on_user_message(self, ev) -> None:
+        """Draw a user turn the terminal did not echo inline.
+
+        An idle prompt is echoed by prompt_toolkit (the typed line stays on
+        screen), so this stays quiet for it. A steered interjection is folded
+        into the running turn with no prompt echo — without drawing it here the
+        timeline would show the assistant answering a message the user never sees
+        recorded. Rendered as ``❯ <text>`` to match the live prompt's look.
+        """
+        if not getattr(ev, 'steered', False):
+            return
+        # A gap before the user turn, mirroring the assistant header's spacing.
+        self._print()
+        self._print(
+            f'[{self.theme.user}]{self.theme.user_symbol}[/] {escape(ev.text)}')
+        self._last_kind = None
 
     # ── assistant content (streamed) ───────────────────────────────────────
 
@@ -145,34 +298,39 @@ class RichEventSink:
             self._label_shown = True
             self._last_kind = 'content'
         self._content_buf += ev.text
-        if self.console.is_terminal:
+        if self.console.is_terminal and not self._append_mode:
             if self._live is None:
                 from rich.live import Live
+                # One screen, erased when the reply finishes. stdout stays
+                # ours so this thread cannot still be writing when the prompt
+                # switches the terminal into raw / bracketed-paste mode.
                 self._live = Live(
                     console=self.console,
                     refresh_per_second=12,
-                    vertical_overflow='visible')
+                    transient=True,
+                    vertical_overflow='crop',
+                    redirect_stdout=False,
+                    redirect_stderr=False)
                 self._live.start()
-            # Stream as plain Text (tolerant of half-formed markdown); the
-            # final ContentEnd reflows once into formatted Markdown.
-            self._live.update(Text(self._content_buf))
+            # Plain text while tokens are still arriving; ContentEnd typesets
+            # the whole reply once, after this region has stopped.
+            self._live.update(self._stream_window(self._content_buf))
         else:
-            # Non-terminal (piped / CI): write raw for clean, scriptable output.
-            self.console.file.write(ev.text)
-            self.console.file.flush()
+            # Non-terminal (piped / CI) writes raw for clean, scriptable output.
+            # Type-ahead capture mode does the same on a terminal, batched to
+            # ~30fps (see _append_write); the raw text scrolls in the region above
+            # the reserved input line, which it never redraws.
+            self._append_write(ev.text)
 
     def _on_content_end(self, ev) -> None:
-        buf = self._content_buf
-        if self._live is not None:
-            renderable = Markdown(buf) if buf.strip() else Text('')
-            self._live.update(renderable)
-            self._live.stop()
-            self._live = None
-        elif not self.console.is_terminal:
+        terminal = bool(self.console.is_terminal)
+        append_mode = self._append_mode
+        self.release_terminal()
+        if not terminal or append_mode:
+            # Raw-streamed text carried no trailing newline; close the line so
+            # the next block starts on a fresh row.
             self.console.file.write('\n')
             self.console.file.flush()
-        self._content_buf = ''
-        self._label_shown = False
         self._last_kind = None  # next turn starts fresh (input divider spaces it)
 
     # ── reasoning (collapsed dim block) ─────────────────────────────────────
@@ -187,12 +345,21 @@ class RichEventSink:
 
     def _on_reasoning_delta(self, ev) -> None:
         if self._reasoning_active and ev.text:
-            # Stream tokens as they arrive (dim), same as assistant content.
-            self.console.print(
-                Text(ev.text, style=self.theme.reasoning), end='')
+            if self._append_mode:
+                # Batch dim reasoning tokens too, so thinking scrolls the region
+                # in even steps like content does (see _append_write).
+                self._reasoning_buf += ev.text
+                if (time.monotonic() - self._last_reasoning_flush
+                        >= _APPEND_FLUSH_INTERVAL):
+                    self._flush_reasoning()
+            else:
+                # Stream tokens as they arrive (dim), same as assistant content.
+                self.console.print(
+                    Text(ev.text, style=self.theme.reasoning), end='')
 
     def _on_reasoning_ended(self, ev) -> None:
         if self._reasoning_active:
+            self._flush_reasoning()
             self.console.print()  # close the streamed thinking block
             self._reasoning_active = False
 
@@ -276,7 +443,7 @@ class RichEventSink:
                     word_wrap=True,
                     background_color='default')
             else:
-                body = Text(ev.text)
+                body = _bold_unavailable(ev.text)
             self._print(Panel(body, border_style='dim', expand=False))
             return
         style = {

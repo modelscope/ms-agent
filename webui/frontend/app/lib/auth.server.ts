@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { redirect, redirectDocument, type MiddlewareFunction } from 'react-router'
-import { api, ApiError } from './api'
-import { AUTH_DISABLED, loginDestination, type AuthStatus } from './auth'
+import { api, ApiError, registerRequestCookieReader } from './api'
+import { AUTH_DISABLED, isLoginPath, loginDestination, loginUrl, type AuthStatus } from './auth'
 
 interface RequestAuth {
   cookie: string
@@ -15,6 +15,8 @@ const requests = new AsyncLocalStorage<RequestAuth>()
 export function requestCookie() {
   return requests.getStore()?.cookie ?? ''
 }
+
+registerRequestCookieReader(requestCookie)
 
 export function requestAuth() {
   return requests.getStore()?.status ?? AUTH_DISABLED
@@ -33,9 +35,9 @@ export const authMiddleware: MiddlewareFunction<Response> = async ({ request }, 
     }
     requests.getStore()!.status = status
     const url = new URL(request.url)
-    const isLogin = /^\/login(?:\.data)?\/?$/.test(url.pathname)
+    const isLogin = isLoginPath(url.pathname)
     if (status.enabled && !status.authenticated && !isLogin) {
-      throw redirectDocument('/login?next=' + encodeURIComponent(url.pathname.replace(/\.data$/, '') + url.search))
+      throw redirectDocument(loginUrl(url.pathname.replace(/\.data$/, '') + url.search))
     }
     if (isLogin && (!status.enabled || status.authenticated)) {
       throw redirect(loginDestination(url.searchParams.get('next')))

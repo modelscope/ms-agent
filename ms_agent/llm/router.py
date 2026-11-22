@@ -45,6 +45,7 @@ def _build_transport(spec: ProviderSpec,
             api_key=api_key,
             base_url=base_url,
             generation_config=gen_config,
+            provider_id=spec.name,
             vision=vision,
             vision_supported=vision_supported,
         )
@@ -55,6 +56,7 @@ def _build_transport(spec: ProviderSpec,
             api_key=api_key,
             base_url=base_url,
             generation_config=gen_config,
+            provider_id=spec.name,
             continue_gen_mode=spec.continue_gen_mode,
             continue_gen_stop=spec.continue_gen_stop,
             strip_reasoning_tags=spec.strip_reasoning_tags,
@@ -130,13 +132,7 @@ class ProviderRouter:
             logger.info(
                 f'No provider spec for service={service} model={model}; '
                 f'falling back to a generic OpenAI-compatible transport.')
-            spec = ProviderSpec(
-                name=service or 'custom',
-                display_name=service or 'Custom',
-                transport=TRANSPORT_OPENAI_COMPAT,
-                api_key_env=['OPENAI_API_KEY'],
-                base_url_env=['OPENAI_BASE_URL'],
-            )
+            spec = CredentialResolver.provider_spec(service or 'custom')
 
         # A provider may target another vendor's OpenAI- or Anthropic-compatible
         # endpoint (e.g. DeepSeek's /anthropic gateway). An explicit
@@ -179,7 +175,12 @@ class ProviderRouter:
         vision_supported = resolve_supports_vision(
             config, spec=spec, model=model, base_url=base_url)
 
-        transport = _build_transport(spec, model, api_key, base_url, gen_config,
-                                     vision=vision,
-                                     vision_supported=vision_supported)
+        transport = _build_transport(
+            spec,
+            model,
+            api_key,
+            base_url,
+            gen_config,
+            vision=vision,
+            vision_supported=vision_supported)
         return LLMProvider(config=config, spec=spec, transport=transport)

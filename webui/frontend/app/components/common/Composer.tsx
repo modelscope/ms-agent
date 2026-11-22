@@ -10,6 +10,7 @@ import { taskStatusIcon } from '~/components/messages/TaskPlan'
 import IconFolder from '~/assets/icons/folder.svg?react'
 import IconTask from '~/assets/icons/task.svg?react'
 import { NewProjectModal } from '~/components/project/NewProjectModal'
+import { effortLabel, thinkingLabel } from '~/components/models/ModelCapabilities'
 import { PillButton } from './PillButton'
 import { api } from '~/lib/api'
 import { useSessionModel, type SessionModelSelection } from '~/lib/sessionModel'
@@ -19,6 +20,7 @@ import {
   useOnModelsChanged,
   useOnProjectSettingsChanged,
   useOnProjectsChanged,
+  dispatchModelsChanged,
   dispatchWorkspaceChanged
 } from '~/lib/events'
 import type { ChatFileRef } from '~/lib/agentProvider'
@@ -26,11 +28,13 @@ import { useT } from '~/lib/i18n'
 import { clientId } from '~/lib/clientId'
 import type {
   AgentSettings,
+  GenerationDefaults,
   Mcp,
   Model,
   PermissionMode,
   Project,
   Provider,
+  ReasoningEffort,
   Scope,
   SearchSettings,
   Skill
@@ -46,6 +50,7 @@ import { ModelSelector } from './ModelSelector'
 import { McpSelector } from './McpSelector'
 import { SkillSelector } from './SkillSelector'
 import './Composer.css'
+import { ContextMeter } from './ContextMeter'
 import ExpandIcon from '~/assets/icons/expand.svg?react'
 import CaretDownIcon from '~/assets/icons/chevron-down.svg?react'
 import AddIcon from '~/assets/icons/add.svg?react'
@@ -90,6 +95,9 @@ export interface ThinkingState {
 interface ComposerProps {
   draftKey?: string | null
   focusOnMount?: boolean
+
+  sessionId?: string | null
+  onContextComplete?: () => void
   modelSelection?: SessionModelSelection
   modeSelection?: SessionModeSelection
   modelSelectionDisabled?: boolean
@@ -99,7 +107,8 @@ interface ComposerProps {
     /** Ordered configuration-style segments (text + skill pills) exactly as
      * laid out in the input — present only when at least one pill was used. */
     segments?: MessageSegment[],
-    modelId?: string
+    modelId?: string,
+    reasoningEffort?: ReasoningEffort
   ) => void | Promise<void>
   loading?: boolean
   onCancel?: () => void
@@ -141,15 +150,77 @@ function SuggestionDesc({ text }: { text: string }) {
   )
 }
 
+function ModelThinkingSelector({ model, effort, disabled, onChange }: {
+  model: Model
+  effort?: ReasoningEffort
+  disabled: boolean
+  onChange: (modelId: string, effort: ReasoningEffort) => void
+}) {
+  const { t } = useT()
+  const [open, setOpen] = useState(false)
+  const [resolved, setResolved] = useState<{ effort: ReasoningEffort; defaults: GenerationDefaults } | null>(null)
+  useEffect(() => {
+    let current = true
+    setResolved(null)
+    if (effort !== undefined && effort !== model.generation_defaults?.effort) {
+      api.getGenerationDefaults(model.provider_id, model.name, undefined, effort)
+        .then((defaults) => { if (current) setResolved({ effort, defaults }) })
+        .catch(() => {})
+    }
+    return () => { current = false }
+  }, [effort, model.id, model.name, model.provider_id, model.generation_defaults])
+  const awaiting = effort !== undefined && effort !== model.generation_defaults?.effort && resolved?.effort !== effort
+  const defaults = resolved && resolved.effort === effort ? resolved.defaults : model.generation_defaults
+  const displayDefaults = defaults && effort !== undefined ? { ...defaults, effort } : defaults
+  const options = defaults?.reasoning === false || defaults?.reasoning_control === 'none'
+    ? [] : defaults?.effort_options ?? []
+  const locked = disabled || awaiting || !options.length || !!defaults?.raw_override || !!defaults?.configuration_error
+  const label = thinkingLabel(displayDefaults, t)
+
+  return (
+    <Dropdown
+      trigger={['click']}
+      disabled={locked}
+      open={open && !locked}
+      onOpenChange={setOpen}
+      classNames={{ itemContent: 'text-xs' }}
+      menu={{
+        selectedKeys: defaults ? [effort ?? defaults.effort] : [],
+        items: options.map((value) => ({
+          key: value,
+          label: effortLabel(value, t),
+          onClick: () => {
+            setOpen(false)
+            onChange(model.id, value)
+          }
+        }))
+      }}
+    >
+      <PillButton
+        className="min-w-0! shrink-0"
+        open={open && !locked}
+        disabled={locked}
+        caret={options.length > 0}
+        aria-label={`${t.modelsAdmin.thinkingLabel}: ${label}`}
+      >
+        {label}
+      </PillButton>
+    </Dropdown>
+  )
+}
+
 export function Composer({
   draftKey,
   focusOnMount,
+
+  sessionId,
+  onContextComplete,
   modelSelection: providedSelection,
   modeSelection,
   modelSelectionDisabled = false,
   onSubmit,
-  loading = false,
-  onCancel,
+  loading: chatLoading = false,
+  onCancel: cancelChat,
   onType,
   placeholder,
   autoSize: autoSizeProp,
@@ -159,6 +230,9 @@ export function Composer({
   thinking = null,
   onOpenFile
 }: ComposerProps) {
+  const [contextBusy, setContextBusy] = useState(false)
+  const loading = chatLoading || contextBusy
+  const onCancel = contextBusy && sessionId ? () => { void api.interruptChat(sessionId) } : cancelChat
   const autoSize = autoSizeProp ?? { minRows: 1, maxRows: 6 }
   const { t } = useT()
   const { message } = App.useApp()
@@ -188,7 +262,7 @@ export function Composer({
   const [filesExpanded, setFilesExpanded] = useState(false)
   // Drives the project-picker caret flip (antd Dropdown owns the panel).
   const [projectMenuOpen, setProjectMenuOpen] = useState(false)
-  // Project-level authorization mode selector (restricted / full access).
+  // Project-level authorization mode selector (ask / auto / full-access).
   const [permMenuOpen, setPermMenuOpen] = useState(false)
   // Optimistic override after a switch — reset when the project changes.
   const [permModeLocal, setPermModeLocal] = useState<PermissionMode | null>(
@@ -241,6 +315,25 @@ export function Composer({
   // loader on every render) keeps the optimistic updates below working: a model
   // switch shows immediately without waiting for a revalidation.
   const [models, setModels] = useState<Model[] | null>(appData?.models ?? null)
+  const modelsRevision = useRef(0)
+  const modelReadSeq = useRef(0)
+  const modelWritePending = useRef(false)
+  const modelsMounted = useRef(true)
+  const [modelSaving, setModelSaving] = useState(false)
+  useEffect(function guardModelRequests() {
+    modelsMounted.current = true
+    return () => { modelsMounted.current = false }
+  }, [])
+  const refreshModelList = useCallback(async () => {
+    if (modelWritePending.current) return
+    const version = modelsRevision.current
+    const request = ++modelReadSeq.current
+    const next = await api.listModels(undefined, { fresh: true })
+    if (modelsMounted.current && !modelWritePending.current &&
+      version === modelsRevision.current && request === modelReadSeq.current) {
+      setModels(next)
+    }
+  }, [])
   const [providers, setProviders] = useState<Provider[] | null>(
     appData?.providers ?? null
   )
@@ -330,15 +423,12 @@ export function Composer({
       .listProviders()
       .then(setProviders)
       .catch(() => {})
-    api
-      .listModels()
-      .then(setModels)
-      .catch(() => {})
+    void refreshModelList().catch(() => {})
     api
       .getAgentSettings()
       .then(setSettings)
       .catch(() => {})
-  }, [])
+  }, [refreshModelList])
   useOnModelsChanged(refreshModels)
 
   // Web-search config is edited on Settings → Search and can arrive via an
@@ -404,10 +494,9 @@ export function Composer({
     // path; this only covers a Composer mounted outside that layout, where
     // there is no loader data to seed from.
     if (hasAppData) return
-    Promise.all([api.listProviders(), api.listModels(), api.getAgentSettings()])
-      .then(([ps, ms, s]) => {
+    Promise.all([api.listProviders(), refreshModelList(), api.getAgentSettings()])
+      .then(([ps, , s]) => {
         setProviders(ps)
-        setModels(ms)
         setSettings(s)
       })
       // `null` is what makes ModelSelector show a skeleton, so leaving it there
@@ -436,9 +525,10 @@ export function Composer({
         .then(setProjects)
         .catch(() => setProjects([]))
     }
-  }, [hasProjectPicker, hasAppData])
+  }, [hasProjectPicker, hasAppData, refreshModelList])
 
   const selectModel = async (providerId: string, modelId: string) => {
+    if (modelWritePending.current) return
     try {
       setSettings(await modelSelection.select(providerId, modelId))
       void revalidator.revalidate()
@@ -667,7 +757,7 @@ export function Composer({
   // wins until the project changes). Persisted project-side; live runtimes are
   // hot-switched by the backend, so it applies to the current turn's next call.
   const permMode: PermissionMode =
-    permModeLocal ?? effectiveProject?.permission_mode ?? 'restricted'
+    permModeLocal ?? effectiveProject?.permission_mode ?? 'ask'
   useEffect(() => {
     setPermModeLocal(null)
   }, [effectiveProjectId])
@@ -740,22 +830,24 @@ export function Composer({
 
   const hasUploading = files.some((f) => f.status === 'uploading')
   const hasReadyFiles = files.some((f) => f.status === 'done')
+  // Keep one action in a fixed position. Uploading attachments also count as
+  // draft content, so an unavailable Send never unexpectedly becomes Stop.
+  const hasDraftContent = !!draft.trim() || files.length > 0 || pickedSkills.length > 0
+  const showStop = contextBusy || (chatLoading && !hasDraftContent)
   // No usable model — the settings pointer names a model that is no longer in
   // the catalog (deleting the active model leaves the pointer behind) or names
   // nothing at all. The backend would silently fall back to whatever its config
   // still holds, so the turn "works" while the UI shows no model: block sending
   // instead and say why. `null` = still loading, which must not block.
-  // The active model's "image understanding" switch. Two states, default off:
-  // anything that is not an explicit `true` means the images travel as paths.
-  // (This used to test `=== false` only, because an unset model still had a
-  // third meaning — "let the SDK decide", which in practice sent images. Now
-  // unset simply is off, so the notice has to cover it or it would go missing
-  // for exactly the models most likely to need it.)
+  // The SDK's effective result, not the nullable user override, governs images.
   const activeModel =
     models !== null && settings !== null
       ? models.find((m) => m.id === settings.default_model_id)
       : undefined
-  const visionOff = activeModel !== undefined && !activeModel.supports_vision
+  const visionOff = activeModel !== undefined && !activeModel.effective_supports_vision
+  const catalogNoImage = !!activeModel?.catalog?.input_modalities.length &&
+    !activeModel.catalog.input_modalities.includes('image')
+  const modelControlsBusy = loading || preparing || modelSelectionDisabled || modelSaving
   const hasImageFile = files.some((f) => (f.type ?? '').startsWith('image'))
   const modelMissing =
     models !== null &&
@@ -766,7 +858,9 @@ export function Composer({
   // ready file, or a picked skill pill (a bare skill invocation is valid —
   // the backend answers with the skill intro).
   const canSend =
+    !contextBusy &&
     !preparing &&
+    !modelSaving &&
     !hasUploading &&
     !modelMissing &&
     (!!draft.trim() || hasReadyFiles || pickedSkills.length > 0)
@@ -780,42 +874,46 @@ export function Composer({
    * setting is one boolean on one model; there is nothing here worth a round
    * trip through another page. */
   // Refresh the catalog without replacing this conversation's selection.
-  useModelChanged(
-    useCallback(() => {
-      Promise.all([
-        api.getAgentSettings(),
-        api.listModels(),
-        api.listProviders()
-      ])
-        .then(([settings, models, providers]) => {
-          setSettings(settings)
-          setModels(models)
-          setProviders(providers)
-        })
-        .catch(() => {})
-    }, [])
-  )
+  useModelChanged(refreshModels)
 
-  const enableVision = async () => {
-    if (!activeModel) return
+  const updateModelDefaults = async (
+    modelId: string,
+    patch: { reasoning_effort: ReasoningEffort } | { supports_vision: true }
+  ) => {
+    if (modelId !== activeModel?.id || modelControlsBusy || modelWritePending.current) return
+    modelWritePending.current = true
+    modelsRevision.current += 1
+    setModelSaving(true)
     try {
-      const updated = await api.updateModel(activeModel.id, {
-        supports_vision: true
-      })
-      setModels((prev) =>
-        (prev ?? []).map((m) => (m.id === updated.id ? updated : m))
-      )
-      // See updateSettings: `models` is seeded from the loader snapshot, so
-      // leaving it stale means the next composer instance reads the model as
-      // vision-less again and asks the user to enable what they just enabled.
-      revalidator.revalidate()
+      if ('reasoning_effort' in patch) {
+        await modelSelection.setThinking(modelId, patch.reasoning_effort)
+        return
+      }
+      const updated = await api.updateModel(modelId, patch)
+      if (modelsMounted.current) {
+        // Match by response ID, never by the selection at response time. An
+        // external session/model change cannot apply model A's defaults to B.
+        setModels((prev) => prev?.map((m) => m.id === updated.id ? updated : m) ?? null)
+      }
     } catch {
-      message.error(t.errors.requestFailed)
+      // The shared API error toast reports failures; the saved value stays put.
+    } finally {
+      modelWritePending.current = false
+      modelsRevision.current += 1
+      if (modelsMounted.current) {
+        setModelSaving(false)
+        void revalidator.revalidate()
+      }
+      dispatchModelsChanged()
     }
   }
 
+  const enableVision = () => {
+    if (activeModel) void updateModelDefaults(activeModel.id, { supports_vision: true })
+  }
+
   const handleSubmit = async (value: string) => {
-    if (submitting.current) return
+    if (submitting.current || modelWritePending.current || contextBusy) return
     const text = value.trim()
     if (hasUploading) return
     // Enter reaches here without passing the button's disabled state, so the
@@ -859,10 +957,10 @@ export function Composer({
     submitting.current = true
     setPreparing(true)
     try {
-      const modelId = await modelSelection.ready()
-      await onSubmit(text, refs, hasSkill ? segments : undefined, modelId)
-    } catch {
-      message.error(t.errors.requestFailed)
+      const selection = await modelSelection.readySelection()
+      await onSubmit(text, refs, hasSkill ? segments : undefined, selection.modelId, selection.reasoningEffort)
+    } catch (error) {
+      message.error(error instanceof Error && error.message ? error.message : t.errors.requestFailed)
       return
     } finally {
       submitting.current = false
@@ -1320,15 +1418,15 @@ export function Composer({
                       !e.altKey
                     ) {
                       e.preventDefault()
-                      // While a reply is streaming, Enter must not send new
-                      // content; the user has to stop first.
-                      if (loading) return false
+                      // Admission is independent of the current generation.
+                      // Context mutations and duplicate submits still wait.
+                      if (contextBusy || preparing) return false
                       handleSubmit(draft)
                       return false
                     }
                   }}
                   onCancel={onCancel}
-                  loading={loading}
+                  loading={preparing}
                   placeholder={placeholder ?? t.home.placeholder}
                   autoSize={autoSize}
                   suffix={false}
@@ -1369,12 +1467,13 @@ export function Composer({
                             explaining the route costs more words than walking
                             it. */}
                         {visionOff && hasImageFile ? (
-                          <div className="w-full text-[11px] leading-snug text-amber-600 dark:text-amber-500">
-                            {t.home.visionOffNotice}{' '}
+                          <div className="w-full text-[11px] leading-snug text-msa-text-2">
+                            {catalogNoImage ? t.home.visionCatalogNotice : t.home.visionOffNotice}{' '}
                             <button
                               type="button"
                               onClick={enableVision}
-                              className="cursor-pointer border-none bg-transparent p-0 text-[11px] font-medium leading-snug text-amber-700 underline underline-offset-2 outline-none dark:text-amber-400"
+                              disabled={modelControlsBusy}
+                              className="cursor-pointer border-none bg-transparent p-0 text-[11px] font-medium leading-snug text-msa-text-brand1 underline underline-offset-2 focus-visible:outline focus-visible:outline-msa-line-3 disabled:cursor-not-allowed disabled:text-msa-text-disabled"
                             >
                               {t.home.visionOffAction}
                             </button>
@@ -1459,12 +1558,23 @@ export function Composer({
                         >
                           {/* Model pill */}
                           <ModelSelector
-                            disabled={preparing || modelSelectionDisabled}
+                            disabled={modelControlsBusy}
                             models={models}
                             providers={providers}
                             settings={settings}
                             onSelectModel={selectModel}
                           />
+                          {activeModel ? (
+                            <ModelThinkingSelector
+                              key={activeModel.id}
+                              model={activeModel}
+                              effort={modelSelection.reasoningEfforts[activeModel.id]}
+                              disabled={modelControlsBusy}
+                              onChange={(id, effort) => {
+                                void updateModelDefaults(id, { reasoning_effort: effort })
+                              }}
+                            />
+                          ) : null}
 
                           {/* MCP pill */}
                           <McpSelector
@@ -1495,22 +1605,29 @@ export function Composer({
                               selectedKeys: [permMode],
                               items: [
                                 {
-                                  key: 'restricted',
+                                  key: 'ask',
                                   label: t.home.permAlwaysAsk,
-                                  onClick: () => switchPermMode('restricted')
+                                  onClick: () => switchPermMode('ask')
                                 },
                                 {
                                   key: 'auto',
-                                  label: t.home.permFullAccess,
+                                  label: t.home.permDecide,
                                   onClick: () => switchPermMode('auto')
+                                },
+                                {
+                                  key: 'full-access',
+                                  label: t.home.permFullAccess,
+                                  onClick: () => switchPermMode('full-access')
                                 }
                               ]
                             }}
                           >
                             <PillButton open={permMenuOpen}>
-                              {permMode === 'auto'
+                              {permMode === 'full-access'
                                 ? t.home.permFullAccess
-                                : t.home.permAlwaysAsk}
+                                : permMode === 'auto'
+                                  ? t.home.permDecide
+                                  : t.home.permAlwaysAsk}
                             </PillButton>
                           </Dropdown>
 
@@ -1536,7 +1653,10 @@ export function Composer({
                       </div>
 
                       {/* Right: attach + send */}
-                      <div className="flex items-center gap-4">
+                      <div className="flex shrink-0 items-center gap-4">
+                        {sessionId && <ContextMeter key={sessionId} sessionId={sessionId} loading={chatLoading}
+                          selectionKey={`${modelSelection.modelId}:${modelSelection.reasoningEfforts[modelSelection.modelId]}`}
+                          onBusy={setContextBusy} onComplete={onContextComplete} />}
                         {attachable && (
                           <>
                             <input
@@ -1567,38 +1687,34 @@ export function Composer({
                           // no hover to rely on); otherwise undefined leaves the
                           // tooltip in its normal hover mode.
                           open={
-                            modelMissing && modelHintOpen ? true : undefined
+                            !showStop && modelMissing && modelHintOpen ? true : undefined
                           }
                           title={
-                            loading
+                            showStop
                               ? t.home.stop
                               : modelMissing
                                 ? t.home.modelRequired
                                 : t.home.send
                           }
                         >
-                          {loading ? (
-                            <IconButton
-                              variant="primary"
-                              icon={
-                                <span className="block h-2.5 w-2.5 rounded-[2px] bg-current" />
-                              }
-                              onClick={() => onCancel?.()}
-                            />
-                          ) : (
+                          {(
                             // A disabled button fires no pointer events, so the
                             // wrapper is what the tooltip hovers on — without it
                             // the "pick a model" hint would be unreachable.
                             <span
                               onMouseEnter={() => {
-                                if (modelMissing) setModelHintOpen(true)
+                                if (!showStop && modelMissing) setModelHintOpen(true)
                               }}
                             >
                               <IconButton
+                                aria-label={showStop ? t.home.stop : t.home.send}
+                                className="min-h-11 min-w-11"
                                 variant="primary"
-                                icon={<SendIcon className="h-5 w-5" />}
-                                onClick={() => handleSubmit(draft)}
-                                disabled={!canSend}
+                                icon={showStop
+                                  ? <span className="block h-2.5 w-2.5 rounded-[2px] bg-current" />
+                                  : <SendIcon className="h-5 w-5" />}
+                                onClick={() => showStop ? onCancel?.() : handleSubmit(draft)}
+                                disabled={!showStop && !canSend}
                               />
                             </span>
                           )}
