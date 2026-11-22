@@ -891,6 +891,7 @@ class LLMAgent(Agent):
                 call_id=str(getattr(message, 'tool_call_id', '') or ''),
                 name=str(getattr(message, 'name', '') or ''),
                 result=content or '',
+                attachments=list(message.attachments or []),
                 error=(content or 'tool call failed') if is_error else None,
                 duration_s=round(duration_s, 3)))
         # todo/split_task tool results drive the plan panel.

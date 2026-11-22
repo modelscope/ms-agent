@@ -127,6 +127,7 @@ def _history_step(
     project=None,
     *,
     has_auth_card: bool = False,
+    attachments: dict[str, list] | None = None,
 ) -> SessionStep | None:
     """Map one persisted assistant tool_call to a step card, or None to drop it.
 
@@ -158,6 +159,8 @@ def _history_step(
     call_id = str(tc.get("id") or "")
     if call_id and call_id in results:
         meta["result"] = results[call_id]
+    if attachments and attachments.get(call_id):
+        meta["attachments"] = attachments[call_id]
     if call_id and call_id in durations:
         meta["duration_ms"] = durations[call_id]
     if call_id and call_id in errored:
@@ -560,6 +563,10 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
         str(r.get("tool_call_id") or ""): str(r.get("content") or "")
         for r in rows if r.get("role") == "tool"
     }
+    attachments = {
+        str(r.get("tool_call_id") or ""): r["attachments"]
+        for r in rows if r.get("role") == "tool" and r.get("attachments")
+    }
     # Persisted tool elapsed time by call id (display only), for the step card.
     durations: dict[str, int] = {
         str(r.get("tool_call_id") or ""): int(r.get("duration_ms"))
@@ -862,6 +869,7 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
                                          results,
                                          durations,
                                          project,
+                                         attachments=attachments,
                                          has_auth_card=perm is not None)
                     if step is not None:
                         step.meta["group"] = group_seq

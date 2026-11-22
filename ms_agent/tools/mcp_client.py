@@ -20,6 +20,7 @@ from ms_agent.config.env import Env
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils import enhance_error, get_logger
+from ms_agent.utils.artifact_manager import ArtifactManager
 
 logger = get_logger()
 
@@ -69,16 +70,33 @@ DEFAULT_STREAMABLE_HTTP_SSE_READ_TIMEOUT = timedelta(seconds=60 * 5)
 #: Identity, toolchain and network settings pass through; credentials do not.
 #: A server's configured ``env`` is applied on top and wins per key.
 _STDIO_ENV_PASSTHROUGH = (
-    'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'TERM', 'TZ',
-    'LANG', 'LC_ALL', 'LC_CTYPE',
-    'SSL_CERT_FILE', 'SSL_CERT_DIR', 'REQUESTS_CA_BUNDLE',
+    'PATH',
+    'HOME',
+    'USER',
+    'LOGNAME',
+    'SHELL',
+    'TMPDIR',
+    'TERM',
+    'TZ',
+    'LANG',
+    'LC_ALL',
+    'LC_CTYPE',
+    'SSL_CERT_FILE',
+    'SSL_CERT_DIR',
+    'REQUESTS_CA_BUNDLE',
     # ALL_PROXY is deliberately absent: a socks5:// value makes any child
     # whose httpx lacks the socksio extra fail on its FIRST request, and the
     # child's venv is not ours to fix. The scheme-specific variables cover
     # the download-acceleration need without that trap.
-    'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY',
-    'http_proxy', 'https_proxy', 'no_proxy',
-    'UV_INDEX_URL', 'UV_DEFAULT_INDEX', 'PIP_INDEX_URL',
+    'HTTP_PROXY',
+    'HTTPS_PROXY',
+    'NO_PROXY',
+    'http_proxy',
+    'https_proxy',
+    'no_proxy',
+    'UV_INDEX_URL',
+    'UV_DEFAULT_INDEX',
+    'PIP_INDEX_URL',
     'npm_config_registry',
 )
 
@@ -113,8 +131,8 @@ def resolve_stdio_command(command: str) -> str:
         candidate = os.path.join(base, command)
         if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
             return candidate
-    searched = ':'.join([os.environ.get('PATH', '')] +
-                        list(_STDIO_EXTRA_BIN_DIRS))
+    searched = ':'.join([os.environ.get('PATH', '')]
+                        + list(_STDIO_EXTRA_BIN_DIRS))
     raise FileNotFoundError(
         f"stdio MCP command '{command}' was not found on this machine. "
         f'Searched: {searched}')
@@ -145,8 +163,7 @@ def _summarize_tool_error(detail: str) -> str:
         return _PYDANTIC_DOC_LINK.sub('', detail).strip()
 
     lines = [f'- `{field}`: {message}' for field, message in seen.items()]
-    return ('the arguments were rejected by the tool:\n'
-            + '\n'.join(lines)
+    return ('the arguments were rejected by the tool:\n' + '\n'.join(lines)
             + '\nSend each value as its declared JSON type (a number '
             'unquoted, not as a string) and call again.\n\nOriginal error:\n'
             + _PYDANTIC_DOC_LINK.sub('', detail).strip())
@@ -168,6 +185,7 @@ class MCPClient(ToolBase):
         config: Optional[DictConfig] = None,
     ):
         super().__init__(config)
+        self._artifacts = ArtifactManager(self.output_dir)
         self.sessions: Dict[str, ClientSession] = {}
         # One owner task per server, holding that server's transport open for
         # its whole lifetime (see _own_server), plus the event that asks it to
@@ -203,14 +221,18 @@ class MCPClient(ToolBase):
 
         texts = []
         resources = []
+        attachments = []
+        image_errors = []
         if response.isError:
             sep = '\n\n'
             if all(isinstance(item, str) for item in response.content):
                 detail = sep.join(response.content)
             else:
                 detail = sep.join(
-                    getattr(item, 'text', str(item))
-                    for item in response.content)
+                    getattr(
+                        item, 'text',
+                        f'[{getattr(item, "type", "unknown")} content omitted]'
+                    ) for item in response.content)
             # Marked as an error rather than returned as ordinary text. A
             # failure reported only in prose reaches the model with no error
             # flag and reaches the UI with no failed step, so a call that was
@@ -225,14 +247,34 @@ class MCPClient(ToolBase):
         for content in response.content:
             if content.type == 'text':
                 texts.append(content.text)
+            elif content.type == 'image':
+                try:
+                    attachment = await asyncio.to_thread(
+                        self._artifacts.store_image, content.data,
+                        content.mimeType)
+                    attachments.append(attachment)
+                    texts.append(
+                        f'Image {len(attachments)}: {attachment["path"]}')
+                except (ValueError, OSError) as exc:
+                    # Keep the readable parts, but never pretend missing pixels
+                    # arrived or stringify the image's base64 into the log.
+                    image_errors.append(f'Could not read tool image: {exc}')
             elif content.type == 'resource':
                 import json5
                 json_str = content.resource.model_dump_json(by_alias=True)
                 texts.append(json_str)
                 resources.append(json5.loads(json_str))
 
-        if resources:
-            return {'text': '\n\n'.join(texts), 'resources': resources}
+        if resources or attachments or image_errors:
+            result = {
+                'text': '\n\n'.join(texts + image_errors),
+                'resources': resources
+            }
+            if attachments:
+                result['attachments'] = attachments
+            if image_errors:
+                result['is_error'] = True
+            return result
 
         return '\n\n'.join(texts)
 
@@ -492,7 +534,8 @@ class MCPClient(ToolBase):
         stack = AsyncExitStack()
         try:
             async with stack:
-                session = await self._open_session(stack, server_name, **kwargs)
+                session = await self._open_session(stack, server_name,
+                                                   **kwargs)
                 self.sessions[server_name] = session
                 if not ready.done():
                     ready.set_result(server_name)
