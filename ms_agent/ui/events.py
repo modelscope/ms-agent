@@ -93,6 +93,16 @@ class TurnCompleted(AgentEvent):
     usage: Optional[UsageInfo] = None
 
 
+@dataclass(frozen=True)
+class InputDelivered(AgentEvent):
+    """A durable user input entered the current logical task."""
+    EVENT_TYPE: ClassVar[str] = 'input_delivered'
+    input_id: str = ''
+    turn_id: str = ''
+    segment_id: str = ''
+    message: dict = field(default_factory=dict)
+
+
 # ── assistant output ──────────────────────────────────────────────────────
 
 
@@ -196,6 +206,8 @@ class ToolCallCompleted(AgentEvent):
     result: str = ''
     error: Optional[str] = None
     duration_s: Optional[float] = None
+    execution_status: str = 'completed'
+    skip_reason: Optional[str] = None
 
 
 # ── plan / todo ───────────────────────────────────────────────────────────

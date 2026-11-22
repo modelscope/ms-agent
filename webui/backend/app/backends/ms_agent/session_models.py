@@ -78,7 +78,7 @@ def _validate_effort(key, effort):
         raise BadRequest('This thinking choice is not supported by the configured model.')
 
 
-def create(project, *, name: str = "", model_id: str | None = None, reasoning_effort: str | None = None):
+def create(project, *, name: str = "", model_id: str | None = None, reasoning_effort: str | None = None, request_id: str | None = None):
     manager = sm_for(project)
     with manager.transaction_lock(), settings_lock(), sidecar.transaction_lock():
         data = model_link._load()
@@ -95,7 +95,7 @@ def create(project, *, name: str = "", model_id: str | None = None, reasoning_ef
             _validate_effort(key, reasoning_effort)
         efforts = _remember_effort(None, key, data, sidecar._load(), reasoning_effort)
         return manager.create(name=name, model_provider=key[0], model=key[1],
-                              reasoning_efforts=efforts)
+                              reasoning_efforts=efforts, request_id=request_id)
 
 
 def migrate(project, session):

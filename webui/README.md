@@ -8,6 +8,8 @@ follow a task and continue the conversation. [中文说明](README_ZH.md)
   and browse or edit project files.
 - **Follow the agent's progress:** stream replies, reasoning, tool calls and
   generated files as the task runs.
+- **Add input while a task runs:** queue follow-ups or steer the current task,
+  with editable pending messages that survive a page refresh.
 - **Choose models and tools:** configure model providers, connect MCP tools and
   enable the skills each project needs.
 - **Continue with context:** keep session history and manage project memory for
@@ -128,6 +130,28 @@ ms-agent ui
 ```
 
 First change to the directory where you saved them. Model configuration and sessions persist, so you do not need to enter your API key again. If you installed Node.js through nvm, check `node --version` in the new terminal. If the command is missing, run `source "$HOME/.nvm/nvm.sh"` first.
+
+## Add input during a task
+
+Keep typing, attaching files or selecting skills while the agent works. New
+messages **queue by default** and run in order after the current task finishes.
+In **Settings → Personalization → Conversation behavior**, select **Steer** to
+add new messages to the current task after its current model response or started
+tool operations finish. Changing this setting only affects new submissions.
+
+Pending messages appear above the input box, where you can edit or withdraw
+them. Once processing starts, they appear as ordinary messages in the conversation.
+Refreshing the page or switching sessions keeps the task running.
+
+While a task runs, the input's action button shows **Stop** when the draft is
+empty and switches to **Send** when you type, attach files or select a skill.
+Clearing or successfully sending the draft brings back **Stop** if the task is
+still running.
+
+**Stop** cancels the current task and holds pending messages. **Continue sending**
+releases those messages as new tasks; it does not resume cancelled operations.
+You can also send a new task while earlier messages remain on hold. After a server
+restart, pending messages stay on hold until you resume them.
 
 ## Branch a conversation
 

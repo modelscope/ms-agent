@@ -1,4 +1,16 @@
 {
+  "followUp": {
+    "title": "Conversation behavior", "queue": "Queue", "steer": "Steer",
+    "queueDesc": "Process new messages in order after the current task finishes.",
+    "steerDesc": "Add new messages to the current task after the current model response and started tools finish.",
+    "pending": "{count} pending", "expand": "Expand", "collapse": "Collapse",
+    "thisTurn": "This task", "nextTurn": "Next task", "paused": "Pending messages paused",
+    "resume": "Continue sending", "more": "More actions", "edit": "Edit", "withdraw": "Withdraw",
+    "withdrawConfirm": "Withdraw this pending message?", "save": "Save", "cancel": "Cancel",
+    "editConflict": "This message changed or was delivered. Your edit is preserved and can be sent as a follow-up.",
+    "confirming": "Confirming receipt…", "reconnecting": "Connection lost. Reconnecting…",
+    "skipped": "Skipped", "attachments": "{count} attachments"
+  },
   "auth": {
     "title": "Sign in to MS-Agent",
     "description": "Enter the credentials set by the person running this instance.",
