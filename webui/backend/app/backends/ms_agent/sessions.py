@@ -380,6 +380,8 @@ def list_messages(sid: str) -> list[SessionMessage]:
         # (API/turn errors) and permission records (restricted-mode auth cards).
         if hasattr(log, "get_errors"):
             extra += log.get_errors()
+        if hasattr(log, "get_notices"):
+            extra += log.get_notices()
         if hasattr(log, "get_permissions"):
             extra += log.get_permissions()
         if hasattr(log, "get_skill_invocations"):
@@ -754,6 +756,10 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
                     text=str(row.get("message") or ""),
                     recoverable=bool(row.get("recoverable", False)),
                 ))
+            continue
+        if row.get("_type") == "notice":
+            parts.append(SessionPart(kind="notice", text=str(row.get("text") or ""),
+                                     code=str(row.get("code") or "")))
             continue
         if row.get("_type") == "permission":
             # Buffer until its matching tool_call step is emitted (see

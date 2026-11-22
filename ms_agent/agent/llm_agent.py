@@ -3242,6 +3242,38 @@ class LLMAgent(Agent):
         except Exception:
             logger.warning('persist partial round failed', exc_info=True)
 
+    def _report_mcp_availability(self, messages):
+        failures = getattr(
+            getattr(self.tool_manager, 'servers', None), 'startup_failures',
+            {})
+        if not failures or not messages or messages[-1].role != 'user':
+            return messages
+        from ms_agent.ui.events import Notice
+
+        detail = '\n'.join(f'{name}: {reason}'
+                           for name, reason in failures.items())
+        if self._event_sink is not None:
+            self._event_sink.emit(
+                Notice(level='warning', text=detail, code='mcp_unavailable'))
+        if self.session_log is not None:
+            self.session_log.record_notice({
+                'text': detail,
+                'level': 'warning',
+                'code': 'mcp_unavailable'
+            })
+        # External diagnostics are for the UI, never instructions for the LLM.
+        # This fixed capability notice is added before pre_step_len so it does
+        # not become durable conversation history or survive a reconnection.
+        return [
+            *messages,
+            Message(
+                role='system',
+                content=
+                ('Some optional MCP servers are unavailable this session. '
+                 'Continue using available tools; do not claim to have used the '
+                 'missing capabilities.'))
+        ]
+
     async def run_loop(self, messages: Union[List[Message], str],
                        **kwargs) -> AsyncGenerator[Any, Any]:
         """Run the agent loop (LLM generation + tool calling).
@@ -3476,6 +3508,7 @@ class LLMAgent(Agent):
 
                 # Captured right before step() so only genuine step outputs are
                 # appended to the SessionLog (ephemeral injections are excluded).
+                messages = self._report_mcp_availability(messages)
                 await self.update_context_snapshot(messages)
                 pre_step_len = len(messages)
                 if not resume_waiting:

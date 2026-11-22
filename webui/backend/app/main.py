@@ -103,6 +103,9 @@ def create_app() -> FastAPI:
         try:
             await registry.close_all()
         finally:
+            from app.backends.ms_agent import mcp_health
+
+            await mcp_health.shutdown()
             skill_index.stop()
 
     app.include_router(auth.router)

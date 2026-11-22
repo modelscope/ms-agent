@@ -428,10 +428,41 @@ Local SDK installs keep their existing PATH unless this variable is set.
 Packages installed into a running container's system Python are lost when that
 container is replaced. Put recurring dependencies in a derived image.
 
+### MCP startup and recovery
+
+MCP tools are optional: if some or all servers fail to start, ordinary chat and
+built-in tools remain available. A notice identifies the missing capabilities.
+Startup includes connecting, initializing and fetching the first tool list.
+The default is 60 seconds per server after it obtains a concurrency slot (up to
+8 servers start together), followed by a separate cleanup grace period. Set
+`MCP_STARTUP_TIMEOUT`, or a positive `startup_timeout` in a server's JSON entry,
+to adjust the startup budget. Ordinary tool calls keep their own timeout.
+
+The initial stdio check only confirms that its command exists and displays
+**Connection not verified**. **Test connection** creates an independent connection
+and reads its tools; it does not repair an existing conversation. In the card's
+menu, **Reconnect sessions next turn** schedules affected conversations to
+rebuild before their next idle turn. Current replies continue, and the session
+ID and conversation history are retained. Disabled servers stay disabled.
+Business tool calls are never replayed automatically.
+
+Automatic remote checks allow up to 6 seconds; a manual connection test allows
+up to 45 seconds. A server's smaller `startup_timeout` still applies. Concurrent
+checks share work only when their effective budgets match, and one malformed
+server configuration does not prevent other health results from being returned.
+
+Startup notices expose controlled error categories and HTTP status codes, not
+raw server output, command arguments or connection addresses. Unknown details
+are withheld because they may contain credentials. The model receives a fixed
+capability notice, without external error details.
+Transport library logs also omit raw details within MCP connection tasks;
+other requests using those libraries keep their normal logging.
+
 ### Python package sources
 
 The image uses the Tsinghua PyPI mirror for runtime `pip`, `uv` and `uvx`
-downloads.
+downloads. Runtime npm/npx uses `https://registry.npmmirror.com/`, configured
+in npm's global config (`npm config get globalconfig`).
 
 To use another mirror or a company package index, create two files on the host.
 For example, to use the official PyPI index, save this as `pip.conf`:
@@ -456,9 +487,19 @@ Add these options before the image name in the `docker run` command above:
 --mount type=bind,src="$PWD/uv.toml",dst=/etc/uv/uv.toml,readonly \
 ```
 
-Use file mounts for container-wide defaults: the agent's execution tools do not
-inherit every environment variable passed with `-e`. Package indexes cover
-PyPI packages; Git repositories and model downloads use their own addresses.
+File mounts provide container-wide defaults. MCP subprocesses and the agent's
+shell also inherit explicitly allowed package settings: `PIP_INDEX_URL`,
+`PIP_CONFIG_FILE`, `PIP_CACHE_DIR`, `UV_INDEX_URL`, `UV_DEFAULT_INDEX`,
+`UV_CONFIG_FILE`, `UV_CACHE_DIR`, and npm registry/cache/userconfig/globalconfig
+variables in upper or lower case. Explicit MCP `env` and tool `shell_env` take
+precedence. Other application credentials are not inherited automatically.
+
+Validate actual wheel/tarball downloads in the deployment network, then test
+MCP initialization and tool listing with a fresh cache. A reachable index alone
+is insufficient. There is no automatic switch to a second registry. Cache
+directories must be writable by the runtime user; persistence depends on the
+container's volume mounts. Git repositories and model downloads use their own
+addresses.
 
 ## Troubleshooting
 
