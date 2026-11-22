@@ -59,7 +59,7 @@ The WebUI brings projects, sessions, and files together with live execution and 
 
 ::::
 
-## Application ecosystem
+## Domain applications
 
 MS-Agent also offers professional applications for research, development, and content creation—ready for real work and a starting point for your own.
 
