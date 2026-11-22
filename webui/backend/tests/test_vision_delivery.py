@@ -160,31 +160,12 @@ def test_reconstruct_reads_the_stamped_attachment(tmp_path):
 # --------------------------------------------------------------------------- #
 # Session model memory
 # --------------------------------------------------------------------------- #
-def test_turn_records_the_session_model(monkeypatch):
-    """Reopening a conversation must put it back on the model it was held with.
+def test_degraded_image_notice_uses_the_turn_model():
+    from app.backends.ms_agent.mapping import encode_model_id
 
-    The active model is one global setting, so without this an old session runs
-    on whatever was picked most recently anywhere else — which changes what the
-    model can see (a text-only model degrades every image in the history) and
-    throws away the provider's prefix cache for that conversation.
-    """
-    written = {}
-    monkeypatch.setattr(chat.sidecar, "merge",
-                        lambda kind, key, data: written.setdefault(
-                            (kind, key), {}).update(data))
-    monkeypatch.setattr(chat, "_active_model_id", lambda: "MODEL-ID")
-    chat._remember_session_model("s1")
-    assert written[("sessions", "s1")] == {"model_id": "MODEL-ID"}
-
-
-def test_no_active_model_records_nothing(monkeypatch):
-    written = {}
-    monkeypatch.setattr(chat.sidecar, "merge",
-                        lambda kind, key, data: written.setdefault(
-                            (kind, key), {}).update(data))
-    monkeypatch.setattr(chat, "_active_model_id", lambda: "")
-    chat._remember_session_model("s1")
-    assert written == {}
+    mapper = chat._TurnMapper("s1", model_key=("anthropic", "original"))
+    frames = mapper.map({"type": "image_delivered", "state": "degraded", "index": 0})
+    assert frames[0].meta["model"] == encode_model_id("anthropic", "original")
 
 
 def test_session_schema_carries_the_model(monkeypatch):
@@ -197,5 +178,5 @@ def test_session_schema_carries_the_model(monkeypatch):
         updated_at = __import__("datetime").datetime.now()
 
     monkeypatch.setattr(mapping.sidecar, "get",
-                        lambda kind, key, default=None: {"model_id": "M1"})
-    assert mapping.session_to_schema(_S()).model_id == "M1"
+                        lambda kind, key, default=None: {"model_id": mapping.encode_model_id("openai", "M1")})
+    assert mapping.session_to_schema(_S()).model_id == mapping.encode_model_id("openai", "M1")

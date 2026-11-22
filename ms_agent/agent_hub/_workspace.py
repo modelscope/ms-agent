@@ -550,6 +550,161 @@ def scrub_json_secrets(obj) -> None:
                 scrub_json_secrets(item)
 
 
+def _blank_toml_value(out: list[str], lines: list[str], i: int, pre: str,
+                      val: str) -> int:
+    """Blank the value of the TOML assignment at ``lines[i]``, appending to *out*.
+
+    Handles multi-line strings (``'''`` / ``\"\"\"``), (multi-line) arrays and
+    plain scalars; returns the next line index to process.
+    """
+    vstrip = val.strip()
+    delim = next((d for d in ('"""', "'''")
+                  if vstrip.startswith(d) and vstrip.count(d) < 2), None)
+    if delim:
+        out.append(pre + '""')
+        i += 1
+        while i < len(lines) and delim not in lines[i]:
+            i += 1
+        return i + 1
+    if vstrip.startswith('['):
+        out.append(pre + '[]')
+        if ']' not in vstrip:
+            i += 1
+            while i < len(lines) and ']' not in lines[i]:
+                i += 1
+        return i + 1
+    out.append(pre + '""')
+    return i + 1
+
+
+def scrub_toml_secrets(text: str) -> str:
+    """Blank secret values in a TOML config *text*, line-by-line.
+
+    Line-level rewrite (stdlib has no TOML writer): any ``key = <value>``
+    assignment whose key name matches :func:`is_secret_key` has its value
+    cleared to ``""``, preserving the rest of the file verbatim.
+
+    Dotted keys (``model.api_key = ...``) are allowed and only the LAST
+    segment is tested, so ``a.b.api_key`` is caught, not just a bare
+    top-level ``api_key``. Beyond simple ``key = <scalar>`` lines this also
+    covers:
+
+    * inline tables  ``provider = { api_key = "X" }`` (incl. nested) --
+      secret pairs inside the braces are cleared in place; an
+      ``env`` / ``headers`` inline table (:data:`SECRET_BAG_KEYS`) is cleared
+      wholesale -- those names are arbitrary bearer bags;
+    * table sections ``[mcp.fs.headers]`` / ``[[...env]]`` -- when the
+      LAST path segment is a secret bag every assignment inside the
+      section is blanked, including quoted keys (``"X-Auth-Code"``)
+      that the bare-key pattern cannot match;
+    * arrays         ``tokens = ["X"]`` -> ``tokens = []``; an ``args``
+      array (single- or multi-line) is positionally scrubbed (secret
+      flag values blanked); a clean multi-line array keeps its layout;
+    * multi-line strings (``secret = '''`` / ``\"\"\"``) -- the opener is
+      blanked and the content lines up to the closing delimiter dropped;
+    * URL string values under any key -- userinfo passwords and
+      secret-named query parameters are stripped.
+
+    Shared by openhuman's ``config.toml`` and by the content-driven outbound
+    layer (:mod:`ms_agent.agent_hub._secrets`), which cleans ``.toml`` at any
+    collected path.
+    """
+    pattern = re.compile(
+        r'^(?P<pre>\s*(?P<key>[A-Za-z0-9_.-]+)\s*=\s*)(?P<val>.*)$')
+    inline_pair = re.compile(r'(?P<key>[A-Za-z0-9_.-]+)(?P<sep>\s*=\s*)'
+                             r'(?P<val>"[^"]*"|\'[^\']*\'|[^,{}\s][^,}]*)')
+    section = re.compile(r'^\s*\[{1,2}\s*(?P<path>[^#\]\[]+?)\s*\]{1,2}'
+                         r'\s*(?:#.*)?$')
+    bagged_assign = re.compile(r'^(?P<pre>\s*.+?=\s*)(?P<val>.*)$')
+    out: list[str] = []
+    lines = text.split('\n')
+    # True while inside a ``[...headers]`` / ``[...env]`` table section.
+    in_bag_section = False
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        sm = section.match(line)
+        if sm:
+            seg = sm.group('path').split('.')[-1].strip().strip('"\'')
+            in_bag_section = seg in SECRET_BAG_KEYS
+            out.append(line)
+            i += 1
+            continue
+        m = pattern.match(line)
+        if not m:
+            # Quoted keys (``"X-Auth-Code" = ...``) fail the bare-key
+            # pattern; inside a bag section they must still be blanked.
+            if in_bag_section and not line.strip().startswith('#'):
+                bm = bagged_assign.match(line)
+                if bm:
+                    i = _blank_toml_value(out, lines, i, bm.group('pre'),
+                                          bm.group('val'))
+                    continue
+            out.append(line)
+            i += 1
+            continue
+        segs = [s.strip().strip('"\'') for s in m.group('key').split('.')]
+        key = segs[-1]
+        val = m.group('val')
+        vstrip = val.strip()
+        # Dotted path THROUGH a bag (``mcp.fs.headers.X = v``) is the
+        # same as living in a ``[...headers]`` section.
+        in_bag_path = any(s in SECRET_BAG_KEYS for s in segs[:-1])
+        if is_secret_key(key) or in_bag_section or in_bag_path:
+            i = _blank_toml_value(out, lines, i, m.group('pre'), val)
+            continue
+        # Secret-bag inline table (``headers = {...}`` / ``env = {...}``):
+        # clear every pair -- the names inside are arbitrary.
+        if key in SECRET_BAG_KEYS and vstrip.startswith('{'):
+            out.append(
+                m.group('pre') + inline_pair.sub(
+                    lambda pm: f"{pm.group('key')}{pm.group('sep')}\"\"", val))
+            i += 1
+            continue
+        # ``args = [...]``: positional flag scrub. A multi-line array is
+        # joined for the scrub and only re-emitted on one line when a
+        # secret was actually removed (clean arrays keep their layout).
+        if key in ARGS_LIST_KEYS and vstrip.startswith('['):
+            if ']' in vstrip:
+                out.append(m.group('pre') + scrub_toml_array_args(val))
+                i += 1
+                continue
+            j = i + 1
+            parts = [val.strip()]
+            while j < len(lines) and ']' not in lines[j]:
+                parts.append(lines[j].strip())
+                j += 1
+            if j < len(lines):
+                parts.append(lines[j].strip())
+                joined = ' '.join(parts)
+                cleaned = scrub_toml_array_args(joined)
+                if cleaned == joined:
+                    out.extend(lines[i:j + 1])
+                else:
+                    out.append(m.group('pre') + cleaned.strip())
+                i = j + 1
+                continue
+        # Non-secret key: still scrub secret pairs inside inline tables
+        # (``provider = { api_key = "X" }``, nested tables included), and
+        # strip credentials from URL string values.
+        if '{' in vstrip:
+
+            def _repl(pm):
+                if is_secret_key(pm.group('key').split('.')[-1]):
+                    return f"{pm.group('key')}{pm.group('sep')}\"\""
+                cleaned = scrub_scalar_url_token(pm.group('val'))
+                if cleaned != pm.group('val'):
+                    return f"{pm.group('key')}{pm.group('sep')}{cleaned}"
+                return pm.group(0)
+
+            out.append(m.group('pre') + inline_pair.sub(_repl, val))
+            i += 1
+            continue
+        out.append(m.group('pre') + scrub_scalar_url_token(val))
+        i += 1
+    return '\n'.join(out)
+
+
 class WorkspaceSpec(ABC):
     """Abstract base for agent framework workspace file specifications.
 
@@ -864,6 +1019,12 @@ class WorkspaceSpec(ABC):
         outbound sanitize for free. Frameworks whose inbound hook DOES rebind
         identity (qwenpaw ``agent.json``) must override this to blank secrets
         WITHOUT writing machine-local identity into the upload.
+
+        This hook selects files by PATH and is only the first of two outbound
+        layers: :func:`._sync.sanitize_outbound` then runs every file through
+        the content-driven :func:`._secrets.redact_outbound`, so a framework
+        that defines no hook is still covered. Keep this hook for the structural
+        cleaning and fail-closed refusals of the configs a framework owns.
         """
         return self.sanitize_inbound_file(rel_path, content)
 

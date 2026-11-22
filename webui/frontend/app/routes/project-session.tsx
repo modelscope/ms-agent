@@ -5,7 +5,6 @@ import { ApiError, api, orThrow } from '~/lib/api'
 import { historyToAgentMessages } from '~/lib/agentProvider'
 import { metaDict, pageTitle } from '~/lib/pageTitle'
 import type { Route } from './+types/project-session'
-import { useRestoreSessionModel } from '~/lib/sessionModel'
 import { useMarkSessionRead } from '~/lib/sessionRead'
 
 /** "<session title> · <project> · <brand>" — falls back to the generic
@@ -55,6 +54,7 @@ export async function loader({ params }: Route.LoaderArgs) {
     session,
     sessionId,
     sessionModelId: session?.model_id || '',
+    sessionReasoningEfforts: session?.reasoning_efforts,
     // Whether a background turn's result is still unacknowledged — opening this
     // page is the acknowledgement, so the flag is only carried here to decide
     // whether that write (and its sidebar repaint) is needed at all.
@@ -71,17 +71,13 @@ export default function ProjectSessionPage() {
     project,
     sessionId,
     sessionModelId,
+    sessionReasoningEfforts,
     sessionUnread,
     messages,
     plan,
     artifacts,
     running
   } = useLoaderData<typeof loader>()
-  // Re-select the model this conversation was held with. A session's answers,
-  // its provider-side prefix cache, and — when capabilities differ — what the
-  // model can even see all depend on which model is active, so inheriting
-  // whatever was last picked somewhere else silently changes the conversation.
-  useRestoreSessionModel(sessionModelId)
   // Reading the conversation is what clears its "finished while you were away"
   // dot in the sidebar.
   useMarkSessionRead(sessionId, sessionUnread)
@@ -91,6 +87,9 @@ export default function ProjectSessionPage() {
   )
   return (
     <ChatView
+      key={sessionId}
+      initialModelId={sessionModelId}
+      initialReasoningEfforts={sessionReasoningEfforts}
       project={project}
       sessionId={sessionId}
       initialMessages={initialMessages}

@@ -122,13 +122,15 @@ def _check_children(processes) -> None:
 
 
 def _wait_for_http(
-    url: str, processes, deadline: float, *, kind: str, expected: str | None = None
+    url: str, processes, deadline: float, *, kind: str, expected: str | None = None,
+    headers: dict[str, str] | None = None,
 ) -> None:
     last_error = "not ready"
     while time.monotonic() < deadline:
         _check_children(processes)
         try:
-            with _LOOPBACK_OPENER.open(url, timeout=2) as response:
+            request = urllib.request.Request(url, headers=headers or {})
+            with _LOOPBACK_OPENER.open(request, timeout=2) as response:
                 content = response.read()
                 valid = response.status == 200
                 if kind == "health":
@@ -167,6 +169,28 @@ def _run_api() -> None:
     )
 
 
+def _check_traced_tree(frontend: Path) -> None:
+    """Reject a `pnpm build:image` tree that no longer matches the checkout.
+
+    Such a tree is a copy of `build/` next to a traced `node_modules`, and it has no
+    `app/` — so `validate_build` skips the source comparison and finds the copied
+    manifest agreeing with the copied outputs, which it always will. Editing a
+    component, rebuilding, and forgetting to re-trace would then serve the previous
+    UI with every check green. The checkout's manifest is the second opinion, and it
+    is only consulted when it exists: the image ships the traced tree alone.
+    """
+    if frontend == FRONTEND_DIR or (frontend / "app").is_dir():
+        return
+    manifest = FRONTEND_DIR / "build/webui-build.json"
+    traced = frontend / "build/webui-build.json"
+    if not manifest.is_file() or not traced.is_file():
+        return
+    if sha256(manifest) != sha256(traced):
+        raise BuildError(
+            f"{frontend} was traced from a different build than {FRONTEND_DIR}/build"
+        )
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Run the MS-Agent WebUI on one public port"
@@ -183,6 +207,13 @@ def main(argv: list[str] | None = None) -> None:
         help="Internal loopback port; by default choose the next free port",
     )
     parser.add_argument("--no-open", action="store_true")
+    parser.add_argument(
+        "--frontend-dir",
+        type=Path,
+        default=FRONTEND_DIR,
+        help="Frontend tree to serve; pass frontend/build-runtime to run what the "
+        "image ships instead of the checkout (see `pnpm build:image`)",
+    )
     parser.add_argument("--startup-timeout", type=float, default=READY_TIMEOUT_S)
     args = parser.parse_args(argv)
     if not math.isfinite(args.startup_timeout) or args.startup_timeout <= 0:
@@ -190,18 +221,35 @@ def main(argv: list[str] | None = None) -> None:
     host = args.host.strip().removeprefix("[").removesuffix("]")
     if not host:
         parser.error("--host cannot be empty")
+    frontend = Path(args.frontend_dir).expanduser().resolve()
     processes = []
     exit_code = 0
     with interruptible():
         try:
             public, backend = select_ports(host, args.port, args.backend_port)
+            # A traced tree carries no `app/`, so validate_build cannot tell whether
+            # it still matches the sources — it only sees its own copied manifest and
+            # calls itself consistent. Compare the two manifests while the checkout is
+            # next door, or an edited component would be served from a stale copy with
+            # every check passing.
+            _check_traced_tree(frontend)
             css_href = validate_build(
-                FRONTEND_DIR, check_sources=(FRONTEND_DIR / "app").is_dir()
+                frontend, check_sources=(frontend / "app").is_dir()
             )
             node = _require_node()
             # Load source dotenv before copying the child environment; installed
             # mode disables dotenv discovery outside a checkout.
             from app.core import settings as _settings  # noqa: F401
+            from app.core.auth import COOKIE_NAME, WebUIAuth
+
+            auth = WebUIAuth(_settings.settings)
+            probe_headers = {"Cookie": f"{COOKIE_NAME}={auth.issue_session()}"} if auth.enabled else {}
+            if not auth.enabled and host not in {"127.0.0.1", "::1", "localhost"}:
+                print(
+                    "WebUI authentication is disabled. Use an authenticated gateway "
+                    "or set MS_AGENT_WEBUI_AUTH_ENABLED=true when sharing this address.",
+                    file=sys.stderr,
+                )
 
             env = os.environ.copy()
             env.update(
@@ -239,8 +287,8 @@ def main(argv: list[str] | None = None) -> None:
                 (
                     "frontend",
                     _spawn(
-                        [node, str(FRONTEND_DIR / "server.js")],
-                        cwd=FRONTEND_DIR,
+                        [node, str(frontend / "server.js")],
+                        cwd=frontend,
                         env=env,
                     ),
                 )
@@ -248,14 +296,16 @@ def main(argv: list[str] | None = None) -> None:
             url = public_url(host, public)
             _wait_for_http(url + "/api/health", processes, deadline, kind="health")
             _wait_for_http(
-                url + "/", processes, deadline, kind="page", expected=css_href
+                url + "/", processes, deadline, kind="page", expected=css_href,
+                headers=probe_headers,
             )
             _wait_for_http(
                 url + css_href,
                 processes,
                 deadline,
                 kind="css",
-                expected=sha256(FRONTEND_DIR / "build/client" / css_href.lstrip("/")),
+                expected=sha256(frontend / "build/client" / css_href.lstrip("/")),
+                headers=probe_headers,
             )
             _check_children(processes)
             print(f"\nMS-Agent WebUI ready: {url}\n", flush=True)
@@ -278,7 +328,8 @@ def main(argv: list[str] | None = None) -> None:
         ) as exc:
             print(f"Cannot start WebUI: {exc}", file=sys.stderr, flush=True)
             if isinstance(exc, BuildError):
-                print(f"Run `pnpm build` in {FRONTEND_DIR}", file=sys.stderr)
+                hint = "build:image" if frontend != FRONTEND_DIR else "build"
+                print(f"Run `pnpm {hint}` in {FRONTEND_DIR}", file=sys.stderr)
             exit_code = 1
         finally:
             for _label, process in reversed(processes):

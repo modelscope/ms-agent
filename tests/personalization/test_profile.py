@@ -50,5 +50,6 @@ class TestProfileManager:
 
     def test_write_atomic_no_partial_file(self, manager):
         manager.write('complete content')
-        tmp_file = manager.path.with_suffix('.tmp')
-        assert not tmp_file.exists()
+        # Temp names are unique per writer now, so check for any leftover.
+        left = {p.name for p in manager.path.parent.iterdir()}
+        assert left == {'profile.md', '.locks'}

@@ -118,9 +118,8 @@ OPENHUMAN_FILES = {
     'SOUL.md': '# Soul\n\n## Identity\nI am OpenHuman, a digital companion.\n',
     'IDENTITY.md': '# Identity\nOpenHuman v1.0 - empathetic assistant.\n',
     'HEARTBEAT.md': '# Heartbeat\n\n## Active Tasks\n- [ ] Remember birthday\n',
+    'MEMORY_GOALS.md': '# Goals\n[g1] Maintain a well-configured environment.\n',
     'config.toml': '[model]\nprovider = "openai"\napi_key = "sk-should-be-scrubbed"\n',
-    'wiki/interests.md': '# Interests\nHiking trails in the Pacific Northwest.\n',
-    'wiki/summaries/week1.md': '# Week 1 Summary\nGot to know the user.\n',
     'skills/journal/SKILL.md': '# Journal\nHelp the user maintain a daily journal.\n',
 }
 
@@ -453,7 +452,7 @@ class TestClientIntegration(unittest.TestCase):
             "openclaw": ["IDENTITY.md", "BOOTSTRAP.md", "memory/project-notes.md"],
             "qwenpaw": ["PROFILE.md", "BOOTSTRAP.md", "memory/story-notes.md"],
             "hermes": ["memories/USER.md"],
-            "openhuman": ["SOUL.md", "IDENTITY.md", "HEARTBEAT.md", "wiki/interests.md"],
+            "openhuman": ["SOUL.md", "IDENTITY.md", "HEARTBEAT.md", "MEMORY_GOALS.md"],
             "qoder": ["agents/code-reviewer.md", "commands/review.md", "rules/style-guide.md", "memory/MEMORY.md"],
         }
 

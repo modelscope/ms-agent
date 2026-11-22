@@ -82,7 +82,7 @@ export function TaskPlan({
           {done}/{total}
         </span>
         <ArrowDownIcon
-          className={`h-3 w-3 shrink-0 text-msa-text-3 transition-transform duration-200 ${
+          className={`h-3.5 w-3.5 shrink-0 text-msa-text-3 transition-transform duration-200 ${
             expanded ? 'rotate-180' : ''
           }`}
         />

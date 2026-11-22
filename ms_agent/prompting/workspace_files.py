@@ -32,6 +32,9 @@ from typing import Dict, Optional, Tuple
 
 from ms_agent.prompting.builtin import (HOME_FILE_TEMPLATES, TEMPLATE_VERSION)
 from ms_agent.project.paths import global_home, local_internal_dir
+from ms_agent.utils.atomic_file import atomic_write_text
+from ms_agent.utils.file_lock import locked
+from ms_agent.utils.json_store import read_json
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
@@ -122,13 +125,6 @@ def _capped(body: str, path: Path) -> str:
     return body[:MAX_FILE_CHARS] + '\n\n[...truncated: file exceeds limit...]'
 
 
-def _atomic_write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + '.tmp')
-    tmp.write_text(text, encoding='utf-8')
-    tmp.replace(path)
-
-
 # ── sidecar bookkeeping ──────────────────────────────────────────────────────
 
 
@@ -141,15 +137,14 @@ def _sidecar_path(home: Path, name: str) -> Path:
 
 
 def _load_sidecar(home: Path, name: str) -> Optional[dict]:
-    try:
-        return json.loads(_sidecar_path(home, name).read_text('utf-8'))
-    except (OSError, json.JSONDecodeError, ValueError):
-        return None
+    path = _sidecar_path(home, name)
+    return read_json(path) if path.exists() else None
 
 
 def _save_sidecar(home: Path, name: str, data: dict) -> None:
     try:
-        _atomic_write(_sidecar_path(home, name), json.dumps(data, indent=1))
+        atomic_write_text(
+            _sidecar_path(home, name), json.dumps(data, indent=1))
     except OSError as e:  # sidecar failures must never break the agent
         logger.warning(f'[workspace_files] cannot write sidecar for {name}: {e}')
 
@@ -164,7 +159,7 @@ def _ensure_one(home: Path, name: str, template: str) -> None:
         if sidecar is not None:
             return  # user deleted it — respect the deletion, never re-seed
         try:
-            _atomic_write(path, template)
+            atomic_write_text(path, template)
         except OSError as e:
             logger.warning(f'[workspace_files] cannot materialize {name}: {e}')
             return
@@ -181,8 +176,8 @@ def _ensure_one(home: Path, name: str, template: str) -> None:
             and sidecar.get('template_version', 0) < TEMPLATE_VERSION
             and _sha256(_read_raw(path)) == sidecar.get('sha256')):
         try:
-            _atomic_write(path.with_name(name + '.bak'), _read_raw(path))
-            _atomic_write(path, template)
+            atomic_write_text(path.with_name(name + '.bak'), _read_raw(path))
+            atomic_write_text(path, template)
         except OSError as e:
             logger.warning(f'[workspace_files] cannot upgrade {name}: {e}')
             return
@@ -223,8 +218,8 @@ def _rebuild_legacy_profile(home: Path) -> None:
     if raw.strip():
         rebuilt += '\n' + raw.strip() + '\n'
     try:
-        _atomic_write(target.with_name('PROFILE.md.bak'), raw)
-        _atomic_write(target, rebuilt)
+        atomic_write_text(target.with_name('PROFILE.md.bak'), raw)
+        atomic_write_text(target, rebuilt)
         # On case-sensitive filesystems the legacy lowercase file is a distinct
         # entry; drop it (its content lives in the .bak and in the new file).
         # On case-insensitive filesystems (macOS/Windows default) they are the
@@ -258,6 +253,7 @@ def _rebuild_legacy_profile(home: Path) -> None:
                 f'(backup: PROFILE.md.bak)')
 
 
+@locked(lambda home=None: (home or global_home()) / '.prompt-files')
 def ensure_home_files(home: Optional[Path] = None) -> None:
     """Materialize missing home files + run the one-time PROFILE rebuild.
 
@@ -271,7 +267,9 @@ def ensure_home_files(home: Optional[Path] = None) -> None:
     _rebuild_legacy_profile(home)
     for name, template in HOME_FILE_TEMPLATES.items():
         _ensure_one(home, name, template)
-    _ensured_homes.add(key)
+    if all((home / name).exists() or _sidecar_path(home, name).exists()
+           for name in HOME_FILE_TEMPLATES):
+        _ensured_homes.add(key)
 
 
 # ── PROFILE region model (R0 header / R1 managed / R2 free) ─────────────────
@@ -410,14 +408,155 @@ def read_home_file(name: str) -> str:
     return _read_raw(global_home() / name)
 
 
+@locked(lambda name, text: global_home() / '.prompt-files')
 def write_home_file(name: str, text: str) -> None:
     """Atomic write of a home workspace file. The mtime bump makes the next
     agent round pick the change up through the content compare."""
-    _atomic_write(global_home() / name, text)
+    atomic_write_text(global_home() / name, text)
 
 
 #: AGENTS.md has no managed block; the same splitter degrades to (R0, '', R2).
 split_regions = split_profile_regions
+
+
+# ── UI write API (TUI slash commands / WebUI settings pages) ─────────────────
+#
+# Global instructions: edit only the user region under the seeded AGENTS.md
+# header. Project instructions: the private slot <work>/.ms_agent/AGENTS.md —
+# never the repo-root AGENTS.md (AI-native repos commit that file themselves).
+# PROFILE.md: managed ``- Call me:`` line + free region.
+
+_AGENTS = 'AGENTS.md'
+_PROFILE = 'PROFILE.md'
+
+
+def read_global_instruction() -> str:
+    """User region of ``~/.ms_agent/AGENTS.md`` (legacy settings migrated)."""
+    return _migrate_legacy_global_instruction().strip()
+
+
+def write_global_instruction(content: str) -> None:
+    """Replace the user region; keep the seeded header/comments."""
+    _migrate_legacy_global_instruction()
+    text = read_home_file(_AGENTS)
+    body = content.strip()
+    write_home_file(_AGENTS, set_free_region(text, body + '\n' if body else ''))
+
+
+def project_instruction_path(work_dir: str) -> Path:
+    return local_internal_dir(work_dir) / _AGENTS
+
+
+def read_project_instruction(work_dir: str) -> str:
+    """Private slot ``<work>/.ms_agent/AGENTS.md`` (legacy project.instruction
+    migrated). Does not read or write the repo-root ``AGENTS.md``."""
+    path = project_instruction_path(work_dir)
+    try:
+        content = path.read_text(encoding='utf-8')
+    except OSError:
+        content = ''
+    if content.strip():
+        return content
+    return _migrate_legacy_project_instruction(work_dir)
+
+
+def write_project_instruction(work_dir: str, content: str) -> None:
+    """Write the private slot only; never touch ``<work>/AGENTS.md``."""
+    _migrate_legacy_project_instruction(work_dir)
+    body = content.strip()
+    atomic_write_text(project_instruction_path(work_dir),
+                      body + '\n' if body else '')
+    # Always drop the leftover JSON field so an empty private file cannot be
+    # re-filled from a stale project.instruction on the next read.
+    _clear_project_instruction_field(work_dir)
+
+
+def read_profile() -> Tuple[str, str]:
+    """``(call_me, free_region)`` from ``~/.ms_agent/PROFILE.md``."""
+    text = read_home_file(_PROFILE)
+    return get_call_me(text), get_free_region(text).strip()
+
+
+def write_profile(*,
+                  call_me: Optional[str] = None,
+                  description: Optional[str] = None) -> Tuple[str, str]:
+    """Update PROFILE.md regions. ``None`` leaves that region unchanged."""
+    text = read_home_file(_PROFILE)
+    if call_me is not None:
+        text = set_call_me(text, call_me)
+    if description is not None:
+        body = description.strip()
+        text = set_free_region(text, body + '\n' if body else '')
+    write_home_file(_PROFILE, text)
+    return get_call_me(text), get_free_region(text).strip()
+
+
+def _migrate_legacy_global_instruction() -> str:
+    """Move settings.json personalization.global_instruction into AGENTS.md."""
+    text = read_home_file(_AGENTS)
+    user_region = get_free_region(text)
+    if user_region.strip():
+        return user_region
+    try:
+        from ms_agent.personalization.settings import PersonalizationSettings
+        from ms_agent.personalization.types import PersonalizationConfig
+        ps = PersonalizationSettings()
+        cur = ps.load()
+        legacy = (cur.global_instruction or '').strip()
+        if not legacy:
+            return user_region
+        text = set_free_region(text, legacy + '\n')
+        write_home_file(_AGENTS, text)
+        ps.save(
+            PersonalizationConfig(
+                global_instruction='',
+                memory_enabled=cur.memory_enabled,
+                memory_backend=cur.memory_backend,
+            ))
+        return get_free_region(text)
+    except Exception:
+        logger.debug(
+            'legacy global_instruction migration skipped', exc_info=True)
+        return user_region
+
+
+def _migrate_legacy_project_instruction(work_dir: str) -> str:
+    """Move Project.instruction into ``.ms_agent/AGENTS.md`` once, then clear it."""
+    path = project_instruction_path(work_dir)
+    try:
+        existing = path.read_text(encoding='utf-8')
+    except OSError:
+        existing = ''
+    if existing.strip():
+        return existing
+    try:
+        from ms_agent.project.manager import ProjectManager
+        pm = ProjectManager(base_dir=str(global_home()))
+        project = pm.find_by_path(work_dir)
+        if project is None:
+            return existing
+        legacy = (project.instruction or '').strip()
+        if not legacy:
+            return existing
+        atomic_write_text(path, legacy + '\n')
+        _clear_project_instruction_field(work_dir)
+        return legacy + '\n'
+    except Exception:
+        logger.debug(
+            'legacy project.instruction migration skipped', exc_info=True)
+        return existing
+
+
+def _clear_project_instruction_field(work_dir: str) -> None:
+    try:
+        from ms_agent.project.manager import ProjectManager
+        pm = ProjectManager(base_dir=str(global_home()))
+        project = pm.find_by_path(work_dir)
+        if project is not None and (project.instruction or '').strip():
+            pm.update(project.id, instruction='')
+    except Exception:
+        logger.debug(
+            'clearing leftover project.instruction skipped', exc_info=True)
 
 
 # ── injected block builders (consumed by LLMAgent) ───────────────────────────

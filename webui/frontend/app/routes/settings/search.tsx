@@ -1,7 +1,8 @@
 import { Input, Select } from 'antd'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { MsaSwitch } from '~/components/common/MsaSwitch'
 import { api } from '~/lib/api'
+import { useOnProjectSettingsChanged } from '~/lib/events'
 import { useT } from '~/lib/i18n'
 import type { SearchProvider, SearchSettings } from '~/lib/types'
 import { metaDict, pageTitle } from '~/lib/pageTitle'
@@ -29,8 +30,17 @@ export default function SearchSettingsPage() {
 
   useEffect(() => {
     api.listSearchProviders().then(setProviders)
+  }, [])
+
+  const loadSettings = useCallback(() => {
     api.getSearchSettings().then(setSettings)
   }, [])
+  useEffect(loadSettings, [loadSettings])
+  // Web-search config is a global singleton edited from the composer pill and by
+  // external API calls (relayed as a project-settings change) — re-read so this
+  // page stays in sync. Typed key drafts live in separate state, so a refresh
+  // here never discards what the user is entering.
+  useOnProjectSettingsChanged(loadSettings)
 
   const provider = providers.find((p) => p.id === settings?.provider) ?? null
   const needsKey = provider?.requires_key ?? true

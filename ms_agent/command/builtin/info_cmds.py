@@ -26,8 +26,13 @@ async def cmd_help(ctx: CommandContext) -> CommandResult:
     for category, cmds in router.list_commands(ctx.source).items():
         lines.append(f'\n  [{category}]')
         for cmd in cmds:
-            aliases = f' ({", ".join(cmd.aliases)})' if cmd.aliases else ''
-            lines.append(f'    /{cmd.name}{aliases} — {cmd.description}')
+            lines.append(f'    /{cmd.name} — {cmd.description}')
+    lines.extend([
+        '',
+        'Load an agent template:',
+        '  Copy the id from https://www.modelscope.cn/agents',
+        '  ms-agent --agent ms-agent/stock_data_agent',
+    ])
 
     return CommandResult(
         type=CommandResultType.MESSAGE, content='\n'.join(lines))

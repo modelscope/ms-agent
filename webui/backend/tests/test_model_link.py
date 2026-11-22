@@ -24,6 +24,12 @@ from app.schemas.mcp import McpCreate, McpUpdate
 from app.schemas.skill import SkillCreate, SkillPathImport, SkillUpdate
 
 
+@pytest.fixture
+def prepared_project_storage(tmp_path, monkeypatch):
+    monkeypatch.setenv("MS_AGENT_HOME", str(tmp_path))
+    common.pm().initialize()
+
+
 def test_active_model_parsing():
     assert model_link.active_model({"default_model": "openai/qwen-max"}) == ("openai", "qwen-max")
     # bare name -> infer provider from the catalog
@@ -88,22 +94,8 @@ def test_probe_stdio():
     assert mcp_health._probe_stdio({"url": "http://x"}) is True  # not a stdio server
 
 
-async def test_filter_healthy_drops_missing_stdio():
-    servers = {"good": {"command": "python3"}, "bad": {"command": "nope-xyz-cmd"}}
-    mcp_health.invalidate_cache()
-    healthy, dropped = await mcp_health.filter_healthy(servers, timeout=1.0)
-    assert "good" in healthy and "bad" not in healthy
-    # The REASON now comes back too: it used to be logged and thrown away, which
-    # is how a stale server became invisible to every UI surface.
-    assert "bad" in dropped and "not found" in dropped["bad"]
-    assert "good" not in dropped
-
-
-async def test_timeout_is_retried_once_but_protocol_errors_are_not():
-    """A timeout means "nobody answered in N seconds of wall clock", which this
-    process can cause by starving its own coroutine — a healthy endpoint that
-    answers in 0.7 s was struck through in the UI and withheld from the model
-    because its first probe timed out. A protocol answer is not ambiguous."""
+async def test_timeout_and_protocol_errors_have_one_probe_budget():
+    """A probe has one budget; its result no longer filters session tools."""
     calls = {"n": 0}
 
     async def _slow_then_fine(server):
@@ -116,8 +108,8 @@ async def test_timeout_is_retried_once_but_protocol_errors_are_not():
     mcp_health._remote_handshake = _slow_then_fine
     try:
         ok, err = await mcp_health.check_server({"url": "http://x/mcp"}, 0.5)
-        assert ok is True and err is None
-        assert calls["n"] == 2, "the timeout should be retried exactly once"
+        assert ok is False and "timed out" in err
+        assert calls["n"] == 1, "one probe must not silently allocate a second budget"
     finally:
         mcp_health._remote_handshake = original
 
@@ -131,26 +123,18 @@ async def test_timeout_is_retried_once_but_protocol_errors_are_not():
     mcp_health._remote_handshake = _protocol_error
     try:
         ok, err = await mcp_health.check_server({"url": "http://x/mcp"}, 0.5)
-        assert ok is False and "Session terminated" in err
+        assert ok is False and "connection closed" in err
         assert calls["n"] == 1
     finally:
         mcp_health._remote_handshake = original
 
 
-async def test_failures_expire_sooner_than_successes():
-    """A cached failure withholds the server from the model, so it must not
-    outlive the blip that caused it."""
-    assert mcp_health._TTL_FAIL < mcp_health._TTL_OK
-    assert mcp_health._ttl(True) == mcp_health._TTL_OK
-    assert mcp_health._ttl(False) == mcp_health._TTL_FAIL
-
-
-async def test_filter_healthy_caches_probes():
+async def test_cached_probe_avoids_repeated_connections():
     """One unreachable server used to cost the full timeout on EVERY session
     build (measured: a flat +6 s per new conversation)."""
     probes = []
 
-    async def _counting(server, timeout=6.0):
+    async def _counting(server, timeout=6.0, deep=False):
         probes.append(server)
         return False, "timed out"
 
@@ -160,11 +144,11 @@ async def test_filter_healthy_caches_probes():
     try:
         servers = {"slow": {"url": "http://10.255.255.1:9/mcp"}}
         for _ in range(3):
-            healthy, dropped = await mcp_health.filter_healthy(servers, timeout=1.0)
-            assert not healthy and dropped["slow"] == "timed out"
+            ok, reason = await mcp_health.check_server_cached("slow", servers["slow"], timeout=1.0)
+            assert ok is False and reason == "timed out"
         assert len(probes) == 1, "cached after the first probe"
         mcp_health.invalidate_cache()
-        await mcp_health.filter_healthy(servers, timeout=1.0)
+        await mcp_health.check_server_cached("slow", servers["slow"], timeout=1.0)
         assert len(probes) == 2, "an explicit re-check bypasses the cache"
     finally:
         mcp_health.check_server = original
@@ -173,12 +157,12 @@ async def test_filter_healthy_caches_probes():
 
 async def test_check_server_reports_reason():
     ok, err = await mcp_health.check_server({"command": "python3"})
-    assert ok is True and err is None
+    assert ok is None and err is None
     ok, err = await mcp_health.check_server({"command": "nope-xyz-cmd"})
     assert ok is False and "not found" in err
 
 
-def test_mcp_health_adapter_probes_enabled_servers():
+async def test_mcp_health_adapter_probes_enabled_servers():
     good = mcps.create_mcp(
         McpCreate(name="good-tool", transport="stdio", endpoint="python3 -m x", scope="global")
     )
@@ -186,8 +170,8 @@ def test_mcp_health_adapter_probes_enabled_servers():
         McpCreate(name="bad-tool", transport="stdio", endpoint="nope-xyz-cmd -m y", scope="global")
     )
     try:
-        rows = {h.id: h for h in mcps.health()}
-        assert rows[good.id].healthy is True and rows[good.id].error is None
+        rows = {h.id: h for h in await mcps.health()}
+        assert rows[good.id].healthy is None and rows[good.id].error is None
         assert rows[bad.id].healthy is False and rows[bad.id].error
     finally:
         mcps.delete_mcp(good.id)
@@ -203,7 +187,7 @@ def test_session_naming_helpers():
     assert len(common._title_from_text("x" * 100)) == 40
 
 
-def test_session_messages_reads_persisted_user_and_assistant_only():
+def test_session_messages_reads_persisted_user_and_assistant_only(prepared_project_storage):
     project = common.pm().get_default_project()
     sm = common.sm_for(project)
     session = sm.create()
@@ -221,7 +205,7 @@ def test_session_messages_reads_persisted_user_and_assistant_only():
     ]
 
 
-def test_project_mcp_can_be_re_added_after_removal():
+def test_project_mcp_can_be_re_added_after_removal(prepared_project_storage):
     """Removing a project MCP that shadows a GLOBAL one leaves a MASK in the
     project file (that is how a project hides a global server). The mask is a row
     that exists without defining a server, so `list` skipped it while the
@@ -356,7 +340,7 @@ def test_skill_source_requires_existing_directory(tmp_path):
         assert str(skill_dir) not in (sj.read_text(encoding="utf-8"))
 
 
-def test_source_skill_disable_uses_runtime_skill_id(tmp_path):
+def test_source_skill_disable_uses_runtime_skill_id(tmp_path, prepared_project_storage):
     from omegaconf import OmegaConf
 
     from ms_agent.skill.catalog import SkillCatalog
@@ -930,7 +914,7 @@ def test_seed_tools_settings_writes_default_block(tmp_path):
     assert tools["todo_list"]["mcp"] is False
     assert tools["code_executor"]["implementation"] == "python_env"
     assert tools["code_executor"]["include"] == ["shell_executor"]  # terminal only
-    assert tools["web_search"]["enabled"] is True
+    assert all(tool["enabled"] is True for tool in tools.values())
     # Tavily, not exa: the seeded engine must be one that works with no
     # credentials (keyless tier), so a fresh install can search immediately.
     assert tools["web_search"]["engine"] == "tavily"
@@ -945,7 +929,7 @@ def test_seed_tools_settings_writes_default_block(tmp_path):
     bootstrap._seed_tools_settings(str(tmp_path))
     migrated = json.loads((tmp_path / "settings.json").read_text())["tools"]
     assert "task_control" not in migrated             # retired -> dropped
-    assert migrated["todo_list"] == {"user_edit": 1}  # user config preserved
+    assert migrated["todo_list"] == {"enabled": True, "mcp": False, "user_edit": 1}
     assert migrated["code_executor"]["include"] == ["shell_executor"]  # narrowed
     assert migrated["code_executor"]["implementation"] == "python_env"  # new default added
 

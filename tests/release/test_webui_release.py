@@ -1,10 +1,13 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 """Release guards must reject version drift and overwriting published bytes."""
 import importlib.util
+import hashlib
+import io
 import json
 import pytest
 import subprocess
 import sys
+import tarfile
 import zipfile
 from pathlib import Path
 
@@ -90,6 +93,34 @@ def test_publishing_requires_actual_frontend_outputs(tmp_path, prebuilt):
     (tmp_path / 'ms_agent-1.7.0.tar.gz').touch()
     with pytest.raises(ValueError, match='require prebuilt WebUI resources'):
         check.check_artifacts(tmp_path, '1.7.0', set(), 'a' * 40)
+
+
+@pytest.mark.parametrize('lock_state', ['matching', 'changed', 'missing'])
+def test_shell_lock_is_verified_and_recorded_in_release_inputs(tmp_path, lock_state):
+    version, sha = '1.7.0', 'a' * 40
+    rel, content = 'frontend/build/webui-build.json', b'{}'
+    manifest = {'prebuilt': True, 'sdk_version': version, 'sdk_commit': sha,
+                'files': {rel: hashlib.sha256(content).hexdigest()}}
+    with zipfile.ZipFile(tmp_path / 'ms_agent-1.7.0-py3-none-any.whl', 'w') as wheel:
+        wheel.writestr('ms_agent-1.7.0.dist-info/METADATA', 'Version: 1.7.0\n')
+        wheel.writestr('ms_agent/webui/RESOURCE-MANIFEST.json', json.dumps(manifest))
+        wheel.writestr('ms_agent/webui/' + rel, content)
+    with tarfile.open(tmp_path / 'ms_agent-1.7.0.tar.gz', 'w:gz') as archive:
+        item = tarfile.TarInfo('ms_agent-1.7.0/webui/' + rel)
+        item.size = len(content)
+        archive.addfile(item, io.BytesIO(content))
+    (tmp_path / 'runtime-requirements.txt').write_text('example==1.0\n')
+    expected = (ROOT / 'docker/webui-shell.txt').read_bytes()
+    if lock_state != 'missing':
+        (tmp_path / 'shell-requirements.txt').write_bytes(
+            expected if lock_state == 'matching' else b'changed lock')
+    if lock_state == 'matching':
+        release = check.check_artifacts(tmp_path, version, set(), sha)
+        assert release['files']['shell-requirements.txt'] == hashlib.sha256(expected).hexdigest()
+        assert 'shell-requirements.txt' in (tmp_path / 'SHA256SUMS').read_text()
+    else:
+        with pytest.raises(ValueError, match='[Ss]hell|shell-requirements'):
+            check.check_artifacts(tmp_path, version, set(), sha)
 
 
 @pytest.mark.parametrize('name', [

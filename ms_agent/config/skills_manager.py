@@ -32,6 +32,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ms_agent.config.resolver import merge_skills_configs
+from ms_agent.utils.atomic_file import atomic_write_json
+from ms_agent.utils.file_lock import file_lock
+from ms_agent.utils.json_store import read_json
 
 SKILLS_FILE = 'skills.json'
 #: Live-tree directory name, shared by both scopes (``<global_dir>/skills``
@@ -169,17 +172,110 @@ class SkillsConfigManager:
         project_path: Optional[str] = None,
     ) -> None:
         path = self._resolve_path(scope, project_path)
-        data = self._read(path)
-        disabled: List[str] = data.get('disabled', [])
+        with file_lock(path):
+            data = self._read(path)
+            disabled: List[str] = data.get('disabled', [])
 
-        if enabled:
-            disabled = [s for s in disabled if s != skill_id]
-        else:
-            if skill_id not in disabled:
-                disabled.append(skill_id)
+            if enabled:
+                disabled = [s for s in disabled if s != skill_id]
+            else:
+                if skill_id not in disabled:
+                    disabled.append(skill_id)
 
-        data['disabled'] = sorted(disabled)
-        self._write(path, data)
+            data['disabled'] = sorted(disabled)
+            self._write(path, data)
+
+    # -- live-tree import (same destination WebUI copies into) --
+
+    def import_from_path(
+        self,
+        source: str,
+        scope: str = 'global',
+        project_path: Optional[str] = None,
+    ) -> List[str]:
+        """Copy Skill directories into this scope's managed live tree.
+
+        A directory with ``SKILL.md`` is one skill; otherwise each immediate
+        child that has ``SKILL.md`` is imported. Existence in the live tree is
+        what the catalog discovers — no ``skills.json`` source row is added.
+        """
+        import shutil
+
+        root = Path(os.path.expanduser(str(source))).resolve()
+        if not root.is_dir():
+            raise FileNotFoundError(f'Not a directory: {root}')
+        dest_root = (
+            self.global_skills_tree() if scope != 'project' else
+            self.project_skills_tree(project_path or ''))
+        dest_root.mkdir(parents=True, exist_ok=True)
+
+        def _is_skill(path: Path) -> bool:
+            return path.is_dir() and (path / 'SKILL.md').is_file()
+
+        dirs = [root] if _is_skill(root) else [
+            child for child in sorted(root.iterdir()) if _is_skill(child)
+        ]
+        imported: List[str] = []
+        for src_dir in dirs:
+            dest = dest_root / src_dir.name
+            if dest.resolve() == src_dir.resolve():
+                imported.append(src_dir.name)
+                continue
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.copytree(src_dir, dest)
+            imported.append(src_dir.name)
+        return imported
+
+    def remove_imported(
+        self,
+        skill_id: str,
+        scope: str = 'global',
+        project_path: Optional[str] = None,
+    ) -> Path:
+        """Delete a managed live-tree skill (same as WebUI managed origin).
+
+        Only removes ``<live-tree>/<skill_id>/``. Auto-discovered
+        ``.agents/skills`` trees and other explicit sources are left alone —
+        disable those instead. Also drops this id from ``disabled`` and any
+        ``skills.json`` source that pointed at the deleted directory.
+        """
+        import shutil
+
+        skill_id = (skill_id or '').strip()
+        if (not skill_id or skill_id in ('.', '..') or '/' in skill_id
+                or '\\' in skill_id):
+            raise ValueError(f'Invalid skill id: {skill_id!r}')
+        dest_root = (
+            self.global_skills_tree() if scope != 'project' else
+            self.project_skills_tree(project_path or ''))
+        dest = (dest_root / skill_id).resolve()
+        root = dest_root.resolve()
+        try:
+            dest.relative_to(root)
+        except ValueError as exc:
+            raise ValueError(f'Invalid skill id: {skill_id!r}') from exc
+        if dest == root:
+            raise ValueError(f'Invalid skill id: {skill_id!r}')
+        if not dest.is_dir() or not (dest / 'SKILL.md').is_file():
+            raise FileNotFoundError(
+                f'{skill_id} is not a managed skill in {scope} scope; '
+                'disable it instead.')
+        shutil.rmtree(dest)
+        data = self._read(self._resolve_path(scope, project_path))
+        if skill_id in (data.get('disabled') or []):
+            self.set_skill_enabled(
+                skill_id, True, scope=scope, project_path=project_path)
+        dest_str = str(dest)
+        for source in list(self.list_explicit_sources(
+                scope, project_path=project_path)):
+            try:
+                if str(Path(source).expanduser().resolve()) == dest_str:
+                    self.remove_source(
+                        source, scope=scope, project_path=project_path)
+            except OSError:
+                continue
+        return dest
 
     # -- sources --
 
@@ -190,12 +286,13 @@ class SkillsConfigManager:
         project_path: Optional[str] = None,
     ) -> None:
         path = self._resolve_path(scope, project_path)
-        data = self._read(path)
-        sources: List[str] = data.get('sources', [])
-        if source not in sources:
-            sources.append(source)
-        data['sources'] = sources
-        self._write(path, data)
+        with file_lock(path):
+            data = self._read(path)
+            sources: List[str] = data.get('sources', [])
+            if source not in sources:
+                sources.append(source)
+            data['sources'] = sources
+            self._write(path, data)
 
     def remove_source(
         self,
@@ -204,19 +301,20 @@ class SkillsConfigManager:
         project_path: Optional[str] = None,
     ) -> None:
         path = self._resolve_path(scope, project_path)
-        if scope == 'project':
-            base = Path(os.path.expanduser(str(project_path))).resolve()
-        else:
-            base = self._global_dir
-        data = self._read(path)
-        sources: List[str] = data.get('sources', [])
-        # Match the raw string or its anchored form, so callers may pass
-        # either what the file stores or what list_sources returned.
-        data['sources'] = [
-            s for s in sources
-            if s != source and resolve_source_entry(s, base) != source
-        ]
-        self._write(path, data)
+        with file_lock(path):
+            if scope == 'project':
+                base = Path(os.path.expanduser(str(project_path))).resolve()
+            else:
+                base = self._global_dir
+            data = self._read(path)
+            sources: List[str] = data.get('sources', [])
+            # Match the raw string or its anchored form, so callers may pass
+            # either what the file stores or what list_sources returned.
+            data['sources'] = [
+                s for s in sources
+                if s != source and resolve_source_entry(s, base) != source
+            ]
+            self._write(path, data)
 
     def list_sources(
         self,
@@ -271,20 +369,8 @@ class SkillsConfigManager:
 
     @staticmethod
     def _read(path: Path) -> Dict[str, Any]:
-        if not path.exists():
-            return {}
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except (json.JSONDecodeError, OSError):
-            return {}
+        return read_json(path)
 
     @staticmethod
     def _write(path: Path, data: Dict[str, Any]) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix('.tmp')
-        with open(tmp, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        # replace() is atomic and cross-platform; rename() raises on Windows
-        # when the destination already exists.
-        tmp.replace(path)
+        atomic_write_json(path, data)

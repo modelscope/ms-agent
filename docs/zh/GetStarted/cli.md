@@ -67,22 +67,27 @@ ms-agent run --config path/to/agent.yaml --query "你好"
 | `--animation_mode` | 视频生成项目的动画模式，取值 `auto` / `human` | `None` |
 | `--knowledge_search_paths` | 知识检索路径，逗号分隔 | `None` |
 
+工作区自动快照默认关闭。如需在每次任务开始前保存 Git 快照，在 Agent 的 YAML 配置顶层设置 `enable_snapshots: true`。关闭此选项不会删除已有快照。
+
 ---
 
 ## tui — 终端交互界面
 
-在终端启动交互式界面。
+在终端启动交互式界面。不带子命令时，`ms-agent` 与 `ms-agent tui` 相同。
 
 ```shell
+ms-agent
 ms-agent tui --config path/to/agent.yaml
+ms-agent --agent ms-agent/stock_data_agent
 ```
 
 | 参数 | 说明 | 默认值 |
 | --- | --- | --- |
 | `--config` | `agent.yaml` 路径（或任务目录 / ModelScope id） | 内置 `agent.yaml` |
+| `--agent` | 安装 Agent Hub 模板（id 从 https://www.modelscope.cn/agents 复制）到工作区后启动。本地 `agent.yaml` / 任务目录则直接加载。不要和 `--config` 同时传 | 内置 `agent.yaml` |
 | `--work-dir`, `--work_dir` | 工作/项目目录（等同 `output_dir`） | 当前目录 |
 | `--env` | `.env` 文件路径 | `./.env` |
-| `--permission_mode` | 工具调用权限模式：`auto` / `strict` / `restricted` / `interactive` | `restricted` |
+| `--permission_mode` | 工具调用权限模式：`ask`（拿不准的问你）/ `auto`（拿不准的交给模型决策）/ `full-access`（拿不准的放行）。旧名 `restricted`、`interactive`、`strict`、`delegate` 仍可用 | `ask` |
 | `--trust_remote_code` | 允许加载配置引用的外部代码（开关） | `false` |
 | `--mcp-server-file`, `--mcp_server_file` | MCP servers JSON 文件路径 | `None` |
 | `--emit-events`, `--emit_events` | 将结构化 AgentEvent 以 JSON Lines 追加到该文件 | `None` |

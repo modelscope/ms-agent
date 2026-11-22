@@ -43,15 +43,37 @@ Polls the status of a document research task.
 |---|---|---|---|
 | `task_id` | string | yes | The task_id from submit_doc_research_task |
 
-**Returns:**
+**Returns (running):**
 ```json
 {
   "task_id": "a1b2c3d4",
+  "task_type": "doc_research",
   "status": "running",
+  "created_at": "2026-04-07T14:30:00",
+  "query": "Deeply analyze and summarize the following document",
+  "output_dir": "/path/to/output/doc_research_20260407_143000",
   "report_available": false,
   "images": 0
 }
 ```
+
+**Returns (terminal):**
+```json
+{
+  "task_id": "a1b2c3d4",
+  "task_type": "doc_research",
+  "status": "completed",
+  "created_at": "2026-04-07T14:30:00",
+  "completed_at": "2026-04-07T14:50:00",
+  "query": "Deeply analyze and summarize the following document",
+  "output_dir": "/path/to/output/doc_research_20260407_143000",
+  "report_available": true,
+  "images": 5
+}
+```
+
+Status values: `running`, `completed`, `failed`, `cancelled`. When terminal,
+includes `completed_at`; when `failed`, includes `error`.
 
 ### Tool: `get_doc_research_report`
 
@@ -70,7 +92,36 @@ Retrieves the final markdown report.
   "report_path": "/path/to/report.md",
   "report_content": "# Research Report\n\n...",
   "truncated": false,
+  "output_dir": "/path/to/output/doc_research_20260407_143000",
   "images": 5
+}
+```
+
+**Returns (still running):**
+```json
+{
+  "task_id": "a1b2c3d4",
+  "status": "running",
+  "message": "Document research is still in progress."
+}
+```
+
+**Returns (failed):**
+```json
+{
+  "task_id": "a1b2c3d4",
+  "status": "failed",
+  "error": "..."
+}
+```
+
+**Returns (completed but report missing):**
+```json
+{
+  "task_id": "a1b2c3d4",
+  "status": "completed",
+  "error": "Report file not found in output directory",
+  "output_dir": "/path/to/output/doc_research_20260407_143000"
 }
 ```
 
@@ -126,6 +177,44 @@ get_doc_research_report(task_id="a1b2c3d4")
 ```
 
 Present key findings and highlight extracted images/tables.
+
+## Sync Tool: `doc_research`
+
+Synchronous version that blocks until document research completes. **Not
+recommended for MCP clients** — prefer the async trio.
+
+**Estimated Duration:** descriptor `minutes`; typical wall-clock 5–20 minutes
+depending on document count and size.
+
+### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `query` | string | yes | -- | Research prompt about the documents |
+| `urls` | string | no | -- | Newline or comma-separated URLs |
+| `file_paths` | string | no | -- | Comma-separated local file paths |
+| `output_dir` | string | no | auto | Directory for outputs |
+
+### Returns
+
+On success:
+
+```json
+{
+  "status": "completed",
+  "output_dir": "/path/to/output/doc_research_20260407_143000",
+  "report_path": "/path/to/report.md"
+}
+```
+
+On failure:
+
+```json
+{
+  "status": "failed",
+  "error": "..."
+}
+```
 
 ## Supported Input Formats
 

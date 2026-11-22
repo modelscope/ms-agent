@@ -6,7 +6,7 @@ import { CardSkeletonGrid } from '~/components/common/CardSkeletonGrid'
 import { EmptyState, EmptyStateAction } from '~/components/common/EmptyState'
 import { MsaButton } from '~/components/common/MsaButton'
 import { api } from '~/lib/api'
-import { dispatchMcpSkillChanged } from '~/lib/events'
+import { dispatchMcpSkillChanged, useOnMcpSkillChanged } from '~/lib/events'
 import { useT } from '~/lib/i18n'
 import { useMcpHealth } from '~/lib/mcpHealth'
 import type { Mcp, Project, Scope } from '~/lib/types'
@@ -58,15 +58,13 @@ export function McpTabPanel({ project }: Props) {
     rows: health,
     sweeping,
     refresh: refreshHealth,
-    put: putHealth
+    check: checkHealth
   } = useMcpHealth()
   const [deepChecking, setDeepChecking] = useState<Set<string>>(new Set())
   const knownIdsRef = useRef<Set<string> | null>(null)
   const deepCheck = (id: string) => {
     setDeepChecking((prev) => new Set(prev).add(id))
-    api
-      .checkMcpHealth(id)
-      .then(putHealth)
+    checkHealth(id)
       .catch(() => {})
       .finally(() =>
         setDeepChecking((prev) => {
@@ -105,6 +103,10 @@ export function McpTabPanel({ project }: Props) {
     setPage(1)
   }, [activeScope])
 
+  // Refresh when the set changes elsewhere (the other tab, or an external API
+  // call relayed by the server-event bridge). `fresh` re-runs the health sweep.
+  useOnMcpSkillChanged(() => refresh(true))
+
   // Reset state when project changes (the scope itself is URL-driven; a
   // cross-project navigation carries no ?scope, which already means global).
   // Closing the JSON dialog matters: its document belongs to the scope it was
@@ -130,17 +132,23 @@ export function McpTabPanel({ project }: Props) {
       {/* Toolbar */}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <Segmented<Scope>
+          className="text-[13px]"
           value={activeScope}
           onChange={setActiveScope}
           options={scopeOptions}
         />
         <div className="flex items-center gap-3">
-          <MsaButton variant="tonal" onClick={() => setViaJson(true)}>
+          <MsaButton
+            variant="tonal"
+            className="rounded-[12px] text-[13px]"
+            onClick={() => setViaJson(true)}
+          >
             {t.resources.viaJson}
           </MsaButton>
           <MsaButton
             variant="primary"
-            icon={<AddIcon className="h-4 w-4" />}
+            className="rounded-[12px] text-[13px]"
+            icon={<AddIcon className="h-5 w-5" />}
             onClick={() => setImporting('custom')}
           >
             {t.resources.addMcp}
@@ -188,8 +196,15 @@ export function McpTabPanel({ project }: Props) {
                     }}
                     onReconnect={async () => {
                       try {
-                        const result = await api.checkMcpHealth(m.id)
-                        putHealth(result)
+                        await api.reconnectMcp(m.id)
+                        message.success(t.resources.reconnectScheduled)
+                      } catch {
+                        message.error(t.resources.statusError)
+                      }
+                    }}
+                    onTest={async () => {
+                      try {
+                        const result = await checkHealth(m.id)
                         if (result.healthy) {
                           message.success(`${m.name}: ${t.resources.statusOk}`)
                         } else {

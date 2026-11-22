@@ -182,6 +182,26 @@ def test_receipt_for_another_wheel_is_rejected_before_upload(tmp_path):
     assert not store.puts
 
 
+@pytest.mark.parametrize('immutable,flag', [(False, '--forbid-overwrite=false'),
+                                         (True, '--forbid-overwrite=true')])
+def test_oss_overwrite_boolean_is_passed_as_one_cli_argument(tmp_path, monkeypatch, immutable, flag):
+    """ossutil treats a bare boolean flag as true, even with a separate 'false'."""
+    store = object.__new__(delivery.OssStore)
+    store.binary, store.config, store.state = Path('/ossutil'), tmp_path / 'config', tmp_path
+    store.region, store.endpoint = 'cn-beijing', 'https://oss-cn-beijing.aliyuncs.com'
+    store.bucket, store.prefix = 'example-bucket', 'packages/'
+    file = tmp_path / 'record.json'
+    file.write_text('{}')
+    commands = []
+    def run(command, **kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, '{}', '')
+    monkeypatch.setattr(subprocess, 'run', run)
+    store.put('record.json', file, immutable=immutable)
+    assert len(commands) == 1
+    assert [arg for arg in commands[0] if arg.startswith('--forbid-overwrite')] == [flag]
+
+
 def test_raw_oss_errors_and_subprocess_arguments_are_not_exposed(tmp_path, monkeypatch):
     store = object.__new__(delivery.OssStore)
     store.binary, store.config, store.state = Path('/ossutil'), Path('/private/config'), tmp_path
@@ -266,7 +286,7 @@ def test_large_wheel_stages_privately_and_copy_cannot_overwrite(tmp_path, race):
     def api(operation, relative, *arguments):
         events.append(operation)
         if operation == 'copy-object':
-            assert arguments[arguments.index('--forbid-overwrite') + 1] == 'true'
+            assert '--forbid-overwrite=true' in arguments
             assert arguments[arguments.index('--object-acl') + 1] == 'public-read'
             if race:
                 raise delivery.OssError(operation, 409, 'FileAlreadyExists')

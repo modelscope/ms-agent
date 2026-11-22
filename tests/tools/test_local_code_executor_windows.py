@@ -168,3 +168,42 @@ def test_config_can_still_override_the_agent_defaults():
         env = tool._build_env('shell_env', inherit=False)
     assert env['PAGER'] == 'bat'
     assert env['GIT_PAGER'] == 'cat'  # untouched keys keep the safe default
+
+
+def test_image_shell_path_does_not_change_parent_environment():
+    parent = {'PATH': '/opt/service/bin:/usr/local/bin:/usr/bin',
+              'MS_AGENT_SHELL_PATH': '/usr/local/bin:/usr/bin',
+              'VIRTUAL_ENV': '/opt/service', 'PYTHONPATH': '/opt/service/lib',
+              'SECRET_TOKEN': 'must-not-leak'}
+    with mock.patch.dict(os.environ, parent, clear=True):
+        tool = _bare_tool()
+        shell = tool._build_env('shell_env')
+        assert shell['PATH'] == parent['MS_AGENT_SHELL_PATH']
+        assert dict(os.environ) == parent
+    assert not {'VIRTUAL_ENV', 'PYTHONPATH', 'SECRET_TOKEN'} & shell.keys()
+
+
+def test_explicit_project_environment_wins_over_image_defaults():
+    from types import SimpleNamespace
+
+    tool = _bare_tool()
+    tool.tool_config = SimpleNamespace(shell_env={
+        'PATH': '/project/.venv/bin:/usr/bin', 'VIRTUAL_ENV': '/project/.venv'})
+    with mock.patch.dict(os.environ, {
+            'PATH': '/opt/service/bin:/usr/bin',
+            'MS_AGENT_SHELL_PATH': '/usr/local/bin:/usr/bin'}, clear=True):
+        shell = tool._build_env('shell_env')
+    assert shell['PATH'] == '/project/.venv/bin:/usr/bin'
+    assert shell['VIRTUAL_ENV'] == '/project/.venv'
+
+
+def test_plugin_tools_are_available_without_an_explicit_shell_env():
+    from types import SimpleNamespace
+
+    tool = _bare_tool()
+    tool.tool_config = SimpleNamespace(plugin_bin_paths=['/plugin/bin'])
+    with mock.patch.dict(os.environ, {
+            'PATH': '/opt/service/bin:/usr/bin',
+            'MS_AGENT_SHELL_PATH': '/usr/local/bin:/usr/bin'}, clear=True):
+        env = tool._build_env('shell_env')
+    assert env['PATH'] == '/plugin/bin:/usr/local/bin:/usr/bin'

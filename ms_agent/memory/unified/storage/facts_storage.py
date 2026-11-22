@@ -5,12 +5,11 @@ Supports confidence-based eviction, deduplication, and atomic writes.
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from ms_agent.utils.atomic_file import atomic_write_json
 from ms_agent.utils.logger import get_logger
 from ..config import MemoryConfig
 from ..protocols import MemoryEntry
@@ -229,16 +228,7 @@ class FactsStorage:
         return default
 
     def _save(self, data: Dict[str, Any]) -> None:
-        self.facts_path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=self.facts_path.parent, suffix='.tmp')
-        try:
-            with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            os.replace(tmp, self.facts_path)
-        except Exception:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
-            raise
+        atomic_write_json(self.facts_path, data)
         self._cache = data
 
     def invalidate_cache(self) -> None:

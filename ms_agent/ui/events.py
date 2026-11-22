@@ -83,6 +83,10 @@ class UserMessage(AgentEvent):
     EVENT_TYPE: ClassVar[str] = 'user_message'
     turn_id: str = ''
     text: str = ''
+    # True when the text was interjected into a running turn (steering) instead of
+    # submitted at an idle prompt. A terminal already echoes an idle prompt's typed
+    # line, so a TUI renders only steered echoes; a WebUI may render both.
+    steered: bool = False
 
 
 @dataclass(frozen=True)
@@ -91,6 +95,16 @@ class TurnCompleted(AgentEvent):
     EVENT_TYPE: ClassVar[str] = 'turn_completed'
     turn_id: str = ''
     usage: Optional[UsageInfo] = None
+
+
+@dataclass(frozen=True)
+class InputDelivered(AgentEvent):
+    """A durable user input entered the current logical task."""
+    EVENT_TYPE: ClassVar[str] = 'input_delivered'
+    input_id: str = ''
+    turn_id: str = ''
+    segment_id: str = ''
+    message: dict = field(default_factory=dict)
 
 
 # ── assistant output ──────────────────────────────────────────────────────
@@ -196,6 +210,9 @@ class ToolCallCompleted(AgentEvent):
     result: str = ''
     error: Optional[str] = None
     duration_s: Optional[float] = None
+    attachments: List[dict] = field(default_factory=list)
+    execution_status: str = 'completed'
+    skip_reason: Optional[str] = None
 
 
 # ── plan / todo ───────────────────────────────────────────────────────────
@@ -235,14 +252,7 @@ class PermissionResolved(AgentEvent):
 
 @dataclass(frozen=True)
 class QuestionRequested(AgentEvent):
-    """The model asked the user something and is suspended on the answer.
-
-    The neighbour of ``PermissionRequested`` and deliberately not the same
-    event: an approval carries a tool call to judge, a question carries
-    choices to pick from, and a front-end renders nothing alike for the two.
-    ``questions`` is the serialized :class:`ms_agent.ui.interaction.Question`
-    list, so the wire form needs no second schema.
-    """
+    """模型发起提问；questions 使用统一 Question 契约的序列化结果。"""
     EVENT_TYPE: ClassVar[str] = 'question_requested'
     request_id: str = ''
     call_id: str = ''
@@ -251,15 +261,7 @@ class QuestionRequested(AgentEvent):
 
 @dataclass(frozen=True)
 class QuestionResolved(AgentEvent):
-    """A pending question reached a terminal state.
-
-    Emitted for the outcomes no client caused — an expiry, or a cancelled
-    turn — because those are exactly the ones a live card cannot know about,
-    and it would otherwise keep offering inputs for a decision already made.
-    Carries no ``request_id``: the outcome is final, so the card must render
-    it instead of live controls (the same reasoning as
-    ``permission_resolved``).
-    """
+    """广播每种提问结局；客户端按 call_id 更新原卡片并关闭输入。"""
     EVENT_TYPE: ClassVar[str] = 'question_resolved'
     call_id: str = ''
     status: str = ''  # answered | skipped | cancelled | timeout | unavailable
@@ -275,6 +277,16 @@ class ContextCompacted(AgentEvent):
     EVENT_TYPE: ClassVar[str] = 'context_compacted'
     before_tokens: int = 0
     after_tokens: int = 0
+    operation_id: str = ''
+    trigger: str = 'auto'
+    memory_status: str = 'skipped'
+
+
+@dataclass(frozen=True)
+class ContextUpdated(AgentEvent):
+    """Current input estimate and limits; no token calculation in interfaces."""
+    EVENT_TYPE: ClassVar[str] = 'context_updated'
+    snapshot: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -283,6 +295,7 @@ class Notice(AgentEvent):
     EVENT_TYPE: ClassVar[str] = 'notice'
     level: str = 'info'  # info | success | warning
     text: str = ''
+    code: str = ''  # Optional stable code for localized UI context.
 
 
 @dataclass(frozen=True)

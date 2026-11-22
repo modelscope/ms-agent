@@ -150,9 +150,10 @@ class OssStore:
     def put(self, relative, file, *, public=False, immutable=True):
         if file.stat().st_size >= 4 * 1024 * 1024 and immutable:
             return self.put_large(relative, file, public=public)
+        # ossutil requires '=' for boolean values; a bare flag is treated as true.
         self.api('put-object', relative, '--body', 'file://' + str(file.resolve()),
                  '--object-acl', 'public-read' if public else 'private',
-                 '--forbid-overwrite', str(immutable).lower(),
+                 f'--forbid-overwrite={str(immutable).lower()}',
                  '--cache-control', 'public, max-age=31536000, immutable' if public else 'no-store')
 
     def put_large(self, relative, file, *, public):
@@ -180,7 +181,7 @@ class OssStore:
                 self.api('copy-object', relative, '--copy-source',
                          urllib.parse.quote('/' + self.bucket + '/' + self.key(staging), safe='/'),
                          '--object-acl', 'public-read' if public else 'private',
-                         '--forbid-overwrite', 'true')
+                         '--forbid-overwrite=true')
             finally:
                 self.api('delete-object', staging)
                 shutil.rmtree(checkpoint, ignore_errors=True)

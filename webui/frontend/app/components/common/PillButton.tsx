@@ -16,6 +16,12 @@ import ArrowDownIcon from '~/assets/icons/arrow-down.svg?react'
  * relative, so it still holds when the composer column is narrow but the
  * viewport is wide (e.g. a detail rail is open). A tooltip surfaces the
  * full text — but only when the label is actually clipped.
+ *
+ * `min-w-24` is the floor at the other end: 96px keeps a few characters of
+ * label readable on the narrowest composer instead of letting the pill
+ * squash down to its caret. It deliberately outranks the `max-w` cap —
+ * CSS gives min-width precedence when the two cross — so a very narrow
+ * container overflows the row (which scrolls) rather than shrinking pills.
  * ================================================================ */
 
 interface PillButtonProps extends Omit<MsaButtonProps, 'variant'> {
@@ -58,11 +64,17 @@ export const PillButton = forwardRef<HTMLButtonElement, PillButtonProps>(
       classNames && typeof classNames === 'object'
         ? (classNames as Record<string, string>)
         : {}
+    // `min-w-24` (96px) is the floor, `max-w-[250px]` the cap: a pill grows with
+    // its label up to 250px, then truncates. The pills row still owns the rest of
+    // overflow — a tight row shrinks each pill (flex) toward the floor and scrolls
+    // once collapsed. When flex forces a pill narrower than its label the inner
+    // span truncates and the label tooltip engages.
+    const width = 'min-w-24 max-w-[250px]'
     return (
       <MsaButton
         ref={ref}
         variant="tonal"
-        className={`!flex !items-center !gap-1.5 !rounded-full !px-3 !py-1.5 !h-auto !text-xs !font-normal !max-w-[min(240px,55cqw)] min-w-0 ${className}`}
+        className={`!flex !items-center !gap-1.5 !rounded-[12px] !px-3 !py-1.5 !h-auto !text-xs !font-normal ${width} ${className}`}
         classNames={{ ...extra, icon: `shrink-0 ${extra.icon ?? ''}` }}
         {...rest}
       >

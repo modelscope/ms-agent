@@ -2,6 +2,18 @@
     align-items: center;
 }
 
+/* The row highlight is painted once, across the whole treenode, from the
+   selection FolderTree owns (the `highlighted` class in FolderTree.tsx). antd's
+   own node backgrounds are forced off here: otherwise a row antd still marks
+   selected — e.g. a prior selection its internal state kept — paints a second,
+   half-width highlight on just the content wrapper, reading as a stuck
+   “half-highlighted” previous file next to the real one. */
+.folder-tree .ant-tree-node-content-wrapper,
+.folder-tree .ant-tree-node-content-wrapper:hover,
+.folder-tree .ant-tree-node-content-wrapper.ant-tree-node-selected {
+    background: transparent !important;
+}
+
 .folder-tree .ant-tree-node-content-wrapper {
     display: flex !important;
     align-items: center;

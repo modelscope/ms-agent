@@ -9,9 +9,10 @@ MemoryBackend = Literal["file", "vector"]
 # local fastembed model.
 MemoryEmbedMode = Literal["provider", "local"]
 
-# Project-level tool authorization: "restricted" = every non-whitelisted tool
-# asks (default), "auto" = full access, no asks (SafetyGuard still applies).
-PermissionMode = Literal["restricted", "auto"]
+# Project-level tool authorization. "ask" confirms uncertain calls (default).
+# "auto" lets a model decide them. "full-access" allows them. A hard safety
+# denial still blocks every mode.
+PermissionMode = Literal["ask", "auto", "full-access"]
 
 
 class Project(BaseModel):
@@ -40,7 +41,7 @@ class Project(BaseModel):
     memory_recall_top_k: int | None = None
     mcp_auto_attach: bool = True
     skill_auto_attach: bool = True
-    permission_mode: PermissionMode = "restricted"
+    permission_mode: PermissionMode = "ask"
     created_at: datetime
 
 
@@ -69,8 +70,7 @@ class ProjectUpdate(BaseModel):
     # Only accepted while the project has never had memory enabled (see
     # ``Project.memory_backend_locked``); rejected with 400 afterwards.
     memory_backend: MemoryBackend | None = None
-    # Sent as a whole group (the modal owns the section): if ANY of the five is
-    # present the stored group is replaced from the body.
+    # Only submitted fields change; explicit None clears an override.
     memory_llm_provider_id: str | None = None
     memory_llm_model: str | None = None
     memory_embed_mode: MemoryEmbedMode | None = None
@@ -82,7 +82,7 @@ class ProjectUpdate(BaseModel):
     permission_mode: PermissionMode | None = None
 
 
-# The five per-project memory-model fields, shared by create/update handling.
+# Per-project memory-model fields, shared by create/update handling.
 MEMORY_MODEL_FIELDS = (
     "memory_llm_provider_id",
     "memory_llm_model",

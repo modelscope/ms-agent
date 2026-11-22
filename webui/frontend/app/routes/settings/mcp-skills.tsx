@@ -45,6 +45,7 @@ export default function SettingsMcpSkills() {
         <MsaButton
           key="via-json"
           variant="tonal"
+          className="rounded-[12px] text-[13px]"
           onClick={() => setViaJson(true)}
         >
           {t.resources.viaJson}
@@ -52,7 +53,8 @@ export default function SettingsMcpSkills() {
         <MsaButton
           key="add-mcp"
           variant="primary"
-          icon={<AddIcon className="h-4 w-4" />}
+          className="rounded-[12px] text-[13px]"
+          icon={<AddIcon className="h-5 w-5" />}
           onClick={() => setMcpImporting('custom')}
         >
           {t.resources.addMcp}
@@ -62,7 +64,8 @@ export default function SettingsMcpSkills() {
       <MsaButton
         variant="primary"
         key="add-skill"
-        icon={<AddIcon className="h-4 w-4" />}
+        className="rounded-[12px] text-[13px]"
+        icon={<AddIcon className="h-5 w-5" />}
         onClick={() => setSkillImporting('local')}
       >
         {t.resources.addSkill}
@@ -104,7 +107,7 @@ export default function SettingsMcpSkills() {
                   tab === 'mcps' ? 'font-semibold' : ''
                 }`}
               >
-                {tab === 'mcps' && <McpIcon className="h-4 w-4" />}
+                {tab === 'mcps' && <McpIcon className="h-5 w-5" />}
                 {t.settings.mcpsTab}
               </span>
             ),
@@ -125,7 +128,7 @@ export default function SettingsMcpSkills() {
                   tab === 'skills' ? 'font-semibold' : ''
                 }`}
               >
-                {tab === 'skills' && <SkillIcon className="h-4 w-4" />}
+                {tab === 'skills' && <SkillIcon className="h-5 w-5" />}
                 {t.settings.skillsTab}
               </span>
             ),

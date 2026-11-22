@@ -81,6 +81,29 @@ export function useOnMcpSkillChanged(callback: () => void) {
   }, [callback])
 }
 
+// ─── Model catalog (providers / models / default) ──────────────────────────
+
+/** Dispatch after adding, editing, removing or reordering a provider or model,
+ * or changing the default model. Consumers that seed the model catalog into
+ * their own state (the Composer picker, the Settings → Models page) re-fetch
+ * providers + models + agent settings. Fired by the server-event bridge for
+ * `/api/models` and `/api/providers`, so an external API call updates the
+ * picker the same way an in-tab edit does. */
+export function dispatchModelsChanged() {
+  if (typeof window !== 'undefined')
+    window.dispatchEvent(new Event('msa:models-changed'))
+}
+
+/** Re-run `callback` whenever the model catalog is changed by another component
+ * or an external API call. */
+export function useOnModelsChanged(callback: () => void) {
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.addEventListener('msa:models-changed', callback)
+    return () => window.removeEventListener('msa:models-changed', callback)
+  }, [callback])
+}
+
 // ─── Session turn completion ───────────────────────────────────────────
 
 /** Dispatch when a session's agent turn completes (done frame received).
@@ -142,5 +165,27 @@ export function useOnProjectSettingsChanged(callback: () => void) {
     window.addEventListener('msa:project-settings-changed', callback)
     return () =>
       window.removeEventListener('msa:project-settings-changed', callback)
+  }, [callback])
+}
+
+// ─── Project list (create / rename / delete a project) ─────────────────────
+
+/** Dispatch after a project is created, renamed or deleted. Loader-backed views
+ * (sidebar, project detail) refresh through the layout revalidate, but the
+ * homepage Composer's project picker seeds its list into its own state once at
+ * mount — it re-fetches on this event so an externally added project shows up.
+ * Fired by the server-event bridge for `/api/projects`. */
+export function dispatchProjectsChanged() {
+  if (typeof window !== 'undefined')
+    window.dispatchEvent(new Event('msa:projects-changed'))
+}
+
+/** Re-run `callback` whenever the project list changes elsewhere or via an
+ * external API call. */
+export function useOnProjectsChanged(callback: () => void) {
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.addEventListener('msa:projects-changed', callback)
+    return () => window.removeEventListener('msa:projects-changed', callback)
   }, [callback])
 }

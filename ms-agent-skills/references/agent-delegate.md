@@ -12,7 +12,7 @@ Activate this capability when:
 ## Sync Mode: `delegate_task`
 
 **Granularity:** Project
-**Estimated Duration:** minutes (blocks until complete)
+**Estimated Duration:** minutes (blocks until complete; use for tasks typically **< 5 minutes**)
 
 Creates an LLMAgent, runs it on the query, and returns the final response.
 The agent can use basic tool components (web search, file system, todo list)
@@ -40,12 +40,32 @@ delegate_task(
 
 ### Response
 
+On success:
+
 ```json
 {
   "status": "completed",
   "response": "# Python Web Framework Comparison 2026\n\n..."
 }
 ```
+
+On failure:
+
+```json
+{
+  "status": "failed",
+  "error": "..."
+}
+```
+
+### Prerequisites
+
+Configure credentials for the provider selected by `config_path`, either in the
+configuration or through that provider’s supported environment variables.
+Without a custom configuration, the bundled agent uses ModelScope and reads
+`MODELSCOPE_API_KEY`. An `OPENAI_API_KEY` alone does not switch the default
+provider to OpenAI. Missing or invalid credentials are reported by the selected
+provider when the agent runs.
 
 ## Async Mode: Submit / Check / Get / Cancel
 
@@ -78,7 +98,7 @@ submit_agent_task(
 |---|---|---|---|
 | `task_id` | string | yes | The task_id from submit_agent_task |
 
-**Returns:**
+**Returns (running):**
 ```json
 {
   "task_id": "e5f6a7b8",
@@ -88,7 +108,19 @@ submit_agent_task(
 }
 ```
 
-Status values: `running`, `completed`, `failed`, `cancelled`.
+**Returns (terminal):**
+```json
+{
+  "task_id": "e5f6a7b8",
+  "task_type": "agent_delegate",
+  "status": "completed",
+  "created_at": "2026-03-24T14:30:00",
+  "completed_at": "2026-03-24T14:45:00"
+}
+```
+
+Status values: `running`, `completed`, `failed`, `cancelled`. When terminal,
+includes `completed_at`; when `failed`, includes `error`.
 
 ### Tool: `get_agent_result`
 
@@ -104,6 +136,32 @@ Status values: `running`, `completed`, `failed`, `cancelled`.
   "status": "completed",
   "response": "# Analysis Results\n\n...",
   "truncated": false
+}
+```
+
+**Returns (still running):**
+```json
+{
+  "task_id": "e5f6a7b8",
+  "status": "running",
+  "message": "Task is still in progress."
+}
+```
+
+**Returns (failed):**
+```json
+{
+  "task_id": "e5f6a7b8",
+  "status": "failed",
+  "error": "..."
+}
+```
+
+**Returns (cancelled):**
+```json
+{
+  "task_id": "e5f6a7b8",
+  "status": "cancelled"
 }
 ```
 
@@ -136,19 +194,19 @@ Write a clear, detailed task description. Include:
 
 Available tool names for the `tools` parameter:
 - `web_search` — web search access
-- `file_system` — file read/write/list
+- `file_system` — file read/write/glob
 - `todo_list` — todo plan read/write
 - `filesystem` — backward-compatible alias for `file_system`
 
 The `tools` parameter selects **basic tool components**, not the higher-level
 capability references listed elsewhere in the skill docs. For example,
 `file_system` refers to the base primitives such as `write_file`, `read_file`,
-and `list_files`; it is separate from the capability-layer editing references
+and `glob`; it is separate from the capability-layer editing references
 in `filesystem-tools.md`.
 
 Default component configs injected by the wrapper:
 - `web_search` → `mcp: false`, `engine: arxiv`
-- `file_system` → `mcp: false`, `include: [write_file, read_file, list_files]`
+- `file_system` → `mcp: false`, `include: [write_file, read_file, glob]`
 - `todo_list` → `mcp: false`, `include: [todo_write, todo_read]`
 
 Leave `tools` empty to use the agent's default configuration.
@@ -188,4 +246,5 @@ that specifies the LLM provider, model, and tool settings.
 - `max_rounds` controls how many tool-use iterations the agent can perform.
   Set it lower (5-10) for simple tasks, higher (20+) for complex ones.
 - If a task fails, check the `error` field for details. Common causes:
-  missing LLM API keys, tool initialization errors, or max rounds exceeded.
+  missing credentials for the selected provider, tool initialization errors,
+  or max rounds exceeded.

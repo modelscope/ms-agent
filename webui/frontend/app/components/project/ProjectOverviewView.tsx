@@ -1,4 +1,4 @@
-import { BulbOutlined } from '@ant-design/icons'
+import type { ReasoningEffort } from '~/lib/types'
 import './ProjectOverviewView.css'
 import {
   App,
@@ -23,6 +23,7 @@ import { SkillTabPanel } from '~/components/project/SkillTabPanel'
 import { ProjectWidgetRail } from '~/components/project/ProjectWidgetRail'
 import { api } from '~/lib/api'
 import { dispatchWorkspaceChanged, useOnWorkspaceChanged } from '~/lib/events'
+import { useSpin } from '~/lib/useSpin'
 import type { ChatFileRef, MessageSegment } from '~/lib/agentProvider'
 import {
   DownloadEmptyError,
@@ -50,6 +51,7 @@ import MediaIcon from '~/assets/icons/media.svg?react'
 import ParamsIcon from '~/assets/icons/params.svg?react'
 import TodoIcon from '~/assets/icons/todo.svg?react'
 import GlobeIcon from '~/assets/icons/globe.svg?react'
+import CreativeIcon from '~/assets/icons/creative.svg?react'
 import TerminalIcon from '~/assets/icons/terminal.svg?react'
 import FolderIcon from '~/assets/icons/folder.svg?react'
 import DownloadIcon from '~/assets/icons/download.svg?react'
@@ -91,12 +93,16 @@ export function ProjectOverviewView({
   const handleSubmit = async (
     text: string,
     files?: ChatFileRef[],
-    segments?: MessageSegment[]
+    segments?: MessageSegment[],
+    modelId?: string,
+    reasoningEffort?: ReasoningEffort
   ) => {
     const session = await api.createSession({
       title: text.slice(0, 60) || 'New chat',
       project_id: project.id,
-      preview: text
+      preview: text,
+      model_id: modelId,
+      reasoning_effort: reasoningEffort
     })
     // Refresh the sidebar's session list BEFORE leaving: the app layout no
     // longer revalidates on a route change (see its `shouldRevalidate`), so
@@ -193,7 +199,7 @@ export function ProjectOverviewView({
             </Typography.Title>
             {onEditProject && (
               <IconButton
-                icon={<EditIcon className="h-4 w-4" />}
+                icon={<EditIcon className="h-5 w-5" />}
                 size="sm"
                 variant="filled"
                 onClick={() => onEditProject(project)}
@@ -203,7 +209,7 @@ export function ProjectOverviewView({
             <Tooltip title={t.projectDetail.detailsPanel}>
               <IconButton
                 className="ml-auto lg:hidden"
-                icon={<DetailsIcon className="h-4 w-4" />}
+                icon={<DetailsIcon className="h-5 w-5" />}
                 size="sm"
                 variant="filled"
                 onClick={() => setDetailsDrawer(true)}
@@ -240,7 +246,7 @@ export function ProjectOverviewView({
                     className={`flex items-center gap-1.5 ${activeTab === 'recent' ? 'font-semibold' : ''}`}
                   >
                     {activeTab === 'recent' && (
-                      <RecentChatsIcon className="h-4 w-4" />
+                      <RecentChatsIcon className="h-5 w-5" />
                     )}
                     {t.projectDetail.tabRecent}
                   </span>
@@ -256,7 +262,7 @@ export function ProjectOverviewView({
                     className={`flex items-center gap-1.5 ${activeTab === 'workspace' ? 'font-semibold' : ''} `}
                   >
                     {activeTab === 'workspace' && (
-                      <WorkspaceIcon className="h-4 w-4" />
+                      <WorkspaceIcon className="h-5 w-5" />
                     )}
                     {t.projectDetail.tabWorkspace}
                   </span>
@@ -275,7 +281,7 @@ export function ProjectOverviewView({
                   <span
                     className={`flex items-center gap-1.5 ${activeTab === 'mcps' ? 'font-semibold' : ''}`}
                   >
-                    {activeTab === 'mcps' && <McpIcon className="h-4 w-4" />}
+                    {activeTab === 'mcps' && <McpIcon className="h-5 w-5" />}
                     {t.projectDetail.tabMcps}
                   </span>
                 ),
@@ -288,7 +294,7 @@ export function ProjectOverviewView({
                     className={`flex items-center gap-1.5 ${activeTab === 'skills' ? 'font-semibold' : ''}`}
                   >
                     {activeTab === 'skills' && (
-                      <SkillIcon className="h-4 w-4" />
+                      <SkillIcon className="h-5 w-5" />
                     )}
                     {t.projectDetail.tabSkills}
                   </span>
@@ -347,14 +353,14 @@ export function ProjectOverviewView({
 // backend taxonomy (ms_agent/titler.CATEGORIES); an unset/unknown category
 // falls back to the generic "general" chat icon.
 const CATEGORY_ICON: Record<string, ReactNode> = {
-  coding: <TerminalIcon className="h-5 w-5 text-msa-text-3" />,
-  writing: <EditIcon className="h-5 w-5 text-msa-text-3" />,
-  research: <GlobeIcon className="h-5 w-5 text-msa-text-3" />,
-  planning: <TodoIcon className="h-5 w-5 text-msa-text-3" />,
-  data: <ParamsIcon className="h-5 w-5 text-msa-text-3" />,
-  creative: <BulbOutlined className="text-xl text-msa-text-3" />,
-  media: <MediaIcon className="h-5 w-5 text-msa-text-3" />,
-  general: <ChatsIcon className="h-5 w-5 text-msa-text-3" />
+  coding: <TerminalIcon className="h-8 w-8 text-msa-text-3" />,
+  writing: <EditIcon className="h-8 w-8 text-msa-text-3" />,
+  research: <GlobeIcon className="h-8 w-8 text-msa-text-3" />,
+  planning: <TodoIcon className="h-8 w-8 text-msa-text-3" />,
+  data: <ParamsIcon className="h-8 w-8 text-msa-text-3" />,
+  creative: <CreativeIcon className="h-8 w-8 text-msa-text-3" />,
+  media: <MediaIcon className="h-8 w-8 text-msa-text-3" />,
+  general: <ChatsIcon className="h-8 w-8 text-msa-text-3" />
 }
 
 function categoryIcon(category?: string): ReactNode {
@@ -434,7 +440,7 @@ function RecentChats({
           </span>
           <span className="hidden shrink-0 items-center gap-1 text-xs font-medium text-msa-text-brand1 group-hover/chat:inline-flex">
             {t.projectDetail.enterChat}
-            <JumpIcon className="h-4 w-4" />
+            <JumpIcon className="h-5 w-5" />
           </span>
         </div>
       ))}
@@ -460,6 +466,7 @@ function WorkspacePanel({
   const { t } = useT()
   const { message } = App.useApp()
   const [files, setFiles] = useState<WorkspaceFile[] | null>(null)
+  const [refreshing, spin] = useSpin()
   const [currentPath, setCurrentPath] = useState('')
   const [downloadingAll, setDownloadingAll] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -473,12 +480,11 @@ function WorkspacePanel({
     }
   }, [])
 
-  const loadFiles = () => {
+  const loadFiles = () =>
     api
       .listWorkspaceFiles(project.id)
       .then(setFiles)
       .catch(() => setFiles([]))
-  }
 
   useEffect(() => {
     loadFiles()
@@ -719,8 +725,13 @@ function WorkspacePanel({
                 <Button
                   size="small"
                   type="text"
-                  icon={<RefreshIcon className="h-4 w-4" />}
-                  onClick={loadFiles}
+                  icon={
+                    <RefreshIcon
+                      className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`}
+                    />
+                  }
+                  disabled={refreshing}
+                  onClick={() => spin(loadFiles)}
                 />
               </Tooltip>
               <Dropdown
@@ -731,16 +742,15 @@ function WorkspacePanel({
                 <Button size="small" type="text">
                   {t.workspace.addFile}
                   <CaretDownIcon
-                    className={`ml-1 h-1.5 w-1.5 transition-transform duration-200 ${
+                    className={`h-2.5 w-2.5 transition-transform duration-200 ${
                       addMenuOpen ? 'rotate-180' : ''
                     }`}
                   />
                 </Button>
               </Dropdown>
               <Button
-                size="small"
-                icon={<DownloadIcon className="h-4 w-4" />}
                 loading={downloadingAll}
+                className="shadow-none rounded-[4px]"
                 disabled={!files || files.length === 0}
                 onClick={handleDownloadAll}
               >
@@ -801,11 +811,11 @@ function WorkspacePanel({
                     return (
                       <span className="flex items-center gap-3">
                         {record.kind === 'folder' ? (
-                          <FolderIcon className="h-4 w-4" />
+                          <FolderIcon className="h-5 w-5" />
                         ) : (
                           <FileTypeIcon
                             name={displayName}
-                            className="h-4 w-4"
+                            className="h-5 w-5"
                           />
                         )}
                         {record.kind === 'folder' ? (
@@ -912,8 +922,13 @@ function WorkspacePanel({
                 <Button
                   size="small"
                   type="text"
-                  icon={<RefreshIcon className="h-4 w-4" />}
-                  onClick={loadFiles}
+                  icon={
+                    <RefreshIcon
+                      className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`}
+                    />
+                  }
+                  disabled={refreshing}
+                  onClick={() => spin(loadFiles)}
                 />
               </Tooltip>
               <Dropdown
@@ -924,7 +939,7 @@ function WorkspacePanel({
                 <Button size="small" type="text">
                   {t.workspace.addFile}
                   <CaretDownIcon
-                    className={`ml-1 h-1.5 w-1.5 transition-transform duration-200 ${
+                    className={`h-2.5 w-2.5 transition-transform duration-200 ${
                       addMenuOpen ? 'rotate-180' : ''
                     }`}
                   />

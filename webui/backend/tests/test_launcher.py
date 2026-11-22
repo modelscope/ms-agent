@@ -144,6 +144,39 @@ def test_changed_css_fails_even_when_sources_unchanged(built_frontend):
         validate_build(built_frontend)
 
 
+def _traced_copy(frontend, tmp_path):
+    """What `pnpm build:image` assembles: build/ copied verbatim beside the server
+    entry, with no app/ — the sources stay behind in the checkout."""
+    traced = tmp_path / "build-runtime"
+    shutil.copytree(frontend / "build", traced / "build")
+    shutil.copyfile(frontend / "server.js", traced / "server.js")
+    shutil.copyfile(frontend / "package.json", traced / "package.json")
+    return traced
+
+
+def test_traced_tree_serves_without_the_sources_it_was_built_from(
+    built_frontend, tmp_path, monkeypatch
+):
+    traced = _traced_copy(built_frontend, tmp_path)
+    monkeypatch.setattr(launcher, "FRONTEND_DIR", built_frontend)
+    launcher._check_traced_tree(traced)
+    assert validate_build(traced, check_sources=False) == "/assets/antd.test.css"
+
+
+def test_traced_tree_from_an_older_build_is_rejected(
+    built_frontend, tmp_path, monkeypatch
+):
+    traced = _traced_copy(built_frontend, tmp_path)
+    (built_frontend / "app/root.tsx").write_text("// changed")
+    _record_build_manifest(built_frontend)
+    monkeypatch.setattr(launcher, "FRONTEND_DIR", built_frontend)
+    # The blind spot this guard covers: on its own the stale copy passes, because
+    # the manifest it is checked against was copied along with the outputs.
+    assert validate_build(traced, check_sources=False) == "/assets/antd.test.css"
+    with pytest.raises(BuildError, match="traced from a different build"):
+        launcher._check_traced_tree(traced)
+
+
 def test_installed_settings_do_not_load_parent_dotenv(tmp_path):
     settings_file = Path(launcher.REPO_DIR) / "backend/app/core/settings.py"
     target = tmp_path / "webui/backend/app/core/settings.py"

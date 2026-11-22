@@ -154,7 +154,6 @@ DEEP_RESEARCH_SYNC_DESCRIPTOR = CapabilityDescriptor(
     },
     tags=['research', 'search', 'report', 'sync'],
     estimated_duration='hours',
-    requires={'env': ['OPENAI_API_KEY']},
 )
 
 

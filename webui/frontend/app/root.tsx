@@ -9,19 +9,31 @@ import {
   Scripts,
   ScrollRestoration,
   isRouteErrorResponse,
+  redirect,
   useRouteError,
   useRouteLoaderData
 } from 'react-router'
 
 import './app.css'
 import { NProgressHandler } from '~/components/common/NProgressHandler'
+import { renderAntdEmpty } from '~/components/common/EmptyState'
 import { ErrorState } from '~/components/common/ErrorState'
-import { ApiError, registerApiErrorReporter } from '~/lib/api'
+import {
+  api,
+  ApiError,
+  describeFailure,
+  orThrow,
+  registerApiErrorReporter
+} from '~/lib/api'
 import { getAntdCssHref } from '~/lib/antdStyle.server'
 import { getDesignTokenStyleContent } from '~/lib/designTokens'
 import { SERVER_HOSTED_MODE } from '~/lib/env'
 import { LANG_COOKIE, dictFor, type Lang, LangProvider, useT } from '~/lib/i18n'
-import { getMsaAntdTheme, msaModalProps } from '~/lib/msaTheme'
+import { getMsaAntdTheme, msaDrawerProps, msaModalProps } from '~/lib/msaTheme'
+import {
+  SCROLLBAR_WIDTH_SCRIPT,
+  useScrollbarWidthVar
+} from '~/lib/scrollbarWidth'
 import {
   SCHEME_COOKIE,
   THEME_COOKIE,
@@ -30,9 +42,13 @@ import {
   ThemeProvider,
   useTheme
 } from '~/lib/theme'
+import { ServerEventsBridge } from '~/lib/serverEvents'
+import { authMiddleware, requestAuth } from '~/lib/auth.server'
+import { useAuth, type AuthStatus } from '~/lib/auth'
 import { MsaButton } from './components/common/MsaButton'
 
 interface RootData {
+  auth: AuthStatus
   initialPref: ThemePref
   initialSystemTheme: Theme
   initialLang: Lang
@@ -63,7 +79,20 @@ function langFromAcceptLanguage(header: string): Lang | null {
   return null
 }
 
+export const middleware = [authMiddleware]
+
 export async function loader({ request }: { request: Request }) {
+  const auth = requestAuth()
+  const recovery = auth.enabled && !auth.authenticated ? null : await orThrow(
+    api.getRecoveryStatus().catch((error) => {
+      // Preserve pages that can render without an API, including the SSR package check.
+      if (error instanceof ApiError && error.status === 0) return null
+      throw error
+    })
+  )
+  if (recovery?.required && new URL(request.url).pathname !== '/recovery') {
+    throw redirect('/recovery')
+  }
   const cookie = request.headers.get('Cookie') || ''
   const themeRaw = readCookie(cookie, THEME_COOKIE)
   const schemeRaw = readCookie(cookie, SCHEME_COOKIE)
@@ -83,10 +112,24 @@ export async function loader({ request }: { request: Request }) {
       ? langRaw
       : (langFromAcceptLanguage(request.headers.get('Accept-Language') || '') ??
         'en')
+  // URL query overrides — `?__theme=…&__language=…` force a theme/language for
+  // THIS load only. Read here so SSR paints the forced value with no flash. Not
+  // persisted: the providers write cookies only on an explicit in-app change, so
+  // a reload without the query falls straight back to the cookie.
+  const url = new URL(request.url)
+  const themeQuery = url.searchParams.get('__theme')
+  const langQuery = url.searchParams.get('__language')
+  const forcedPref: ThemePref =
+    themeQuery === 'dark' || themeQuery === 'light' || themeQuery === 'system'
+      ? themeQuery
+      : initialPref
+  const forcedLang: Lang =
+    langQuery === 'zh' || langQuery === 'en' ? langQuery : initialLang
   return {
-    initialPref,
+    auth,
+    initialPref: forcedPref,
     initialSystemTheme,
-    initialLang,
+    initialLang: forcedLang,
     // Sent through the loader because the constant is `false` in the browser (the
     // client build has no `process.env`); this is what makes the value available
     // to components, via `useHosted()`. Declared in `lib/env.ts`.
@@ -95,6 +138,16 @@ export async function loader({ request }: { request: Request }) {
     // ever emitted at render time — the pre-baked file is it.
     antdCssHref: getAntdCssHref()
   } satisfies RootData
+}
+
+// This loader owns document-lifetime bootstrap data: the initial theme/language,
+// process-static hosted mode and the build's antd stylesheet. Re-running it would
+// violate the `initial*` contract and could replace a query-forced value with a
+// later cookie snapshot. Mutable page data belongs to child loaders, whose
+// independent `shouldRevalidate` decisions still let global revalidation refresh
+// them. Recovery also has its own loader and completes through a full navigation.
+export function shouldRevalidate() {
+  return false
 }
 
 /** Universal title fallback: any route without its own `meta` (e.g. a
@@ -173,6 +226,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
         ) : null}
       </head>
       <body className="h-full overflow-x-hidden">
+        {/* Before anything below it lays out — see the script's own comment. */}
+        <script dangerouslySetInnerHTML={{ __html: SCROLLBAR_WIDTH_SCRIPT }} />
         <LangProvider initialLang={initialLang}>
           <ThemeProvider
             initialPref={initialPref}
@@ -189,18 +244,27 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 function ThemedRoot({ children }: { children: React.ReactNode }) {
+  const auth = useAuth()
   const { antdLocale } = useT()
   const { theme } = useTheme()
+  useScrollbarWidthVar()
   return (
     <StyleProvider layer>
       <XProvider
         locale={antdLocale}
         theme={getMsaAntdTheme(theme)}
         modal={msaModalProps}
+        drawer={msaDrawerProps}
+        // Every antd data component falls back to its own "No data" illustration
+        // when the call site names no empty content; this replaces all of them
+        // with the project's, so a new Select or Table is themed by default
+        // instead of by whoever remembers to pass `notFoundContent`.
+        renderEmpty={renderAntdEmpty}
       >
         <AntdApp>
           <NProgressHandler />
           <ApiErrorBridge />
+          {auth.authenticated ? <ServerEventsBridge /> : null}
           {children}
         </AntdApp>
       </XProvider>
@@ -215,29 +279,18 @@ function ApiErrorBridge() {
   const { message } = AntdApp.useApp()
   const { t } = useT()
   useEffect(() => {
-    registerApiErrorReporter((msg: string, err: ApiError) => {
-      // No message means the failure was not reported by our backend at all —
-      // something in FRONT of it answered (a proxy/gateway 502, an upstream
-      // 504) with a body carrying no envelope. Naming the number keeps a burst
-      // of such toasts distinguishable and reportable instead of an
-      // indistinguishable wall of "Request failed".
-      // `code`, not `status`: the two are equal for a transport failure, but a
-      // rejection the body declares itself (readFailure) can arrive with a 2xx
-      // status, and only `code` then holds the real one.
-      // The reason phrase is appended when there is one, since it is the only
-      // words such a failure carries — absent over HTTP/2, hence the bare-code
-      // fallback. It pairs with `status` ONLY: for the 200-OK-with-code-400 case
-      // above, "400 OK" would describe neither half truthfully.
-      const detail =
-        err.code === err.status && err.statusText
-          ? `${err.status} ${err.statusText}`
-          : String(err.code)
-      const text = msg
-        ? msg
-        : err.status === 0
-          ? t.errors.network
-          : `${t.errors.requestFailed}: ${detail}`
-      message.error(text)
+    registerApiErrorReporter((_msg: string, err: ApiError) => {
+      // One toast for every failed request. `describeFailure` composes the text:
+      // the backend's own message when it sent one, otherwise the status first
+      // (`502 Bad Gateway`) and a server-vs-client headline second. The chat
+      // stream reuses the same helper so a failure reads identically there.
+      message.error(
+        describeFailure(err, {
+          server: t.errors.server,
+          requestFailed: t.errors.requestFailed,
+          network: t.errors.network
+        })
+      )
     })
     return () => registerApiErrorReporter(null)
   }, [message, t])
@@ -252,29 +305,30 @@ export function ErrorBoundary() {
   const error = useRouteError()
   const { t } = useT()
   const routeError = isRouteErrorResponse(error)
-  // A loader that let an API failure propagate carries the real HTTP status on
-  // the ApiError — without reading it, a missing project/session would show no
-  // status at all when it is plainly a 404.
-  const apiStatus = error instanceof ApiError ? error.status : undefined
-  const status = routeError ? error.status : apiStatus
-  // The status code IS the headline. A client-side exception carries no status,
-  // so it falls back to the error's OWN name (`TypeError`) rather than a phrase
-  // we made up — same principle as the description below.
-  const code = status
-    ? String(status)
-    : error instanceof Error
-      ? error.name
-      : undefined
+  // Read nothing off the error object but its message: a server-rendered error
+  // arrives here as a plain `Error`, so `status` and the class are gone and
+  // reading them broke hydration. Loaders carry status via `orThrow` instead.
+  const status = routeError ? error.status : undefined
+  // No status means a client-side exception; its own name is unavailable (see
+  // above), so use a fixed phrase and let the message explain.
+  const code = status ? String(status) : t.errors.unexpected
   // The server's own message is the explanation — it is the only text that knows
   // what actually failed. Inventing a per-status sentence here would replace
   // "project not found" with something vaguer.
-  const description = routeError
+  const reported = routeError
     ? typeof error.data === 'string' && error.data
       ? error.data
       : error.statusText
     : error instanceof Error
       ? error.message
       : String(error ?? '')
+  // Some failures carry no words at all (backend never answered, or an empty
+  // gateway body), which left the headline over an empty paragraph. A 5xx is a
+  // server-side fault, so it falls back to the server error, not "check your
+  // connection" (the user's network is not the problem).
+  const description =
+    reported ||
+    (status && status >= 500 ? t.errors.server : t.errors.requestFailed)
 
   return (
     <ErrorState

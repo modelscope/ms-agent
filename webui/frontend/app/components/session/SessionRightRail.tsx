@@ -1,16 +1,31 @@
-import { App, Button, Dropdown, Input, Modal, Splitter, Tooltip } from 'antd'
+import {
+  App,
+  Button,
+  Dropdown,
+  Input,
+  Modal,
+  Segmented,
+  Splitter,
+  Tooltip
+} from 'antd'
 import type { MenuProps, TreeDataNode } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { CodeEditor } from '~/components/common/CodeEditor'
 import { EmptyState } from '~/components/common/EmptyState'
 import { FolderTree } from '~/components/common/FolderTree'
-import { languageFor } from '~/lib/editorLanguage'
+import { HtmlPreview } from '~/components/common/HtmlPreview'
+import { Markdown } from '~/components/common/Markdown'
+import { docKindFor, languageFor } from '~/lib/editorLanguage'
+import { extensionOf, mediaKindFor } from '~/lib/mediaKind'
+import { makeRefResolver } from '~/lib/previewRefs'
+import { ScrollArea } from '~/components/common/ScrollArea'
 import { DeferredSkeleton } from '~/components/common/DeferredSkeleton'
 import type { FolderTreeActions } from '~/components/common/FolderTree'
 import { IconButton } from '~/components/common/IconButton'
 import { api } from '~/lib/api'
 import { dispatchWorkspaceChanged, useOnWorkspaceChanged } from '~/lib/events'
+import { useSpin } from '~/lib/useSpin'
 import { collectDroppedFiles } from '~/lib/dropFiles'
 import { createWorkspaceEntry } from '~/lib/workspaceCreate'
 import {
@@ -27,6 +42,8 @@ import CloseIcon from '~/assets/icons/close.svg?react'
 import RefreshIcon from '~/assets/icons/refresh.svg?react'
 import SearchIcon from '~/assets/icons/search.svg?react'
 import DownloadIcon from '~/assets/icons/download.svg?react'
+import ViewIcon from '~/assets/icons/view.svg?react'
+import TerminalIcon from '~/assets/icons/terminal.svg?react'
 import DefaultFileIcon from '~/assets/files/default.svg?react'
 
 interface Props {
@@ -132,19 +149,6 @@ function toTreeData(node: DirNode): TreeDataNode[] {
 
 type PreviewKind = 'text' | 'image' | 'video' | 'audio' | 'unsupported'
 
-const IMAGE_EXTS = new Set([
-  'png',
-  'jpg',
-  'jpeg',
-  'gif',
-  'webp',
-  'svg',
-  'bmp',
-  'ico',
-  'avif'
-])
-const VIDEO_EXTS = new Set(['mp4', 'webm', 'ogg', 'mov', 'avi', 'mkv'])
-const AUDIO_EXTS = new Set(['mp3', 'wav', 'aac', 'flac', 'm4a', 'wma', 'opus'])
 const TEXT_EXTS = new Set([
   'txt',
   'md',
@@ -219,16 +223,9 @@ function previewKindOf(file: WorkspaceFile): PreviewKind {
   // Directories are never previewable (the backend returns metadata only, and
   // writing one is rejected) — guard before any extension guessing.
   if (file.kind === 'folder') return 'unsupported'
-  // Real extension only: text after the last dot of the BASENAME, and only
-  // when that dot isn't the leading character. `logging` / `Dockerfile`
-  // (no dot) and `.locks` (dotfile) have NO extension — naive
-  // `split('.').pop()` would return the whole name instead of ''.
-  const name = file.path.split('/').pop() ?? ''
-  const dot = name.lastIndexOf('.')
-  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : ''
-  if (IMAGE_EXTS.has(ext)) return 'image'
-  if (VIDEO_EXTS.has(ext)) return 'video'
-  if (AUDIO_EXTS.has(ext)) return 'audio'
+  const media = mediaKindFor(file.path)
+  if (media) return media
+  const ext = extensionOf(file.path)
   if (TEXT_EXTS.has(ext)) return 'text'
   // Extensionless files (Dockerfile, Makefile, logging, dotfiles…) default
   // to plain-text preview.
@@ -272,7 +269,7 @@ export function SessionRightRail({
   const { t } = useT()
   const { message, modal } = App.useApp()
   const [files, setFiles] = useState<WorkspaceFile[] | null>(null)
-  const [refreshing, setRefreshing] = useState(false)
+  const [refreshing, spin] = useSpin()
   const [filter, setFilter] = useState('')
   // The entry being created: an inline row in the tree, named in place the way
   // an editor does it. null = nothing being created; '' is the workspace root,
@@ -301,6 +298,8 @@ export function SessionRightRail({
   const [fileLoading, setFileLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [previewKind, setPreviewKind] = useState<PreviewKind>('text')
+  // Markdown/HTML files open rendered; 'code' is the editor behind that.
+  const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview')
   // The open file was written by someone else (the agent, another view) while
   // the buffer had unsaved edits, so neither version can be dropped silently.
   const [externalChanged, setExternalChanged] = useState(false)
@@ -325,6 +324,24 @@ export function SessionRightRail({
 
   const dirty = selectedFile !== null && draft !== (fileContent ?? '')
 
+  // What the open file can be shown as, beyond its source.
+  const docKind = selectedFile ? docKindFor(selectedFile) : null
+  // An HTML preview is an iframe on the file's raw URL, so it shows what is ON
+  // DISK — it has to reload whenever that changes, ours or anyone else's write.
+  const [diskRevision, setDiskRevision] = useState(0)
+  useEffect(() => setDiskRevision((n) => n + 1), [fileContent])
+  // Relative references inside a rendered markdown file point at its neighbours
+  // in the workspace, not at anything under the current route.
+  const previewRefs = useMemo(
+    () =>
+      selectedFile
+        ? makeRefResolver(selectedFile, (path) =>
+            api.workspaceFileRawUrl(project.id, path)
+          )
+        : undefined,
+    [project.id, selectedFile]
+  )
+
   // Everything holding text that is not on disk: the parked buffers plus the open
   // one, if it has been edited.
   const unsavedPaths = useMemo(() => {
@@ -346,16 +363,11 @@ export function SessionRightRail({
     }
   }, [])
 
-  const loadFiles = (spin = false) => {
-    if (spin) setRefreshing(true)
+  const loadFiles = () =>
     api
       .listWorkspaceFiles(project.id)
       .then(setFiles)
       .catch(() => setFiles([]))
-      .finally(() => {
-        if (spin) setRefreshing(false)
-      })
-  }
 
   // A project switch must not flash the previous project's tree (or keep its
   // selected file) while the new list loads — reset to the loading placeholder
@@ -425,8 +437,8 @@ export function SessionRightRail({
   }, [project.id, previewKind, dirty])
 
   // Cross-component sync: another view (e.g. project-edit modal) uploaded files.
-  // Wrapped so the event's optional `created` paths payload isn't mistaken for
-  // loadFiles' `spin` flag.
+  // Wrapped so the reload also re-reads the open file, and so the event's
+  // optional `created` paths payload isn't forwarded on as an argument.
   const reloadOnChange = useCallback(() => {
     loadFiles()
     void syncOpenFile()
@@ -566,6 +578,7 @@ export function SessionRightRail({
     setFileContent(null)
     setDraft('')
     setPreviewKind('text')
+    setViewMode('preview')
     setExternalChanged(false)
     diskContent.current = null
     setFileLoading(true)
@@ -838,9 +851,7 @@ export function SessionRightRail({
   const downloadMany = async (paths: string[]) => {
     // Folders can't be streamed as a single file; caller passes files only.
     try {
-      await Promise.all(
-        paths.map((p) => downloadWorkspaceFile(project.id, p))
-      )
+      await Promise.all(paths.map((p) => downloadWorkspaceFile(project.id, p)))
     } catch (err) {
       message.error(downloadErrorText(t, err))
     }
@@ -971,7 +982,9 @@ export function SessionRightRail({
     // Reflect updated size / mtime in the tree metadata.
     setFiles((prev) =>
       prev
-        ? prev.map((f) => (f.path === res.file.path ? { ...f, ...res.file } : f))
+        ? prev.map((f) =>
+            f.path === res.file.path ? { ...f, ...res.file } : f
+          )
         : prev
     )
     // An edit changes no path, but it does change what other views SHOW about
@@ -1145,7 +1158,7 @@ export function SessionRightRail({
               variant="ghost"
               size="sm"
               disabled={refreshing}
-              onClick={() => loadFiles(true)}
+              onClick={() => spin(loadFiles)}
             />
           </Tooltip>
         </div>
@@ -1154,6 +1167,7 @@ export function SessionRightRail({
             icon={<CloseIcon className="h-4 w-4" />}
             variant="tonal"
             size="sm"
+            className="!h-7 !w-7 !rounded-[12px]"
             onClick={onClose}
           />
         )}
@@ -1170,7 +1184,7 @@ export function SessionRightRail({
               <Dropdown menu={addMenu} trigger={['hover']}>
                 <MsaButton
                   variant="primary"
-                  icon={<AddIcon className="h-4 w-4" />}
+                  icon={<AddIcon className="h-5 w-5" />}
                 >
                   {t.workspace.addFile}
                 </MsaButton>
@@ -1187,21 +1201,21 @@ export function SessionRightRail({
               <div className="shrink-0 px-2 pt-2 pb-1">
                 <Input
                   allowClear
-                  size="small"
-                  prefix={<SearchIcon className="h-4 w-4 text-msa-text-3" />}
+                  variant="borderless"
+                  prefix={
+                    <SearchIcon className="mr-1 h-5 w-5 text-msa-text-3" />
+                  }
                   placeholder={t.workspace.searchPlaceholder}
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
+                  className="rounded-lg h-8 bg-msa-fill-2 px-1.5 py-1"
                 />
               </div>
-              <div
-                className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-1"
-                // stable both-edges: the styled scrollbar reserves a gutter on
-                // the right only; mirroring it on the left keeps the selected
-                // tree-row highlight's left/right insets equal. The former px-2
-                // is dropped because the ~8px gutter already supplies that inset,
-                // keeping the total spacing the same as before.
-                style={{ scrollbarGutter: 'stable both-edges' }}
+              <ScrollArea
+                pad={12}
+                className="min-h-0 flex-1 py-1"
+                // pad: keeps the selected tree-row highlight's left/right insets
+                // equal whether or not the scrollbar takes space.
                 onDragOver={(e) => {
                   // Native OS file drag over empty tree area -> upload to root.
                   // Folder nodes handle (and stop) their own drops.
@@ -1231,13 +1245,13 @@ export function SessionRightRail({
                     onDraftCancel={() => setNewEntry(null)}
                   />
                 )}
-              </div>
+              </ScrollArea>
               {/* Footer: download + add, inside left panel */}
               <div className="flex shrink-0 items-stretch border-t border-msa-line-1">
                 <Button
                   type="text"
                   size="small"
-                  icon={<DownloadIcon className="h-4 w-4" />}
+                  icon={<DownloadIcon className="h-5 w-5" />}
                   loading={downloadingAll}
                   disabled={!files || files.length === 0}
                   onClick={handleDownloadAll}
@@ -1250,7 +1264,7 @@ export function SessionRightRail({
                   <Button
                     type="text"
                     size="small"
-                    icon={<AddIcon className="h-4 w-4" />}
+                    icon={<AddIcon className="h-5 w-5" />}
                     className="h-10 flex-1 !rounded-none !text-msa-text-2"
                   >
                     {t.workspace.addFile}
@@ -1289,19 +1303,64 @@ export function SessionRightRail({
                         </Tooltip>
                       )}
                     </div>
-                    <Tooltip title={t.workspace.download}>
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<DownloadIcon className="h-4 w-4" />}
-                        onClick={() => downloadOne(selectedFile)}
-                        className="!text-msa-text-2"
-                      />
-                    </Tooltip>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {previewKind === 'text' && docKind && (
+                        <Segmented<'preview' | 'code'>
+                          size="small"
+                          value={viewMode}
+                          onChange={setViewMode}
+                          options={[
+                            {
+                              value: 'preview',
+                              icon: (
+                                <Tooltip title={t.common.viewPreview}>
+                                  <ViewIcon className="h-5 w-5" />
+                                </Tooltip>
+                              )
+                            },
+                            {
+                              value: 'code',
+                              icon: (
+                                <Tooltip title={t.common.viewCode}>
+                                  <TerminalIcon className="h-5 w-5" />
+                                </Tooltip>
+                              )
+                            }
+                          ]}
+                        />
+                      )}
+                      <Tooltip title={t.workspace.download}>
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<DownloadIcon className="h-5 w-5" />}
+                          onClick={() => downloadOne(selectedFile)}
+                          className="!text-msa-text-2"
+                        />
+                      </Tooltip>
+                    </div>
                   </div>
-                  <div className="min-h-0 flex-1">
+                  <div className="min-h-0 flex-1 flex flex-col">
                     {fileLoading ? (
                       <DeferredSkeleton rows={10} className="p-4" />
+                    ) : previewKind === 'text' &&
+                      docKind === 'markdown' &&
+                      viewMode === 'preview' ? (
+                      <div className="h-full overflow-auto px-4 py-4">
+                        <Markdown
+                          content={draft}
+                          frontmatter
+                          resolveRef={previewRefs}
+                        />
+                      </div>
+                    ) : previewKind === 'text' &&
+                      docKind === 'html' &&
+                      viewMode === 'preview' ? (
+                      <HtmlPreview
+                        src={api.workspaceFileRawUrl(project.id, selectedFile)}
+                        title={selectedFile}
+                        reloadKey={`${selectedFile}:${diskRevision}`}
+                      />
                     ) : previewKind === 'text' ? (
                       <CodeEditor
                         value={draft}
@@ -1380,15 +1439,17 @@ export function SessionRightRail({
             <Button danger onClick={discardAllAndClose}>
               {t.workspace.discardAndClose}
             </Button>
-            <Button type="primary" loading={savingAll} onClick={saveAllAndClose}>
+            <Button
+              type="primary"
+              loading={savingAll}
+              onClick={saveAllAndClose}
+            >
               {t.workspace.saveAllAndClose}
             </Button>
           </>
         }
       >
-        <p className="m-0 text-sm text-msa-text-2">
-          {t.workspace.unsavedHint}
-        </p>
+        <p className="m-0 text-sm text-msa-text-2">{t.workspace.unsavedHint}</p>
         <ul className="m-0 mt-3 flex list-none flex-col gap-1 p-0">
           {unsavedPaths.map((p) => (
             <li key={p} className="min-w-0">

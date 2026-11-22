@@ -115,7 +115,7 @@ python3 -m ms_agent.capabilities.mcp_server --check
 ./install_skill.sh
 ```
 
-This copies the `ms-agent-skills/` directory into nanobot's workspace skills directory so that nanobot's context builder can load it.
+This copies `SKILL.md`, `references/`, and `scripts/` from `ms-agent-skills/` into nanobot's workspace skills directory (`skills/ms-agent/`) so that nanobot's context builder can load it.
 
 ### Step 3: Configure nanobot
 
@@ -188,6 +188,6 @@ python3 test_mcp_tools.py --test fs,ws    # Combined tests
 
 | File | Purpose |
 |------|---------|
-| `config.json` | MCP server config to merge into nanobot's `config.json` |
+| `nanobot_mcp_config.json` | MCP server config snippet to merge into nanobot's `config.json` |
 | `install_skill.sh` | Copies ms-agent skill to nanobot workspace |
 | `test_mcp_tools.py` | Standalone test that exercises MCP tools directly |

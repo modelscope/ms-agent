@@ -49,6 +49,8 @@
  *   rounded-msa-8  shadow-msa-s  text-msa-sm
  * ================================================================ */
 @theme {
+  --animate-msa-session-dot: msa-session-dot 1.4s ease-in-out infinite;
+
   /* --- Background --- */
   --color-msa-bg-1: var(--msa-bg-1);
   --color-msa-bg-2: var(--msa-bg-2);
@@ -256,6 +258,15 @@ a {
 
    Unlayered on purpose: these must outrank antd's layered styles, and the
    WebKit pseudo-elements below already override the `color-scheme` bar. */
+
+/* How much width a scrollbar steals from the content box. 0 is the overlay
+   case (macOS default, mobile) and the SSR default; a blocking script at the top
+   of <body> overwrites it on <html> with the real measurement before the app
+   lays out. See ScrollArea. */
+:root {
+  --msa-scrollbar-w: 0px;
+}
+
 * {
   scrollbar-width: thin;
   /* thumb track — transparent until hover (Firefox has no hover pseudo). */
@@ -263,8 +274,7 @@ a {
 }
 
 *:hover {
-  scrollbar-color: color-mix(in srgb, var(--msa-text-3) 45%, transparent)
-    transparent;
+  scrollbar-color: color-mix(in srgb, var(--msa-text-3) 45%, transparent) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -325,6 +335,21 @@ a {
   [contenteditable]:focus-visible {
     outline: none;
   }
+
+  /* Segmented: drop antd's raised look. The selected item + moving thumb carry
+     `box-shadow: boxShadowTertiary` (a global alias token, not a Segmented
+     component token), so it can't be turned off in msaTheme.ts — the flat MSA
+     control keeps only the white pill fill. Layer precedence beats the baked
+     `antd` rule without stacking `.ant-*` selectors. */
+  .ant-segmented .ant-segmented-item-selected,
+  .ant-segmented .ant-segmented-thumb {
+    box-shadow: none;
+  }
+
+  .ant-dropdown-menu-submenu-title {
+    display: flex;
+    align-items: center;
+  }
 }
 
 /* --- Anti-flicker loading (skeletons / spinners) ---------------------------
@@ -346,4 +371,114 @@ a {
 .msa-loading-defer {
   opacity: 0;
   animation: msa-loading-reveal 150ms ease-out 250ms forwards;
+}
+
+@keyframes msa-session-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+  }
+
+  30% {
+    opacity: 0.9;
+  }
+}
+
+@keyframes msa-agent-gaze-working {
+  0%,
+  8%,
+  28%,
+  43%,
+  67%,
+  76%,
+  94%,
+  100% {
+    transform: translate(0, 0);
+  }
+
+  14%,
+  22% {
+    transform: translate(1.15px, 0.25px);
+  }
+
+  49%,
+  61% {
+    transform: translate(-1.15px, -0.25px);
+  }
+
+  82%,
+  90% {
+    transform: translate(0.3px, 1.25px);
+  }
+}
+
+@keyframes msa-agent-left-eye-working {
+  0%,
+  30%,
+  38%,
+  47%,
+  67%,
+  76%,
+  94%,
+  100% {
+    transform: scaleY(1);
+  }
+
+  34% {
+    transform: scaleY(0.12);
+  }
+
+  53%,
+  63% {
+    transform: scaleY(1.15);
+  }
+}
+
+@keyframes msa-agent-right-eye-working {
+  0%,
+  30%,
+  38%,
+  47%,
+  67%,
+  76%,
+  94%,
+  100% {
+    transform: scaleY(1);
+  }
+
+  34% {
+    transform: scaleY(0.12);
+  }
+
+  53%,
+  63% {
+    transform: scaleY(1.15);
+  }
+}
+
+.msa-agent-working .task-icon-eyes,
+.msa-agent-working .task-icon-eye {
+  transform-box: fill-box;
+  transform-origin: center;
+  will-change: transform;
+}
+
+.msa-agent-working .task-icon-eyes {
+  animation: msa-agent-gaze-working 6.4s ease-in-out infinite;
+}
+
+.msa-agent-working .task-icon-eye-left {
+  animation: msa-agent-left-eye-working 6.4s ease-in-out infinite;
+}
+
+.msa-agent-working .task-icon-eye-right {
+  animation: msa-agent-right-eye-working 6.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .msa-agent-working .task-icon-eyes,
+  .msa-agent-working .task-icon-eye {
+    animation: none;
+  }
 }

@@ -7,12 +7,15 @@
  * Per scenario: nothing left ticking, the seconds are the SERVER's, and the
  * replay matches the live pass.
  */
+import assert from 'node:assert/strict'
 import {
   applyChunk,
   finalizeOpenThoughts,
+  historyToAgentMessages,
   type AgentChunk,
   type AgentMessage
 } from '~/lib/agentProvider'
+import { splitTurn } from '~/components/messages/turnSplit'
 
 type Scenario = {
   name: string
@@ -61,8 +64,25 @@ const error = (message: string): AgentChunk => ({
   content: '',
   meta: { message, recoverable: false }
 })
+const compaction = (): AgentChunk => ({
+  type: 'step',
+  content: '',
+  meta: { kind: 'context_compaction', before_tokens: 12000, after_tokens: 4000 }
+})
 
 const SCENARIOS: Scenario[] = [
+  {
+    name: 'context compaction does not finish in-flight reasoning',
+    frames: [thought(1, 'still thinking', 0), compaction()],
+    expect: ['ticking']
+  },
+  {
+    name: 'context compaction preserves reasoning identity and server duration',
+    frames: [
+      thought(1, 'before', 0), compaction(), thought(1, ' after', 2000), close(1, 4)
+    ],
+    expect: [4]
+  },
   {
     // The common shape: think, then a tool call with no narration.
     name: 'think → tool call (no narration)',
@@ -252,6 +272,54 @@ for (const s of SCENARIOS) {
     fail(s.name, 'replay disagrees with the live pass')
   else console.log(`  ✓ ${s.name} → ${JSON.stringify(got)}`)
 }
+
+// Compaction is not a tool result or a turn boundary. Exercise the same reducer
+// used for live SSE and attach, plus persisted-history conversion, without a DOM.
+const beforeNotice = reduce([text('narration'), composing()])
+const withNotice = applyChunk(beforeNotice, compaction())
+assert.equal(withNotice.content, beforeNotice.content)
+assert.equal(withNotice.turnStartedAt, beforeNotice.turnStartedAt)
+assert.equal(withNotice.loopDurationMs, undefined)
+assert.deepEqual(withNotice.parts?.slice(0, -1), beforeNotice.parts)
+assert.equal(splitTurn(withNotice.parts ?? [], true).loopDone, false)
+
+const runningTool = step('file_read', { status: 'running', path: 'a.txt' })
+const toolsAndNotice = reduce([runningTool, compaction(), step('file_read', { path: 'a.txt' })])
+assert.equal(toolsAndNotice.parts?.length, 2) // completion replaces only the tool
+assert.deepEqual(toolsAndNotice.parts?.[0], {
+  kind: 'step', step: { kind: 'file_read', meta: { kind: 'file_read', call_id: 'c1', group: 1, path: 'a.txt' } }
+})
+assert.deepEqual(toolsAndNotice.parts?.[1], {
+  kind: 'step', step: { kind: 'context_compaction', meta: compaction().meta }
+})
+
+const [history] = historyToAgentMessages([{
+  role: 'assistant', content: 'answer', parts: [
+    { kind: 'step', step: { kind: 'context_compaction', meta: { before_tokens: 12000, after_tokens: 4000 } } },
+    { kind: 'text', text: 'answer' }
+  ]
+}])
+const historyNotice = history.parts?.[0]
+assert.equal(history.content, 'answer')
+assert.equal(historyNotice?.kind, 'step')
+if (historyNotice?.kind === 'step') {
+  assert.equal(historyNotice.step.kind, 'context_compaction')
+  assert.deepEqual(historyNotice.step.meta, { before_tokens: 12000, after_tokens: 4000 })
+}
+assert.equal(splitTurn(history.parts ?? [], false).summary?.text, 'answer')
+const afterAnswer = reduce([text('answer'), compaction(), compaction()])
+const completed = splitTurn(afterAnswer.parts ?? [], false)
+assert.equal(completed.summary?.text, 'answer')
+assert.deepEqual(completed.processParts, [])
+assert.equal(completed.trailingNotices.length, 2)
+const streaming = splitTurn(afterAnswer.parts ?? [], true)
+assert.equal(streaming.summary, null)
+assert.deepEqual(streaming.processParts, afterAnswer.parts)
+assert.deepEqual(streaming.trailingNotices, [])
+const interrupted = splitTurn([...(afterAnswer.parts ?? []), { kind: 'interrupted' }], false)
+assert.equal(interrupted.loopDone, false)
+assert.equal(interrupted.summary, null)
+console.log('Context compaction reducer, history and turn-boundary checks passed')
 
 if (failed) {
   console.error(`\n${failed} scenario(s) failed`)

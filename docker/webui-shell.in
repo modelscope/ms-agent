@@ -1,0 +1,5 @@
+# Image-only Python tools, installed outside the SDK service environment.
+# Regenerate the lock using the command in docker/webui-shell.txt.
+requests
+PyYAML
+beautifulsoup4

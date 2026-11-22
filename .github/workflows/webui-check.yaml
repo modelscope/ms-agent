@@ -144,6 +144,7 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/release-inputs"
           cd "$RUNNER_TEMP/ms-agent-package-source"
           uv export --project webui/backend --frozen --no-dev --no-emit-project --no-emit-package ms-agent --output-file "$GITHUB_WORKSPACE/release-inputs/runtime-requirements.txt" > /dev/null
+          cp docker/webui-shell.txt "$GITHUB_WORKSPACE/release-inputs/shell-requirements.txt"
           uv build --python 3.12 --out-dir "$GITHUB_WORKSPACE/release-inputs"
           cd "$GITHUB_WORKSPACE"
           uvx --from twine==6.2.0 twine check release-inputs/*.whl release-inputs/*.tar.gz

@@ -38,7 +38,7 @@ llm:
   # Large model service backend
   service: modelscope
   # Model id
-  model: Qwen/Qwen3-235B-A22B-Instruct-2507
+  model: Qwen/Qwen3.8-Flash-Next
   # Model api_key
   modelscope_api_key:
   # Model base_url
@@ -180,6 +180,9 @@ tool_call_timeout: 30000
 
 # Output artifact directory
 output_dir: output
+
+# Save a workspace snapshot before each task (disabled by default)
+enable_snapshots: false
 
 # Help information, usually appears after runtime errors
 help: |

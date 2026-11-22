@@ -14,6 +14,7 @@ def get_settings() -> AgentSettings:
     return agent_settings.get_settings()
 
 
+@router.patch("")
 @router.put("")
 def update_settings(body: AgentSettings) -> AgentSettings:
     from app.backends.ms_agent import agent_settings

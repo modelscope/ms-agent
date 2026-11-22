@@ -5,7 +5,7 @@ import { CardSkeletonGrid } from '~/components/common/CardSkeletonGrid'
 import { EmptyState, EmptyStateAction } from '~/components/common/EmptyState'
 import { MsaButton } from '~/components/common/MsaButton'
 import { api } from '~/lib/api'
-import { dispatchMcpSkillChanged } from '~/lib/events'
+import { dispatchMcpSkillChanged, useOnMcpSkillChanged } from '~/lib/events'
 import { useT } from '~/lib/i18n'
 import type { Project, Scope, Skill } from '~/lib/types'
 import { SkillCard } from '~/components/resources/SkillCard'
@@ -58,6 +58,10 @@ export function SkillTabPanel({ project }: Props) {
     setPage(1)
   }, [activeScope])
 
+  // Refresh when the set changes elsewhere (the other tab, or an external API
+  // call relayed by the server-event bridge).
+  useOnMcpSkillChanged(refresh)
+
   // Reset state when project changes (the scope itself is URL-driven).
   useEffect(() => {
     setPage(1)
@@ -73,13 +77,15 @@ export function SkillTabPanel({ project }: Props) {
       {/* Toolbar */}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <Segmented<Scope>
+          className="text-[13px]"
           value={activeScope}
           onChange={setActiveScope}
           options={scopeOptions}
         />
         <MsaButton
           variant="primary"
-          icon={<AddIcon className="h-4 w-4" />}
+          className="rounded-[12px] text-[13px]"
+          icon={<AddIcon className="h-5 w-5" />}
           onClick={() => setShowLocal(true)}
         >
           {t.resources.addSkill}

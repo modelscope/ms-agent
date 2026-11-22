@@ -11,10 +11,11 @@ interface McpCardProps {
   mcp: Mcp
   onToggle: (v: boolean) => void
   onReconnect?: () => void
+  onTest?: () => void
   onEdit?: () => void
   onRemove: () => void
   /** undefined = not probed yet; the reason rides in `healthError`. */
-  healthy?: boolean
+  healthy?: boolean | null
   healthError?: string | null
   /** A probe is in flight — connecting/installing is a real phase (a cold uvx
       server takes tens of seconds), and without showing it the card reads as
@@ -28,6 +29,7 @@ export function McpCard({
   mcp,
   onToggle,
   onReconnect,
+  onTest,
   onEdit,
   onRemove,
   healthy,
@@ -41,6 +43,9 @@ export function McpCard({
   const menu: MenuProps = {
     onClick: (e) => e.domEvent.stopPropagation(),
     items: [
+      ...(onReconnect && mcp.enabled
+        ? [{ key: 'reconnect', label: t.resources.reconnect, onClick: onReconnect }]
+        : []),
       ...(onEdit
         ? [{ key: 'edit', label: t.resources.edit, onClick: onEdit }]
         : []),
@@ -137,30 +142,30 @@ export function McpCard({
           </Typography.Text>
         ) : (
           <span className="min-w-0 flex-1 truncate text-xs text-msa-text-3">
-            {mcp.description || t.resources.noDescription}
+            {mcp.enabled && healthy == null ? t.resources.statusUnverified : mcp.description || t.resources.noDescription}
           </span>
         )}
         <div
           className="flex shrink-0 items-center gap-1"
           onClick={(e) => e.stopPropagation()}
         >
-          {onReconnect && (
+          {onTest && mcp.enabled && (
             /* One spinner for every probe, whoever started it: the sweep on
                mount, the deep check after an add, or this button. antd also
                blocks the click while it spins, so a manual retry cannot race
                the sweep that is already probing the same server. */
             <Tooltip
-              title={probing ? t.resources.probing : t.resources.reconnect}
+              title={probing ? t.resources.probing : t.resources.testConnection}
             >
               <Button
                 size="small"
                 type="text"
-                icon={<RefreshIcon className="h-4 w-4" />}
+                icon={<RefreshIcon className="h-5 w-5" />}
                 loading={testing || probing}
                 onClick={async () => {
                   setTesting(true)
                   try {
-                    await onReconnect()
+                    await onTest()
                   } finally {
                     setTesting(false)
                   }
@@ -187,7 +192,7 @@ export function McpCard({
                 aria-label={t.resources.more}
                 size="small"
                 type="text"
-                icon={<MoreIcon className="h-4 w-4" />}
+                icon={<MoreIcon className="h-5 w-5" />}
                 className="!text-msa-text-3"
               />
             </Dropdown>

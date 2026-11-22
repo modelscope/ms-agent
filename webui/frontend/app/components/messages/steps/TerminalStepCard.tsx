@@ -174,7 +174,7 @@ export function TerminalStepCard({
             className="h-4 w-4 shrink-0 animate-spin text-msa-text-brand1"
           />
         ) : (
-          <TerminalIcon className="h-4 w-4 shrink-0 text-msa-text-3" />
+          <TerminalIcon className="h-5 w-5 shrink-0 text-msa-text-3" />
         )}
         {/* Still a Typography so the chip inherits antd's `code` chrome (its
             hairline border) exactly like the file-search header does — that
@@ -203,7 +203,7 @@ export function TerminalStepCard({
           </span>
         )}
         <ArrowDownIcon
-          className={`h-3 w-3 shrink-0 text-msa-text-3 transition-transform duration-200 ${
+          className={`h-3.5 w-3.5 shrink-0 text-msa-text-3 transition-transform duration-200 ${
             expanded ? 'rotate-180' : ''
           }`}
         />

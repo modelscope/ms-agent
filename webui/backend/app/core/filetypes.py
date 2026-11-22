@@ -68,3 +68,17 @@ def guess_type(name: str) -> str | None:
 def is_binary_ext(name: str) -> bool:
     """True for extensions that must never be previewed as editable text."""
     return Path(name).suffix.lower() in _BINARY_EXTS
+
+
+def raw_headers(content_type: str | None) -> dict[str, str]:
+    """Headers for serving raw workspace/skill bytes.
+
+    HTML gets a sandbox: it comes from the agent or an upload, and same-origin
+    HTML would run its scripts against the app's own session. Scripts stay
+    enabled (previews need them) but the document lands in an opaque origin.
+    """
+    headers = {"X-Content-Type-Options": "nosniff"}
+    if (content_type or "").startswith("text/html"):
+        headers["Content-Security-Policy"] = (
+            "sandbox allow-scripts allow-forms allow-popups")
+    return headers

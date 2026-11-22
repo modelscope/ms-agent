@@ -44,39 +44,21 @@ export default defineConfig(({ mode }) => {
     envDir,
     plugins: [svgr(), tailwindcss(), reactRouter()],
     resolve: {
-      // Array form with ANCHORED regex finds: a bare string alias is a prefix
-      // match, so '@ant-design/x-markdown' would also mangle subpath imports
-      // (themes/dark.css → es/index.js/themes/dark.css, "duplicated modules"
-      // warning). Anchors rewrite only the exact ids we mean.
-      alias: [
-        {
-          find: '~',
-          replacement: fileURLToPath(new URL('./app', import.meta.url))
-        },
-        // x-markdown's lib/ (CJS) does `require("./*.css")` which Node can't
-        // parse. Force the es/ entry so Vite's CSS pipeline handles it.
-        {
-          find: /^@ant-design\/x-markdown$/,
-          replacement: '@ant-design/x-markdown/es/index.js'
-        }
-      ]
+      alias: {
+        '~': fileURLToPath(new URL('./app', import.meta.url))
+      }
     },
     server: {
       port: 5173,
       proxy: {
-        '/api': { target: apiBaseUrl, changeOrigin: true }
+        // Preserve the browser's Host for the backend's same-origin check,
+        // including when Vite selects a different available development port.
+        '/api': { target: apiBaseUrl, changeOrigin: false }
       }
     },
     ssr: {
-      // Prefer CJS (lib/) for Node SSR so antd's es/ extensionless imports
-      // don't fail under strict Node ESM resolution.
-      resolve: {
-        mainFields: ['main', 'module'],
-        conditions: ['node', 'require'],
-        externalConditions: ['node', 'require']
-      },
-      // x-markdown's lib/ build contains syntax Node SSR can't parse; route it
-      // through Vite so esbuild handles the transform. Regex (not a bare package
+      // x-markdown's es/ build imports CSS, which Node can't load; route it
+      // through Vite so its CSS pipeline handles it. Regex (not a bare package
       // name) so DEEP imports like `plugins/Latex` (no `exports` map) match too.
       // NOTE: katex itself must stay external — its UMD build breaks under
       // Vite's strict-mode SSR transform ("Cannot set properties of undefined").

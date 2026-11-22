@@ -79,9 +79,9 @@ def test_anthropic_protocol_falls_back_to_mem0_native_provider():
 
 
 def test_non_openai_vendor_without_a_native_adapter_is_declined():
-    """Better no `llm` key (mem0 warns and uses its default) than a provider
-    we know cannot be reached -- and never a silent mislabel."""
-    assert C._mem0_llm(_settings("acme", "anthropic", "https://acme.test")) is None
+    """Never silently switch to mem0's unrelated default model."""
+    with pytest.raises(C.MemoryConfigError, match="does not support"):
+        C._mem0_llm(_settings("acme", "anthropic", "https://acme.test"))
 
 
 @pytest.mark.parametrize("settings", [
@@ -89,8 +89,11 @@ def test_non_openai_vendor_without_a_native_adapter_is_declined():
     {"llm": {"provider": "deepseek"}},                        # no model
     {"llm": {"provider": "deepseek", "model": "m"}},          # no credentials
 ])
-def test_incomplete_settings_yield_no_llm_block(settings):
-    assert C._mem0_llm(settings) is None
+def test_incomplete_settings_yield_configuration_error(settings, monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(C.MemoryConfigError):
+        C._mem0_llm(settings)
 
 
 # ── embedder resolution (explicit → conversation provider → local) ─────────
@@ -465,6 +468,8 @@ def _mismatched_store(monkeypatch, vector_project, rows=None):
     mem_dir = Path(str(memory_dir(sdk_proj.path)))
     (mem_dir / "qdrant").mkdir(parents=True)
     (mem_dir / "qdrant" / "meta.json").write_text("{}")
+    monkeypatch.setattr(C, "_read_settings", lambda: _settings(
+        "openai", "openai", "https://example.test/v1"))
     (mem_dir / "ingest_state.json").write_text('{"hashes": ["x"]}')
     monkeypatch.setattr(C, "_probe_embed_dimension", lambda desc: (384, False))
     # The rebuild materializes the embedder before touching anything (for a
@@ -1055,20 +1060,27 @@ def test_rebuild_refuses_while_a_turn_is_running(monkeypatch, vector_project):
     assert not busy.closed and "s-busy" in registry._runtimes
 
 
-def test_a_flagged_runtime_is_rebuilt_on_the_next_turn(monkeypatch):
+def test_a_flagged_runtime_is_rebuilt_on_the_next_turn(tmp_path, monkeypatch):
     """The other half: `get()` used to look only at the conversation model, so
     a flagged runtime kept serving the old configuration anyway."""
-    from app.backends.ms_agent import model_link
     from app.backends.ms_agent import runtime as R
+    from app.backends.ms_agent import session_models
 
+    monkeypatch.setenv("MS_AGENT_HOME", str(tmp_path))
+    snapshot = session_models.ModelSnapshot(("openai", "unused"), {}, {})
+    monkeypatch.setattr(session_models, "prepare", lambda project, session:
+                        (session, snapshot))
     reg = R.RuntimeRegistry()
+    monkeypatch.setattr(reg, "_ensure_sweeper", lambda: None)
     stale = _FakeRuntime("p1", "s1")
-    stale.model_key = model_link.active_model()
-    stale.needs_rebuild = True
+    stale.project.path = str(tmp_path / "workspace")
+    stale.model_key = snapshot.key
+    stale.settings_fingerprint = R._settings_fingerprint(stale.project, snapshot)
+    stale.mcp_fingerprint = R._mcp_fingerprint(stale.project)
     reg._runtimes["s1"] = stale
     built = []
 
-    def _fake_runtime(project, session, mcp):
+    def _fake_runtime(project, session, mcp, model_snapshot=None):
         built.append(session.id)
         return _FakeRuntime("p1", session.id)
 
@@ -1079,8 +1091,14 @@ def test_a_flagged_runtime_is_rebuilt_on_the_next_turn(monkeypatch):
 
     monkeypatch.setattr(reg, "_resolve_mcp", _mcp)
 
-    got = asyncio.run(reg.get(stale.project, stale.session))
-    assert built == ["s1"] and got is not stale and stale.closed
+    async def check():
+        assert await reg.get(stale.project, stale.session) is stale
+        assert not built and not stale.closed
+        stale.needs_rebuild = True
+        got = await reg.get(stale.project, stale.session)
+        assert built == ["s1"] and got is not stale and stale.closed
+
+    asyncio.run(check())
 
 
 def test_identity_that_cannot_be_written_aborts_before_moving_anything(

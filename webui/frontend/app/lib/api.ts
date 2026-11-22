@@ -1,6 +1,11 @@
 import { SERVER_API_BASE } from './env'
+import type { AgentInput } from './agentProvider'
+import type { InputReceipt, ConversationState } from './sessionChat'
+import { redirectIfSignedOut, type AuthStatus } from './auth'
 import type {
   AgentSettings,
+  CatalogStatus,
+  ContextStatus,
   Artifact,
   GenerationDefaults,
   Instruction,
@@ -11,10 +16,14 @@ import type {
   MemoryItem,
   MemoryRebuildResult,
   MemoryStatus,
+  MemoryProviderOption,
+  MemoryModelCheckResult,
+  ModelPurpose,
   Model,
   Profile,
   Project,
   Provider,
+  ReasoningEffort,
   Scope,
   SearchProvider,
   SearchSettings,
@@ -47,6 +56,12 @@ export interface ApiEnvelope<T = unknown> {
   data: T
 }
 
+export interface RecoveryStatus {
+  required: boolean
+  backup_path: string | null
+  error: 'backup_failed' | 'repair_failed' | 'startup_failed' | null
+}
+
 /**
  * Error thrown by the REST client when a request fails (non-2xx, envelope
  * `code !== 0`, or a network/parse failure). Carries the resolved,
@@ -74,6 +89,26 @@ export class ApiError extends Error {
   }
 }
 
+/** User-facing text for a failed request: the backend's own message when it
+ * sent one, otherwise the HTTP status first (`502 Bad Gateway`) and a
+ * server-vs-client headline second. `code` — not `status` — picks both the
+ * headline and the bare-number detail, since a gateway rejection can arrive
+ * with a 2xx status while `code` holds the real one. Shared by the REST toast
+ * bridge and the chat-stream paths so a failure reads the same everywhere. */
+export function describeFailure(
+  err: ApiError,
+  s: { server: string; requestFailed: string; network: string }
+): string {
+  if (err.message) return err.message
+  if (err.status === 0) return s.network
+  const detail =
+    err.code === err.status && err.statusText
+      ? `${err.status} ${err.statusText}`
+      : String(err.code)
+  const headline = err.code >= 500 ? s.server : s.requestFailed
+  return `${detail}: ${headline}`
+}
+
 // Global error reporter, registered once in the browser by the app shell (see
 // root.tsx). Lets the API layer surface a single, consistent toast for every
 // failed request without each call site repeating `message.error(...)`. Stays
@@ -91,6 +126,8 @@ interface JsonOpts {
   // suppresses only those codes (e.g. `[409]` to ignore an idempotent
   // create-conflict while still surfacing genuine failures).
   silent?: boolean | number[]
+  /** Do not join a GET started before a mutation completed. */
+  fresh?: boolean
 }
 
 /** Per-call options shared by REST methods that support silencing errors. */
@@ -144,6 +181,12 @@ export function readFailure(
 // fresh, so mutations + refetches still see up-to-date data).
 const inflightGets = new Map<string, Promise<unknown>>()
 
+let readRequestCookie: (() => string) | null = null
+
+export function registerRequestCookieReader(reader: () => string): void {
+  readRequestCookie = reader
+}
+
 async function json<T>(
   input: RequestInfo,
   init?: RequestInit,
@@ -156,16 +199,22 @@ async function json<T>(
     typeof input === 'string'
       ? input
       : null
-  if (key) {
+  if (key && !opts?.fresh) {
     const pending = inflightGets.get(key)
     if (pending) return pending as Promise<T>
   }
   const run = (async () => {
     let res: Response
     try {
+      // An explicit empty header object lets FormData supply its own boundary.
+      const headers = new Headers(init?.headers ?? { 'Content-Type': 'application/json' })
+      if (typeof window === 'undefined') {
+        const cookie = readRequestCookie?.()
+        if (cookie) headers.set('Cookie', cookie)
+      }
       res = await fetch(resolve(input), {
-        headers: { 'Content-Type': 'application/json' },
-        ...init
+        ...init,
+        headers
       })
     } catch {
       // Network / connection failure — no HTTP response at all.
@@ -174,6 +223,7 @@ async function json<T>(
       throw err
     }
 
+    redirectIfSignedOut(res)
     // Parse the body once; every endpoint returns the JSON envelope (204s and
     // empty bodies are tolerated for safety).
     const text = await res.text()
@@ -242,6 +292,17 @@ const fp = (path: string) =>
  * useXChat (see app/lib/agentProvider.ts), not this module.
  */
 export const api = {
+  getAuthStatus: (opts?: JsonOpts) => json<AuthStatus>('/api/auth/status', undefined, opts),
+  login: (username: string, password: string) => json<null>('/api/auth/login', {
+    method: 'POST', body: JSON.stringify({ username, password })
+  }, { silent: true }),
+  logout: () => json<null>('/api/auth/logout', { method: 'POST' }),
+  getRecoveryStatus: () => json<RecoveryStatus>('/api/recovery', undefined, { silent: true }),
+  repairDefaultProject: () =>
+    json<RecoveryStatus>('/api/recovery/default-project', {
+      method: 'POST',
+      body: JSON.stringify({ confirm: true })
+    }, { silent: true }),
   // Projects
   listProjects: () => json<Project[]>('/api/projects'),
   createProject: (body: {
@@ -268,7 +329,7 @@ export const api = {
       memory_backend: MemoryBackend
       mcp_auto_attach: boolean
       skill_auto_attach: boolean
-      permission_mode: 'restricted' | 'auto'
+      permission_mode: 'ask' | 'auto' | 'full-access'
     }>
   ) =>
     json<Project>(`/api/projects/${pid(id)}`, {
@@ -281,20 +342,39 @@ export const api = {
   // Sessions
   listSessions: (projectId?: string) =>
     json<Session[]>(`/api/sessions${q({ project_id: projectId })}`),
+  getContext: (id: string) => json<ContextStatus>(`/api/sessions/${id}/context`, undefined, { silent: true }),
+  retryContext: (id: string) => json<{ status: string }>(`/api/sessions/${id}/context/retry`, { method: 'POST' }),
+  compactContext: (id: string) => json<{ status: string }>(`/api/sessions/${id}/compact`, { method: 'POST' }),
   getSession: (id: string, opts?: ApiCallOpts) =>
     json<Session>(`/api/sessions/${pid(id)}`, {}, opts),
   listSessionMessages: (id: string, opts?: ApiCallOpts) =>
     json<SessionMessage[]>(`/api/sessions/${pid(id)}/messages`, {}, opts),
   getSessionPlan: (id: string, opts?: ApiCallOpts) =>
     json<SessionPlan>(`/api/sessions/${pid(id)}/plan`, {}, opts),
+  forkSession: (id: string, afterSeq: number, requestId: string) =>
+    json<Session>(`/api/sessions/${pid(id)}/fork`, {
+      method: 'POST',
+      body: JSON.stringify({ after_seq: afterSeq, request_id: requestId })
+    }),
   createSession: (body: {
     title: string
     project_id?: string
     preview?: string
+    model_id?: string
+    reasoning_effort?: ReasoningEffort
   }) =>
     json<Session>('/api/sessions', {
       method: 'POST',
       body: JSON.stringify(body)
+    }),
+  updateSessionThinking: (id: string, modelId: string, effort: ReasoningEffort) =>
+    json<Session>(`/api/sessions/${pid(id)}/thinking`, {
+      method: 'PATCH', body: JSON.stringify({ model_id: modelId, reasoning_effort: effort })
+    }),
+  updateSessionModel: (id: string, modelId: string) =>
+    json<{ session: Session; settings: AgentSettings }>(`/api/sessions/${pid(id)}/model`, {
+      method: 'PATCH',
+      body: JSON.stringify({ model_id: modelId })
     }),
   deleteSession: (id: string) =>
     json<void>(`/api/sessions/${pid(id)}`, { method: 'DELETE' }),
@@ -314,6 +394,13 @@ export const api = {
     ),
   listArtifacts: (sessionId: string) =>
     json<Artifact[]>(`/api/sessions/${pid(sessionId)}/artifacts`),
+  // Browser-only URL for a credentialed Blob download (see download.ts).
+  sessionExportUrl: (
+    sessionId: string,
+    format: 'markdown' | 'html',
+    detail: 'full' | 'compact' | 'user-only'
+  ) =>
+    `/api/sessions/${pid(sessionId)}/export${q({ format, detail })}`,
 
   // MCPs
   listMcps: (scope?: Scope) => json<Mcp[]>(`/api/mcps${q({ scope })}`),
@@ -345,6 +432,8 @@ export const api = {
    *  failure withholds its tools from a whole conversation), so a miss costs
    *  the full probe — go through `lib/mcpHealth`, which shares one sweep across
    *  every surface, rather than calling this per mount. */
+  reconnectMcp: (id: string) =>
+    json<{ scheduled: number; status: 'scheduled' }>(`/api/mcps/${pid(id)}/reconnect`, { method: 'POST' }),
   listMcpHealth: () => json<McpHealth[]>('/api/mcps/health'),
 
   // Skills
@@ -359,6 +448,10 @@ export const api = {
     json<{ path: string; content: string | null }>(
       `/api/skills/${encodeURIComponent(id)}/file?path=${encodeURIComponent(path)}`
     ),
+  /** URL for a skill file's raw bytes — what a previewed document in the skill
+   * viewer loads its images and styles from. Browser-only usage. */
+  skillFileRawUrl: (id: string, path: string) =>
+    `/api/skills/${encodeURIComponent(id)}/raw/${fp(path)}`,
   createSkill: (
     body: Omit<Skill, 'id' | 'created_at' | 'origin' | 'removable'> & {
       /** Bundle imports only: replace a same-named skill in this scope instead
@@ -393,6 +486,17 @@ export const api = {
     json<void>(`/api/skills/${pid(id)}`, { method: 'DELETE' }),
 
   // Memory — project-scoped items. 400s when the project has memory off.
+  listMemoryProviders: () => json<MemoryProviderOption[]>('/api/memory/providers'),
+  checkMemoryModels: (body: {
+    memory_llm_provider_id: string | null
+    memory_llm_model: string | null
+    memory_embed_mode: 'provider' | 'local'
+    memory_embed_provider_id: string | null
+    memory_embed_model: string | null
+    probe?: boolean
+  }, signal?: AbortSignal) => json<MemoryModelCheckResult>('/api/memory/check', {
+    method: 'POST', body: JSON.stringify(body), signal
+  }, { silent: true }),
   // The vector card renders load failures itself (a misconfigured vector
   // backend is a legible state, not a transient error), so it passes
   // `{ silent: true }` to keep the global toast out of it.
@@ -481,10 +585,12 @@ export const api = {
       opts
     )
   },
-  // URL for raw file bytes (media <img>/<video>/<audio> src, or download).
-  // Relative so the same-origin proxy routes it; browser-only usage.
+  // URL for raw file bytes (media <img>/<video>/<audio> src, an HTML preview's
+  // iframe, or download). Relative so the same-origin proxy routes it;
+  // browser-only usage. The path is the URL tail so a previewed document's own
+  // relative references resolve back into this route.
   workspaceFileRawUrl: (projectId: string, path: string) =>
-    `/api/projects/${pid(projectId)}/workspace/files/${fp(path)}/raw`,
+    `/api/projects/${pid(projectId)}/workspace/raw/${fp(path)}`,
   // URL for a zip of the workspace, or of one folder in it. The server builds
   // and streams the archive; `path` is omitted for the whole workspace. Not
   // under `/files/` — that route's catch-all would swallow the segment.
@@ -546,6 +652,8 @@ export const api = {
     }),
 
   // Providers + Models
+  getCatalogStatus: () => json<CatalogStatus>('/api/model-catalog'),
+  updateCatalog: () => json<CatalogStatus>('/api/model-catalog/update', { method: 'POST' }),
   listProviders: () => json<Provider[]>('/api/providers'),
   createProvider: (body: {
     id: string
@@ -576,6 +684,11 @@ export const api = {
     }),
   deleteProvider: (id: string) =>
     json<void>(`/api/providers/${pid(id)}`, { method: 'DELETE' }),
+  reorderProviders: (order: string[]) =>
+    json<Provider[]>('/api/providers/order', {
+      method: 'PUT',
+      body: JSON.stringify({ order })
+    }),
   listProviderModels: (id: string, opts?: ApiCallOpts) =>
     json<string[]>(
       `/api/providers/${pid(id)}/available-models`,
@@ -583,33 +696,40 @@ export const api = {
       opts
     ),
 
-  listModels: (providerId?: string) =>
-    json<Model[]>(`/api/models${q({ provider_id: providerId })}`),
-  /** What the runtime will send for this provider/model before any override. */
+  listModels: (providerId?: string, opts?: ApiCallOpts) =>
+    json<Model[]>(`/api/models${q({ provider_id: providerId })}`, undefined, opts),
+  /** SDK defaults and catalog lookup, including model IDs not yet added. */
   getGenerationDefaults: (
     providerId: string,
     model: string,
-    opts?: ApiCallOpts
+    opts?: ApiCallOpts,
+    reasoningEffort?: ReasoningEffort
   ) =>
     json<GenerationDefaults>(
-      `/api/models/generation-defaults${q({ provider_id: providerId, model })}`,
+      `/api/models/generation-defaults${q({ provider_id: providerId, model, reasoning_effort: reasoningEffort })}`,
       undefined,
       opts
     ),
   createModel: (body: {
+    purpose?: ModelPurpose
     provider_id: string
     name: string
     display_name?: string
     advanced_params?: Record<string, unknown>
+    reasoning_effort?: ReasoningEffort
     supports_vision?: boolean | null
+    context_limit?: number | null
   }) =>
     json<Model>('/api/models', { method: 'POST', body: JSON.stringify(body) }),
   updateModel: (
     id: string,
     body: Partial<{
+      purpose: ModelPurpose
       display_name: string
       advanced_params: Record<string, unknown>
+      reasoning_effort: ReasoningEffort
       supports_vision: boolean | null
+      context_limit: number | null
     }>
   ) =>
     json<Model>(`/api/models/${pid(id)}`, {
@@ -628,7 +748,7 @@ export const api = {
     json<Model>(`/api/models/${pid(id)}/vision/retry`, { method: 'POST' }),
 
   getAgentSettings: () => json<AgentSettings>('/api/agent-settings'),
-  putAgentSettings: (body: AgentSettings) =>
+  putAgentSettings: (body: Partial<AgentSettings>) =>
     json<AgentSettings>('/api/agent-settings', {
       method: 'PUT',
       body: JSON.stringify(body)
@@ -677,17 +797,39 @@ export const api = {
   // Explicitly stop a session's in-flight turn (the composer Stop button).
   // Distinct from merely closing the SSE (navigating away), which keeps the turn
   // running in the background; only this cancels it and seals it as interrupted.
-  interruptChat: (sessionId: string) =>
+  interruptChat: (sessionId: string, expectedTurnId?: string | null) =>
     json<{ stopped: boolean }>('/api/chat/interrupt', {
       method: 'POST',
-      body: JSON.stringify({ session_id: sessionId })
-    }),
+      body: JSON.stringify({ session_id: sessionId, expected_turn_id: expectedTurnId })
+    }, { silent: true }),
+
+  submitInput: (body: AgentInput) => json<InputReceipt>('/api/chat/inputs', {
+    method: 'POST', body: JSON.stringify(body), signal: AbortSignal.timeout(15000)
+  }, { silent: true }),
+  editInput: (sid: string, id: string, revision: number, request: AgentInput) =>
+    json<ConversationState>(`/api/chat/sessions/${sid}/inputs/${id}`, {
+      method: 'PATCH', body: JSON.stringify({ revision, request })
+    }, { silent: true }),
+  withdrawInput: (sid: string, id: string, revision: number) =>
+    json<ConversationState>(`/api/chat/sessions/${sid}/inputs/${id}?revision=${revision}`, { method: 'DELETE' }, { silent: true }),
+  resumeInputs: (sid: string) => json<ConversationState>(`/api/chat/sessions/${sid}/inputs/resume`, { method: 'POST' }, { silent: true }),
 
   // Browser presence heartbeat (~10s cadence, sent by the app shell). Keeps
   // background turns alive across refresh/navigation and returns the sessions
   // with a turn in flight (drives the sidebar running spinners).
   postPresence: () =>
     json<{ running: string[] }>('/api/presence', { method: 'POST' })
+}
+
+/** Status a loader failure reaches the error page as.
+ *
+ * `Response` rejects anything outside 200-599, and an `ApiError` may carry no
+ * HTTP status (0 when the backend is unreachable) or a 2xx for a body-declared
+ * rejection. 502 stands for "no answer from the backend"; the error page turns
+ * it back into the network message. */
+function errorPageStatus(status: number): number {
+  if (status === 0) return 502
+  return status >= 400 && status <= 599 ? status : 500
 }
 
 /**
@@ -697,14 +839,15 @@ export const api = {
  * loader error to the client as a plain Error, dropping both the class and the
  * `status`. The error page would then render 404 on the server and "unexpected
  * error" after hydration — a visible downgrade. A thrown Response carries its
- * status across intact, so both sides agree.
+ * status across intact, so both sides agree. Every server-side loader must go
+ * through here, `Promise.all` batches included.
  */
 export async function orThrow<T>(promise: Promise<T>): Promise<T> {
   try {
     return await promise
   } catch (err) {
     if (err instanceof ApiError)
-      throw new Response(err.message, { status: err.status })
+      throw new Response(err.message, { status: errorPageStatus(err.status) })
     throw err
   }
 }

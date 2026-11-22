@@ -480,9 +480,11 @@ class TestFourFrameworkConvertMatrix(unittest.TestCase):
         self.assertEqual(rc, 0, f"{source_fw}->{target_fw} convert failed")
         return _read_all(build_spec(target_fw, "bot-a", str(out)).workspace_root)
 
-    def test_ms_agent_to_qwenpaw_persona_maps_to_user(self):
-        """ms-agent (single-agent) -> qwenpaw (root-per-agent): PROFILE.md
-        identity lands in qwenpaw memory/USER.md (USER semantic group)."""
+    def test_ms_agent_to_qwenpaw_persona_folds_into_agents(self):
+        """ms-agent (single-agent) -> qwenpaw (root-per-agent): qwenpaw has
+        no USER.md slot (its PROFILE.md is a composite identity+profile
+        file), so PROFILE.md content folds into the catch-all AGENTS.md with
+        a merged hint instead of writing a dead memory/USER.md."""
         files = self._convert(
             {
                 "PROFILE.md": "---\nversion: 1\n---\n\n# About Me\n- Call me: MS_PERSONA_MARKER\n",
@@ -490,8 +492,9 @@ class TestFourFrameworkConvertMatrix(unittest.TestCase):
             },
             "ms-agent", "qwenpaw",
         )
-        self.assertIn("memory/USER.md", files)
-        self.assertIn("MS_PERSONA_MARKER", files["memory/USER.md"])
+        self.assertNotIn("memory/USER.md", files)
+        self.assertIn("AGENTS.md", files)
+        self.assertIn("MS_PERSONA_MARKER", files["AGENTS.md"])
         # skill carried over.
         self.assertIn("skills/write/SKILL.md", files)
 

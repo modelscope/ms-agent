@@ -1,13 +1,14 @@
 import { CodeHighlighter, Mermaid } from '@ant-design/x'
 import { CheckOutlined } from '@ant-design/icons'
 import { ConfigProvider, Typography } from 'antd'
-import { useContext, useState } from 'react'
+import { createContext, useContext, useState } from 'react'
 import { XMarkdown } from '@ant-design/x-markdown'
 import type { ComponentProps } from '@ant-design/x-markdown'
 import Latex from '@ant-design/x-markdown/plugins/Latex'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { useTheme } from '~/lib/theme'
 import { useT } from '~/lib/i18n'
+import { mediaKindFor } from '~/lib/mediaKind'
 import CopyIcon from '~/assets/icons/copy.svg?react'
 import './Markdown.css'
 // Typography themes (x-markdown-light / x-markdown-dark) are @imported in
@@ -23,6 +24,40 @@ interface Props {
    * raw block would render as a broken heading/paragraph mix. When enabled,
    * the block is re-emitted as a fenced ```yaml code block instead. */
   frontmatter?: boolean
+  /**
+   * Rewrite the `src`/`href` of relative references, for markdown read from a
+   * file rather than streamed from the model: `![](./img/a.png)` means "next
+   * to this document", which the browser would otherwise resolve against the
+   * current SPA route. Build one with `makeRefResolver` (~/lib/previewRefs).
+   * Return undefined to leave a reference as written.
+   */
+  resolveRef?: (ref: string) => string | undefined
+}
+
+/** Set by the `resolveRef` prop. A context, not a prop, so the components map
+ * stays the stable module constant x-markdown wants. */
+const RefResolver = createContext<((ref: string) => string | undefined) | null>(
+  null
+)
+
+function useResolved(ref: unknown): string | undefined {
+  const resolve = useContext(RefResolver)
+  const raw = typeof ref === 'string' ? ref : undefined
+  if (!resolve || raw == null) return raw
+  return resolve(raw) ?? raw
+}
+
+/** Strip the parser metadata x-markdown injects — it is not valid DOM. */
+function domProps(props: ComponentProps) {
+  const {
+    children: _children,
+    domNode: _domNode,
+    streamStatus: _streamStatus,
+    lang: _lang,
+    block: _block,
+    ...rest
+  } = props
+  return rest
 }
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/
@@ -196,26 +231,62 @@ function MermaidTag(props: ComponentProps) {
  * every link leaves the app in a separate tab instead of in place.
  * `rel="noopener noreferrer"` because the target is untrusted content. */
 function Anchor(props: ComponentProps) {
-  const {
-    children,
-    // Dropped: x-markdown injects parser metadata that is not valid DOM.
-    domNode: _domNode,
-    streamStatus: _streamStatus,
-    lang: _lang,
-    block: _block,
-    ...rest
-  } = props as ComponentProps & { href?: string }
+  const rest = domProps(props) as { href?: string }
+  const href = useResolved(rest.href)
   return (
-    <a {...rest} target="_blank" rel="noopener noreferrer">
-      {children}
+    <a {...rest} href={href} target="_blank" rel="noopener noreferrer">
+      {props.children}
     </a>
   )
+}
+
+/** Images resolve a relative `src` against the document's own path when a
+ * resolver is in play — without one a file's `./img/a.png` cannot be found.
+ *
+ * Markdown's image syntax is also how a file links its media: `![](./clip.mp4)`
+ * parses to an `<img>` no browser can play, so a media extension picks the
+ * element that can. */
+function Image(props: ComponentProps) {
+  const rest = domProps(props) as { src?: string; alt?: string }
+  const src = useResolved(rest.src)
+  const kind = rest.src ? mediaKindFor(rest.src) : null
+  if (kind === 'video')
+    return <video {...rest} src={src} controls className="max-w-full" />
+  if (kind === 'audio')
+    return <audio {...rest} src={src} controls className="w-full" />
+  return <img {...rest} src={src} alt={rest.alt ?? ''} />
+}
+
+/** Inline `<video>` / `<audio>` — markdown files reach for raw HTML when they
+ * need player controls or several encodings, and those `src`s are relative to
+ * the document just like an image's. */
+function Media(tag: 'video' | 'audio') {
+  return function MediaTag(props: ComponentProps) {
+    const rest = domProps(props) as { src?: string }
+    const src = useResolved(rest.src)
+    const Tag = tag
+    return (
+      <Tag {...rest} src={src}>
+        {props.children}
+      </Tag>
+    )
+  }
+}
+
+/** `<source>` inside one of those players — a void element, so no children. */
+function Source(props: ComponentProps) {
+  const rest = domProps(props) as { src?: string }
+  return <source {...rest} src={useResolved(rest.src)} />
 }
 
 // Stable references (x-markdown best practice: never rebuild per render).
 const COMPONENTS = {
   a: Anchor,
   code: Code,
+  img: Image,
+  video: Media('video'),
+  audio: Media('audio'),
+  source: Source,
   mermaid: MermaidTag
 }
 const CONFIG = { extensions: Latex() }
@@ -231,19 +302,27 @@ const CONFIG = { extensions: Latex() }
  * - fenced code → CodeHighlighter, ```mermaid → Mermaid diagrams;
  * - LaTeX math ($…$ / $$…$$) via the official Latex plugin (KaTeX);
  * - optional YAML frontmatter handling (`frontmatter` prop);
+ * - optional relative-reference rewriting (`resolveRef` prop);
  * - light/dark typography theme following the app theme.
  */
-export function Markdown({ content, streaming, frontmatter }: Props) {
+export function Markdown({
+  content,
+  streaming,
+  frontmatter,
+  resolveRef
+}: Props) {
   const { theme } = useTheme()
   return (
-    <XMarkdown
-      className={`msa-md-body ${
-        theme === 'dark' ? 'x-markdown-dark' : 'x-markdown-light'
-      }`}
-      content={frontmatter ? withFrontmatterAsYaml(content) : content}
-      components={COMPONENTS}
-      config={CONFIG}
-      streaming={streaming ? { hasNextChunk: true } : undefined}
-    />
+    <RefResolver.Provider value={resolveRef ?? null}>
+      <XMarkdown
+        className={`msa-md-body ${
+          theme === 'dark' ? 'x-markdown-dark' : 'x-markdown-light'
+        }`}
+        content={frontmatter ? withFrontmatterAsYaml(content) : content}
+        components={COMPONENTS}
+        config={CONFIG}
+        streaming={streaming ? { hasNextChunk: true } : undefined}
+      />
+    </RefResolver.Provider>
   )
 }

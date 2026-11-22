@@ -572,7 +572,7 @@ class TestUploadDownload(unittest.TestCase):
                 elif fw == "hermes":
                     files = {"SOUL.md": "# Soul\n"}
                 elif fw == "openhuman":
-                    files = {"wiki/identity.md": "# Identity\n"}
+                    files = {"IDENTITY.md": "# Identity\n"}
                 elif fw == "ms-agent":
                     files = {"profile.md": "# Profile\n", "MEMORY.md": "# Memory\n"}
                 else:

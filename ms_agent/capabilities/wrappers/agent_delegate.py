@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 # Copyright (c) ModelScope Contributors. All rights reserved.
-import contextlib
 import logging
 import os
-import sys
 from copy import deepcopy
 from typing import Any
 
@@ -77,7 +75,9 @@ DELEGATE_TASK_DESCRIPTOR = CapabilityDescriptor(
         'Creates an LLMAgent with the given configuration, runs it on the '
         'provided query, and returns the final response text.  The agent '
         'can use tools (web search, filesystem, etc.) to accomplish the '
-        'task.  WARNING: this call blocks and may take minutes.'),
+        'task.  WARNING: this call blocks and may take minutes. '
+        'Configure credentials for the provider selected by config_path; '
+        'the default agent uses ModelScope.'),
     input_schema={
         'type': 'object',
         'properties': _DELEGATE_INPUT_PROPERTIES,
@@ -106,7 +106,9 @@ SUBMIT_AGENT_TASK_DESCRIPTOR = CapabilityDescriptor(
              'Returns a task_id immediately.'),
     description=('Starts an LLMAgent in the background and returns a task_id. '
                  'Use check_agent_task(task_id) to poll progress and '
-                 'get_agent_result(task_id) to retrieve the final response.'),
+                 'get_agent_result(task_id) to retrieve the final response. '
+                 'Credentials follow the provider selected by config_path; '
+                 'the default agent uses ModelScope.'),
     input_schema={
         'type': 'object',
         'properties': _DELEGATE_INPUT_PROPERTIES,
@@ -236,7 +238,10 @@ def _build_agent_config(
 
     from ms_agent.config.config import Config
 
-    if config_path and os.path.isfile(config_path):
+    if config_path:
+        config_path = os.path.expanduser(config_path)
+        if not os.path.isfile(config_path):
+            raise FileNotFoundError(f'Agent config file not found: {config_path}')
         config = Config.from_task(config_path)
     else:
         config = DictConfig({})
@@ -272,23 +277,6 @@ def _build_agent_config(
     return config
 
 
-@contextlib.contextmanager
-def _redirect_stdout():
-    """Redirect stdout to stderr while running an in-process LLMAgent.
-
-    MCP stdio transport uses stdout for JSONRPC messages.  LLMAgent.step()
-    writes streaming content and reasoning to sys.stdout, which would
-    corrupt the protocol.  Redirecting to stderr keeps the channel clean
-    while still allowing the output to appear in server logs.
-    """
-    old_stdout = sys.stdout
-    sys.stdout = sys.stderr
-    try:
-        yield
-    finally:
-        sys.stdout = old_stdout
-
-
 async def _run_agent(
     query: str,
     system_prompt: str | None = None,
@@ -304,8 +292,7 @@ async def _run_agent(
     agent = LLMAgent(config=config, tag='delegate')
 
     try:
-        with _redirect_stdout():
-            result = await agent.run(query)
+        result = await agent.run(query)
 
         # result is List[Message] -- extract assistant replies
         if isinstance(result, list):
@@ -318,8 +305,7 @@ async def _run_agent(
     finally:
         try:
             if agent.tool_manager:
-                with _redirect_stdout():
-                    await agent.cleanup_tools()
+                await agent.cleanup_tools()
         except Exception:
             logger.debug('Error during agent tool cleanup', exc_info=True)
 

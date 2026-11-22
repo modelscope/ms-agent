@@ -165,7 +165,36 @@ export function StepCard({
   const open = () => onOpenStep?.(step)
   const running = meta.status === 'running'
 
+  if (meta.status === 'skipped') {
+    return <button type="button" onClick={open}
+      className="flex min-h-9 items-center gap-2 text-left text-xs text-msa-text-3">
+      <span>{String(meta.tool ?? step.kind)}</span>
+      <span>· {t.followUp.skipped}</span>
+    </button>
+  }
+
   switch (step.kind) {
+    case 'context_compaction': {
+      const before = meta.before_tokens
+      const after = meta.after_tokens
+      const hasUsage =
+        typeof before === 'number' && Number.isSafeInteger(before) && before > 0 &&
+        typeof after === 'number' && Number.isSafeInteger(after) && after >= 0
+      return (
+        <div className="text-xs leading-5 text-msa-text-3">
+          {t.chat.contextCompacted}
+          {meta.trigger === 'manual' || meta.trigger === 'slash' ? ` · ${t.context.manual}` : meta.trigger === 'auto' ? ` · ${t.context.automatic}` : ''}
+          {hasUsage ? (
+            <span className="ml-2 tabular-nums">
+              {t.chat.contextCompactedTokens
+                .replace('{before}', String(before))
+                .replace('{after}', String(after))}
+            </span>
+          ) : null}
+          {meta.memory_status === 'failed' && <div>{t.context.memoryFailed}</div>}
+        </div>
+      )
+    }
     case 'terminal':
       return (
         <TerminalStepCard step={step} onOpenStep={onOpenStep} isLast={isLast} />
@@ -303,7 +332,8 @@ export function StepCard({
       // buttons / the rejected badge. Titled with the pre-action verb, since
       // nothing has happened yet.
       const askState = String(meta.state ?? '')
-      if (askState === 'pending' || askState === 'rejected') return fileAccordion
+      if (askState === 'pending' || askState === 'rejected')
+        return fileAccordion
       // In progress: "reading/writing/editing {path}", not the past-tense row.
       // Either the live `running` frame, or an ask already approved whose result
       // hasn't landed (what an attach replay hands back after a refresh).
@@ -355,7 +385,7 @@ export function StepCard({
         <ToolCallStepCard
           step={step}
           isLast={isLast}
-          icon={<GlobeIcon className="h-4 w-4" />}
+          icon={<GlobeIcon className="h-5 w-5" />}
           title={
             <>
               <span className="align-middle">{t.chat.stepBrowser}</span>{' '}
@@ -375,7 +405,7 @@ export function StepCard({
           <ToolCallStepCard
             step={step}
             isLast={isLast}
-            icon={<SearchIcon className="h-4 w-4" />}
+            icon={<SearchIcon className="h-5 w-5" />}
             title={
               <>
                 <span className="align-middle">{t.chat.stepSearchFiles}</span>{' '}
@@ -396,7 +426,7 @@ export function StepCard({
           <ToolCallStepCard
             step={step}
             isLast={isLast}
-            icon={<GlobeIcon className="h-4 w-4" />}
+            icon={<GlobeIcon className="h-5 w-5" />}
             title={
               <>
                 <span className="align-middle">{t.chat.stepSearch}</span>{' '}
@@ -432,7 +462,7 @@ export function StepCard({
       const failed = meta.status === 'error' && !denied
       return (
         <StepCardShell
-          icon={<GlobeIcon className="h-4 w-4" />}
+          icon={<GlobeIcon className="h-5 w-5" />}
           onClick={open}
           // The outcome belongs on the ROW itself — the error text only lives in
           // the rail, which the user has to open to see.
@@ -484,7 +514,7 @@ export function StepCard({
         <ToolCallStepCard
           step={step}
           isLast={isLast}
-          icon={<MemoryIcon className="h-4 w-4" />}
+          icon={<MemoryIcon className="h-5 w-5" />}
           title={label}
         />
       )

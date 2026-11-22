@@ -1,8 +1,10 @@
 import { Typography } from 'antd'
 import { useEffect, useState } from 'react'
+import { ArtifactStepCard } from './ArtifactStepCard'
 import type { ReactNode } from 'react'
 import { MsaButton } from '~/components/common/MsaButton'
 import { api } from '~/lib/api'
+import { useWorkspaceProjectId } from '~/lib/workspaceFiles'
 import { useT } from '~/lib/i18n'
 import { useCollapseTransition } from '../useCollapseTransition'
 import { deniedNote } from '../authOutcome'
@@ -23,7 +25,7 @@ type ToolState = 'pending' | 'approved' | 'rejected' | 'cancelled'
  */
 export function ToolCallStepCard({
   step,
-  onOpenStep: _onOpenStep,
+  onOpenStep,
   isLast,
   icon,
   title
@@ -38,6 +40,7 @@ export function ToolCallStepCard({
   title?: ReactNode
 }) {
   const { t } = useT()
+  const projectId = useWorkspaceProjectId()
   const meta = step.meta
   const name = String(meta.tool ?? meta.name ?? '')
   const args = meta.arguments
@@ -46,6 +49,9 @@ export function ToolCallStepCard({
       ? JSON.stringify(args, null, 2)
       : String(args ?? '')
   const result = String(meta.result ?? '')
+  const images = (Array.isArray(meta.attachments) ? meta.attachments : [])
+    .filter((a): a is { type: 'image'; path: string } =>
+      a?.type === 'image' && typeof a.path === 'string')
 
   const metaState = (meta.state as ToolState | undefined) ?? null
   const [localState, setLocalState] = useState<ToolState | null>(null)
@@ -116,7 +122,8 @@ export function ToolCallStepCard({
   // in-progress state for the kinds StepCard routes through this card (browser,
   // file grep/glob, memory, skill_load).
   const executing =
-    meta.status === 'running' || (state === 'approved' && !!requestId && !result)
+    meta.status === 'running' ||
+    (state === 'approved' && !!requestId && !result)
 
   // A kind with its own in-progress ROW (a web search, a file operation) is only
   // using this accordion for its ASK (details + decision buttons). The moment
@@ -143,7 +150,7 @@ export function ToolCallStepCard({
               className="h-4 w-4 animate-spin text-msa-text-brand1"
             />
           ) : (
-            (icon ?? <InvokeIcon className="h-4 w-4" />)
+            (icon ?? <InvokeIcon className="h-5 w-5" />)
           )}
         </span>
         <Typography.Text
@@ -178,7 +185,7 @@ export function ToolCallStepCard({
           </span>
         )}
         <ArrowDownIcon
-          className={`h-3 w-3 shrink-0 text-msa-text-3 transition-transform duration-200 ${
+          className={`h-3.5 w-3.5 shrink-0 text-msa-text-3 transition-transform duration-200 ${
             expanded ? 'rotate-180' : ''
           }`}
         />
@@ -231,6 +238,14 @@ export function ToolCallStepCard({
                 </div>
               )
             )}
+
+            {projectId && !denied && images.map((attachment) => (
+              <ArtifactStepCard key={attachment.path} onOpenStep={onOpenStep} step={{
+                kind: 'artifact',
+                meta: { path: attachment.path, name: attachment.path.split('/').pop(),
+                  preview: api.workspaceFileRawUrl(projectId, attachment.path) }
+              }} />
+            ))}
 
             {/* Authorization: pending → deny / always run / run once */}
             {state === 'pending' && (

@@ -6,6 +6,7 @@ from threading import Lock
 from typing import Literal
 
 from ms_agent.plugins.types import PluginRecord
+from ms_agent.utils.atomic_file import atomic_write_json
 
 PluginScope = Literal['global', 'project', 'merged']
 PLUGIN_FILE = 'plugins.json'
@@ -142,12 +143,8 @@ class PluginConfigManager:
         records: list[PluginRecord],
     ) -> None:
         path = self._path_for_scope(scope)
-        path.parent.mkdir(parents=True, exist_ok=True)
         payload = {'plugins': [record.to_dict() for record in records]}
-        tmp = path.with_suffix('.tmp')
-        with open(tmp, 'w', encoding='utf-8') as f:
-            json.dump(payload, f, indent=2, ensure_ascii=False)
-        tmp.rename(path)
+        atomic_write_json(path, payload)
 
     @staticmethod
     def _read_json(path: Path) -> dict:

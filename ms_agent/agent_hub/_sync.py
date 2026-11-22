@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from ms_agent.utils.logger import get_logger
 from ._cache import cache_dir
 from ._defaults import get_defaults
+from ._secrets import redact_outbound
 
 if TYPE_CHECKING:
     from modelscope_hub.agent import AgentApi, RemoteFileInfo
@@ -75,24 +76,35 @@ def backup_local(spec, name: str) -> Path:
     return zip_path
 
 
-def sanitize_outbound(resources: dict, spec) -> dict:
+def sanitize_outbound(resources: dict,
+                      spec,
+                      findings: list | None = None) -> dict:
     """Strip machine-local secrets from local files before they are pushed.
 
-    Symmetric to the per-file inbound sanitize hook: applies
-    ``spec.sanitize_outbound_file`` to every collected file so secrets a user
-    left in a local config (e.g. hermes ``config.yaml``, openhuman
-    ``config.toml``, qwenpaw ``agent.json``) are never uploaded to the remote
-    repo -- and therefore never written into its git history.
+    Two layers, both applied to EVERY collected file: the framework's own
+    ``spec.sanitize_outbound_file`` hook, which owns the structural cleaning of
+    the config files it knows about and fails closed (``ValueError``) on one it
+    cannot parse; then :func:`._secrets.redact_outbound`, which decides on
+    content rather than path and so also covers ``skills/*``, the persona and
+    memory documents, and the frameworks with no hook at all (BUG-0909-01).
 
-    Accepts and returns the same ``{rel_path: bytes}`` mapping
-    ``collect_bytes`` produces (``str`` values are encoded as UTF-8, matching
-    the push path which uploads bytes).
+    *findings*, when given, receives one :class:`._secrets.Finding` per redacted
+    secret (never the secret text) so the caller can report what was stripped.
+
+    Accepts and returns the ``{rel_path: bytes}`` mapping ``collect_bytes``
+    produces (``str`` values are encoded as UTF-8, matching the push path). A
+    file with nothing to redact keeps its ORIGINAL bytes object:
+    ``drop_unchanged_defaults`` and the sha256 push-skip both compare bytes.
     """
     out: dict = {}
     for rel, content in resources.items():
         raw = content if isinstance(content,
                                     bytes) else content.encode('utf-8')
-        out[rel] = spec.sanitize_outbound_file(rel, raw)
+        cleaned = spec.sanitize_outbound_file(rel, raw)
+        cleaned, hits = redact_outbound(rel, cleaned)
+        if findings is not None:
+            findings.extend(hits)
+        out[rel] = cleaned
     return out
 
 

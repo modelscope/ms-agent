@@ -85,13 +85,16 @@ const componentTokens = {
     paddingInline: 10,
     paddingInlineSM: 6
   },
+  Menu: {
+    fontSize: 13
+  },
   Segmented: {
     trackBg: light.fill[2],
     trackPadding: 4,
     itemColor: light.text[3],
-    itemHoverColor: light.text.brand1,
+    itemHoverColor: light.text[1],
     itemSelectedBg: light.bg[1],
-    itemSelectedColor: light.text.brand1,
+    itemSelectedColor: light.text[1],
     borderRadiusSM: 6
   },
   // Flat tabs: the MSA design uses plain text colour for the active tab (the
@@ -120,13 +123,16 @@ const darkComponentTokens = {
     paddingInline: 10,
     paddingInlineSM: 6
   },
+  Menu: {
+    fontSize: 13
+  },
   Segmented: {
     trackBg: dark.fill[2],
     trackPadding: 4,
     itemColor: dark.text[3],
     itemHoverColor: dark.text.brand1,
     itemSelectedBg: dark.bg[1],
-    itemSelectedColor: dark.text.brand1,
+    itemSelectedColor: dark.text[1],
     borderRadiusSM: 6
   },
   Tabs: {
@@ -202,4 +208,9 @@ export const msaModalProps: XProviderProps['modal'] = {
     container: 'max-h-[80vh] flex flex-col',
     body: 'overflow-y-auto flex-1 px-[24px] mx-[-24px]'
   }
+}
+
+/* ===== Global Drawer close placement ===== */
+export const msaDrawerProps: XProviderProps['drawer'] = {
+  closable: { placement: 'end' }
 }

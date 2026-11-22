@@ -16,6 +16,10 @@ import { useMatchMedia } from '~/lib/useMatchMedia'
 import type { Project } from '~/lib/types'
 import type { AgentMessage } from '~/lib/agentProvider'
 import type { ChatFileRef, MessageSegment } from '~/lib/agentProvider'
+import type { ReasoningEffort } from '~/lib/types'
+import { useSessionModel } from '~/lib/sessionModel'
+import { useRouteLoaderData } from 'react-router'
+import type { loader as appLoader } from '~/layouts/app'
 import type { SessionPlan, Artifact } from '~/lib/types'
 import CollectionIcon from '~/assets/icons/collection.svg?react'
 
@@ -24,6 +28,8 @@ interface Props {
   project: Project | null
   /** `null` = new-chat mode; a string = existing session (detail) mode. */
   sessionId: string | null
+  initialModelId?: string
+  initialReasoningEfforts?: Record<string, ReasoningEffort>
   /** Auto-submit this message once on mount (carried draft from overview). */
   autoSubmitMessage?: string
   /** Files attached to the auto-submitted draft (carried from overview). */
@@ -45,6 +51,8 @@ interface Props {
 export function ChatView({
   project,
   sessionId,
+  initialModelId,
+  initialReasoningEfforts,
   autoSubmitMessage,
   autoSubmitFiles,
   autoSubmitSegments,
@@ -116,6 +124,16 @@ export function ChatView({
 
   const activeProject = project ?? startedProject
   const activeSessionId = sessionId ?? startedSessionId
+  const appData = useRouteLoaderData('layouts/app') as
+    | Awaited<ReturnType<typeof appLoader>>
+    | undefined
+  const modelSelection = useSessionModel(
+    activeSessionId,
+    sessionId
+      ? (initialModelId ?? '')
+      : (appData?.agentSettings.default_model_id ?? ''),
+    true, initialReasoningEfforts
+  )
   const isNewChat = activeSessionId === null
   const showWorkspace = activeProject !== null
 
@@ -163,17 +181,21 @@ export function ChatView({
       setRailOpen((p) => !p)
     } else setRailDrawer((p) => !p)
   }
-  // Clicking a step card opens its detail in the rail (a dedicated component,
-  // not the file workspace).
-  const openStepDetail = (step: AgentStep) => {
-    setDetailStep(step)
-    openRail()
-  }
   // Clicking a file card in a chat bubble opens the file workspace (clearing any
   // step detail) and selects that path for preview.
   const openWorkspaceFile = (path: string) => {
     setDetailStep(null)
     setOpenFileReq((prev) => ({ path, nonce: (prev?.nonce ?? 0) + 1 }))
+    openRail()
+  }
+  // Persisted artifacts use the workspace's file preview. Other steps show
+  // their invocation details rather than trying to interpret them as files.
+  const openStepDetail = (step: AgentStep) => {
+    if (step.kind === 'artifact' && typeof step.meta.path === 'string' && step.meta.path) {
+      openWorkspaceFile(step.meta.path)
+      return
+    }
+    setDetailStep(step)
     openRail()
   }
 
@@ -274,7 +296,9 @@ export function ChatView({
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden justify-center px-4 sm:px-[24px]">
       <div
         className={`mx-auto flex transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
-          railOpen ? 'w-full' : 'w-full xl:w-[80%]'
+          railOpen
+            ? 'w-full max-w-[900px]'
+            : 'w-full xl:w-[80%] xl:max-w-[900px]'
         } flex-col`}
       >
         <ChatBackdrop className="mb-10 w-full">
@@ -286,6 +310,13 @@ export function ChatView({
           </p>
         </ChatBackdrop>
         <Composer
+          draftKey={activeSessionId}
+          focusOnMount={!!location.state?.focusComposer}
+
+          sessionId={activeSessionId}
+          onContextComplete={ctx.refreshMessages}
+          modelSelection={modelSelection}
+          modelSelectionDisabled={isNewChat && ctx.loading}
           project={activeProject}
           onSubmit={ctx.submit}
           loading={ctx.loading}
@@ -305,6 +336,13 @@ export function ChatView({
   const renderSender = (ctx: ChatComposerCtx) => (
     <div>
       <Composer
+        draftKey={activeSessionId}
+        focusOnMount={!!location.state?.focusComposer}
+
+          sessionId={activeSessionId}
+          onContextComplete={ctx.refreshMessages}
+        modelSelection={modelSelection}
+        modelSelectionDisabled={isNewChat && ctx.loading}
         project={activeProject}
         onSubmit={ctx.submit}
         loading={ctx.loading}
@@ -324,6 +362,7 @@ export function ChatView({
       // session's messages).
       key={sessionId ?? 'new'}
       sessionId={sessionId}
+      prepareModel={modelSelection.readySelection}
       projectId={projectId}
       workspaceOpen={railOpen}
       autoSubmitMessage={prefill}
@@ -442,7 +481,7 @@ export function ChatView({
                 shape="round"
                 icon={<CollectionIcon className="h-5 w-5" />}
                 onClick={toggleRail}
-                className="absolute right-3 top-3 z-10 !rounded-full !border-msa-line-1 !bg-msa-bg-1 !text-msa-text-1 hover:!bg-msa-fill-2"
+                className="absolute text-[13px] right-3 top-3 z-10 !rounded-full !border-msa-line-1 !bg-msa-bg-1 !text-msa-text-1 hover:!bg-msa-fill-2 shadow-none"
                 classNames={{
                   icon: 'flex items-center justify-center leading-none'
                 }}

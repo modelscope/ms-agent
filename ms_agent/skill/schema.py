@@ -249,7 +249,7 @@ class SkillSchemaParser:
                 or (os.path.splitext(name)[1] in ignored_suffixes))
 
     @staticmethod
-    def parse_skill_directory(directory_path: Path) -> Optional[SkillSchema]:
+    def parse_skill_directory(directory_path: str | Path) -> Optional[SkillSchema]:
         """
         Parse a Skill directory and create a SkillSchema.
 
@@ -259,6 +259,8 @@ class SkillSchemaParser:
         Returns:
             SkillSchema if valid, None otherwise
         """
+        # Accept both str and Path for convenience / robustness.
+        directory_path = Path(directory_path)
         if not directory_path.exists() or not directory_path.is_dir():
             return None
 
@@ -270,13 +272,13 @@ class SkillSchemaParser:
         with open(skill_md_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        # Parse metadata
-        frontmatter = SkillSchemaParser.parse_yaml_frontmatter(content)
-        if not frontmatter or 'name' not in frontmatter or 'description' not in frontmatter:
-            return None
-
-        # Generate skill_id from directory name
+        # Parse metadata. SKILL.md is enough to register; fill missing
+        # name/description so a live-tree import still loads.
+        frontmatter = SkillSchemaParser.parse_yaml_frontmatter(content) or {}
         skill_id = directory_path.name
+        name = str(frontmatter.get('name') or skill_id).strip() or skill_id
+        description = str(
+            frontmatter.get('description') or name).strip() or name
 
         # Collect all files
         files = []
@@ -355,8 +357,8 @@ class SkillSchemaParser:
 
         schema = SkillSchema(
             skill_id=skill_id,
-            name=frontmatter['name'],
-            description=frontmatter['description'],
+            name=name,
+            description=description,
             content=content,
             version=frontmatter.get('version', 'latest'),
             files=files,

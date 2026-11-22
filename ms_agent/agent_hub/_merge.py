@@ -526,11 +526,12 @@ SEMANTIC_GROUPS = [
         'ms-agent': 'SOUL.md'
     },
     {
+        # No qwenpaw / qoder entries: neither framework has a USER.md slot,
+        # so profile content for them folds into the target's catch-all file
+        # with a visible hint instead of landing in a file never read.
         'nanobot': 'USER.md',
         'openclaw': 'USER.md',
         'hermes': 'memories/USER.md',
-        'qwenpaw': 'memory/USER.md',
-        'qoder': 'memory/USER.md',
         'ms-agent': 'PROFILE.md'
     },
     {
@@ -547,6 +548,11 @@ SEMANTIC_GROUPS = [
     },
     {
         'qwenpaw': 'PROFILE.md',
+    },
+    {
+        # openhuman's long-term goals list: no counterpart elsewhere, so
+        # cross-framework it folds into the target's catch-all file.
+        'openhuman': 'MEMORY_GOALS.md',
     },
     {
         'nanobot': 'AGENTS.md',
@@ -665,46 +671,159 @@ def _resolve_target_path(source_product: str, source_path: str,
     return source_path
 
 
-# Where UNMAPPED loose memory files (the ``memory/*`` / ``memories/*`` detail
-# files that travel beside the canonical ``MEMORY.md`` index) land on each
-# target framework. ``None`` means the target has a single-file memory slot:
-# the detail is inlined INTO that file instead of written beside it, because a
-# file the runtime never reads is a false promise of migration.
-#
-# * hermes keeps memory in ``memories/`` (plural) and reads the directory;
-# * openclaw / qwenpaw / qoder keep ``memory/*.md`` beside their index;
-# * nanobot's runtime reads ONLY ``memory/MEMORY.md`` (its MemoryStore has a
-#   fixed file list and never scans the directory) -> inline merge;
-# * openhuman injects ``MEMORY.md`` every session and keeps the bulk memory in
-#   the Obsidian-style ``wiki/`` vault (its Memory Tree mirror) -> detail
-#   routes into ``wiki/memory/``;
-# * ms-agent has no home-level memory slot at all (runtime memory is
-#   project-level) -> unmapped, the target-spec filter drops it like any
-#   other out-of-scope file.
+# Where UNMAPPED loose memory files (detail beside the canonical MEMORY.md
+# index) land per target. ``None`` = the target reads a single memory file
+# (:data:`_SINGLE_FILE_MEMORY_SLOTS`) and detail is inlined into it -- a file
+# the runtime never reads is not a migration. openclaw uses its own
+# ``memory/imports/<source>/`` convention; targets without an entry (ms-agent
+# has no home-level memory) keep the source path for the spec filter to drop.
 _MEMORY_LOOSE_HOME = {
-    'hermes': 'memories/',
+    'hermes': None,
     'openclaw': 'memory/',
     'qwenpaw': 'memory/',
     'qoder': 'memory/',
-    'openhuman': 'wiki/memory/',
+    'openhuman': None,
     'nanobot': None,
 }
 
-# The single memory file a ``None`` entry in :data:`_MEMORY_LOOSE_HOME`
-# stands for (nanobot): loose detail is inlined into it.
-_SINGLE_FILE_MEMORY_SLOT = 'memory/MEMORY.md'
+# The single memory file each ``None`` target above actually reads.
+_SINGLE_FILE_MEMORY_SLOTS = {
+    'nanobot': 'memory/MEMORY.md',
+    'hermes': 'memories/MEMORY.md',
+    'openhuman': 'MEMORY.md',
+}
+
+# openhuman injects MEMORY.md into the system prompt under a char cap;
+# detail beyond it would never be read, so it is skipped and reported.
+_OPENHUMAN_MEMORY_INJECT_CAP = 2000
+
+# hermes memory files are ``§``-delimited entry stores under a per-file char
+# budget; an over-budget entry makes hermes refuse further memory writes, so
+# overflow is skipped, never truncated.
+_HERMES_ENTRY_DELIM = '\n§\n'
+_HERMES_CHAR_LIMITS = {
+    'memories/MEMORY.md': 2200,
+    'memories/USER.md': 1375,
+}
+# Headings that are really file names add no entry context.
+_HERMES_HEADING_DROP_RE = re.compile(
+    r'\b(MEMORY|USER|SOUL|AGENTS|TOOLS|IDENTITY|CLAUDE)\.md\b', re.I)
 
 
-def _rehome_loose_memory(path: str, target_product: str) -> str | None:
-    """Relocate one loose memory file onto the target's memory layout.
+def _normalize_entry_text(text: str) -> str:
+    """Whitespace-collapsed lowercase form used for entry dedup."""
+    return re.sub(r'\s+', ' ', (text or '').strip()).lower()
 
-    Returns the new relative path, or ``None`` when the target only reads a
-    single memory file and the content must be inlined into it instead.
-    Non-``.md`` payloads (openclaw ``memory/*.json``, nanobot
-    ``memory/history.jsonl``) and targets without a table entry keep the
-    original path, so the downstream target-spec filter decides their fate
-    exactly as before.
-    """
+
+def _strip_yaml_frontmatter(text: str) -> str:
+    """Drop a leading YAML frontmatter block: metadata, not memory content."""
+    lines = text.splitlines()
+    if lines and lines[0].strip() == '---':
+        for idx in range(1, len(lines)):
+            if lines[idx].strip() in ('---', '...'):
+                return '\n'.join(lines[idx + 1:])
+    return text
+
+
+def _markdown_to_hermes_entries(text: str) -> list[str]:
+    """Split a Markdown memory document into hermes entries: headings become
+    context prefixes, bullets and paragraphs become entries, code blocks and
+    table rows are skipped, duplicates dropped."""
+    entries: list[str] = []
+    headings: list[str] = []
+    paragraph: list[str] = []
+
+    def add_entry(content: str) -> None:
+        prefix = ' > '.join(
+            h for h in headings if h and not _HERMES_HEADING_DROP_RE.search(h))
+        entries.append(f'{prefix}: {content}' if prefix else content)
+
+    def flush() -> None:
+        block = ' '.join(line.strip() for line in paragraph).strip()
+        paragraph.clear()
+        if block:
+            add_entry(block)
+
+    in_code = False
+    lines = _strip_yaml_frontmatter(text or '').splitlines()
+    for raw_line in lines:
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if stripped.startswith('```'):
+            in_code = not in_code
+            flush()
+            continue
+        if in_code:
+            continue
+        heading = re.match(r'^(#{1,6})\s+(.*\S)\s*$', stripped)
+        if heading:
+            flush()
+            headings[len(heading.group(1)) - 1:] = [heading.group(2).strip()]
+            continue
+        bullet = re.match(r'^\s*(?:[-*]|\d+\.)\s+(.*\S)\s*$', line)
+        if bullet:
+            flush()
+            add_entry(bullet.group(1).strip())
+            continue
+        if not stripped or (stripped.startswith('|')
+                            and stripped.endswith('|')):
+            flush()
+            continue
+        paragraph.append(stripped)
+    flush()
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for entry in entries:
+        normalized = _normalize_entry_text(entry)
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            deduped.append(entry.strip())
+    return deduped
+
+
+def _merge_hermes_entries(existing: list[str], incoming: list[str],
+                          limit: int) -> tuple[list[str], dict]:
+    """Dedupe *incoming* against *existing* under a cumulative char *limit*;
+    entries that would bust it are skipped (never truncated) and counted."""
+    merged = list(existing)
+    seen = {_normalize_entry_text(e) for e in existing if e.strip()}
+    stats = {'added': 0, 'duplicates': 0, 'overflowed': 0}
+    current = len(_HERMES_ENTRY_DELIM.join(merged))
+    for entry in incoming:
+        normalized = _normalize_entry_text(entry)
+        if not normalized:
+            continue
+        if normalized in seen:
+            stats['duplicates'] += 1
+            continue
+        candidate = (len(entry) if not merged else
+                     current + len(_HERMES_ENTRY_DELIM) + len(entry))
+        if candidate > limit:
+            stats['overflowed'] += 1
+            continue
+        merged.append(entry)
+        seen.add(normalized)
+        current = candidate
+        stats['added'] += 1
+    return merged, stats
+
+
+def _hermes_entries_to_markdown(text: str) -> str:
+    """Render a ``§``-delimited hermes store as Markdown paragraphs (hermes
+    as SOURCE); text without the delimiter is returned unchanged."""
+    if _HERMES_ENTRY_DELIM not in text:
+        return text
+    entries = [e.strip() for e in text.split(_HERMES_ENTRY_DELIM) if e.strip()]
+    return ('\n\n'.join(entries) + '\n') if entries else text
+
+
+def _rehome_loose_memory(path: str, source_product: str,
+                         target_product: str) -> str | None:
+    """Relocate one loose memory .md onto the target's layout; ``None`` means
+    inline it into the target's single memory file. Non-``.md`` payloads and
+    targets without a table entry keep the original path (the downstream
+    target-spec filter decides their fate)."""
     if not path.endswith('.md'):
         return path
     if target_product not in _MEMORY_LOOSE_HOME:
@@ -712,7 +831,89 @@ def _rehome_loose_memory(path: str, target_product: str) -> str | None:
     home = _MEMORY_LOOSE_HOME[target_product]
     if home is None:
         return None
+    if target_product == 'openclaw':
+        home = f'memory/imports/{source_product}/'
     return home + path.split('/', 1)[1]
+
+
+def _memory_index_paths() -> dict:
+    """Per-product canonical memory index path, derived from the MEMORY group."""
+    for group in SEMANTIC_GROUPS:
+        if group.get('nanobot') == 'memory/MEMORY.md':
+            return dict(group)
+    return {}
+
+
+_MEMORY_INDEX_PATHS = _memory_index_paths()
+
+_MD_LINK_RE = re.compile(r'\[([^\]]*)\]\(([^)\s]+)\)')
+
+
+def _is_memory_slot(target_product: str, target_path: str) -> bool:
+    """Whether *target_path* is one of the target's canonical memory files.
+
+    Memory is user data: never rebase it onto a target default template --
+    the template's placeholder lines would be read back as real memories
+    (a single-file reader like nanobot injects them verbatim).
+    """
+    if target_path == _MEMORY_INDEX_PATHS.get(target_product):
+        return True
+    return (target_product == 'hermes'
+            and target_path.startswith('memories/')
+            and target_path.endswith('.md'))
+
+
+def _rewrite_memory_index(content: str, src_index_dir: str,
+                          moves: dict, tgt_index_dir: str,
+                          target_product: str) -> str:
+    """Keep index links resolvable after loose files moved or were inlined:
+    moved links are rewritten to the new relative location, inlined ones
+    de-linked. qoder discovers detail only through index references, so
+    unreferenced moves get a line appended (a minimal index is created when
+    the source had none)."""
+    import posixpath
+
+    # Old link forms (source-relative + unambiguous basenames) -> new link,
+    # or None to de-link.
+    forms: dict[str, str | None] = {}
+    basenames: dict[str, list[str]] = {}
+    for src_path, new_path in moves.items():
+        rel = posixpath.relpath(src_path, src_index_dir or '.')
+        new_rel = (None if new_path is None else
+                   posixpath.relpath(new_path, tgt_index_dir or '.'))
+        forms[rel] = new_rel
+        base = posixpath.basename(src_path)
+        basenames.setdefault(base, []).append(rel)
+    for base, rels in basenames.items():
+        if len(rels) == 1 and base not in forms:
+            forms[base] = forms[rels[0]]
+
+    def _sub(m):
+        text, link = m.group(1), m.group(2)
+        key = link[2:] if link.startswith('./') else link
+        if key not in forms:
+            return m.group(0)
+        new_rel = forms[key]
+        return f'[{text}]({new_rel})' if new_rel is not None else text
+
+    content = _MD_LINK_RE.sub(_sub, content)
+
+    if target_product == 'qoder':
+        mentioned = {m.group(2) for m in _MD_LINK_RE.finditer(content)}
+        missing = []
+        for src_path, new_path in sorted(moves.items()):
+            if new_path is None:
+                continue
+            rel = posixpath.relpath(new_path, tgt_index_dir or '.')
+            if rel not in mentioned:
+                stem = posixpath.basename(new_path)[:-3]
+                missing.append(f'- [{stem}]({rel})')
+        if missing:
+            body = content.rstrip()
+            if not body:
+                body = '# Memory Index'
+            content = body + '\n' + '\n'.join(missing) + '\n'
+    return content
 
 
 def _extract_user_diff_text(user_content: str, source_default: str) -> str:
@@ -752,8 +953,10 @@ def _catch_all_file(product: str) -> str:
         return 'AGENTS.md'
     if 'SOUL.md' in known:
         return 'SOUL.md'
-    # Products without AGENTS.md/SOUL.md (e.g. ms-agent) fall back to their
-    # persona file so overflow lands in a file the harness actually loads.
+    # Products without AGENTS.md/SOUL.md fall back to their persona file
+    # (ms-agent's PROFILE.md; the legacy lowercase spelling is accepted too).
+    if 'PROFILE.md' in known:
+        return 'PROFILE.md'
     if 'profile.md' in known:
         return 'profile.md'
     return 'SOUL.md'
@@ -801,6 +1004,15 @@ def merge_resources(
     existing_skill_set = set(existing_skills or [])
     result = FullMergeResult()
 
+    # hermes as SOURCE: its memory files are ``§``-delimited entry stores;
+    # cross-framework they are rendered as Markdown paragraphs first.
+    if is_cross_product and source_product == 'hermes':
+        incoming = {
+            p: (_hermes_entries_to_markdown(c)
+                if p.startswith('memories/') and p.endswith('.md') else c)
+            for p, c in incoming.items()
+        }
+
     src_cls = PRODUCT_FILE_CLASSES.get(source_product, _DEFAULT_FILE_CLASS)
     tgt_cls = PRODUCT_FILE_CLASSES.get(target_product, _DEFAULT_FILE_CLASS)
     portable_files = src_cls['portable'] | tgt_cls['portable']
@@ -809,11 +1021,11 @@ def merge_resources(
 
     handled_target_paths = set()
     overflow_blocks: list[tuple[str, str]] = []
-    # Loose memory detail files deferred for inlining into the target's
-    # single-file memory slot (nanobot); applied after the loop so the
-    # canonical index -- possibly processed AFTER the detail files -- forms
-    # the base they append to.
+    # Loose detail deferred for inlining into single-file target slots;
+    # applied after the loop so the canonical index forms the base.
     loose_inline: list[tuple[str, str]] = []
+    # Source -> moved target path (None = inlined); drives the index rewrite.
+    loose_moves: dict[str, str | None] = {}
 
     for path, content in incoming.items():
         # Skills: direct import, skip if exists.  Hermes' official
@@ -912,25 +1124,25 @@ def merge_resources(
                     ))
                 continue
             if path.startswith('memory/') or path.startswith('memories/'):
-                # Unmapped memory file (e.g. a framework the USER group does
-                # not cover): re-home it onto the target's memory layout so
-                # the detail lands where the target's runtime actually reads
-                # it -- or inline it into the single-file slot -- instead of
-                # passing through verbatim only to die on the target-spec
-                # filter with the index left dangling.
-                new_path = _rehome_loose_memory(path, target_product)
+                # Unmapped memory file: re-home (or inline) onto the target's
+                # layout instead of dying on its spec filter.
+                new_path = _rehome_loose_memory(path, source_product,
+                                                target_product)
+                slot = _SINGLE_FILE_MEMORY_SLOTS.get(target_product, '')
                 if new_path is None:
                     loose_inline.append((path, content))
+                    loose_moves[path] = None
                     result.actions.append(
                         MergeAction(
-                            path=_SINGLE_FILE_MEMORY_SLOT,
+                            path=slot,
                             action='merged',
                             detail=(f'Loose memory detail {path} inlined into '
-                                    f'{_SINGLE_FILE_MEMORY_SLOT}'),
+                                    f'{slot}'),
                             src_path=path,
-                            dst_path=_SINGLE_FILE_MEMORY_SLOT,
+                            dst_path=slot,
                         ))
                     continue
+                loose_moves[path] = new_path
                 result.merged_files[new_path] = content
                 result.actions.append(
                     MergeAction(
@@ -1004,6 +1216,16 @@ def merge_resources(
             continue
 
         # ---- Cross-product logic ----
+        if _is_memory_slot(target_product, target_path):
+            result.merged_files[target_path] = content
+            result.actions.append(
+                MergeAction(
+                    path=target_path,
+                    action='import',
+                    detail=f'Memory file imported directly (from {path})',
+                ))
+            continue
+
         if path in src_cls['portable']:
             src_default = source_defaults.get(path, '')
             tgt_default = target_defaults.get(target_path, '')
@@ -1075,12 +1297,8 @@ def merge_resources(
             continue
 
         if path.startswith('memory/') or path.startswith('memories/'):
-            # Canonical memory files with an explicit semantic mapping (the
-            # MEMORY.md / USER.md groups) travel verbatim to their mapped
-            # slot. Unmapped LOOSE files fell back to their source path,
-            # which no target is guaranteed to accept: re-home them onto the
-            # target's memory layout (or inline into its single-file slot)
-            # so they never die silently on the target-spec filter.
+            # Mapped canonical files travel verbatim; unmapped loose files
+            # re-home/inline onto the target's layout (never die silently).
             if PATH_MAP.get((source_product, path), {}).get(
                     target_product) is not None:
                 result.merged_files[target_path] = content
@@ -1091,19 +1309,23 @@ def merge_resources(
                         detail='Memory file imported directly',
                     ))
                 continue
-            new_path = _rehome_loose_memory(path, target_product)
+            new_path = _rehome_loose_memory(path, source_product,
+                                            target_product)
+            slot = _SINGLE_FILE_MEMORY_SLOTS.get(target_product, '')
             if new_path is None:
                 loose_inline.append((path, content))
+                loose_moves[path] = None
                 result.actions.append(
                     MergeAction(
-                        path=_SINGLE_FILE_MEMORY_SLOT,
+                        path=slot,
                         action='merged',
                         detail=(f'Loose memory detail {path} inlined into '
-                                f'{_SINGLE_FILE_MEMORY_SLOT}'),
+                                f'{slot}'),
                         src_path=path,
-                        dst_path=_SINGLE_FILE_MEMORY_SLOT,
+                        dst_path=slot,
                     ))
                 continue
+            loose_moves[path] = new_path
             result.merged_files[new_path] = content
             result.actions.append(
                 MergeAction(
@@ -1145,17 +1367,84 @@ def merge_resources(
         result.merged_files[catch_all] = (
             base.rstrip() + '\n\n' + block if base.strip() else block)
 
-    # Inline loose memory detail into the target's single-file memory slot
-    # (nanobot reads ONLY ``memory/MEMORY.md``): the canonical index -- if
-    # any -- forms the base, detail files append as sourced sections in a
-    # deterministic order.
+    # Rewrite the canonical index's links to follow the loose-file moves;
+    # runs before the inline append and the hermes entry conversion.
+    if is_cross_product and loose_moves:
+        import posixpath
+        tgt_idx = _MEMORY_INDEX_PATHS.get(target_product)
+        if tgt_idx:
+            src_idx = _MEMORY_INDEX_PATHS.get(source_product, '')
+            tgt_dir = posixpath.dirname(tgt_idx)
+            src_dir = posixpath.dirname(src_idx) if src_idx else ''
+            index_content = result.merged_files.get(tgt_idx)
+            if index_content is not None:
+                result.merged_files[tgt_idx] = _rewrite_memory_index(
+                    index_content, src_dir, loose_moves, tgt_dir,
+                    target_product)
+            elif target_product == 'qoder':
+                # No source index: qoder discovers detail only through index
+                # references, so build a minimal one for the moved files.
+                created = _rewrite_memory_index('', src_dir, loose_moves,
+                                                tgt_dir, target_product)
+                if created.strip():
+                    result.merged_files[tgt_idx] = created
+
+    # Inline loose detail into single-file target slots: index as base,
+    # sourced sections in deterministic order; openhuman's injection cap
+    # skips and reports what would never be read.
     if loose_inline:
-        base = result.merged_files.get(_SINGLE_FILE_MEMORY_SLOT, '').rstrip()
+        slot = _SINGLE_FILE_MEMORY_SLOTS.get(target_product, '')
+        cap = (_OPENHUMAN_MEMORY_INJECT_CAP
+               if target_product == 'openhuman' else None)
+        base = result.merged_files.get(slot, '').rstrip()
+        overflowed: list[str] = []
         for src_path, detail in sorted(loose_inline):
+            body = detail.strip()
+            if target_product == 'hermes':
+                # Inlined files sit mid-document, beyond the extractor's
+                # head-only frontmatter strip.
+                body = _strip_yaml_frontmatter(body).strip()
             block = (f'## Imported from {source_product} {src_path}\n\n'
-                     f'{detail.strip()}')
-            base = f'{base}\n\n{block}' if base else block
-        result.merged_files[_SINGLE_FILE_MEMORY_SLOT] = base + '\n'
+                     f'{body}')
+            candidate = f'{base}\n\n{block}' if base else block
+            if cap is not None and len(candidate) > cap:
+                overflowed.append(src_path)
+                continue
+            base = candidate
+        for src_path in overflowed:
+            result.actions.append(
+                MergeAction(
+                    path=slot,
+                    action='skip',
+                    detail=(f'Loose memory detail {src_path} exceeds the '
+                            f'{target_product} injection cap ({cap} chars), '
+                            f'left out of {slot}'),
+                    src_path=src_path,
+                    dst_path=slot,
+                ))
+        if base:
+            result.merged_files[slot] = base + '\n'
+
+    # Convert hermes memory files to ``§`` entry stores; entries over the
+    # per-file budget are skipped so the store stays write-acceptable.
+    if is_cross_product and target_product == 'hermes':
+        for slot, limit in _HERMES_CHAR_LIMITS.items():
+            markdown = result.merged_files.get(slot)
+            if markdown is None:
+                continue
+            entries = _markdown_to_hermes_entries(markdown)
+            merged, stats = _merge_hermes_entries([], entries, limit)
+            result.merged_files[slot] = (
+                _HERMES_ENTRY_DELIM.join(merged) + '\n') if merged else ''
+            detail = (f'{slot} converted to hermes entry store: '
+                      f"{stats['added']} entries")
+            if stats['duplicates']:
+                detail += f", {stats['duplicates']} duplicates dropped"
+            if stats['overflowed']:
+                detail += (f", {stats['overflowed']} skipped over the "
+                           f'{limit}-char budget')
+            result.actions.append(
+                MergeAction(path=slot, action='merged', detail=detail))
 
     return result
 

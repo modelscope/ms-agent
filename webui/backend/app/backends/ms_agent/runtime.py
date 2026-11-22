@@ -39,6 +39,10 @@ DRIVER_DONE = "__driver_done__"
 class WebInputSource:
     """InputSource whose read_prompt blocks on a queue fed by POST /api/chat.
 
+    ``supports_credential_prompt`` is false: a missing API key must surface as
+    an error with the user message kept in history. The terminal is the
+    surface that pauses the turn and accepts ``/model provider key``.
+
     The first read is the initial prompt (session start / resume next-turn) and
     marks no boundary; every later read means the previous turn finished, so it
     pushes a TURN_END sentinel to the active turn queue before blocking.
@@ -54,12 +58,15 @@ class WebInputSource:
     InputSource implementation and every caller. ``log_getter`` is lazy because
     the session log is created when the agent's run loop starts."""
 
+    supports_credential_prompt = False
+
     def __init__(self, queue: "asyncio.Queue", sink: "QueueEventSink",
                  log_getter=None) -> None:
         self._queue = queue
         self._sink = sink
         self._log_getter = log_getter
         self._first = True
+        self.waiting = asyncio.Event()
         # Attachments for the prompt most recently returned by read_prompt.
         # Consumed (and cleared) by take_attachments immediately after, so a
         # later turn can never inherit them.
@@ -70,7 +77,11 @@ class WebInputSource:
             self._first = False
         else:
             self._sink.push({"type": TURN_END})
-        item = await self._queue.get()
+        self.waiting.set()
+        try:
+            item = await self._queue.get()
+        finally:
+            self.waiting.clear()
         if isinstance(item, tuple):
             text, marker, *rest = item
             attachments = rest[0] if rest else None
@@ -209,6 +220,37 @@ def _mcp_fingerprint(project) -> str:
         return ""
 
 
+def _settings_fingerprint(project, model_snapshot=None) -> str:
+    """Detect imports and file edits before reusing a session's frozen config."""
+    import hashlib
+    from pathlib import Path
+
+    from app.backends.ms_agent.common import home
+    from ms_agent.config.resolver import _project_internal_file
+
+    paths = [] if model_snapshot is not None else [Path(home()) / "settings.json"]
+    paths.extend(_project_internal_file(project.path, name)
+                 for name in ("config.yaml", "settings.local.json"))
+    paths.extend(root / name for root in (Path(home()), Path(project.path))
+                 for name in ("AGENTS.md", "SOUL.md", "PROFILE.md"))
+    digest = hashlib.sha256()
+    if model_snapshot is not None:
+        import json
+        digest.update(json.dumps(model_snapshot.settings, sort_keys=True).encode())
+        # Session display fields change on every turn and do not configure the agent.
+        meta = {k: v for k, v in model_snapshot.metadata.items()
+                if k in ("providers", "models", "agent_settings", "projects")}
+        digest.update(json.dumps(meta, sort_keys=True).encode())
+    for path in paths:
+        try:
+            content = path.read_bytes()
+        except (FileNotFoundError, NotADirectoryError):
+            content = b""
+        digest.update(len(content).to_bytes(8, "big"))
+        digest.update(content)
+    return digest.hexdigest()
+
+
 def _ask_timeout_for(permission_mode: str | None) -> float | None:
     """``None`` — wait indefinitely — whenever the user chose to be asked.
 
@@ -219,7 +261,8 @@ def _ask_timeout_for(permission_mode: str | None) -> float | None:
     is the opposite statement, and there a bound is what keeps an unattended
     session from parking on a question no one will read.
     """
-    if (permission_mode or "").strip().lower() in ("auto", "full", "full_access"):
+    if (permission_mode or "").strip().lower().replace("_", "-") in (
+            "auto", "full", "full-access", "strict"):
         return FULL_ACCESS_ASK_TIMEOUT_S
     return None
 
@@ -354,18 +397,16 @@ def _persisting_question_handler(sink, session_log_getter):
 
 
 class SessionRuntime:
-    def __init__(self, project, session, mcp_config: dict | None = None) -> None:
+    def __init__(self, project, session, mcp_config: dict | None = None, model_snapshot=None) -> None:
         from app.backends.ms_agent import model_link
 
         self.project = project
         self.session = session
-        # (provider, model) baked into this agent — the resolver reads it from
-        # settings.json.llm, so a later model switch is detected by comparing
-        # against active_model() and triggers a rebuild (see RuntimeRegistry.get).
-        self.model_key = model_link.active_model()
+        self.model_key = model_snapshot.key if model_snapshot is not None else model_link.active_model()
         # Config identity at build time; get() compares it per turn so edits
         # made outside the management routes still reach the next turn.
         self.mcp_fingerprint = _mcp_fingerprint(project)
+        self.settings_fingerprint = _settings_fingerprint(project, model_snapshot)
         # Set when this agent's configuration was superseded while it was
         # mid-turn (a memory-model edit, a store rebuild): it finishes the turn
         # it is in, and the NEXT one gets a freshly built agent. Without it a
@@ -419,11 +460,19 @@ class SessionRuntime:
             mcp_config=mcp_config,
             permission_handler=self.permission_handler,
             question_handler=self.question_handler,
+            model_snapshot=model_snapshot,
         )
         # Last user-driven activity (monotonic). The idle sweeper evicts
         # runtimes that sat untouched past the TTL — an idle vector project
         # otherwise pins its embedded qdrant lock and its in-RAM vectors until
         # the server restarts.
+        self.agent._context_config_signature = self.settings_fingerprint
+        from app.backends.ms_agent.conversations import conversations
+        conversation = conversations.get(session.id)
+        if conversation is not None:
+            self.agent._input_controller = conversation.controller
+        self.context_task = None
+        self.context_state = None
         self.last_active: float = time.monotonic()
         self.run_task: asyncio.Task = asyncio.create_task(self._drive())
 
@@ -458,6 +507,14 @@ class SessionRuntime:
             await self.input_queue.put(text)
 
     async def aclose(self) -> None:
+        retry_task = getattr(self, 'context_retry_task', None)
+        if retry_task is not None and not retry_task.done():
+            retry_task.cancel()
+            await asyncio.gather(retry_task, return_exceptions=True)
+        task = getattr(self, 'context_task', None)
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
         # Answer anything still waiting on a person BEFORE cancelling the run
         # task. An ask with no deadline (every "always ask" session, and every
         # question) suspends its turn until something resolves it, and a
@@ -592,6 +649,7 @@ class RuntimeRegistry:
             rt is not None
             and rt.turn_lock.locked()
             and not rt.run_task.done()
+            and not (getattr(rt, "context_task", None) and not rt.context_task.done())
         )
 
     def is_running(self, session_id: str) -> bool:
@@ -622,11 +680,20 @@ class RuntimeRegistry:
         exited (e.g. after an error) or the active model changed (in-conversation
         model switch) so a fresh agent restores from SessionLog with the new model."""
         from app.backends.ms_agent import model_link
+        from app.backends.ms_agent.common import home
+        from app.backends.ms_agent.tool_settings import ensure_tool_settings
 
         async with self._create_lock:
             self._loop = asyncio.get_running_loop()  # for cross-thread toggles
             self._ensure_sweeper()
             rt = self._runtimes.get(session.id)
+            # External import services write the file directly. Complete its
+            # global defaults before fingerprinting so this write does not
+            # cause another rebuild on the following turn.
+            await asyncio.to_thread(ensure_tool_settings, home())
+            from app.backends.ms_agent.session_models import prepare
+
+            session, model_snapshot = await asyncio.to_thread(prepare, project, session)
             # Rebuild on a model switch or a superseded config, but never
             # mid-turn: an in-flight turn holds turn_lock, so defer the swap to
             # the next idle turn to avoid cancelling it. The MCP fingerprint
@@ -635,11 +702,13 @@ class RuntimeRegistry:
             # one — which previously took effect only for NEW sessions: the
             # session where the fix happened kept its frozen tool set.
             current_fp = _mcp_fingerprint(project)
+            current_settings = _settings_fingerprint(project, model_snapshot)
             superseded = (
                 rt is not None
                 and not rt.turn_lock.locked()
-                and (rt.model_key != model_link.active_model()
+                and (rt.model_key != model_snapshot.key
                      or rt.needs_rebuild
+                     or rt.settings_fingerprint != current_settings
                      # Both sides non-empty: a fingerprint FAILURE ("") must
                      # neither force nor mask a rebuild.
                      or bool(current_fp and rt.mcp_fingerprint
@@ -650,7 +719,7 @@ class RuntimeRegistry:
                 return rt
             if rt is not None:
                 await rt.aclose()
-            rt = SessionRuntime(project, session, await self._resolve_mcp(project))
+            rt = SessionRuntime(project, session, await self._resolve_mcp(project), model_snapshot=model_snapshot)
             self._runtimes[session.id] = rt
             return rt
 
@@ -686,6 +755,8 @@ class RuntimeRegistry:
                 expired.add(rt.session.id)
         for sid in expired:
             await self._evict(sid)
+        from app.backends.ms_agent.conversations import sweep_idle
+        sweep_idle(self.IDLE_TTL_S, self.MAX_RUNTIMES)
 
     async def _evict(self, session_id: str) -> None:
         async with self._create_lock:
@@ -723,16 +794,37 @@ class RuntimeRegistry:
                            exc_info=True)
 
     async def _resolve_mcp(self, project) -> dict:
-        """Resolve enabled MCP servers and probe them (connect+initialize), so an
-        unreachable/invalid server is dropped before it can break the chat turn."""
+        """Resolve configuration only; network startup belongs to the agent task."""
         from ms_agent.tui.managed_config import resolve_mcp_config
-
-        from app.backends.ms_agent import mcp_health
         from app.backends.ms_agent.common import home
 
-        raw = (resolve_mcp_config(home(), project.path, None) or {}).get("mcpServers", {})
-        healthy, _dropped = await mcp_health.filter_healthy(raw)
-        return {"mcpServers": healthy} if healthy else {}
+        return await asyncio.to_thread(
+            resolve_mcp_config, home(), project.path, None) or {}
+
+    async def reconnect_mcp(self, scope: str, name: str) -> int:
+        """Schedule a rebuild at the next idle turn, respecting project overrides."""
+        from ms_agent.config import MCPConfigManager
+        from app.backends.ms_agent.common import home
+
+        def affected(rt):
+            if scope.startswith('project:') and scope != f'project:{rt.project.id}':
+                return False
+            mm = MCPConfigManager(global_root=home(), project_root=rt.project.path)
+            entry = (mm.list('merged') or {}).get(name)
+            if not entry or not entry.get('enabled', True):
+                return False
+            local = (mm.list('project') or {}).get(name)
+            if scope == 'global' and local is not None:
+                return False
+            return name in (getattr(rt.agent, 'mcp_config', {}) or {}).get('mcpServers', {})
+
+        count = 0
+        async with self._create_lock:
+            for rt in list(self._runtimes.values()):
+                if await asyncio.to_thread(affected, rt):
+                    rt.needs_rebuild = True
+                    count += 1
+        return count
 
     async def _apply_mcp_toggle(self, name: str, enabled: bool) -> None:
         for rt in list(self._runtimes.values()):
@@ -925,6 +1017,12 @@ class RuntimeRegistry:
         # (reproduced: the whole interrupted turn vanished from the log). With
         # the lock held, that get() waits and rebuilds from the sealed log.
         async with self._create_lock:
+            current = self._runtimes.get(session_id)
+            task = getattr(current, 'context_task', None)
+            if task is not None and not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+                return True
             rt = self._runtimes.pop(session_id, None)
             if rt is None:
                 return False
@@ -953,12 +1051,12 @@ class RuntimeRegistry:
         if loop is not None and loop.is_running():
             try:
                 if asyncio.get_running_loop() is loop:
-                    loop.create_task(self.close(session_id))
+                    loop.create_task(self._discard_session(session_id))
                     return
             except RuntimeError:
                 pass
             try:
-                future = asyncio.run_coroutine_threadsafe(self.close(session_id), loop)
+                future = asyncio.run_coroutine_threadsafe(self._discard_session(session_id), loop)
                 future.result(timeout=15)
                 return
             except Exception:
@@ -971,7 +1069,14 @@ class RuntimeRegistry:
             except RuntimeError:
                 logger.debug("runtime discard skipped for stopped loop", exc_info=True)
 
+    async def _discard_session(self, session_id: str) -> None:
+        from app.backends.ms_agent.conversations import discard
+        await discard(session_id)
+        await self.close(session_id)
+
     async def close_all(self) -> None:
+        from app.backends.ms_agent.conversations import close_all
+        await close_all()
         for sid in list(self._runtimes):
             await self.close(sid)
 

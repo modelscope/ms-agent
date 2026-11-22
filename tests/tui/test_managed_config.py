@@ -59,7 +59,9 @@ def test_skills_sources_appended_and_disabled_unioned(tmp_path):
     assert 'foo' in list(cfg.skills.disabled)  # disabled unioned
 
 
-def test_skills_noop_when_empty(tmp_path):
+def test_skills_noop_when_empty(tmp_path, monkeypatch):
+    monkeypatch.setattr("ms_agent.config.skills_manager.global_standard_skills_tree",
+                        lambda: tmp_path / "empty-standard-skills")
     cfg = OmegaConf.create({'llm': {'model': 'x'}})
     out = merge_skills_into_config(cfg, str(tmp_path / 'home'), None)
     assert not getattr(out, 'skills', None)  # nothing added

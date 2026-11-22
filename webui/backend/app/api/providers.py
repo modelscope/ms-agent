@@ -1,7 +1,12 @@
 from fastapi import APIRouter, HTTPException
 
 from app.core.envelope import EnvelopeRoute
-from app.schemas.provider import Provider, ProviderCreate, ProviderUpdate
+from app.schemas.provider import (
+    Provider,
+    ProviderCreate,
+    ProviderOrder,
+    ProviderUpdate,
+)
 
 router = APIRouter(prefix="/api/providers", tags=["providers"],
                    route_class=EnvelopeRoute)
@@ -19,6 +24,15 @@ def create_provider(body: ProviderCreate) -> Provider:
     from app.backends.ms_agent import providers
 
     return providers.create_provider(body)
+
+
+# Declared before the ``/{provider_id}`` routes so its literal path is matched
+# first (belt-and-braces — the method differs from those routes anyway).
+@router.put("/order")
+def reorder_providers(body: ProviderOrder) -> list[Provider]:
+    from app.backends.ms_agent import providers
+
+    return providers.reorder_providers(body.order)
 
 
 @router.get("/{provider_id}")
@@ -52,7 +66,9 @@ def available_models(provider_id: str) -> list[str]:
 
     base_url, protocol, api_key = providers.get_provider_secret(
         provider_id)
-    # fetch_model_ids is itself best-effort (missing key, network error, non-2xx
-    # and non-standard payloads all degrade to []), so its result is returned
-    # as-is: the UI falls back to free-form manual entry on an empty list.
-    return fetch_model_ids(base_url, protocol, api_key)
+    discovered = fetch_model_ids(base_url, protocol, api_key)
+    if discovered:
+        return discovered
+    from ms_agent.llm.model_catalog import list_model_ids
+
+    return list_model_ids(provider_id, base_url=base_url)

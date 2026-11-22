@@ -5,6 +5,9 @@ Built-ins come from the read-only registry; customs from settings.json
 override and is merged into that built-in row (kept as a single entry)."""
 from __future__ import annotations
 
+from pathlib import Path
+from ms_agent.utils.file_lock import locked
+
 from app.backends.errors import BadRequest, Conflict, NotFound
 from app.backends.ms_agent import model_link, sidecar
 from app.backends.ms_agent.common import home
@@ -46,6 +49,32 @@ def _default_name(pid: str) -> str:
     return (spec.display_name or spec.name) if spec else pid
 
 
+# User-defined display order, kept in the WebUI sidecar (its own section so a
+# provider id can never collide with a real key). Own isolated store because it
+# spans both built-ins (read-only registry) and customs (settings.json).
+_ORDER_SECTION = "ordering"
+_ORDER_KEY = "providers"
+
+
+def _saved_order() -> list[str]:
+    val = sidecar.get(_ORDER_SECTION, _ORDER_KEY, [])
+    return [str(x) for x in val] if isinstance(val, list) else []
+
+
+def _write_order(ids: list[str]) -> None:
+    sidecar.put(_ORDER_SECTION, _ORDER_KEY, ids)
+
+
+def _apply_order(rows: list[Provider]) -> list[Provider]:
+    """Sort by the saved order overlay: ids listed there lead, in that order;
+    anything unlisted keeps its default position after them (stable sort)."""
+    order = _saved_order()
+    if not order:
+        return rows
+    rank = {pid: i for i, pid in enumerate(order)}
+    return sorted(rows, key=lambda p: rank.get(p.id, len(order)))
+
+
 def list_providers() -> list[Provider]:
     with settings_lock():
         custom = _msm().list_custom_providers()
@@ -55,7 +84,7 @@ def list_providers() -> list[Provider]:
         custom_provider_to_schema(pid, entry) for pid, entry in custom.items()
         if pid not in builtin_ids
     ]
-    return out
+    return _apply_order(out)
 
 
 def get_provider(pid: str) -> Provider:
@@ -69,6 +98,7 @@ def get_provider(pid: str) -> Provider:
     raise NotFound("Provider not found.")
 
 
+@locked(lambda *args, **kwargs: Path(home()) / "settings.json")
 def create_provider(body: ProviderCreate) -> Provider:
     with settings_lock():
         msm = _msm()
@@ -88,9 +118,12 @@ def create_provider(body: ProviderCreate) -> Provider:
             body.id,
             {"default_generation_params": body.default_generation_params},
         )
+    # Newly added providers surface at the very top of the list.
+    _write_order([body.id, *(x for x in _saved_order() if x != body.id)])
     return custom_provider_to_schema(body.id, custom)
 
 
+@locked(lambda *args, **kwargs: Path(home()) / "settings.json")
 def update_provider(pid: str, body: ProviderUpdate) -> Provider:
     with settings_lock():
         msm = _msm()
@@ -107,8 +140,10 @@ def update_provider(pid: str, body: ProviderUpdate) -> Provider:
             msm.add_provider(
                 pid,
                 name=name or _default_name(pid),
+                # A partial edit retains the effective protocol, including
+                # the registry default when no override has been saved yet.
                 protocol=(body.protocol if body.protocol is not None else
-                          cur.get("protocol")) or "openai",
+                          get_provider(pid).protocol),
                 api_key=body.api_key
                 if body.api_key is not None else cur.get("api_key"),
                 base_url=body.base_url
@@ -135,6 +170,7 @@ def update_provider(pid: str, body: ProviderUpdate) -> Provider:
     return get_provider(pid)
 
 
+@locked(lambda *args, **kwargs: Path(home()) / "settings.json")
 def delete_provider(pid: str) -> None:
     with settings_lock():
         msm = _msm()
@@ -148,6 +184,25 @@ def delete_provider(pid: str) -> None:
     for name in model_names:
         sidecar.drop("models", encode_model_id(pid, name))
     sidecar.drop("providers", pid)
+    order = _saved_order()
+    if pid in order:
+        _write_order([x for x in order if x != pid])
+
+
+def reorder_providers(order: list[str]) -> list[Provider]:
+    """Persist a user-chosen display order. Only known ids are kept (dropping
+    duplicates and any that vanished in a concurrent delete); ids left out fall
+    back to their default position behind the listed ones."""
+    with settings_lock():
+        known = _builtin_ids() | set(_msm().list_custom_providers())
+    seen: set[str] = set()
+    clean: list[str] = []
+    for pid in order:
+        if pid in known and pid not in seen:
+            seen.add(pid)
+            clean.append(pid)
+    _write_order(clean)
+    return list_providers()
 
 
 def get_provider_secret(pid: str) -> tuple[str, str, str]:
@@ -163,7 +218,7 @@ def get_provider_secret(pid: str) -> tuple[str, str, str]:
             spec = next(s for s in _specs() if s.name == pid)
             override = custom.get(pid, {}) or {}
             base_url = override.get("base_url") or spec.default_base_url or ""
-            protocol = _protocol(spec.transport)
+            protocol = override.get("protocol") or _protocol(spec.transport)
             return base_url, protocol, override.get("api_key", "") or ""
         if pid in custom:
             entry = custom[pid] or {}

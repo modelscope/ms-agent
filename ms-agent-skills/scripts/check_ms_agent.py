@@ -8,7 +8,22 @@ def check_import() -> dict:
     """Check that ms_agent is importable."""
     try:
         import ms_agent  # noqa: F401
-        version = getattr(ms_agent, '__version__', 'unknown')
+        # ms_agent does not expose a top-level ``__version__``; the canonical
+        # version lives in ``ms_agent.version.__version__``. Fall back to the
+        # top-level attribute (if a future release adds one) and finally to
+        # ``importlib.metadata`` for installed wheels.
+        version = getattr(ms_agent, '__version__', None)
+        if not version:
+            try:
+                from ms_agent.version import __version__ as version
+            except Exception:
+                version = None
+        if not version:
+            try:
+                from importlib.metadata import version as _pkg_version
+                version = _pkg_version('ms-agent')
+            except Exception:
+                version = 'unknown'
         return {'importable': True, 'version': version}
     except ImportError as e:
         return {'importable': False, 'error': str(e)}

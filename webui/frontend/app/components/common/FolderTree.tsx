@@ -1,80 +1,18 @@
 import { Dropdown, Tree } from 'antd'
 import type { MenuProps, TreeDataNode, TreeProps } from 'antd'
-import {
-  type FC,
-  type ReactNode,
-  type SVGProps,
-  useEffect,
-  useMemo,
-  useRef,
-  useState
-} from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { collectDroppedFiles } from '~/lib/dropFiles'
 import type { DroppedFile } from '~/lib/dropFiles'
 import { useT } from '~/lib/i18n'
 import { InlineNameInput } from './InlineNameInput'
 import './FolderTree.css'
 
-// File type icons, inlined (`?react`) so the neutral ones can follow
-// `currentColor` (see FileCard).
-import iconDefault from '~/assets/files/default.svg?react'
-import iconPdf from '~/assets/files/pdf.svg?react'
-import iconWord from '~/assets/files/word.svg?react'
-import iconExcel from '~/assets/files/excel.svg?react'
-import iconPpt from '~/assets/files/ppt.svg?react'
-import iconZip from '~/assets/files/zip.svg?react'
-import iconMarkdown from '~/assets/files/md.svg?react'
-import iconJava from '~/assets/files/java.svg?react'
-import iconJavascript from '~/assets/files/js.svg?react'
-import iconPython from '~/assets/files/py.svg?react'
-import iconText from '~/assets/files/txt.svg?react'
-import iconMp3 from '~/assets/files/mp3.svg?react'
-import iconWeb from '~/assets/files/web.svg?react'
 import iconFolder from '~/assets/icons/folder.svg?react'
-
-type FileIcon = FC<SVGProps<SVGSVGElement>>
-
-// Extension → icon mapping
-const FILE_ICONS: Record<string, FileIcon> = {
-  pdf: iconPdf,
-  doc: iconWord,
-  docx: iconWord,
-  xls: iconExcel,
-  xlsx: iconExcel,
-  csv: iconExcel,
-  ppt: iconPpt,
-  pptx: iconPpt,
-  zip: iconZip,
-  rar: iconZip,
-  '7z': iconZip,
-  tar: iconZip,
-  gz: iconZip,
-  md: iconMarkdown,
-  js: iconJavascript,
-  ts: iconJavascript,
-  jsx: iconJavascript,
-  tsx: iconJavascript,
-  java: iconJava,
-  py: iconPython,
-  json: iconJavascript,
-  mp3: iconMp3,
-  html: iconWeb,
-  htm: iconWeb,
-  css: iconWeb,
-  log: iconText,
-  txt: iconText,
-  yaml: iconDefault,
-  yml: iconDefault,
-  bin: iconDefault,
-  sh: iconDefault,
-  xml: iconDefault,
-  svg: iconDefault
-}
+import { getFileIcon } from './FileCard'
 
 function iconFor(title: string, isDir: boolean): ReactNode {
-  const ext = title.split('.').pop()?.toLowerCase() ?? ''
-  const Icon = isDir ? iconFolder : FILE_ICONS[ext] ?? iconDefault
-  return <Icon aria-hidden className="h-[14px] w-[14px] text-msa-icon-neutral" />
+  const Icon = isDir ? iconFolder : getFileIcon(title)
+  return <Icon aria-hidden className="h-5 w-5 text-msa-icon-neutral" />
 }
 
 // Key of the inline "new entry" row. Not a path, so it can never collide with a
@@ -321,7 +259,11 @@ export function FolderTree({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedKey, defaultExpandAll, dirSig])
 
-  const menuItems = (isDir: boolean, path: string, key: string): MenuProps['items'] => {
+  const menuItems = (
+    isDir: boolean,
+    path: string,
+    key: string
+  ): MenuProps['items'] => {
     if (!actions) return []
     // When right-clicking a node that's part of a multi-selection, offer batch
     // operations over the whole selection instead of single-node actions.
@@ -560,7 +502,9 @@ export function FolderTree({
   useEffect(() => {
     if (!draft?.dir) return
     const parts = draft.dir.split('/')
-    const ancestors = parts.map((_, i) => `dir:${parts.slice(0, i + 1).join('/')}`)
+    const ancestors = parts.map(
+      (_, i) => `dir:${parts.slice(0, i + 1).join('/')}`
+    )
     setExpandedKeys((prev) => [...new Set([...prev, ...ancestors])])
   }, [draft?.dir])
 
@@ -641,7 +585,9 @@ export function FolderTree({
       '.ant-tree-treenode'
     ) as HTMLElement | null
     if (!dt || !dt.setDragImage || !row) return
-    const iconEl = row.querySelector('.ant-tree-title img') as HTMLImageElement | null
+    const iconEl = row.querySelector(
+      '.ant-tree-title img'
+    ) as HTMLImageElement | null
     const name = row.querySelector('.ant-tree-title')?.textContent ?? ''
     // Dragging any node of a multi-selection moves the whole set: show a count.
     const dragKey = String(info.node.key)

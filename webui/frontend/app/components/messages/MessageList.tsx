@@ -1,3 +1,5 @@
+import { useLocation } from 'react-router'
+import { ForkReplyButton, ForkDivider } from './ForkActions'
 import { Bubble } from '@ant-design/x'
 import { Tooltip } from 'antd'
 import { CheckOutlined } from '@ant-design/icons'
@@ -59,7 +61,7 @@ function CopyReplyButton({ text }: { text: string }) {
           copied ? (
             <CheckOutlined className="text-sm !text-msa-green-5" />
           ) : (
-            <CopyIcon className="h-4 w-4" />
+            <CopyIcon className="h-5 w-5" />
           )
         }
         className="text-msa-text-3 hover:!text-msa-text-1"
@@ -142,6 +144,21 @@ export const MessageList = forwardRef<
     [scrollToKey, getScrollBox]
   )
 
+  const location = useLocation()
+  const jumpedTo = useRef('')
+  useEffect(() => {
+    const at = new URLSearchParams(location.search).get('at')
+    const target = `${sessionId}:${at}`
+    if (at === null || jumpedTo.current === target) return
+    const item = items.find(({ message }) => message.logSeq === Number(at))
+    if (!item) return
+    const frame = requestAnimationFrame(() => {
+      scrollToKey(item.id)
+      jumpedTo.current = target
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [items, sessionId, location.search, scrollToKey])
+
   // Watch Bubble.List's built-in scroll-box. It uses a column-reverse viewport,
   // so scrollTop is 0 at the visual bottom and grows negative when scrolling up
   // to read history; show the button once we move away from the bottom.
@@ -197,21 +214,22 @@ export const MessageList = forwardRef<
       // redundant progress hint stacked above it.
       loading: inFlight && !hasBody && message.turnStartedAt == null,
       footer:
-        copyText || interrupted ? (
-          <div className="flex w-full items-center justify-between">
-            {/* Leftmost action: copy the reply text. */}
-            {copyText ? (
-              <span className={isLatestReply ? '' : 'msgl-copy-hover'}>
-                <CopyReplyButton text={copyText} />
+        copyText || interrupted || message.forkOrigin || message.forkAfterSeq != null ? (
+          <div className="w-full">
+            <div className="flex w-full items-center justify-between">
+              <span className={`inline-flex items-center gap-1 ${isLatestReply ? '' : 'msgl-copy-hover'}`}>
+                {copyText && <CopyReplyButton text={copyText} />}
+                {sessionId && message.forkAfterSeq != null && !inFlight && !interrupted && (
+                  <ForkReplyButton sessionId={sessionId} afterSeq={message.forkAfterSeq} />
+                )}
               </span>
-            ) : (
-              <span />
-            )}
-            {interrupted && (
-              <span className="inline-flex items-center gap-1.5 text-xs text-msa-text-3">
-                {t.chat.interrupted}
-              </span>
-            )}
+              {interrupted && (
+                <span className="inline-flex items-center gap-1.5 text-xs text-msa-text-3">
+                  {t.chat.interrupted}
+                </span>
+              )}
+            </div>
+            {message.forkOrigin && <ForkDivider origin={message.forkOrigin} />}
           </div>
         ) : undefined
     }
@@ -234,7 +252,9 @@ export const MessageList = forwardRef<
               />
             ),
             classNames: {
-              root: 'px-0'
+              root: 'px-0',
+              // 38px for a single line: 8px padding + 22px line box + 8px.
+              content: 'min-h-[38px] py-2'
             }
           },
           assistant: {
@@ -266,7 +286,7 @@ export const MessageList = forwardRef<
             }}
             className="absolute bottom-5 right-5 z-10 !rounded-full"
             variant="tonal"
-            icon={<DownloadIcon className="h-4 w-4" />}
+            icon={<DownloadIcon className="h-5 w-5" />}
           ></IconButton>
         </Tooltip>
       )}

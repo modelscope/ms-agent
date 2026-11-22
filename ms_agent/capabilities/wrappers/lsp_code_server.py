@@ -1,22 +1,75 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import os
+import shutil
 from typing import Any
 
 from ms_agent.capabilities.descriptor import CapabilityDescriptor
 from ms_agent.capabilities.registry import CapabilityRegistry
 
+# Maps each supported language to the executable that must be on ``$PATH`` and
+# an actionable install hint. The descriptor-level ``requires`` mechanism is
+# static, but the actual LSP backend depends on the runtime ``language``
+# argument, so we validate here and surface a clear, install-ready message
+# instead of an opaque "Failed to start LSP server" string.
+_LANGUAGE_BACKENDS: dict[str, dict[str, str]] = {
+    'typescript': {
+        # 后端通过 npx 解析项目本地、全局或缓存安装，不要求全局语言服务器。
+        'bin':
+        'npx',
+        'hint': ('install Node.js with npm; install typescript and '
+                 'typescript-language-server in your project or globally'),
+    },
+    'python': {
+        'bin': 'pyright-langserver',
+        'hint': 'pip install pyright  (or: npm install -g pyright)',
+    },
+    'java': {
+        'bin':
+        'jdtls',
+        'hint': ('brew install jdtls  '
+                 '(or download the Eclipse JDT Language Server)'),
+    },
+}
+
+
+def _check_language_backend(language: str) -> dict[str, Any] | None:
+    """Return an actionable error dict when the LSP backend for *language* is
+    unavailable, otherwise ``None``."""
+    spec = _LANGUAGE_BACKENDS.get(language)
+    if spec is None:
+        return {
+            'error':
+            (f'Unsupported language {language!r}. '
+             f'Supported languages: {", ".join(sorted(_LANGUAGE_BACKENDS))}.')
+        }
+    available = shutil.which(spec['bin'])
+    if language == 'java' and not available:
+        # JavaLanguageServer also supports these locations outside PATH.
+        available = any(
+            os.path.isfile(os.path.expanduser(path))
+            for path in ('/usr/local/bin/jdtls', '/opt/homebrew/bin/jdtls',
+                         '~/.local/bin/jdtls'))
+    if not available:
+        return {
+            'error': (f'LSP backend for {language!r} is unavailable: '
+                      f'executable "{spec["bin"]}" was not found on $PATH. '
+                      f'Install it with: {spec["hint"]}')
+        }
+    return None
+
+
 CHECK_DIRECTORY_DESCRIPTOR = CapabilityDescriptor(
     name='lsp_check_directory',
     version='0.1.0',
     granularity='component',
-    summary=('Run LSP diagnostics on all code files in a directory. '
+    summary=('Index code files in a directory with an LSP backend. '
              'Supports TypeScript/JavaScript, Python, and Java.'),
     description=(
         'Starts the appropriate Language Server Protocol backend '
-        '(typescript-language-server, pyright, or jdtls) and runs '
-        'diagnostics on every matching file in the given directory. '
-        'Returns structured error/warning information. Useful for '
-        'validating generated code or checking a project for issues.'),
+        '(typescript-language-server, pyright, or jdtls) and opens matching '
+        'files for indexing. Returns indexing status and file counts. '
+        'Directory-wide diagnostic collection is currently disabled; '
+        'use lsp_update_and_check for incremental diagnostics.'),
     input_schema={
         'type': 'object',
         'properties': {
@@ -42,7 +95,7 @@ CHECK_DIRECTORY_DESCRIPTOR = CapabilityDescriptor(
         'properties': {
             'result': {
                 'type': 'string',
-                'description': 'Diagnostic summary'
+                'description': 'JSON-encoded indexing summary'
             },
         },
     },
@@ -52,7 +105,6 @@ CHECK_DIRECTORY_DESCRIPTOR = CapabilityDescriptor(
     ],
     estimated_duration='minutes',
     parent='lsp_code_server',
-    requires={'bins': []},
 )
 
 UPDATE_AND_CHECK_DESCRIPTOR = CapabilityDescriptor(
@@ -158,6 +210,10 @@ def _resolve_workspace(directory: str, fallback: str) -> str:
 
 async def _handle_check_directory(args: dict[str, Any],
                                   **kwargs: Any) -> dict[str, Any]:
+    backend_error = _check_language_backend(args.get('language', ''))
+    if backend_error is not None:
+        return backend_error
+
     fallback = kwargs.get('workspace') or os.environ.get(
         'MS_AGENT_OUTPUT_DIR', os.getcwd())
     directory = args['directory']
@@ -178,8 +234,28 @@ async def _handle_check_directory(args: dict[str, Any],
     return {'result': result}
 
 
+async def _handle_lsp_info(args: dict[str, Any],
+                           **kwargs: Any) -> dict[str, Any]:
+    """Handler for the parent ``lsp_code_server`` descriptor.
+
+    The parent descriptor has no input parameters, so it must not be wired to
+    the directory-check handler (which would raise ``KeyError('directory')``).
+    Instead it describes the component and its callable sub-capabilities.
+    """
+    return {
+        'component': 'lsp_code_server',
+        'summary': LSP_SERVER_DESCRIPTOR.summary,
+        'sub_capabilities': list(LSP_SERVER_DESCRIPTOR.sub_capabilities),
+        'supported_languages': sorted(_LANGUAGE_BACKENDS),
+    }
+
+
 async def _handle_update_and_check(args: dict[str, Any],
                                    **kwargs: Any) -> dict[str, Any]:
+    backend_error = _check_language_backend(args.get('language', ''))
+    if backend_error is not None:
+        return backend_error
+
     fallback = kwargs.get('workspace') or os.environ.get(
         'MS_AGENT_OUTPUT_DIR', os.getcwd())
     file_path = args['file_path']
@@ -205,6 +281,8 @@ async def _handle_update_and_check(args: dict[str, Any],
 
 def register_all(registry: CapabilityRegistry, config: Any = None) -> None:
     """Register LSP code server capabilities into the registry."""
-    registry.register(LSP_SERVER_DESCRIPTOR, _handle_check_directory)
+    # Parent component descriptor: describes sub-capabilities, does not run
+    # diagnostics (it has no ``directory``/``language`` input).
+    registry.register(LSP_SERVER_DESCRIPTOR, _handle_lsp_info)
     registry.register(CHECK_DIRECTORY_DESCRIPTOR, _handle_check_directory)
     registry.register(UPDATE_AND_CHECK_DESCRIPTOR, _handle_update_and_check)

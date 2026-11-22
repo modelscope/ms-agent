@@ -426,9 +426,11 @@ def cmd_upload(
     # boilerplate is never pushed -- keeps upload and convert 1:1-consistent
     # about what "the user's own files" are.
     from ._sync import drop_unchanged_defaults, sanitize_outbound
+    redacted: list = []
     try:
         resources = drop_unchanged_defaults(
-            sanitize_outbound(resources, spec), framework, spec)
+            sanitize_outbound(resources, spec, findings=redacted), framework,
+            spec)
     except ValueError as e:
         # Fail-closed sanitize: a config file that cannot be parsed cannot be
         # verified secret-free -- abort instead of pushing plaintext keys.
@@ -450,6 +452,17 @@ def cmd_upload(
         headers=['FILE', 'SIZE'],
         color=display.COLOR_WRITTEN,
     )
+    if redacted:
+        # Before the dry-run return, so --dry-run shows what would be stripped.
+        display.table(
+            'Secrets redacted',
+            [(f.rel, f.kind, f'line {f.line}' if f.line else 'structural')
+             for f in sorted(redacted)],
+            headers=['FILE', 'KIND', 'WHERE'],
+            color=display.COLOR_MERGED,
+            note=f'{len(redacted)} secret value(s) replaced with '
+            f'[REDACTED:*] in the uploaded copy; local files are untouched.',
+        )
 
     if dry_run:
         print('\n[dry-run] nothing uploaded.')
@@ -1020,10 +1033,19 @@ def convert_workspace(
     # as-is; without this filter they would leak into the target framework.
     # Mirrors the dst-spec guard in cmd_download's download path.
     dropped: list[str] = []
+    dropped_memory_payloads: list[str] = []
     if source_fw != target_fw:
         dst_patterns = dst_spec.resolved_patterns()
         dropped = sorted(
             k for k in converted if not dst_spec.matches(k, dst_patterns))
+        # Non-Markdown memory payloads cannot be hosted by any target's
+        # Markdown-only memory: report them separately from generic drops.
+        dropped_memory_payloads = [
+            k for k in dropped
+            if k.startswith(('memory/', 'memories/'))
+            and not k.endswith('.md')
+        ]
+        dropped = [k for k in dropped if k not in dropped_memory_payloads]
         converted = {
             k: v
             for k, v in converted.items() if dst_spec.matches(k, dst_patterns)
@@ -1054,8 +1076,9 @@ def convert_workspace(
               ('written', len(effective), display.COLOR_WRITTEN)]
     if merge_pairs:
         counts.append(('merged', len(merge_pairs), display.COLOR_MERGED))
-    if dropped:
-        counts.append(('dropped', len(dropped), display.COLOR_DROPPED))
+    if dropped or dropped_memory_payloads:
+        counts.append(('dropped', len(dropped) + len(dropped_memory_payloads),
+                       display.COLOR_DROPPED))
     display.summary(counts)
 
     display.file_list('Written', effective, color=display.COLOR_WRITTEN)
@@ -1072,6 +1095,15 @@ def convert_workspace(
         color=display.COLOR_DROPPED,
         marker='[drop]',
         note=f'not part of the {target_fw} workspace spec',
+    )
+    display.file_list(
+        'Memory payloads not supported',
+        dropped_memory_payloads,
+        color=display.COLOR_DROPPED,
+        marker='[drop]',
+        note=(f'non-Markdown memory files; {target_fw} memory is '
+              'Markdown-only, so they cannot travel cross-framework '
+              '(kept on same-framework sync)'),
     )
     display.file_list(
         'Skipped',

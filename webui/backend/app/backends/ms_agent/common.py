@@ -35,13 +35,13 @@ apply_home_env()
 def pm():
     from ms_agent.project import ProjectManager
 
-    return ProjectManager(base_dir=home())
+    return ProjectManager(base_dir=home(), auto_initialize=False)
 
 
 def sm_for(project):
     from ms_agent.project import SessionManager
 
-    return SessionManager(project)
+    return SessionManager(project, base_dir=home(), auto_initialize=False, require_project=True)
 
 
 def resolve_project(project_id: str | None):
@@ -129,8 +129,11 @@ def autoname_session(project, session, text: str | None = None):
     title = _title_from_text(text) if text else _first_user_line(project, session)
     if not title:
         return session
+    if text is None:
+        from dataclasses import replace
+        return replace(session, name=title)
     try:
-        return sm_for(project).update(session.id, name=title)
+        return sm_for(project).update_if(session.id, expected={"name": session.name}, name=title) or session
     except Exception:
         return session
 

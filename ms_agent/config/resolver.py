@@ -8,6 +8,9 @@ Merges config from five layers (later wins):
   4. Project patch        (<project>/.ms-agent/config.yaml)
   5. Session overrides    (runtime overrides, e.g. model switch in a session)
 
+Callers may supply interface ``defaults`` between layers 1 and 2. These apply
+only to that resolver, so a WebUI profile does not change ordinary SDK agents.
+
 MCP/Skills merge semantics:
   - Union by name, project-level overrides global on conflict
   - Each entry carries an `enabled` flag
@@ -77,11 +80,14 @@ class ConfigResolver:
         project_root: Union[str, Path, None] = None,
         agent_config: DictConfig | ListConfig | None = None,
         mcp_manager: MCPConfigManager | None = None,
+        defaults: Optional[Dict[str, Any]] = None,
     ) -> None:
         self._global_dir = Path(global_dir).expanduser()
         self.project_root = (
             Path(project_root).expanduser() if project_root else None)
         self.agent_config = agent_config
+        # Interface defaults sit above framework defaults, below all user layers.
+        self.defaults = deepcopy(defaults)
         self.mcp_manager = mcp_manager or MCPConfigManager(
             self._global_dir, self.project_root)
         self.plugin_manager = PluginConfigManager(self._global_dir,
@@ -97,6 +103,7 @@ class ConfigResolver:
         agent_config: Union[DictConfig, str, None] = None,
         project_path: Optional[str] = None,
         session_overrides: Optional[Dict[str, Any]] = None,
+        global_settings: Optional[Dict[str, Any]] = None,
     ) -> DictConfig:
         """Merge configs from all layers.
 
@@ -106,6 +113,7 @@ class ConfigResolver:
             project_path: The project's workspace root. If provided,
                 reads <project_path>/.ms-agent/config.yaml as a patch.
             session_overrides: Runtime overrides (e.g. model switch).
+            global_settings: Optional already-read settings snapshot.
 
         Returns:
             The merged DictConfig ready for AgentLoader.build().
@@ -113,10 +121,13 @@ class ConfigResolver:
         layers: List[DictConfig] = []
 
         layers.append(self._load_framework_defaults())
+        if self.defaults is not None:
+            layers.append(OmegaConf.create(self.defaults))
 
-        global_settings = self._load_global_settings()
-        if global_settings:
-            layers.append(global_settings)
+        global_layer = (self._settings_to_agent_config(global_settings)
+                        if global_settings is not None else self._load_global_settings())
+        if global_layer:
+            layers.append(global_layer)
 
         effective_agent_config = (
             agent_config if agent_config is not None else self.agent_config)
@@ -137,7 +148,10 @@ class ConfigResolver:
         if session_overrides:
             layers.append(OmegaConf.create(session_overrides))
 
-        merged = self._merge_layers(layers)
+        merged = self._merge_layers(layers, merge_tools=self.defaults is not None)
+        for name in collect_builtin_tool_names(OmegaConf.create(self.defaults or {})):
+            if OmegaConf.select(merged, f'tools.{name}.mcp') is not False:
+                raise ValueError(f'tools.{name} is a built-in tool; mcp must be false')
 
         merged = self._merge_mcp(merged, effective_project_path)
         merged = self._merge_skills(merged, effective_project_path)
@@ -290,17 +304,27 @@ class ConfigResolver:
 
         if not layers:
             return None
-        return self._merge_layers(layers)
+        return self._merge_layers(layers, merge_tools=self.defaults is not None)
 
     # -- merging --
 
     @staticmethod
-    def _merge_layers(layers: List[DictConfig]) -> DictConfig:
+    def _merge_layers(layers: List[DictConfig], *, merge_tools: bool = False) -> DictConfig:
         if not layers:
             return OmegaConf.create({})
         result = layers[0]
         for layer in layers[1:]:
+            tools = None
+            if merge_tools and 'tools' in layer:
+                from ms_agent.config.tool_settings import merge_tool_settings
+                tools = merge_tool_settings(
+                    OmegaConf.to_container(result.tools)
+                    if OmegaConf.is_config(result.get('tools')) else {},
+                    OmegaConf.to_container(layer.tools)
+                    if OmegaConf.is_config(layer.tools) else layer.tools)
             result = OmegaConf.merge(result, layer)
+            if tools is not None:
+                OmegaConf.update(result, 'tools', tools, merge=False)
         return result
 
     def _merge_mcp(self, config: DictConfig,
@@ -406,7 +430,10 @@ class ConfigResolver:
             agent_llm = agent_fields.setdefault('llm', {})
             if not agent_llm.get('model'):
                 if '/' in default_model:
+                    from ms_agent.config.model_settings import (
+                        strip_provider_model_prefix)
                     prov, mdl = default_model.split('/', 1)
+                    mdl = strip_provider_model_prefix(prov, mdl)
                     agent_llm.setdefault('service', prov)
                     agent_llm['model'] = mdl
                 else:
@@ -430,7 +457,33 @@ class ConfigResolver:
         # (honored in ToolManager), which lets a higher layer turn a tool off.
         if 'tools' in settings:
             agent_fields['tools'] = settings['tools']
+        ConfigResolver._fill_provider_catalog(agent_fields, settings)
         return OmegaConf.create(agent_fields)
+
+    @staticmethod
+    def _fill_provider_catalog(agent_fields: Dict[str, Any],
+                               settings: Dict[str, Any]) -> None:
+        """Copy providers.<id> credentials onto llm when the llm block only
+        names a provider (WebUI stores keys under ``providers``, not always
+        under ``llm.api_key``). Never overwrites an explicit llm value."""
+        providers = settings.get('providers')
+        if not isinstance(providers, dict):
+            return
+        agent_llm = agent_fields.get('llm')
+        if not isinstance(agent_llm, dict):
+            return
+        pid = str(agent_llm.get('service') or '')
+        entry = providers.get(pid)
+        if not pid or not isinstance(entry, dict):
+            return
+        if entry.get('api_key'):
+            agent_llm.setdefault(f'{pid}_api_key', entry['api_key'])
+            agent_llm.setdefault('api_key', entry['api_key'])
+        if entry.get('base_url'):
+            agent_llm.setdefault(f'{pid}_base_url', entry['base_url'])
+            agent_llm.setdefault('base_url', entry['base_url'])
+        if entry.get('protocol'):
+            agent_llm.setdefault('protocol', entry['protocol'])
 
     @staticmethod
     def _load_json_safe(path: Path) -> Dict[str, Any]:

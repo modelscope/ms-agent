@@ -115,8 +115,8 @@ def main():
     args.logs.mkdir(parents=True, exist_ok=True)
     # The image shares these locked dependencies with the full SDK CLI.
     importlib.import_module('ms_agent.agent_hub')
-    # Default tool initialization must not download packages during first chat.
-    for module in ('bs4', 'lxml', 'pyarrow', 'seaborn', 'sklearn'):
+    # Document conversion remains available without optional Python/Notebook tools.
+    for module in ('bs4', 'lxml'):
         importlib.import_module(module)
     from ms_agent.cli.ui_resources import file_digest, find_webui
 

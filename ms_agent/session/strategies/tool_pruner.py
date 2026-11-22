@@ -13,66 +13,66 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional, Tuple
 
-from ms_agent.llm import multimodal
+from ms_agent.llm import multimodal, token_budget
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
 
 
 def _estimate_tokens(text: str) -> int:
-    if not text:
-        return 0
-    return len(text) // 4
+    return token_budget.estimate_text_tokens(text)
 
 
 def _estimate_message_tokens(msg: Dict[str, Any]) -> int:
-    """Heuristic token count from message body (no API usage fields).
-
-    Structured content is walked block-by-block, and an image block is charged a
-    flat per-image cost instead of having its payload measured as text. The
-    providers bill images by pixel dimensions (Anthropic ``⌈w/28⌉ × ⌈h/28⌉``;
-    DashScope returns the real figure as ``prompt_tokens_details.image_tokens``),
-    which has nothing to do with how long the base64 happens to be.
-
-    Measured on DashScope with a 900x320 PNG: 282 real image tokens versus 7,293
-    from counting base64 characters — a 26x over-count on a 22 KB image. A 2 MiB
-    PNG estimates at ~699k tokens against a ~108k usable budget, which does not
-    merely mis-trigger compaction once: the offending message is the last visible
-    one, so the compactor re-appends it, the estimate never drops, and every
-    subsequent round pays for another summary LLM call.
-    """
-    total = 0
-    content = msg.get('content', '')
-    if content:
-        total += multimodal.estimate_content_tokens(content, _estimate_tokens)
-    tool_calls = msg.get('tool_calls')
-    if tool_calls:
-        total += _estimate_tokens(json.dumps(tool_calls))
-    rc = msg.get('reasoning_content', '')
-    if rc:
-        total += _estimate_tokens(rc)
-    return total
+    return token_budget.estimate_message_tokens(msg)
 
 
-def _estimate_total_tokens(messages: List[Dict[str, Any]]) -> int:
-    """Estimate total tokens, preferring real API usage data when available.
+def _estimate_total_tokens(messages: List[Dict[str, Any]],
+                           tool_tokens: int = 0) -> int:
+    return token_budget.estimate_total_tokens(messages, tool_tokens)
 
-    ``prompt_tokens`` on an assistant message already accounts for all
-    preceding context in that API call, so we use it as a base and only
-    add a heuristic for messages appended *after* that turn.
-    """
-    for i in range(len(messages) - 1, -1, -1):
-        msg = messages[i]
-        if msg.get('role') != 'assistant':
+
+def invalidate_usage(messages):
+    """Keep billing evidence, but discard usage anchors for a changed window."""
+    for msg in messages:
+        msg['_usage_invalidated'] = True
+
+
+def compression_threshold(config):
+    context = config.get('context_limit', 128000)
+    threshold = (
+        context - config['reserved_buffer']
+        if config.get('reserved_buffer') is not None else int(context * 0.85))
+    return min(
+        config.get('input_limit', context),
+        config.get('compression_threshold', threshold))
+
+
+def protected_indices(messages):
+    """Protect instructions/media/latest user and the last atomic tool exchange."""
+    protected = {
+        i
+        for i, m in enumerate(messages) if m.get('role') == 'system'
+        or m.get('attachments') or m.get('hook_attachments')
+        or multimodal.has_image_blocks(m.get('content'))
+    }
+    users = [i for i, m in enumerate(messages) if m.get('role') == 'user']
+    if users:
+        protected.add(users[-1])
+    if messages:
+        protected.add(len(messages) - 1)
+    # An assistant tool call and all consecutive results form one atomic group.
+    for i, msg in enumerate(messages):
+        if not msg.get('tool_calls'):
             continue
-        pt = int(msg.get('prompt_tokens', 0) or 0)
-        ct = int(msg.get('completion_tokens', 0) or 0)
-        if pt or ct:
-            base = pt + ct
-            tail = sum(_estimate_message_tokens(m) for m in messages[i + 1:])
-            return base + tail
-
-    return sum(_estimate_message_tokens(m) for m in messages)
+        group = {i}
+        j = i + 1
+        while j < len(messages) and messages[j].get('role') == 'tool':
+            group.add(j)
+            j += 1
+        if group & protected:
+            protected.update(group)
+    return protected
 
 
 class ToolOutputPruner:
@@ -92,17 +92,16 @@ class ToolOutputPruner:
         all_msgs: List[Dict[str, Any]],
         config: Dict[str, Any],
     ) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
-        context_limit = config.get('context_limit', 128000)
-        reserved = config.get('reserved_buffer', 20000)
         protect = config.get('prune_protect', 40000)
-
-        tokens_before = _estimate_total_tokens(visible)
-        usable = context_limit - reserved
-        if tokens_before < usable:
+        tokens_before = _estimate_total_tokens(visible,
+                                               config.get('tool_tokens', 0))
+        if tokens_before < compression_threshold(config):
             return visible, None
 
+        protected = protected_indices(visible)
         total_tool_tokens = 0
         pruned_count = 0
+        replacement = '[Output truncated to save context]'
         for idx in range(len(visible) - 1, -1, -1):
             msg = visible[idx]
             if msg.get('role') != 'tool' or not msg.get('content'):
@@ -112,16 +111,17 @@ class ToolOutputPruner:
                 content = json.dumps(content, ensure_ascii=False)
             tokens = _estimate_tokens(content)
             total_tool_tokens += tokens
-            if total_tool_tokens > protect:
-                visible[idx] = {
-                    **msg, 'content': '[Output truncated to save context]'
-                }
+            if (idx not in protected and total_tool_tokens > protect
+                    and tokens > _estimate_tokens(replacement)):
+                visible[idx] = {**msg, 'content': replacement}
                 pruned_count += 1
 
         if pruned_count == 0:
             return visible, None
 
-        tokens_after = _estimate_total_tokens(visible)
+        invalidate_usage(visible)
+        tokens_after = _estimate_total_tokens(visible,
+                                              config.get('tool_tokens', 0))
         logger.info(f'[tool_pruner] Pruned {pruned_count} tool outputs '
                     f'({tokens_before} -> {tokens_after} tokens)')
 

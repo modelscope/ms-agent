@@ -3,15 +3,10 @@ beautifulsoup4
 exa-py>=2.16.0
 fastapi>=0.139.0
 httpx>=0.28.1
-ipykernel>=7.3.0
-jupyter-client>=8.9.1
-loguru>=0.7.3
 lxml
+markdown>=3.10
 mem0ai>=2.0.12
-pyarrow
 pydantic-settings>=2.14.2
-scikit-learn
-seaborn
 socksio>=1.0.0
 sse-starlette>=3.4.5
 uvicorn[standard]>=0.50.2

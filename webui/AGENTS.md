@@ -67,8 +67,19 @@ cd frontend
 pnpm install --frozen-lockfile
 pnpm dev                 # http://localhost:5173, proxies /api/* to :8000
 pnpm build               # production build
+pnpm build:image         # the above, then assemble build-runtime/ — a traced runtime tree
 pnpm start               # serve the build: SSR + /api proxy on one port (PORT, default: API port + 1)
 ```
+
+**Runtime image build:** `pnpm build:image` runs the normal build, then
+`scripts/traceRuntime.ts` traces the SSR entries with `@vercel/nft` into
+`build-runtime/` and verifies the assembled tree with a smoke render.
+
+`../docker/webui.Dockerfile` enables the same flow for installed packages with
+`MS_AGENT_WEBUI_TRACE_RUNTIME=1`. The prepared cache records whether its runtime
+is traced. To run the traced tree locally from `backend/`, use
+`uv run webui --frontend-dir ../frontend/build-runtime`; the launcher rejects it
+when its manifest does not match the checkout build.
 
 **Frontend configuration** is declared in `backend/.env.example` and read by
 application code through `frontend/app/lib/env.ts`. Its `SERVER_*` exports are
@@ -125,24 +136,42 @@ pnpm typecheck           # runs react-router typegen + tsc --noEmit
 | -------- | ----------------------------------------------------------------------------------------------------- |
 | Frontend | React 19, React Router v8 (SSR), Tailwind CSS v4, Ant Design 6, @ant-design/x 2, Vite 8, TypeScript 6 |
 | Backend  | Python 3.12, FastAPI, sse-starlette, pydantic-settings, managed by `uv`                               |
-| Chat     | SSE streaming via `POST /api/chat`, events: `delta` / `done`                                          |
+| Chat     | `POST /api/chat/inputs` admits messages; `GET /api/chat/sessions/{id}/events` streams session events; legacy `POST /api/chat` remains supported |
 | i18n     | EN / 中文, via `app/lib/i18n.tsx` (`useT` hook), persisted in cookie                                  |
 
 ## Architecture
 
 - **Frontend entry**: `frontend/app/root.tsx` → layouts (`app.tsx`, `settings.tsx`) → routes
-- **Chat system**: `@ant-design/x-sdk` (`useXChat`, `XRequest`) + custom `AgentChatProvider` in `app/lib/agentProvider.ts`
+- **Chat system**: `app/lib/sessionChat.ts` owns submission, reconnect and the
+  session reducer; `app/lib/agentProvider.ts` supplies shared chunk/history
+  projection. `Conversation` owns execution independently of SSE viewers; the
+  SDK `SessionInputController` owns durable input scheduling.
 - **Design tokens**: Defined in `app/lib/designTokens.ts`, consumed via CSS variables (`--msa-*`), applied through Tailwind (`text-msa-text-1`, `bg-msa-fill-2`, etc.)
 - **Backend**: `backend/app/api/` handles HTTP requests and response envelopes;
   `backend/app/backends/ms_agent/` adapts SDK projects, sessions, chat, models,
   skills, MCP, memory and files. Management routes call adapters directly; chat
-  streams through `get_backend().chat_stream`. Execution and persistence belong
+  legacy streams use `get_backend().chat_stream`; session inputs and events use
+  the conversation adapter. Execution and persistence belong
   in SDK services, not duplicated interface code.
 - **Contracts**: update backend models, `frontend/app/lib/types.ts` and
-  `frontend/app/lib/agentProvider.ts` together when changing event payloads.
+  `frontend/app/lib/agentProvider.ts` and `sessionChat.ts` together when changing event payloads.
   Preserve frame order, identifiers and completion handling. In-memory session
   runtime requires one API worker; shutdown must close owned SDK resources and
   file watchers.
+- **State lifecycle**: `bootstrap.py` initializes SDK project/session storage
+  before normal API operations become available. Missing default project metadata
+  opens the recovery page; only health and recovery endpoints remain available
+  until an explicitly confirmed backup, repair and initialization succeed.
+  Request handlers use `common.pm()` and
+  `common.sm_for()` without implicit entity creation. Protect the complete
+  read-modify-write operation with the SDK file lock; keep network calls and
+  async waits outside it. Acquire project storage, settings, then sidecar locks
+  in that order when an operation needs more than one.
+- **Conversation models**: `session_models.py` saves selections and prepares
+  each turn's model configuration. An explicit selection updates the session
+  and the new-chat default; restoring or sending an existing session does not
+  change that default. Drafts stay in page state until creation. Frontend
+  settings requests must send only fields the user changed.
 - **SSR + antd**: antd/x run with `theme.zeroRuntime`, so no component CSS is generated at request time. `pnpm gen:antd-css` (auto-run by `pnpm dev` / `pnpm build`) renders every antd + `@ant-design/x` component through `scripts/genAntdCss.tsx` into `public/assets/antd.<hash>.css`; the root loader returns its href via `app/lib/antdStyle.server.ts` and `root.tsx` links it in `<head>`. `entry.server.tsx` therefore streams HTML untouched.
 
 `frontend/server.js` must route `/api/*` before compression and the SSR catch-all.

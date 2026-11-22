@@ -23,11 +23,12 @@ interface Props {
  * Overlay presentation of a right rail.
  *
  * The rail components draw their own header (title, refresh, close) and fill
- * their container, so the antd chrome is switched off and the body padding
- * zeroed. That combination is easy to get wrong — a stacked second title, a
- * second close button, a panel collapsed to its content width — so it lives
- * here once and both callers (chat view below `xl`, project detail workspace
- * tab) share it.
+ * their container, so the antd chrome is switched off, the body padding zeroed,
+ * and the body scroll disabled — the rail scrolls its own content regions, so
+ * the whole panel never scrolls as one. That combination is easy to get wrong
+ * — a stacked second title, a second close button, a panel collapsed to its
+ * content width — so it lives here once and both callers (chat view below
+ * `xl`, project detail workspace tab) share it.
  */
 export function RailDrawer({
   open,
@@ -48,7 +49,10 @@ export function RailDrawer({
       size={size}
       closable={false}
       destroyOnHidden={destroyOnHidden}
-      styles={{ body: { padding: 0 }, header: { display: 'none' } }}
+      styles={{
+        body: { padding: 0, overflow: 'hidden' },
+        header: { display: 'none' }
+      }}
     >
       {children}
     </Drawer>

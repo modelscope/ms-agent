@@ -21,7 +21,8 @@ import release_artifacts as artifacts
 def release_tree(tmp_path):
     inputs = tmp_path / 'inputs'
     inputs.mkdir()
-    files = {'a.whl': b'wheel', 'a.tar.gz': b'sdist', 'runtime-requirements.txt': b'locked'}
+    files = {'a.whl': b'wheel', 'a.tar.gz': b'sdist', 'runtime-requirements.txt': b'locked',
+             'shell-requirements.txt': b'locked shell tools'}
     for name, data in files.items():
         (inputs / name).write_bytes(data)
     release = {'version': '1.7.0rc0', 'sdk_commit': 'a' * 40,
@@ -58,9 +59,10 @@ def test_restore_checks_archive_bytes_before_loading(release_tree, monkeypatch):
         artifacts.restore_image(directory, inputs)
 
 
-def test_changed_package_cannot_be_used_for_image_restore(release_tree):
+@pytest.mark.parametrize('name', ['a.whl', 'shell-requirements.txt'])
+def test_changed_package_cannot_be_used_for_image_restore(release_tree, name):
     inputs, directory, *_ = release_tree
-    (inputs / 'a.whl').write_bytes(b'rebuilt wheel')
+    (inputs / name).write_bytes(b'changed input')
     with pytest.raises(ValueError, match='input changed'):
         artifacts.restore_image(directory, inputs)
 

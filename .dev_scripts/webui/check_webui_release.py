@@ -123,7 +123,12 @@ def check_artifacts(directory, version, dependencies, sdk_sha):
                  text):
         raise ValueError(
             'Runtime dependency export includes a source/SDK install')
-    inputs = wheels + archives + [runtime]
+    shell = directory / 'shell-requirements.txt'
+    if not shell.is_file():
+        raise ValueError('Missing shell-requirements.txt in image inputs')
+    if shell.read_bytes() != (ROOT / 'docker/webui-shell.txt').read_bytes():
+        raise ValueError('Shell dependency lock differs from the source')
+    inputs = wheels + archives + [runtime, shell]
     info = {
         'format': 1,
         'version': version,

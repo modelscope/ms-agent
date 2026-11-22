@@ -10,7 +10,7 @@ import {
 } from 'react-router'
 import { IconButton } from '~/components/common/IconButton'
 import { Sidebar } from '~/components/layout/Sidebar'
-import { api } from '~/lib/api'
+import { api, orThrow } from '~/lib/api'
 import { useOnMcpSkillChanged } from '~/lib/events'
 import { recordLastAppRoute } from '~/lib/lastAppRoute'
 import { useModelChanged } from '~/lib/modelChanged'
@@ -34,6 +34,8 @@ const MD = '(min-width: 768px)'
 // resolving it per Composer mount re-asked the same question on every session
 // switch and flashed the "search not configured" pill in a beat late.
 export async function loader() {
+  // `orThrow` wraps the whole batch: any failure takes the app shell down, and
+  // a raw ApiError loses its class and status across the SSR boundary.
   const [
     projects,
     sessions,
@@ -43,16 +45,18 @@ export async function loader() {
     globalMcps,
     globalSkills,
     searchSettings
-  ] = await Promise.all([
-    api.listProjects(),
-    api.listSessions(),
-    api.listProviders(),
-    api.listModels(),
-    api.getAgentSettings(),
-    api.listMcps('global'),
-    api.listSkills('global'),
-    api.getSearchSettings()
-  ])
+  ] = await orThrow(
+    Promise.all([
+      api.listProjects(),
+      api.listSessions(),
+      api.listProviders(),
+      api.listModels(),
+      api.getAgentSettings(),
+      api.listMcps('global'),
+      api.listSkills('global'),
+      api.getSearchSettings()
+    ])
+  )
 
   return {
     projects,
@@ -157,24 +161,27 @@ export default function AppLayout() {
   const seenStampRef = useRef(fetchedAt)
   const askedRef = useRef(false)
   const retriedRef = useRef(false)
-  useEffect(function recoverInterruptedRefresh() {
-    if (revalidator.state === 'loading') {
-      askedRef.current = true
-      return
-    }
-    if (navigation.state !== 'idle') return
-    if (fetchedAt !== seenStampRef.current) {
-      seenStampRef.current = fetchedAt
-      askedRef.current = false
-      retriedRef.current = false
-      return
-    }
-    if (!askedRef.current || retriedRef.current) return
-    // One attempt per dropped refresh: whatever keeps the stamp from advancing
-    // must cost a single extra request, never a loop.
-    retriedRef.current = true
-    revalidate()
-  }, [revalidator.state, navigation.state, fetchedAt, revalidate])
+  useEffect(
+    function recoverInterruptedRefresh() {
+      if (revalidator.state === 'loading') {
+        askedRef.current = true
+        return
+      }
+      if (navigation.state !== 'idle') return
+      if (fetchedAt !== seenStampRef.current) {
+        seenStampRef.current = fetchedAt
+        askedRef.current = false
+        retriedRef.current = false
+        return
+      }
+      if (!askedRef.current || retriedRef.current) return
+      // One attempt per dropped refresh: whatever keeps the stamp from advancing
+      // must cost a single extra request, never a loop.
+      retriedRef.current = true
+      revalidate()
+    },
+    [revalidator.state, navigation.state, fetchedAt, revalidate]
+  )
 
   // Stash the current non-settings location so /settings → Back can jump
   // straight here instead of through the settings sub-nav history.
@@ -222,7 +229,15 @@ export default function AppLayout() {
           />
         </Drawer>
 
-        <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-[10px]">
+        {/* `md:pl-0`: on desktop the sidebar already supplies the left gutter
+            (16px around the collapsed rail's cards, 12px in expanded mode), so
+            keeping main's own 10px there would stack on top of it and push the
+            content ~10px further from the sidebar than the rail's outer gutter —
+            the asymmetry you'd read as "the right side is wider". Dropping it
+            lets that single sidebar gutter be the content's left inset. Mobile
+            keeps the full padding: there is no sidebar (drawer), and the toggle
+            below lives inside this padding. */}
+        <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-[12px] md:pl-0">
           {/* Mobile sidebar toggle — opens the drawer (small screens only) */}
           <IconButton
             variant="filled"

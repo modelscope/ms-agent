@@ -92,3 +92,27 @@ def test_resending_same_project_path_is_tolerated(unlocked_project):
         ProjectUpdate(local_path=unlocked_project.local_path, name="renamed"))
     assert got.name == "renamed"
     assert got.local_path == unlocked_project.local_path
+
+
+def test_reopening_folder_keeps_existing_project_settings(tmp_path, monkeypatch):
+    monkeypatch.setenv('MS_AGENT_HOME', str(tmp_path / 'home'))
+    folder = tmp_path / 'existing-folder'
+    folder.mkdir()
+    first = P.create_project(ProjectCreate(name='original', local_path=str(folder)))
+    P.update_project(first.id, ProjectUpdate(description='keep me', permission_mode='auto',
+                                             memory_llm_model='chosen', memory_recall_top_k=7))
+    second = P.create_project(ProjectCreate(name='reopened', local_path=str(folder)))
+    assert second.id == first.id and second.name == 'original'
+    assert second.description == 'keep me'
+    assert second.memory_llm_model == 'chosen' and second.memory_recall_top_k == 7
+    assert second.permission_mode == 'auto'
+
+
+def test_partial_memory_model_updates_preserve_other_fields(unlocked_project):
+    P.update_project(unlocked_project.id, ProjectUpdate(memory_llm_provider_id='first',
+                                                        memory_llm_model='M1', memory_recall_top_k=5))
+    got = P.update_project(unlocked_project.id, ProjectUpdate(memory_recall_top_k=9))
+    assert got.memory_llm_model == 'M1' and got.memory_llm_provider_id == 'first'
+    assert got.memory_recall_top_k == 9
+    got = P.update_project(unlocked_project.id, ProjectUpdate(memory_llm_model=None))
+    assert got.memory_llm_model is None and got.memory_recall_top_k == 9

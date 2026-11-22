@@ -1,3 +1,5 @@
+import threading
+
 import pytest
 from ms_agent.project.manager import ProjectManager
 from ms_agent.project.types import DEFAULT_PROJECT_ID, Project
@@ -13,6 +15,35 @@ class TestProjectManager:
         assert default is not None
         assert default.id == DEFAULT_PROJECT_ID
         assert default.name == 'Default'
+
+    def test_concurrent_managers_can_create_the_default_project(
+            self, tmp_path):
+        # A first visit does this from several requests at once: the WebUI
+        # builds a manager per request and construction creates the default
+        # project when missing.
+        home = tmp_path / 'home'
+        callers = 6
+        failures: list[BaseException] = []
+        names: list[str] = []
+        start = threading.Barrier(callers)
+
+        def visit() -> None:
+            start.wait()
+            try:
+                names.append(
+                    ProjectManager(
+                        base_dir=str(home)).get_default_project().name)
+            except BaseException as exc:  # noqa: B902 - reported verbatim
+                failures.append(exc)
+
+        threads = [threading.Thread(target=visit) for _ in range(callers)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not failures, f'{len(failures)} failed: {failures[:3]}'
+        assert names == ['Default'] * callers
 
     def test_create_and_get(self, pm):
         project = pm.create(name='Test Project')
@@ -139,3 +170,30 @@ class TestProjectManager:
         assert again is not None
         assert again.path == project.path
         assert again.instruction == 'be terse'
+
+    def test_find_by_path_returns_create_project(self, pm, tmp_path):
+        folder = tmp_path / 'webui-created'
+        folder.mkdir()
+        created = pm.create(name='From WebUI', path=str(folder),
+                            init_workspace=False)
+        found = pm.find_by_path(str(folder))
+        assert found is not None
+        assert found.id == created.id
+
+    def test_open_folder_reuses_create_project_id(self, pm, tmp_path):
+        """TUI --work-dir on a WebUI-created project must not mint a path-key."""
+        from ms_agent.project.paths import project_key
+        folder = tmp_path / 'shared-workspace'
+        folder.mkdir()
+        created = pm.create(
+            name='WebUI', path=str(folder), init_workspace=False)
+        opened = pm.open_folder(str(folder))
+        assert opened.id == created.id
+        assert opened.id != project_key(str(folder))
+        matching = [p for p in pm.list() if p.path == str(folder.resolve())]
+        assert len(matching) == 1
+
+    def test_open_folder_on_default_project_path_keeps_default(self, pm):
+        default = pm.get_default_project()
+        opened = pm.open_folder(default.path)
+        assert opened.id == DEFAULT_PROJECT_ID

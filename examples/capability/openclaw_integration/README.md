@@ -83,7 +83,7 @@ python3 -m ms_agent.capabilities.mcp_server --check
 ./install_skill.sh
 ```
 
-This copies the `ms-agent-skills/` directory into OpenClaw's workspace skills directory so the agent can reference it.
+This copies `SKILL.md`, `references/`, and `scripts/` from `ms-agent-skills/` into OpenClaw's workspace skills directory (`skills/ms-agent/`) so the agent can reference it.
 
 ### Step 3: Configure OpenClaw
 

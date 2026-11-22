@@ -38,7 +38,7 @@ llm:
   # 大模型服务 backend
   service: modelscope
   # 模型 id
-  model: Qwen/Qwen3-235B-A22B-Instruct-2507
+  model: Qwen/Qwen3.8-Flash-Next
   # 模型 api_key
   modelscope_api_key:
   # 模型 base_url
@@ -180,6 +180,9 @@ tool_call_timeout: 30000
 
 # 输出 artifact 目录
 output_dir: output
+
+# 每次任务开始前保存工作区快照，默认关闭
+enable_snapshots: false
 
 # 帮助信息，通常在运行错误后出现
 help: |

@@ -52,3 +52,38 @@ def test_mcp_fingerprint_tracks_config_file_edits(tmp_path, monkeypatch):
         json.dumps({"mcpServers": {"s": {"command": "uvx", "args": ["x"]}}}))
     after = _mcp_fingerprint(_P())
     assert before and after and before != after
+
+
+async def test_reconnect_is_scoped_and_never_cancels_active_turn(tmp_path, monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+    from ms_agent.config import MCPConfigManager
+    from app.backends.ms_agent import common
+    from app.backends.ms_agent.runtime import RuntimeRegistry
+
+    monkeypatch.setattr(common, 'home', lambda: str(tmp_path / 'home'))
+    config = {'command': 'python3', 'args': []}
+    gm = MCPConfigManager(global_root=common.home())
+    gm.add('same', config, scope='global')
+    runtimes = {}
+    for pid in ('inherits', 'overrides', 'disabled', 'unrelated'):
+        path = tmp_path / pid
+        path.mkdir()
+        mm = MCPConfigManager(global_root=common.home(), project_root=str(path))
+        if pid == 'overrides':
+            mm.add('same', {'command': 'local', 'args': []}, scope='project')
+        if pid == 'disabled':
+            mm.add('same', dict(config, enabled=False), scope='project')
+        lock = asyncio.Lock()
+        await lock.acquire()  # Simulate an active turn.
+        runtimes[pid] = SimpleNamespace(project=SimpleNamespace(id=pid, path=str(path)),
+            agent=SimpleNamespace(mcp_config={'mcpServers': {'same': config} if pid != 'unrelated' else {}}),
+            needs_rebuild=False, turn_lock=lock)
+    registry = RuntimeRegistry()
+    registry._runtimes = runtimes
+    assert await registry.reconnect_mcp('global', 'same') == 1
+    assert runtimes['inherits'].needs_rebuild
+    assert not any(runtimes[p].needs_rebuild for p in ('overrides', 'disabled', 'unrelated'))
+    assert all(rt.turn_lock.locked() for rt in runtimes.values())
+    assert await registry.reconnect_mcp('project:overrides', 'same') == 1
+    assert runtimes['overrides'].needs_rebuild

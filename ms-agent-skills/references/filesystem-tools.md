@@ -8,7 +8,7 @@ skill index:
 - `replace_file_lines`
 
 Lower-level `file_system` primitives such as `write_file`, `read_file`, and
-`list_files` belong to the base tool layer. They may be available in other
+`glob` belong to the base tool layer. They may be available in other
 contexts such as delegated agents, but they are **not** additional capability
 tools defined on this page.
 
@@ -26,7 +26,7 @@ Activate these tools when:
 ## Tool: `replace_file_contents`
 
 **Granularity:** Tool (atomic)
-**Estimated Duration:** instant
+**Estimated Duration:** seconds
 
 The flagship editing tool. Finds an exact substring in a file and replaces
 it with new content. Because it matches by **content** instead of line
@@ -84,6 +84,20 @@ replace_file_contents(
   Read the file first to get the precise content to match.
 - When `occurrence` exceeds the total count, an error is returned.
 
+### Response Format
+
+On success:
+
+```json
+{"result": "Replaced occurrence 1 of 3 in src/utils.py"}
+```
+
+On failure:
+
+```json
+{"error": "Could not find the exact content to replace in src/utils.py"}
+```
+
 ### Why Use This Over the low-level `write_file` primitive?
 
 The `write_file` name below refers to the lower-level `file_system` tool, not
@@ -99,7 +113,7 @@ to another capability listed on this page.
 ## Tool: `replace_file_lines`
 
 **Granularity:** Tool (atomic)
-**Estimated Duration:** instant
+**Estimated Duration:** seconds
 
 Replaces a range of lines by line number. Useful when you know the exact
 line range and concurrency is not a concern.
@@ -141,6 +155,20 @@ replace_file_lines(
     start_line=10,
     end_line=15
 )
+```
+
+### Response Format
+
+On success:
+
+```json
+{"result": "Replaced lines 10-15 in src/config.py"}
+```
+
+On failure:
+
+```json
+{"error": "end_line is required when start_line > 0"}
 ```
 
 ### Caveat

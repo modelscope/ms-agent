@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Context: only the verified wheel/sdist, dependency export and release.json.
+# Context: verified packages, service/shell dependency locks and release.json.
 FROM node:22-bookworm-slim AS node
 
 FROM python:3.12-slim-bookworm AS base
@@ -36,7 +36,8 @@ LABEL org.opencontainers.image.title="MS-Agent WebUI" \
       org.opencontainers.image.version="${SDK_VERSION}" \
       org.opencontainers.image.revision="${SDK_SHA}" \
       com.modelscope.ms-agent.wheel-sha256="${WHEEL_SHA256}"
-ENV PATH="/opt/venv/bin:${PATH}" \
+ENV MS_AGENT_SHELL_PATH="${PATH}" \
+    PATH="/opt/venv/bin:${PATH}" \
     NODE_ENV=production \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -45,13 +46,39 @@ ENV PATH="/opt/venv/bin:${PATH}" \
     MS_AGENT_WEBUI_CACHE=/opt/ms-agent-webui-cache
 COPY --from=dependencies /opt/venv /opt/venv
 COPY release.json /opt/ms-agent-release/release.json
+# Keep task libraries in the system Python; never expose service site-packages
+# to the agent's shell. The same immutable inputs also record this lockfile.
+COPY shell-requirements.txt /opt/ms-agent-release/shell-requirements.txt
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system --python /usr/local/bin/python --require-hashes --no-deps \
+        -r /opt/ms-agent-release/shell-requirements.txt
 # Create the persistent data directory and the preloaded WebUI dependency cache.
 RUN mkdir -p /data /opt/ms-agent-webui-cache
 WORKDIR /app
 # This uses the installed wheel and the final runtime's Node version. No source
 # checkout or frontend compilation is performed inside the image.
+#
+# MS_AGENT_WEBUI_TRACE_RUNTIME keeps only the dependency closure the SSR entries
+# can actually reach: `pnpm install --prod` lands ~430 MB in the cache against a
+# real closure of ~51 MB, the waste sitting inside the packages rather than in a
+# list of unneeded ones. Tracing imports `tsx` and `@vercel/nft`, both
+# devDependencies, so the install it runs on is a full one -- transient, and
+# discarded within this single RUN, so no layer retains it. The tracer boots the
+# closure and renders a page before the full tree goes away, which is why a
+# dependency it could not see fails HERE instead of a request in production.
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
-    ms-agent ui --prepare-only --no-browser
+    MS_AGENT_WEBUI_TRACE_RUNTIME=1 ms-agent ui --prepare-only --no-browser
+# Runtime defaults also apply to agent subprocesses with filtered environments.
+# Mount replacement files at these paths to use another package index.
+RUN <<'EOF'
+mkdir -p /etc/uv
+npm config set --global registry https://registry.npmmirror.com/
+printf '%s\n' '[global]' \
+    'index-url = https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple' > /etc/pip.conf
+printf '%s\n' '[[index]]' \
+    'url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"' \
+    'default = true' > /etc/uv/uv.toml
+EOF
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
     CMD ["curl", "--noproxy", "*", "--fail", "--silent", "http://127.0.0.1:8000/api/health"]

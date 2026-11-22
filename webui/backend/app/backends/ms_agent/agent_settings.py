@@ -7,6 +7,7 @@ from app.backends.ms_agent.common import home
 from app.backends.ms_agent.mapping import decode_model_id, encode_model_id
 from app.backends.ms_agent.settings_store import settings_lock
 from app.schemas.agent_settings import AgentSettings
+from ms_agent.config.interaction_settings import InteractionSettings
 
 
 def _ps():
@@ -26,6 +27,7 @@ def get_settings() -> AgentSettings:
     mem_cfg = sidecar.get("agent_settings", "memory_models", {}) or {}
     embed_mode = mem_cfg.get("embed_mode")
     return AgentSettings(
+        follow_up_behavior=InteractionSettings(home()).get(),
         default_provider_id=provider,
         default_model_id=default_model_id,
         default_memory_enabled=bool(cfg.memory_enabled),
@@ -41,40 +43,63 @@ def get_settings() -> AgentSettings:
     )
 
 
+# Bool / enum switches have no separate "clear" value. JSON null is the same
+# as omitting the field: leave the stored setting alone. Optional string pins
+# (memory_llm_model and the other memory_* fields) still treat null as clear.
+_NULL_MEANS_UNCHANGED = frozenset({
+    "follow_up_behavior",
+    "default_memory_enabled",
+    "default_memory_backend",
+    "global_mcp_auto_attach",
+    "global_skill_auto_attach",
+})
+
+
 def update_settings(body: AgentSettings) -> AgentSettings:
-    from ms_agent.personalization import PersonalizationConfig
+    from app.backends.errors import BadRequest
+    from ms_agent.utils.json_store import json_transaction
+    from pathlib import Path
 
+    patch = body.model_dump(exclude_unset=True)
+    for key in list(patch):
+        if key in _NULL_MEANS_UNCHANGED and patch[key] is None:
+            del patch[key]
     with settings_lock():
-        # default_model_id arrives as a base64 Model.id; decode and point the active
-        # model (llm block + default_model + catalog) at it so chat actually uses it.
-        if body.default_model_id:
-            try:
-                provider, model = decode_model_id(body.default_model_id)
+        if 'follow_up_behavior' in patch:
+            InteractionSettings(home()).update(patch['follow_up_behavior'])
+        if "default_model_id" in patch:
+            if body.default_model_id:
+                try:
+                    provider, model = decode_model_id(body.default_model_id)
+                except (ValueError, TypeError):
+                    raise BadRequest("Invalid model selection.") from None
+                from app.backends.ms_agent.session_models import validate_selection
+                if "default_provider_id" in patch and body.default_provider_id not in (None, provider):
+                    raise BadRequest("The selected model belongs to a different provider.")
+                validate_selection(provider, model)
                 model_link.set_active_model(provider, model)
-            except Exception:
-                pass
+            else:
+                with json_transaction(Path(home()) / "settings.json") as data:
+                    model_link.preserve_legacy_credentials(data)
+                    data.pop("default_model", None)
+                    data["llm"] = {}
+        elif "default_provider_id" in patch:
+            provider, _ = model_link.active_model()
+            if body.default_provider_id != provider:
+                raise BadRequest("Select a model together with its provider.")
 
-        ps = _ps()
-        cur = ps.load()
-        ps.save(
-            PersonalizationConfig(
-                global_instruction=cur.global_instruction,  # preserve
-                memory_enabled=body.default_memory_enabled,
-                memory_backend=body.default_memory_backend,
-            )
-        )
-    sidecar.put("agent_settings", "global_mcp_auto_attach", body.global_mcp_auto_attach)
-    sidecar.put("agent_settings", "global_skill_auto_attach", body.global_skill_auto_attach)
-    sidecar.put(
-        "agent_settings",
-        "memory_models",
-        {
-            "llm_provider_id": body.memory_llm_provider_id,
-            "llm_model": body.memory_llm_model,
-            "embed_mode": body.memory_embed_mode,
-            "embed_provider_id": body.memory_embed_provider_id,
-            "embed_model": body.memory_embed_model,
-            "recall_top_k": body.memory_recall_top_k,
-        },
-    )
-    return get_settings()
+        personalization = {
+            key.removeprefix("default_"): value
+            for key, value in patch.items()
+            if key in ("default_memory_enabled", "default_memory_backend")
+        }
+        if personalization:
+            _ps().update(**personalization)
+        for key in ("global_mcp_auto_attach", "global_skill_auto_attach"):
+            if key in patch:
+                sidecar.put("agent_settings", key, patch[key])
+        memory = {key.removeprefix("memory_"): value for key, value in patch.items()
+                  if key.startswith("memory_")}
+        if memory:
+            sidecar.merge("agent_settings", "memory_models", memory)
+        return get_settings()

@@ -19,6 +19,7 @@ class Mcp(BaseModel):
     # env for stdio servers, headers for remote (sse/http) servers.
     env: dict = Field(default_factory=dict)
     headers: dict = Field(default_factory=dict)
+    startup_timeout: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     created_at: datetime
 
 
@@ -31,6 +32,7 @@ class McpCreate(BaseModel):
     scope: str
     env: dict = Field(default_factory=dict)
     headers: dict = Field(default_factory=dict)
+    startup_timeout: float | None = Field(default=None, gt=0, allow_inf_nan=False)
 
 
 class McpReplace(BaseModel):
@@ -53,14 +55,25 @@ class McpUpdate(BaseModel):
     enabled: bool | None = None
     env: dict | None = None
     headers: dict | None = None
+    startup_timeout: float | None = Field(default=None, gt=0, allow_inf_nan=False)
 
 
 class McpHealth(BaseModel):
-    """Live reachability of an enabled MCP server (real connect+initialize).
-    `id` matches the Mcp row so the frontend can join. When healthy is False,
-    `error` is a short reason (e.g. 'Session terminated', 'timed out')."""
+    """Independent diagnostic, not the current session's connection state.
+
+    None means the command exists but the connection has not been verified.
+    A connection-level success includes initialize and list_tools.
+    """
     id: str
     name: str
     scope: str
-    healthy: bool
+    healthy: bool | None
+    level: Literal["command", "connection"] = "command"
+    checked_at: float = 0
+    expires_at: float = 0
     error: str | None = None
+
+
+class McpReconnect(BaseModel):
+    scheduled: int
+    status: Literal["scheduled"] = "scheduled"
