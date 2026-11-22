@@ -34,3 +34,12 @@ global-exclude *.pyc
 global-exclude __pycache__
 global-exclude .DS_Store
 global-exclude *.so
+
+# Local credentials and execution state are never distribution resources.
+prune temp
+prune ms_agent/agent/output
+global-exclude */.memory/* */.ms_agent/* */.ms-agent/* */*.secrets/*
+global-exclude */output/* */outputs/* */.venv/* */venv/* */node_modules/*
+global-exclude .env .env.*
+recursive-include projects .env.example
+include webui/backend/.env.example
