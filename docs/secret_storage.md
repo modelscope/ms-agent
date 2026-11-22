@@ -61,6 +61,10 @@ Decryption failure does not fall back to an environment credential. Configuratio
 
 WebUI startup checks global settings and every registered project, including unopened projects. SDK resolution checks global settings and the current project; management reads check subsequently imported global settings. Only registered sensitive fields change. Migration is idempotent and preserves other configuration and messages.
 
+A normal upgrade requires no API-key re-entry or vector-store rebuild. The credential value stays the same; only its storage changes. Chat and context compaction share a model client, file memory reuses that client, and vector memory resolves credentials separately for extraction and embedding. Restored conversations use current valid configuration. This means no extra user configuration steps; it does not promise a restart-free rollout or validation against every historical release.
+
+Deployment must provide writable managed configuration and a creatable default master-key directory (or a valid external key), then preserve the matching data and key across rebuilds. The first migration incurs file I/O. Rollout acceptance should include an instance with existing conversations and memory, verifying continued chat, compaction, memory writes and retrieval.
+
 Migration is per file, not an instance-wide transaction. Malformed files, or files mixing plaintext with ciphertext that cannot be decrypted, remain unchanged and produce an error; healthy files can still migrate. WebUI keeps management available and logs incomplete migration. Such an instance must not be treated as fully protected for export. SDK parsing fails explicitly when configuration cannot be handled safely.
 
 If the master key is lost, restore the original first. Messages remain readable. Metadata-only edits and clearing ciphertext do not require generating a missing default key. Existing managed ciphertext blocks automatic default-key creation.

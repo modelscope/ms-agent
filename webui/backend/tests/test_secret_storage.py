@@ -81,3 +81,57 @@ def test_validation_does_not_echo_secret_body():
         response = client.patch("/api/providers/openai", json={"api_key": {"nested": "synthetic-test-secret"}})
         assert response.status_code == 422
         assert "synthetic-test-secret" not in response.text
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_webui_upgrade_resolves_auxiliary_credentials_without_rewriting_plaintext(
+    tmp_path, monkeypatch, legacy
+):
+    from app.backends.ms_agent import config, titler
+    from ms_agent.llm.credentials import CredentialResolver
+    from omegaconf import OmegaConf
+
+    home = tmp_path / "home"
+    monkeypatch.setenv("MS_AGENT_HOME", str(home))
+    monkeypatch.delenv("MS_AGENT_SECRET_KEY", raising=False)
+    monkeypatch.delenv("MS_AGENT_SECRET_KEY_FILE", raising=False)
+    data = {
+        "providers": {
+            name: {"api_key": f"synthetic-{name}-key", "models": [model],
+                   "base_url": "https://example.test/v1", "protocol": "openai"}
+            for name, model in (("conversation", "chat"), ("facts", "extract"),
+                                ("vectors", "embed"))
+        },
+        "llm": {"provider": "conversation", "model": "chat"},
+    }
+    path = home / "settings.json"
+    if legacy:
+        home.mkdir()
+        path.write_text(json.dumps(data))
+        assert not SecretStore(home).key_file.exists()
+    else:
+        write_managed_config(path, data, home=home)
+    with TestClient(app):
+        saved = json.loads(path.read_text())
+        before = path.read_bytes()
+        assert all(entry["api_key"].startswith("enc:v1:")
+                   for entry in saved["providers"].values())
+        selected = OmegaConf.create({"llm": {
+            "api_key": saved["providers"]["conversation"]["api_key"]}})
+        assert CredentialResolver.resolve_api_key(
+            CredentialResolver.provider_spec("conversation"), selected
+        ) == "synthetic-conversation-key"
+        assert titler._llm_config()[1] == "synthetic-conversation-key"
+        memory = {"llm_provider_id": "facts", "llm_model": "extract",
+                  "embed_provider_id": "vectors", "embed_model": "embed"}
+        assert config._mem0_llm(saved, memory)["config"]["api_key"] == "synthetic-facts-key"
+        assert config._resolve_embedder(saved, memory)["api_key"] == "synthetic-vectors-key"
+        assert path.read_bytes() == before
+        # Auxiliary calls must fail on key loss, even if a fallback env key exists.
+        SecretStore(home).key_file.unlink()
+        monkeypatch.setenv("OPENAI_API_KEY", "synthetic-fallback-key")
+        for consume in (lambda: config._mem0_llm(saved, memory),
+                        lambda: config._resolve_embedder(saved, memory),
+                        titler._llm_config):
+            with pytest.raises(SecretError):
+                consume()
