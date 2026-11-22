@@ -12,6 +12,12 @@ Model setup has three steps: configure a provider connection, add a model, and s
 
 The display name is a UI label; the model ID goes to the service. Identically named models from different providers need not accept the same parameters.
 
+## Model purpose
+
+When adding or editing a model, set **Model purpose** to **Chat / fact extraction** or **Embedding**. **Unspecified** preserves compatibility with existing models; it is not capability detection. Embedding models are excluded from conversation selectors and cannot become the chat default. The memory configuration check rejects models marked as embedding for extraction and models marked as chat for embeddings.
+
+The label helps avoid choosing the wrong endpoint; it does not turn a chat model into an embedding model. Suggested IDs do not guarantee account or endpoint access. See [Memory management](memory.md) for vector-memory configuration checks.
+
 ## Custom endpoints
 
 **Add provider** requires a unique ID, Base URL, and protocol; the display name is optional. OpenAI-compatible endpoints generally use an API root such as `/v1`; Anthropic endpoints use their actual service root. Do not substitute a dashboard URL or an arbitrary full chat/completions path.
@@ -30,7 +36,7 @@ For models with reasoning controls, choose a supported level in settings or besi
 
 Image understanding supports **Auto / On / Off** overrides. When disabled, attachments pass only paths, not proof that the main model received image pixels. Audio, video, and PDF capability labels do not imply native upload support for those formats.
 
-The context limit can tighten a known window or cap an unknown model; clear it to restore defaults. See [WebUI workspace](webui.md) for the context ring, manual compaction, and capability-data updates, and [Context management](../core/context.md) for budgets.
+Under **Context token limit**, the model editor shows the model maximum, current budget, and, when available, the automatic compaction threshold. A manual limit can tighten a known window or cap an unknown model. Clear it to restore defaults; the budget is recalculated after saving. See [WebUI workspace](webui.md) for the context ring, manual compaction, and capability-data updates, and [Context management](../core/context.md) for budgets.
 
 ## Recover from errors
 

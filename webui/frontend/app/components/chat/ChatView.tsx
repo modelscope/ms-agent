@@ -181,17 +181,21 @@ export function ChatView({
       setRailOpen((p) => !p)
     } else setRailDrawer((p) => !p)
   }
-  // Clicking a step card opens its detail in the rail (a dedicated component,
-  // not the file workspace).
-  const openStepDetail = (step: AgentStep) => {
-    setDetailStep(step)
-    openRail()
-  }
   // Clicking a file card in a chat bubble opens the file workspace (clearing any
   // step detail) and selects that path for preview.
   const openWorkspaceFile = (path: string) => {
     setDetailStep(null)
     setOpenFileReq((prev) => ({ path, nonce: (prev?.nonce ?? 0) + 1 }))
+    openRail()
+  }
+  // Persisted artifacts use the workspace's file preview. Other steps show
+  // their invocation details rather than trying to interpret them as files.
+  const openStepDetail = (step: AgentStep) => {
+    if (step.kind === 'artifact' && typeof step.meta.path === 'string' && step.meta.path) {
+      openWorkspaceFile(step.meta.path)
+      return
+    }
+    setDetailStep(step)
     openRail()
   }
 

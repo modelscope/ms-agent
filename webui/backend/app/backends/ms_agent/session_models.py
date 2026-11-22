@@ -51,6 +51,11 @@ def validate_selection(provider: str, model: str, data: dict | None = None,
         raise BadRequest("This model is no longer available. Select a configured model.")
     if (metadata.get("providers", {}).get(provider) or {}).get("enabled") is False:
         raise BadRequest("This provider is disabled. Enable it or select another model.")
+    from app.backends.ms_agent.config import _KNOWN_EMBED_MODELS
+
+    purpose = (metadata.get("models", {}).get(encode_model_id(provider, model)) or {}).get("purpose")
+    if purpose == "embedding" or (not purpose and _KNOWN_EMBED_MODELS.get(provider) == model):
+        raise BadRequest("Embedding models cannot be used for chat. Select a chat model.")
 
 
 def _remember_effort(session, key, data, metadata, effort=None):

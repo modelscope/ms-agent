@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional, Tuple
 
-from ms_agent.llm.message_text import flatten_message_text
+from ms_agent.llm import token_budget
 from ms_agent.utils.logger import get_logger
 # Both strategies MUST use the same estimator and trigger boundary.
 from .tool_pruner import (_estimate_message_tokens, _estimate_tokens,
@@ -64,6 +64,7 @@ class SummaryCompactor:
 
     def __init__(self, llm: Any = None) -> None:
         self.llm = llm
+        self._last_summary_attempt = None
 
     def apply(
         self,
@@ -92,6 +93,17 @@ class SummaryCompactor:
                              for m in kept) >= hard_limit:
             self.last_result = 'blocked'
             return visible, None
+
+        attempt_config = {k: config.get(k) for k in (
+            'context_limit', 'input_limit', 'reserved_buffer', 'compression_threshold',
+            'tool_tokens', 'output_reserve', 'summary_prompt', 'summary_max_tokens',
+            'summary_input_tokens', 'summary_input_char_limit', 'summary_max_calls',
+            'summary_reasoning_effort', 'model')}
+        key = token_budget.summary_attempt_key(visible, attempt_config)
+        if key == self._last_summary_attempt and not config.get('force_compaction'):
+            self.last_result = 'failed'
+            return visible, None
+        self._last_summary_attempt = key
 
         summary_config = dict(config)
         summary_config['summary_target_tokens'] = min(
@@ -137,7 +149,7 @@ class SummaryCompactor:
         prompt = config.get('summary_prompt', SUMMARY_PROMPT)
         parts = []
         for msg in messages:
-            content = flatten_message_text(msg.get('content', ''))
+            content = token_budget.summary_text(msg)
             if msg.get('tool_calls'):
                 content += '\nTOOL_CALLS: ' + json.dumps(
                     msg['tool_calls'], ensure_ascii=False)

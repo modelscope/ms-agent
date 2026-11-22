@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+ModelPurpose = Literal["unknown", "chat", "embedding"]
+
 ReasoningEffort = Literal["auto", "off", "on", "minimal", "low", "medium", "high", "xhigh", "max"]
 
 
@@ -50,6 +52,7 @@ class Model(BaseModel):
     name: str
     display_name: str = ""
     is_builtin: bool = False
+    purpose: ModelPurpose = "unknown"
     advanced_params: dict = Field(default_factory=dict)
     supports_vision: bool | None = None
     effective_supports_vision: bool = False
@@ -64,6 +67,7 @@ class ModelCreate(BaseModel):
     provider_id: str
     name: str = Field(min_length=1, max_length=160)
     display_name: str = ""
+    purpose: ModelPurpose = "unknown"
     advanced_params: dict = Field(default_factory=dict)
     reasoning_effort: ReasoningEffort | None = None
     supports_vision: bool | None = None
@@ -72,6 +76,7 @@ class ModelCreate(BaseModel):
 
 class ModelUpdate(BaseModel):
     display_name: str | None = None
+    purpose: ModelPurpose | None = None
     advanced_params: dict | None = None
     reasoning_effort: ReasoningEffort | None = None
     supports_vision: bool | None = None

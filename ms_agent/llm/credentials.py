@@ -14,9 +14,10 @@ from __future__ import annotations
 import os
 import re
 from omegaconf import DictConfig
+from types import SimpleNamespace
 from typing import Optional
 
-from .spec import ProviderSpec
+from .spec import TRANSPORT_OPENAI_COMPAT, ProviderSpec, get_registry
 
 
 def _cfg_get(config: DictConfig, field: str) -> Optional[str]:
@@ -82,6 +83,30 @@ def missing_api_key_setup_text(exc: BaseException, service: str = '') -> str:
 
 
 class CredentialResolver:
+
+    @staticmethod
+    def provider_spec(provider: str) -> ProviderSpec:
+        """The same named-provider lookup for chat and auxiliary model calls."""
+        return get_registry().get(provider) or ProviderSpec(
+            name=provider or 'custom',
+            display_name=provider or 'Custom',
+            transport=TRANSPORT_OPENAI_COMPAT,
+            api_key_env=['OPENAI_API_KEY'],
+            base_url_env=['OPENAI_BASE_URL'])
+
+    @classmethod
+    def resolve_fields(cls, provider: str,
+                       fields: dict) -> tuple[Optional[str], str]:
+        """Resolve an already-merged provider/LLM block without persisting env.
+
+        Callers merge their explicit overrides before entering the SDK's
+        credential precedence chain. In particular, a custom gateway keeps
+        its own identity instead of being inferred from its model name.
+        """
+        spec = cls.provider_spec(provider)
+        config = SimpleNamespace(llm=fields)
+        return cls.resolve_api_key(spec,
+                                   config), cls.resolve_base_url(spec, config)
 
     @staticmethod
     def resolve_api_key(spec: ProviderSpec,

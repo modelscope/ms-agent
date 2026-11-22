@@ -210,6 +210,7 @@ class ToolCallCompleted(AgentEvent):
     result: str = ''
     error: Optional[str] = None
     duration_s: Optional[float] = None
+    attachments: List[dict] = field(default_factory=list)
     execution_status: str = 'completed'
     skip_reason: Optional[str] = None
 

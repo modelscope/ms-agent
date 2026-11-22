@@ -228,6 +228,10 @@ class ContextAssembler:
                 worker.exception(
                 )  # Retrieve a late failure, never its result.
             self._take_usage(strategy)
+            # An abandoned attempt must not suppress a later explicit retry
+            # of this unchanged window after the user resumes the agent.
+            if hasattr(strategy, '_last_summary_attempt'):
+                strategy._last_summary_attempt = None
             raise
 
     def _prepare_window(self):

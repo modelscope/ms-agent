@@ -18,6 +18,14 @@ llm:
 
 Merge these fields into an already configured vision model. `supports_vision` is tri-state: unset follows model metadata, with unknown models defaulting to disabled; explicit true/false is a user override. Do not mark a text-only model as image-capable.
 
+## Images returned by MCP tools
+
+MCP images are validated for base64 encoding, format, and readability, then stored by content hash under `.ms_agent/artifacts/images/` in the workspace. Tool results carry relative paths and media types in image order, not encoded pixels embedded in ordinary result text.
+
+A vision-capable main model can receive these images through OpenAI-compatible or Anthropic transports. With image understanding disabled, only references are provided. The WebUI can preview images in tool results, but display alone does not prove the current model received pixels. Session recovery and forks reuse stored references; backups must include the artifact files.
+
+Tool images are currently limited to 16 MiB decoded and 40 megapixels, with declared media types matching the actual bytes. Invalid or unsupported images mark the result as an error while retaining readable text. These local checks are separate from provider input limits.
+
 ## Encoding and budgets
 
 | Option | Meaning |
@@ -37,4 +45,4 @@ The shared long-edge baseline is 2048, with provider-specific overrides. The bun
 
 Generation uses dedicated tools, credentials, and application configuration. See [Tools](tools.md) and [Singularity Cinema](../applications/singularity-cinema.md). Record model, protocol, image dimensions, and errors when diagnosing failures, without exposing private images or keys.
 
-Implementation: `llm/multimodal.py`, `llm/spec.py`, `tools/image_reader_tool.py`, `agent/agent.yaml`.
+Implementation: `llm/multimodal.py`, `llm/spec.py`, `tools/mcp_client.py`, `utils/artifact_manager.py`, `tools/image_reader_tool.py`, `agent/agent.yaml`.

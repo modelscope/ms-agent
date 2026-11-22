@@ -18,6 +18,14 @@ llm:
 
 将这些字段合并到已配置的视觉模型中。`supports_vision`是三态：未设置时按模型元数据识别，未知模型默认关闭；显式false/true是用户覆盖。不要给纯文本模型强行标true。
 
+## MCP 返回的图片
+
+MCP 工具返回的图片经过 base64、格式和可读性校验后，按内容哈希保存到工作目录的 `.ms_agent/artifacts/images/`。工具结果携带相对路径和媒体类型，保留多张图片的顺序，不把编码后的图片塞进普通结果文本。
+
+支持图片的主模型可经 OpenAI 兼容或 Anthropic 协议接收这些图片；关闭图片理解时只提供引用路径。WebUI 在工具结果中展示可预览图片，但界面能显示不代表当前模型已收到像素。会话恢复与分支复用已保存引用，备份时也应保留对应产物文件。
+
+当前工具图片上限为解码后 16 MiB、4000 万像素，且声明媒体类型必须与实际文件一致。无效或不支持的图片标记为工具错误，同时保留可读文本；这些本地校验与供应商输入上限分别计算。
+
 ## 编码与预算
 
 | 选项 | 含义 |
@@ -37,4 +45,4 @@ llm:
 
 图像/视频生成需要对应工具、服务凭据和项目配置，见[工具](tools.md)和[Singularity Cinema](../applications/singularity-cinema.md)。排障时记录模型、协议、图片尺寸与错误，不在报告里附私密图像或Key。
 
-实现：`llm/multimodal.py`、`llm/spec.py`、`tools/image_reader_tool.py`、`agent/agent.yaml`。
+实现：`llm/multimodal.py`、`llm/spec.py`、`tools/mcp_client.py`、`utils/artifact_manager.py`、`tools/image_reader_tool.py`、`agent/agent.yaml`。

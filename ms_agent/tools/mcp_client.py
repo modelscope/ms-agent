@@ -30,6 +30,7 @@ from ms_agent.config.env import Env
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils import get_logger
+from ms_agent.utils.artifact_manager import ArtifactManager
 from ms_agent.utils.package_env import PACKAGE_ENV_PASSTHROUGH
 
 logger = get_logger()
@@ -494,14 +495,17 @@ class MCPClient(ToolBase):
         texts = []
         resources = []
         attachments = []
+        image_errors = []
         if _tool_call_is_error(response):
             sep = '\n\n'
-            if all(isinstance(item, str) for item in response.content):
-                detail = sep.join(response.content)
+            if all(isinstance(item, str) for item in response.content or []):
+                detail = sep.join(response.content or [])
             else:
                 detail = sep.join(
-                    getattr(item, 'text', str(item))
-                    for item in response.content)
+                    item if isinstance(item, str) else
+                    getattr(item, 'text', '') or
+                    f'[{getattr(item, "type", "non-text")} content omitted]'
+                    for item in response.content or [])
             # Marked as an error rather than returned as ordinary text. A
             # failure reported only in prose reaches the model with no error
             # flag and reaches the UI with no failed step, so a call that was
@@ -523,16 +527,14 @@ class MCPClient(ToolBase):
                 texts.append(json_str)
                 resources.append(json5.loads(json_str))
             elif kind == 'image':
-                path = self._write_media(
-                    getattr(content, 'data', '') or '',
-                    _content_mime(content), 'image')
-                attachments.append({
-                    'type': 'image',
-                    'path': path,
-                    'media_type': _content_mime(content),
-                    'label': f'Image: {os.path.basename(path)}',
-                })
-                texts.append(f'Image returned ({_content_mime(content)}).')
+                try:
+                    attachment = await asyncio.to_thread(
+                        ArtifactManager(self.output_dir or os.getcwd()).store_image,
+                        getattr(content, 'data', '') or '', _content_mime(content))
+                    attachments.append(attachment)
+                    texts.append(f'Image {len(attachments)}: {attachment["path"]}')
+                except (ValueError, OSError) as exc:
+                    image_errors.append(f'Could not read tool image: {exc}')
             elif kind == 'audio':
                 path = self._write_media(
                     getattr(content, 'data', '') or '',
@@ -545,9 +547,11 @@ class MCPClient(ToolBase):
             texts.append(
                 json.dumps(structured, ensure_ascii=False, default=str))
 
-        body = '\n\n'.join(texts)
-        if resources or attachments:
+        body = '\n\n'.join(texts + image_errors)
+        if resources or attachments or image_errors:
             result = {'text': body}
+            if image_errors:
+                result['is_error'] = True
             if resources:
                 result['resources'] = resources
             if attachments:

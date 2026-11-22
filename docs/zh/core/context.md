@@ -43,6 +43,14 @@ compaction:
 
 输出预留按最终请求的 `max_tokens`、`max_completion_tokens` 或 `max_output_tokens` 计算；未指定时默认不超过 8192、模型输出上限及窗口的八分之一。输入上限还需扣除该预留。旧 `reserved_buffer` 覆盖比例阈值，但不是最终请求的输出 token 参数。
 
+## 上下文估算
+
+当前会话压缩与旧 `ContextCompressor` 共用本地预算估算。没有可用用量锚点时，估算可读文本、工具定义和媒体引用；图片按媒体预算处理，不按 base64 长度计数，同一图片的附件引用与内联表示不重复计算。
+
+已有 API 用量只用于它对应的历史请求；之后新增的消息或图片仍需估算。提示、媒体或工具输出被替换后，不继续拿失效的旧用量当作新窗口大小；原始用量保留用于费用记录。上下文圆环显示的是请求预算估算，不是供应商账单，也不是专用 tokenizer 的精确计数。
+
+文本摘要不会携带图片像素，只保留可读内容并说明图片已省略。因此，摘要不能替代图片证据，最新受保护的图片输入仍需保留。
+
 ## 自定义策略对象
 
 策略符合 `ViewStrategy` 的 `name` 和 `apply()` 接口。下面的最小策略保留窗口，用来验证扩展契约，不调用模型：
@@ -74,6 +82,6 @@ assert isinstance(KeepWindow(), ViewStrategy)
 
 ## 失败与续接
 
-摘要失败时保留原上下文；仍超过硬输入预算时保存待处理请求。WebUI 的“重试压缩并继续”及 SDK `ResumeContext` 续接该请求，不重复追加用户消息。发送新指令会取代旧待处理请求。最新输入本身过大时，应缩短内容或换用更大窗口模型，不能靠压缩删除必须保留的输入。
+摘要失败时保留原上下文；窗口和预算未变化时，不在每轮自动重复同一失败摘要。显式手动压缩或修改输入、预算后可以重试，取消不会阻止后续重试。仍超过硬输入预算时保存待处理请求。WebUI 的“重试压缩并继续”及 SDK `ResumeContext` 续接该请求，不重复追加用户消息。发送新指令会取代旧待处理请求。最新输入本身过大时，应缩短内容或换用更大窗口模型，不能靠压缩删除必须保留的输入。
 
-下一步：[会话](sessions.md)、[提示装配](prompts.md)、[存储布局](../development/storage.md)。实现：`session/context_assembler.py`、`session/strategies/`、`LLMAgent._build_compaction_strategies()`。
+下一步：[会话](sessions.md)、[提示装配](prompts.md)、[存储布局](../development/storage.md)。实现：`session/context_assembler.py`、`session/strategies/`、`llm/token_budget.py`、`LLMAgent._build_compaction_strategies()`。

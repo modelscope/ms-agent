@@ -13,77 +13,23 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional, Tuple
 
-from ms_agent.llm import multimodal
+from ms_agent.llm import multimodal, token_budget
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
 
 
 def _estimate_tokens(text: str) -> int:
-    if not text:
-        return 0
-    # Conservative for CJK and other non-ASCII text, rather than /4 everywhere.
-    non_ascii = sum(ord(c) > 127 for c in text)
-    return (len(text) - non_ascii + 3) // 4 + non_ascii
+    return token_budget.estimate_text_tokens(text)
 
 
 def _estimate_message_tokens(msg: Dict[str, Any]) -> int:
-    """Heuristic token count from message body (no API usage fields).
-
-    Structured content is walked block-by-block, and an image block is charged a
-    flat per-image cost instead of having its payload measured as text. The
-    providers bill images by pixel dimensions (Anthropic ``⌈w/28⌉ × ⌈h/28⌉``;
-    DashScope returns the real figure as ``prompt_tokens_details.image_tokens``),
-    which has nothing to do with how long the base64 happens to be.
-
-    Measured on DashScope with a 900x320 PNG: 282 real image tokens versus 7,293
-    from counting base64 characters — a 26x over-count on a 22 KB image. A 2 MiB
-    PNG estimates at ~699k tokens against a ~108k usable budget, which does not
-    merely mis-trigger compaction once: the offending message is the last visible
-    one, so the compactor re-appends it, the estimate never drops, and every
-    subsequent round pays for another summary LLM call.
-    """
-    total = 4 + len(msg.get('attachments')
-                    or []) * multimodal.IMAGE_TOKEN_ESTIMATE
-    content = msg.get('content', '')
-    if content:
-        total += multimodal.estimate_content_tokens(content, _estimate_tokens)
-    tool_calls = msg.get('tool_calls')
-    if tool_calls:
-        total += _estimate_tokens(json.dumps(tool_calls))
-    rc = msg.get('reasoning_content', '')
-    if rc:
-        total += _estimate_tokens(rc)
-    return total
+    return token_budget.estimate_message_tokens(msg)
 
 
 def _estimate_total_tokens(messages: List[Dict[str, Any]],
                            tool_tokens: int = 0) -> int:
-    """Estimate total tokens, preferring real API usage data when available.
-
-    ``prompt_tokens`` on an assistant message already accounts for all
-    preceding context in that API call, so we use it as a base and only
-    add a heuristic for messages appended *after* that turn.
-    """
-    for i in range(len(messages) - 1, -1, -1):
-        msg = messages[i]
-        if msg.get('role') != 'assistant' or msg.get('_usage_invalidated'):
-            continue
-        records = msg.get('usage_records') or []
-        # A continued answer's summed input is billing usage, not context size.
-        usage = records[-1]['usage'] if records else msg
-        pt = int(usage.get('prompt_tokens', 0) or 0)
-        ct = int(usage.get('completion_tokens', 0) or 0)
-        if pt or ct:
-            base = pt + ct
-            tail = sum(_estimate_message_tokens(m) for m in messages[i + 1:])
-            # A replaced system prompt (or changed media) before this anchor
-            # can exceed the previous call even without any appended messages.
-            return max(
-                base + tail, tool_tokens
-                + sum(_estimate_message_tokens(m) for m in messages))
-
-    return tool_tokens + sum(_estimate_message_tokens(m) for m in messages)
+    return token_budget.estimate_total_tokens(messages, tool_tokens)
 
 
 def invalidate_usage(messages):

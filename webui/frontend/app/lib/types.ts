@@ -287,6 +287,22 @@ export interface Provider {
   created_at: string
 }
 
+export type ModelPurpose = 'unknown' | 'chat' | 'embedding'
+
+export interface MemoryProviderOption {
+  id: string
+  credentials_available: boolean
+  endpoint_available: boolean
+  embedding_models: string[]
+}
+
+export interface MemoryModelCheckResult {
+  valid: boolean
+  verified: boolean
+  embedder: MemoryEmbedderInfo | null
+  errors: MemoryErrorInfo[]
+}
+
 export type ReasoningEffort =
   | 'auto' | 'off' | 'on' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
@@ -313,6 +329,7 @@ export interface ContextBudget {
 }
 
 export interface Model {
+  purpose?: ModelPurpose
   id: string
   provider_id: string
   name: string
