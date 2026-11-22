@@ -401,7 +401,7 @@ class ToolManager:
                     self.mcp_config = self.servers.mcp_config
         elif MCPClient is not None:
             self.servers = MCPClient(self.mcp_config, self.config)
-            await self.servers.connect()
+            await self.servers.connect(failure_policy='skip')
         elif (isinstance(self.mcp_config, dict)
               and self.mcp_config.get('mcpServers')):
             logger.warning_once(

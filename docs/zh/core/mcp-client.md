@@ -12,7 +12,8 @@ MS-Agent作为MCP客户端时，连接外部服务并把其工具提供给模型
     "local-tools": {
       "command": "/path/to/python",
       "args": ["/path/to/server.py"],
-      "env": {}
+      "env": {},
+      "startup_timeout": 60
     }
   }
 }
@@ -41,7 +42,11 @@ flowchart TD
  E --> F[关闭拥有的连接/子进程]
 ```
 
-管理页面探测成功只证明该次连接，不代表后续会话的每次调用都可用。SDK现有直接客户端路径与独立MCPRuntime状态机不同；会话接入、覆盖持久化等提案见[MCP RFC](../development/rfcs/mcp-runtime-api.md)。
+启动包括连接、握手和首次枚举工具。每个服务获得并发名额后默认有 60 秒预算，最多同时启动 8 个；资源清理另有等待上限。`MCP_STARTUP_TIMEOUT` 可设置默认预算，服务 JSON 中正数 `startup_timeout` 可覆盖；普通工具调用使用独立超时。
+
+失败服务从可用工具面中移除，其他 MCP、内置工具和普通聊天继续运行。提示仅包含受控错误类别、HTTP 状态码及缺失能力，不展示外部原始日志、命令参数或连接地址，以免泄露凭据。模型接收固定的能力缺失提示，不接收外部错误详情。
+
+管理探测使用独立连接，不修复现有会话。WebUI 可安排下轮重连，当前执行和历史不受影响，详见[技能与 MCP](../user-guide/skills-mcp.md)。独立 `MCPRuntime` 管理接口的进一步扩展见[MCP RFC](../development/rfcs/mcp-runtime-api.md)。
 
 检查失败时确认命令可执行、工作目录、环境变量、协议版本和网络。stdio服务的日志必须避开stdout。只连接可信服务，外部工具返回文本也不是应无条件执行的指令。
 

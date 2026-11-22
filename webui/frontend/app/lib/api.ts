@@ -429,6 +429,8 @@ export const api = {
    *  failure withholds its tools from a whole conversation), so a miss costs
    *  the full probe — go through `lib/mcpHealth`, which shares one sweep across
    *  every surface, rather than calling this per mount. */
+  reconnectMcp: (id: string) =>
+    json<{ scheduled: number; status: 'scheduled' }>(`/api/mcps/${pid(id)}/reconnect`, { method: 'POST' }),
   listMcpHealth: () => json<McpHealth[]>('/api/mcps/health'),
 
   // Skills

@@ -285,7 +285,7 @@
     "mcpEmpty": "这里还没有 MCP 服务，",
     "mcpEmptyHint": "点击下方按钮开始添加吧～",
     "viaJson": "通过 JSON 配置",
-    "reconnect": "测试连接",
+    "reconnect": "下轮重连相关会话",
     "tryIt": "查看",
     "edit": "编辑",
     "remove": "移除",
@@ -296,7 +296,7 @@
     "jsonReset": "重置",
     "jsonInvalid": "JSON 格式不正确，请先修复后再保存",
     "probing": "检测中…",
-    "statusOk": "已连接",
+    "statusOk": "连接测试通过",
     "statusError": "连接失败",
     "addMcp": "添加 MCP",
     "globalMcps": "全局MCPs",
@@ -310,7 +310,11 @@
     "skillEmptyHint": "点击下方按钮开始添加吧～",
     "addNow": "立即添加",
     "more": "更多",
-    "download": "下载"
+    "download": "下载",
+    "testConnection": "测试连接",
+    "statusUnverified": "连接尚未验证",
+    "reconnectScheduled": "已安排下轮重新连接，当前回复继续。",
+    "mcpUnavailable": "部分 MCP 工具不可用，聊天与其他工具可继续使用。"
   },
   "mcpImport": {
     "hubProjectBadge": "项目",

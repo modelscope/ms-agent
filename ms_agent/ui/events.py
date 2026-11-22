@@ -273,6 +273,7 @@ class Notice(AgentEvent):
     EVENT_TYPE: ClassVar[str] = 'notice'
     level: str = 'info'  # info | success | warning
     text: str = ''
+    code: str = ''  # Optional stable code for localized UI context.
 
 
 @dataclass(frozen=True)

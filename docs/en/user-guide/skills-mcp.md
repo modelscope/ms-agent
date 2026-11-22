@@ -30,7 +30,13 @@ Paths belong to the backend machine. If Python/Node cannot be found, use an abso
 | Enabled/selected | The current scope selects it |
 | Callable | Connection, dependencies, credentials, and permissions are ready |
 
-Open pages may refresh resource state after updates; active sessions synchronize according to runtime behavior. A successful probe proves one connection attempt, not indefinite availability.
+The initial stdio check only verifies that the command exists and shows **Connection not verified**. **Test connection** independently connects, initializes, and lists tools. Success proves that diagnostic connection, not an existing session's readiness or a business tool invocation.
+
+## Startup failure and reconnecting
+
+MCP capabilities are optional. If some or all servers fail, ordinary chat and built-in tools remain available with a capability notice. **Reconnect sessions next turn** in the card menu schedules affected sessions to rebuild when idle before the next turn. Current replies continue, session IDs/history remain, disabled servers stay disabled, and business calls are not automatically replayed.
+
+Automatic remote checks allow up to six seconds, manual tests up to 45; a server's shorter startup budget still applies. If the MCP command downloads dependencies, verify actual package downloads before full initialization. An existing command or reachable package index alone does not establish service readiness.
 
 ## Diagnose failures
 

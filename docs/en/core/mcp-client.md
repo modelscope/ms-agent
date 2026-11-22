@@ -12,7 +12,8 @@ Save `mcp.json`, replacing the command with your installed server's interpreter 
     "local-tools": {
       "command": "/path/to/python",
       "args": ["/path/to/server.py"],
-      "env": {}
+      "env": {},
+      "startup_timeout": 60
     }
   }
 }
@@ -41,7 +42,11 @@ flowchart TD
  E --> F[Close owned connections and processes]
 ```
 
-A successful management probe proves that connection attempt, not every later session call. Existing direct-client execution differs from the separate MCPRuntime state machine. Session integration and persistent overrides are described in the [MCP RFC](../development/rfcs/mcp-runtime-api.md).
+Startup includes connecting, initialization, and the first tool list. Each server gets a default 60-second budget after acquiring one of eight concurrency slots, plus a separate cleanup grace period. `MCP_STARTUP_TIMEOUT` sets the default and a positive server JSON `startup_timeout` overrides it. Ordinary calls have independent timeouts.
+
+Failed servers are removed from the available tool surface while other MCP servers, built-ins, and ordinary chat remain usable. Notices expose controlled categories, HTTP statuses, and missing capabilities—not raw external logs, command arguments, or connection URLs that may contain credentials. The model receives a fixed capability notice without external error details.
+
+Management probes use independent connections and do not repair existing sessions. The WebUI can schedule reconnects before the next idle turn, preserving current work and history; see [Skills and MCP](../user-guide/skills-mcp.md). Further independent `MCPRuntime` management extensions are in the [MCP RFC](../development/rfcs/mcp-runtime-api.md).
 
 On failure, check executable paths, cwd, environment, protocol version, and network. Keep stdio server logs off stdout. Connect only to trusted services; tool-returned text is not automatically an instruction to execute.
 

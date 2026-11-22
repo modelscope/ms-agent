@@ -67,7 +67,7 @@ export async function assertChatStream(response: Response): Promise<Response> {
  * Must stay in sync with backend/app/schemas/chat.py::ChatChunk.
  */
 export interface AgentChunk {
-  type: "text" | "thought" | "task" | "step" | "session" | "turn" | "error" | "done" | "input";
+  type: "text" | "thought" | "task" | "step" | "session" | "turn" | "notice" | "error" | "done" | "input";
   content: string;
   meta?: Record<string, unknown>;
 }
@@ -197,6 +197,7 @@ export type AgentPart =
   // A turn/API failure surfaced as its own alert card (not body text), so it
   // reads as a system-level failure. `recoverable` mirrors whether the error
   // re-entered the model context (turn/API errors: false).
+  | { kind: "notice"; text: string; code?: string }
   | { kind: "error"; text: string; recoverable?: boolean }
   // Marks the exact point where the turn was interrupted (Stop button).
   // Rendered as a muted badge; the partial content before it is real
@@ -456,6 +457,9 @@ export function applyChunk(base: AgentMessage, c: AgentChunk): AgentMessage {
       if (meta.kind !== IMAGE_DELIVERY && meta.kind !== CONTEXT_COMPACTION)
         finalizeOpenThoughts(parts);
       appendStepPart(parts, meta);
+      return { ...base, parts };
+    case "notice":
+      parts.push({ kind: "notice", text: c.content || "", code: String(meta.code || "") });
       return { ...base, parts };
     case "error": {
       // Its own alert card (ErrorCard) rather than body text — a turn/API
@@ -847,12 +851,13 @@ function upsertTask(
  * no elapsed time, so it carries no duration).
  */
 export interface HistoryPart {
-  kind: "text" | "thought" | "tasks" | "step" | "error" | "interrupted";
+  kind: "text" | "thought" | "tasks" | "step" | "notice" | "error" | "interrupted";
   text?: string;
   // kind="thought": persisted elapsed seconds, so replay shows "thought Ns".
   duration?: number;
   // kind="error": whether the error re-entered model context (turn/API: false).
   recoverable?: boolean;
+  code?: string;
   // kind="tasks": the plan items (labels + status), no nested steps.
   tasks?: {
     id: string;
@@ -959,6 +964,9 @@ export function historyToAgentMessages(
           // Faithful-interrupt badge: marks the exact stop point in replay,
           // matching what the live view showed when the turn was stopped.
           return { kind: "interrupted" };
+        }
+        if (part.kind === "notice") {
+          return { kind: "notice", text: part.text ?? "", code: part.code };
         }
         if (part.kind === "error") {
           // Same alert card as the live path (never body text).

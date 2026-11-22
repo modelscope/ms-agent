@@ -77,8 +77,9 @@ export interface SessionMessage {
   // meta.status="error"; a kind:"error" part is an API/turn error
   // (recoverable=false).
   parts?: {
-    kind: 'text' | 'thought' | 'tasks' | 'error'
+    kind: 'text' | 'thought' | 'tasks' | 'notice' | 'error'
     text?: string
+    code?: string
     recoverable?: boolean
     tasks?: {
       id: string
@@ -153,6 +154,7 @@ export interface Mcp {
   /** stdio env vars / remote auth headers (ms_agent backend round-trips these). */
   env?: Record<string, string>
   headers?: Record<string, string>
+  startup_timeout?: number | null
   created_at: string
 }
 
@@ -160,7 +162,10 @@ export interface McpHealth {
   id: string
   name: string
   scope: string
-  healthy: boolean
+  healthy: boolean | null
+  level: 'command' | 'connection'
+  checked_at: number
+  expires_at: number
   error?: string | null
 }
 

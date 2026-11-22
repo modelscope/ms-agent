@@ -29,6 +29,8 @@ Silence during streaming can mean tool arguments are being composed or approval 
 
 For MCP failures, check executable paths, network, authentication, and protocol. For missing skills, check structure, enabling, and scope. Resolve permission denials through rules/handlers, not model prompts intended to bypass protection.
 
+An MCP startup notice does not mean the whole conversation failed; ordinary chat and built-in tools remain available. **Connection not verified** only confirms command presence. A successful manual test still requires **Reconnect sessions next turn** to update existing sessions. Reconnection never replays failed business calls automatically; inspect side effects before retrying. See [Skills and MCP](skills-mcp.md).
+
 Local search needs actual roots. LSP indexing is not compiler validation. Install optional vector, parsing, or video dependencies in the environment that actually runs the task.
 
 ## Report a reproducible issue

@@ -20,6 +20,7 @@ export interface McpServerConfig {
   url?: string
   env?: Record<string, string>
   headers?: Record<string, string>
+  startup_timeout?: number | null
   enabled?: boolean
   disabled?: boolean
   description?: string
@@ -35,6 +36,7 @@ export function toMcpServers(items: Mcp[]): McpServersFile {
   for (const m of items) {
     const entry: McpServerConfig = { disabled: !m.enabled }
     if (m.description) entry.description = m.description
+    if (m.startup_timeout != null) entry.startup_timeout = m.startup_timeout
     if (m.transport === 'stdio') {
       const parts = m.endpoint.split(/\s+/).filter(Boolean)
       entry.command = parts[0] ?? ''
@@ -59,6 +61,7 @@ export interface ParsedMcp {
   enabled: boolean
   env?: Record<string, string>
   headers?: Record<string, string>
+  startup_timeout?: number | null
 }
 
 function remoteTransport(cfg: McpServerConfig): McpTransport {
@@ -93,6 +96,7 @@ export function fromMcpServers(text: string): ParsedMcp[] {
       }
       if (cfg.headers && Object.keys(cfg.headers).length > 0)
         item.headers = cfg.headers
+      if (cfg.startup_timeout != null) item.startup_timeout = cfg.startup_timeout
       out.push(item)
     } else {
       const endpoint = [cfg.command ?? '', ...(cfg.args ?? [])]
@@ -106,6 +110,7 @@ export function fromMcpServers(text: string): ParsedMcp[] {
         enabled
       }
       if (cfg.env && Object.keys(cfg.env).length > 0) item.env = cfg.env
+      if (cfg.startup_timeout != null) item.startup_timeout = cfg.startup_timeout
       out.push(item)
     }
   }

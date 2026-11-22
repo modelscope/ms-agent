@@ -72,6 +72,7 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
 # Mount replacement files at these paths to use another package index.
 RUN <<'EOF'
 mkdir -p /etc/uv
+npm config set --global registry https://registry.npmmirror.com/
 printf '%s\n' '[global]' \
     'index-url = https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple' > /etc/pip.conf
 printf '%s\n' '[[index]]' \
