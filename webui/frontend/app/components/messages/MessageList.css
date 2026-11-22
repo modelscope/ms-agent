@@ -10,3 +10,8 @@
 .msgl-copy-hover:focus-within {
   opacity: 1;
 }
+
+/* Reply actions remain reachable from the keyboard and on touch screens. */
+@media (hover: none) {
+  .msgl-copy-hover { opacity: 1; }
+}

@@ -68,9 +68,11 @@ def test_script_outside_the_workspace_is_still_judged():
 
 
 @pytest.mark.parametrize('mode, expected', [
-    ('auto', 'allow'),
+    ('auto', 'ask'),
+    ('ask', 'ask'),
     ('interactive', 'ask'),
-    ('strict', 'deny'),
+    ('strict', 'allow'),
+    ('full-access', 'allow'),
 ])
 def test_interpreter_resolution_follows_the_mode(mode, expected):
     decision = _validator().check('python3 -c "print(1)"')
@@ -82,11 +84,14 @@ def test_interpreter_resolution_follows_the_mode(mode, expected):
     'cat /home/other/.aws/credentials',
     'cat /srv/certs/server.pem',
 ])
-def test_credentials_are_never_read_unattended(command):
+def test_credentials_are_not_silently_allowed(command):
+    """A credential read stays a decision. ask and auto leave it open; only
+    full-access, which the user chose as allow-uncertain, lets it through."""
     decision = _validator().check(command)
     assert decision.category == 'sensitive_read', command
-    assert resolve_ask(decision, 'auto', 'loose').action == 'deny', command
-    assert resolve_ask(decision, 'interactive', 'loose').action == 'ask'
+    assert resolve_ask(decision, 'auto', 'loose').action == 'ask', command
+    assert resolve_ask(decision, 'ask', 'loose').action == 'ask', command
+    assert resolve_ask(decision, 'full-access', 'loose').action == 'allow', command
 
 
 def test_write_protection_does_not_become_read_refusal():

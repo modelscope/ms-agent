@@ -1,3 +1,4 @@
+import { useT } from '~/lib/i18n'
 import { Markdown } from '~/components/common/Markdown'
 import type { AgentMessage, AgentPart } from '~/lib/agentProvider'
 import type { OnOpenStep, OnOpenFile } from './types'
@@ -5,6 +6,7 @@ import { ThoughtsFlow } from './ThoughtsFlow'
 import { TaskPlan } from './TaskPlan'
 import { ToolBatch } from './ToolBatch'
 import { ToolComposing } from './ToolComposing'
+import { StepCard } from './StepCard'
 import { TurnProcess } from './TurnProcess'
 import { splitTurn } from './turnSplit'
 import { ArtifactFiles } from './ArtifactFiles'
@@ -15,7 +17,7 @@ type StepPart = Extract<AgentPart, { kind: 'step' }>
 type RenderGroup =
   | { kind: 'steps'; parts: StepPart[]; endIdx: number; group: unknown }
   | { kind: 'composing'; parts: StepPart[]; endIdx: number }
-  | { kind: 'single'; part: Exclude<AgentPart, StepPart>; endIdx: number }
+  | { kind: 'single'; part: AgentPart; endIdx: number }
 
 /** History-replayed approved authorizations render nothing (the adjacent
  * tool step shows the invocation) — exclude them from grouping so the
@@ -37,6 +39,11 @@ function groupParts(parts: AgentPart[]): RenderGroup[] {
   const groups: RenderGroup[] = []
   parts.forEach((part, i) => {
     if (part.kind === 'step') {
+      if (part.step.kind === 'context_compaction') {
+        // Upkeep is a plain notice, never a tool accordion or tool count.
+        groups.push({ kind: 'single', part, endIdx: i })
+        return
+      }
       const prev = groups[groups.length - 1]
       const group = part.step.meta.group
       // Not a tool round: nothing has run. Kept in its own group so it never
@@ -123,6 +130,7 @@ export function AssistantMessage({
   onOpenStep?: OnOpenStep
   onOpenFile?: OnOpenFile
 }) {
+  const { t } = useT()
   const parts = message.parts
 
   if (!parts || parts.length === 0) {
@@ -153,7 +161,7 @@ export function AssistantMessage({
   // An interrupted turn produced no summary — it stays in the "processing"
   // presentation forever (per spec), so the partial work isn't hidden behind a
   // "processed" header that never really happened.
-  const { loopDone, processParts, summary } = splitTurn(parts, streaming)
+  const { loopDone, processParts, summary, trailingNotices } = splitTurn(parts, streaming)
 
   const renderParts = (source: AgentPart[], frozen: boolean) =>
     groupParts(source).map((g, gi) => {
@@ -163,7 +171,10 @@ export function AssistantMessage({
       // into the finished "processed" card are all history — keep them closed.
       const isLast =
         !frozen &&
-        !source.slice(g.endIdx + 1).some((p) => p.kind !== 'interrupted')
+        !source.slice(g.endIdx + 1).some((p) =>
+          p.kind !== 'interrupted' &&
+          !(p.kind === 'step' && p.step.kind === 'context_compaction')
+        )
       if (g.kind === 'composing') {
         // A placeholder is only ever truthful in one position: the tail of a turn
         // that is still streaming. Anywhere else it outlived the call it stood
@@ -187,6 +198,9 @@ export function AssistantMessage({
         )
       }
       const part = g.part
+      if (part.kind === 'step') {
+        return <StepCard key={key} step={part.step} />
+      }
       if (part.kind === 'thought') {
         return (
           <ThoughtsFlow
@@ -247,10 +261,13 @@ export function AssistantMessage({
   // Errors never fold into the "processed" accordion: a turn/API failure must
   // be visible without expanding anything (a message that is ONLY an error
   // would otherwise be an empty-looking collapsed card).
+  const noticeParts = processParts.filter(
+    (p): p is Extract<AgentPart, { kind: 'notice' }> => p.kind === 'notice'
+  )
   const errorParts = processParts.filter(
     (p): p is Extract<AgentPart, { kind: 'error' }> => p.kind === 'error'
   )
-  const foldableParts = processParts.filter((p) => p.kind !== 'error')
+  const foldableParts = processParts.filter((p) => p.kind !== 'error' && p.kind !== 'notice')
 
   return (
     <div className="space-y-3">
@@ -267,11 +284,18 @@ export function AssistantMessage({
           {renderParts(foldableParts, loopDone)}
         </TurnProcess>
       )}
+      {noticeParts.map((p, i) => (
+        <div key={`notice-${i}`} role="status" className="rounded-xl bg-msa-fill-2 p-3 text-sm text-msa-text-2">
+          {p.code === 'mcp_unavailable' && <div>{t.resources.mcpUnavailable}</div>}
+          <div className="whitespace-pre-line text-xs">{p.text}</div>
+        </div>
+      ))}
       {/* Alert cards sit outside the fold, before the summary. */}
       {errorParts.map((p, i) => (
         <ErrorCard key={`err-${i}`} text={p.text} recoverable={p.recoverable} />
       ))}
       {summary && <Markdown content={summary.text} streaming={false} />}
+      {renderParts(trailingNotices, true)}
       {/* The turn's deliverables (files written/edited this loop) close the
           message, after the summary. */}
       {loopDone && deliverables.length > 0 && (

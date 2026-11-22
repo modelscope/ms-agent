@@ -205,7 +205,9 @@ def save_history(output_dir: str, task: str, config: DictConfig,
     message_file = os.path.join(cache_dir, f'{task}.json')
     from ms_agent.config.secrets import secret_home, write_managed_config
     from ms_agent.utils.atomic_file import atomic_write_json
-    write_managed_config(config_file, config, home=secret_home(config))
+    from .history_secrets import config_for_history_disk
+    write_managed_config(config_file, config_for_history_disk(config),
+                         home=secret_home(config))
     atomic_write_json(message_file, [message.to_dict() for message in messages],
                       indent=4, fsync=True)
 

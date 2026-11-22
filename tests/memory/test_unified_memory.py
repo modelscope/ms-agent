@@ -311,7 +311,7 @@ class TestToolOutputPrunerTokenEstimation:
     def test_estimate_message_tokens(self):
         msg = {"role": "tool", "content": "a" * 400}
         tokens = _estimate_message_tokens(msg)
-        assert tokens == 100
+        assert tokens == 104  # text plus per-message framing overhead
 
     def test_estimate_message_tokens_with_tool_calls(self):
         msg = {
@@ -476,7 +476,7 @@ class TestContextAssemblerFlushCallback:
         assert len(flushed) == 3
         assert flushed[0]["content"] == "msg_0"
 
-    def test_callback_exception_does_not_crash(self):
+    def test_callback_exception_preserves_history_and_allows_compaction(self):
         tmpdir = tempfile.mkdtemp()
         log = SessionLog(tmpdir, session_key="flush_err")
         log.append({"role": "user", "content": "x"})
@@ -496,8 +496,11 @@ class TestContextAssemblerFlushCallback:
             strategies=[ForceCompact()],
             memory_flush_callback=bad_callback,
         )
-        # should not raise
         asm.assemble()
+        assert log.last_consolidated > 0
+        assert len(log.get_all_messages()) == 2
+        assert log.get_memory_flushes()[0]['status'] == 'failed'
+        assert log.get_compaction_events()[0]['memory']['status'] == 'failed'
 
 
 # ═══════════════════════════════════════════════════════════════════════

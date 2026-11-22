@@ -387,3 +387,65 @@ def test_clear_and_child_environments_never_carry_master(home):
         'PATH': '/bin',
         'MS_AGENT_HOME': str(home)
     }
+
+
+def test_new_settings_writers_preserve_encryption_and_fail_after_key_loss(home):
+    from ms_agent.config.interaction_settings import InteractionSettings
+    from ms_agent.config.search_settings import SearchSettingsManager
+    path = home / 'settings.json'
+    home.mkdir()
+    path.write_text(json.dumps({'providers': {'vendor': {'api_key': 'legacy-key'}}}))
+    InteractionSettings(home).update('steer')
+    search = SearchSettingsManager(home)
+    search.set_api_key('search-key', 'exa')
+    data = json.loads(path.read_text())
+    assert data['providers']['vendor']['api_key'].startswith(PREFIX)
+    assert data['tools']['web_search']['exa_api_key'].startswith(PREFIX)
+    search.set_engine('exa')
+    assert search.get().has_key
+    SecretStore(home).key_file.unlink()
+    assert not search.get().has_key
+    before = path.read_bytes()
+    with pytest.raises(SecretError):
+        search.set_api_key('replacement')
+    assert path.read_bytes() == before
+
+
+def test_tui_discovery_decrypts_and_never_falls_back_after_key_loss(home, monkeypatch):
+    from ms_agent.command.builtin.config_cmds import _effective_api_key
+    value = SecretStore(home).encrypt('catalog-key')
+    assert _effective_api_key('openai', {'api_key': value}) == 'catalog-key'
+    SecretStore(home).key_file.unlink()
+    monkeypatch.setenv('OPENAI_API_KEY', 'unrelated-key')
+    with pytest.raises(SecretError):
+        _effective_api_key('openai', {'api_key': value})
+
+
+def test_tui_credential_update_clears_legacy_duplicate_and_cross_provider_key(home):
+    from ms_agent.config.model_settings import ModelSettingsManager
+    home.mkdir()
+    path = home / 'settings.json'
+    path.write_text(json.dumps({'llm': {'provider': 'a', 'model': 'm',
+                                     'api_key': 'retired-key', 'base_url': 'https://a.invalid'}}))
+    manager = ModelSettingsManager(home)
+    manager.patch_provider('a', api_key='current-key')
+    assert 'api_key' not in manager._load_raw()['llm']
+    manager.patch_provider('a', clear_api_key=True)
+    assert 'api_key' not in manager._load_raw()['llm']
+    manager.set_default_model('n', 'b')
+    assert 'base_url' not in manager._load_raw()['llm']
+
+
+def test_new_history_clears_registered_fields_without_mutating_runtime(home, tmp_path):
+    from ms_agent.llm.utils import Message
+    from ms_agent.utils.constants import DEFAULT_MEMORY_DIR
+    from ms_agent.utils.utils import save_history
+    config = OmegaConf.create({'llm': {'api_key': 'runtime-key'},
+                               'tools': {'web_search': {'exa_api_keys': ['search-key']}}})
+    save_history(str(tmp_path / 'project'), 'agent', config, [Message(role='user', content='hello')])
+    path = tmp_path / 'project' / DEFAULT_MEMORY_DIR / 'agent.yaml'
+    saved = OmegaConf.load(path)
+    assert saved.llm.api_key == ''
+    assert saved.tools.web_search.exa_api_keys == []
+    assert config.llm.api_key == 'runtime-key'
+    assert not SecretStore(home).key_file.exists()

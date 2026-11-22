@@ -1,4 +1,5 @@
 """Conversation exports preserve the replay model in safe Markdown and HTML."""
+import pytest
 from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 
@@ -168,6 +169,31 @@ def test_duplicate_error_result_is_rendered_once():
         "Error"
     ]
     assert markdown_output.count("Use the exact tool name from the tool list.") == 1
+
+
+@pytest.mark.parametrize("detail", ["full", "compact"])
+@pytest.mark.parametrize("counts", [
+    {"before_tokens": 12000, "after_tokens": 4000}, {},
+    {"before_tokens": 0, "after_tokens": 0},
+])
+def test_exports_show_compaction_as_notice_not_successful_tool(detail, counts):
+    message = SessionMessage(role="assistant", content="answer", parts=[
+        SessionPart(kind="step", step=SessionStep(kind="context_compaction", meta=counts)),
+        SessionPart(kind="text", text="answer"),
+    ])
+    markdown = render_markdown(_metadata(), [message], detail)
+    soup = BeautifulSoup(render_html(_metadata(), [message], detail), "html.parser")
+    notice = soup.select_one('[data-kind="context_compaction"]')
+    assert notice is not None
+    assert "conversation history is preserved" in notice.get_text()
+    assert "conversation history is preserved" in markdown
+    assert soup.select('.step, .status-mark, [data-kind="tool"]') == []
+    assert "Tool ·" not in markdown
+    assert ("12000 → 4000" in notice.get_text()) == bool(counts.get("before_tokens"))
+    assert ("Context tokens:" in markdown) == bool(counts.get("before_tokens"))
+    # The conversation-only export remains model/user text only.
+    conversation = render_markdown(_metadata(), [message], "user-only")
+    assert "history is preserved" not in conversation and "answer" in conversation
 
 
 def test_html_covers_all_step_families_and_mcp_source():

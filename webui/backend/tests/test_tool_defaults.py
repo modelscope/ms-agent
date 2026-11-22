@@ -64,6 +64,38 @@ def test_default_tool_scope_without_persisted_defaults(tmp_path, monkeypatch, se
     assert all(tool["enabled"] is True for tool in persisted.values())
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("include,expected", [
+    (None, {"shell_executor"}),
+    (["shell_executor", "python_executor", "notebook_executor"], {"shell_executor"}),
+    (["python_executor", "notebook_executor"], set()),
+])
+async def test_local_tool_registration_after_settings_load(tmp_path, monkeypatch, include, expected):
+    """Saved WebUI settings cannot revive removed tools or widen their scope."""
+    settings = None if include is None else {"code_executor": {"include": include}}
+    project, session = prepare(tmp_path, monkeypatch, settings)
+    cfg = build(project, session).config
+    assert cfg.tools.code_executor.implementation == "python_env"
+    # Connect only the executor; unrelated tools may require external services.
+    manager = ToolManager(OmegaConf.create({
+        "output_dir": str(tmp_path / "workspace"),
+        "tools": {"code_executor": cfg.tools.code_executor},
+    }))
+    try:
+        await manager.connect()
+        names = {tool["tool_name"] for tool in await manager.get_tools()}
+        assert names == {f"code_executor---{name}" for name in expected}
+        for name in ("python_executor", "notebook_executor", "reset_executor", "get_executor_info"):
+            result = await manager.single_call_tool({
+                "tool_name": f"code_executor---{name}",
+                "arguments": {},
+            })
+            assert result["is_error"] is True
+            assert "is not available" in result["result"]
+    finally:
+        await manager.cleanup()
+
+
 def test_partial_and_repeated_import_respects_all_four_switches(tmp_path, monkeypatch):
     project, session = prepare(tmp_path, monkeypatch, {
         name: {"enabled": False} for name in DEFAULT_TOOLS})

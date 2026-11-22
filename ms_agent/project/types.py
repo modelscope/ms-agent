@@ -56,3 +56,7 @@ class Session:
     created_at: str = field(default_factory=_now_iso)
     updated_at: str = field(default_factory=_now_iso)
     model_provider: str | None = None
+    forked_from: dict | None = None
+
+    # Provider -> model -> saved effort; interface-independent session state.
+    reasoning_efforts: dict[str, dict[str, str]] = field(default_factory=dict)

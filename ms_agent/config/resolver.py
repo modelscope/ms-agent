@@ -271,6 +271,8 @@ class ConfigResolver:
         settings_file = self._global_dir / GLOBAL_SETTINGS_FILE
         if not settings_file.exists():
             return None
+        from .secrets import migrate_file
+        migrate_file(settings_file, home=self._global_dir)
         try:
             with open(settings_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
@@ -412,7 +414,7 @@ class ConfigResolver:
             llm = settings['llm']
             if llm.get('provider') and llm.get('model'):
                 from .model_settings import resolve_model_settings
-                llm = resolve_model_settings(settings, llm['provider'], llm['model'])
+                llm = {**resolve_model_settings(settings, llm['provider'], llm['model']), **llm}
             agent_llm: Dict[str, Any] = {}
             if 'provider' in llm:
                 agent_llm['service'] = llm['provider']
@@ -441,7 +443,10 @@ class ConfigResolver:
             agent_llm = agent_fields.setdefault('llm', {})
             if not agent_llm.get('model'):
                 if '/' in default_model:
+                    from ms_agent.config.model_settings import (
+                        strip_provider_model_prefix)
                     prov, mdl = default_model.split('/', 1)
+                    mdl = strip_provider_model_prefix(prov, mdl)
                     agent_llm.setdefault('service', prov)
                     agent_llm['model'] = mdl
                 else:
@@ -465,7 +470,33 @@ class ConfigResolver:
         # (honored in ToolManager), which lets a higher layer turn a tool off.
         if 'tools' in settings:
             agent_fields['tools'] = settings['tools']
+        ConfigResolver._fill_provider_catalog(agent_fields, settings)
         return OmegaConf.create(agent_fields)
+
+    @staticmethod
+    def _fill_provider_catalog(agent_fields: Dict[str, Any],
+                               settings: Dict[str, Any]) -> None:
+        """Copy providers.<id> credentials onto llm when the llm block only
+        names a provider (WebUI stores keys under ``providers``, not always
+        under ``llm.api_key``). Never overwrites an explicit llm value."""
+        providers = settings.get('providers')
+        if not isinstance(providers, dict):
+            return
+        agent_llm = agent_fields.get('llm')
+        if not isinstance(agent_llm, dict):
+            return
+        pid = str(agent_llm.get('service') or '')
+        entry = providers.get(pid)
+        if not pid or not isinstance(entry, dict):
+            return
+        if entry.get('api_key'):
+            agent_llm.setdefault(f'{pid}_api_key', entry['api_key'])
+            agent_llm.setdefault('api_key', entry['api_key'])
+        if entry.get('base_url'):
+            agent_llm.setdefault(f'{pid}_base_url', entry['base_url'])
+            agent_llm.setdefault('base_url', entry['base_url'])
+        if entry.get('protocol'):
+            agent_llm.setdefault('protocol', entry['protocol'])
 
     @staticmethod
     def _load_json_safe(path: Path) -> Dict[str, Any]:

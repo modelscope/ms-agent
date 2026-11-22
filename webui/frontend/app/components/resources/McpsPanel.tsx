@@ -56,7 +56,7 @@ export function McpsPanel({
     rows: health,
     sweeping,
     refresh: refreshHealth,
-    put: putHealth
+    check: checkHealth
   } = useMcpHealth()
 
   // A JUST-ADDED stdio server gets one deep check (real spawn+initialize):
@@ -67,9 +67,7 @@ export function McpsPanel({
   const knownIdsRef = useRef<Set<string> | null>(null)
   const deepCheck = (id: string) => {
     setDeepChecking((prev) => new Set(prev).add(id))
-    api
-      .checkMcpHealth(id)
-      .then(putHealth)
+    checkHealth(id)
       .catch(() => {})
       .finally(() =>
         setDeepChecking((prev) => {
@@ -159,8 +157,15 @@ export function McpsPanel({
                     }}
                     onReconnect={async () => {
                       try {
-                        const result = await api.checkMcpHealth(m.id)
-                        putHealth(result)
+                        await api.reconnectMcp(m.id)
+                        message.success(t.resources.reconnectScheduled)
+                      } catch {
+                        message.error(t.resources.statusError)
+                      }
+                    }}
+                    onTest={async () => {
+                      try {
+                        const result = await checkHealth(m.id)
                         if (result.healthy) {
                           message.success(`${m.name}: ${t.resources.statusOk}`)
                         } else {

@@ -13,14 +13,14 @@ from ms_agent.permission.memory import PermissionMemory
 
 
 def _interactive_config(**kwargs) -> PermissionConfig:
-    """Build interactive-mode config via from_dict (restricted → interactive alias)."""
+    """Build ask-mode config via from_dict (restricted → ask)."""
     raw = {'mode': 'restricted', **kwargs}
     if 'whitelist' in raw:
         raw['whitelist'] = list(raw['whitelist'])
     if 'blacklist' in raw:
         raw['blacklist'] = list(raw['blacklist'])
     config = PermissionConfig.from_dict(raw)
-    assert config.mode == 'interactive'
+    assert config.mode == 'ask'
     return config
 
 
@@ -83,19 +83,20 @@ class TestAutoMode:
         assert 'blacklist' in r.reason
 
 
-class TestStrictMode:
+class TestFullAccessMode:
     @pytest.mark.asyncio
     async def test_allows_non_blacklisted(self):
         config = PermissionConfig(mode='strict')
+        assert config.mode == 'full-access'
         enforcer = PermissionEnforcer(config=config)
         r = await enforcer.check('file_system---read_file', {'path': '/test'})
         assert r.action == 'allow'
-        assert 'Strict mode' in r.reason
+        assert 'Full-access mode' in r.reason
 
     @pytest.mark.asyncio
     async def test_blacklist_denies(self):
         config = PermissionConfig(
-            mode='strict',
+            mode='full-access',
             blacklist=('code_executor---shell_executor:rm -rf *',),
         )
         enforcer = PermissionEnforcer(config=config)
@@ -335,6 +336,59 @@ class TestNetworkCommandsAsk:
                                  {'command': 'curl https://example.com'})
         assert r.action == 'allow'
         assert Probe.asked == 0
+
+class TestAutoDecidesUncertainCalls:
+    @pytest.mark.asyncio
+    async def test_provider_allow_and_deny(self, tmp_path):
+        from ms_agent.permission.enforcer import PermissionDecision
+        from ms_agent.permission.provider import ProviderDecision
+
+        class Provider:
+            def __init__(self):
+                self.action = 'allow_once'
+
+            async def decide(self, tool_name, tool_args, context, suggestions):
+                return ProviderDecision(self.action, reason=context or 'because')
+
+        provider = Provider()
+        enforcer = PermissionEnforcer(
+            config=PermissionConfig(mode='auto'),
+            handler=MockDenyHandler(),
+            memory=PermissionMemory(project_path=tmp_path),
+            provider=provider,
+        )
+        allowed = await enforcer.check(
+            'code_executor---shell_executor',
+            {'command': 'python3 -c "print(1)"'},
+            force_decision=PermissionDecision(action='ask', reason='runs code'),
+        )
+        assert allowed.action == 'allow'
+        assert 'runs code' in allowed.reason
+
+        provider.action = 'deny'
+        denied = await enforcer.check(
+            'code_executor---shell_executor',
+            {'command': 'python3 -c "print(1)"'},
+            force_decision=PermissionDecision(
+                action='ask', reason='runs code'),
+        )
+        assert denied.action == 'deny'
+
+    @pytest.mark.asyncio
+    async def test_uncertain_without_a_person_is_denied(self, tmp_path):
+        enforcer = PermissionEnforcer(
+            config=PermissionConfig(mode='auto'),
+            memory=PermissionMemory(project_path=tmp_path),
+        )
+        from ms_agent.permission.enforcer import PermissionDecision
+        decision = await enforcer.check(
+            'file_system---read_file',
+            {'path': '/tmp/x'},
+            force_decision=PermissionDecision(action='ask', reason='outside'),
+        )
+        assert decision.action == 'deny'
+        assert 'uncertain' in decision.reason.lower()
+
 
 class TestRememberedPatternBreadth:
     """`allow_always` remembering the approval at PROJECT scope is BY DESIGN —

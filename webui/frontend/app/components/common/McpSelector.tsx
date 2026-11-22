@@ -42,11 +42,10 @@ export function McpSelector({ items, project }: McpSelectorProps) {
   // ago kept whatever verdict the mount-time sweep gave it.
   const { rows: health, sweeping } = useMcpHealth()
 
-  const deadCount = useMemo(
-    () => enabledItems.filter((m) => health[m.id]?.healthy === false).length,
+  const liveCount = useMemo(
+    () => enabledItems.filter((m) => health[m.id]?.healthy === true).length,
     [enabledItems, health]
   )
-  const liveCount = enabledItems.length - deadCount
 
   const settingsPath = project
     ? `/projects/${project.id}?tab=mcps`
@@ -99,6 +98,9 @@ export function McpSelector({ items, project }: McpSelectorProps) {
                   </span>
                   {/* The reason, on hover — the row already says "unavailable"
                       by being struck through. */}
+                  {health[it.id]?.healthy == null ? (
+                    <span className="text-xs text-msa-text-3">{t.resources.statusUnverified}</span>
+                  ) : null}
                   {dead ? (
                     <Tooltip title={health[it.id]?.error || ''}>
                       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-msa-deco-red" />
@@ -145,7 +147,7 @@ export function McpSelector({ items, project }: McpSelectorProps) {
         {/* Plain count while everything answers; a fraction the moment some
             server does not, so the discrepancy is visible without the pill
             growing noisier for the healthy majority. */}
-        {deadCount > 0
+        {liveCount < enabledItems.length
           ? `${liveCount}/${enabledItems.length}`
           : enabledItems.length}{' '}
         {t.home.mcpPill}

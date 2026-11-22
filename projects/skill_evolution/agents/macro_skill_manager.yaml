@@ -21,7 +21,7 @@ prompt:
     3. Diagnose and Plan: Reason about the current structural problem and propose a specific refactoring action (merge/compress/delete) with clear justification.
     4. Execute: Invoke the tool `skill_manage` to create, edit, or delete the skills based on your diagnosis and plan. You can use the tool `skill_manage` multiple times to update the skill until you are satisfied with the updated skill.
     5. Self-Review: Review the updated skills and ensure functional coverage and correctness. If necessary, repeat the process to further refine the skills.
-    6. Tips for Merging: 
+    6. Tips for Merging:
         - When merging skills, ensure that the merged skill retains the essential functionalities of all original skills. Avoid losing any critical capabilities.
         - You need to `create` a new skill that combines the functionalities of the original skills, and then `delete` the original skills to avoid redundancy.
     7. Tips for Compressing:
@@ -43,11 +43,9 @@ tools:
   code_executor:
     mcp: false
     implementation: python_env
-    exclude:
-      - notebook_executor
-      - python_executor
-      - reset_executor
-      - get_executor_info
+    include:
+      - shell_executor
+      - file_operation
   file_system:
     mcp: false
     include:

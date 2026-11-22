@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 from dotenv import dotenv_values
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # app/core/settings.py -> backend/ ; anchor .env to the file, not the CWD, so it
@@ -53,12 +54,17 @@ class Settings(BaseSettings):
         env_file=tuple(str(path) for path in _ENV_FILES),
         env_file_encoding="utf-8",
         extra="ignore",
+        hide_input_in_errors=True,
     )
 
     host: str = "127.0.0.1"
     port: int = 8000
 
     ms_agent_cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
+    ms_agent_webui_auth_enabled: bool = False
+    ms_agent_webui_username: str = "admin"
+    ms_agent_webui_password: SecretStr = SecretStr("")
 
     anthropic_api_key: str = ""
     openai_api_key: str = ""
@@ -80,6 +86,18 @@ class Settings(BaseSettings):
     # proxy) or "huggingface" (fastembed's own source, the pre-existing
     # behaviour). An already-downloaded model is always reused as-is.
     ms_agent_embed_model_source: str = "modelscope"
+
+    @model_validator(mode="after")
+    def validate_webui_auth(self) -> "Settings":
+        if self.ms_agent_webui_auth_enabled:
+            if not self.ms_agent_webui_username.strip() or len(self.ms_agent_webui_username) > 256:
+                raise ValueError("MS_AGENT_WEBUI_USERNAME must contain 1–256 characters.")
+            password = self.ms_agent_webui_password.get_secret_value()
+            if not password.strip() or len(password) > 4096:
+                raise ValueError("Set MS_AGENT_WEBUI_PASSWORD to a nonempty password (at most 4096 characters).")
+            if "*" in self.cors_origin_list:
+                raise ValueError("Use explicit MS_AGENT_CORS_ORIGINS when authentication is enabled.")
+        return self
 
     @property
     def cors_origin_list(self) -> list[str]:

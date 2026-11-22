@@ -201,7 +201,19 @@ def _markdown_tasks(part: SessionPart) -> list[str]:
     return lines
 
 
+def _compaction_notice(step: SessionStep) -> str:
+    # Exports currently use English labels throughout. Keep this informational,
+    # just like the localized WebUI row, rather than a successful tool card.
+    text = "Earlier context has been compacted; conversation history is preserved"
+    before, after = step.meta.get("before_tokens"), step.meta.get("after_tokens")
+    if type(before) is int and before > 0 and type(after) is int and after >= 0:
+        text += f" (Context tokens: {before} → {after})"
+    return text
+
+
 def _markdown_step(step: SessionStep, detail: ExportDetail) -> list[str]:
+    if step.kind == "context_compaction":
+        return ["", f"_{_compaction_notice(step)}_"]
     title = _step_title(step)
     lines = ["", f"### {_status_mark(step)} Tool · {title}"]
     duration = step.meta.get("duration_ms")
@@ -371,6 +383,9 @@ def _html_step_section(label: str, value: object, language: str = "") -> str:
 
 
 def _html_step(step: SessionStep, detail: ExportDetail) -> str:
+    if step.kind == "context_compaction":
+        return (f'<p class="context-compaction" data-kind="context_compaction">'
+                f'{html.escape(_compaction_notice(step))}</p>')
     title = html.escape(_step_title(step))
     status = _css_token(_step_status(step), "done")
     step_kind = _css_token(step.kind, "tool")
