@@ -15,6 +15,7 @@ MemoryEmbedMode = Literal["provider", "local"]
 
 
 class AgentSettings(BaseModel):
+    follow_up_behavior: Literal['queue', 'steer'] | None = None
     default_provider_id: str | None = None
     default_model_id: str | None = None
 

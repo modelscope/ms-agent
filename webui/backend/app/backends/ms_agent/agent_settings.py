@@ -7,6 +7,7 @@ from app.backends.ms_agent.common import home
 from app.backends.ms_agent.mapping import decode_model_id, encode_model_id
 from app.backends.ms_agent.settings_store import settings_lock
 from app.schemas.agent_settings import AgentSettings
+from ms_agent.config.interaction_settings import InteractionSettings
 
 
 def _ps():
@@ -26,6 +27,7 @@ def get_settings() -> AgentSettings:
     mem_cfg = sidecar.get("agent_settings", "memory_models", {}) or {}
     embed_mode = mem_cfg.get("embed_mode")
     return AgentSettings(
+        follow_up_behavior=InteractionSettings(home()).get(),
         default_provider_id=provider,
         default_model_id=default_model_id,
         default_memory_enabled=bool(cfg.memory_enabled),
@@ -45,6 +47,7 @@ def get_settings() -> AgentSettings:
 # as omitting the field: leave the stored setting alone. Optional string pins
 # (memory_llm_model and the other memory_* fields) still treat null as clear.
 _NULL_MEANS_UNCHANGED = frozenset({
+    "follow_up_behavior",
     "default_memory_enabled",
     "default_memory_backend",
     "global_mcp_auto_attach",
@@ -62,6 +65,8 @@ def update_settings(body: AgentSettings) -> AgentSettings:
         if key in _NULL_MEANS_UNCHANGED and patch[key] is None:
             del patch[key]
     with settings_lock():
+        if 'follow_up_behavior' in patch:
+            InteractionSettings(home()).update(patch['follow_up_behavior'])
         if "default_model_id" in patch:
             if body.default_model_id:
                 try:

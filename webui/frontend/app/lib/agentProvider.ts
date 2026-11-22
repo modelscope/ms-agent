@@ -67,7 +67,7 @@ export async function assertChatStream(response: Response): Promise<Response> {
  * Must stay in sync with backend/app/schemas/chat.py::ChatChunk.
  */
 export interface AgentChunk {
-  type: "text" | "thought" | "task" | "step" | "session" | "turn" | "notice" | "error" | "done";
+  type: "text" | "thought" | "task" | "step" | "session" | "turn" | "notice" | "error" | "done" | "input";
   content: string;
   meta?: Record<string, unknown>;
 }
@@ -104,6 +104,8 @@ export type MessageSegment =
   | { type: "skill"; id: string; name?: string };
 
 export interface AgentInput {
+  input_id?: string;
+  expected_turn_id?: string | null;
   session_id?: string | null;
   model_id?: string;
   reasoning_effort?: ReasoningEffort;
@@ -204,6 +206,8 @@ export type AgentPart =
 
 /** Rich assistant message; user messages reuse the same shape with content only. */
 export interface AgentMessage {
+  messageId?: string;
+  turnId?: string;
   logSeq?: number;
   forkAfterSeq?: number;
   forkOrigin?: ForkOrigin;
@@ -866,6 +870,8 @@ export interface HistoryPart {
 }
 
 export interface HistoryMessage {
+  message_id?: string | null;
+  turn_id?: string | null;
   log_seq?: number | null;
   fork_after_seq?: number | null;
   fork_origin?: ForkOrigin | null;
@@ -903,6 +909,8 @@ export function historyToAgentMessages(
   if (!rows) return [];
   return rows.map((row) => {
     const msg: AgentMessage = { role: row.role, content: row.content };
+    if (row.message_id) msg.messageId = row.message_id;
+    if (row.turn_id) msg.turnId = row.turn_id;
     if (row.log_seq != null) msg.logSeq = row.log_seq;
     if (row.fork_after_seq != null) msg.forkAfterSeq = row.fork_after_seq;
     if (row.fork_origin) msg.forkOrigin = row.fork_origin;

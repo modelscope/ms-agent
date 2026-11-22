@@ -1,4 +1,16 @@
 {
+  "followUp": {
+    "title": "对话行为", "queue": "排队", "steer": "插话",
+    "queueDesc": "当前任务完成后，再依次处理新消息。",
+    "steerDesc": "将新消息加入当前任务；当前模型响应和已开始的工具操作结束后生效。",
+    "pending": "待发送 {count} 条", "expand": "展开", "collapse": "收起",
+    "thisTurn": "本轮", "nextTurn": "下一轮", "paused": "待发送已暂停",
+    "resume": "继续发送", "more": "更多操作", "edit": "编辑", "withdraw": "撤回",
+    "withdrawConfirm": "撤回这条待发送消息？", "save": "保存", "cancel": "取消",
+    "editConflict": "消息已发生变化或已投递。编辑内容已保留，可作为补充消息发送。",
+    "confirming": "正在确认接收…", "reconnecting": "连接已断开，正在重新连接…",
+    "skipped": "已跳过", "attachments": "{count} 个附件"
+  },
   "auth": {
     "title": "登录 MS-Agent",
     "description": "请输入此实例配置的用户名和密码。",

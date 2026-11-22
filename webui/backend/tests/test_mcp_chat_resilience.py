@@ -4,6 +4,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 from app.backends.ms_agent import chat, common, model_link, mcps, projects, sessions
 from app.backends.ms_agent.runtime import registry
 from app.schemas.chat import ChatMessage, ChatRequest
@@ -12,7 +14,8 @@ from app.schemas.project import ProjectCreate
 from app.schemas.session import SessionCreate
 
 
-async def test_first_token_notice_replay_and_same_session_reconnect(tmp_path, monkeypatch):
+@pytest.mark.parametrize('transport', ['legacy', 'session'])
+async def test_first_token_notice_replay_and_same_session_reconnect(tmp_path, monkeypatch, transport):
     from ms_agent.agent.llm_agent import LLMAgent
     from ms_agent.llm.utils import Message
 
@@ -42,6 +45,20 @@ async def test_first_token_notice_replay_and_same_session_reconnect(tmp_path, mo
     async def turn(text):
         req = ChatRequest(session_id=session.id, project_id=project.id,
                           message=ChatMessage(role='user', content=text))
+        if transport == 'session':
+            from app.backends.ms_agent import conversations
+            conversation = conversations.get(session.id)
+            previous = conversation.sequence
+            await conversations.submit(req)
+            await conversation.worker
+            events = [event for event in conversation.events
+                      if int(event['cursor'].rsplit(':', 1)[1]) > previous]
+            assert not any(event['type'] == 'failure' for event in events), events
+            chunks = [event['chunk'] for event in events if event['type'] == 'chunk']
+            delivered = [chunk for chunk in chunks if chunk['type'] == 'input']
+            assert len(delivered) == 1
+            assert delivered[0]['meta']['message']['content'] == text
+            return chunks
         frames = [frame async for frame in chat.stream(req)]
         return [json.loads(f['data']) for f in frames if f.get('data') and f['data'] != '[DONE]']
 

@@ -399,6 +399,10 @@ class SessionRuntime:
         # otherwise pins its embedded qdrant lock and its in-RAM vectors until
         # the server restarts.
         self.agent._context_config_signature = self.settings_fingerprint
+        from app.backends.ms_agent.conversations import conversations
+        conversation = conversations.get(session.id)
+        if conversation is not None:
+            self.agent._input_controller = conversation.controller
         self.context_task = None
         self.context_state = None
         self.last_active: float = time.monotonic()
@@ -673,6 +677,8 @@ class RuntimeRegistry:
                 expired.add(rt.session.id)
         for sid in expired:
             await self._evict(sid)
+        from app.backends.ms_agent.conversations import sweep_idle
+        sweep_idle(self.IDLE_TTL_S, self.MAX_RUNTIMES)
 
     async def _evict(self, session_id: str) -> None:
         async with self._create_lock:
@@ -945,12 +951,12 @@ class RuntimeRegistry:
         if loop is not None and loop.is_running():
             try:
                 if asyncio.get_running_loop() is loop:
-                    loop.create_task(self.close(session_id))
+                    loop.create_task(self._discard_session(session_id))
                     return
             except RuntimeError:
                 pass
             try:
-                future = asyncio.run_coroutine_threadsafe(self.close(session_id), loop)
+                future = asyncio.run_coroutine_threadsafe(self._discard_session(session_id), loop)
                 future.result(timeout=15)
                 return
             except Exception:
@@ -963,7 +969,14 @@ class RuntimeRegistry:
             except RuntimeError:
                 logger.debug("runtime discard skipped for stopped loop", exc_info=True)
 
+    async def _discard_session(self, session_id: str) -> None:
+        from app.backends.ms_agent.conversations import discard
+        await discard(session_id)
+        await self.close(session_id)
+
     async def close_all(self) -> None:
+        from app.backends.ms_agent.conversations import close_all
+        await close_all()
         for sid in list(self._runtimes):
             await self.close(sid)
 

@@ -137,6 +137,8 @@ class SessionFile(BaseModel):
 
 
 class SessionMessage(BaseModel):
+    message_id: str | None = None
+    turn_id: str | None = None
     log_seq: int | None = None
     fork_after_seq: int | None = None
     fork_origin: ForkOrigin | None = None
