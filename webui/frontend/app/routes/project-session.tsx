@@ -54,6 +54,7 @@ export async function loader({ params }: Route.LoaderArgs) {
     session,
     sessionId,
     sessionModelId: session?.model_id || '',
+    sessionReasoningEfforts: session?.reasoning_efforts,
     // Whether a background turn's result is still unacknowledged — opening this
     // page is the acknowledgement, so the flag is only carried here to decide
     // whether that write (and its sidebar repaint) is needed at all.
@@ -70,6 +71,7 @@ export default function ProjectSessionPage() {
     project,
     sessionId,
     sessionModelId,
+    sessionReasoningEfforts,
     sessionUnread,
     messages,
     plan,
@@ -87,6 +89,7 @@ export default function ProjectSessionPage() {
     <ChatView
       key={sessionId}
       initialModelId={sessionModelId}
+      initialReasoningEfforts={sessionReasoningEfforts}
       project={project}
       sessionId={sessionId}
       initialMessages={initialMessages}

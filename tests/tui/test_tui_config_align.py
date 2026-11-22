@@ -16,7 +16,7 @@ import asyncio
 import io
 import json
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from omegaconf import OmegaConf
@@ -350,6 +350,7 @@ async def test_serve_keeps_repl_after_turn_api_error():
     from unittest.mock import MagicMock
 
     app = TuiApp.__new__(TuiApp)
+    app.input = SimpleNamespace(_stop_capture=AsyncMock(), _queued=[])
     buf = io.StringIO()
     app.console = Console(file=buf, force_terminal=False, width=100)
     app.renderer = MagicMock()
@@ -409,6 +410,7 @@ async def test_serve_stays_open_on_cancel_scope_error():
     from unittest.mock import MagicMock
 
     app = TuiApp.__new__(TuiApp)
+    app.input = SimpleNamespace(_stop_capture=AsyncMock(), _queued=[])
     buf = io.StringIO()
     app.console = Console(file=buf, force_terminal=False, width=100)
     app.renderer = MagicMock()
@@ -458,6 +460,7 @@ async def test_serve_stays_open_on_cancelled_error_that_is_not_quit():
     from unittest.mock import MagicMock
 
     app = TuiApp.__new__(TuiApp)
+    app.input = SimpleNamespace(_stop_capture=AsyncMock(), _queued=[])
     buf = io.StringIO()
     app.console = Console(file=buf, force_terminal=False, width=100)
     app.renderer = MagicMock()
@@ -505,6 +508,7 @@ async def test_serve_exits_when_quit_cancels_the_turn():
     from unittest.mock import MagicMock
 
     app = TuiApp.__new__(TuiApp)
+    app.input = SimpleNamespace(_stop_capture=AsyncMock(), _queued=[])
     buf = io.StringIO()
     app.console = Console(file=buf, force_terminal=False, width=100)
     app.renderer = MagicMock()
@@ -551,6 +555,7 @@ def _serve_app(buf):
     from unittest.mock import MagicMock
 
     app = TuiApp.__new__(TuiApp)
+    app.input = SimpleNamespace(_stop_capture=AsyncMock(), _queued=[])
     app.console = Console(file=buf, force_terminal=False, width=100)
     app.renderer = MagicMock()
     app._queued_query = None
@@ -586,6 +591,7 @@ async def test_ctrl_c_during_stream_stays_in_repl():
 
     app.agent = SimpleNamespace(
         run=fake_run,
+        config=OmegaConf.create({"llm": {"model": "m", "service": "openai"}}),
         runtime=SimpleNamespace(should_stop=False),
     )
     serve = asyncio.create_task(app._serve())
@@ -594,7 +600,9 @@ async def test_ctrl_c_during_stream_stays_in_repl():
     await asyncio.wait_for(serve, timeout=2)
     out = buf.getvalue()
     assert runs['n'] == 2
-    assert 'interrupted — Ctrl-C or /quit to exit' in out
+    assert 'turn stopped' in out
+    assert 'Ctrl-C again or /quit to exit' in out
+    app.input._stop_capture.assert_awaited()
     assert 'bye' in out
 
 

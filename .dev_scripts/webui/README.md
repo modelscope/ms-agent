@@ -28,6 +28,29 @@ Editable SDK installation builds in the checkout when first started.
 Published packages must pass the release checker, which requires prebuilt
 resources. An existing but invalid release manifest is always an error.
 
+## Update the model catalog
+
+Packages include the models.dev snapshot, its SHA256 manifest and the upstream
+MIT license. Preparation and wheel/sdist builds validate the tracked data.
+To download a new snapshot during preparation, run:
+
+```bash
+python .dev_scripts/webui/prepare_webui.py --update-model-catalog
+```
+
+To import a previously downloaded snapshot, preserve its original fetch time:
+
+```bash
+python .dev_scripts/update_model_catalog.py --input FILE --fetched-at ORIGINAL_ISO_TIMESTAMP
+python .dev_scripts/update_model_catalog.py --check
+```
+
+The update script normalizes the final newline before computing the hash so
+repository formatting hooks leave the manifest valid. Images use the data in
+the wheel. Source WebUI startup may update a separate SDK HOME cache; runtime
+updates leave the tracked snapshot unchanged. SDK callers can query a model
+with `ms_agent.llm.model_catalog.get_model`.
+
 ## Package inputs
 
 The image installs SDK dependencies into `/opt/venv` and shell utility packages

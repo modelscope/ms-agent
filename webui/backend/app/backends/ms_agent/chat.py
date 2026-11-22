@@ -198,7 +198,8 @@ def _resolve_or_create(req: ChatRequest):
         project = resolve_project(None)  # unknown id -> default project
     from app.backends.ms_agent import session_models
 
-    session = session_models.create(project, model_id=req.model_id)
+    session = session_models.create(project, model_id=req.model_id,
+                                    reasoning_effort=req.reasoning_effort)
     return project, session
 
 
@@ -447,6 +448,32 @@ def _inline_auth_meta(meta: dict, tool: str, args: dict) -> dict:
     return {**meta, **step}
 
 
+def _context_compaction_meta(payload: dict) -> dict | None:
+    """Display-only completion, shared by live events and SessionLog replay.
+
+    Logs use tokens_before/tokens_after; UI events use before_tokens/after_tokens.
+    Older successful records have no status, and older UI events default both
+    counts to zero. Never turn a retained/failed attempt into a success notice
+    or present those default counts as measured usage.
+    """
+    if payload.get("status") not in (None, "", "completed", "success"):
+        return None
+    if payload.get("error") or payload.get("is_error") or payload.get("success") is False:
+        return None
+    meta: dict = {"kind": "context_compaction"}
+    before = payload.get("before_tokens", payload.get("tokens_before"))
+    after = payload.get("after_tokens", payload.get("tokens_after"))
+    if type(before) is int and before > 0 and type(after) is int and after >= 0:
+        meta.update(before_tokens=before, after_tokens=after)
+    for key in ('operation_id', 'trigger'):
+        if payload.get(key):
+            meta[key] = payload[key]
+    memory = payload.get('memory_status') or (payload.get('memory') or {}).get('status')
+    if memory:
+        meta['memory_status'] = memory
+    return meta
+
+
 class _TurnMapper:
     """Assemble the frontend's ordered-parts view-model (agentProvider.ts) from
     the SDK's flat semantic event stream. Stateful per turn: streams reasoning as
@@ -619,12 +646,16 @@ class _TurnMapper:
             return self._permission_step(payload)
         if t == "permission_resolved":
             return self._permission_resolved_step(payload)
+        if t == "context_compacted":
+            # Informational only: no tool group, thought seal or turn boundary.
+            meta = _context_compaction_meta(payload)
+            return [ChatChunk(type="step", meta=meta)] if meta is not None else []
         if t == "error":
             return [ChatChunk(type="error", meta={
                 "message": payload.get("message", ""),
                 "recoverable": bool(payload.get("recoverable", False)),
             })]
-        # user_message / turn_started / content_end / context_compacted -> none.
+        # user_message / turn_started / content_end -> none.
         return []
 
     def _tool_running_step(self, name: str, args: dict, group: int,

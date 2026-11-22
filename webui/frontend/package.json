@@ -26,6 +26,7 @@
     "@monaco-editor/react": "^4.7.0",
     "@react-router/node": "^8.1.0",
     "antd": "^6.5.0",
+    "clsx": "2.1.1",
     "compression": "1.8.1",
     "express": "5.2.1",
     "isbot": "^5",
@@ -35,7 +36,8 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router": "^8.1.0",
-    "react-syntax-highlighter": "^16.1.1"
+    "react-syntax-highlighter": "^16.1.1",
+    "style-to-js": "1.1.21"
   },
   "devDependencies": {
     "@react-router/dev": "^8.1.0",

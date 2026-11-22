@@ -1,4 +1,5 @@
 import threading
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +18,7 @@ from app.api import (
     projects,
     providers,
     recovery,
+    catalog,
     search,
     sessions,
     skills,
@@ -28,7 +30,26 @@ from app.core.settings import settings
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="ms-agent-webui backend", version="0.2.0")
+    @asynccontextmanager
+    async def lifespan(app):
+        from app.backends.ms_agent.bootstrap import bootstrap
+        from app.backends.ms_agent.common import apply_home_env
+        from ms_agent.llm.catalog_update import prepare_startup
+        from ms_agent.project.manager import DefaultProjectMissingError
+
+        apply_home_env()
+        await prepare_startup()
+        try:
+            bootstrap()
+        except DefaultProjectMissingError:
+            app.state.recovery = recovery.RecoveryStatus(required=True)
+        await _log_effective_home()
+        try:
+            yield
+        finally:
+            await _shutdown()
+
+    app = FastAPI(title="ms-agent-webui backend", version="0.2.0", lifespan=lifespan)
     app.state.auth = WebUIAuth(settings)
     app.state.recovery = recovery.RecoveryStatus(required=False)
     app.state.recovery_lock = threading.Lock()
@@ -56,22 +77,12 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Ensure the SDK home + default project + settings.json llm are ready.
-    from app.backends.ms_agent.bootstrap import bootstrap
-    from ms_agent.project.manager import DefaultProjectMissingError
-
-    try:
-        bootstrap()
-    except DefaultProjectMissingError:
-        app.state.recovery = recovery.RecoveryStatus(required=True)
-
     # HOME semantics, pinned (docs and code agree from here on): the default is
     # the SHARED ~/.ms_agent — the same home CLI/TUI use; isolation is an
     # explicit choice via MS_AGENT_HOME / ms_agent_home in backend/.env. Print
     # the effective home once so "which home am I on" is never guesswork.
     # Runs in the startup hook (not at import) so uvicorn's logging is wired;
     # uvicorn.error is the logger whose handlers reach the dev console.
-    @app.on_event("startup")
     async def _log_effective_home() -> None:
         import logging
         import os
@@ -85,7 +96,6 @@ def create_app() -> FastAPI:
             "shared default" if effective == shared_default else
             "isolated via MS_AGENT_HOME")
 
-    @app.on_event("shutdown")
     async def _shutdown() -> None:
         from app.backends.ms_agent.runtime import registry
         from app.backends.ms_agent.skill_index import skill_index
@@ -96,6 +106,7 @@ def create_app() -> FastAPI:
             skill_index.stop()
 
     app.include_router(auth.router)
+    app.include_router(catalog.router)
     app.include_router(chat.router)
     app.include_router(events.router)
     app.include_router(presence.router)

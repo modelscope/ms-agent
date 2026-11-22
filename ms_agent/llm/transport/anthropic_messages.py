@@ -17,10 +17,14 @@ from dataclasses import replace
 from typing import Any, Dict, Generator, Iterator, List, Optional, Union
 
 from ms_agent.llm import multimodal
-from ms_agent.llm.io import OpenedStream, interrupt_stream
-from ms_agent.llm.thinking import apply_effort, create_with_thinking_fallback
+from ms_agent.llm.cost import (response_usage, set_response_usage,
+                               update_usage_snapshot)
+from ms_agent.llm.io import (OpenedStream, create_owned_response,
+                             interrupt_stream)
+from ms_agent.llm.thinking import (THINKING_PARAM_KEYS, apply_effort,
+                                   create_with_thinking_fallback)
 from ms_agent.llm.transport.base import Transport
-from ms_agent.llm.utils import Message, Tool, ToolCall
+from ms_agent.llm.utils import Message, Tool, ToolCall, normalize_finish_reason
 from ms_agent.llm.vision import create_with_vision_fallback
 from ms_agent.llm.vision import delivery_reason as vision_delivery_reason
 from ms_agent.utils import assert_package_exist, get_logger
@@ -38,7 +42,9 @@ class AnthropicMessagesTransport(Transport):
         generation_config: Optional[Dict] = None,
         vision: Optional['multimodal.VisionOptions'] = None,
         vision_supported: bool = True,
+        provider_id: str = '',
     ):
+        self.provider_id = provider_id
         assert_package_exist('anthropic', 'anthropic')
         import anthropic
 
@@ -236,8 +242,9 @@ class AnthropicMessagesTransport(Transport):
                     # See the OpenAI transport: the tool's own text would
                     # otherwise be the last word on images this request drops.
                     result_content = '\n'.join(
-                        filter(None,
-                               [result_content, multimodal.TOOL_MEDIA_WITHHELD]))
+                        filter(
+                            None,
+                            [result_content, multimodal.TOOL_MEDIA_WITHHELD]))
                 image_blocks = multimodal.anthropic_tool_result_blocks(
                     attachments,
                     self._vision,
@@ -310,22 +317,16 @@ class AnthropicMessagesTransport(Transport):
             system = formatted_messages[0]['content']
             formatted_messages = formatted_messages[1:]
 
-        # Already lowered in `generate()` — it has to happen before the
-        # signature filter there, and doing it twice is destructive (see the
-        # note in transport/openai_compat.py).
-        max_tokens = kwargs.pop('max_tokens', 16000)
-        extra_body = kwargs.get('extra_body', {})
-        enable_thinking = extra_body.get('enable_thinking', False)
-        thinking_budget = extra_body.get('thinking_budget', max_tokens)
-
+        kwargs = apply_effort(
+            kwargs,
+            base_url=str(getattr(self.client, 'base_url', '')),
+            protocol='anthropic',
+            provider_id=getattr(self, 'provider_id', ''),
+            model=self.model)
         params = {
             'model': self.model,
             'messages': formatted_messages,
-            'max_tokens': max_tokens,
-            'thinking': {
-                'type': 'enabled' if enable_thinking else 'disabled',
-                'budget_tokens': thinking_budget
-            }
+            'max_tokens': kwargs.pop('max_tokens', 16000),
         }
         if system:
             params['system'] = system
@@ -353,7 +354,7 @@ class AnthropicMessagesTransport(Transport):
                 opened = OpenedStream(self.client.messages.stream(**call))
                 self._active_stream = opened
                 return opened
-            return self.client.messages.create(**call)
+            return create_owned_response(self.client.messages, self, **call)
 
         # Thinking is the OTHER per-model hard-400, and this transport used to
         # be the one family without the repair: a Messages-API gateway fronting
@@ -363,11 +364,8 @@ class AnthropicMessagesTransport(Transport):
         # retries compose instead of masking each other.
         def _create(messages, **kw):
             return create_with_thinking_fallback(
-                lambda **kw2: _send(messages, **kw2),
-                self.client,
-                self.model,
-                logger,
-                **kw)
+                lambda **kw2: _send(messages, **kw2), self.client, self.model,
+                logger, **kw)
 
         # Everything except `model` and `messages`, which the wrapper takes as
         # named arguments; leaving either in `params` would collide with them.
@@ -381,8 +379,7 @@ class AnthropicMessagesTransport(Transport):
             model=self.model,
             messages=params['messages'],
             sent_images=sent_images,
-            max_edge=getattr(
-                getattr(self, '_vision', None), 'max_edge', 0),
+            max_edge=getattr(getattr(self, '_vision', None), 'max_edge', 0),
             on_degrade=self._mark_images_degraded,
             logger_=logger,
             **rest)
@@ -398,13 +395,14 @@ class AnthropicMessagesTransport(Transport):
         args.update(kwargs)
         stream = args.pop('stream', False)
 
-        # Before the signature filter: `reasoning_effort` is not a Messages API
-        # parameter, so filtering first would drop the knob instead of lowering
-        # it into this protocol's `thinking` block.
-        args = apply_effort(args, base_url='', protocol='anthropic')
-
+        # Keep SDK controls through the signature filter, then lower exactly
+        # once in _call_llm, just as for direct and legacy calls.
         sig_params = inspect.signature(self.client.messages.create).parameters
-        filtered_args = {k: v for k, v in args.items() if k in sig_params}
+        filtered_args = {
+            k: v
+            for k, v in args.items()
+            if k in sig_params or k in THINKING_PARAM_KEYS
+        }
 
         completion = self._call_llm(messages, formatted_tools, stream,
                                     **filtered_args)
@@ -433,13 +431,36 @@ class AnthropicMessagesTransport(Transport):
             try:
                 full_content = ''
                 full_thinking = ''
+                usage_snapshot = {}
                 for event in stream:
                     event_type = getattr(event, 'type')
                     if event_type == 'message_start':
                         msg = event.message
                         current_message.id = msg.id
+                        update_usage_snapshot(usage_snapshot,
+                                              getattr(msg, 'usage', None))
+                        set_response_usage(
+                            current_message,
+                            usage_snapshot or None,
+                            protocol='anthropic',
+                            model=self.model,
+                            complete=False)
                         tool_call_id_map = {}
                         yield current_message
+                    elif event_type == 'message_delta':
+                        update_usage_snapshot(usage_snapshot,
+                                              getattr(event, 'usage', None))
+                        set_response_usage(
+                            current_message,
+                            usage_snapshot or None,
+                            protocol='anthropic',
+                            model=self.model,
+                            complete=False)
+                        reason = getattr(
+                            getattr(event, 'delta', None), 'stop_reason', None)
+                        if reason:
+                            current_message.finish_reason = normalize_finish_reason(
+                                reason)
                     elif event_type == 'content_block_delta':
                         if event.delta.type == 'thinking_delta':
                             full_thinking += event.delta.thinking
@@ -449,9 +470,10 @@ class AnthropicMessagesTransport(Transport):
                             current_message.content = full_content
                         yield current_message
                     elif event_type == 'message_stop':
-                        final_msg = getattr(event, 'message')
-                        full_content = ''
-                        for idx, block in enumerate(event.message.content):
+                        final_msg = getattr(event, 'message', None)
+                        full_content = '' if final_msg else full_content
+                        for idx, block in enumerate(
+                                getattr(final_msg, 'content', [])):
                             if block is None:
                                 continue
                             if block.type == 'text':
@@ -479,14 +501,26 @@ class AnthropicMessagesTransport(Transport):
                                     ))
                         current_message.content = full_content
                         current_message.partial = False
-                        current_message.completion_tokens = getattr(
-                            final_msg.usage, 'output_tokens',
-                            current_message.completion_tokens)
-                        current_message.prompt_tokens = getattr(
-                            final_msg.usage, 'input_tokens',
-                            current_message.prompt_tokens)
+                        reason = getattr(final_msg, 'stop_reason', None)
+                        if reason:
+                            current_message.finish_reason = normalize_finish_reason(
+                                reason)
+                        update_usage_snapshot(
+                            usage_snapshot, getattr(final_msg, 'usage', None))
+                        set_response_usage(
+                            current_message,
+                            usage_snapshot or None,
+                            protocol='anthropic',
+                            model=getattr(self, 'model', ''))
                         yield current_message
             finally:
+                if current_message.partial and usage_snapshot:
+                    set_response_usage(
+                        current_message,
+                        usage_snapshot,
+                        protocol='anthropic',
+                        model=self.model,
+                        complete=False)
                 if self._active_stream is stream:
                     self._active_stream = None
 
@@ -510,6 +544,9 @@ class AnthropicMessagesTransport(Transport):
         from a different thread than the one iterating the stream: closing the
         underlying HTTP response unblocks that read. A no-op when nothing streams.
         """
+        cancelled = getattr(self, '_request_cancel', None)
+        if cancelled is not None:
+            cancelled.set()
         stream = self._active_stream
         interrupt_stream(stream)
         if self._active_stream is stream:
@@ -540,7 +577,12 @@ class AnthropicMessagesTransport(Transport):
             content=content,
             reasoning_content=reasoning_content,
             tool_calls=tool_calls if tool_calls else None,
+            finish_reason=normalize_finish_reason(
+                getattr(completion, 'stop_reason', None)),
             id=completion.id,
-            prompt_tokens=completion.usage.input_tokens,
-            completion_tokens=completion.usage.output_tokens,
+            **response_usage(
+                getattr(completion, 'usage', None),
+                protocol='anthropic',
+                model=getattr(completion, 'model', ''),
+                response_id=completion.id),
         )

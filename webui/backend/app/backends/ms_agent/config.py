@@ -774,9 +774,9 @@ def provider_base_url(provider: str) -> str:
     """The endpoint we will actually call for ``provider`` (user override first,
     then the built-in spec's default). The thinking dialect is decided by the
     host, so this — not the provider id — is what the SDK needs."""
-    provider = (provider or "").lower()
-    entry = (_read_settings().get("providers") or {}).get(provider) or {}
-    return entry.get("base_url") or _openai_compat_base_url(provider) or ""
+    from ms_agent.config.model_settings import resolve_model_settings
+
+    return resolve_model_settings(_read_settings(), provider, "").get("base_url") or ""
 
 
 def thinking_plan(
@@ -784,6 +784,7 @@ def thinking_plan(
     provider: str,
     effort: Any = "auto",
     existing: dict | None = None,
+    model: str = "",
 ) -> dict:
     """What the SDK will send for ``effort`` on this provider's endpoint.
 
@@ -801,6 +802,8 @@ def thinking_plan(
     return plan(effort,
                 base_url=provider_base_url(provider),
                 protocol=(protocol or "").lower(),
+                provider_id=provider,
+                model=model,
                 existing=existing)
 
 
@@ -941,6 +944,11 @@ def _apply_webui_generation_params(config):
     if supports_vision is not None:
         OmegaConf.update(
             config, "llm.supports_vision", supports_vision, merge=True)
+    from app.backends.ms_agent.mapping import encode_model_id
+
+    meta = _read_metadata("models", encode_model_id(provider, model)) or {}
+    if meta.get("context_limit") is not None:
+        OmegaConf.update(config, "llm.context_limit", meta["context_limit"], merge=True)
     return config
 
 

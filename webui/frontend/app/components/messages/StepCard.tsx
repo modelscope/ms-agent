@@ -165,6 +165,27 @@ export function StepCard({
   const running = meta.status === 'running'
 
   switch (step.kind) {
+    case 'context_compaction': {
+      const before = meta.before_tokens
+      const after = meta.after_tokens
+      const hasUsage =
+        typeof before === 'number' && Number.isSafeInteger(before) && before > 0 &&
+        typeof after === 'number' && Number.isSafeInteger(after) && after >= 0
+      return (
+        <div className="text-xs leading-5 text-msa-text-3">
+          {t.chat.contextCompacted}
+          {meta.trigger === 'manual' || meta.trigger === 'slash' ? ` · ${t.context.manual}` : meta.trigger === 'auto' ? ` · ${t.context.automatic}` : ''}
+          {hasUsage ? (
+            <span className="ml-2 tabular-nums">
+              {t.chat.contextCompactedTokens
+                .replace('{before}', String(before))
+                .replace('{after}', String(after))}
+            </span>
+          ) : null}
+          {meta.memory_status === 'failed' && <div>{t.context.memoryFailed}</div>}
+        </div>
+      )
+    }
     case 'terminal':
       return (
         <TerminalStepCard step={step} onOpenStep={onOpenStep} isLast={isLast} />
