@@ -68,10 +68,15 @@ def create_model(body: ModelCreate) -> Model:
     side = {}
     if body.display_name:
         side["display_name"] = body.display_name
-    if body.advanced_params:
-        side["advanced_params"] = body.advanced_params
+    advanced = dict(body.advanced_params)
+    if body.reasoning_effort is not None:
+        advanced["reasoning_effort"] = body.reasoning_effort
+    if advanced:
+        side["advanced_params"] = advanced
     if body.supports_vision is not None:
-        side["supports_vision"] = bool(body.supports_vision)
+        side["supports_vision"] = body.supports_vision
+    if body.context_limit is not None:
+        side["context_limit"] = body.context_limit
     if side:
         sidecar.merge("models", mid, side)
     return model_to_schema(body.provider_id, body.name)
@@ -92,19 +97,19 @@ def update_model(model_id: str, body: ModelUpdate) -> Model:
     side = {}
     if body.display_name is not None:
         side["display_name"] = body.display_name
-    if body.advanced_params is not None:
-        side["advanced_params"] = body.advanced_params
-    if body.supports_vision is not None:
-        side["supports_vision"] = bool(body.supports_vision)
-    if side:
-        sidecar.merge("models", model_id, side)
-    if body.advanced_params is not None or body.supports_vision is not None:
-        # An agent freezes its whole config at build time, so an open
-        # conversation would keep sending the old thinking parameters — and
-        # keep the old vision decision — until it is evicted. The user flips
-        # the switch, sees no difference, and concludes the setting does
-        # nothing. Flagging costs nothing and the swap happens on the next
-        # idle turn.
+    with sidecar.transaction_lock():
+        if body.advanced_params is not None:
+            side["advanced_params"] = dict(body.advanced_params)
+        if body.reasoning_effort is not None:
+            advanced = side.setdefault("advanced_params", dict(
+                (sidecar.get("models", model_id) or {}).get("advanced_params") or {}))
+            advanced["reasoning_effort"] = body.reasoning_effort
+        for key in ("supports_vision", "context_limit"):
+            if key in body.model_fields_set:
+                side[key] = getattr(body, key)
+        if side:
+            sidecar.merge("models", model_id, side)
+    if body.model_fields_set & {"advanced_params", "reasoning_effort", "supports_vision", "context_limit"}:
         from app.backends.ms_agent.runtime import registry
 
         registry.mark_all_stale()
@@ -121,49 +126,86 @@ def delete_model(model_id: str) -> None:
     sidecar.drop("models", model_id)
 
 
-def generation_defaults(provider_id: str, model: str = "") -> GenerationDefaults:
-    """The read-only preview behind the advanced-params editor.
+def generation_defaults(provider_id: str, model: str = "", *,
+                        reasoning_effort: str | None = None) -> GenerationDefaults:
+    from omegaconf import OmegaConf
 
-    Resolved by the SDK against the provider's real base_url, so what the dialog
-    shows is literally what the next request will carry — the settings page and
-    the runtime cannot drift apart because they call the same function.
+    from ms_agent.config.model_settings import resolve_model_settings
+    from ms_agent.llm.context_budget import resolve_context_budget
+    from ms_agent.llm.model_catalog import get_model
+    from ms_agent.llm.spec import get_registry
+    from ms_agent.llm.vision import resolve_supports_vision
 
-    ``model`` is accepted for a per-model answer later (vendors do vary the
-    default per model) but is not consulted today: the dialect, and therefore
-    the wire shape, is decided by the endpoint.
-    """
-    from ms_agent.llm.thinking import offered_tiers
-
-    from app.backends.ms_agent.config import _read_settings, thinking_plan
-
-    entry = (_read_settings().get("providers") or {}).get(
-        (provider_id or "").lower()
-    ) or {}
-    protocol = entry.get("protocol") or "openai"
-    stored = (sidecar.get("providers", provider_id) or {}).get(
-        "default_generation_params"
-    ) or {}
-    if model:
-        stored = {
-            **stored,
-            **((sidecar.get("models", encode_model_id(provider_id, model)) or {}).get(
-                "advanced_params"
-            ) or {}),
-        }
-    effort = stored.get("reasoning_effort", "auto")
-    resolved = thinking_plan(
-        protocol,
-        provider_id,
-        effort,
-        existing={k: v for k, v in stored.items() if k != "reasoning_effort"},
+    from app.backends.ms_agent.config import (
+        _deep_merge, _read_settings, _webui_generation_params,
+        provider_base_url, thinking_plan,
     )
+    from app.schemas.model import CatalogMetadata
+
+    settings = _read_settings()
+    llm = resolve_model_settings(settings, provider_id, model)
+    spec = get_registry().get(provider_id)
+    protocol = llm.get("protocol") or "openai"
+    base_url = provider_base_url(provider_id)
+    stored = _deep_merge(settings.get("generation_config") or {},
+                         _webui_generation_params(provider_id, model))
+    if reasoning_effort is not None:
+        stored["reasoning_effort"] = reasoning_effort
+    if llm.get("max_tokens") is not None:
+        stored.setdefault("max_tokens", llm["max_tokens"])
+    if not model:
+        stored = _deep_merge(stored, (sidecar.get("providers", provider_id) or {}).get(
+            "default_generation_params") or {})
+    side = sidecar.get("models", encode_model_id(provider_id, model)) or {}
+    metadata = get_model(provider_id, model, base_url=base_url)
+    cfg = OmegaConf.create({
+        "llm": {"service": provider_id, "model": model, "base_url": base_url,
+                "protocol": protocol, "supports_vision": side.get("supports_vision"),
+                "context_limit": side.get("context_limit")},
+        "generation_config": stored,
+        "compaction": settings.get("compaction") or {},
+        "session_log": settings.get("session_log") or {},
+    })
+    effort = stored.get("reasoning_effort", "auto")
+    errors = []
+    try:
+        resolved = thinking_plan(protocol, provider_id, effort, model=model,
+                                 existing={k: v for k, v in stored.items() if k != "reasoning_effort"})
+    except (ValueError, TypeError) as exc:
+        errors.append(str(exc))
+        resolved = thinking_plan(protocol, provider_id, "auto", model=model)
+        resolved["params"] = {}
+    try:
+        budget = resolve_context_budget(cfg, metadata=metadata)
+    except ValueError as exc:
+        errors.append(str(exc))
+        budget = None
+    catalog = None
+    if metadata:
+        limits = metadata.get("limit") or {}
+        modalities = metadata.get("modalities") or {}
+        catalog = CatalogMetadata(
+            revision=metadata["catalog_revision"], provider_id=metadata["catalog_provider"],
+            context_limit=limits.get("context"), input_limit=limits.get("input"),
+            output_limit=limits.get("output"), input_modalities=modalities.get("input") or [],
+            output_modalities=modalities.get("output") or [],
+            reasoning=metadata.get("reasoning"), tool_call=metadata.get("tool_call"),
+        )
+    extra = stored.get("extra_body")
+    from ms_agent.llm.thinking import THINKING_PARAM_KEYS
+    raw_keys = set(THINKING_PARAM_KEYS) - {'reasoning_effort'}
+    raw_override = bool(raw_keys & set(stored) or
+                        isinstance(extra, dict) and set(THINKING_PARAM_KEYS) & set(extra))
+    options = list(resolved["effort_options"])
+    requested = resolved["requested"]
+    if "on" in options and requested not in ("auto", "off"):
+        requested = "on"
     return GenerationDefaults(
-        effort=resolved["requested"],
-        # Only the rungs this endpoint really has: a switch-only
-        # provider gets two, not the whole ladder.
-        effort_options=list(offered_tiers(resolved["family"])),
-        effective=resolved["effective"],
-        wire_params=resolved["params"],
-        family=resolved["family"],
-        extra_hint=resolved["extra_hint"],
+        effort=requested, effort_options=options, effective=resolved["effective"],
+        wire_params=resolved["params"], family=resolved["family"],
+        extra_hint=resolved["extra_hint"], reasoning=resolved.get("reasoning"),
+        reasoning_control=resolved.get("reasoning_control", "unknown"),
+        raw_override=raw_override, configuration_error="; ".join(errors), catalog=catalog,
+        context_budget=budget,
+        effective_supports_vision=resolve_supports_vision(cfg, spec=spec, model=model, base_url=base_url),
     )

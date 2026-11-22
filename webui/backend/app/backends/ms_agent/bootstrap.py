@@ -50,7 +50,6 @@ def bootstrap() -> None:
     # Normalize the model link so the chat dropdown lists the active model and
     # default_model is a full "provider/model" (see model_link).
     model_link.ensure_link()
-    _migrate_vision_default(home())
     _export_fastembed_cache()
 
 
@@ -133,46 +132,6 @@ def _export_fastembed_cache() -> None:
 
         logging.getLogger("app.ms_agent.bootstrap").debug(
             "fastembed cache pinning failed", exc_info=True)
-
-
-@locked(lambda home_dir: Path(home_dir) / "webui_meta.json")
-def _migrate_vision_default(home_dir: str) -> None:
-    """Materialize the old implicit "unset" into an explicit ``false``. Once.
-
-    "Image understanding" used to be a tri-state whose middle value fell through
-    to the provider's declared ``vision`` capability — and because nearly every
-    provider declares it, *unset meant images were sent*. The switch is now a
-    plain two-state control that defaults to off, so leaving those models unset
-    would silently flip behaviour under existing users with no record of why.
-
-    Writing the value down instead makes the change visible and inspectable: the
-    model form shows exactly what the runtime will do, and a user who wants
-    images back ticks one box. Guarded by a marker so it never re-runs and can
-    never overwrite a later choice.
-    """
-    import logging
-
-    from app.backends.ms_agent import sidecar
-
-    log = logging.getLogger("app.ms_agent.bootstrap")
-    try:
-        flags = sidecar.get("flags", "vision_two_state") or {}
-        if flags.get("migrated"):
-            return
-        models = sidecar.section("models") or {}
-        touched = [
-            mid for mid, meta in models.items()
-            if isinstance(meta, dict) and meta.get("supports_vision") is None
-        ]
-        for mid in touched:
-            sidecar.merge("models", mid, {"supports_vision": False})
-        sidecar.merge("flags", "vision_two_state", {"migrated": True})
-        if touched:
-            log.info(
-                "image understanding is now a two-state switch; %d model(s) "
-                "that were previously unset are recorded as off", len(touched))
-    except Exception:  # a migration must never block boot
-        log.warning("vision two-state migration skipped", exc_info=True)
 
 
 def _export_env() -> None:

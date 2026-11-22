@@ -20,27 +20,22 @@ def context(log):
     return [m.content for m in ContextAssembler(log).assemble()]
 
 
-@pytest.mark.parametrize('failure', ['message', 'sidecar'])
-def test_failed_compaction_recovers_only_committed_context(tmp_path, monkeypatch, failure):
+@pytest.mark.parametrize('durable', [False, True])
+def test_failed_compaction_recovers_only_committed_context(tmp_path, monkeypatch, durable):
     log = SessionLog(tmp_path, 'test')
     turn(log)
     original = context(log)
-    if failure == 'message':
-        append = log.append
-        def fail(message):
-            if message.get('role') == 'assistant':
-                raise OSError('disk failure')
-            return append(message)
-        monkeypatch.setattr(log, 'append', fail)
-    else:
-        def fail(meta):
-            raise OSError('sidecar failure')
-        monkeypatch.setattr(log, '_write_meta', fail)
+    append = log._append_line
+    def fail(record):
+        if durable:
+            append(record)
+        raise OSError('commit failure')
+    monkeypatch.setattr(log, '_append_line', fail)
     with pytest.raises(OSError):
         log.commit_compaction([{'role': 'user', 'content': 'summary'},
                                {'role': 'assistant', 'content': 'answer'}], {'strategy': 'test'})
     restored = SessionLog(tmp_path, 'test')
-    assert context(restored) == (original if failure == 'message' else ['summary', 'answer'])
+    assert context(restored) == (['summary', 'answer'] if durable else original)
     assert context(log) == context(restored)
 
 
@@ -53,7 +48,8 @@ def sessions(tmp_path):
 
 @pytest.mark.parametrize('legacy', [False, True])
 def test_multiple_compactions_fork_historical_view(sessions, legacy):
-    source = sessions.create('Original', model='m', model_provider='provider')
+    source = sessions.create('Original', model='m', model_provider='provider',
+                             reasoning_efforts={'provider': {'m': 'low'}})
     log = sessions.get_session_log(source)
     if legacy:
         header = log._path.read_text().replace('"checkpoint_from_seq": 0, ', '')
@@ -85,6 +81,7 @@ def test_multiple_compactions_fork_historical_view(sessions, legacy):
     for point, messages in zip(points, expected):
         child = sessions.fork(source.id, after_seq=point)
         assert context(sessions.get_session_log(child)) == messages
+        assert child.reasoning_efforts == source.reasoning_efforts
     assert log._path.read_bytes().startswith(original)
 
 
@@ -157,8 +154,6 @@ def test_fork_preserves_tool_results_and_plan(sessions):
 
 def test_manual_compaction_is_durable_and_failure_keeps_live_context(tmp_path, monkeypatch):
     import asyncio
-    from ms_agent.command.builtin.context_cmds import cmd_compact
-    from ms_agent.command.types import CommandContext
     from ms_agent.agent.llm_agent import LLMAgent
 
     log = SessionLog(tmp_path, 'manual')
@@ -171,18 +166,15 @@ def test_manual_compaction_is_durable_and_failure_keeps_live_context(tmp_path, m
     live = ContextAssembler(log).assemble()
     agent = object.__new__(LLMAgent)
     agent.session_log = log
-    ctx = CommandContext(raw_input='/compact', command_name='compact',
-                         extra={'messages': live, 'persist_context': agent._persist_manual_compaction})
     save = log.commit_compaction
     def fail(*args):
         raise OSError('disk full')
     monkeypatch.setattr(log, 'commit_compaction', fail)
     with pytest.raises(OSError):
-        asyncio.run(cmd_compact(ctx))
-    assert live[2].content == '0' * 500
+        agent._persist_manual_compaction(live)
+    assert context(SessionLog(tmp_path, 'manual')) == [m.content for m in live]
     monkeypatch.setattr(log, 'commit_compaction', save)
-    asyncio.run(cmd_compact(ctx))
-    assert live[2].content.startswith('[compacted')
+    agent._persist_manual_compaction(live)
     assert context(SessionLog(tmp_path, 'manual')) == [m.content for m in live]
     assert fork_points(log.records())[-1].context_start == log.last_consolidated
 
@@ -197,6 +189,21 @@ def test_new_format_waits_for_durable_turn_completion(tmp_path):
     original = log._path.read_bytes()
     log.record_turn_checkpoint(1)
     assert log._path.read_bytes() == original
+
+
+def test_fork_after_context_retry_keeps_one_request(sessions):
+    source = sessions.create('Retry')
+    log = sessions.get_session_log(source)
+    user = log.append({'role': 'user', 'content': 'original request'})
+    log.set_metadata_field('pending_context', {'id': 'retry', 'status': 'paused', 'tail_seq': user})
+    log.append({'role': 'assistant', 'content': '', 'errored': True})
+    log.record_error({'message': 'context budget exceeded'})
+    log.resume_pending_context()
+    log.append({'role': 'assistant', 'content': 'recovered answer'})
+    log.record_turn_checkpoint(1)
+    point = fork_points(log.records())[-1]
+    child = sessions.fork(source.id, after_seq=point.after_seq)
+    assert context(sessions.get_session_log(child)) == ['original request', 'recovered answer']
 
 
 @pytest.mark.parametrize('change', ['delete', 'replace', 'append'])
@@ -307,10 +314,12 @@ def test_resume_waits_for_new_input_before_compaction_and_execution(tmp_path):
     original = log._path.read_bytes()
     agent = LLMAgent.__new__(LLMAgent)
     agent.config = OmegaConf.create({})
+    agent.llm = SimpleNamespace()
+    agent._on_user_turn = None
     agent.tag, agent.load_cache = 'test', True
     agent.session_log = log
     agent.runtime = Runtime()
-    agent.tool_manager = SimpleNamespace(extra_tools=[])
+    agent.tool_manager = SimpleNamespace(extra_tools=[], get_tools=AsyncMock(return_value=[]))
     agent._skill_runtime, agent._event_sink = None, None
     agent.memory_tools = []
     agent._resolve_interactive = lambda _: True

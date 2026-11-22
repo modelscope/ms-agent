@@ -239,6 +239,16 @@ class ContextCompacted(AgentEvent):
     EVENT_TYPE: ClassVar[str] = 'context_compacted'
     before_tokens: int = 0
     after_tokens: int = 0
+    operation_id: str = ''
+    trigger: str = 'auto'
+    memory_status: str = 'skipped'
+
+
+@dataclass(frozen=True)
+class ContextUpdated(AgentEvent):
+    """Current input estimate and limits; no token calculation in interfaces."""
+    EVENT_TYPE: ClassVar[str] = 'context_updated'
+    snapshot: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

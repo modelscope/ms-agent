@@ -97,8 +97,11 @@ class InteractiveSession:
         while True:
             try:
                 if self._input_source is not None:
-                    query = (await
-                             self._input_source.read_prompt('>>> ')).strip()
+                    from ms_agent.ui.input import ResumeContext
+                    value = await self._input_source.read_prompt('>>> ')
+                    if isinstance(value, ResumeContext):
+                        return InteractiveTurn(action='resume_context')
+                    query = value.strip()
                 else:
                     query = input('>>> ').strip()
             except (EOFError, KeyboardInterrupt):

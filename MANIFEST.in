@@ -4,6 +4,12 @@ include requirements.txt
 recursive-include requirements *.txt
 recursive-include ms_agent/ *.yaml
 
+# Fixed offline models.dev snapshot, provenance, and upstream MIT license.
+include ms_agent/llm/data/models_dev.json
+include ms_agent/llm/data/models_dev.manifest.json
+include ms_agent/llm/data/LICENSE
+include .dev_scripts/update_model_catalog.py
+
 # agent_hub cross-framework conversion templates (markdown, not yaml)
 recursive-include ms_agent/agent_hub/default_configs *
 

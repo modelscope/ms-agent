@@ -15,6 +15,13 @@ _webui_spec = importlib.util.spec_from_file_location(
 webui_packaging = importlib.util.module_from_spec(_webui_spec)
 _webui_spec.loader.exec_module(webui_packaging)
 
+# Load the stdlib-only validator without importing SDK runtime dependencies.
+_catalog_spec = importlib.util.spec_from_file_location(
+    '_ms_agent_model_catalog',
+    Path(__file__).resolve().parent / 'ms_agent/llm/model_catalog.py')
+model_catalog = importlib.util.module_from_spec(_catalog_spec)
+_catalog_spec.loader.exec_module(model_catalog)
+
 
 def readme():
     with open('README.md', encoding='utf-8') as f:
@@ -135,6 +142,7 @@ class build_py(_build_py):
         if getattr(self, 'editable_mode', False):
             super().run()
             return
+        model_catalog.validate_bundle()
         if (webui_packaging.WEBUI / webui_packaging.MANIFEST).is_file():
             webui_packaging.validate_release()
         super().run()
@@ -165,15 +173,15 @@ class build_py(_build_py):
             shutil.copytree(
                 skill_src,
                 skill_dst,
-                ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '.DS_Store'),
+                ignore=shutil.ignore_patterns('__pycache__', '*.pyc',
+                                              '.DS_Store'),
             )
 
     def get_source_files(self):
         files = super().get_source_files()
-        files.extend('webui/' + rel
-                     for rel in webui_packaging.resource_paths(
-                         include_build=(webui_packaging.WEBUI /
-                                        webui_packaging.MANIFEST).is_file())
+        files.extend('webui/' + rel for rel in webui_packaging.resource_paths(
+            include_build=(webui_packaging.WEBUI
+                           / webui_packaging.MANIFEST).is_file())
                      if (webui_packaging.WEBUI / rel).is_file())
         if (webui_packaging.WEBUI / webui_packaging.MANIFEST).is_file():
             files.append('webui/' + webui_packaging.MANIFEST)
@@ -185,8 +193,8 @@ class build_py(_build_py):
             files.extend(
                 str(Path(self.build_lib) / 'ms_agent/webui' / rel)
                 for rel in webui_packaging.resource_paths(
-                    include_build=(webui_packaging.WEBUI /
-                                   webui_packaging.MANIFEST).is_file())
+                    include_build=(webui_packaging.WEBUI
+                                   / webui_packaging.MANIFEST).is_file())
                 + [webui_packaging.MANIFEST])
         return files
 
@@ -194,6 +202,7 @@ class build_py(_build_py):
 class sdist(_sdist):
 
     def run(self):
+        model_catalog.validate_bundle()
         if (webui_packaging.WEBUI / webui_packaging.MANIFEST).is_file():
             webui_packaging.validate_release()
         super().run()
@@ -247,6 +256,11 @@ if __name__ == '__main__':
             'sdist': sdist
         },
         package_data={
+            'ms_agent.llm': [
+                'data/models_dev.json',
+                'data/models_dev.manifest.json',
+                'data/LICENSE',
+            ],
             'ms_agent': [
                 'projects/**/*',
                 # agent_hub conversion templates — without these in the wheel,

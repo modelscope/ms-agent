@@ -45,6 +45,7 @@ def _build_transport(spec: ProviderSpec,
             api_key=api_key,
             base_url=base_url,
             generation_config=gen_config,
+            provider_id=spec.name,
             vision=vision,
             vision_supported=vision_supported,
         )
@@ -55,6 +56,7 @@ def _build_transport(spec: ProviderSpec,
             api_key=api_key,
             base_url=base_url,
             generation_config=gen_config,
+            provider_id=spec.name,
             continue_gen_mode=spec.continue_gen_mode,
             continue_gen_stop=spec.continue_gen_stop,
             strip_reasoning_tags=spec.strip_reasoning_tags,
@@ -179,7 +181,12 @@ class ProviderRouter:
         vision_supported = resolve_supports_vision(
             config, spec=spec, model=model, base_url=base_url)
 
-        transport = _build_transport(spec, model, api_key, base_url, gen_config,
-                                     vision=vision,
-                                     vision_supported=vision_supported)
+        transport = _build_transport(
+            spec,
+            model,
+            api_key,
+            base_url,
+            gen_config,
+            vision=vision,
+            vision_supported=vision_supported)
         return LLMProvider(config=config, spec=spec, transport=transport)

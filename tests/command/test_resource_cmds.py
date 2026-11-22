@@ -383,7 +383,8 @@ class TestMcpCommand:
 
 class TestSkillsCommand:
     @pytest.mark.asyncio
-    async def test_help(self):
+    async def test_help(self, monkeypatch):
+        monkeypatch.setattr('ms_agent.skill.loader.SkillLoader.discover_skills', lambda *a, **k: {})
         result = await make_router().dispatch(make_ctx('/skills'))
         assert result.content.startswith('No skills.')
         assert '/skills add' in result.content

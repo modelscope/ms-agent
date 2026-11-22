@@ -586,6 +586,7 @@ async def test_ctrl_c_during_stream_stays_in_repl():
 
     app.agent = SimpleNamespace(
         run=fake_run,
+        config=OmegaConf.create({"llm": {"model": "m", "service": "openai"}}),
         runtime=SimpleNamespace(should_stop=False),
     )
     serve = asyncio.create_task(app._serve())
