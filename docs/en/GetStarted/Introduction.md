@@ -1,6 +1,6 @@
 ---
 slug: Introduction
-title: Introduction
+title: Quick Start
 description: Ms-Agent Introduction
 ---
 

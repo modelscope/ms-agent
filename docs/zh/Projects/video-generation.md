@@ -5,7 +5,6 @@ description: Ms-Agent 奇点放映室项目：基于大模型的短视频生成�
 ---
 # 奇点放映室 (Singularity Cinema)
 
----
 ## 效果展示
 
 [![Video Preview](../../../projects/singularity_cinema/show_case/deploy_llm.png)](http://modelscope.oss-cn-beijing.aliyuncs.com/ms-agent/show_case/video/deploy_llm_claude_sonnet_4_5_mllm_gemini_3_pro_image_gen_gemini_3_pro_image.mp4)
@@ -280,5 +279,3 @@ ms-agent run --project singularity_cinema \
 - 并行度：`--t2i_num_parallel`、`--t2v_num_parallel`、`--llm_num_parallel`
 - 视频参数：`--video.fps`、`--video.bitrate` 等
 - 开关项：`--use_subtitle`、`--use_text2video`、`--use_doc_image` 等
-
----

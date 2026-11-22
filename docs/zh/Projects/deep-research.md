@@ -6,7 +6,15 @@ description: Ms-Agent 深度研究项目：面向通用领域的多模态调研�
 
 # 深度研究
 
-MS-Agent的DeepResearch项目提供了具备复杂任务解决能力的Agent工作流，用于面向科研等领域生成深度的多模态调研报告。目前提供两个版本，分别用于支持轻量、高效的低成本调研和深度、全面的大规模调研。
+MS-Agent 的 DeepResearch 项目面向需要多轮检索、证据整理和报告撰写的研究任务。当前项目包含 Agentic Insight v2，以及保留用于兼容和定制的 v1 基础、扩展工作流。
+
+## Agentic Insight v2
+
+v2 由研究智能体组织研究计划，再把检索任务交给搜索智能体，逐步积累证据并生成报告。模型和搜索引擎通过独立配置管理，便于按任务预算与数据来源调整。
+
+使用方法见 [v2 项目说明](https://github.com/modelscope/ms-agent/blob/main/projects/deep_research/v2/README.md)。仓库中的 `run_benchmark.sh` 是评测入口，需要根目录 `.env` 中的 `OPENAI_API_KEY`、`OPENAI_BASE_URL`；默认 Tavily 搜索还需 `TAVILY_API_KEY`，端点必须支持配置指定的模型。日常研究任务应按项目说明选择运行入口。
+
+以下介绍 **v1** 的基础与扩展工作流，安装、配置及代码示例均属于这一路径。
 
 ## 原理介绍
 

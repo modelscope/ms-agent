@@ -51,7 +51,7 @@ llm:
 
 ```yaml
 generation_config:
-  # 下面的字段均为 OpenAI sdk 的标准参数，你也可以配置 OpenAI 支持的其他参数在这里。
+  # 示例面向支持这些参数的 OpenAI 兼容服务；top_k、extra_body 等取决于供应商。
   top_p: 0.6
   temperature: 0.2
   top_k: 20
@@ -66,7 +66,7 @@ generation_config:
 
 ```yaml
 prompt:
-  # LLM system，如果不传递则使用默认的 `you are a helpful assistant.`
+  # 基础系统提示；未配置时使用内置 BASE_AGENT_PROMPT
   system:
   # LLM 初始 query，通常来说可以不使用
   query:
@@ -94,7 +94,6 @@ tools:
     mcp: false
     # 排除的 function，可以为空
     exclude:
-      - create_directory
       - write_file
   amap-maps:
     mcp: true
@@ -104,6 +103,7 @@ tools:
       - map_geo
   # 本地代码库/文档搜索（sirchmunk），对应模型可调用的 `localsearch` 工具
   localsearch:
+    mcp: false
     paths:
       - ./src
       - ./docs
@@ -112,7 +112,7 @@ tools:
     # 可选：llm_api_key、llm_base_url、llm_model_name（不填则从 `llm` 继承）
 ```
 
-支持的完整工具列表，以及自定义工具请参考 [这里](./tools)
+支持的完整工具列表，以及自定义工具请参考 [这里](./tools.md)
 
 ## 技能配置
 
@@ -120,63 +120,65 @@ tools:
 
 ```yaml
 skills:
-  # 技能目录路径或 ModelScope 仓库 ID
-  path: /path/to/skills
-  # 是否自动执行技能（默认 True）
-  auto_execute: true
-  # 工作目录
-  work_dir: /path/to/workspace
-  # 是否使用 Docker 沙箱执行（默认 True）
-  use_sandbox: false
+  # 技能来源（本地目录 / ModelScope 或 GitHub 仓库 ID），可多源
+  sources:
+    - type: local
+      path: /path/to/skills
+  # 是否自动发现 CWD/skills 下的技能目录（默认 False）
+  auto_discover: false
+  # 禁用的技能 id 列表
+  disabled: []
+  # 系统提示注入策略：all | always_only | none
+  prompt_injection: all
+  # 固定系统提示中的技能清单，技能变化通过后续消息通知（默认 false）
+  update_notice: false
 ```
 
-完整的技能模块说明（包括架构、目录结构、API 参考和安全机制等），请参考 [智能体技能](./agent-skills)。
+完整的技能模块说明（包括架构、目录结构、API 参考和安全机制等），请参考 [智能体技能](./agent-skills.md)。
 
-## 内存压缩配置
+此选项只固定技能清单；个性化文件等其他系统提示层仍可更新。
 
-> 可选，用于长对话场景的上下文管理
+## 上下文压缩配置（compaction）
+
+> 可选，用于长对话场景的非破坏式上下文管理
+
+历史以 append-only 的 `session_log` 为唯一真相源；每轮由 `ContextAssembler` 非破坏式地重建上下文视图，可按策略压缩，原始日志始终完整。
 
 ```yaml
-memory:
-  # 上下文压缩器：基于token检测 + 工具输出裁剪 + LLM摘要
-  context_compressor:
-    context_limit: 128000      # 模型上下文窗口大小
-    prune_protect: 40000       # 保护最近工具输出的token阈值
-    prune_minimum: 20000       # 最小裁剪数量
-    reserved_buffer: 20000     # 预留缓冲区
-    enable_summary: true       # 是否启用LLM摘要
-    summary_prompt: |          # 自定义摘要提示词（可选）
-      Summarize this conversation...
+# append-only 消息日志（历史真相源）
+session_log:
+  enabled: true            # 默认 true
+  context_limit: 128000    # 活动窗口保留的最大 token
+  reserved_buffer: 20000   # 为下一次回复预留的余量
+  prune_protect: 40000     # 最近这些 token 不会被工具输出裁剪
 
-  # 精炼压缩器：保留执行轨迹的结构化压缩
-  refine_condenser:
-    threshold: 60000           # 触发压缩的字符阈值
-    system: ...                # 自定义压缩提示词（可选）
-
-  # 代码压缩器：生成代码索引文件
-  code_condenser:
-    system: ...                # 自定义索引生成提示词（可选）
-    code_wrapper: ['```', '```']  # 代码块标记
+# 非破坏式上下文压缩（每轮重建）
+compaction:
+  enabled: true            # 默认 true；false 则不压缩（仍记录日志）
+  context_limit: 128000    # 覆盖 session_log.context_limit
+  reserved_buffer: 20000
+  strategies:              # 默认两者，按此顺序
+    - name: tool_output_pruner
+      enabled: true
+      prune_protect: 40000 # 最近 token 免于裁剪
+    - name: summary_compactor
+      enabled: true        # 需要 LLM；对较早轮次做摘要
 ```
 
-支持的压缩器类型：
+未指定 `session_log.dir` 时，会话按工作目录保存在 `$MS_AGENT_HOME/projects/` 下（默认 `~/.ms_agent/projects/`）。WebUI 为项目会话设置独立的日志目录。
 
-| 类型 | 适用场景 | 压缩方式 |
-|------|---------|---------|
-| `context_compressor` | 通用长对话 | Token检测 + 工具裁剪 + LLM摘要 |
-| `refine_condenser` | 需保留执行轨迹 | 结构化消息压缩（1:6压缩比） |
-| `code_condenser` | 代码生成任务 | 生成代码索引JSON |
+新建通用智能体建议使用 `compaction` 与 `session_log`。旧的 `memory.context_compressor`、`refine_condenser` 和 `code_condenser` 仍受支持，CodeGenesis 等项目也仍在使用；迁移已有工作流时，应先检查其自定义压缩和恢复逻辑。
 
 ## 其他
 
 > 可选，按需配置
 
 ```yaml
-# 自动对话轮数，默认为 20 轮
+# 自动对话轮数：框架常量默认 20，随包 agent.yaml 设为 9999
 max_chat_round: 9999
 
-# 工具调用超时时间，单位秒
-tool_call_timeout: 30000
+# 工具调用超时（秒），默认 120；上限由 tool_call_timeout_max 控制（默认 600）
+tool_call_timeout: 120
 
 # 输出 artifact 目录
 output_dir: output
@@ -217,7 +219,7 @@ handler: custom_handler
 - query: 初始 query，这个 query 的优先级高于 yaml 中的 prompt.query
 - config: 配置文件路径，支持 modelscope model-id
 - trust_remote_code: 是否信任外部代码。如果某个配置包含了一些外部代码，需要将这个参数置为 true 才会生效
-- load_cache: 从历史 messages 继续对话。cache 会被自动存储在 `output` 配置中。默认为 `False`
+- load_cache: 从历史 messages 继续对话。缓存路径由 `output_dir` 等运行配置决定。默认为 `False`
 - mcp_server_file: 可以读取一个外部的 mcp 工具配置，格式为：
     ```json
     {

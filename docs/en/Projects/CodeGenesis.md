@@ -1,20 +1,20 @@
 ---
 slug: CodeGenesis
 title: Code Genesis
-description: Ms-Agent Code Genesis Project for production-ready software project generation from natural language
+description: Ms-Agent Code Genesis Project for software project generation from natural language
 ---
 
 # Code Genesis
 
-Code Genesis is an open-source multi-agent framework that generates production-ready software projects from natural language requirements. It orchestrates specialized AI agents to autonomously deliver end-to-end project generation with frontend, backend, and database integration.
+Code Genesis is an open-source multi-agent framework that generates software projects from natural language requirements. It orchestrates specialized AI agents to autonomously deliver end-to-end project generation with frontend, backend, and database integration.
 
 ## Overview
 
 ### Features
 
 - **End-to-end project generation**: Automatically generates complete projects with frontend, backend, and database integration from natural language descriptions
-- **High-quality code**: LSP validation and dependency resolution ensure production-ready output
-- **Topology-aware generation**: Eliminates reference errors through dependency-driven code generation
+- **High-quality code**: LSP diagnostics and dependency resolution help check generated code
+- **Topology-aware generation**: Generates code in dependency order to reduce cross-file reference errors
 - **Automated deployment**: Deploys to EdgeOne Pages automatically with MCP integration
 - **Flexible workflows**: Choose between standard (7-stage) or simple (4-stage) pipelines based on project complexity
 
@@ -22,11 +22,11 @@ Code Genesis is an open-source multi-agent framework that generates production-r
 
 Code Genesis provides two configurable workflow modes:
 
-#### Standard Workflow (Production-Grade)
+#### Standard Workflow
 
 ![Standard Workflow](../../../projects/code_genesis/asset/workflow.jpg)
 
-The standard pipeline implements a rigorous 7-stage process optimized for complex, production-ready projects:
+The standard pipeline has seven stages for complex projects that benefit from explicit design and incremental validation:
 
 ```
 User Story → Architect → File Design → File Order → Install → Coding → Refine
@@ -41,7 +41,7 @@ User Story → Architect → File Design → File Order → Install → Coding �
 6. **Coding Agent**: Synthesizes code with LSP validation, following dependency order
 7. **Refine Agent**: Performs runtime validation, bug fixing, and automated deployment
 
-Each agent produces structured intermediate outputs, ensuring engineering rigor throughout the pipeline.
+Each agent produces structured intermediate outputs, making the design, code, and validation results easier to inspect.
 
 #### Simple Workflow (Rapid Prototyping)
 
@@ -106,26 +106,20 @@ The code will be output to the `output` folder in the current directory by defau
 
 ### Advanced Configuration
 
-#### Enable Diff-Based File Editing
+#### File Editing and Legacy Configuration
 
-Add `edit_file_config` to both `coding.yaml` and `refine.yaml`:
-
-```yaml
-edit_file_config:
-  model: morph-v3-fast  # or other compatible models
-  api_key: your-api-key
-  base_url: https://api.morphllm.com/v1
-```
-
-Get your model and API key from https://www.morphllm.com
+The current SDK uses exact `old_string` / `new_string` replacement in `file_system.edit_file`, without a separate editing model. Some legacy CodeGenesis configuration handlers still inspect `tools.file_system.edit_file_config.api_key` to decide whether to expose the edit tool. This compatibility logic does not mean that setting `diff_model` enables Morph or another editing service. Check `coding.yaml`, `refine.yaml`, and their configuration handlers together when updating an existing workflow.
 
 #### Enable Automated Deployment
 
-Add `edgeone-pages-mcp` configuration to `refine.yaml`:
+Add `edgeone-pages-mcp` under `tools` in `refine.yaml` (as an MCP tool):
 
 ```yaml
-mcp_servers:
-  edgeone-pages:
+tools:
+  edgeone-pages-mcp:
+    mcp: true
+    command: "npx"
+    args: ["edgeone-pages-mcp"]
     env:
       EDGEONE_PAGES_API_TOKEN: your-edgeone-token
 ```

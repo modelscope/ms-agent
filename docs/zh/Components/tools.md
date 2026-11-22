@@ -24,40 +24,56 @@ MS-Agent支持很多内部工具：
 
 ### file_system
 
-一个基础的本地文件增删改查工具。该工具会读取yaml配置中的`output`字段（默认为当前文件夹的`output`文件夹），所有的增删改查均基于output所指定的目录为根目录进行。
-
-#### create_directory
-
-创建一个文件夹
-
-参数：
-
-- path: `str`, 待创建的目录，该目录基于yaml配置中的`output`字段。
+本地文件读写工具。默认限制在配置的 `output_dir`（未配置时为当前工作目录 `Path.cwd()`）内。在 `trust_remote_code` 启用时，`allow_read_all_files` 可放宽读取范围；实际调用还受权限规则约束。共提供 5 个方法（`read` / `edit` / `write` 为别名）：
 
 #### write_file
 
-写入具体文件。
+写入文件（不存在则创建，父目录自动创建）。
 
 参数：
 
-- path: `str`, 待写入的具体文件，目录基于yaml配置中的`output`字段。
-- content: `str`: 写入内容。
+- `path`: `str`，目标文件路径。
+- `content`: `str`，写入内容。
 
 #### read_file
 
-读取一个文件内容
+读取一个或多个文件的内容。
 
 参数：
 
-- path: `str`, 待读出的具体文件，目录基于yaml配置中的`output`字段。
+- `paths`: `list[str]`，待读取的文件路径列表；兼容单文件参数 `path`。
+- `offset` / `limit`：读取的起始行和行数，用于分页。
 
-#### list_files
+#### edit_file
 
-列出某个目录的文件列表
+按字符串精确替换编辑文件。
 
 参数：
 
-- path: `str`, 基于yaml配置中的`output`的相对目录。如果为空，则列出根目录下的所有文件。
+- `path`: `str`，目标文件。
+- `old_string`: `str`，待替换的原文（默认需唯一匹配；空字符串用于创建文件）。
+- `new_string`: `str`，替换后的内容。
+- `replace_all`: `bool`，是否替换全部匹配，默认 `false`。
+
+#### grep
+
+在文件内容中做正则搜索（ripgrep 语义）。
+
+参数：
+
+- `pattern`: `str`，正则表达式。
+- `path`: `str`，搜索的文件或目录（可选，默认根目录）。
+- `glob`: `str`，文件名过滤（可选，如 `*.py`）。
+- `output_mode` / `head_limit` / `offset`：输出模式与分页（可选）。
+
+#### glob
+
+按 glob 模式查找文件路径。
+
+参数：
+
+- `pattern`: `str`（必填），glob 模式，如 `**/*.md`。
+- `path`: `str`，搜索起始目录（可选）。
 
 ### code_executor
 
@@ -133,11 +149,12 @@ MS-Agent支持很多内部工具：
 
 本地模式下，用于获取当前本地 Python 执行环境的基本信息，例如工作目录、是否已初始化、当前执行次数以及运行时长等。
 
-### MCP工具
+### MCP 工具
 
 支持传入外部MCP工具，只需要将mcp工具需要的配置写入字段即可，注意配置`mcp: true`。
 
 ```yaml
+tools:
   amap-maps:
     mcp: true
     type: sse
@@ -167,71 +184,33 @@ from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 
 
-# 可以改为其他名字
 class CustomTool(ToolBase):
-    """A file system operation tool
-
-    TODO: This tool now is a simple implementation, sandbox or mcp TBD.
-    """
-
     def __init__(self, config):
-        super(CustomTool, self).__init__(config)
+        super().__init__(config)
         self.exclude_func(getattr(config.tools, 'custom_tool', None))
-        ...
 
     async def connect(self):
-        ...
+        pass
 
-    async def cleanup(self):
-        ...
-
-    async def get_tools(self):
-        tools = {
-            'custom_tool': [
-                Tool(
-                    tool_name='foo',
-                    server_name='custom_tool',
-                    description='foo function',
-                    parameters={
-                        'type': 'object',
-                        'properties': {
-                            'path': {
-                                'type': 'string',
-                                'description': 'This is the only argument needed by foo, it\'s used to ...',
-                            }
-                        },
-                        'required': ['foo_arg1'],
-                        'additionalProperties': False
-                    }),
-                Tool(
-                    tool_name='bar',
-                    server_name='custom_tool',
-                    description='bar function',
-                    parameters={
-                        'type': 'object',
-                        'properties': {
-                            'path': {
-                                'type': 'string',
-                                'description': 'This is the only argument needed by bar, it\'s used to ...',
-                            },
-                        },
-                        'required': ['bar_arg1'],
-                        'additionalProperties': False
-                    }),
-            ]
-        }
+    async def _get_tools_inner(self):
         return {
-            'custom_tool': [
-                t for t in tools['custom_tool']
-                if t['tool_name'] not in self.exclude_functions
-            ]
+            'custom_tool': [Tool(
+                tool_name='echo',
+                server_name='custom_tool',
+                description='Return the supplied text.',
+                parameters={
+                    'type': 'object',
+                    'properties': {'text': {'type': 'string'}},
+                    'required': ['text'],
+                    'additionalProperties': False,
+                },
+            )]
         }
 
-    async def foo(self, foo_arg1) -> str:
-        ...
-
-    async def bar(self, bar_arg1) -> str:
-        ...
+    async def call_tool(self, server_name, *, tool_name, tool_args):
+        if server_name != 'custom_tool' or tool_name != 'echo':
+            raise ValueError('Unknown tool')
+        return tool_args['text']
 ```
 
 将文件保存在`agent.yaml`的相对目录中，如`tools/custom_tool.py`。

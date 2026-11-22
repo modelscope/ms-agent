@@ -6,7 +6,15 @@ description: Ms-Agent Deep Research Project for in-depth multimodal research rep
 
 # Deep Research
 
-The DeepResearch project of MS-Agent provides an Agent workflow with complex task-solving capabilities, designed to generate in-depth, multimodal research reports for domains such as scientific research. Two versions are currently available: one for lightweight, efficient, low-cost investigation, and another for deep, comprehensive, large-scale research.
+DeepResearch supports research tasks that require repeated searches, evidence gathering, and report writing. The project includes Agentic Insight v2 and the v1 base and extended workflows retained for compatibility and customization.
+
+## Agentic Insight v2
+
+v2 uses a research agent to organize a research plan and delegate retrieval tasks to a search agent, building evidence before producing a report. Separate model and search-engine configurations let you adapt the workflow to your budget and sources.
+
+See the [v2 project guide](https://github.com/modelscope/ms-agent/blob/main/projects/deep_research/v2/README.md) for usage. The repository’s `run_benchmark.sh` is an evaluation entry point: it requires `OPENAI_API_KEY` and `OPENAI_BASE_URL` in the root `.env`, plus `TAVILY_API_KEY` for the default search engine. The endpoint must support the configured models. For ordinary research tasks, follow the project guide to choose an entry point.
+
+The following sections describe the **v1** base and extended workflows; their installation, configuration, and code examples belong to that path.
 
 ## Principle Overview
 

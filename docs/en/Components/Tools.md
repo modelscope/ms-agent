@@ -24,40 +24,56 @@ Parameters:
 
 ### file_system
 
-A basic local file CRUD tool. This tool reads the `output` field in the yaml configuration (defaults to the `output` folder in the current directory), and all CRUD operations are performed based on the directory specified by output as the root directory.
-
-#### create_directory
-
-Create a folder
-
-Parameters:
-
-- path: `str`, the directory to be created, based on the `output` field in the yaml configuration.
+A local file read/write tool. By default, paths are confined to `output_dir` (the current working directory, `Path.cwd()`, when unset). With `trust_remote_code` enabled, `allow_read_all_files` can expand read access; calls are also subject to permission rules. It provides 5 methods (`read` / `edit` / `write` are aliases):
 
 #### write_file
 
-Write to a specific file.
+Write a file (created if missing; parent directories are created automatically).
 
 Parameters:
 
-- path: `str`, the specific file to write to, directory based on the `output` field in the yaml configuration.
-- content: `str`: content to write.
+- `path`: `str`, the target file path.
+- `content`: `str`, the content to write.
 
 #### read_file
 
-Read file content
+Read the content of one or more files.
 
 Parameters:
 
-- path: `str`, the specific file to read, directory based on the `output` field in the yaml configuration.
+- `paths`: `list[str]`, the file paths to read; the single-file `path` parameter is also supported.
+- `offset` / `limit`: starting line and number of lines for paging.
 
-#### list_files
+#### edit_file
 
-List files in a directory
+Edit a file by exact string replacement.
 
 Parameters:
 
-- path: `str`, relative directory based on the `output` in yaml configuration. If empty, lists all files in the root directory.
+- `path`: `str`, the target file.
+- `old_string`: `str`, the original text to replace (a unique match by default; an empty string creates a file).
+- `new_string`: `str`, the replacement content.
+- `replace_all`: `bool`, replace all matches; defaults to `false`.
+
+#### grep
+
+Regex search over file contents (ripgrep semantics).
+
+Parameters:
+
+- `pattern`: `str`, the regular expression.
+- `path`: `str`, the file or directory to search (optional, defaults to the root).
+- `glob`: `str`, filename filter (optional, e.g. `*.py`).
+- `output_mode` / `head_limit` / `offset`: output mode and pagination (optional).
+
+#### glob
+
+Find file paths by glob pattern.
+
+Parameters:
+
+- `pattern`: `str` (required), the glob pattern, e.g. `**/*.md`.
+- `path`: `str`, the starting directory (optional).
 
 ### code_executor
 
@@ -132,6 +148,7 @@ Code execution tool that can run Python code either in a sandboxed environment o
 Supports passing external MCP tools, just write the configuration required by the mcp tool into the field, and make sure to configure `mcp: true`.
 
 ```yaml
+tools:
   amap-maps:
     mcp: true
     type: sse
@@ -161,66 +178,33 @@ from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 
 
-# Can be changed to other names
 class CustomTool(ToolBase):
-    """A file system operation tool
-
-    TODO: This tool now is a simple implementation, sandbox or mcp TBD.
-    """
-
     def __init__(self, config):
-        super(CustomTool, self).__init__(config)
+        super().__init__(config)
         self.exclude_func(getattr(config.tools, 'custom_tool', None))
-        ...
 
     async def connect(self):
-        ...
+        pass
 
-    async def cleanup(self):
-        ...
-
-    async def get_tools(self):
-        tools = {
-            'custom_tool': [
-                Tool(
-                    tool_name='foo',
-                    server_name='custom_tool',
-                    description='foo function',
-                    parameters={
-                        'type': 'object',
-                        'properties': {
-                            'path': {
-                                'type': 'string',
-                                'description': 'This is the only argument needed by foo, it\'s used to ...',
-                            }
-                        },
-                        'required': ['foo_arg1'],
-                        'additionalProperties': False
-                    }),
-                Tool(
-                    tool_name='bar',
-                    server_name='custom_tool',
-                    description='bar function',
-                    parameters={
-                        'type': 'object',
-                        'properties': {
-                            'path': {
-                                'type': 'string',
-                                'description': 'This is the only argument needed by bar, it\'s used to ...',
-                            },
-                        },
-                        'required': ['bar_arg1'],
-                        'additionalProperties': False
-                    }),
-            ]
+    async def _get_tools_inner(self):
+        return {
+            'custom_tool': [Tool(
+                tool_name='echo',
+                server_name='custom_tool',
+                description='Return the supplied text.',
+                parameters={
+                    'type': 'object',
+                    'properties': {'text': {'type': 'string'}},
+                    'required': ['text'],
+                    'additionalProperties': False,
+                },
+            )]
         }
-        return tools
 
-    async def foo(self, foo_arg1) -> str:
-        ...
-
-    async def bar(self, bar_arg1) -> str:
-        ...
+    async def call_tool(self, server_name, *, tool_name, tool_args):
+        if server_name != 'custom_tool' or tool_name != 'echo':
+            raise ValueError('Unknown tool')
+        return tool_args['text']
 ```
 
 Save the file in a relative directory to `agent.yaml`, such as `tools/custom_tool.py`.

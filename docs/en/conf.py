@@ -17,15 +17,16 @@ from sphinxawesome_theme import ThemeOptions
 sys.path.insert(0, os.path.abspath('../../'))
 
 project = 'MS-Agent'
-copyright = '2022-2024, Alibaba ModelScope'
+copyright = '2022-2026, Alibaba ModelScope'
 author = 'ModelScope Authors'
 version_file = '../../ms_agent/version.py'
 
 
 def get_version():
+    namespace: dict = {}
     with open(version_file, 'r', encoding='utf-8') as f:
-        exec(compile(f.read(), version_file, 'exec'))
-    return locals()['__version__']
+        exec(compile(f.read(), version_file, 'exec'), namespace)
+    return namespace['__version__']
 
 
 # The full version, including alpha/beta/rc tags
@@ -41,6 +42,7 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.viewcode',
     'sphinx_design',
+    'sphinxcontrib.mermaid',
     'myst_parser',
 ]
 

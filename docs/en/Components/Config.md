@@ -51,7 +51,7 @@ llm:
 
 ```yaml
 generation_config:
-  # The following fields are all standard parameters of OpenAI SDK, you can also configure other parameters supported by OpenAI here.
+  # Example for a compatible provider; support for top_k and extra_body is provider-specific.
   top_p: 0.6
   temperature: 0.2
   top_k: 20
@@ -66,7 +66,7 @@ generation_config:
 
 ```yaml
 prompt:
-  # LLM system, if not passed, the default `you are a helpful assistant.` is used
+  # Base system prompt; defaults to the built-in BASE_AGENT_PROMPT
   system:
   # LLM initial query, usually not needed
   query:
@@ -94,7 +94,6 @@ tools:
     mcp: false
     # Excluded functions, can be empty
     exclude:
-      - create_directory
       - write_file
   amap-maps:
     mcp: true
@@ -104,6 +103,7 @@ tools:
       - map_geo
   # Local codebase / document search (sirchmunk), exposed as the `localsearch` tool
   localsearch:
+    mcp: false
     paths:
       - ./src
       - ./docs
@@ -120,63 +120,65 @@ For the complete list of supported tools and custom tools, please refer to [here
 
 ```yaml
 skills:
-  # Path to skills directory or ModelScope repo ID
-  path: /path/to/skills
-  # Whether to auto-execute skills (default: True)
-  auto_execute: true
-  # Working directory for outputs
-  work_dir: /path/to/workspace
-  # Whether to use Docker sandbox for execution (default: True)
-  use_sandbox: false
+  # Skill sources (local directory / ModelScope or GitHub repo ID); multiple allowed
+  sources:
+    - type: local
+      path: /path/to/skills
+  # Whether to auto-discover skill directories under CWD/skills (default: False)
+  auto_discover: false
+  # List of disabled skill ids
+  disabled: []
+  # System-prompt injection policy: all | always_only | none
+  prompt_injection: all
+  # Pin the skill list in the system prompt; report skill changes in later messages (default: false)
+  update_notice: false
 ```
 
-For the complete skill module documentation (including architecture, directory structure, API reference, and security mechanisms), see [Agent Skills](./AgentSkills).
+For the complete skill module documentation (including architecture, directory structure, API reference, and security mechanisms), see [Agent Skills](./AgentSkills.md).
 
-## Memory Compression Configuration
+This option pins only the skill list; other system-prompt layers, such as personalization files, can still change.
 
-> Optional, for context management in long conversations
+## Context Compaction Configuration
+
+> Optional, for non-destructive context management in long conversations
+
+History lives in the append-only `session_log` (the single source of truth); each round the `ContextAssembler` rebuilds the context view non-destructively and may compact it by strategy, while the raw log always stays complete.
 
 ```yaml
-memory:
-  # Context Compressor: token detection + tool output pruning + LLM summary
-  context_compressor:
-    context_limit: 128000      # Model context window size
-    prune_protect: 40000       # Token threshold to protect recent tool outputs
-    prune_minimum: 20000       # Minimum pruning amount
-    reserved_buffer: 20000     # Reserved buffer
-    enable_summary: true       # Enable LLM summary
-    summary_prompt: |          # Custom summary prompt (optional)
-      Summarize this conversation...
+# Append-only message log (source of truth for history)
+session_log:
+  enabled: true            # default true
+  context_limit: 128000    # max tokens kept in the live window
+  reserved_buffer: 20000   # headroom left for the next response
+  prune_protect: 40000     # recent tokens never tool-pruned
 
-  # Refine Condenser: structured compression preserving execution trace
-  refine_condenser:
-    threshold: 60000           # Character threshold to trigger compression
-    system: ...                # Custom compression prompt (optional)
-
-  # Code Condenser: generate code index files
-  code_condenser:
-    system: ...                # Custom index generation prompt (optional)
-    code_wrapper: ['```', '```']  # Code block markers
+# Non-destructive context compaction (rebuilt every loop round)
+compaction:
+  enabled: true            # default true; false -> no compaction (still logged)
+  context_limit: 128000    # overrides session_log.context_limit
+  reserved_buffer: 20000
+  strategies:              # default: both, in this order
+    - name: tool_output_pruner
+      enabled: true
+      prune_protect: 40000 # recent tokens exempt from pruning
+    - name: summary_compactor
+      enabled: true        # needs an LLM; summarizes older turns
 ```
 
-Supported compressor types:
+Without `session_log.dir`, sessions are grouped by working directory under `$MS_AGENT_HOME/projects/` (default: `~/.ms_agent/projects/`). WebUI assigns a separate log directory to each project session.
 
-| Type | Use Case | Compression Method |
-|------|----------|-------------------|
-| `context_compressor` | General long conversations | Token detection + Tool pruning + LLM summary |
-| `refine_condenser` | Preserve execution trace | Structured message compression (1:6 ratio) |
-| `code_condenser` | Code generation tasks | Generate code index JSON |
+Use `compaction` and `session_log` for new general-purpose agents. The legacy `memory.context_compressor`, `refine_condenser`, and `code_condenser` remain supported and are still used by projects such as CodeGenesis. Check custom compaction and restoration logic before migrating an existing workflow.
 
 ## Others
 
 > Optional, configure as needed
 
 ```yaml
-# Automatic conversation rounds, default is 20 rounds
+# Automatic conversation rounds: framework constant defaults to 20, the bundled agent.yaml sets 9999
 max_chat_round: 9999
 
-# Tool call timeout, in seconds
-tool_call_timeout: 30000
+# Tool call timeout (seconds), default 120; the upper bound is tool_call_timeout_max (default 600)
+tool_call_timeout: 120
 
 # Output artifact directory
 output_dir: output
@@ -216,7 +218,7 @@ In addition to yaml configuration, MS-Agent also supports several additional com
 - query: Initial query, this query has higher priority than prompt.query in yaml
 - config: Configuration file path, supports modelscope model-id
 - trust_remote_code: Whether to trust external code. If a configuration contains some external code, this parameter needs to be set to true for it to take effect
-- load_cache: Continue conversation from historical messages. Cache will be automatically stored in the `output` configuration. Default is `False`
+- load_cache: Continue conversation from historical messages. Cache paths depend on runtime settings such as `output_dir`. Default is `False`
 - mcp_server_file: Can read an external mcp tool configuration, format is:
     ```json
     {
@@ -239,7 +241,7 @@ Use `--knowledge_search_paths` or define `tools.localsearch` in yaml so the mode
 
 ```bash
 # Using default agent.yaml configuration, automatically reuses LLM settings
-ms-agent run --query "How to implement user authentication?" --knowledge_search_paths "/path/to/docs"
+ms-agent run --query "How to implement user authentication?" --knowledge_search_paths "./src,./docs"
 
 # Specify configuration file
 ms-agent run --config /path/to/agent.yaml --query "your question" --knowledge_search_paths "/path/to/docs"
