@@ -47,7 +47,7 @@ TOOLS = [
 
 # service -> (default model, env key that must be present)
 PROVIDERS = {
-    'modelscope': ('Qwen/Qwen3-235B-A22B-Instruct-2507', 'MODELSCOPE_API_KEY'),
+    'modelscope': ('Qwen/Qwen3.8-Flash-Next', 'MODELSCOPE_API_KEY'),
     'dashscope': ('qwen3.7-plus', 'DASHSCOPE_API_KEY'),
     'deepseek': ('deepseek-chat', 'DEEPSEEK_API_KEY'),
     'zhipu': ('glm-4.5', 'GLM_API_KEY'),

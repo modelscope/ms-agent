@@ -10,7 +10,7 @@ prompt_toolkit / omegaconf.
 """
 from ms_agent.ui.events import (
     AgentEvent, AgentEventSink, ContentDelta, ContentEnd, ContextCompacted,
-    ErrorRaised, JsonlEventSink, Notice, PermissionRequested,
+    ContextUpdated, ErrorRaised, JsonlEventSink, Notice, PermissionRequested,
     PermissionResolved, PlanEntry, PlanUpdated, ReasoningDelta, ReasoningEnded,
     ReasoningStarted, RecordingSink, TeeEventSink, ToolCallCompleted,
     ToolCallStarted, TurnCompleted, TurnStarted, UsageInfo, UserMessage)
@@ -35,6 +35,7 @@ __all__ = [
     'PermissionRequested',
     'PermissionResolved',
     'ContextCompacted',
+    'ContextUpdated',
     'Notice',
     'ErrorRaised',
     'UsageInfo',

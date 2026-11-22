@@ -203,7 +203,12 @@ class UICMD(CLICommand):
                 ]
                 if self.args.no_browser:
                     arguments.append('--no-open')
-            _exec_launcher(python, webui, arguments, installed=installed)
+            _exec_launcher(
+                python,
+                webui,
+                arguments,
+                installed=installed,
+                skip_install=self.args.skip_install)
         except KeyboardInterrupt:
             print('WebUI preparation stopped.', flush=True)
         except (UIError, OSError, RuntimeError, subprocess.SubprocessError,
@@ -212,8 +217,11 @@ class UICMD(CLICommand):
             raise SystemExit(1) from None
 
 
-def _exec_launcher(python, webui, arguments, *, installed):
+def _exec_launcher(python, webui, arguments, *, installed, skip_install=False):
     env = os.environ.copy()
+    if skip_install:
+        env['MS_AGENT_MODEL_CATALOG'] = 'local' if env.get(
+            'MS_AGENT_MODEL_CATALOG') != 'bundled' else 'bundled'
     env['PYTHONUTF8'] = '1'
     env['PYTHONIOENCODING'] = 'utf-8'
     if installed:

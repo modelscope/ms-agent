@@ -16,6 +16,7 @@ import { useMatchMedia } from '~/lib/useMatchMedia'
 import type { Project } from '~/lib/types'
 import type { AgentMessage } from '~/lib/agentProvider'
 import type { ChatFileRef, MessageSegment } from '~/lib/agentProvider'
+import type { ReasoningEffort } from '~/lib/types'
 import { useSessionModel } from '~/lib/sessionModel'
 import { useRouteLoaderData } from 'react-router'
 import type { loader as appLoader } from '~/layouts/app'
@@ -28,6 +29,7 @@ interface Props {
   /** `null` = new-chat mode; a string = existing session (detail) mode. */
   sessionId: string | null
   initialModelId?: string
+  initialReasoningEfforts?: Record<string, ReasoningEffort>
   /** Auto-submit this message once on mount (carried draft from overview). */
   autoSubmitMessage?: string
   /** Files attached to the auto-submitted draft (carried from overview). */
@@ -50,6 +52,7 @@ export function ChatView({
   project,
   sessionId,
   initialModelId,
+  initialReasoningEfforts,
   autoSubmitMessage,
   autoSubmitFiles,
   autoSubmitSegments,
@@ -128,7 +131,8 @@ export function ChatView({
     activeSessionId,
     sessionId
       ? (initialModelId ?? '')
-      : (appData?.agentSettings.default_model_id ?? '')
+      : (appData?.agentSettings.default_model_id ?? ''),
+    true, initialReasoningEfforts
   )
   const isNewChat = activeSessionId === null
   const showWorkspace = activeProject !== null
@@ -304,6 +308,9 @@ export function ChatView({
         <Composer
           draftKey={activeSessionId}
           focusOnMount={!!location.state?.focusComposer}
+
+          sessionId={activeSessionId}
+          onContextComplete={ctx.refreshMessages}
           modelSelection={modelSelection}
           modelSelectionDisabled={isNewChat && ctx.loading}
           project={activeProject}
@@ -327,6 +334,9 @@ export function ChatView({
       <Composer
         draftKey={activeSessionId}
         focusOnMount={!!location.state?.focusComposer}
+
+          sessionId={activeSessionId}
+          onContextComplete={ctx.refreshMessages}
         modelSelection={modelSelection}
         modelSelectionDisabled={isNewChat && ctx.loading}
         project={activeProject}
@@ -348,7 +358,7 @@ export function ChatView({
       // session's messages).
       key={sessionId ?? 'new'}
       sessionId={sessionId}
-      prepareModel={modelSelection.ready}
+      prepareModel={modelSelection.readySelection}
       projectId={projectId}
       workspaceOpen={railOpen}
       autoSubmitMessage={prefill}

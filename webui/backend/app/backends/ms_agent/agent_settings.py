@@ -41,12 +41,26 @@ def get_settings() -> AgentSettings:
     )
 
 
+# Bool / enum switches have no separate "clear" value. JSON null is the same
+# as omitting the field: leave the stored setting alone. Optional string pins
+# (memory_llm_model and the other memory_* fields) still treat null as clear.
+_NULL_MEANS_UNCHANGED = frozenset({
+    "default_memory_enabled",
+    "default_memory_backend",
+    "global_mcp_auto_attach",
+    "global_skill_auto_attach",
+})
+
+
 def update_settings(body: AgentSettings) -> AgentSettings:
     from app.backends.errors import BadRequest
     from ms_agent.utils.json_store import json_transaction
     from pathlib import Path
 
     patch = body.model_dump(exclude_unset=True)
+    for key in list(patch):
+        if key in _NULL_MEANS_UNCHANGED and patch[key] is None:
+            del patch[key]
     with settings_lock():
         if "default_model_id" in patch:
             if body.default_model_id:

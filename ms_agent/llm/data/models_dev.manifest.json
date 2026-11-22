@@ -1,0 +1,12 @@
+{
+  "format": 1,
+  "source": "https://models.dev/api.json",
+  "revision": "sha256:8434414a0506f38d59499f4e76e37fc48d5437e2ad168bb809f672bed90edac3",
+  "sha256": "8434414a0506f38d59499f4e76e37fc48d5437e2ad168bb809f672bed90edac3",
+  "fetched_at": "2026-09-21T17:51:47.592481+00:00",
+  "provider_count": 222,
+  "model_count": 7922,
+  "license": "MIT",
+  "license_source": "https://github.com/anomalyco/models.dev/blob/dev/LICENSE",
+  "license_sha256": "dc2dc41c9fea2fd3c41c21c6f484844cab367800b88ff24781f980ad3a9d160a"
+}

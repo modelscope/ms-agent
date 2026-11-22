@@ -83,6 +83,10 @@ class UserMessage(AgentEvent):
     EVENT_TYPE: ClassVar[str] = 'user_message'
     turn_id: str = ''
     text: str = ''
+    # True when the text was interjected into a running turn (steering) instead of
+    # submitted at an idle prompt. A terminal already echoes an idle prompt's typed
+    # line, so a TUI renders only steered echoes; a WebUI may render both.
+    steered: bool = False
 
 
 @dataclass(frozen=True)
@@ -239,6 +243,16 @@ class ContextCompacted(AgentEvent):
     EVENT_TYPE: ClassVar[str] = 'context_compacted'
     before_tokens: int = 0
     after_tokens: int = 0
+    operation_id: str = ''
+    trigger: str = 'auto'
+    memory_status: str = 'skipped'
+
+
+@dataclass(frozen=True)
+class ContextUpdated(AgentEvent):
+    """Current input estimate and limits; no token calculation in interfaces."""
+    EVENT_TYPE: ClassVar[str] = 'context_updated'
+    snapshot: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

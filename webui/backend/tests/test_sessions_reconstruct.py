@@ -204,6 +204,104 @@ def test_reconstruct_keeps_removed_local_tool_history(tmp_path, name):
     assert terminals[0].meta["code"] == "print(6)"
     assert terminals[0].meta["result"] == result
 
+def test_list_messages_replays_compaction_from_original_session_log(tmp_path, monkeypatch):
+    from app.backends.ms_agent import chat, runtime, sessions
+    from ms_agent.session import SessionLog
+
+    log = SessionLog(tmp_path, "compaction-history")
+    log.append({"role": "user", "content": "first question"})
+    log.append({"role": "assistant", "content": "first answer"})
+    log.record_loop_end({"duration_ms": 1000})
+    log.append({"role": "user", "content": "second question"})
+    # The current user's row precedes compaction, but not the assistant's reply.
+    log.record_compaction({"strategy": "tool_pruner", "tokens_before": 12000,
+                           "tokens_after": 8000})
+    # These rows are the LLM view, NOT a replacement for the original history.
+    log.append({"role": "user", "content": "summary", "_source": "compaction"})
+    log.append({"role": "assistant", "content": "first answer", "_source": "compaction"})
+    log.append({
+        "role": "assistant", "content": "checking", "reasoning_content": "thinking",
+        "tool_calls": [
+            {"id": call_id, "tool_name": "file_system---read_file",
+             "arguments": '{"path": "a.txt"}'} for call_id in ("c1", "c2")
+        ],
+    })
+    for call_id in ("c1", "c2"):
+        log.append({"role": "tool", "tool_call_id": call_id, "content": "original result"})
+    log.record_compaction({"strategy": "summary_compactor", "status": "completed",
+                           "tokens_before": 8000, "tokens_after": 3000})
+    log.record_compaction({"status": "retained", "tokens_before": 8000, "tokens_after": 8000})
+    log.record_compaction({"status": "failed", "error": "summary failed"})
+    log.append({"role": "assistant", "content": "second answer"})
+    log.record_loop_end({"duration_ms": 9000})
+    log.append({"role": "user", "content": "third question"})
+    log.append({"role": "assistant", "content": "third answer"})
+    log.record_loop_end({"duration_ms": 2000})
+
+    path = tmp_path / "compaction-history.jsonl"
+    original = path.read_bytes()
+    # Fresh reader exercises the on-disk API used after a reload, not its cache.
+    manager = SimpleNamespace(get_session_log=lambda session: SessionLog(tmp_path, "compaction-history"))
+    monkeypatch.setattr(sessions, "find_session", lambda sid:
+                        (_project(tmp_path), SimpleNamespace(id=sid, forked_from=None), manager))
+    monkeypatch.setattr(runtime.registry, "is_generating", lambda sid: False)
+    messages = sessions.list_messages("sid")
+    assert [(m.role, m.content) for m in messages] == [
+        ("user", "first question"), ("assistant", "first answer"),
+        ("user", "second question"), ("assistant", "checking\n\nsecond answer"),
+        ("user", "third question"), ("assistant", "third answer"),
+    ]
+    assert [m.duration_ms for m in messages if m.role == "assistant"] == [1000, 9000, 2000]
+    parts = messages[3].parts
+    assert [p.step.kind if p.kind == "step" else p.kind for p in parts] == [
+        "context_compaction", "thought", "text", "file_read", "file_read",
+        "context_compaction", "text",
+    ]
+    assert [step.meta["group"] for step in _steps(messages, "file_read")] == [1, 1]
+    assert [step.meta["result"] for step in _steps(messages, "file_read")] == ["original result"] * 2
+    for step, before, after in zip(_steps(messages, "context_compaction"), (12000, 8000), (8000, 3000)):
+        live = chat._TurnMapper().map({"type": "context_compacted", "before_tokens": before,
+                                      "after_tokens": after})[0]
+        assert {"kind": step.kind, **step.meta} == live.meta
+    assert not messages[3].partial
+    assert path.read_bytes() == original  # replay never rewrites conversation storage
+
+
+@pytest.mark.parametrize("outcome", [
+    {"status": "retained"}, {"status": "failed"}, {"status": "error"},
+    {"status": "cancelled"}, {"status": "pending"},
+    {"error": "summary failed"}, {"is_error": True}, {"success": False},
+])
+def test_reconstruct_skips_unsuccessful_compaction(outcome):
+    messages = _reconstruct([
+        {"role": "user", "content": "question"},
+        {"_type": "compaction_event", "tokens_before": 12000,
+         "tokens_after": 4000, **outcome},
+        {"role": "assistant", "content": "answer"},
+    ])
+    assert [(m.role, m.content) for m in messages] == [("user", "question"), ("assistant", "answer")]
+    assert [p.kind for p in messages[1].parts] == ["text"]
+
+
+@pytest.mark.parametrize("counts", [{}, {"tokens_before": 0, "tokens_after": 0}])
+def test_reconstruct_legacy_compaction_between_turns_keeps_message_order(counts):
+    messages = _reconstruct([
+        {"role": "user", "content": "first question"},
+        {"role": "assistant", "content": "first answer"},
+        {"_type": "loop_end", "duration_ms": 1000},
+        {"_type": "compaction_event", **counts},
+        {"role": "user", "content": "next question"},
+        {"role": "assistant", "content": "next answer"},
+    ])
+    assert [(m.role, m.content) for m in messages] == [
+        ("user", "first question"), ("assistant", "first answer"),
+        ("user", "next question"), ("assistant", "next answer"),
+    ]
+    assert [p.kind for p in messages[1].parts] == ["text", "step"]
+    assert messages[1].duration_ms == 1000
+    assert _steps(messages, "context_compaction")[0].meta == {}
+    assert [p.kind for p in messages[3].parts] == ["text"]
+
 
 def test_reconstruct_keeps_rule_refused_tool_call(tmp_path):
     """A call refused by a rule (blacklist / ask rule with nobody to ask) was

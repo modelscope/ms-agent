@@ -36,6 +36,40 @@ def test_cold_homepage_queries_do_not_rewrite_entities(client):
     assert not list(root.rglob('session.json'))
 
 
+def test_null_switch_leaves_memory_on_for_webui_and_tui(client):
+    """JSON null does not turn memory off. The file the TUI reads stays on.
+
+    An explicit true/false still writes, and a null string pin still clears.
+    """
+    assert client.patch(
+        '/api/agent-settings',
+        json={'default_memory_enabled': True}).status_code == 200
+    assert client.put(
+        '/api/agent-settings',
+        json={'default_memory_enabled': None}).status_code == 200
+    data = client.get('/api/agent-settings').json()['data']
+    assert data['default_memory_enabled'] is True
+
+    from ms_agent.personalization import PersonalizationSettings
+    from app.backends.ms_agent.common import home
+    assert PersonalizationSettings(global_dir=home()).load().memory_enabled is True
+
+    assert client.patch(
+        '/api/agent-settings',
+        json={'memory_llm_model': 'one'}).status_code == 200
+    assert client.patch(
+        '/api/agent-settings',
+        json={'memory_llm_model': None}).status_code == 200
+    data = client.get('/api/agent-settings').json()['data']
+    assert data['memory_llm_model'] is None
+    assert data['default_memory_enabled'] is True
+
+    assert client.patch(
+        '/api/agent-settings',
+        json={'default_memory_enabled': False}).status_code == 200
+    assert client.get('/api/agent-settings').json()['data']['default_memory_enabled'] is False
+
+
 def test_parallel_api_patches_merge_fields_and_last_save_wins(client):
     start = Barrier(2, timeout=5)
 
@@ -119,3 +153,40 @@ def test_deleting_provider_drops_it_from_the_order(client):
     assert _provider_ids(client)[0] == 'temp'
     assert client.delete('/api/providers/temp').status_code == 200
     assert 'temp' not in _provider_ids(client)
+
+
+def test_thinking_is_session_scoped_and_turn_snapshot_is_immutable(client):
+    from app.backends.ms_agent import session_models, sidecar, config
+    from app.backends.ms_agent.common import find_session
+
+    model = client.post('/api/models', json={'provider_id': 'dashscope', 'name': 'qwen3.8-flash'}).json()['data']
+    mid = model['id']
+    a, b = [client.post('/api/sessions', json={'title': label, 'model_id': mid}).json()['data'] for label in ('A', 'B')]
+    change = lambda sid, effort: client.patch(f'/api/sessions/{sid}/thinking', json={'model_id': mid, 'reasoning_effort': effort})
+    assert change(a['id'], 'off').status_code == 200
+    project, session, manager = find_session(a['id'])
+    _, frozen = session_models.prepare(project, session)
+    assert change(b['id'], 'low').status_code == 200
+    assert client.get(f"/api/sessions/{a['id']}").json()['data']['reasoning_efforts'][mid] == 'off'
+    assert client.get(f"/api/sessions/{b['id']}").json()['data']['reasoning_efforts'][mid] == 'low'
+    assert sidecar.get('models', mid)['advanced_params']['reasoning_effort'] == 'low'
+    # Resolving an existing conversation must not mutate the global default.
+    _, current = session_models.prepare(project, manager.get(a['id']))
+    for snapshot in (frozen, current):
+        token = config._model_snapshot.set(snapshot)
+        try:
+            assert config._webui_generation_params('dashscope', 'qwen3.8-flash')['reasoning_effort'] == 'off'
+        finally:
+            config._model_snapshot.reset(token)
+    assert sidecar.get('models', mid)['advanced_params']['reasoning_effort'] == 'low'
+    other = client.post('/api/models', json={'provider_id': 'dashscope', 'name': 'qwen3.8-max'}).json()['data']['id']
+    assert client.patch(f"/api/sessions/{a['id']}/model", json={'model_id': other}).status_code == 200
+    assert change(a['id'], 'off').status_code == 400
+    restored = client.patch(f"/api/sessions/{a['id']}/model", json={'model_id': mid}).json()['data']['session']
+    assert restored['reasoning_efforts'][mid] == 'off'
+    # SDK metadata, rather than frontend-local state, survives a fresh read.
+    assert manager.get(a['id']).reasoning_efforts['dashscope']['qwen3.8-flash'] == 'off'
+    assert client.patch(f'/api/models/{mid}', json={'advanced_params': {'extra_body': {'reasoning_effort': 'low'}}}).status_code == 200
+    defaults = client.get('/api/models/generation-defaults', params={'provider_id': 'dashscope', 'model': 'qwen3.8-flash'}).json()['data']
+    assert defaults['raw_override'] is True
+    assert change(a['id'], 'low').status_code == 400

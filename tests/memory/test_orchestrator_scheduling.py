@@ -21,6 +21,7 @@ import pytest
 from ms_agent.llm.utils import Message
 from ms_agent.memory.unified.config import MemoryConfig
 from ms_agent.memory.unified.orchestrator import MemoryOrchestrator
+from ms_agent.memory.unified.user_notice import MISSING_DIR_NOTICE
 
 
 class RecordingBackend:
@@ -139,9 +140,16 @@ def test_ledger_survives_a_process_restart(tmp_path):
     asyncio.run(main())
 
 
-def test_failed_ingest_is_retried_on_the_next_turn(tmp_path):
+def test_failed_ingest_is_retried_on_the_next_turn(tmp_path, monkeypatch):
 
     async def main():
+        logged = []
+
+        def _error(msg, *args, **kwargs):
+            logged.append(msg % args if args else msg)
+
+        monkeypatch.setattr(
+            'ms_agent.memory.unified.orchestrator.logger.error', _error)
 
         class Failing(RecordingBackend):
 
@@ -152,6 +160,8 @@ def test_failed_ingest_is_retried_on_the_next_turn(tmp_path):
         await orch.add(_msgs('important fact', 'noted'))
         assert orch.ingest_status['state'] == 'error'
         assert 'provider down' in orch.ingest_status['error']
+        assert orch.user_notice is None
+        assert any('provider down' in line for line in logged)
 
         # Hashes were NOT recorded, so the same messages come back as delta.
         backend = RecordingBackend()
@@ -160,6 +170,36 @@ def test_failed_ingest_is_retried_on_the_next_turn(tmp_path):
         assert [m['content'] for m in backend.batches[0]] == [
             'important fact', 'noted'
         ]
+        assert orch.user_notice is None
+
+    asyncio.run(main())
+
+
+def test_missing_memory_dir_uses_its_own_sentence(tmp_path):
+
+    async def main():
+
+        class Missing(RecordingBackend):
+
+            async def on_messages(self, messages, **kwargs):
+                raise FileNotFoundError(2, 'gone', 'MEMORY.md')
+
+        orch = _orch(tmp_path, Missing())
+        await orch.add(_msgs('q', 'a'))
+        assert orch.user_notice == MISSING_DIR_NOTICE
+
+    asyncio.run(main())
+
+
+def test_later_success_clears_a_stale_notice(tmp_path):
+
+    async def main():
+        backend = RecordingBackend()
+        orch = _orch(tmp_path, backend)
+        await orch.add(_msgs('q', 'a'))
+        orch.user_notice = 'stale disk failure'
+        await orch.add(_msgs('q', 'a'))
+        assert orch.user_notice is None
 
     asyncio.run(main())
 

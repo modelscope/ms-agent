@@ -79,6 +79,8 @@ class InteractiveSession:
         self,
         messages: Optional[List[Any]] = None,
         runtime: Any = None,
+        *,
+        retry_when=None,
     ) -> InteractiveTurn:
         """Read input at ``>>>`` until a real prompt or a quit signal.
 
@@ -95,8 +97,11 @@ class InteractiveSession:
         while True:
             try:
                 if self._input_source is not None:
-                    query = (await
-                             self._input_source.read_prompt('>>> ')).strip()
+                    from ms_agent.ui.input import ResumeContext
+                    value = await self._input_source.read_prompt('>>> ')
+                    if isinstance(value, ResumeContext):
+                        return InteractiveTurn(action='resume_context')
+                    query = value.strip()
                 else:
                     query = input('>>> ').strip()
             except (EOFError, KeyboardInterrupt):
@@ -126,9 +131,17 @@ class InteractiveSession:
                     'persist_context': self._persist_context,
                     'router': self._router,
                     'messages': messages if messages is not None else [],
+                    # TUI input_source only — never a blocking menu in
+                    # CLI/tests that drive InteractiveSession via input().
+                    'interactive': self._input_source is not None,
                 },
             )
-            result = await self._router.dispatch(ctx)
+            result = None
+            try:
+                result = await self._router.dispatch(ctx)
+            except Exception as exc:  # noqa: BLE001 — command bugs stay in-loop
+                self._emit(f'command failed: {type(exc).__name__}: {exc}')
+                continue
             if result is None:
                 # Unrecognized command — treat it as a normal prompt.
                 return InteractiveTurn(action='submit', text=query)
@@ -139,8 +152,36 @@ class InteractiveSession:
             if result.type == CommandResultType.SUBMIT_PROMPT:
                 return InteractiveTurn(action='submit', text=result.content)
             # MESSAGE / MUTATE_STATE: show output and prompt again.
+            if result.type == CommandResultType.MUTATE_STATE:
+                self._sync_model_label(runtime)
             if result.content:
                 self._emit(result.content)
+            # A key just saved can build a client. Hand the original sentence
+            # back instead of waiting for the user to type it again.
+            if retry_when is not None:
+                try:
+                    ready = bool(retry_when())
+                except Exception:  # noqa: BLE001 — a probe must not trap the prompt
+                    ready = False
+                if ready:
+                    return InteractiveTurn(action='submit', text='')
+
+    def _sync_model_label(self, runtime) -> None:
+        """Push the live model id into the TUI status bar, when one is attached."""
+        source = self._input_source
+        note = getattr(source, 'note_model', None)
+        if not callable(note) or runtime is None:
+            return
+        llm = getattr(runtime, 'llm', None)
+        model = str(getattr(llm, 'model', '') or '') if llm is not None else ''
+        if not model and llm is not None:
+            config = getattr(llm, 'config', None)
+            if config is not None:
+                from omegaconf import OmegaConf
+                model = str(
+                    OmegaConf.select(config, 'llm.model', default='') or '')
+        if model:
+            note(model)
 
     def _emit(self, text: str) -> None:
         if self._event_sink is not None:

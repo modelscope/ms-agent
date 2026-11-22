@@ -3,7 +3,7 @@ import asyncio
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from functools import wraps
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
@@ -274,6 +274,42 @@ async def test_cancel_during_stream_read_interrupts_and_closes_iterator(legacy, 
 
 @pytest.mark.parametrize('protocol', ['openai', 'anthropic'])
 @run_async
+async def test_cancel_does_not_close_iterator_until_next_has_unwound(protocol):
+    async with mock_request(protocol, wait_for='body') as r:
+        release_next = threading.Event()
+        iterator_closed = threading.Event()
+        premature_close = threading.Event()
+        generate = r.agent.llm.generate
+
+        class TrackedIterator:
+            def __init__(self, chunks):
+                self.chunks = chunks
+
+            def __next__(self):
+                try:
+                    return next(self.chunks)
+                finally:
+                    release_next.wait(2)
+
+            def close(self):
+                if not release_next.is_set():
+                    premature_close.set()
+                self.chunks.close()
+                iterator_closed.set()
+
+        r.agent.llm.generate = lambda *a, **kw: TrackedIterator(generate(*a, **kw))
+        try:
+            await reached(r.body.entered)
+            await cancel(r.task)
+            assert not premature_close.is_set()
+            assert not iterator_closed.is_set()
+        finally:
+            release_next.set()
+        await reached(iterator_closed)
+
+
+@pytest.mark.parametrize('protocol', ['openai', 'anthropic'])
+@run_async
 async def test_request_timeout_propagates_without_blocking_event_loop(protocol):
     async with mock_request(protocol, error=httpx.ReadTimeout) as r:
         await reached(r.headers_entered)
@@ -309,10 +345,13 @@ async def test_slow_model_does_not_starve_host_executor(wait_for_body, protocol)
             asyncio.to_thread(lambda: 'session storage'), .5) == 'session storage'
 
 
-@pytest.mark.parametrize('protocol', ['openai', 'anthropic'])
-@pytest.mark.parametrize('legacy', [False, True])
+@pytest.mark.parametrize('protocol,legacy,stream', [
+    ('openai', False, True), ('anthropic', False, True),
+    ('openai', True, True), ('anthropic', True, True),
+    ('openai', False, False), ('anthropic', False, False),
+])
 @run_async
-async def test_cancel_stalled_tcp_read_releases_model_worker(monkeypatch, protocol, legacy):
+async def test_cancel_stalled_tcp_read_releases_model_worker(monkeypatch, protocol, legacy, stream):
     """A mock close can release an Event while a real socket stays in recv()."""
     release, reading = threading.Event(), threading.Event()
 
@@ -324,7 +363,7 @@ async def test_cancel_stalled_tcp_read_releases_model_worker(monkeypatch, protoc
         def do_POST(self):
             self.rfile.read(int(self.headers['Content-Length']))
             self.send_response(200)
-            self.send_header('Content-Type', 'text/event-stream')
+            self.send_header('Content-Type', 'text/event-stream' if stream else 'application/json')
             self.send_header('Connection', 'close')
             self.end_headers()
             self.wfile.flush()
@@ -352,7 +391,7 @@ async def test_cancel_stalled_tcp_read_releases_model_worker(monkeypatch, protoc
     try:
         with ThreadPoolExecutor(max_workers=1) as pool:
             monkeypatch.setattr(io, '_executor', pool)
-            agent = make_agent(legacy=legacy, protocol=protocol,
+            agent = make_agent(legacy=legacy, protocol=protocol, stream=stream,
                                base_url=f'http://127.0.0.1:{server.server_port}',
                                http_client=httpx.Client(event_hooks={'response': [mark_response]}))
             async with running(agent, release) as task:
@@ -386,7 +425,8 @@ def test_interrupt_preserves_shared_or_released_connection(http_version, closed)
 
 @pytest.mark.parametrize('entrypoint', ['step', 'run_loop', 'run'])
 @run_async
-async def test_closing_stream_propagates_to_model_and_partial_round(entrypoint):
+async def test_closing_stream_propagates_to_model_and_partial_round(
+        entrypoint):
     from ms_agent.agent.runtime import Runtime
 
     body = ResponseBody(True)
@@ -402,17 +442,19 @@ async def test_closing_stream_propagates_to_model_and_partial_round(entrypoint):
     agent.tool_manager.extra_tools = []
     for method in ('register_callback_from_config', 'prepare_llm',
                    'prepare_runtime', '_init_session_log',
-                   '_schedule_add_memory_after_task', '_persist_partial_round'):
+                   '_schedule_add_memory_after_task',
+                   '_persist_partial_round'):
         setattr(agent, method, Mock())
     for method in ('prepare_tools', 'prepare_skills', 'load_memory',
                    'prepare_rag', 'prepare_knowledge_search'):
         setattr(agent, method, AsyncMock())
     agent.condense_memory = AsyncMock(side_effect=lambda messages: messages)
-    agent.read_history = lambda messages: (agent.config, agent.runtime, messages)
+    agent.read_history = lambda messages: (agent.config, agent.runtime,
+                                           messages)
     agent._apply_pending_rollback = lambda messages: messages
     messages = [Message(role='user', content='Say OK')]
-    stream = (await agent.run(messages, stream=True) if entrypoint == 'run'
-              else getattr(agent, entrypoint)(messages))
+    stream = (await agent.run(messages, stream=True)
+              if entrypoint == 'run' else getattr(agent, entrypoint)(messages))
     try:
         chunk = await anext(stream)
         assert chunk[-1].content == 'OK'
@@ -425,3 +467,44 @@ async def test_closing_stream_propagates_to_model_and_partial_round(entrypoint):
     finally:
         await stream.aclose()
         agent.llm.client.close()
+
+
+@pytest.mark.parametrize('early_close', [False, True])
+@run_async
+async def test_step_with_usage_closes_child_inside_scope(
+        monkeypatch, early_close):
+    from ms_agent.llm import cost
+
+    trace = []
+    finalizer = asyncio.Event()
+
+    @contextmanager
+    def usage_scope(sink, config, operation):
+        assert operation == 'conversation'
+        trace.append('scope entered')
+        try:
+            yield
+        finally:
+            trace.append('scope exited')
+
+    async def step(messages):
+        try:
+            yield 'reply'
+        finally:
+            trace.append('step finalized')
+            finalizer.set()
+
+    monkeypatch.setattr(cost, 'usage_scope', usage_scope)
+    agent = SimpleNamespace(config={}, session_log=None, step=step)
+    stream = LLMAgent._step_with_usage(agent, [])
+    try:
+        assert await anext(stream) == 'reply'
+        if early_close:
+            await stream.aclose()
+        else:
+            with pytest.raises(StopAsyncIteration):
+                await anext(stream)
+        assert finalizer.is_set()
+        assert trace == ['scope entered', 'step finalized', 'scope exited']
+    finally:
+        await stream.aclose()

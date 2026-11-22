@@ -38,7 +38,7 @@ llm:
   # 大模型服务 backend
   service: modelscope
   # 模型 id
-  model: Qwen/Qwen3-235B-A22B-Instruct-2507
+  model: Qwen/Qwen3.8-Flash-Next
   # 模型 api_key
   modelscope_api_key:
   # 模型 base_url
