@@ -265,6 +265,18 @@ class SessionLog:
         }
         self._append_line(record)
 
+    def record_notice(self, event: Dict[str, Any]) -> None:
+        """A nonterminal capability notice, kept out of the model's history."""
+        self._append_line({
+            **event,
+            '_type': 'notice',
+            'seq': self._next_seq(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+        })
+
+    def get_notices(self) -> List[Dict[str, Any]]:
+        return [row for row in self.records() if row.get('_type') == 'notice']
+
     def record_loop_end(self, event: Dict[str, Any]) -> None:
         """Record a tool-call-loop boundary — a non-message, display-only marker.
 

@@ -84,7 +84,7 @@ class ChatChunk(BaseModel):
     """
 
     type: Literal[
-        "text", "thought", "task", "step", "session", "turn", "error", "done"
+        "text", "thought", "task", "step", "session", "turn", "notice", "error", "done"
     ]
     content: str = ""
     meta: dict = Field(default_factory=dict)

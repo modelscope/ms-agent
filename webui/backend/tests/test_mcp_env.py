@@ -52,4 +52,24 @@ def test_probe_stdio_uses_expanded_command(monkeypatch):
     import asyncio
 
     ok, err = asyncio.run(mcp_health.check_server(entry))
-    assert ok, err  # python3 resolves on PATH once expanded
+    assert ok is None and err is None  # command resolves; handshake is unverified
+
+
+def test_startup_budget_roundtrips_management_and_resolver():
+    from app.schemas.mcp import McpCreate, McpUpdate
+    from app.backends.ms_agent import mcps, common
+    from ms_agent.tui.managed_config import resolve_mcp_config
+    row = mcps.create_mcp(McpCreate(name='budget-roundtrip', scope='global',
+                                   endpoint='python3', startup_timeout=2.5))
+    try:
+        assert row.startup_timeout == 2.5
+        assert resolve_mcp_config(common.home(), None)['mcpServers'][row.name]['startup_timeout'] == 2.5
+        row = mcps.update_mcp(row.id, McpUpdate(startup_timeout=3.5))
+        assert row.startup_timeout == 3.5
+        row = mcps.update_mcp(row.id, McpUpdate(startup_timeout=None))
+        assert row.startup_timeout is None
+        from ms_agent.tools.mcp_client import MCPClient
+        cfg = resolve_mcp_config(common.home(), None)['mcpServers'][row.name]
+        assert 'startup_timeout' not in MCPClient()._plan_server(row.name, cfg, 120)
+    finally:
+        mcps.delete_mcp(row.id)

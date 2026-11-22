@@ -650,6 +650,10 @@ class _TurnMapper:
             # Informational only: no tool group, thought seal or turn boundary.
             meta = _context_compaction_meta(payload)
             return [ChatChunk(type="step", meta=meta)] if meta is not None else []
+        if t == "notice":
+            return [ChatChunk(type="notice", content=payload.get("text", ""),
+                              meta={"level": payload.get("level", "info"),
+                                    "code": payload.get("code", "")})]
         if t == "error":
             return [ChatChunk(type="error", meta={
                 "message": payload.get("message", ""),

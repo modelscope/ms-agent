@@ -20,6 +20,7 @@ MCP_CONNECTION_FIELDS = frozenset({
     'env',
     'headers',
     'timeout',
+    'startup_timeout',
     'include',
     'exclude',
     'source',

@@ -273,7 +273,7 @@
     "mcpEmpty": "No MCP services here yet. ",
     "mcpEmptyHint": "Click the button below to add one~",
     "viaJson": "Configure via JSON",
-    "reconnect": "Test Connection",
+    "reconnect": "Reconnect sessions next turn",
     "tryIt": "View",
     "edit": "Edit",
     "remove": "Remove",
@@ -284,7 +284,7 @@
     "jsonReset": "Reset",
     "jsonInvalid": "JSON is invalid — fix the syntax before saving.",
     "probing": "Checking…",
-    "statusOk": "Connected",
+    "statusOk": "Connection test passed",
     "statusError": "Connection failed",
     "addMcp": "Add MCP",
     "globalMcps": "Global MCPs",
@@ -298,7 +298,11 @@
     "skillEmptyHint": "Click the button below to add one~",
     "addNow": "Add now",
     "more": "More",
-    "download": "Download"
+    "download": "Download",
+    "testConnection": "Test connection",
+    "statusUnverified": "Connection not verified",
+    "reconnectScheduled": "Reconnection scheduled for the next turn. Current replies continue.",
+    "mcpUnavailable": "Some MCP tools are unavailable. Chat and other tools can continue."
   },
   "mcpImport": {
     "hubProjectBadge": "project",

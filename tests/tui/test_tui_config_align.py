@@ -53,7 +53,7 @@ def test_plan_filename_without_mcp_flag_is_treated_as_mcp():
         finally:
             await client.cleanup()
 
-    with pytest.raises(ValueError, match='url.*command|command.*url'):
+    with pytest.raises(RuntimeError, match='Connect todo_list failed:.*Invalid MCP configuration'):
         asyncio.run(_boom())
 
 

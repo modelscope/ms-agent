@@ -710,16 +710,37 @@ class RuntimeRegistry:
                            exc_info=True)
 
     async def _resolve_mcp(self, project) -> dict:
-        """Resolve enabled MCP servers and probe them (connect+initialize), so an
-        unreachable/invalid server is dropped before it can break the chat turn."""
+        """Resolve configuration only; network startup belongs to the agent task."""
         from ms_agent.tui.managed_config import resolve_mcp_config
-
-        from app.backends.ms_agent import mcp_health
         from app.backends.ms_agent.common import home
 
-        raw = (resolve_mcp_config(home(), project.path, None) or {}).get("mcpServers", {})
-        healthy, _dropped = await mcp_health.filter_healthy(raw)
-        return {"mcpServers": healthy} if healthy else {}
+        return await asyncio.to_thread(
+            resolve_mcp_config, home(), project.path, None) or {}
+
+    async def reconnect_mcp(self, scope: str, name: str) -> int:
+        """Schedule a rebuild at the next idle turn, respecting project overrides."""
+        from ms_agent.config import MCPConfigManager
+        from app.backends.ms_agent.common import home
+
+        def affected(rt):
+            if scope.startswith('project:') and scope != f'project:{rt.project.id}':
+                return False
+            mm = MCPConfigManager(global_root=home(), project_root=rt.project.path)
+            entry = (mm.list('merged') or {}).get(name)
+            if not entry or not entry.get('enabled', True):
+                return False
+            local = (mm.list('project') or {}).get(name)
+            if scope == 'global' and local is not None:
+                return False
+            return name in (getattr(rt.agent, 'mcp_config', {}) or {}).get('mcpServers', {})
+
+        count = 0
+        async with self._create_lock:
+            for rt in list(self._runtimes.values()):
+                if await asyncio.to_thread(affected, rt):
+                    rt.needs_rebuild = True
+                    count += 1
+        return count
 
     async def _apply_mcp_toggle(self, name: str, enabled: bool) -> None:
         for rt in list(self._runtimes.values()):

@@ -114,6 +114,7 @@ class SessionPart(BaseModel):
     tasks: list[SessionTask] = Field(default_factory=list)
     step: SessionStep | None = None
     recoverable: bool = True
+    code: str = ""
 
 
 class SessionFile(BaseModel):
