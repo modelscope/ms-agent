@@ -1954,6 +1954,9 @@ class _FakeSession:
 class _FakeProject:
     id = "pid-1"  # done frames now carry project_id (for the new-session redirect)
 
+    def __init__(self):
+        self.path = os.path.join(os.environ['MS_AGENT_HOME'], 'test-project')
+
 
 class _FakeRuntime:
 

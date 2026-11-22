@@ -1,8 +1,8 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 """Demo integration tests for F1-F3 features with real API keys.
 
-These tests call live LLM endpoints and save full request/response
-traces to ``tests/skills/demo_traces/`` for review.
+These tests call live LLM endpoints. Request/response traces are written to
+a temporary directory and removed when the test process exits.
 
 Environment setup:
     source /opt/homebrew/anaconda3/bin/activate agent_bench
@@ -25,8 +25,8 @@ from omegaconf import DictConfig, OmegaConf
 
 load_dotenv()
 
-DEMO_TRACES_DIR = Path(__file__).resolve().parent / "demo_traces"
-DEMO_TRACES_DIR.mkdir(parents=True, exist_ok=True)
+_trace_directory = tempfile.TemporaryDirectory(prefix="ms-agent-skill-demo-")
+DEMO_TRACES_DIR = Path(_trace_directory.name)
 
 
 def _save_trace(test_name: str, model: str, inputs: dict,

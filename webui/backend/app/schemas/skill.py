@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -16,6 +17,9 @@ class Skill(BaseModel):
     # old sidecar-only row.  The UI uses this to describe deletion accurately.
     origin: str = "content"
     removable: bool = True
+    installation: dict | None = None
+    update: dict | None = None
+    capabilities: dict[str, bool] = Field(default_factory=dict)
 
 
 class SkillCreate(BaseModel):
@@ -56,3 +60,35 @@ class SkillFileContent(BaseModel):
     path: str
     # None ⇒ the file is binary / not valid UTF-8 (frontend shows a notice).
     content: str | None = None
+
+
+class SkillSourceInspect(BaseModel):
+    scope: str
+    source: str = Field(min_length=1, max_length=2048)
+
+
+class SkillInstallPlan(BaseModel):
+    scope: str
+    source_snapshot_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    candidate_ids: list[str] = Field(min_length=1, max_length=100)
+
+
+class SkillUpdateCheck(BaseModel):
+    scope: str
+    skill_ids: list[str] | None = Field(default=None, max_length=100)
+    force: bool = False
+
+
+class SkillLinkPlan(BaseModel):
+    source_snapshot_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    candidate_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+
+
+class SkillPlanApply(BaseModel):
+    local_changes_policy: Literal["abort", "replace"] = "abort"
+    request_id: str = Field(min_length=1, max_length=128)
+    acknowledge_risk: bool = False
+
+
+class SkillManagementSettings(BaseModel):
+    auto_check: bool = True

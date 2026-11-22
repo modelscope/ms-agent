@@ -199,5 +199,6 @@ skills:
 
 ## References
 
+- [Skill installation and updates: WebUI and shared SDK API](SkillManagement.md)
 - [Design Document](https://github.com/modelscope/ms-agent/tree/main/ms_agent/skill/README.md)
 - [MS-Agent Skill Examples](https://modelscope.cn/models/ms-agent/skill_examples)

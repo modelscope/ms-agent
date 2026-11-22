@@ -27,6 +27,11 @@ import type {
   SessionMessage,
   SessionPlan,
   Skill,
+  SkillSourcePreview,
+  SkillPlan,
+  SkillOperation,
+  SkillItemResult,
+  SkillDiff,
   WorkspaceFile
 } from './types'
 
@@ -430,7 +435,98 @@ export const api = {
   listMcpHealth: () => json<McpHealth[]>('/api/mcps/health'),
 
   // Skills
-  listSkills: (scope?: Scope) => json<Skill[]>(`/api/skills${q({ scope })}`),
+  listSkills: (scope?: Scope, opts?: ApiCallOpts) =>
+    json<Skill[]>(`/api/skills${q({ scope })}`, undefined, opts),
+  skillManagementSettings: () =>
+    json<{ auto_check: boolean }>(
+      '/api/skills/management-settings',
+      undefined,
+      { silent: true }
+    ),
+  setSkillManagementSettings: (auto_check: boolean) =>
+    json<{ auto_check: boolean }>('/api/skills/management-settings', {
+      method: 'PATCH',
+      body: JSON.stringify({ auto_check })
+    }),
+  inspectSkillSource: (scope: Scope, source: string) =>
+    json<SkillOperation<SkillSourcePreview>>(
+      '/api/skills/sources/inspect',
+      { method: 'POST', body: JSON.stringify({ scope, source }) },
+      { silent: true }
+    ),
+  prepareSkillInstall: (
+    scope: Scope,
+    source_snapshot_id: string,
+    candidate_ids: string[]
+  ) =>
+    json<SkillOperation<SkillPlan>>(
+      '/api/skills/install-plans',
+      {
+        method: 'POST',
+        body: JSON.stringify({ scope, source_snapshot_id, candidate_ids })
+      },
+      { silent: true }
+    ),
+  checkSkillUpdates: (scope: Scope, force = false, skill_ids?: string[]) =>
+    json<SkillOperation>(
+      '/api/skills/update-checks',
+      { method: 'POST', body: JSON.stringify({ scope, force, skill_ids }) },
+      { silent: true }
+    ),
+  prepareSkillUpdate: (id: string, kind: 'update' | 'restore') =>
+    json<SkillOperation<SkillPlan>>(
+      `/api/skills/${pid(id)}/${kind}-plans`,
+      { method: 'POST' },
+      { silent: true }
+    ),
+  prepareSkillLink: (
+    id: string,
+    source_snapshot_id: string,
+    candidate_id: string
+  ) =>
+    json<SkillOperation<SkillPlan>>(
+      `/api/skills/${pid(id)}/link-plans`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ source_snapshot_id, candidate_id })
+      },
+      { silent: true }
+    ),
+  applySkillPlan: (
+    id: string,
+    request_id: string,
+    local_changes_policy: 'abort' | 'replace' = 'abort',
+    acknowledge_risk = false
+  ) =>
+    json<SkillOperation<SkillItemResult[]>>(
+      `/api/skills/plans/${pid(id)}/apply`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          request_id,
+          local_changes_policy,
+          acknowledge_risk
+        })
+      },
+      { silent: true }
+    ),
+  skillPlanDiff: (id: string, item_id: string, path: string) =>
+    json<SkillDiff>(
+      `/api/skills/plans/${pid(id)}/diff${q({ item_id, path })}`,
+      undefined,
+      { silent: true }
+    ),
+  skillOperation: <T = unknown>(id: string) =>
+    json<SkillOperation<T>>(`/api/skills/operations/${pid(id)}`, undefined, {
+      silent: true,
+      fresh: true
+    }),
+  cancelSkillOperation: (id: string) =>
+    json<SkillOperation>(
+      `/api/skills/operations/${pid(id)}`,
+      { method: 'DELETE' },
+      { silent: true }
+    ),
   /** Real file listing of a skill's on-disk directory (detail viewer tree). */
   listSkillFiles: (id: string) =>
     json<{ path: string; size?: number | null }[]>(

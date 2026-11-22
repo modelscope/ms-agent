@@ -199,5 +199,6 @@ skills:
 
 ## 参考
 
+- [Skill 安装与更新：WebUI 与 SDK 管理接口](skill-management.md)
 - [设计文档](https://github.com/modelscope/ms-agent/tree/main/ms_agent/skill/README.md)
 - [MS-Agent 技能示例](https://modelscope.cn/models/ms-agent/skill_examples)

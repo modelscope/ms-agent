@@ -8,11 +8,15 @@ import { HtmlPreview } from '~/components/common/HtmlPreview'
 import { Markdown } from '~/components/common/Markdown'
 import { api } from '~/lib/api'
 import { useT } from '~/lib/i18n'
-import type { Skill } from '~/lib/types'
+import type { Skill, SkillPlan } from '~/lib/types'
 import ViewIcon from '~/assets/icons/view.svg?react'
 import TerminalIcon from '~/assets/icons/terminal.svg?react'
 import { docKindFor, languageFor } from '~/lib/editorLanguage'
 import { makeRefResolver } from '~/lib/previewRefs'
+import { SkillUpdatePanel } from './SkillUpdatePanel'
+import { SkillSourceDetails } from './SkillSourceDetails'
+import { Button, Dropdown } from 'antd'
+import { SkillsFromLinkModal } from './SkillsFromLinkModal'
 
 interface Props {
   open: boolean
@@ -21,6 +25,7 @@ interface Props {
   allSkills: Skill[]
   onClose: () => void
   onSkillChange: (skill: Skill) => void
+  onUpdated?: () => void
 }
 
 type ViewMode = 'preview' | 'code'
@@ -78,9 +83,22 @@ export function SkillDetailDrawer({
   skill,
   allSkills,
   onClose,
-  onSkillChange
+  onSkillChange,
+  onUpdated
 }: Props) {
   const { t } = useT()
+  const [managementView, setManagementView] = useState<
+    'files' | 'update' | 'restore' | 'link'
+  >('files')
+  const [linkOpen, setLinkOpen] = useState(false)
+  const [linkPlan, setLinkPlan] = useState<SkillPlan | null>(null)
+  useEffect(() => {
+    setLinkOpen(false)
+    setLinkPlan(null)
+    setManagementView(
+      skill?.update?.remote_status === 'available' ? 'update' : 'files'
+    )
+  }, [open, skill?.id])
   const [selected, setSelected] = useState<string>('SKILL.md')
   const [viewMode, setViewMode] = useState<ViewMode>('preview')
   // Real relative paths of the skill's directory (from the backend).
@@ -114,7 +132,7 @@ export function SkillDetailDrawer({
       // Swallowed on purpose: `files` keeps its ['SKILL.md'] default, which is
       // a usable tree. Nothing is gated on this request resolving.
       .catch(() => {})
-  }, [open, skill])
+  }, [open, skill?.id, skill?.installation?.updated_at])
 
   // Lazy-load the selected file's content (cached per path).
   useEffect(() => {
@@ -163,11 +181,68 @@ export function SkillDetailDrawer({
       open={open}
       onClose={onClose}
       placement="right"
-      size="min(1100px, 100vw)"
-      title={t.skillDetail.title}
+      size={
+        managementView === 'files' ? 'min(1100px, 100vw)' : 'min(760px, 100vw)'
+      }
+      title={skill?.name ?? t.skillDetail.title}
+      extra={
+        skill && (
+          <div className="flex flex-wrap gap-2">
+            {managementView !== 'files' && (
+              <Button type="text" onClick={() => setManagementView('files')}>
+                {t.skillManagement.files}
+              </Button>
+            )}
+            {managementView === 'files' && skill.capabilities?.can_update && (
+              <Button onClick={() => setManagementView('update')}>
+                {t.skillManagement.update}
+              </Button>
+            )}
+            {managementView === 'files' && skill.capabilities?.can_link && (
+              <Button onClick={() => setLinkOpen(true)}>
+                {t.skillManagement.linkSource}
+              </Button>
+            )}
+            {skill.capabilities?.can_restore && (
+              <Dropdown
+                trigger={['click']}
+                menu={{
+                  items: [
+                    {
+                      key: 'restore',
+                      label: t.skillManagement.restore,
+                      onClick: () => setManagementView('restore')
+                    }
+                  ]
+                }}
+              >
+                <Button type="text">{t.resources.more}</Button>
+              </Dropdown>
+            )}
+          </div>
+        )
+      }
       styles={{ body: { padding: 0 } }}
     >
-      {!skill ? null : (
+      {!skill ? null : managementView !== 'files' ? (
+        <SkillUpdatePanel
+          key={`${skill.id}:${managementView}`}
+          skill={skill}
+          kind={managementView}
+          initialPlan={linkPlan}
+          onRelink={() => {
+            setLinkPlan(null)
+            setManagementView('files')
+            setLinkOpen(true)
+          }}
+          onCancel={() => setManagementView('files')}
+          onApplied={() => {
+            setBodies({})
+            setManagementView('files')
+            onUpdated?.()
+          }}
+        />
+      ) : (
         <div className="flex h-full">
           <aside className="hidden w-60 shrink-0 flex-col border-r border-msa-line-1 lg:flex">
             <div className="p-2">
@@ -201,6 +276,11 @@ export function SkillDetailDrawer({
           </aside>
 
           <section className="flex min-w-0 flex-1 flex-col">
+            {skill.installation && (
+              <div className="shrink-0 border-b border-msa-line-1 px-4 pb-3">
+                <SkillSourceDetails source={skill.installation.source} />
+              </div>
+            )}
             <header className="flex shrink-0 items-center gap-1 border-b border-msa-line-1 px-3 py-2">
               <span className="truncate text-sm font-medium text-msa-text-1">
                 {selected}
@@ -266,6 +346,20 @@ export function SkillDetailDrawer({
             </div>
           </section>
         </div>
+      )}
+      {skill && (
+        <SkillsFromLinkModal
+          open={linkOpen}
+          scope={skill.scope}
+          linkSkill={skill}
+          onClose={() => setLinkOpen(false)}
+          onImported={() => {}}
+          onPrepared={(plan) => {
+            setLinkPlan(plan)
+            setLinkOpen(false)
+            setManagementView('link')
+          }}
+        />
       )}
     </Drawer>
   )

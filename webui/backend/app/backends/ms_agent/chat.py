@@ -1417,6 +1417,19 @@ async def _start_turn(project, session, user_msg, prompt: str,
     rt = None
     marker: dict | None = None
     started = False
+    from ms_agent.config.skills_manager import SkillsConfigManager
+    from ms_agent.skill.management.io import complete_io
+    from ms_agent.skill.management.usage import SkillUseLease
+    from app.backends.ms_agent.common import home
+
+    manager = SkillsConfigManager(home())
+    lease = SkillUseLease([manager.global_skills_tree(),
+                           manager.project_skills_tree(project.path)])
+    try:
+        await complete_io(lease.__enter__)
+    except BaseException:
+        lease.close()
+        raise
     # Declare the turn running from HERE rather than from the enqueue. Acquiring
     # the runtime below takes seconds on a cold session and only ends by taking
     # `turn_lock`, so that whole stretch used to read as idle to presence,
@@ -1426,6 +1439,10 @@ async def _start_turn(project, session, user_msg, prompt: str,
     registry.mark_starting(session.id, project.id)
     try:
         rt = await _acquire_live_runtime(project, session)
+        # The host lock outlives SSE disconnects and owns the accepted turn.
+        # Tests may supply a plain Lock; production runtimes use SkillTurnLock.
+        if hasattr(rt.turn_lock, "skill_lease"):
+            rt.turn_lock.skill_lease = lease
         # The lock is ours, so the previous turn's question is history now and
         # this turn's is not known until the enqueue below. Anything reading
         # `turn_user` in between must see nothing rather than the last turn's.
@@ -1521,6 +1538,8 @@ async def _start_turn(project, session, user_msg, prompt: str,
         # holding — seamless for anything polling it. A turn that never started
         # leaves nothing behind, which is what readers should see.
         registry.clear_starting(session.id)
+        if not started or not hasattr(getattr(rt, "turn_lock", None), "skill_lease"):
+            lease.close()
         # The lock is handed to whoever will see the turn end (the live stream's
         # finally, or the drain). Released here only when no turn was started:
         # an intro-only reply, or a failure anywhere above.

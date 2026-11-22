@@ -354,6 +354,32 @@ class LLMAgent(Agent):
         self._llm_fp: Optional[str] = None
         self._mcp_fp: Optional[str] = None
 
+    async def _acquire_skill_usage(self):
+        from ms_agent.config.skills_manager import SkillsConfigManager
+        from ms_agent.skill.management.io import complete_io
+        from ms_agent.skill.management.usage import SkillUseLease
+        from ms_agent.utils.workspace_context import resolve_workspace_root
+
+        if getattr(self, '_skill_usage', None) is not None:
+            return
+        manager = SkillsConfigManager(str(global_home()))
+        lease = SkillUseLease([
+            manager.global_skills_tree(),
+            manager.project_skills_tree(str(resolve_workspace_root(self.config))),
+        ])
+        try:
+            await complete_io(lease.__enter__)
+        except BaseException:
+            lease.close()
+            raise
+        self._skill_usage = lease
+
+    def _release_skill_usage(self):
+        lease = getattr(self, '_skill_usage', None)
+        if lease is not None:
+            lease.close()
+            self._skill_usage = None
+
     async def prepare_skills(self):
         """Initialize the skill system from config.skills.
 
@@ -3174,6 +3200,9 @@ class LLMAgent(Agent):
                 self._stub_llm_for_setup()
                 self._emit_credential_setup(e)
             self.prepare_runtime()
+            self.runtime.acquire_skill_usage = self._acquire_skill_usage
+            self.runtime.release_skill_usage = self._release_skill_usage
+            await self._acquire_skill_usage()
             self.runtime.compact_context = self.compact_context
             self.runtime.resume_pending_context = lambda: self.session_log.resume_pending_context(
             )
@@ -3212,6 +3241,7 @@ class LLMAgent(Agent):
                             if self._input_source is not None else 'cli',
                             input_source=self._input_source,
                             event_sink=self._event_sink)
+                        self._release_skill_usage()
                         turn = await session.run_turn(
                             messages=None, runtime=self.runtime)
                         if turn.action == 'quit':
@@ -3219,6 +3249,7 @@ class LLMAgent(Agent):
                             self.runtime.should_stop = True
                             await self.cleanup_tools()
                             return
+                        await self._acquire_skill_usage()
                         messages = turn.text
                         if self._on_user_turn is not None:
                             await self._on_user_turn(None)
@@ -3587,6 +3618,7 @@ class LLMAgent(Agent):
             # CancelledError / GeneratorExit skip the Exception handler and
             # used to leave streamable_http owner tasks for the event-loop
             # shutdown to cancel — that is what dumps the MCP SDK traceback.
+            self._release_skill_usage()
             try:
                 await self.cleanup_tools()
             except (asyncio.CancelledError, Exception):  # noqa: BLE001

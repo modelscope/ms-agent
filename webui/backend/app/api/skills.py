@@ -10,6 +10,12 @@ from app.schemas.skill import (
     SkillFileContent,
     SkillPathImport,
     SkillUpdate,
+    SkillSourceInspect,
+    SkillInstallPlan,
+    SkillUpdateCheck,
+    SkillPlanApply,
+    SkillManagementSettings,
+    SkillLinkPlan,
 )
 
 router = APIRouter(prefix="/api/skills", tags=["skills"],
@@ -36,6 +42,87 @@ def import_skills_from_path(body: SkillPathImport) -> list[Skill]:
     from app.backends.ms_agent import skills
 
     return skills.import_skills_from_path(body)
+
+
+@router.get("/management-settings")
+def management_settings():
+    from app.backends.ms_agent import skill_management as management
+    return management.settings()
+
+
+@router.patch("/management-settings")
+def update_management_settings(body: SkillManagementSettings):
+    from app.backends.ms_agent import skill_management as management
+    return management.save_settings(body.auto_check)
+
+
+@router.post("/sources/inspect", status_code=202)
+async def inspect_source(body: SkillSourceInspect):
+    from app.backends.ms_agent import skill_management as management
+    return management.submit_inspect(body.scope, body.source)
+
+
+@router.post("/install-plans", status_code=202)
+async def prepare_install(body: SkillInstallPlan):
+    from app.backends.ms_agent import skill_management as management
+    return management.submit_install(body.scope, body.source_snapshot_id, body.candidate_ids)
+
+
+@router.post("/update-checks", status_code=202)
+async def check_updates(body: SkillUpdateCheck):
+    from app.backends.ms_agent import skill_management as management
+    return management.submit_check(body.scope, body.force, body.skill_ids)
+
+
+@router.get("/plans/{plan_id}")
+def get_plan(plan_id: str):
+    from app.backends.ms_agent import skill_management as management
+    return management.guarded_call(management.service().get_plan, plan_id).to_dict()
+
+
+@router.get("/plans/{plan_id}/diff")
+def get_plan_diff(plan_id: str, item_id: str, path: str):
+    from app.backends.ms_agent import skill_management as management
+    return management.guarded_call(management.service().diff, plan_id, item_id, path)
+
+
+@router.post("/plans/{plan_id}/apply", status_code=202)
+async def apply_plan(plan_id: str, body: SkillPlanApply):
+    from app.backends.ms_agent import skill_management as management
+    return management.submit_apply(plan_id, body.local_changes_policy,
+                                    body.request_id, body.acknowledge_risk)
+
+
+@router.get("/operations/{operation_id}")
+def get_operation(operation_id: str):
+    from app.backends.ms_agent import skill_management as management
+    return management.guarded_call(management.operations().get, operation_id)
+
+
+@router.delete("/operations/{operation_id}")
+async def cancel_operation(operation_id: str):
+    from app.backends.ms_agent import skill_management as management
+    management.guarded_call(management.operations().get, operation_id)
+    return await management.operations().cancel(operation_id)
+
+
+@router.post("/{skill_id}/update-plans", status_code=202)
+async def prepare_update(skill_id: str):
+    from app.backends.ms_agent import skill_management as management
+    return management.guarded_call(management.submit_replace, skill_id, "update")
+
+
+@router.post("/{skill_id}/link-plans", status_code=202)
+async def prepare_link(skill_id: str, body: SkillLinkPlan):
+    from app.backends.ms_agent import skill_management as management
+    return management.guarded_call(management.submit_link, skill_id,
+                                   body.source_snapshot_id, body.candidate_id)
+
+
+@router.post("/{skill_id}/restore-plans", status_code=202)
+async def prepare_restore(skill_id: str):
+    from app.backends.ms_agent import skill_management as management
+    return management.guarded_call(management.submit_replace, skill_id, "restore")
 
 
 @router.get("/{skill_id}")

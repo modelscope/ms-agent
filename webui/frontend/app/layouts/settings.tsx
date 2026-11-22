@@ -1,4 +1,7 @@
 import { Tooltip } from 'antd'
+import { useCallback, useEffect, useState } from 'react'
+import { api } from '~/lib/api'
+import { useOnMcpSkillChanged } from '~/lib/events'
 import { NavLink, Outlet, useNavigate } from 'react-router'
 import IconModelSettings from '~/assets/icons/model-settings.svg?react'
 import IconMcpSkill from '~/assets/icons/mcp-skill-manage.svg?react'
@@ -25,6 +28,19 @@ export function meta({ matches }: Route.MetaArgs) {
 export default function SettingsLayout() {
   const { t } = useT()
   const navigate = useNavigate()
+  const [skillUpdates, setSkillUpdates] = useState(0)
+  const refreshUpdates = useCallback(() => {
+    api
+      .listSkills('global')
+      .then((skills) =>
+        setSkillUpdates(
+          skills.filter((s) => s.update?.remote_status === 'available').length
+        )
+      )
+      .catch(() => {})
+  }, [])
+  useEffect(refreshUpdates, [refreshUpdates])
+  useOnMcpSkillChanged(refreshUpdates)
   // Below `md` this rail collapses to icons only (CSS-driven, see the
   // `hidden md:inline` labels), leaving nothing to say what each icon is — so
   // the label moves into a tooltip. Above `md` the label is right there and a
@@ -96,6 +112,14 @@ export default function SettingsLayout() {
               >
                 <it.icon className="h-5 w-5 shrink-0" />
                 <span className="hidden md:inline">{it.label}</span>
+                {it.to === 'mcp-skills' && skillUpdates > 0 && (
+                  <span
+                    className="rounded-md bg-msa-fill-3 px-1.5 text-xs text-msa-text-2"
+                    aria-label={`${t.skillManagement.updates} ${skillUpdates}`}
+                  >
+                    {skillUpdates}
+                  </span>
+                )}
               </NavLink>
             </Tooltip>
           ))}

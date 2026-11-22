@@ -55,10 +55,16 @@ class InputCallback(Callback):
         if messages[-1].tool_calls or messages[-1].role in ('tool', 'user'):
             return
 
+        release = getattr(runtime, 'release_skill_usage', None)
+        if release is not None:
+            release()
         turn = await self._session.run_turn(messages=messages, runtime=runtime)
         if turn.action == 'quit':
             runtime.should_stop = True
             return
+        acquire = getattr(runtime, 'acquire_skill_usage', None)
+        if acquire is not None:
+            await acquire()
         runtime.should_stop = False
         if turn.action == 'resume_context':
             runtime.resume_pending_context()
