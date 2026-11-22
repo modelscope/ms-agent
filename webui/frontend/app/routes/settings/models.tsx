@@ -155,6 +155,7 @@ export default function ModelsSettings() {
   const defaultModelOptions = useMemo(
     () =>
       models
+        .filter((m) => m.purpose !== 'embedding')
         .filter((m) =>
           settings?.default_provider_id
             ? m.provider_id === settings.default_provider_id
@@ -438,7 +439,7 @@ export default function ModelsSettings() {
           // below would otherwise restore the previously persisted provider and
           // drop the model out of sight. Awaited, since a concurrent GET can
           // still answer with the pre-save settings.
-          if (asDefault) {
+          if (asDefault && m.purpose !== 'embedding') {
             try {
               await updateSettings({
                 default_provider_id: m.provider_id,

@@ -130,13 +130,7 @@ class ProviderRouter:
             logger.info(
                 f'No provider spec for service={service} model={model}; '
                 f'falling back to a generic OpenAI-compatible transport.')
-            spec = ProviderSpec(
-                name=service or 'custom',
-                display_name=service or 'Custom',
-                transport=TRANSPORT_OPENAI_COMPAT,
-                api_key_env=['OPENAI_API_KEY'],
-                base_url_env=['OPENAI_BASE_URL'],
-            )
+            spec = CredentialResolver.provider_spec(service or 'custom')
 
         # A provider may target another vendor's OpenAI- or Anthropic-compatible
         # endpoint (e.g. DeepSeek's /anthropic gateway). An explicit

@@ -174,6 +174,7 @@ def decode_model_id(model_id: str) -> tuple[str, str]:
 
 
 def model_to_schema(provider_id: str, name: str) -> ModelSchema:
+    from app.backends.ms_agent.config import _KNOWN_EMBED_MODELS
     mid = encode_model_id(provider_id, name)
     meta = sidecar.get("models", mid, {}) or {}
     return ModelSchema(
@@ -183,6 +184,8 @@ def model_to_schema(provider_id: str, name: str) -> ModelSchema:
         display_name=meta.get("display_name") or name,
         is_builtin=False,
         advanced_params=meta.get("advanced_params", {}),
+        purpose=meta.get("purpose") or (
+            "embedding" if _KNOWN_EMBED_MODELS.get(provider_id) == name else "unknown"),
         # Absent in the sidecar => None => "unset", not False (see the schema).
         supports_vision=meta.get("supports_vision"),
         created_at=_now(),

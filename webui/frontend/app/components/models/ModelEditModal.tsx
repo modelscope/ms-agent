@@ -4,7 +4,7 @@ import { CodeEditor } from '~/components/common/CodeEditor'
 import { MsaSwitch } from '~/components/common/MsaSwitch'
 import { api } from '~/lib/api'
 import { useT } from '~/lib/i18n'
-import type { GenerationDefaults, Model, Provider } from '~/lib/types'
+import type { GenerationDefaults, Model, ModelPurpose, Provider } from '~/lib/types'
 
 /**
  * Params the runtime applies on its own, rendered into the editor so the box
@@ -93,6 +93,7 @@ interface Props {
 }
 
 interface FormValues {
+  purpose: ModelPurpose
   provider_id: string
   name: string
   display_name: string
@@ -140,6 +141,7 @@ export function ModelEditModal({
     if (model) {
       form.setFieldsValue({
         provider_id: model.provider_id,
+        purpose: model.purpose ?? 'unknown',
         name: model.name,
         display_name: model.display_name,
         supports_vision: model.supports_vision ?? false
@@ -157,6 +159,7 @@ export function ModelEditModal({
       const pid = defaultProvider?.id ?? providers[0]?.id ?? ''
       form.setFieldsValue({
         provider_id: pid,
+        purpose: 'unknown',
         name: '',
         display_name: '',
         supports_vision: false
@@ -243,12 +246,14 @@ export function ModelEditModal({
       // it back changes nothing and the guard is gone with it.
       if (model) {
         saved = await api.updateModel(model.id, {
+          purpose: v.purpose,
           display_name: v.display_name,
           advanced_params: advanced,
           supports_vision: v.supports_vision
         })
       } else {
         saved = await api.createModel({
+          purpose: v.purpose,
           provider_id: v.provider_id,
           name: v.name,
           display_name: v.display_name,
@@ -357,6 +362,13 @@ export function ModelEditModal({
           }
         >
           <MsaSwitch />
+        </Form.Item>
+        <Form.Item label={t.modelsAdmin.purposeLabel} name="purpose">
+          <Select options={[
+            { value: 'unknown', label: t.modelsAdmin.purposeUnknown },
+            { value: 'chat', label: t.modelsAdmin.purposeChat },
+            { value: 'embedding', label: t.modelsAdmin.purposeEmbedding }
+          ]} />
         </Form.Item>
         <Form.Item label={t.modelsAdmin.advancedJson}>
           <div className="overflow-hidden rounded-md border border-msa-line-1">

@@ -66,6 +66,8 @@ def create_model(body: ModelCreate) -> Model:
         msm.add_model(body.provider_id, body.name)
     mid = encode_model_id(body.provider_id, body.name)
     side = {}
+    if body.purpose != "unknown":
+        side["purpose"] = body.purpose
     if body.display_name:
         side["display_name"] = body.display_name
     if body.advanced_params:
@@ -90,6 +92,8 @@ def update_model(model_id: str, body: ModelUpdate) -> Model:
     if name not in _model_names(provider_id):
         raise NotFound("Model not found.")
     side = {}
+    if body.purpose is not None:
+        side["purpose"] = body.purpose
     if body.display_name is not None:
         side["display_name"] = body.display_name
     if body.advanced_params is not None:

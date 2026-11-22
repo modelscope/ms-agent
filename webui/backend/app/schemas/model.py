@@ -1,7 +1,9 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
+ModelPurpose = Literal["unknown", "chat", "embedding"]
 
 class Model(BaseModel):
     id: str
@@ -10,6 +12,7 @@ class Model(BaseModel):
     display_name: str = ""
     is_builtin: bool = False
     advanced_params: dict = Field(default_factory=dict)
+    purpose: ModelPurpose = "unknown"
     #: Whether this model may be shown image attachments. Tri-state on purpose:
     #: None = "nobody has said", which lets the SDK fall back to the provider's
     #: declared capability and then to runtime learning (a model that rejects an
@@ -27,12 +30,14 @@ class ModelCreate(BaseModel):
     advanced_params: dict = Field(default_factory=dict)
     #: Set from the "image understanding" switch on the create form.
     supports_vision: bool | None = None
+    purpose: ModelPurpose = "unknown"
 
 
 class ModelUpdate(BaseModel):
     display_name: str | None = None
     advanced_params: dict | None = None
     supports_vision: bool | None = None
+    purpose: ModelPurpose | None = None
 
 
 class GenerationDefaults(BaseModel):
