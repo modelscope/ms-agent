@@ -33,7 +33,8 @@ class TUIPermissionHandler:
                  console: Optional[Console] = None,
                  io: Any = None,
                  theme: Theme = DEFAULT_THEME,
-                 renderer: Any = None) -> None:
+                 renderer: Any = None,
+                 input: Any = None) -> None:
         self._console = console or Console()
         self._theme = theme
         # The event renderer, so its draws can be held while this menu owns the
@@ -42,6 +43,9 @@ class TUIPermissionHandler:
         # reading (tool completions arrive per call now, so that overlap is
         # reachable whenever one call is approved while another is still asked).
         self._renderer = renderer
+        # The TUI input, so its type-ahead reader can yield the terminal while
+        # this menu (a second prompt_toolkit app) is up, and resume afterwards.
+        self._input = input
 
     @contextmanager
     def _own_screen(self):
@@ -53,8 +57,19 @@ class TUIPermissionHandler:
             yield
 
     async def ask(self, tool_name, tool_args, context, suggestions=None):
-        with self._own_screen():
-            return await self._ask(tool_name, tool_args, context, suggestions)
+        # Two prompt_toolkit apps cannot own the terminal at once: pause the
+        # type-ahead reader for the duration of this menu, then resume it.
+        suspend = getattr(self._input, 'suspend_capture', None)
+        if callable(suspend):
+            await suspend()
+        try:
+            with self._own_screen():
+                return await self._ask(tool_name, tool_args, context,
+                                       suggestions)
+        finally:
+            resume = getattr(self._input, 'resume_capture', None)
+            if callable(resume):
+                await resume()
 
     async def _ask(self, tool_name, tool_args, context, suggestions=None):
         from ms_agent.permission.handler import (PermissionAction,
