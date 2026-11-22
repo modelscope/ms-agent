@@ -57,12 +57,8 @@ class ContextCompressor(Memory):
                 logger.warning(f'Failed to init LLM for summary: {e}')
 
     def estimate_tokens(self, text: str) -> int:
-        """Estimate token count from text.
-        Simple heuristic: ~4 chars per token for mixed content.
-        """
-        if not text:
-            return 0
-        return len(text) // 4
+        """Estimate text consistently with session compaction."""
+        return token_budget.estimate_text_tokens(text)
 
     def _estimate_message_tokens_from_content(self, msg: Message) -> int:
         """Heuristic token count from message body (no API usage fields)."""
@@ -70,11 +66,7 @@ class ContextCompressor(Memory):
 
     def estimate_message_tokens(self, msg: Message) -> int:
         """Tokens for one message: prefer ``Message`` usage, else content heuristic."""
-        pt = int(getattr(msg, 'prompt_tokens', 0) or 0)
-        ct = int(getattr(msg, 'completion_tokens', 0) or 0)
-        if pt or ct:
-            return pt + ct
-        return self._estimate_message_tokens_from_content(msg)
+        return token_budget.estimate_total_tokens([msg])
 
     def estimate_total_tokens(self, messages: List[Message]) -> int:
         """Total tokens for the conversation."""
@@ -114,6 +106,7 @@ class ContextCompressor(Memory):
             # Usage belongs to the pre-pruned request, not this new view.
             for msg in messages:
                 msg.prompt_tokens = msg.completion_tokens = 0
+                msg.usage_records = []
             logger.info(f'Pruned {pruned_count} tool outputs')
 
         return messages

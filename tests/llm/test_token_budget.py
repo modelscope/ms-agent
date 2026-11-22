@@ -1,4 +1,6 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+from copy import deepcopy
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 from omegaconf import OmegaConf
@@ -36,11 +38,17 @@ def test_attachment_and_inline_representation_are_not_double_counted():
 
 
 def test_usage_anchor_covers_prefix_but_not_new_images():
-    rows = [{'role': 'user', 'content': 'a' * 50000},
+    rows = [{'role': 'user', 'content': 'question'},
             {'role': 'assistant', 'content': 'ok', 'prompt_tokens': 100, 'completion_tokens': 2},
             {'role': 'user', 'content': '', 'attachments': [
                 {'type': 'image', 'path': 'a.png', 'media_type': 'image/png'}]}]
     assert token_budget.estimate_total_tokens(rows) == 102 + token_budget.estimate_message_tokens(rows[-1])
+
+
+def test_changed_prefix_cannot_hide_behind_old_usage():
+    rows = [{'role': 'system', 'content': 'new instructions' * 2000},
+            {'role': 'assistant', 'content': 'ok', 'prompt_tokens': 100}]
+    assert token_budget.estimate_total_tokens(rows) > 100
 
 
 def test_summary_never_contains_encoded_pixels():
@@ -64,28 +72,44 @@ def test_uncompressible_latest_request_is_preserved_without_summary_calls():
 
 
 def test_summary_that_increases_budget_is_not_committed_or_repeated():
-    llm = Mock()
-    llm.generate.return_value = Message(role='assistant', content='x' * 6000)
+    llm = SimpleNamespace(generate=Mock())
     compactor = SummaryCompactor(llm)
+    # Isolate the final acceptance guard from the hierarchical generator's
+    # separate input/output limits and internal bounded retries.
+    compactor._generate_summary = Mock(return_value='x' * 6000)
     rows = [{'role': 'user', 'content': 'a' * 1000}, {'role': 'assistant', 'content': 'b' * 1000},
             {'role': 'user', 'content': 'last question'}]
     config = {'context_limit': 500, 'reserved_buffer': 10}
     for _ in range(2):
         result, meta = compactor.apply(rows, rows, config)
         assert result == rows and meta is None
-    assert llm.generate.call_count == 1
+    assert compactor._generate_summary.call_count == 1
 
 
-def test_pruning_removes_tool_pixels_and_invalidates_old_usage():
-    rows = [{'role': 'tool', 'content': '', 'attachments': [
+def test_session_pruning_preserves_images_and_billing_evidence():
+    rows = [{'role': 'tool', 'content': 't' * 16000},
+        {'role': 'tool', 'content': '', 'attachments': [
         {'type': 'image', 'path': 'a.png', 'media_type': 'image/png'}]},
         {'role': 'assistant', 'content': 'ok', 'prompt_tokens': 5000, 'completion_tokens': 1}]
-    result, meta = ToolOutputPruner().apply(list(rows), rows,
+    result, meta = ToolOutputPruner().apply(deepcopy(rows), rows,
         {'context_limit': 2000, 'reserved_buffer': 0, 'prune_protect': 0})
     assert meta is not None and meta['tokens_after'] < meta['tokens_before']
-    assert result[0]['attachments'] == []
-    assert result[1]['prompt_tokens'] == 0
-    assert rows[0]['attachments'] and rows[1]['prompt_tokens'] == 5000
+    assert result[1]['attachments'] == rows[1]['attachments']
+    assert result[2]['_usage_invalidated']
+    assert result[2]['prompt_tokens'] == rows[2]['prompt_tokens'] == 5000
+    assert len(rows[0]['content']) == 16000 and '_usage_invalidated' not in rows[2]
+
+
+def test_legacy_pruning_invalidates_continuation_usage_without_mutating_history():
+    usage = [{'usage': {'prompt_tokens': 5000, 'completion_tokens': 1}}]
+    messages = [Message(role='tool', attachments=[{'type': 'image', 'path': 'a.png'}]),
+                Message(role='assistant', content='ok', prompt_tokens=5000, usage_records=usage)]
+    c = compressor()
+    c.prune_protect = 0
+    result = c.prune_tool_outputs(messages)
+    assert result[0].attachments == [] and result[1].usage_records == []
+    assert result[1].prompt_tokens == 0
+    assert messages[0].attachments and messages[1].usage_records == usage
 
 
 def test_summary_keeps_latest_image_only_message():
@@ -93,8 +117,7 @@ def test_summary_keeps_latest_image_only_message():
     rows = [{'role': 'user', 'content': 'x' * 12000},
             {'role': 'assistant', 'content': 'old answer'},
             {'role': 'user', 'content': '', 'attachments': refs}]
-    llm = Mock()
-    llm.generate.return_value = Message(role='assistant', content='short summary')
+    llm = SimpleNamespace(generate=Mock(return_value=Message(role='assistant', content='short summary')))
     c = compressor()
     c.llm = llm
     c.context_limit, c.reserved_buffer = 2000, 0

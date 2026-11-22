@@ -102,3 +102,43 @@ class TestSkillsConfigManager:
         with pytest.raises(ValueError, match='valid JSON'):
             mgr.add_source('new-source')
         assert path.read_text() == 'not json{{{'
+
+    def test_import_from_path_copies_skill_dir(self, mgr, tmp_path):
+        src = tmp_path / 'pack' / 'demo-skill'
+        src.mkdir(parents=True)
+        (src / 'SKILL.md').write_text('# Demo\n')
+        names = mgr.import_from_path(str(src), scope='global')
+        assert names == ['demo-skill']
+        dest = mgr.global_skills_tree() / 'demo-skill' / 'SKILL.md'
+        assert dest.is_file()
+        assert dest.read_text() == '# Demo\n'
+
+    def test_import_from_path_project_scope(self, mgr, tmp_path):
+        proj = tmp_path / 'repo'
+        proj.mkdir()
+        src = tmp_path / 'local-skill'
+        src.mkdir()
+        (src / 'SKILL.md').write_text('# Local\n')
+        names = mgr.import_from_path(
+            str(src), scope='project', project_path=str(proj))
+        assert names == ['local-skill']
+        dest = mgr.project_skills_tree(str(proj)) / 'local-skill' / 'SKILL.md'
+        assert dest.is_file()
+
+    def test_remove_imported_deletes_live_tree_dir(self, mgr, tmp_path):
+        src = tmp_path / 'pack' / 'demo-skill'
+        src.mkdir(parents=True)
+        (src / 'SKILL.md').write_text('# Demo\n')
+        mgr.import_from_path(str(src), scope='global')
+        mgr.set_skill_enabled('demo-skill', False)
+        dest = mgr.remove_imported('demo-skill', scope='global')
+        assert not dest.exists()
+        assert 'demo-skill' not in mgr.load_global().get('disabled', [])
+
+    def test_remove_imported_rejects_non_managed(self, mgr):
+        with pytest.raises(FileNotFoundError, match='not a managed skill'):
+            mgr.remove_imported('ghost')
+
+    def test_import_from_path_missing_raises(self, mgr, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            mgr.import_from_path(str(tmp_path / 'missing'))

@@ -81,6 +81,28 @@ def test_discovery_caches_unchanged_skill_markdown(tmp_path, monkeypatch):
     assert reads == [tmp_path / 'alpha' / 'SKILL.md']
 
 
+def test_discover_lists_skill_without_description(tmp_path):
+    skill = tmp_path / 'demo-skill'
+    skill.mkdir()
+    (skill / 'SKILL.md').write_text(
+        '---\nname: demo-skill\n---\n# Demo\n', encoding='utf-8')
+    found = SkillLoader().discover_skills(str(tmp_path))
+    row = next(iter(found.values()))
+    assert row.name == 'demo-skill'
+    assert row.description == 'demo-skill'
+
+
+def test_parse_directory_fills_missing_description(tmp_path):
+    skill = tmp_path / 'demo-skill'
+    skill.mkdir()
+    (skill / 'SKILL.md').write_text(
+        '---\nname: demo-skill\n---\n# Demo\n', encoding='utf-8')
+    schema = SkillSchemaParser.parse_skill_directory(skill)
+    assert schema is not None
+    assert schema.name == 'demo-skill'
+    assert schema.description == 'demo-skill'
+
+
 def test_full_parse_reuses_exact_legacy_files_signature(tmp_path):
     skill = _make_skill(tmp_path, 'alpha')
     (skill / 'z.txt').write_text('z', encoding='utf-8')

@@ -9,6 +9,13 @@ import pytest
 from ms_agent.llm import thinking as T
 
 
+@pytest.fixture(autouse=True)
+def _unknown_models(monkeypatch):
+    # These tests pin the historical family fallback. Model-aware behavior and
+    # serialized requests with catalog hits live in test_model_thinking.py.
+    monkeypatch.setattr(T, '_catalog_model', lambda *args: None)
+
+
 # --------------------------------------------------------------------------- #
 # Which dialect an endpoint speaks
 # --------------------------------------------------------------------------- #
@@ -226,15 +233,10 @@ def test_auto_sends_nothing_almost_everywhere():
         assert T.plan('auto', base_url=base_url)['params'] == {}
 
 
-def test_auto_is_explicit_only_where_silence_would_mean_off():
-    # Anthropic: our Messages transport always writes a `thinking` block and
-    # absent means disabled, so Claude would never think.
-    assert T.plan(None, base_url='', protocol='anthropic')['params'] == {
-        'extra_body': {
-            'enable_thinking': True
-        }
-    }
-    # DashScope: qwen-plus/turbo/flash and qwen3-max default thinking OFF.
+def test_auto_is_explicit_only_in_the_legacy_dashscope_fallback():
+    # Messages now permits omission, so unknown models are not forced to think.
+    assert T.plan(None, base_url='', protocol='anthropic')['params'] == {}
+    # The uncatalogued DashScope fallback retains its old default.
     assert T.plan(None, base_url='https://dashscope.aliyuncs.com/v1')[
         'params'] == {
             'extra_body': {

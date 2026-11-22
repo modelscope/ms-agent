@@ -2,10 +2,16 @@ from __future__ import annotations
 
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import asyncio
+import base64
+import contextvars
 import copy
+import inspect
+import json
+import mimetypes
 import os
 import re
 import shutil
+import uuid
 from contextlib import AsyncExitStack, suppress
 from datetime import timedelta
 from mcp import ClientSession, ListToolsResult, StdioServerParameters
@@ -23,6 +29,131 @@ from ms_agent.utils import enhance_error, get_logger
 from ms_agent.utils.artifact_manager import ArtifactManager
 
 logger = get_logger()
+
+
+def _session_read_timeout(seconds: float):
+    """Value ``ClientSession`` accepts for ``read_timeout_seconds``.
+
+    mcp 1.x takes a ``timedelta``. mcp 2.x takes seconds as a float and
+    adds that number to ``anyio.current_time()``.
+    """
+    param = inspect.signature(
+        ClientSession.__init__).parameters.get('read_timeout_seconds')
+    annotation = '' if param is None else str(param.annotation)
+    if 'timedelta' in annotation and 'float' not in annotation:
+        return timedelta(seconds=seconds)
+    return float(seconds)
+
+
+def _tool_call_is_error(response) -> bool:
+    """Whether an MCP ``call_tool`` result is an error.
+
+    mcp 1.x exposes ``isError``. mcp 2.x renamed it to ``is_error``.
+    """
+    flag = getattr(response, 'is_error', None)
+    if flag is None:
+        flag = getattr(response, 'isError', None)
+    return bool(flag)
+
+
+def _tool_output_schema(tool):
+    """Return schema, whichever spelling this SDK version uses."""
+    schema = getattr(tool, 'output_schema', None)
+    if schema is None:
+        schema = getattr(tool, 'outputSchema', None)
+    return schema if isinstance(schema, dict) else None
+
+
+def _describe_tool(tool) -> str:
+    """Description plus the declared return shape.
+
+    The chat-completions tool object only has a description, so a server that
+    published an output schema would otherwise never show the model what a
+    successful call looks like.
+    """
+    description = getattr(tool, 'description', None) or ''
+    schema = _tool_output_schema(tool)
+    if not schema:
+        return description
+    rendered = json.dumps(schema, ensure_ascii=False)
+    if len(rendered) > 800:
+        rendered = rendered[:800] + '…'
+    return f'{description}\nReturns: {rendered}'.strip()
+
+
+def _structured_content(response):
+    value = getattr(response, 'structured_content', None)
+    if value is None:
+        value = getattr(response, 'structuredContent', None)
+    return value
+
+
+def _content_mime(content) -> str:
+    mime = getattr(content, 'mime_type', None)
+    if not mime:
+        mime = getattr(content, 'mimeType', None)
+    return str(mime or 'application/octet-stream')
+
+
+def _resource_json(resource) -> str:
+    """Serialize an embedded resource on either SDK spelling."""
+    dump_json = getattr(resource, 'model_dump_json', None)
+    if callable(dump_json):
+        try:
+            return dump_json(by_alias=True)
+        except TypeError:
+            return dump_json()
+    dump = getattr(resource, 'model_dump', None)
+    if callable(dump):
+        try:
+            return json.dumps(dump(by_alias=True), ensure_ascii=False)
+        except TypeError:
+            return json.dumps(dump(), ensure_ascii=False)
+    if isinstance(resource, dict):
+        return json.dumps(resource, ensure_ascii=False)
+    return json.dumps(getattr(resource, '__dict__', str(resource)),
+                      default=str,
+                      ensure_ascii=False)
+
+
+def _tool_input_schema(tool) -> dict:
+    """JSON schema for one MCP tool.
+
+    mcp 1.x exposes ``inputSchema``. mcp 2.x renamed it to ``input_schema``
+    and dropped the old attribute.
+    """
+    schema = getattr(tool, 'input_schema', None)
+    if schema is None:
+        schema = getattr(tool, 'inputSchema', None)
+    if isinstance(schema, dict):
+        return schema
+    return {'type': 'object', 'properties': {}}
+
+
+def _retrieve_future(fut) -> None:
+    """Mark a finished future's exception as retrieved.
+
+    ``ready.set_exception(CancelledError())`` inside a connect that quit
+    cancelled otherwise logs ``Future exception was never retrieved`` when the
+    loop later garbage-collects it — after the user has already seen bye.
+    """
+    if fut is None or not fut.done() or fut.cancelled():
+        return
+    try:
+        fut.exception()
+    except (asyncio.CancelledError, Exception):  # noqa: BLE001
+        return
+
+
+def _is_teardown_noise(exc: BaseException) -> bool:
+    """MCP SDK / anyio errors that fire when closing streamable_http."""
+    text = f'{type(exc).__name__}: {exc}'
+    return any(s in text for s in (
+        'cancel scope',
+        'athrow()',
+        'asynchronous generator',
+    ))
+
 
 EncodingErrorHandler = Literal['strict', 'ignore', 'replace']
 
@@ -43,6 +174,13 @@ def _int_env(name: str, default: int) -> int:
 
 
 CONNECTION_TIMEOUT = _int_env('CONNECTION_TIMEOUT', 120)
+
+#: Cap for one remote MCP handshake. WebUI's health check uses the same 6
+#: seconds. A dead address must not sit on ``CONNECTION_TIMEOUT`` (120s).
+#: stdio does not use this as a death sentence: a local command keeps
+#: ``DEFAULT_SERVER_STARTUP_TIMEOUT`` in the background, and a turn only
+#: waits ``MCP_TURN_WAIT``.
+MCP_PROBE_TIMEOUT = 6
 
 #: How many servers may be started at once. Bounded because each stdio server
 #: is a child process and a large config would otherwise fork all of them
@@ -70,33 +208,16 @@ DEFAULT_STREAMABLE_HTTP_SSE_READ_TIMEOUT = timedelta(seconds=60 * 5)
 #: Identity, toolchain and network settings pass through; credentials do not.
 #: A server's configured ``env`` is applied on top and wins per key.
 _STDIO_ENV_PASSTHROUGH = (
-    'PATH',
-    'HOME',
-    'USER',
-    'LOGNAME',
-    'SHELL',
-    'TMPDIR',
-    'TERM',
-    'TZ',
-    'LANG',
-    'LC_ALL',
-    'LC_CTYPE',
-    'SSL_CERT_FILE',
-    'SSL_CERT_DIR',
-    'REQUESTS_CA_BUNDLE',
+    'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'TERM', 'TZ',
+    'LANG', 'LC_ALL', 'LC_CTYPE',
+    'SSL_CERT_FILE', 'SSL_CERT_DIR', 'REQUESTS_CA_BUNDLE',
     # ALL_PROXY is deliberately absent: a socks5:// value makes any child
     # whose httpx lacks the socksio extra fail on its FIRST request, and the
     # child's venv is not ours to fix. The scheme-specific variables cover
     # the download-acceleration need without that trap.
-    'HTTP_PROXY',
-    'HTTPS_PROXY',
-    'NO_PROXY',
-    'http_proxy',
-    'https_proxy',
-    'no_proxy',
-    'UV_INDEX_URL',
-    'UV_DEFAULT_INDEX',
-    'PIP_INDEX_URL',
+    'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY',
+    'http_proxy', 'https_proxy', 'no_proxy',
+    'UV_INDEX_URL', 'UV_DEFAULT_INDEX', 'PIP_INDEX_URL',
     'npm_config_registry',
 )
 
@@ -120,6 +241,37 @@ def stdio_child_env(config_env: Optional[dict]) -> dict:
     return env
 
 
+# The stdio helper keeps the child private. This records it for the task
+# that is opening the server, so a later turn can read ``returncode``.
+_stdio_child: 'contextvars.ContextVar[list[Any] | None]' = (
+    contextvars.ContextVar('ms_agent_stdio_child', default=None))
+
+
+def _install_stdio_child_hook() -> None:
+    """Remember the process ``stdio_client`` just spawned.
+
+    The MCP helper does not return that process. Missing the private
+    function is safe: death is then noticed when the session itself drops.
+    """
+    try:
+        import mcp.client.stdio as stdio_mod
+    except ImportError:
+        return
+    current = getattr(stdio_mod, '_create_platform_compatible_process', None)
+    if current is None or getattr(current, '_ms_agent_stdio_hook', False):
+        return
+
+    async def hooked(*args, **kwargs):
+        process = await current(*args, **kwargs)
+        holder = _stdio_child.get()
+        if holder is not None:
+            holder.append(process)
+        return process
+
+    hooked._ms_agent_stdio_hook = True  # type: ignore[attr-defined]
+    stdio_mod._create_platform_compatible_process = hooked
+
+
 def resolve_stdio_command(command: str) -> str:
     """Absolute path for *command*, searching PATH then the usual user dirs."""
     if os.path.sep in command:
@@ -131,8 +283,8 @@ def resolve_stdio_command(command: str) -> str:
         candidate = os.path.join(base, command)
         if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
             return candidate
-    searched = ':'.join([os.environ.get('PATH', '')]
-                        + list(_STDIO_EXTRA_BIN_DIRS))
+    searched = ':'.join([os.environ.get('PATH', '')] +
+                        list(_STDIO_EXTRA_BIN_DIRS))
     raise FileNotFoundError(
         f"stdio MCP command '{command}' was not found on this machine. "
         f'Searched: {searched}')
@@ -163,7 +315,8 @@ def _summarize_tool_error(detail: str) -> str:
         return _PYDANTIC_DOC_LINK.sub('', detail).strip()
 
     lines = [f'- `{field}`: {message}' for field, message in seen.items()]
-    return ('the arguments were rejected by the tool:\n' + '\n'.join(lines)
+    return ('the arguments were rejected by the tool:\n'
+            + '\n'.join(lines)
             + '\nSend each value as its declared JSON type (a number '
             'unquoted, not as a string) and call again.\n\nOriginal error:\n'
             + _PYDANTIC_DOC_LINK.sub('', detail).strip())
@@ -185,13 +338,21 @@ class MCPClient(ToolBase):
         config: Optional[DictConfig] = None,
     ):
         super().__init__(config)
-        self._artifacts = ArtifactManager(self.output_dir)
         self.sessions: Dict[str, ClientSession] = {}
         # One owner task per server, holding that server's transport open for
         # its whole lifetime (see _own_server), plus the event that asks it to
         # let go.
         self._server_tasks: Dict[str, 'asyncio.Task'] = {}
         self._server_shutdown: Dict[str, asyncio.Event] = {}
+        # The Future ``connect_to_server`` waits on. Kept so a cancelled
+        # connect can still retrieve the CancelledError it stored there.
+        self._server_ready: Dict[str, 'asyncio.Future'] = {}
+        # Every owner task, including ones already popped from ``_server_tasks``
+        # while their teardown is still running.
+        self._live_tasks: set['asyncio.Task'] = set()
+        # stdio children, so a later turn can see that the process exited
+        # while this session object is still registered.
+        self._stdio_children: Dict[str, Any] = {}
         self.exit_stack = AsyncExitStack()
         self.mcp_config: Dict[str, Dict[str, Any]] = {'mcpServers': {}}
         if config is not None:
@@ -223,16 +384,16 @@ class MCPClient(ToolBase):
         resources = []
         attachments = []
         image_errors = []
-        if response.isError:
+        if _tool_call_is_error(response):
             sep = '\n\n'
-            if all(isinstance(item, str) for item in response.content):
-                detail = sep.join(response.content)
+            if all(isinstance(item, str) for item in response.content or []):
+                detail = sep.join(response.content or [])
             else:
                 detail = sep.join(
-                    getattr(
-                        item, 'text',
-                        f'[{getattr(item, "type", "unknown")} content omitted]'
-                    ) for item in response.content)
+                    item if isinstance(item, str) else
+                    getattr(item, 'text', '') or
+                    f'[{getattr(item, "type", "non-text")} content omitted]'
+                    for item in response.content or [])
             # Marked as an error rather than returned as ordinary text. A
             # failure reported only in prose reaches the model with no error
             # flag and reaches the UI with no failed step, so a call that was
@@ -244,39 +405,67 @@ class MCPClient(ToolBase):
                 'is_error':
                 True,
             }
-        for content in response.content:
-            if content.type == 'text':
+        for content in response.content or []:
+            kind = getattr(content, 'type', None)
+            if kind == 'text':
                 texts.append(content.text)
-            elif content.type == 'image':
-                try:
-                    attachment = await asyncio.to_thread(
-                        self._artifacts.store_image, content.data,
-                        content.mimeType)
-                    attachments.append(attachment)
-                    texts.append(
-                        f'Image {len(attachments)}: {attachment["path"]}')
-                except (ValueError, OSError) as exc:
-                    # Keep the readable parts, but never pretend missing pixels
-                    # arrived or stringify the image's base64 into the log.
-                    image_errors.append(f'Could not read tool image: {exc}')
-            elif content.type == 'resource':
+            elif kind == 'resource':
                 import json5
-                json_str = content.resource.model_dump_json(by_alias=True)
+                json_str = _resource_json(content.resource)
                 texts.append(json_str)
                 resources.append(json5.loads(json_str))
+            elif kind == 'image':
+                try:
+                    attachment = await asyncio.to_thread(
+                        ArtifactManager(self.output_dir or os.getcwd()).store_image,
+                        getattr(content, 'data', '') or '', _content_mime(content))
+                    attachments.append(attachment)
+                    texts.append(f'Image {len(attachments)}: {attachment["path"]}')
+                except (ValueError, OSError) as exc:
+                    image_errors.append(f'Could not read tool image: {exc}')
+            elif kind == 'audio':
+                path = self._write_media(
+                    getattr(content, 'data', '') or '',
+                    _content_mime(content), 'audio')
+                texts.append(
+                    f'Audio returned ({_content_mime(content)}), saved at {path}.')
 
+        structured = _structured_content(response)
+        if structured is not None and not texts:
+            texts.append(
+                json.dumps(structured, ensure_ascii=False, default=str))
+
+        body = '\n\n'.join(texts + image_errors)
         if resources or attachments or image_errors:
-            result = {
-                'text': '\n\n'.join(texts + image_errors),
-                'resources': resources
-            }
-            if attachments:
-                result['attachments'] = attachments
+            result = {'text': body}
             if image_errors:
                 result['is_error'] = True
+            if resources:
+                result['resources'] = resources
+            if attachments:
+                result['attachments'] = attachments
             return result
+        return body
 
-        return '\n\n'.join(texts)
+    def _write_media(self, data: str, mime: str, kind: str) -> str:
+        """Persist a base64 tool result next to the workspace.
+
+        Image refs the model can see are file paths, not inline bytes. Audio
+        has no model channel, so the path in the text is the whole delivery.
+        """
+        raw = base64.b64decode(data or '')
+        ext = mimetypes.guess_extension(mime.split(';', 1)[0].strip()) or ''
+        if ext == '.jpe':
+            ext = '.jpg'
+        if not ext:
+            ext = '.png' if kind == 'image' else '.bin'
+        root = self.output_dir or os.getcwd()
+        folder = os.path.join(root, 'mcp_media')
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, f'{uuid.uuid4().hex}{ext}')
+        with open(path, 'wb') as handle:
+            handle.write(raw)
+        return os.path.relpath(path, root)
 
     def _filter_session_tools(
         self,
@@ -296,8 +485,8 @@ class MCPClient(ToolBase):
             Tool(
                 tool_name=t.name,
                 server_name=server_name,
-                description=t.description,
-                parameters=t.inputSchema,
+                description=_describe_tool(t),
+                parameters=_tool_input_schema(t),
             ) for t in session_tools
         ]
 
@@ -359,17 +548,37 @@ class MCPClient(ToolBase):
     def is_connected(self, server_name: str) -> bool:
         return server_name in self.sessions
 
-    async def disconnect_server(self, server_name: str) -> None:
+    def stdio_process_exited(self, server_name: str) -> bool:
+        """Whether the stdio child has already exited.
+
+        The session can still be registered: the owner task is blocked
+        until something asks it to stop. ``returncode`` is the fact.
+        """
+        process = self._stdio_children.get(server_name)
+        if process is None:
+            return False
+        return getattr(process, 'returncode', None) is not None
+
+    def _track_task(self, task: 'asyncio.Task') -> None:
+        self._live_tasks.add(task)
+        task.add_done_callback(self._live_tasks.discard)
+        task.add_done_callback(_retrieve_future)
+
+    async def disconnect_server(self,
+                                server_name: str,
+                                *,
+                                graceful: bool = True) -> None:
         """Disconnect a single MCP server."""
         self.exclude_functions.pop(server_name, None)
         self.include_functions.pop(server_name, None)
-        await self._stop_server(server_name)
+        await self._stop_server(server_name, graceful=graceful)
 
     async def connect_single_server(
         self,
         server_name: str,
         server_config: Dict[str, Any],
         timeout: int = CONNECTION_TIMEOUT,
+        startup_timeout: Optional[float] = None,
     ) -> str:
         """Connect one server from a normalized config entry."""
         if self.is_connected(server_name):
@@ -390,6 +599,7 @@ class MCPClient(ToolBase):
             server_name=server_name,
             env=env_dict,
             timeout=timeout,
+            startup_timeout=startup_timeout,
             **server,
         )
 
@@ -470,7 +680,7 @@ class MCPClient(ToolBase):
                 ClientSession(
                     read,
                     write,
-                    read_timeout_seconds=timedelta(seconds=timeout),
+                    read_timeout_seconds=_session_read_timeout(timeout),
                     **session_kwargs))
 
         elif command:
@@ -493,8 +703,16 @@ class MCPClient(ToolBase):
                     'encoding_error_handler', DEFAULT_ENCODING_ERROR_HANDLER),
             )
 
-            stdio, write = await stack.enter_async_context(
-                stdio_client(server_params))
+            holder: list[Any] = []
+            token = _stdio_child.set(holder)
+            try:
+                _install_stdio_child_hook()
+                stdio, write = await stack.enter_async_context(
+                    stdio_client(server_params))
+            finally:
+                _stdio_child.reset(token)
+            if holder:
+                self._stdio_children[server_name] = holder[-1]
             session_kwargs = session_kwargs or {}
             read_timeout = max(
                 session_kwargs.pop('read_timeout_seconds', timeout), 1)
@@ -505,7 +723,7 @@ class MCPClient(ToolBase):
                 ClientSession(
                     stdio,
                     write,
-                    read_timeout_seconds=timedelta(seconds=read_timeout),
+                    read_timeout_seconds=_session_read_timeout(read_timeout),
                     **session_kwargs))
         else:
             raise ValueError(
@@ -534,8 +752,7 @@ class MCPClient(ToolBase):
         stack = AsyncExitStack()
         try:
             async with stack:
-                session = await self._open_session(stack, server_name,
-                                                   **kwargs)
+                session = await self._open_session(stack, server_name, **kwargs)
                 self.sessions[server_name] = session
                 if not ready.done():
                     ready.set_result(server_name)
@@ -543,7 +760,11 @@ class MCPClient(ToolBase):
         except BaseException as exc:  # noqa: BLE001
             if not ready.done():
                 ready.set_exception(exc)
-            elif not isinstance(exc, asyncio.CancelledError):
+            elif isinstance(exc, asyncio.CancelledError):
+                pass
+            elif _is_teardown_noise(exc):
+                logger.debug('MCP server %s closed: %s', server_name, exc)
+            else:
                 logger.warning('MCP server %s dropped: %s', server_name, exc)
         finally:
             self.sessions.pop(server_name, None)
@@ -551,12 +772,15 @@ class MCPClient(ToolBase):
     async def connect_to_server(self,
                                 server_name: str,
                                 timeout: int = CONNECTION_TIMEOUT,
-                                startup_timeout: Optional[int] = None,
+                                startup_timeout: Optional[float] = None,
                                 **kwargs):
         if self.is_connected(server_name):
             return server_name
         logger.info(f'connect to {server_name}')
         ready: 'asyncio.Future' = asyncio.get_running_loop().create_future()
+        # Retrieve as soon as the owner stores an exception, including the
+        # CancelledError a quit leaves behind after the waiter has moved on.
+        ready.add_done_callback(_retrieve_future)
         shutdown = asyncio.Event()
         task = asyncio.create_task(
             self._own_server(server_name, {
@@ -564,8 +788,10 @@ class MCPClient(ToolBase):
                 **kwargs
             }, ready, shutdown),
             name=f'mcp-server:{server_name}')
+        self._track_task(task)
         self._server_tasks[server_name] = task
         self._server_shutdown[server_name] = shutdown
+        self._server_ready[server_name] = ready
         try:
             if startup_timeout:
                 # Shield so a timeout stops US waiting without cancelling the
@@ -580,32 +806,50 @@ class MCPClient(ToolBase):
             # the startup timeout the caller already spent.
             await self._stop_server(server_name, graceful=False)
             raise
+        self._server_ready.pop(server_name, None)
         return server_name
 
     async def _stop_server(self,
                            server_name: str,
                            graceful: bool = True) -> None:
         """Ask a server's owner task to close its transport, and wait for it."""
+        self._stdio_children.pop(server_name, None)
         shutdown = self._server_shutdown.pop(server_name, None)
         task = self._server_tasks.pop(server_name, None)
+        ready = self._server_ready.pop(server_name, None)
         self.sessions.pop(server_name, None)
         if shutdown is not None:
             shutdown.set()
         if task is None or task.done():
+            _retrieve_future(task)
+            _retrieve_future(ready)
             return
         if graceful:
             try:
                 await asyncio.wait_for(
                     asyncio.shield(task), timeout=SERVER_STOP_TIMEOUT)
+                _retrieve_future(ready)
                 return
-            except (asyncio.TimeoutError, asyncio.CancelledError):
-                pass
+            except asyncio.TimeoutError:
+                logger.debug('MCP server %s stop timed out', server_name)
+                _retrieve_future(ready)
+            except asyncio.CancelledError:
+                # The TUI generator is closing. The owner already has the
+                # shutdown signal — wait it out. Cancelling it here would
+                # athrow() streamablehttp_client from the wrong task.
+                with suppress(BaseException):
+                    await asyncio.shield(task)
+                _retrieve_future(ready)
+                return
             except BaseException as exc:  # noqa: BLE001
                 logger.debug('MCP server %s stopped with %s', server_name, exc)
+                _retrieve_future(ready)
                 return
         task.cancel()
         with suppress(BaseException):
             await task
+        _retrieve_future(task)
+        _retrieve_future(ready)
 
     def _plan_server(self, name: str, server: Dict[str, Any],
                      default_timeout: int) -> Dict[str, Any]:
@@ -718,11 +962,60 @@ class MCPClient(ToolBase):
                     server_name=name, env=env_dict, **server)
         self.mcp_config['mcpServers'].update(new_mcp_config)
 
+    async def _reap_live_tasks(self) -> None:
+        """Stop owner tasks that a cancelled connect did not finish awaiting.
+
+        Quit during a probe used to leave those tasks for the loop shutdown,
+        which then printed ``CancelledError`` after bye.
+        """
+        # A server nobody has signalled yet is still inside connect. Cancel
+        # it. One whose shutdown event is already set is closing itself;
+        # cancelling that owner exits its anyio scope in the wrong task.
+        for name, task in list(self._server_tasks.items()):
+            if task.done():
+                continue
+            shutdown = self._server_shutdown.get(name)
+            if shutdown is None or not shutdown.is_set():
+                task.cancel()
+        pending = [task for task in list(self._live_tasks) if not task.done()]
+        readies = list(self._server_ready.values())
+        self._server_tasks.clear()
+        self._server_shutdown.clear()
+        self._server_ready.clear()
+        self.sessions.clear()
+        try:
+            if pending:
+                await asyncio.shield(
+                    asyncio.gather(*pending, return_exceptions=True))
+        except asyncio.CancelledError:
+            return
+        finally:
+            for task in pending:
+                _retrieve_future(task)
+            for ready in readies:
+                _retrieve_future(ready)
+
     async def cleanup(self):
         """Clean up resources"""
-        for name in list(self._server_tasks):
-            await self.disconnect_server(name)
-        await self.exit_stack.aclose()
+        try:
+            for name in list(self._server_tasks):
+                try:
+                    # Not initialized yet: there is no session to drain, and
+                    # the grace period would hang bye on the probe that just
+                    # timed out.
+                    established = name in self.sessions
+                    await self.disconnect_server(name, graceful=established)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:  # noqa: BLE001
+                    logger.debug(
+                        'MCP disconnect %s during cleanup',
+                        name,
+                        exc_info=True)
+        finally:
+            await self._reap_live_tasks()
+            with suppress(BaseException):
+                await self.exit_stack.aclose()
 
     async def __aenter__(self) -> 'MCPClient':
         try:

@@ -22,7 +22,10 @@ def field(message: Any, name: str, default=None):
 
 
 def estimate_text_tokens(text: str) -> int:
-    return len(text) // 4 if text else 0
+    if not text:
+        return 0
+    non_ascii = sum(ord(c) > 127 for c in text)
+    return (len(text) - non_ascii + 3) // 4 + non_ascii
 
 
 def estimate_message_tokens(message: Any) -> int:
@@ -41,29 +44,37 @@ def estimate_message_tokens(message: Any) -> int:
         total += estimate_text_tokens(json.dumps(calls))
     total += estimate_text_tokens(
         field(message, 'reasoning_content', '') or '')
-    return total
+    return 4 + total
 
 
-def estimate_total_tokens(messages: list) -> int:
+def estimate_total_tokens(messages: list, tool_tokens: int = 0) -> int:
+    heuristic = tool_tokens + sum(estimate_message_tokens(m) for m in messages)
     for i in range(len(messages) - 1, -1, -1):
         msg = messages[i]
-        if field(msg, 'role') != 'assistant':
+        if field(msg, 'role') != 'assistant' or field(msg, '_usage_invalidated'):
             continue
-        prompt = int(field(msg, 'prompt_tokens', 0) or 0)
-        completion = int(field(msg, 'completion_tokens', 0) or 0)
+        # Continuation totals are billing evidence; only the latest request
+        # describes the current context. Tool schemas are already in its usage.
+        records = field(msg, 'usage_records') or []
+        usage = records[-1]['usage'] if records else msg
+        prompt = int(field(usage, 'prompt_tokens', 0) or 0)
+        completion = int(field(usage, 'completion_tokens', 0) or 0)
         if prompt or completion:
-            return prompt + completion + sum(
+            anchored = prompt + completion + sum(
                 estimate_message_tokens(m) for m in messages[i + 1:])
-    return sum(estimate_message_tokens(m) for m in messages)
+            # Prompt/media replacement before the anchor can increase the
+            # request without appending a message. Preserve upstream's guard.
+            return max(anchored, heuristic)
+    return heuristic
 
 
-def summary_attempt_key(messages: list, usable: int) -> str:
+def summary_attempt_key(messages: list, budget: Any) -> str:
     """Identify an unchanged window without retaining its large payloads."""
     keys = ('role', 'content', 'attachments', 'tool_calls',
             'reasoning_content')
     payload = [{k: field(m, k) for k in keys} for m in messages]
     return hashlib.sha256(
-        json.dumps([usable, payload], sort_keys=True,
+        json.dumps([budget, payload], sort_keys=True,
                    ensure_ascii=False).encode()).hexdigest()
 
 

@@ -25,6 +25,7 @@ import {
   dispatchWorkspaceChanged,
   useOnWorkspaceChanged
 } from '~/lib/events'
+import type { ReasoningEffort } from '~/lib/types'
 import { useT } from '~/lib/i18n'
 import {
   claimQuestion,
@@ -57,6 +58,7 @@ import type {
 export type { ArtifactRef }
 
 export interface ChatComposerCtx {
+  refreshMessages: () => void
   submit: (
     text: string,
     files?: ChatFileRef[],
@@ -74,7 +76,7 @@ export interface ChatComposerCtx {
 
 interface ChatPanelProps {
   sessionId: string | null
-  prepareModel?: () => Promise<string>
+  prepareModel?: () => Promise<{ modelId: string; reasoningEffort?: ReasoningEffort }>
   projectId: string | null
   /**
    * Whether the workspace rail is open in side-by-side (lg) mode. When true
@@ -521,7 +523,7 @@ export function ChatPanel({
     files?: ChatFileRef[],
     segments?: MessageSegment[]
   ) => {
-    const modelId = await prepareModel?.()
+    const selection = await prepareModel?.()
     const text = value.trim()
     const attached = files?.length ? files : undefined
     setStoppedLocally(false)
@@ -556,7 +558,8 @@ export function ChatPanel({
     onRequest({
       session_id: sidRef.current,
       project_id: effectiveProjectId,
-      model_id: sidRef.current ? undefined : modelId,
+      model_id: sidRef.current ? undefined : selection?.modelId,
+      reasoning_effort: sidRef.current ? undefined : selection?.reasoningEffort,
       message: { role: 'user', content, files: attached }
     })
   }
@@ -1205,6 +1208,7 @@ export function ChatPanel({
         }
       : null
   const ctx: ChatComposerCtx = {
+    refreshMessages: () => { void refreshMessages() },
     submit: handleSubmit,
     // A rejoined (attached) turn counts as loading too, so the composer shows
     // the Stop control for it and blocks a concurrent send from this view.

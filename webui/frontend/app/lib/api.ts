@@ -2,6 +2,8 @@ import { SERVER_API_BASE } from './env'
 import { redirectIfSignedOut, type AuthStatus } from './auth'
 import type {
   AgentSettings,
+  CatalogStatus,
+  ContextStatus,
   Artifact,
   GenerationDefaults,
   Instruction,
@@ -19,6 +21,7 @@ import type {
   Profile,
   Project,
   Provider,
+  ReasoningEffort,
   Scope,
   SearchProvider,
   SearchSettings,
@@ -121,6 +124,8 @@ interface JsonOpts {
   // suppresses only those codes (e.g. `[409]` to ignore an idempotent
   // create-conflict while still surfacing genuine failures).
   silent?: boolean | number[]
+  /** Do not join a GET started before a mutation completed. */
+  fresh?: boolean
 }
 
 /** Per-call options shared by REST methods that support silencing errors. */
@@ -192,7 +197,7 @@ async function json<T>(
     typeof input === 'string'
       ? input
       : null
-  if (key) {
+  if (key && !opts?.fresh) {
     const pending = inflightGets.get(key)
     if (pending) return pending as Promise<T>
   }
@@ -322,7 +327,7 @@ export const api = {
       memory_backend: MemoryBackend
       mcp_auto_attach: boolean
       skill_auto_attach: boolean
-      permission_mode: 'restricted' | 'auto'
+      permission_mode: 'ask' | 'auto' | 'full-access'
     }>
   ) =>
     json<Project>(`/api/projects/${pid(id)}`, {
@@ -335,6 +340,9 @@ export const api = {
   // Sessions
   listSessions: (projectId?: string) =>
     json<Session[]>(`/api/sessions${q({ project_id: projectId })}`),
+  getContext: (id: string) => json<ContextStatus>(`/api/sessions/${id}/context`, undefined, { silent: true }),
+  retryContext: (id: string) => json<{ status: string }>(`/api/sessions/${id}/context/retry`, { method: 'POST' }),
+  compactContext: (id: string) => json<{ status: string }>(`/api/sessions/${id}/compact`, { method: 'POST' }),
   getSession: (id: string, opts?: ApiCallOpts) =>
     json<Session>(`/api/sessions/${pid(id)}`, {}, opts),
   listSessionMessages: (id: string, opts?: ApiCallOpts) =>
@@ -351,10 +359,15 @@ export const api = {
     project_id?: string
     preview?: string
     model_id?: string
+    reasoning_effort?: ReasoningEffort
   }) =>
     json<Session>('/api/sessions', {
       method: 'POST',
       body: JSON.stringify(body)
+    }),
+  updateSessionThinking: (id: string, modelId: string, effort: ReasoningEffort) =>
+    json<Session>(`/api/sessions/${pid(id)}/thinking`, {
+      method: 'PATCH', body: JSON.stringify({ model_id: modelId, reasoning_effort: effort })
     }),
   updateSessionModel: (id: string, modelId: string) =>
     json<{ session: Session; settings: AgentSettings }>(`/api/sessions/${pid(id)}/model`, {
@@ -635,6 +648,8 @@ export const api = {
     }),
 
   // Providers + Models
+  getCatalogStatus: () => json<CatalogStatus>('/api/model-catalog'),
+  updateCatalog: () => json<CatalogStatus>('/api/model-catalog/update', { method: 'POST' }),
   listProviders: () => json<Provider[]>('/api/providers'),
   createProvider: (body: {
     id: string
@@ -677,16 +692,17 @@ export const api = {
       opts
     ),
 
-  listModels: (providerId?: string) =>
-    json<Model[]>(`/api/models${q({ provider_id: providerId })}`),
-  /** What the runtime will send for this provider/model before any override. */
+  listModels: (providerId?: string, opts?: ApiCallOpts) =>
+    json<Model[]>(`/api/models${q({ provider_id: providerId })}`, undefined, opts),
+  /** SDK defaults and catalog lookup, including model IDs not yet added. */
   getGenerationDefaults: (
     providerId: string,
     model: string,
-    opts?: ApiCallOpts
+    opts?: ApiCallOpts,
+    reasoningEffort?: ReasoningEffort
   ) =>
     json<GenerationDefaults>(
-      `/api/models/generation-defaults${q({ provider_id: providerId, model })}`,
+      `/api/models/generation-defaults${q({ provider_id: providerId, model, reasoning_effort: reasoningEffort })}`,
       undefined,
       opts
     ),
@@ -696,7 +712,9 @@ export const api = {
     name: string
     display_name?: string
     advanced_params?: Record<string, unknown>
+    reasoning_effort?: ReasoningEffort
     supports_vision?: boolean | null
+    context_limit?: number | null
   }) =>
     json<Model>('/api/models', { method: 'POST', body: JSON.stringify(body) }),
   updateModel: (
@@ -705,7 +723,9 @@ export const api = {
       purpose: ModelPurpose
       display_name: string
       advanced_params: Record<string, unknown>
+      reasoning_effort: ReasoningEffort
       supports_vision: boolean | null
+      context_limit: number | null
     }>
   ) =>
     json<Model>(`/api/models/${pid(id)}`, {

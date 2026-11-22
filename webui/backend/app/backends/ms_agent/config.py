@@ -730,21 +730,47 @@ _PERMISSION_WHITELIST = [
 ]
 
 
+def read_project_permission_mode(meta: dict | None) -> str:
+    """Canonical mode for a project sidecar.
+
+    Sidecars written before the rename stored ``restricted`` (ask the user)
+    and ``auto`` (full access) and have no ``permission_mode_v``. Those map
+    to ``ask`` and ``full-access``. A write stamps version 2, after which
+    ``auto`` means the model decides uncertain calls.
+    """
+    meta = meta or {}
+    raw = meta.get("permission_mode")
+    legacy = int(meta.get("permission_mode_v") or 1) < 2
+    if legacy:
+        value = (raw or "restricted").strip().lower()
+        if value in ("", "restricted", "interactive", "ask"):
+            return "ask"
+        if value in ("auto", "full", "full_access", "full-access", "strict"):
+            return "full-access"
+        return "ask"
+    from ms_agent.permission.config import normalize_permission_mode
+
+    try:
+        return normalize_permission_mode(raw or "ask")
+    except ValueError:
+        return "ask"
+
+
 def _apply_webui_permission(config, project_mode: str | None = None):
-    """Default this phase to the SDK's restricted (ask) mode.
+    """Default this phase to ask mode.
 
     Non-whitelisted tools suspend on the session's WebPermissionHandler, which
     surfaces an authorization card over SSE and times out to deny. Explicit
     `permission.*` from settings.json / project config still wins — we only
     fill blanks. ``project_mode`` is the UI's per-project override (the
-    composer's restricted/full-access selector, stored in the project sidecar):
-    an explicit user choice, so it beats the fill-blanks default."""
+    composer's ask / auto / full-access selector, already canonical): an
+    explicit user choice, so it beats the fill-blanks default."""
     from omegaconf import OmegaConf
 
-    if project_mode in ("restricted", "auto"):
+    if project_mode in ("ask", "auto", "full-access"):
         OmegaConf.update(config, "permission.mode", project_mode, merge=True)
     elif OmegaConf.select(config, "permission.mode", default=None) is None:
-        OmegaConf.update(config, "permission.mode", "restricted", merge=True)
+        OmegaConf.update(config, "permission.mode", "ask", merge=True)
     if OmegaConf.select(config, "permission.whitelist", default=None) is None:
         OmegaConf.update(
             config, "permission.whitelist", list(_PERMISSION_WHITELIST), merge=True
@@ -756,9 +782,9 @@ def provider_base_url(provider: str) -> str:
     """The endpoint we will actually call for ``provider`` (user override first,
     then the built-in spec's default). The thinking dialect is decided by the
     host, so this — not the provider id — is what the SDK needs."""
-    provider = (provider or "").lower()
-    entry = (_read_settings().get("providers") or {}).get(provider) or {}
-    return entry.get("base_url") or _openai_compat_base_url(provider) or ""
+    from ms_agent.config.model_settings import resolve_model_settings
+
+    return resolve_model_settings(_read_settings(), provider, "").get("base_url") or ""
 
 
 def thinking_plan(
@@ -766,6 +792,7 @@ def thinking_plan(
     provider: str,
     effort: Any = "auto",
     existing: dict | None = None,
+    model: str = "",
 ) -> dict:
     """What the SDK will send for ``effort`` on this provider's endpoint.
 
@@ -783,6 +810,8 @@ def thinking_plan(
     return plan(effort,
                 base_url=provider_base_url(provider),
                 protocol=(protocol or "").lower(),
+                provider_id=provider,
+                model=model,
                 existing=existing)
 
 
@@ -923,6 +952,11 @@ def _apply_webui_generation_params(config):
     if supports_vision is not None:
         OmegaConf.update(
             config, "llm.supports_vision", supports_vision, merge=True)
+    from app.backends.ms_agent.mapping import encode_model_id
+
+    meta = _read_metadata("models", encode_model_id(provider, model)) or {}
+    if meta.get("context_limit") is not None:
+        OmegaConf.update(config, "llm.context_limit", meta["context_limit"], merge=True)
     return config
 
 
@@ -1061,7 +1095,7 @@ def _build_agent(project, session, *, event_sink, input_source, mcp_config=None,
     from app.backends.ms_agent import sidecar
 
     meta = _read_metadata("projects", project.id, {}) or {}
-    cfg = _apply_webui_permission(cfg, meta.get("permission_mode"))
+    cfg = _apply_webui_permission(cfg, read_project_permission_mode(meta))
 
     # Route-A shaping (see tui/app.py::_prepare_config).
     shaping = {

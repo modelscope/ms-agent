@@ -42,6 +42,29 @@ def test_local_lifecycle_does_not_install_dependencies(tmp_path, monkeypatch, sc
     asyncio.run(run())
 
 
+def test_shell_call_ignores_unknown_description(tmp_path):
+
+    async def run():
+        tool = LocalCodeExecutionTool(
+            config(tmp_path, include=['shell_executor']))
+        await tool.connect()
+        try:
+            raw = await tool.call_tool(
+                'code_executor',
+                tool_name='shell_executor',
+                tool_args={
+                    'command': 'echo shell-ready',
+                    'description': 'list the news',
+                })
+        finally:
+            await tool.cleanup()
+        assert 'unexpected keyword' not in raw
+        payload = json.loads(raw)
+        assert payload['success'] and 'shell-ready' in payload['output']
+
+    asyncio.run(run())
+
+
 @pytest.mark.skipif(os.name == 'nt', reason='POSIX command quoting')
 def test_real_shell_and_background_use_selected_python(tmp_path, monkeypatch):
     project_env = tmp_path / 'task-env'

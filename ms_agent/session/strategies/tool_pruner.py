@@ -10,33 +10,69 @@ event in the SessionLog.
 """
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, List, Optional, Tuple
 
-from ms_agent.llm import token_budget
+from ms_agent.llm import multimodal, token_budget
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
 
 
 def _estimate_tokens(text: str) -> int:
-    if not text:
-        return 0
-    return len(text) // 4
+    return token_budget.estimate_text_tokens(text)
 
 
 def _estimate_message_tokens(msg: Dict[str, Any]) -> int:
-    """Shared text/media heuristic, excluding API usage anchors."""
     return token_budget.estimate_message_tokens(msg)
 
 
-def _estimate_total_tokens(messages: List[Dict[str, Any]]) -> int:
-    """Estimate total tokens, preferring real API usage data when available.
+def _estimate_total_tokens(messages: List[Dict[str, Any]],
+                           tool_tokens: int = 0) -> int:
+    return token_budget.estimate_total_tokens(messages, tool_tokens)
 
-    ``prompt_tokens`` on an assistant message already accounts for all
-    preceding context in that API call, so we use it as a base and only
-    add a heuristic for messages appended *after* that turn.
-    """
-    return token_budget.estimate_total_tokens(messages)
+
+def invalidate_usage(messages):
+    """Keep billing evidence, but discard usage anchors for a changed window."""
+    for msg in messages:
+        msg['_usage_invalidated'] = True
+
+
+def compression_threshold(config):
+    context = config.get('context_limit', 128000)
+    threshold = (
+        context - config['reserved_buffer']
+        if config.get('reserved_buffer') is not None else int(context * 0.85))
+    return min(
+        config.get('input_limit', context),
+        config.get('compression_threshold', threshold))
+
+
+def protected_indices(messages):
+    """Protect instructions/media/latest user and the last atomic tool exchange."""
+    protected = {
+        i
+        for i, m in enumerate(messages) if m.get('role') == 'system'
+        or m.get('attachments') or m.get('hook_attachments')
+        or multimodal.has_image_blocks(m.get('content'))
+    }
+    users = [i for i, m in enumerate(messages) if m.get('role') == 'user']
+    if users:
+        protected.add(users[-1])
+    if messages:
+        protected.add(len(messages) - 1)
+    # An assistant tool call and all consecutive results form one atomic group.
+    for i, msg in enumerate(messages):
+        if not msg.get('tool_calls'):
+            continue
+        group = {i}
+        j = i + 1
+        while j < len(messages) and messages[j].get('role') == 'tool':
+            group.add(j)
+            j += 1
+        if group & protected:
+            protected.update(group)
+    return protected
 
 
 class ToolOutputPruner:
@@ -56,42 +92,36 @@ class ToolOutputPruner:
         all_msgs: List[Dict[str, Any]],
         config: Dict[str, Any],
     ) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
-        context_limit = config.get('context_limit', 128000)
-        reserved = config.get('reserved_buffer', 20000)
         protect = config.get('prune_protect', 40000)
-
-        tokens_before = _estimate_total_tokens(visible)
-        usable = context_limit - reserved
-        if tokens_before < usable:
+        tokens_before = _estimate_total_tokens(visible,
+                                               config.get('tool_tokens', 0))
+        if tokens_before < compression_threshold(config):
             return visible, None
 
+        protected = protected_indices(visible)
         total_tool_tokens = 0
         pruned_count = 0
+        replacement = '[Output truncated to save context]'
         for idx in range(len(visible) - 1, -1, -1):
             msg = visible[idx]
-            if msg.get('role') != 'tool' or not (msg.get('content')
-                                                 or msg.get('attachments')):
+            if msg.get('role') != 'tool' or not msg.get('content'):
                 continue
-            tokens = _estimate_message_tokens(msg)
+            content = msg['content']
+            if not isinstance(content, str):
+                content = json.dumps(content, ensure_ascii=False)
+            tokens = _estimate_tokens(content)
             total_tool_tokens += tokens
-            if total_tool_tokens > protect:
-                visible[idx] = {
-                    **msg,
-                    'content': '[Output truncated to save context]',
-                    'attachments': [],
-                }
+            if (idx not in protected and total_tool_tokens > protect
+                    and tokens > _estimate_tokens(replacement)):
+                visible[idx] = {**msg, 'content': replacement}
                 pruned_count += 1
 
         if pruned_count == 0:
             return visible, None
 
-        # Only this derived view loses its usage anchors; canonical log rows
-        # retain the actual billable usage of their original requests.
-        visible = [{
-            **m, 'prompt_tokens': 0,
-            'completion_tokens': 0
-        } for m in visible]
-        tokens_after = _estimate_total_tokens(visible)
+        invalidate_usage(visible)
+        tokens_after = _estimate_total_tokens(visible,
+                                              config.get('tool_tokens', 0))
         logger.info(f'[tool_pruner] Pruned {pruned_count} tool outputs '
                     f'({tokens_before} -> {tokens_after} tokens)')
 

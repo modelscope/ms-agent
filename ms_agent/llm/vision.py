@@ -3,9 +3,9 @@
 
 Two halves.
 
-**Resolution** — one state, default OFF: the per-model "image understanding"
-switch. Nothing else. There is deliberately no memory of models observed to
-refuse images, and no write-back of the switch.
+**Resolution** — the explicit per-model "image understanding" switch wins;
+otherwise offline catalog input modalities decide, with unknown models OFF.
+There is no memory of observed image refusals and no write-back of the switch.
 
 An earlier version cached refusals so a conversation would stop paying for a
 request it expected to fail. It cost a TTL, four invalidation hooks, a retry
@@ -100,7 +100,8 @@ def is_image_refusal(exc: Exception, sent_images: bool) -> bool:
     from being recorded as blindness.
     """
     return classify(
-        exc, sent_images=sent_images).failure is not ImageFailure.NOT_IMAGE_RELATED
+        exc,
+        sent_images=sent_images).failure is not ImageFailure.NOT_IMAGE_RELATED
 
 
 def strip_images_from_messages(messages: Any) -> Tuple[Any, bool]:
@@ -156,7 +157,8 @@ def create_with_vision_fallback(create: Callable[..., Any],
                                 messages: Any,
                                 sent_images: bool,
                                 max_edge: int = 0,
-                                on_degrade: Optional[Callable[[str], None]] = None,
+                                on_degrade: Optional[Callable[[str],
+                                                              None]] = None,
                                 logger_: Any = None,
                                 **kwargs) -> Any:
     """Call ``create(messages=..., **kwargs)``, recovering along the ladder.
@@ -243,20 +245,31 @@ def resolve_supports_vision(config: Any,
                             spec: Any = None,
                             model: str = '',
                             base_url: Any = '') -> bool:
-    """Whether to attach pixels for this model. See the module docstring.
+    """Explicit per-model switch, then offline input modalities, else False.
 
-    ``config.llm.supports_vision`` is the explicit per-model switch and the only
-    thing that turns images on; unset means OFF. ``spec`` is accepted and ignored
-    (kept so existing callers need no edit): a provider's declared ``vision``
-    capability describes the protocol, not the model behind it.
+    A provider-level vision flag is not evidence about a particular model.
+    ``spec`` supplies identity only, never a cross-provider model-name guess.
     """
-    llm = getattr(config, 'llm', None) if config is not None else None
+
+    def get(obj, key, default=None):
+        return obj.get(key, default) if isinstance(obj, dict) else getattr(
+            obj, key, default)
+
+    llm = get(config, 'llm') if config is not None else None
     if llm is not None:
         for name in ('supports_vision', 'vision_supported'):
-            value = getattr(llm, name, None)
+            value = get(llm, name)
             if value is not None:
                 return _as_bool(value)
-    return False
+    provider_id = get(llm, 'service') or get(spec, 'name', '')
+    model = model or get(llm, 'model', '')
+    try:
+        from ms_agent.llm.model_catalog import get_model
+        meta = get_model(provider_id, model, base_url=str(base_url or ''))
+    except (ImportError, OSError, ValueError):
+        return False
+    inputs = ((meta or {}).get('modalities') or {}).get('input') or []
+    return isinstance(inputs, list) and 'image' in inputs
 
 
 def resolve_max_edge(spec: Any, configured: int = 0) -> int:

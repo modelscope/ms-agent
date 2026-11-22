@@ -16,7 +16,7 @@ import json
 import re
 import time
 from contextlib import contextmanager
-from rich.console import Console
+from rich.console import Console, Group
 from rich.markdown import Markdown
 from rich.markup import escape
 from rich.panel import Panel
@@ -28,6 +28,23 @@ from ms_agent.tui.state import TuiState
 from ms_agent.tui.theme import DEFAULT_THEME, Theme
 from ms_agent.tui.tool_view import tool_header, tool_summary
 from ms_agent.ui.events import AgentEvent
+
+_UNAVAILABLE = 'UNAVAILABLE'
+
+
+def _bold_unavailable(text: str) -> Text:
+    """Bold the word UNAVAILABLE. The rest of a command panel stays plain.
+
+    Command text is not markup, so a ``[bold]`` tag would print literally.
+    """
+    body = Text()
+    parts = re.split(f'({_UNAVAILABLE})', text or '')
+    for part in parts:
+        if part == _UNAVAILABLE:
+            body.append(part, style='bold')
+        else:
+            body.append(part)
+    return body
 
 _KEY_LINE = re.compile(r'^\s*[\w.\-]+:(\s|$)')
 
@@ -122,15 +139,58 @@ class RichEventSink:
         self.console.print(*args, **kwargs)
 
     def finalize(self) -> None:
-        """Tear down any in-flight Live region (call on error / turn abort)."""
-        if self._live is not None:
-            try:
-                self._live.stop()
-            except Exception:
-                pass
-            self._live = None
+        """Stop any in-flight Live region (call on error / turn abort)."""
+        self.release_terminal()
+
+    def release_terminal(self) -> None:
+        """Stop the streaming region and wait until it can no longer write.
+
+        ``Live.stop`` only signals the refresh thread; it does not join it.
+        Joining here means the next owner of the terminal (the input prompt)
+        is the only writer. A reply that was still streaming is typeset once
+        below the title line already printed above the region.
+        """
+        buf = self._content_buf
         self._content_buf = ''
         self._label_shown = False
+        terminal = bool(self.console.is_terminal)
+        self._stop_live()
+        if terminal and buf.strip():
+            self.console.print(Markdown(buf))
+
+    def _stop_live(self) -> None:
+        live = self._live
+        if live is None:
+            return
+        self._live = None
+        # Grab the thread first: stop() drops the reference without joining.
+        thread = getattr(live, '_refresh_thread', None)
+        try:
+            live.stop()
+        except Exception:
+            pass
+        if thread is not None:
+            try:
+                thread.join()
+            except RuntimeError:
+                pass
+
+    def _stream_window(self, text: str):
+        """The last screen of ``text``.
+
+        Live's ``crop`` keeps the top of a renderable, so the renderable
+        itself has to be the tail. One screen (minus a row, so the refresh
+        does not scroll) is all that gets redrawn each frame.
+        """
+        width = max(1, self.console.size.width)
+        height = max(1, self.console.size.height - 1)
+        lines = list(Text(text).wrap(self.console, width))
+        tail = lines[-height:] if lines else []
+        if not tail:
+            return Text('')
+        if len(tail) == 1:
+            return tail[0]
+        return Group(*tail)
 
     # ── assistant content (streamed) ───────────────────────────────────────
 
@@ -148,31 +208,31 @@ class RichEventSink:
         if self.console.is_terminal:
             if self._live is None:
                 from rich.live import Live
+                # One screen, erased when the reply finishes. stdout stays
+                # ours so this thread cannot still be writing when the prompt
+                # switches the terminal into raw / bracketed-paste mode.
                 self._live = Live(
                     console=self.console,
                     refresh_per_second=12,
-                    vertical_overflow='visible')
+                    transient=True,
+                    vertical_overflow='crop',
+                    redirect_stdout=False,
+                    redirect_stderr=False)
                 self._live.start()
-            # Stream as plain Text (tolerant of half-formed markdown); the
-            # final ContentEnd reflows once into formatted Markdown.
-            self._live.update(Text(self._content_buf))
+            # Plain text while tokens are still arriving; ContentEnd typesets
+            # the whole reply once, after this region has stopped.
+            self._live.update(self._stream_window(self._content_buf))
         else:
             # Non-terminal (piped / CI): write raw for clean, scriptable output.
             self.console.file.write(ev.text)
             self.console.file.flush()
 
     def _on_content_end(self, ev) -> None:
-        buf = self._content_buf
-        if self._live is not None:
-            renderable = Markdown(buf) if buf.strip() else Text('')
-            self._live.update(renderable)
-            self._live.stop()
-            self._live = None
-        elif not self.console.is_terminal:
+        terminal = bool(self.console.is_terminal)
+        self.release_terminal()
+        if not terminal:
             self.console.file.write('\n')
             self.console.file.flush()
-        self._content_buf = ''
-        self._label_shown = False
         self._last_kind = None  # next turn starts fresh (input divider spaces it)
 
     # ── reasoning (collapsed dim block) ─────────────────────────────────────
@@ -268,7 +328,7 @@ class RichEventSink:
                     word_wrap=True,
                     background_color='default')
             else:
-                body = Text(ev.text)
+                body = _bold_unavailable(ev.text)
             self._print(Panel(body, border_style='dim', expand=False))
             return
         style = {
