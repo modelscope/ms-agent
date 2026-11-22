@@ -6,11 +6,9 @@ replaces old messages with a summary message and advances
 """
 from __future__ import annotations
 
-import json
 from typing import Any, Dict, List, Optional, Tuple
 
-from ms_agent.llm import multimodal
-from ms_agent.llm.message_text import flatten_message_text
+from ms_agent.llm import token_budget
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
@@ -43,23 +41,8 @@ def _estimate_tokens(text: str) -> int:
 
 
 def _estimate_message_tokens(msg: Dict[str, Any]) -> int:
-    """Heuristic token count from message body (no API usage fields).
-
-    Image blocks are charged a flat per-image cost rather than having their
-    base64 measured as text — see the twin in ``tool_pruner`` for the numbers and
-    for why over-counting here does not self-correct.
-    """
-    total = 0
-    content = msg.get('content', '')
-    if content:
-        total += multimodal.estimate_content_tokens(content, _estimate_tokens)
-    tc = msg.get('tool_calls')
-    if tc:
-        total += _estimate_tokens(json.dumps(tc))
-    rc = msg.get('reasoning_content', '')
-    if rc:
-        total += _estimate_tokens(rc)
-    return total
+    """Shared text/media heuristic, excluding API usage anchors."""
+    return token_budget.estimate_message_tokens(msg)
 
 
 def _estimate_total_tokens(messages: List[Dict[str, Any]]) -> int:
@@ -69,18 +52,7 @@ def _estimate_total_tokens(messages: List[Dict[str, Any]]) -> int:
     preceding context in that API call, so we use it as a base and only
     add a heuristic for messages appended *after* that turn.
     """
-    for i in range(len(messages) - 1, -1, -1):
-        msg = messages[i]
-        if msg.get('role') != 'assistant':
-            continue
-        pt = int(msg.get('prompt_tokens', 0) or 0)
-        ct = int(msg.get('completion_tokens', 0) or 0)
-        if pt or ct:
-            base = pt + ct
-            tail = sum(_estimate_message_tokens(m) for m in messages[i + 1:])
-            return base + tail
-
-    return sum(_estimate_message_tokens(m) for m in messages)
+    return token_budget.estimate_total_tokens(messages)
 
 
 class SummaryCompactor:
@@ -99,6 +71,7 @@ class SummaryCompactor:
 
     def __init__(self, llm: Any = None) -> None:
         self.llm = llm
+        self._last_summary_attempt = None
 
     def apply(
         self,
@@ -116,6 +89,19 @@ class SummaryCompactor:
 
         if not self.llm:
             logger.warning('[summary_compactor] No LLM available, skipping')
+            return visible, None
+
+        key = token_budget.summary_attempt_key(visible, usable)
+        if key == self._last_summary_attempt:
+            return visible, None
+        self._last_summary_attempt = key
+        protected = [m for m in visible if m.get('role') == 'system'][:1]
+        if visible and visible[-1].get('role') == 'user':
+            protected.append(visible[-1])
+        if sum(_estimate_message_tokens(m) for m in protected) >= usable:
+            logger.warning(
+                '[summary_compactor] Protected messages exceed the '
+                'context budget; summary cannot make this request fit')
             return visible, None
 
         summary = self._generate_summary(visible, config)
@@ -139,11 +125,15 @@ class SummaryCompactor:
 
         if visible and visible[-1].get('role') == 'user':
             last_user = visible[-1]
-            if last_user.get('content') and last_user['content'] != result[-1][
-                    'content']:
+            if ((last_user.get('content') or last_user.get('attachments'))
+                    and last_user.get('content') != result[-1]['content']):
                 result.append(last_user)
 
         tokens_after = _estimate_total_tokens(result)
+        if tokens_after >= tokens_before:
+            logger.warning('[summary_compactor] Summary did not reduce the '
+                           'context budget; keeping the original view')
+            return visible, None
 
         logger.info(
             f'[summary_compactor] Compressed {len(visible)} messages to '
@@ -166,7 +156,7 @@ class SummaryCompactor:
             # Reduce a block list to its text instead of skipping the message:
             # a turn dropped here is invisible to the summary that decides what
             # survives compaction.
-            content = flatten_message_text(msg.get('content', ''))
+            content = token_budget.summary_text(msg)
             if content:
                 conv_parts.append(f'{role}: {content[:char_limit]}')
 

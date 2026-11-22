@@ -1,9 +1,9 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 
-import json
+from copy import copy
 from typing import List, Optional
 
-from ms_agent.llm import LLM, Message
+from ms_agent.llm import LLM, Message, token_budget
 from ms_agent.memory import Memory
 from ms_agent.utils.logger import logger
 
@@ -49,6 +49,7 @@ class ContextCompressor(Memory):
 
         # LLM for summarization
         self.llm: Optional[LLM] = None
+        self._last_summary_attempt = None
         if getattr(mem_config, 'enable_summary', True):
             try:
                 self.llm = LLM.from_config(config)
@@ -65,17 +66,7 @@ class ContextCompressor(Memory):
 
     def _estimate_message_tokens_from_content(self, msg: Message) -> int:
         """Heuristic token count from message body (no API usage fields)."""
-        total = 0
-        if msg.content:
-            content = msg.content if isinstance(
-                msg.content, str) else json.dumps(
-                    msg.content, ensure_ascii=False)
-            total += self.estimate_tokens(content)
-        if msg.tool_calls:
-            total += self.estimate_tokens(json.dumps(msg.tool_calls))
-        if msg.reasoning_content:
-            total += self.estimate_tokens(msg.reasoning_content)
-        return total
+        return token_budget.estimate_message_tokens(msg)
 
     def estimate_message_tokens(self, msg: Message) -> int:
         """Tokens for one message: prefer ``Message`` usage, else content heuristic."""
@@ -87,25 +78,7 @@ class ContextCompressor(Memory):
 
     def estimate_total_tokens(self, messages: List[Message]) -> int:
         """Total tokens for the conversation."""
-        last_usage_idx = -1
-        for i in range(len(messages) - 1, -1, -1):
-            m = messages[i]
-            if m.role != 'assistant':
-                continue
-            pt = int(getattr(m, 'prompt_tokens', 0) or 0)
-            ct = int(getattr(m, 'completion_tokens', 0) or 0)
-            if pt or ct:
-                last_usage_idx = i
-                break
-        if last_usage_idx >= 0:
-            m = messages[last_usage_idx]
-            base = int(getattr(m, 'prompt_tokens', 0) or 0) + int(
-                getattr(m, 'completion_tokens', 0) or 0)
-            tail = sum(
-                self._estimate_message_tokens_from_content(x)
-                for x in messages[last_usage_idx + 1:])
-            return base + tail
-        return sum(self.estimate_message_tokens(m) for m in messages)
+        return token_budget.estimate_total_tokens(messages)
 
     def is_overflow(self, messages: List[Message]) -> bool:
         """Check if messages exceed context limit."""
@@ -123,22 +96,24 @@ class ContextCompressor(Memory):
         """
         total_tool_tokens = 0
         pruned_count = 0
+        messages = [copy(m) for m in messages]
 
         for idx in range(len(messages) - 1, -1, -1):
             msg = messages[idx]
-            if msg.role != 'tool' or not msg.content:
+            if msg.role != 'tool' or not (msg.content or msg.attachments):
                 continue
-            content_str = msg.content if isinstance(
-                msg.content, str) else json.dumps(
-                    msg.content, ensure_ascii=False)
-            tokens = self.estimate_tokens(content_str)
+            tokens = token_budget.estimate_message_tokens(msg)
             total_tool_tokens += tokens
 
             if total_tool_tokens > self.prune_protect:
                 msg.content = '[Output truncated to save context]'
+                msg.attachments = []
                 pruned_count += 1
 
         if pruned_count > 0:
+            # Usage belongs to the pre-pruned request, not this new view.
+            for msg in messages:
+                msg.prompt_tokens = msg.completion_tokens = 0
             logger.info(f'Pruned {pruned_count} tool outputs')
 
         return messages
@@ -152,8 +127,7 @@ class ContextCompressor(Memory):
         conv_parts = []
         for msg in messages:
             role = msg.role.upper()
-            content = msg.content if isinstance(msg.content, str) else str(
-                msg.content)
+            content = token_budget.summary_text(msg)
             if content:
                 conv_parts.append(f'{role}: {content[:2000]}')
 
@@ -185,8 +159,22 @@ class ContextCompressor(Memory):
         if not self.is_overflow(pruned):
             return pruned
 
+        usable = self.context_limit - self.reserved_buffer
+        key = token_budget.summary_attempt_key(pruned, usable)
+        if key == self._last_summary_attempt:
+            return pruned
+        self._last_summary_attempt = key
+        protected = [m for m in pruned if m.role == 'system'][:1]
+        if pruned and pruned[-1].role == 'user':
+            protected.append(pruned[-1])
+        if sum(token_budget.estimate_message_tokens(m)
+               for m in protected) >= usable:
+            logger.warning('Context budget is exceeded by protected messages; '
+                           'summary cannot make this request fit')
+            return pruned
+
         # Step 2: Generate summary
-        summary = self.summarize(messages)
+        summary = self.summarize(pruned)
         if not summary:
             logger.warning('Summary failed, returning pruned messages')
             return pruned
@@ -207,8 +195,16 @@ class ContextCompressor(Memory):
         # Keep the most recent user message if different
         if messages and messages[-1].role == 'user':
             last_user = messages[-1]
-            if last_user.content and last_user.content != result[-1].content:
+            if ((last_user.content or last_user.attachments)
+                    and last_user.content != result[-1].content):
                 result.append(last_user)
+
+        if self.estimate_total_tokens(result) >= self.estimate_total_tokens(
+                pruned):
+            logger.warning(
+                'Summary did not reduce the context budget; keeping the original view'
+            )
+            return pruned
 
         logger.info(
             f'Compressed {len(messages)} messages to {len(result)} messages')

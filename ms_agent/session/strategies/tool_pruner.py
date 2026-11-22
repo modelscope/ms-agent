@@ -10,10 +10,9 @@ event in the SessionLog.
 """
 from __future__ import annotations
 
-import json
 from typing import Any, Dict, List, Optional, Tuple
 
-from ms_agent.llm import multimodal
+from ms_agent.llm import token_budget
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
@@ -26,32 +25,8 @@ def _estimate_tokens(text: str) -> int:
 
 
 def _estimate_message_tokens(msg: Dict[str, Any]) -> int:
-    """Heuristic token count from message body (no API usage fields).
-
-    Structured content is walked block-by-block, and an image block is charged a
-    flat per-image cost instead of having its payload measured as text. The
-    providers bill images by pixel dimensions (Anthropic ``⌈w/28⌉ × ⌈h/28⌉``;
-    DashScope returns the real figure as ``prompt_tokens_details.image_tokens``),
-    which has nothing to do with how long the base64 happens to be.
-
-    Measured on DashScope with a 900x320 PNG: 282 real image tokens versus 7,293
-    from counting base64 characters — a 26x over-count on a 22 KB image. A 2 MiB
-    PNG estimates at ~699k tokens against a ~108k usable budget, which does not
-    merely mis-trigger compaction once: the offending message is the last visible
-    one, so the compactor re-appends it, the estimate never drops, and every
-    subsequent round pays for another summary LLM call.
-    """
-    total = 0
-    content = msg.get('content', '')
-    if content:
-        total += multimodal.estimate_content_tokens(content, _estimate_tokens)
-    tool_calls = msg.get('tool_calls')
-    if tool_calls:
-        total += _estimate_tokens(json.dumps(tool_calls))
-    rc = msg.get('reasoning_content', '')
-    if rc:
-        total += _estimate_tokens(rc)
-    return total
+    """Shared text/media heuristic, excluding API usage anchors."""
+    return token_budget.estimate_message_tokens(msg)
 
 
 def _estimate_total_tokens(messages: List[Dict[str, Any]]) -> int:
@@ -61,18 +36,7 @@ def _estimate_total_tokens(messages: List[Dict[str, Any]]) -> int:
     preceding context in that API call, so we use it as a base and only
     add a heuristic for messages appended *after* that turn.
     """
-    for i in range(len(messages) - 1, -1, -1):
-        msg = messages[i]
-        if msg.get('role') != 'assistant':
-            continue
-        pt = int(msg.get('prompt_tokens', 0) or 0)
-        ct = int(msg.get('completion_tokens', 0) or 0)
-        if pt or ct:
-            base = pt + ct
-            tail = sum(_estimate_message_tokens(m) for m in messages[i + 1:])
-            return base + tail
-
-    return sum(_estimate_message_tokens(m) for m in messages)
+    return token_budget.estimate_total_tokens(messages)
 
 
 class ToolOutputPruner:
@@ -105,22 +69,28 @@ class ToolOutputPruner:
         pruned_count = 0
         for idx in range(len(visible) - 1, -1, -1):
             msg = visible[idx]
-            if msg.get('role') != 'tool' or not msg.get('content'):
+            if msg.get('role') != 'tool' or not (msg.get('content')
+                                                 or msg.get('attachments')):
                 continue
-            content = msg['content']
-            if not isinstance(content, str):
-                content = json.dumps(content, ensure_ascii=False)
-            tokens = _estimate_tokens(content)
+            tokens = _estimate_message_tokens(msg)
             total_tool_tokens += tokens
             if total_tool_tokens > protect:
                 visible[idx] = {
-                    **msg, 'content': '[Output truncated to save context]'
+                    **msg,
+                    'content': '[Output truncated to save context]',
+                    'attachments': [],
                 }
                 pruned_count += 1
 
         if pruned_count == 0:
             return visible, None
 
+        # Only this derived view loses its usage anchors; canonical log rows
+        # retain the actual billable usage of their original requests.
+        visible = [{
+            **m, 'prompt_tokens': 0,
+            'completion_tokens': 0
+        } for m in visible]
         tokens_after = _estimate_total_tokens(visible)
         logger.info(f'[tool_pruner] Pruned {pruned_count} tool outputs '
                     f'({tokens_before} -> {tokens_after} tokens)')
