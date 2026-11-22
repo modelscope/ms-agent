@@ -331,6 +331,7 @@ class LLMAgent(Agent):
         # the terminal — the enabling seam for the native (route-A) lifecycle.
         # When None, the legacy sync console_io / input() path is used.
         self._input_source = kwargs.get('input_source', None)
+        self._input_controller = kwargs.get('input_controller', None)
 
         # Attachments belonging to the FIRST user turn, parked between the
         # interactive read in run_loop and create_messages (whose input is a
@@ -812,6 +813,9 @@ class LLMAgent(Agent):
         await self.loop_callback('on_tool_call', messages)
 
     async def after_tool_call(self, messages: List[Message]):
+        if await self._consume_steering(messages):
+            await self.loop_callback('after_tool_call', messages)
+            return
         assistant = messages[-1]
         would_stop = assistant.role == 'assistant' and not assistant.tool_calls
 
@@ -837,11 +841,82 @@ class LLMAgent(Agent):
             apply_hook_result_to_messages(messages, stop, hook_event='Stop')
 
         if would_stop:
+            # Stop hooks can await arbitrary work. Recheck after that await,
+            # then close admission synchronously with the final decision.
+            if await self._consume_steering(messages):
+                await self.loop_callback('after_tool_call', messages)
+                return
+            controller = getattr(self, '_input_controller', None)
+            if controller is not None:
+                controller.finish()
+                await self.add_memory(messages, add_type='add_after_step')
             self.runtime.should_stop = True
             if self.session_log is not None:
                 self.session_log.record_turn_checkpoint(
                     self.runtime.round, self._checkpoint_state())
         await self.loop_callback('after_tool_call', messages)
+
+    def _prepare_controlled_input(self, messages):
+        controller = getattr(self, '_input_controller', None)
+        if not controller or not controller.active_input or not messages:
+            return
+        message = messages[-1]
+        item = controller.inputs[controller.active_input]
+        if (message.role != 'user' or item['state'] != 'pending'
+                or getattr(message, 'input_id', None)):
+            return
+        message.input_id = item['input_id']
+        message._input_prepared = True
+        from ms_agent.hooks.context import HookAttachment
+        message.hook_attachments = [
+            HookAttachment(**a)
+            for a in item['prepared'].get('hook_attachments', [])
+        ]
+
+    def _append_session_message(self, message):
+        controller = getattr(self, '_input_controller', None)
+        row = self._msg_to_dict(message)
+        if controller is not None:
+            seq = controller.append_message(row)
+            input_id = getattr(message, 'input_id', None)
+            if seq is not None and input_id and self._event_sink is not None:
+                from ms_agent.ui.events import InputDelivered
+                self._event_sink.emit(
+                    InputDelivered(
+                        input_id=input_id,
+                        turn_id=controller.active_turn,
+                        segment_id=controller.segment_id,
+                        message=controller.inputs[input_id]['request']
+                        ['message']))
+            return seq
+        return self.session_log.append(row)
+
+    async def _consume_steering(self, messages):
+        controller = getattr(self, '_input_controller', None)
+        if controller is None or not controller.has_steering():
+            return False
+        from uuid import uuid4
+
+        from ms_agent.hooks.context import HookAttachment
+        items = controller.take_steering()
+        for item in items:
+            prepared = item['prepared']
+            message = Message(
+                role='user',
+                content=prepared['prompt'],
+                attachments=prepared.get('attachments') or [])
+            message.input_id = item['input_id']
+            message._input_prepared = True
+            message.hook_attachments = [
+                HookAttachment(**a)
+                for a in prepared.get('hook_attachments', [])
+            ]
+            messages.append(message)
+            await self._attach_memory_recall(messages)
+            controller.segment_id = uuid4().hex
+            self._append_session_message(message)
+        self.runtime.should_stop = False
+        return True
 
     async def loop_callback(self, point, messages: List[Message]):
         """
@@ -927,7 +1002,12 @@ class LLMAgent(Agent):
                 result=content or '',
                 attachments=list(message.attachments or []),
                 error=(content or 'tool call failed') if is_error else None,
-                duration_s=round(duration_s, 3)))
+                duration_s=round(duration_s, 3),
+                execution_status=getattr(message, 'execution_status',
+                                         'completed'),
+                skip_reason=getattr(message, 'skip_reason', None)))
+        if getattr(message, 'execution_status', None) == 'skipped':
+            return
         # todo/split_task tool results drive the plan panel.
         plan = self._extract_plan_from_tool_result(message)
         if plan is not None:
@@ -2025,7 +2105,10 @@ class LLMAgent(Agent):
 
         session_key = getattr(session_cfg, 'session_key',
                               None) if session_cfg else None
-        self.session_log = SessionLog(session_dir, session_key=session_key)
+        controller = getattr(self, '_input_controller', None)
+        self.session_log = (
+            controller.log if controller is not None else SessionLog(
+                session_dir, session_key=session_key))
 
         compaction_cfg = getattr(self.config, 'compaction', None)
         compaction_enabled = (
@@ -2424,6 +2507,7 @@ class LLMAgent(Agent):
         Returns:
             List[Message]: Updated message history after this step.
         """
+        self._prepare_controlled_input(messages)
         messages = deepcopy(messages)
         messages = self._append_task_notifications(messages)
         from ms_agent.hooks.context import (apply_hook_result_to_messages,
@@ -2434,7 +2518,8 @@ class LLMAgent(Agent):
         # UserPromptSubmit for multi-turn user input (InputCallback path)
         hook_runtime = getattr(self, '_hook_runtime', None)
         if (hook_runtime is not None and not hook_runtime.is_empty and messages
-                and messages[-1].role == 'user' and self.runtime.round > 0):
+                and messages[-1].role == 'user' and self.runtime.round > 0
+                and getattr(self, '_input_controller', None) is None):
             prompt_text = extract_latest_user_prompt(messages)
             submit = await hook_runtime.run_user_prompt_submit(prompt_text)
             if submit.action in ('deny', 'block'):
@@ -2610,6 +2695,8 @@ class LLMAgent(Agent):
         self.save_history(messages)
 
         if _response_message.tool_calls:
+            controller = getattr(self, '_input_controller', None)
+            skip_tools = controller is not None and controller.has_steering()
             if self._event_sink is not None:
                 for tc in _response_message.tool_calls:
                     self._event_sink.emit(
@@ -2622,7 +2709,15 @@ class LLMAgent(Agent):
             # emits its own ToolCallCompleted / PlanUpdated as it finishes —
             # inside parallel_tool_call, not after the batch, so one call held
             # up by an approval doesn't hold back its finished siblings.
-            messages = await self.parallel_tool_call(messages)
+            if skip_tools:
+                from ms_agent.session.input_controller import \
+                    skipped_tool_result
+                for call in _response_message.tool_calls:
+                    result = skipped_tool_result(call)
+                    messages.append(result)
+                    self._emit_tool_completed(result, 0)
+            else:
+                messages = await self.parallel_tool_call(messages)
 
         # usage
         # NOTE: token accounting must run BEFORE after_tool_call. The interactive
@@ -3043,6 +3138,11 @@ class LLMAgent(Agent):
         usage data for accurate overflow detection.
         """
         d: Dict[str, Any] = {'role': msg.role, 'content': msg.content or ''}
+        for key in ('input_id', 'turn_id', 'message_id', 'segment_id',
+                    'execution_status', 'skip_reason', '_input_prepared'):
+            value = getattr(msg, key, None)
+            if value is not None:
+                d[key] = value
         if msg.tool_calls:
             d['tool_calls'] = msg.tool_calls
         # Image refs must survive to disk: the SessionLog is the source of truth
@@ -3268,6 +3368,7 @@ class LLMAgent(Agent):
             if self.runtime.round == 0 and not restored_from_log:
                 # New task: create standardized messages first
                 messages = await self.create_messages(messages)
+                self._prepare_controlled_input(messages)
 
                 hook_runtime = getattr(self, '_hook_runtime', None)
                 if hook_runtime is not None:
@@ -3277,7 +3378,8 @@ class LLMAgent(Agent):
                 await self.on_task_begin(messages)
 
                 # UserPromptSubmit — first user message
-                if hook_runtime is not None and not hook_runtime.is_empty:
+                if (hook_runtime is not None and not hook_runtime.is_empty
+                        and getattr(self, '_input_controller', None) is None):
                     from ms_agent.hooks.context import (
                         apply_hook_result_to_messages,
                         extract_latest_user_prompt)
@@ -3312,7 +3414,7 @@ class LLMAgent(Agent):
                 # Seed SessionLog with initial messages
                 if self.session_log is not None:
                     for msg in messages:
-                        self.session_log.append(self._msg_to_dict(msg))
+                        self._append_session_message(msg)
                     # Baseline the model here, not on the second turn: a switch
                     # made between turn 1 and turn 2 is exactly the case the
                     # notice exists for, and recording late would miss it.
@@ -3354,6 +3456,8 @@ class LLMAgent(Agent):
 
                 messages = self._apply_pending_rollback(messages)
                 if not resume_waiting:
+                    await self._consume_steering(messages)
+                if not resume_waiting:
                     if self.task_manager is not None:
                         notifications = self.task_manager.drain_notifications()
                         if notifications:
@@ -3366,8 +3470,9 @@ class LLMAgent(Agent):
                             messages)
                     messages = await self.condense_memory(messages)
                     # If assistant and tool content can be ignored, add memory earlier to reduce running time.
-                    self._schedule_add_memory_after_task(
-                        messages, timestamp='early')
+                    if getattr(self, '_input_controller', None) is None:
+                        self._schedule_add_memory_after_task(
+                            messages, timestamp='early')
 
                 # Captured right before step() so only genuine step outputs are
                 # appended to the SessionLog (ephemeral injections are excluded).
@@ -3416,7 +3521,7 @@ class LLMAgent(Agent):
                 step_end_len = len(messages)
                 if self.session_log is not None:
                     for msg in messages[pre_step_len:step_end_len]:
-                        self.session_log.append(self._msg_to_dict(msg))
+                        self._append_session_message(msg)
 
                 await self.update_context_snapshot(messages)
 
@@ -3438,7 +3543,8 @@ class LLMAgent(Agent):
                 # ingesting every round made memory cost O(rounds x history):
                 # a 4-round tool-calling answer paid ~4 extraction-LLM calls
                 # where one covers it (the closing ingest sees the whole turn).
-                if (not resume_waiting and messages
+                if (getattr(self, '_input_controller', None) is None
+                        and not resume_waiting and messages
                         and messages[-1].role == 'assistant'
                         and not messages[-1].tool_calls):
                     await self.add_memory(
@@ -3449,8 +3555,12 @@ class LLMAgent(Agent):
                     await self.loop_callback('after_tool_call', messages)
                 else:
                     await self.after_tool_call(messages)
+                    steering_added = (
+                        len(messages) > step_end_len
+                        and getattr(messages[-1], '_input_prepared', False))
                     if (self._on_user_turn is not None
-                            and len(messages) > step_end_len):
+                            and len(messages) > step_end_len
+                            and not steering_added):
                         await self._on_user_turn(messages)
                     # Drop happened on this line. Hold before the line is logged,
                     # so a missing key matches a session that never had one.
@@ -3466,7 +3576,9 @@ class LLMAgent(Agent):
                 # query strips reminder blocks so notices never pollute it).
                 commit_surface = None
                 commit_model = None
-                if len(messages) > step_end_len:
+                if (len(messages) > step_end_len and
+                        not getattr(messages[-1], '_input_prepared', False)):
+                    self._prepare_controlled_input(messages)
                     commit_surface = self._attach_prompt_update_notice(
                         messages)
                     commit_model = self._attach_model_switch_notice(messages)
@@ -3477,7 +3589,7 @@ class LLMAgent(Agent):
                 # message) and the round counter, so a later resume picks up here.
                 if self.session_log is not None:
                     for msg in messages[step_end_len:]:
-                        self.session_log.append(self._msg_to_dict(msg))
+                        self._append_session_message(msg)
                     self.session_log.round = self.runtime.round
                 if commit_surface is not None:
                     # Only now is the notice durably part of the turn — an

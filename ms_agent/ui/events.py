@@ -83,6 +83,10 @@ class UserMessage(AgentEvent):
     EVENT_TYPE: ClassVar[str] = 'user_message'
     turn_id: str = ''
     text: str = ''
+    # True when the text was interjected into a running turn (steering) instead of
+    # submitted at an idle prompt. A terminal already echoes an idle prompt's typed
+    # line, so a TUI renders only steered echoes; a WebUI may render both.
+    steered: bool = False
 
 
 @dataclass(frozen=True)
@@ -91,6 +95,16 @@ class TurnCompleted(AgentEvent):
     EVENT_TYPE: ClassVar[str] = 'turn_completed'
     turn_id: str = ''
     usage: Optional[UsageInfo] = None
+
+
+@dataclass(frozen=True)
+class InputDelivered(AgentEvent):
+    """A durable user input entered the current logical task."""
+    EVENT_TYPE: ClassVar[str] = 'input_delivered'
+    input_id: str = ''
+    turn_id: str = ''
+    segment_id: str = ''
+    message: dict = field(default_factory=dict)
 
 
 # ── assistant output ──────────────────────────────────────────────────────
@@ -197,6 +211,8 @@ class ToolCallCompleted(AgentEvent):
     error: Optional[str] = None
     duration_s: Optional[float] = None
     attachments: List[dict] = field(default_factory=list)
+    execution_status: str = 'completed'
+    skip_reason: Optional[str] = None
 
 
 # ── plan / todo ───────────────────────────────────────────────────────────

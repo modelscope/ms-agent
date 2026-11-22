@@ -1,4 +1,6 @@
 import { SERVER_API_BASE } from './env'
+import type { AgentInput } from './agentProvider'
+import type { InputReceipt, ConversationState } from './sessionChat'
 import { redirectIfSignedOut, type AuthStatus } from './auth'
 import type {
   AgentSettings,
@@ -774,11 +776,22 @@ export const api = {
   // Explicitly stop a session's in-flight turn (the composer Stop button).
   // Distinct from merely closing the SSE (navigating away), which keeps the turn
   // running in the background; only this cancels it and seals it as interrupted.
-  interruptChat: (sessionId: string) =>
+  interruptChat: (sessionId: string, expectedTurnId?: string | null) =>
     json<{ stopped: boolean }>('/api/chat/interrupt', {
       method: 'POST',
-      body: JSON.stringify({ session_id: sessionId })
-    }),
+      body: JSON.stringify({ session_id: sessionId, expected_turn_id: expectedTurnId })
+    }, { silent: true }),
+
+  submitInput: (body: AgentInput) => json<InputReceipt>('/api/chat/inputs', {
+    method: 'POST', body: JSON.stringify(body), signal: AbortSignal.timeout(15000)
+  }, { silent: true }),
+  editInput: (sid: string, id: string, revision: number, request: AgentInput) =>
+    json<ConversationState>(`/api/chat/sessions/${sid}/inputs/${id}`, {
+      method: 'PATCH', body: JSON.stringify({ revision, request })
+    }, { silent: true }),
+  withdrawInput: (sid: string, id: string, revision: number) =>
+    json<ConversationState>(`/api/chat/sessions/${sid}/inputs/${id}?revision=${revision}`, { method: 'DELETE' }, { silent: true }),
+  resumeInputs: (sid: string) => json<ConversationState>(`/api/chat/sessions/${sid}/inputs/resume`, { method: 'POST' }, { silent: true }),
 
   // Browser presence heartbeat (~10s cadence, sent by the app shell). Keeps
   // background turns alive across refresh/navigation and returns the sessions

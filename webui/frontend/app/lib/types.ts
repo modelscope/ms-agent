@@ -360,6 +360,7 @@ export interface GenerationDefaults {
 }
 
 export interface AgentSettings {
+  follow_up_behavior?: 'queue' | 'steer'
   default_provider_id: string | null
   default_model_id: string | null
   default_memory_enabled: boolean

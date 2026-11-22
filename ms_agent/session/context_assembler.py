@@ -467,6 +467,11 @@ def _dicts_to_messages(dicts: List[Dict[str, Any]]) -> List[Message]:
                     for a in result[-1].hook_attachments
                 ]
             result[-1]._usage_restored = True
+            result[-1].is_error = bool(d.get('is_error'))
+            for key in ('input_id', 'turn_id', 'message_id', 'segment_id',
+                        'execution_status', 'skip_reason', '_input_prepared'):
+                if key in d:
+                    setattr(result[-1], key, d[key])
             result[-1]._usage_invalidated = bool(d.get('_usage_invalidated'))
             result[-1].context_summary = bool(d.get('context_summary'))
         else:

@@ -1,10 +1,10 @@
 import { Typography } from 'antd'
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router'
 import { ArtifactStepCard } from './ArtifactStepCard'
 import type { ReactNode } from 'react'
 import { MsaButton } from '~/components/common/MsaButton'
 import { api } from '~/lib/api'
+import { useWorkspaceProjectId } from '~/lib/workspaceFiles'
 import { useT } from '~/lib/i18n'
 import { useCollapseTransition } from '../useCollapseTransition'
 import { deniedNote } from '../authOutcome'
@@ -40,7 +40,7 @@ export function ToolCallStepCard({
   title?: ReactNode
 }) {
   const { t } = useT()
-  const { projectId } = useParams()
+  const projectId = useWorkspaceProjectId()
   const meta = step.meta
   const name = String(meta.tool ?? meta.name ?? '')
   const args = meta.arguments

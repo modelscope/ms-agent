@@ -826,6 +826,10 @@ export function Composer({
 
   const hasUploading = files.some((f) => f.status === 'uploading')
   const hasReadyFiles = files.some((f) => f.status === 'done')
+  // Keep one action in a fixed position. Uploading attachments also count as
+  // draft content, so an unavailable Send never unexpectedly becomes Stop.
+  const hasDraftContent = !!draft.trim() || files.length > 0 || pickedSkills.length > 0
+  const showStop = contextBusy || (chatLoading && !hasDraftContent)
   // No usable model — the settings pointer names a model that is no longer in
   // the catalog (deleting the active model leaves the pointer behind) or names
   // nothing at all. The backend would silently fall back to whatever its config
@@ -850,6 +854,7 @@ export function Composer({
   // ready file, or a picked skill pill (a bare skill invocation is valid —
   // the backend answers with the skill intro).
   const canSend =
+    !contextBusy &&
     !preparing &&
     !modelSaving &&
     !hasUploading &&
@@ -904,7 +909,7 @@ export function Composer({
   }
 
   const handleSubmit = async (value: string) => {
-    if (submitting.current || modelWritePending.current) return
+    if (submitting.current || modelWritePending.current || contextBusy) return
     const text = value.trim()
     if (hasUploading) return
     // Enter reaches here without passing the button's disabled state, so the
@@ -950,8 +955,8 @@ export function Composer({
     try {
       const selection = await modelSelection.readySelection()
       await onSubmit(text, refs, hasSkill ? segments : undefined, selection.modelId, selection.reasoningEffort)
-    } catch {
-      message.error(t.errors.requestFailed)
+    } catch (error) {
+      message.error(error instanceof Error && error.message ? error.message : t.errors.requestFailed)
       return
     } finally {
       submitting.current = false
@@ -1405,15 +1410,15 @@ export function Composer({
                       !e.altKey
                     ) {
                       e.preventDefault()
-                      // While a reply is streaming, Enter must not send new
-                      // content; the user has to stop first.
-                      if (loading) return false
+                      // Admission is independent of the current generation.
+                      // Context mutations and duplicate submits still wait.
+                      if (contextBusy || preparing) return false
                       handleSubmit(draft)
                       return false
                     }
                   }}
                   onCancel={onCancel}
-                  loading={loading}
+                  loading={preparing}
                   placeholder={placeholder ?? t.home.placeholder}
                   autoSize={autoSize}
                   suffix={false}
@@ -1674,38 +1679,34 @@ export function Composer({
                           // no hover to rely on); otherwise undefined leaves the
                           // tooltip in its normal hover mode.
                           open={
-                            modelMissing && modelHintOpen ? true : undefined
+                            !showStop && modelMissing && modelHintOpen ? true : undefined
                           }
                           title={
-                            loading
+                            showStop
                               ? t.home.stop
                               : modelMissing
                                 ? t.home.modelRequired
                                 : t.home.send
                           }
                         >
-                          {loading ? (
-                            <IconButton
-                              variant="primary"
-                              icon={
-                                <span className="block h-2.5 w-2.5 rounded-[2px] bg-current" />
-                              }
-                              onClick={() => onCancel?.()}
-                            />
-                          ) : (
+                          {(
                             // A disabled button fires no pointer events, so the
                             // wrapper is what the tooltip hovers on — without it
                             // the "pick a model" hint would be unreachable.
                             <span
                               onMouseEnter={() => {
-                                if (modelMissing) setModelHintOpen(true)
+                                if (!showStop && modelMissing) setModelHintOpen(true)
                               }}
                             >
                               <IconButton
+                                aria-label={showStop ? t.home.stop : t.home.send}
+                                className="min-h-11 min-w-11"
                                 variant="primary"
-                                icon={<SendIcon className="h-5 w-5" />}
-                                onClick={() => handleSubmit(draft)}
-                                disabled={!canSend}
+                                icon={showStop
+                                  ? <span className="block h-2.5 w-2.5 rounded-[2px] bg-current" />
+                                  : <SendIcon className="h-5 w-5" />}
+                                onClick={() => showStop ? onCancel?.() : handleSubmit(draft)}
+                                disabled={!showStop && !canSend}
                               />
                             </span>
                           )}

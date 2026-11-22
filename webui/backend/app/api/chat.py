@@ -1,6 +1,6 @@
 from typing import Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
@@ -68,14 +68,83 @@ class ChatInterrupt(BaseModel):
     call cancels the turn and seals it with an interrupted marker."""
 
     session_id: str
+    expected_turn_id: str | None = None
 
 
 @router.post("/interrupt")
 async def interrupt_chat(body: ChatInterrupt) -> dict:
-    from app.backends.ms_agent.runtime import registry
+    from app.backends.ms_agent.conversations import interrupt
 
-    stopped = await registry.interrupt(body.session_id)
+    stopped = await interrupt(body.session_id, body.expected_turn_id)
     return {"stopped": stopped}
+
+
+@router.post('/inputs')
+async def submit_input(body: ChatRequest):
+    from app.backends.ms_agent.conversations import submit
+    return await submit(body)
+
+
+@router.get('/sessions/{session_id}/events')
+async def session_events(session_id: str, last_event_id: str | None = Header(default=None)):
+    from app.backends.ms_agent.conversations import get
+    return EventSourceResponse(get(session_id).subscribe(last_event_id), sep='\n')
+
+
+@router.get('/sessions/{session_id}/inputs')
+async def pending_inputs(session_id: str):
+    from app.backends.ms_agent.conversations import get
+    return get(session_id).state()
+
+
+class InputEdit(BaseModel):
+    revision: int
+    request: ChatRequest
+
+
+@router.patch('/sessions/{session_id}/inputs/{input_id}')
+async def edit_input(session_id: str, input_id: str, body: InputEdit):
+    from app.backends.ms_agent.conversations import get
+    from app.backends.errors import Conflict
+    from ms_agent.session.input_controller import InputConflict
+    conversation = get(session_id)
+    request = body.request.model_dump(exclude={
+        'input_id', 'expected_turn_id', 'session_id', 'project_id'})
+    try:
+        await conversation.controller.edit(input_id, body.revision, request, conversation.prepare)
+    except InputConflict as exc:
+        raise Conflict(str(exc)) from None
+    except ValueError as exc:
+        from app.backends.errors import BadRequest
+        raise BadRequest(str(exc)) from None
+    return conversation.state()
+
+
+@router.delete('/sessions/{session_id}/inputs/{input_id}')
+async def withdraw_input(session_id: str, input_id: str, revision: int):
+    from app.backends.ms_agent.conversations import get
+    from app.backends.errors import Conflict
+    from ms_agent.session.input_controller import InputConflict
+    conversation = get(session_id)
+    try:
+        conversation.controller.withdraw(input_id, revision)
+    except InputConflict as exc:
+        raise Conflict(str(exc)) from None
+    return conversation.state()
+
+
+@router.post('/sessions/{session_id}/inputs/resume')
+async def resume_inputs(session_id: str):
+    from app.backends.ms_agent.conversations import get
+    from app.backends.errors import Conflict
+    from ms_agent.session.input_controller import InputConflict
+    conversation = get(session_id)
+    try:
+        conversation.controller.resume()
+    except InputConflict as exc:
+        raise Conflict(str(exc)) from None
+    conversation.kick()
+    return conversation.state()
 
 
 # NOTE: the former POST /api/chat/cancel (pagehide sendBeacon) was removed.
