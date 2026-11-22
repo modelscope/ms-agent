@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import math
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -15,6 +16,7 @@ from ms_agent.tools.mcp_client import (
     DEFAULT_SERVER_STARTUP_TIMEOUT,
     MCP_PROBE_TIMEOUT,
     MCPClient,
+    safe_mcp_error,
 )
 from ms_agent.utils import get_logger
 
@@ -142,12 +144,7 @@ def short_connect_reason(exc: BaseException, timeout: float) -> str:
     if isinstance(exc, TimeoutError):
         label = str(int(timeout)) if timeout >= 1 else f'{timeout:g}'
         return f'{label}秒内没有连上'
-    text = ' '.join(str(exc).split())
-    if not text:
-        text = type(exc).__name__
-    if len(text) > 80:
-        text = text[:79] + '…'
-    return text
+    return safe_mcp_error(exc)
 
 
 def mcp_unreachable_notice(name: str, reason: str) -> str:
@@ -232,7 +229,10 @@ class MCPRuntime:
         stdio process keeps the real startup budget in the background.
         """
         async with self._sync_lock:
-            self._started = True
+            if self._started:
+                if wait:
+                    await self._wait_probes()
+                return
             names: list[str] = []
             for name, state in self._states.items():
                 if not state.enabled:
@@ -243,7 +243,20 @@ class MCPRuntime:
                         state.status = 'connected'
                     continue
                 names.append(name)
-            await self._probe_servers(names, wait=wait)
+            try:
+                await self._probe_servers(names, wait=wait)
+            except BaseException:
+                await self._cancel_probes()
+                for name in names:
+                    await self._drop_unfinished_connect(name)
+                    state = self._states[name]
+                    state.status = 'registered'
+                    state.cached_tools.clear()
+                    state.tool_count = 0
+                raise
+            # Started means background probes are owned by this runtime;
+            # each server becomes connected only after its tools are ready.
+            self._started = True
 
     async def stop(self) -> None:
         """Disconnect all servers when this runtime owns the client."""
@@ -265,6 +278,14 @@ class MCPRuntime:
         """Remote handshake stays short. stdio may spend the real startup."""
         config = state.config or {}
         if config.get('command') and not config.get('url'):
+            try:
+                budget = float(config.get('startup_timeout', DEFAULT_SERVER_STARTUP_TIMEOUT))
+                if math.isfinite(budget) and budget > 0:
+                    return budget
+            except (TypeError, ValueError):
+                pass
+            # The client reports invalid values per server; scheduling a bad
+            # row must not prevent the other probes from starting.
             return float(DEFAULT_SERVER_STARTUP_TIMEOUT)
         return float(MCP_PROBE_TIMEOUT)
 
@@ -346,14 +367,12 @@ class MCPRuntime:
 
     async def _wait_probes(self) -> None:
         """Give in-flight connects a short chance to join this turn."""
-        pending = [
-            task for task in self._probe_tasks.values() if not task.done()
-        ]
+        pending = list(self._probe_tasks.values())
         if pending and MCP_TURN_WAIT > 0:
             await asyncio.wait(pending, timeout=MCP_TURN_WAIT)
         if self._connect_policy != 'fail_fast':
             return
-        for task in list(self._probe_tasks.values()):
+        for task in pending:
             if task.done() and not task.cancelled():
                 exc = task.exception()
                 if exc is not None:
@@ -394,11 +413,12 @@ class MCPRuntime:
                 ),
                 timeout=timeout,
             )
+            await self._refresh_cached_tools(name, state)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             reason = short_connect_reason(exc, timeout)
-            logger.warning('MCP server %s unreachable: %s', name, exc)
+            logger.warning('MCP server %s unreachable: %s', name, reason)
             await self._record_connect_failure(name, reason)
             await self._drop_unfinished_connect(name)
             if self._connect_policy == 'fail_fast':
@@ -410,7 +430,6 @@ class MCPRuntime:
         state.connected_at = _utc_now()
         state.last_success_at = state.connected_at
         state.consecutive_failures = 0
-        await self._refresh_cached_tools(name, state)
 
     async def _connect_server(self, name: str, state: MCPServerState) -> None:
         """Finish one connect. Enable and reconnect keep the short cap.
@@ -483,9 +502,8 @@ class MCPRuntime:
             state.tool_count = len(state.cached_tools)
             state.last_success_at = _utc_now()
         except Exception as exc:
-            # Already inside the connect lock. record_failure would take it
-            # again and deadlock when several servers list tools together.
             self._apply_failure_state(name, 'list_tools', str(exc), exc=exc)
+            raise
 
     # ── enable / disable ───────────────────────────────────────────────
 

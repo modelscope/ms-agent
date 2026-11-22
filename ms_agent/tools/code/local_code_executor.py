@@ -12,6 +12,7 @@ from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
 from ms_agent.utils import get_logger
 from ms_agent.utils.artifact_manager import ArtifactManager
+from ms_agent.utils.package_env import PACKAGE_ENV_PASSTHROUGH
 from ms_agent.utils.workspace_context import WorkspaceContext
 
 logger = get_logger()
@@ -81,7 +82,7 @@ _POSIX_ENV_PASSTHROUGH = (
     'https_proxy',
     'all_proxy',
     'no_proxy',
-)
+) + PACKAGE_ENV_PASSTHROUGH
 
 #: Set on every command the agent runs, unless the environment already says
 #: otherwise. Nothing here changes what a command DOES — it changes what the

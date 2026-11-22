@@ -794,7 +794,7 @@ async def test_apply_config_does_not_reprobe_a_recorded_failure():
     assert client.connect_calls.count('bad') == 1
     assert client.is_connected('extra')
     assert runtime.get_server('bad').status == 'error'
-    assert runtime.get_server('bad').last_error == 'connect failed: bad'
+    assert runtime.get_server('bad').last_error == 'Could not connect to the MCP service.'
 
 
 @pytest.mark.asyncio
@@ -1014,7 +1014,7 @@ async def test_a_failed_reconnect_stays_failed_until_retry():
     state = runtime.get_server('box')
     assert state.status == 'error'
     assert state.process_exited is True
-    assert state.last_error == 'gone'
+    assert state.last_error == 'Could not connect to the MCP service.'
     assert not runtime.is_callable('box')
     failed = client.connect_calls.count('box')
     await runtime.refresh_for_turn()

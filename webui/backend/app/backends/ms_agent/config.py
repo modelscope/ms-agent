@@ -975,43 +975,6 @@ _MCP_META = frozenset({
 })
 
 
-def _mcp_reachable(server: dict, timeout: float = 2.0) -> bool:
-    """Cheap pre-flight so an unreachable MCP can't break the chat turn.
-
-    Remote servers: TCP-connect to host:port. stdio servers: the command must
-    resolve on PATH (or be an existing file). Reachable-but-broken servers still
-    pass (rare); the common 'wrong/dead URL or missing command' case is dropped.
-    """
-    import shutil
-    import socket
-    from urllib.parse import urlparse
-
-    url = server.get("url")
-    if url:
-        try:
-            u = urlparse(url)
-            if not u.hostname:
-                return False
-            port = u.port or (443 if u.scheme in ("https", "wss") else 80)
-            with socket.create_connection((u.hostname, port), timeout=timeout):
-                return True
-        except Exception:
-            return False
-    command = server.get("command")
-    if command:
-        return bool(shutil.which(command)) or os.path.isfile(command)
-    return True  # unknown shape — don't drop
-
-
-def _healthy_mcp_config(mcp_config: dict | None) -> dict:
-    servers = (mcp_config or {}).get("mcpServers") or {}
-    healthy = {name: s for name, s in servers.items() if _mcp_reachable(s)}
-    dropped = set(servers) - set(healthy)
-    if dropped:
-        logger.warning("skipping unreachable MCP server(s): %s", ", ".join(sorted(dropped)))
-    return {"mcpServers": healthy} if healthy else {}
-
-
 def build_agent(project, session, *, event_sink, input_source, mcp_config=None,
                 permission_handler=None, model_snapshot=None):
     token = _model_snapshot.set(model_snapshot)
@@ -1142,14 +1105,10 @@ def _build_agent(project, session, *, event_sink, input_source, mcp_config=None,
     except Exception:
         logger.debug("skill change tracker baseline failed", exc_info=True)
 
-    # MCP: use the SDK's standard mcp_config path (enabled servers only) — far
-    # more robust to invalid servers than injecting an MCPRuntime (whose remote
-    # client teardown throws cross-task anyio errors). The registry pre-probes
-    # servers (connect+initialize) and passes only healthy ones as `mcp_config`;
-    # fall back to a cheap TCP check for direct callers (tests). Live
-    # enable/disable is sacrificed — a toggle applies on the next session build.
+    # Optional MCP preparation is isolated in the SDK. Independent health
+    # probes must not permanently remove tools from an otherwise live session.
     if mcp_config is None:
-        mcp_config = _healthy_mcp_config(resolve_mcp_config(h, project.path, None))
+        mcp_config = resolve_mcp_config(h, project.path, None)
 
     resume = session_has_history(project, session)
     agent = LLMAgent(

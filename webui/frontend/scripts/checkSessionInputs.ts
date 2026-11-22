@@ -12,7 +12,9 @@ const delivered = (id: string): AgentChunk => ({ type: 'input', content: '', met
   message: { role: 'user', content: id, files: [{ name: 'note.txt', path: 'note.txt' }] }
 } })
 const frames: AgentChunk[] = [
-  delivered('initial'), { type: 'text', content: 'before', meta: {} },
+  delivered('initial'),
+  { type: 'notice', content: 'Optional MCP unavailable', meta: { code: 'mcp_unavailable' } },
+  { type: 'text', content: 'before', meta: {} },
   delivered('steer1'), delivered('steer2'), { type: 'text', content: 'after', meta: {} }
 ]
 let live = reduceConversation(initialChatState(), { type: 'begin', turn_id: 'task', cursor: 'epoch:0' })
@@ -21,6 +23,8 @@ for (const frame of frames) live = reduceConversation(live, chunk(frame))
 assert.deepEqual(live.active.filter(i => i.message.role === 'user').map(i => i.message.content), ['initial', 'steer1', 'steer2'])
 assert.deepEqual(live.pending.map(i => i.input_id), ['queue'])
 assert.equal(live.active[1].message.content, 'before')
+assert.ok(live.active[1].message.parts?.some(part =>
+  part.kind === 'notice' && part.code === 'mcp_unavailable'))
 assert.equal(live.active.at(-1)?.message.content, 'after')
 const before = live.active.length
 live = reduceConversation(live, chunk(delivered('steer2')))
