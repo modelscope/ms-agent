@@ -256,7 +256,7 @@ for storage, recovery and pricing details.
 
 ## Install and update skills
 
-Open **Settings → MCP & Skills → Skills**, or a project's **Skills** panel. Choose **Add skill → Install from link** and paste a GitHub repository, subdirectory, or ModelScope Skill page URL. Select one or more skills from the repository and choose a global or project installation.
+Open **Settings → MCP & Skills → Skills**, or a project's **Skills** panel. Choose **Add skill → Install from link** and paste a GitHub repository, subdirectory, or ModelScope Skill or collection URL. Select one or more skills and choose a global or project installation.
 
 The open app checks linked skills periodically; **Check for updates** also runs a manual check. Open a card marked **Update available**, review the file changes, and confirm the update. The details menu offers **Restore previous version** afterward. Replacing local changes requires confirmation and keeps one backup. Checks and previews remain available during active tasks; replacing files waits until those tasks finish.
 
