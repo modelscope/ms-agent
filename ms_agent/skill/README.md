@@ -2,6 +2,8 @@
 
 A knowledge-driven skill system that extends LLM agents with reusable procedural knowledge — skills guide the model on *what tools to use and in what order*, while execution stays within the agent's standard tool-calling loop.
 
+User guides: [English](../../docs/en/core/skills.md) · [中文](../../docs/zh/core/skills.md). The code remains authoritative; configuration defaults and optional backends are described in those guides.
+
 ## Design Philosophy
 
 > **Skill = Knowledge, not Executor.** A skill describes *how to do something*; the model itself decides *when and how to act* using its available tools.
@@ -85,6 +87,9 @@ ms_agent/skill/
 ├── catalog.py             # SkillCatalog — multi-source loading, cache, hot-reload
 ├── prompt_injector.py     # SkillPromptInjector — system prompt injection
 ├── skill_tools.py         # SkillToolSet — skills_list, skill_view, skill_manage
+├── runtime.py             # 会话内技能同步
+├── safety.py              # 技能检查
+├── search.py              # 技能检索
 └── README.md              # This file
 ```
 
@@ -97,8 +102,8 @@ Unified skill directory with three-tier priority loading:
 | Priority | Source | Path |
 |----------|--------|------|
 | 1 (lowest) | Built-in | `ms_agent/skills/` (package) or `<repo>/skills/` (source) |
-| 2 | User home | `~/.ms_agent/skills/{installed,custom}/` |
-| 3 (highest) | Workspace / config | `CWD/skills/` or `config.skills.path` |
+| 2 | User home | Live trees: `~/.agents/skills/` and `$MS_AGENT_HOME/skills/`; legacy subdirectories remain readable |
+| 3 (highest) | Workspace / config | Project live trees, structured `skills.sources`, compatible `skills.path`; `CWD/skills/` when auto-discovery is enabled |
 
 Later-loaded skills override earlier ones with the same `skill_id`.
 
@@ -129,8 +134,7 @@ author: "team-name"                 # optional
 tags: [research, papers]            # optional
 always: false                       # optional, true → inject full body into prompt
 requires:                           # optional
-  tools: [web_search, terminal]
-  env: [ARXIV_API_KEY]
+  tools: [web_search, code_executor]
 ---
 
 # Paper Finder
@@ -160,7 +164,7 @@ skills:
     - modelscope://owner/repo@v1.0#subdir                      # ModelScope URI with revision
     - https://github.com/user/repo.git                         # Git repository
 
-  auto_discover: true                # scan CWD/skills/ automatically
+  auto_discover: false               # 默认关闭额外的 CWD/skills 扫描，不关闭所有活动树
   enable_manage: false               # enable runtime skill CRUD
 
   # Filtering (three-value semantics)
@@ -197,7 +201,7 @@ Browse available skills at [modelscope.cn/skills](https://modelscope.cn/skills).
 | Tool coexistence | Skills and MCP tools mutually exclusive | Skills and all tools coexist in same loop |
 | Result passing | Required special `_format_skill_result_as_messages` | Standard `role: tool` messages |
 | Streaming | Not supported in skill mode | Naturally supported |
-| Dependencies | FAISS, Docker, sentence-transformers | None (pure Python) |
+| Dependencies | FAISS, Docker, sentence-transformers | BM25 is lightweight; vector/hybrid search requires optional retrieval dependencies |
 | Key components removed | `AutoSkills`, `DAGExecutor`, `SkillAnalyzer`, `SkillContainer`, `Spec` | — |
 | Key components added | — | `SkillCatalog`, `SkillPromptInjector`, `SkillToolSet` |
 

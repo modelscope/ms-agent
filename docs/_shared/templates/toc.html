@@ -1,0 +1,8 @@
+{% if pagename != 'index' %}
+<aside id="right-sidebar" class="hidden text-sm xl:block" aria-label="{{ '页内目录' if ms_zh else 'On this page' }}">
+  <div class="sticky top-16 -mt-10 max-h-[calc(100vh-5rem)] h-full overflow-y-auto pt-6 space-y-2">
+    <p class="font-medium">{{ '本页内容' if ms_zh else 'On this page' }}</p>
+    {{ toc }}
+  </div>
+</aside>
+{% endif %}

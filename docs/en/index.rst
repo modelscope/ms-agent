@@ -1,78 +1,137 @@
-MS-Agent Documentation
+MS-Agent documentation
 ======================
 
-MS-Agent is built for complex tasks that require sustained planning, execution, and verification.
-Compose models, tools, skills, and sub-agents, work through the CLI, TUI, or WebUI,
-or embed the same Python SDK in your own application.
+.. raw:: html
 
-Start here
-----------
+   <section class="ms-hero">
+   <p class="eyebrow">BUILD · USE · EXTEND</p>
+   <p class="lead">From your first conversation to complex tasks: combine models, tools, skills, and workflows into an agent that fits your work. Start with a familiar interface, then explore the mechanisms behind it.</p>
+   <div class="actions"><a href="get-started/quick-start.html">Get started →</a><a href="get-started/introduction.html">What is MS-Agent</a></div>
+   </section>
 
-* **Try an agent**: follow the :doc:`installation guide <GetStarted/Installation>`, then the :doc:`quick start <GetStarted/Introduction>`.
-* **Work in your browser**: use the :doc:`WebUI workspace <Interfaces/WebUI>` to manage project sessions, files, models, and tools.
-* **Build an application**: start with :doc:`agents <Components/LLMAgent>` and :doc:`workflows <Components/Workflow>`, then add tools and skills.
-* **Customize execution**: read the :doc:`architecture overview <Architecture/ARCHITECTURE>` for context, permissions, callbacks, and extension points.
+Choose your path
+----------------
 
-.. toctree::
-   :maxdepth: 1
-   :caption: Getting Started
+.. grid:: 1 2 2 2
+   :gutter: 3
 
-   GetStarted/Installation
-   GetStarted/Introduction
+   .. grid-item-card:: 01 · Getting started
+      :link: get-started/quick-start
+      :link-type: doc
 
-.. toctree::
-   :maxdepth: 1
-   :caption: Core Components
+      Install, configure a model, and run your first task. Developers can start with the Python SDK.
 
-   Components/LLMAgent
-   Components/Workflow
+   .. grid-item-card:: 02 · User guide
+      :link: user-guide/webui
+      :link-type: doc
 
-.. toctree::
-   :maxdepth: 1
-   :caption: Capabilities and Extensions
+      Work with files and sessions in the WebUI, TUI, or CLI, and pick up where you left off.
 
-   Components/Tools
-   Components/AgentSkills
-   Components/MultimodalSupport
+   .. grid-item-card:: 03 · Core modules
+      :link: core/configuration
+      :link-type: doc
 
-.. toctree::
-   :maxdepth: 1
-   :caption: Interfaces and Integrations
+      Understand models, tools, context, and memory. Configure and extend agents through their interfaces.
 
-   Interfaces/WebUI
-   Expose Capabilities over MCP <Components/CapabilityGateway>
+   .. grid-item-card:: 04 · Domain applications
+      :link: applications/deep-research
+      :link-type: doc
 
-.. toctree::
-   :maxdepth: 1
-   :caption: Reference
+      Explore research, coding, finance, document, and video workflows with their prerequisites and entry points.
 
-   Configuration Reference <Components/Config>
-   CLI Reference <GetStarted/CLI>
-   Models and Providers <Components/SupportedModels>
+   .. grid-item-card:: 05 · Development & reference
+      :link: development/architecture
+      :link-type: doc
 
-.. toctree::
-   :maxdepth: 1
-   :caption: Applications
+      Look up configuration, commands, storage, and architecture, or contribute improvements to the framework.
 
-   Projects/DeepResearch
-   Projects/CodeGenesis
-   Projects/FinResearch
-   Projects/VideoGeneration
-   DocResearch <https://github.com/modelscope/ms-agent/blob/main/projects/doc_research/README.md>
-   Skill Evolution <https://github.com/modelscope/ms-agent/blob/main/projects/skill_evolution/README.md>
+Start with a small task
+-----------------------
+
+Complete a conversation, check tool execution and session recovery, then add skills,
+MCP connections, or workflows as needed.
 
 .. toctree::
+   :hidden:
    :maxdepth: 1
-   :caption: Architecture and Design
+   :caption: Getting started
 
-   Architecture/ARCHITECTURE
-   Architecture/ROADMAP
-   Architecture/rfcs/plugins
-   Architecture/rfcs/hooks-executors
-   Architecture/rfcs/mcp-runtime-api
+   get-started/introduction
+   get-started/quick-start
+   get-started/python-sdk
 
 .. toctree::
+   :hidden:
    :maxdepth: 1
-   :caption: Contributing
+   :caption: User guide
 
-   Components/ContributorGuide
+   user-guide/webui
+   user-guide/tui
+   user-guide/cli
+   user-guide/projects-sessions
+   user-guide/model-settings
+   user-guide/skills-mcp
+   user-guide/memory
+   user-guide/scheduled-tasks
+   user-guide/deployment
+   user-guide/troubleshooting
+
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+   :caption: Core modules
+
+   core/configuration
+   core/models
+   core/messages-events
+   core/agents
+   core/multimodal
+   core/tools
+   core/execution-environments
+   core/mcp-client
+   core/skills
+   core/sessions
+   core/context
+   core/memory
+   core/prompts
+   core/personalization
+   core/retrieval
+   core/rag
+   core/permissions
+   core/callbacks
+   core/hooks
+   core/plugins
+   core/subagents
+   core/workflows
+   core/scheduling
+   core/acp
+   core/a2a
+   core/agent-hub
+   core/capability-gateway
+
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+   :caption: Domain applications
+
+   applications/deep-research
+   applications/code-genesis
+   applications/fin-research
+   applications/doc-research
+   applications/singularity-cinema
+   applications/skill-evolution
+
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+   :caption: Development & reference
+
+   development/configuration-reference
+   development/cli-reference
+   development/storage
+   development/glossary
+   development/architecture
+   development/contributing
+   development/rfcs/plugins
+   development/rfcs/hooks-executors
+   development/rfcs/mcp-runtime-api

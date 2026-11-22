@@ -4,6 +4,6 @@ orphan: true
 
 # 权限设计文档已迁移
 
-当前权限机制、模式和覆盖范围见[架构总览](../Architecture/ARCHITECTURE.md#5-工具调用与安全双层权限--hooks)，遗留问题与演进方向见[路线图](../Architecture/ROADMAP.md)。
+当前权限机制、模式与覆盖范围见[权限](../core/permissions.md)；整体执行链见[架构总览](../development/architecture.md)。
 
 本页保留旧路径供历史链接访问，不再维护原设计过程记录。以当前实现和新文档为准；应用权限规则不能替代操作系统或容器隔离。
