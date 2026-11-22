@@ -19,6 +19,7 @@ MS-Agent DOCUMENTATION
 
    Components/Config
    Components/LLMAgent
+   Components/DecisionMode
    Components/Workflow
    Components/SupportedModels
    Components/MultimodalSupport

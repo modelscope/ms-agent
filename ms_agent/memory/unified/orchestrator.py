@@ -646,8 +646,13 @@ def _messages_to_dicts(messages: List[Message]) -> List[Dict[str, Any]]:
             # ``_dicts_to_messages``.
             if getattr(m, 'attachments', None):
                 d['attachments'] = m.attachments
-            if getattr(m, 'context_summary', False):
+            if getattr(m, 'context_summary', False) or getattr(
+                    m, '_context_summary', False):
                 d['context_summary'] = True
+            if getattr(m, '_decision_feedback', False):
+                d['decision_feedback'] = True
+            if getattr(m, '_origin_seq', None) is not None:
+                d['_origin_seq'] = m._origin_seq
             result.append(d)
         else:
             result.append({'role': 'user', 'content': str(m)})

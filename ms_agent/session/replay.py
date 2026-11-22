@@ -196,7 +196,13 @@ def fork_points(records: list[dict],
             failed, final, checkpoint = False, None, False
             pending.clear()
         if role == 'user':
-            if row.get('delivery') == 'steer':
+            if row.get('decision_feedback') or row.get('context_summary'):
+                # Internal review continues the same user task. Its rejected
+                # candidate answer must never become a branchable completion.
+                final, checkpoint = None, False
+                end = seq
+                continue
+            elif row.get('delivery') == 'steer':
                 # A continuation within one task cannot expose the preceding
                 # intermediate assistant segment as a completed reply.
                 final, checkpoint = None, False

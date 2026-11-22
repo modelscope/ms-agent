@@ -93,6 +93,14 @@ class SessionLog:
         """Append multiple messages.  Returns list of seq numbers."""
         return [self.append(m) for m in messages]
 
+    def record_decision(self, event: Dict[str, Any]) -> None:
+        """Append diagnostic/state data without feeding it back to the model."""
+        self._append_line({
+            **event, '_type': 'decision_event',
+            'seq': self._next_seq(),
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+
     def record_input_event(self, event: Dict[str, Any]) -> None:
         """Scheduling metadata, deliberately excluded from model context."""
         self._append_line({

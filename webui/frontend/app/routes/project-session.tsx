@@ -53,6 +53,8 @@ export async function loader({ params }: Route.LoaderArgs) {
     project,
     session,
     sessionId,
+    sessionExecutionMode: session?.execution_mode,
+    sessionExecutionLocked: session?.execution_mode_locked,
     sessionModelId: session?.model_id || '',
     sessionReasoningEfforts: session?.reasoning_efforts,
     // Whether a background turn's result is still unacknowledged — opening this
@@ -71,6 +73,8 @@ export default function ProjectSessionPage() {
     project,
     sessionId,
     sessionModelId,
+    sessionExecutionMode,
+    sessionExecutionLocked,
     sessionReasoningEfforts,
     sessionUnread,
     messages,
@@ -89,6 +93,8 @@ export default function ProjectSessionPage() {
     <ChatView
       key={sessionId}
       initialModelId={sessionModelId}
+      initialExecutionMode={sessionExecutionMode}
+      initialExecutionLocked={sessionExecutionLocked}
       initialReasoningEfforts={sessionReasoningEfforts}
       project={project}
       sessionId={sessionId}

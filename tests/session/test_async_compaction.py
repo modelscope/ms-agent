@@ -124,7 +124,7 @@ def make_agent(log, strategies, memory_tools=()):
         setattr(agent, method, Mock())
     for method in ('prepare_tools', 'prepare_skills', 'load_memory',
                    'prepare_rag', 'prepare_knowledge_search', 'add_memory',
-                   'after_tool_call', 'on_task_end', 'cleanup_tools'):
+                   'after_tool_call', 'on_task_end', 'cleanup_tools', '_prepare_decision'):
         setattr(agent, method, AsyncMock())
     agent._resolve_interactive = Mock(return_value=False)
     agent._build_assembler_config = Mock(side_effect=lambda *a: dict(CONFIG))

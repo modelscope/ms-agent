@@ -167,7 +167,11 @@ class ContextAssembler:
         check_context_budget(visible, self.config)
         return _dicts_to_messages(visible)
 
-    async def assemble_async(self) -> List[Message]:
+    async def aassemble(self, *, is_current=None) -> List[Message]:
+        """Compatibility alias for decision-mode callers."""
+        return await self.assemble_async(is_current=is_current)
+
+    async def assemble_async(self, *, is_current=None) -> List[Message]:
         """Assemble without blocking the event loop on strategy/model I/O.
 
         Only ``strategy.apply`` runs in the model executor. Flush is an awaited
@@ -180,14 +184,29 @@ class ContextAssembler:
         all_msgs, lc_seq, visible = self._prepare_window()
         for strategy in self.strategies:
             window_last_seq = visible[-1].get('seq', 0) if visible else lc_seq
-            visible, meta = await self._apply_async(strategy, visible,
-                                                    all_msgs)
+            source = self.session_log.get_visible_messages()
+            source = deepcopy(source)
+            source_start = self.session_log.last_consolidated
+            visible, meta = await self._apply_async(strategy, visible, all_msgs)
+
+            def current():
+                return ((is_current is None or is_current())
+                        and self.session_log.last_consolidated == source_start
+                        and self.session_log.get_visible_messages() == source)
+
+            if not current():
+                self._take_usage(strategy)
+                return _dicts_to_messages(
+                    self.session_log.get_visible_messages())
             usage_records = self._take_usage(strategy)
             if meta is not None:
                 flushed = self._flush_memory(
                     all_msgs, lc_seq, window_last_seq, async_mode=True)
                 if inspect.isawaitable(flushed):
                     await flushed
+            if not current():
+                return _dicts_to_messages(
+                    self.session_log.get_visible_messages())
             all_msgs, lc_seq, visible = self._commit(strategy, visible, meta,
                                                      usage_records, all_msgs,
                                                      lc_seq, window_last_seq)
@@ -196,6 +215,14 @@ class ContextAssembler:
         return _dicts_to_messages(visible)
 
     async def _apply_async(self, strategy, visible, all_msgs):
+        if callable(getattr(strategy, 'aapply', None)):
+            try:
+                return await strategy.aapply(visible, all_msgs,
+                                             deepcopy(self.config))
+            except asyncio.CancelledError:
+                strategy._attempt = None
+                self._take_usage(strategy)
+                raise
         llm = getattr(strategy, 'llm', None)
         abandoned = threading.Event()
         config = deepcopy(self.config)
@@ -278,9 +305,10 @@ class ContextAssembler:
         wanted = set(pending)
         for message in all_msgs:
             if message.get('role') == 'system' or message.get(
-                    'context_summary'):
+                    'context_summary') or message.get('decision_feedback'):
                 continue
-            seq = message.get('_origin_seq', message['seq'])
+            seq = message.get('_origin_seq',
+                              message.get('origin_seq', message['seq']))
             rows.setdefault(seq, message)
             if boundary_before <= message['seq'] <= boundary_after:
                 wanted.add(seq)
@@ -361,7 +389,7 @@ class ContextAssembler:
             return all_msgs, lc_seq, visible
 
         event: Dict[str, Any] = {
-            'strategy': strategy.name,
+            'strategy': meta.get('strategy', strategy.name),
             'operation_id': self.config.get('operation_id'),
             'trigger': self.config.get('trigger', 'auto'),
             'boundary_before': lc_seq,
@@ -371,6 +399,9 @@ class ContextAssembler:
             'budget': budget,
             'usage_records': usage_records,
         }
+        for key in ('summary_calls', 'count_method', 'source_fingerprint'):
+            if key in meta:
+                event[key] = meta[key]
         if meta.get('summary'):
             event['summary_preview'] = meta['summary'][:200]
         if meta.get('pruned_count') is not None:
@@ -388,7 +419,8 @@ class ContextAssembler:
                              'reasoning_tokens', 'tokens', 'api_calls')
             }
             if 'seq' in msg and not msg.get('context_summary'):
-                clean['_origin_seq'] = msg.get('_origin_seq', msg['seq'])
+                clean['_origin_seq'] = msg.get(
+                    '_origin_seq', msg.get('origin_seq', msg['seq']))
             window.append(clean)
         self.session_log.commit_compaction(window, event)
         return self._prepare_window()
@@ -474,6 +506,10 @@ def _dicts_to_messages(dicts: List[Dict[str, Any]]) -> List[Message]:
                     setattr(result[-1], key, d[key])
             result[-1]._usage_invalidated = bool(d.get('_usage_invalidated'))
             result[-1].context_summary = bool(d.get('context_summary'))
+            result[-1]._decision_feedback = bool(d.get('decision_feedback'))
+            result[-1]._context_summary = bool(d.get('context_summary'))
+            result[-1]._origin_seq = d.get(
+                '_origin_seq', d.get('origin_seq', d.get('seq')))
         else:
             result.append(Message(role='user', content=str(d)))
     return result

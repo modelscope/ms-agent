@@ -46,6 +46,7 @@ class ChatMessage(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    execution_mode: Literal["standard", "decision"] | None = None
     input_id: str | None = Field(default=None, min_length=1, max_length=128)
     expected_turn_id: str | None = None
     model_id: str | None = None

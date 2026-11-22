@@ -73,6 +73,32 @@ async def test_steer_during_stop_hook_keeps_same_task_open(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_steer_during_decision_review_supersedes_old_feedback(tmp_path):
+    agent, controller, send = await agent_for(tmp_path)
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def review(**kwargs):
+        entered.set()
+        await release.wait()
+        return 'Feedback on the old objective'
+
+    agent.callbacks = []
+    agent.max_chat_round = 10
+    agent._decision_supervisor = SimpleNamespace(check=review)
+    rows = [Message(role='assistant', content='old final')]
+    turn = controller.active_turn
+    task = asyncio.create_task(agent.after_tool_call(rows))
+    await entered.wait()
+    await send('Corrected objective')
+    release.set()
+    await task
+    assert rows[-1].content == 'Corrected objective'
+    assert not getattr(rows[-1], '_decision_feedback', False)
+    assert controller.active_turn == turn and not agent.runtime.should_stop
+    agent.add_memory.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_steer_skips_declared_but_unstarted_calls_with_balanced_results(tmp_path):
     agent, c, send = await agent_for(tmp_path)
     response = Message(role='assistant', tool_calls=[

@@ -38,6 +38,7 @@ export interface ChatComposerCtx {
 
 interface ChatPanelProps {
   sessionId: string | null
+  prepareExecutionMode?: () => Promise<'standard' | 'decision'>
   prepareModel?: () => Promise<{ modelId: string; reasoningEffort?: ReasoningEffort }>
   projectId: string | null
   /**
@@ -129,7 +130,7 @@ function toThinkingTasks(tasks: SessionPlanTask[]): ThinkingTask[] {
 }
 
 export function ChatPanel({
-  sessionId, prepareModel, projectId, workspaceOpen, onOpenStep, onOpenFile,
+  sessionId, prepareModel, prepareExecutionMode, projectId, workspaceOpen, onOpenStep, onOpenFile,
   renderEmpty, renderSender, autoSubmitMessage, autoSubmitFiles,
   autoSubmitSegments, initialMessages, initialPlan, initialArtifacts,
   initialRunning, onSessionStarted
@@ -203,9 +204,11 @@ export function ChatPanel({
     if (!text && !files?.length && !segments?.length) return
     // Session model controls already persist selection. Steer never overrides
     // the active task's model; queued inputs keep their admission-time choice.
+    const executionMode = await prepareExecutionMode?.()
     const selection = sid ? undefined : await prepareModel?.()
     const receipt = await chat.submit({
       session_id: sid, project_id: effectiveProject,
+      execution_mode: sid ? undefined : executionMode,
       model_id: selection?.modelId, reasoning_effort: selection?.reasoningEffort,
       message: { role: 'user', content: segments?.length ? segments : text, files }
     })

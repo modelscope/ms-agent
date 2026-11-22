@@ -171,6 +171,11 @@ def fork_session(manager,
                 session_key=child_key,
                 model=source.model,
                 model_provider=source.model_provider,
+                execution_mode=source.execution_mode,
+                execution_mode_locked_at=source.execution_mode_locked_at
+                or now,
+                execution_profile=source.execution_profile,
+                execution_profile_version=source.execution_profile_version,
                 reasoning_efforts=deepcopy(source.reasoning_efforts),
                 forked_from={
                     'session_id': source.id,

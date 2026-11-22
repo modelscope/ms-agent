@@ -1,15 +1,28 @@
 {
   "followUp": {
-    "title": "Conversation behavior", "queue": "Queue", "steer": "Steer",
+    "title": "Conversation behavior",
+    "queue": "Queue",
+    "steer": "Steer",
     "queueDesc": "Process new messages in order after the current task finishes.",
     "steerDesc": "Add new messages to the current task after the current model response and started tools finish.",
-    "pending": "{count} pending", "expand": "Expand", "collapse": "Collapse",
-    "thisTurn": "This task", "nextTurn": "Next task", "paused": "Pending messages paused",
-    "resume": "Continue sending", "more": "More actions", "edit": "Edit", "withdraw": "Withdraw",
-    "withdrawConfirm": "Withdraw this pending message?", "save": "Save", "cancel": "Cancel",
+    "pending": "{count} pending",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "thisTurn": "This task",
+    "nextTurn": "Next task",
+    "paused": "Pending messages paused",
+    "resume": "Continue sending",
+    "more": "More actions",
+    "edit": "Edit",
+    "withdraw": "Withdraw",
+    "withdrawConfirm": "Withdraw this pending message?",
+    "save": "Save",
+    "cancel": "Cancel",
     "editConflict": "This message changed or was delivered. Your edit is preserved and can be sent as a follow-up.",
-    "confirming": "Confirming receipt…", "reconnecting": "Connection lost. Reconnecting…",
-    "skipped": "Skipped", "attachments": "{count} attachments"
+    "confirming": "Confirming receipt…",
+    "reconnecting": "Connection lost. Reconnecting…",
+    "skipped": "Skipped",
+    "attachments": "{count} attachments"
   },
   "auth": {
     "title": "Sign in to MS-Agent",
@@ -668,5 +681,26 @@
     "automatic": "Automatic",
     "resuming": "Resuming the saved request…",
     "resumed": "Saved request resumed."
+  },
+  "decisionMode": {
+    "title": "Execution mode",
+    "standard": "Standard",
+    "decision": "Decision",
+    "standardDescription": "Use your selected model and the standard execution flow.",
+    "decisionDescription": "Add execution reviews and semantic context compression for longer tasks.",
+    "locked": "This conversation has started. Create a new conversation to change its mode.",
+    "configure": "Configure decision model",
+    "settingsTitle": "Decision model",
+    "settingsDescription": "Use a configured provider for typed decisions. Your main chat model and permissions stay independent. Applies to new conversations.",
+    "provider": "Decision provider",
+    "model": "Decision model name",
+    "save": "Save",
+    "saved": "Decision model saved",
+    "review": "Reviewing execution evidence",
+    "intervened": "Rechecking an execution issue",
+    "degraded": "Decision service unavailable; using standard handling",
+    "compacted": "Context compressed",
+    "test": "Test connection (uses tokens)",
+    "connected": "Decision service is connected"
   }
 }

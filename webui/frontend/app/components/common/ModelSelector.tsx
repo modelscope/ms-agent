@@ -65,11 +65,13 @@ export function ModelSelector({
   const providerModels = useMemo(
     () =>
       (models ?? [])
-        .filter((m) => m.provider_id === effectiveProviderId && m.purpose !== 'embedding')
+        .filter((m) => m.provider_id === effectiveProviderId && m.purpose !== 'embedding'
+          && !m.name.startsWith('decision-model') && !m.name.toLowerCase().startsWith('jev')
+          && !(m.provider_id === settings?.decision_provider_id && m.name === settings?.decision_model))
         .sort((a, b) =>
           (a.display_name || a.name).localeCompare(b.display_name || b.name)
         ),
-    [models, effectiveProviderId]
+    [models, effectiveProviderId, settings?.decision_provider_id, settings?.decision_model]
   )
 
   const handleSelectModel = (model: Model) => {

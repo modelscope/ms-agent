@@ -84,8 +84,12 @@ def create_session(body: SessionCreate) -> Session:
             None)  # unknown id -> default (mock is lenient)
     from app.backends.ms_agent import session_models
 
-    session = session_models.create(project, name=body.title, model_id=body.model_id,
-                                    reasoning_effort=body.reasoning_effort)
+    try:
+        session = session_models.create(project, name=body.title, model_id=body.model_id,
+                                        execution_mode=body.execution_mode, reasoning_effort=body.reasoning_effort)
+    except ValueError as exc:
+        from app.backends.errors import BadRequest
+        raise BadRequest(str(exc)) from None
     if body.preview:
         sidecar.merge("sessions", session.id, {"preview": body.preview})
     return session_to_schema(session)
@@ -709,6 +713,13 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
 
     compaction_parts: dict[str, SessionPart] = {}
     for row in rows:
+        if row.get('decision_feedback') or row.get('context_summary'):
+            continue
+        if row.get('_type') == 'decision_event':
+            if row.get('action') in ('intervene', 'degraded'):
+                parts.append(SessionPart(kind='step', step=SessionStep(kind='decision', meta={
+                    key: row.get(key, '') for key in ('phase', 'action', 'reason', 'evidence_id')})))
+            continue
         if row.get("_source") == "compaction":
             # Compacted-view re-appends duplicate earlier rows for the LLM
             # window only; replaying them would double the timeline.
@@ -1274,6 +1285,21 @@ def update_session_model(sid: str, model_id: str) -> dict:
     with manager.transaction_lock(), settings_lock():
         saved = session_models.change(project, sid, model_id)
         return {"session": session_to_schema(saved), "settings": agent_settings.get_settings()}
+
+
+def update_execution_mode(sid: str, value: str) -> Session:
+    from ms_agent.project.session import ExecutionModeLocked
+    from app.backends.errors import BadRequest
+    found = find_session(sid)
+    if not found:
+        raise NotFound("Conversation not found.")
+    _, _, manager = found
+    try:
+        return session_to_schema(manager.set_execution_mode(sid, value))
+    except ExecutionModeLocked:
+        raise Conflict("execution_mode_locked") from None
+    except ValueError as exc:
+        raise BadRequest(str(exc)) from None
 
 
 def update_session_thinking(sid: str, model_id: str, effort: str) -> Session:

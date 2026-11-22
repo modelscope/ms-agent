@@ -173,6 +173,11 @@ export function StepCard({
   }
 
   switch (step.kind) {
+    case 'decision':
+      return <StepCardShell icon={<MemoryIcon className="h-4 w-4" />}>
+        {meta.action === 'degraded' ? t.decisionMode.degraded : meta.action === 'compacted' ? t.decisionMode.compacted : t.decisionMode.intervened}
+      </StepCardShell>
+
     case 'context_compaction': {
       const before = meta.before_tokens
       const after = meta.after_tokens

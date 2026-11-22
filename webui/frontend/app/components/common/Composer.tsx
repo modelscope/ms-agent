@@ -1,3 +1,5 @@
+import { ExecutionModeSelector } from './ExecutionModeSelector'
+import type { SessionModeSelection } from '~/lib/sessionMode'
 import { readComposerDraft, saveComposerDraft, registerComposer } from '~/lib/composerDraft'
 import { App, Button, Dropdown, Tooltip, Typography } from 'antd'
 import type { MenuProps } from 'antd'
@@ -97,6 +99,7 @@ interface ComposerProps {
   sessionId?: string | null
   onContextComplete?: () => void
   modelSelection?: SessionModelSelection
+  modeSelection?: SessionModeSelection
   modelSelectionDisabled?: boolean
   onSubmit: (
     text: string,
@@ -213,6 +216,7 @@ export function Composer({
   sessionId,
   onContextComplete,
   modelSelection: providedSelection,
+  modeSelection,
   modelSelectionDisabled = false,
   onSubmit,
   loading: chatLoading = false,
@@ -1291,9 +1295,11 @@ export function Composer({
 
         {/* Card-style composer container */}
         <div className="composer-card relative flex flex-col rounded-3xl border border-msa-line-1 bg-msa-bg-1 p-5 shadow-msa-m">
+          <div className="absolute -top-9 right-0 flex max-w-full items-center gap-3">
+          {modeSelection && <ExecutionModeSelector selection={modeSelection} disabled={loading} />}
           {/* Project picker (top-right, outside card flow) */}
           {hasProjectPicker && projectMenuItems && (
-            <div className="absolute -top-8 right-0">
+            <div>
               <Dropdown
                 menu={{ items: projectMenuItems }}
                 trigger={['click']}
@@ -1315,6 +1321,8 @@ export function Composer({
               </Dropdown>
             </div>
           )}
+
+          </div>
 
           {/* Sender (textarea) with slash-command suggestion */}
           {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}

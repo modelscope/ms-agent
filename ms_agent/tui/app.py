@@ -612,6 +612,12 @@ class TuiApp:
         OmegaConf.update(cfg, 'session_log.dir', sess_dir, merge=True)
         OmegaConf.update(
             cfg, 'session_log.session_key', session.session_key, merge=True)
+        OmegaConf.update(
+            cfg, 'execution.mode', session.execution_mode, merge=True)
+        if session.execution_mode == 'decision':
+            session = self._sm.prepare_execution(session.id)
+            OmegaConf.update(
+                cfg, 'decision', session.execution_profile, merge=False)
         # Same as WebUI: plan files live beside the session log, not a
         # project-shared workspace plan.json. mcp:false is required so
         # ToolManager does not treat todo_list as an MCP server.

@@ -104,6 +104,7 @@ export type MessageSegment =
   | { type: "skill"; id: string; name?: string };
 
 export interface AgentInput {
+  execution_mode?: "standard" | "decision";
   input_id?: string;
   expected_turn_id?: string | null;
   session_id?: string | null;
@@ -134,6 +135,7 @@ export type AgentOutput = { event?: string; data?: string | AgentChunk };
 export type StepKind =
   | "terminal"
   | "tool_call"
+  | "decision"
   | "skill_load"
   | "skill_list"
   | "skill_manage"
@@ -292,6 +294,7 @@ export class AgentChatProvider extends AbstractChatProvider<
       ...(options?.params || {}),
       session_id: requestParams.session_id ?? null,
       model_id: requestParams.model_id,
+      execution_mode: requestParams.execution_mode,
       reasoning_effort: requestParams.reasoning_effort,
       project_id: requestParams.project_id ?? null,
       message: requestParams.message ?? { role: "user", content: "" },
