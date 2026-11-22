@@ -10,6 +10,7 @@
   "scripts": {
     "gen:antd-css": "tsx scripts/genAntdCss.tsx",
     "check:frames": "tsx scripts/checkThoughtFrames.ts",
+    "check:questions": "tsx scripts/checkQuestionState.ts",
     "dev": "pnpm gen:antd-css && react-router dev",
     "build": "pnpm gen:antd-css && react-router build && tsx scripts/buildManifest.ts",
     "start": "node ./server.js",

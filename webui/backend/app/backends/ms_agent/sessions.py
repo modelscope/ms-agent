@@ -201,6 +201,21 @@ def _permission_step(row: dict) -> SessionStep | None:
     return SessionStep(kind=kind, meta=meta)
 
 
+def _question_step(row: dict) -> SessionStep | None:
+    """将问题及最终状态映射为问题卡片。"""
+    questions = row.get("questions")
+    answers = row.get("answers")
+    return SessionStep(
+        kind="question",
+        meta={
+            "state": str(row.get("status") or "answered"),
+            "call_id": str(row.get("call_id") or ""),
+            "questions": questions if isinstance(questions, list) else [],
+            "answers": answers if isinstance(answers, list) else [],
+        },
+    )
+
+
 def _plan_entries(tc: dict, results: dict[str, str]) -> list | None:
     """Extract the plan (todo) items from a persisted ``todo_list---todo_write``
     call, or None if this call isn't a plan write.
@@ -319,11 +334,14 @@ def list_messages(sid: str) -> list[SessionMessage]:
         rows = log.get_all_messages()
         # Display-only records (excluded from the LLM context) are read
         # separately and merged back into the timeline by seq: error records
-        # (API/turn errors) and permission records (restricted-mode auth cards).
+        # (API/turn errors), permission records (restricted-mode auth cards) and
+        # question records (what the model asked and what was chosen).
         if hasattr(log, "get_errors"):
             extra += log.get_errors()
         if hasattr(log, "get_permissions"):
             extra += log.get_permissions()
+        if hasattr(log, "get_questions"):
+            extra += log.get_questions()
         if hasattr(log, "get_skill_invocations"):
             extra += log.get_skill_invocations()
         if hasattr(log, "get_loop_ends"):
@@ -618,6 +636,14 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
             # pending_perms above); keeps the auth card adjacent to the tool it
             # authorized, matching the live frame order.
             pending_perms.append(row)
+            continue
+        if row.get("_type") == "question":
+            # Emitted in place, not buffered: a question has no tool step to sit
+            # beside (the ask tool renders no card), and its seq already puts it
+            # exactly where the model asked it.
+            qstep = _question_step(row)
+            if qstep is not None:
+                parts.append(SessionPart(kind="step", step=qstep))
             continue
         if row.get("_type") == "skill_invocation":
             # A slash-skill turn persists the EXPANDED prompt as the user row

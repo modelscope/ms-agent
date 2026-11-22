@@ -170,6 +170,17 @@ class SessionLog:
         }
         self._append_line(record)
 
+    def record_question(self, event: Dict[str, Any]) -> None:
+        """仅供界面回放；答案已经作为工具结果进入模型上下文。"""
+        seq = self._next_seq()
+        record = {
+            '_type': 'question',
+            'seq': seq,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            **event,
+        }
+        self._append_line(record)
+
     def record_skill_invocation(self, event: Dict[str, Any]) -> None:
         """Record a slash-skill invocation — a display-only marker.
 
@@ -255,7 +266,7 @@ class SessionLog:
                 continue
             if record.get('_type') in ('metadata', 'compaction_event', 'error',
                                        'permission', 'skill_invocation',
-                                       'loop_end'):
+                                       'loop_end', 'question'):
                 continue
             msgs.append(record)
         self._messages = msgs
@@ -354,6 +365,23 @@ class SessionLog:
             if record.get('_type') == 'permission':
                 perms.append(record)
         return perms
+
+    def get_questions(self) -> List[Dict[str, Any]]:
+        """读取问题历史记录，按 seq 保留时间顺序。"""
+        questions: List[Dict[str, Any]] = []
+        if not self._path.exists():
+            return questions
+        for line in self._path.read_text(encoding='utf-8').splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if record.get('_type') == 'question':
+                questions.append(record)
+        return questions
 
     def get_loop_ends(self) -> List[Dict[str, Any]]:
         """All tool-call-loop boundary markers in chronological order (each

@@ -357,6 +357,9 @@ def _tool_step_meta(name: str, args: dict) -> dict | None:
     leaf alone, per the tool taxonomy.
 
     - todo_list / task_control -> None (plan machinery; shown as the task list).
+    - ask_user                 -> None (the question CARD is authored from the
+      question_requested event, which is the only thing carrying the questions;
+      a tool card beside it would be a second, emptier copy of the same step).
     - file_system read          -> file_read (with a path).
     - file_system write_file    -> file_write; edit_file -> file_edit (distinct
       cards: a full-content write vs an in-place edit render differently).
@@ -372,7 +375,7 @@ def _tool_step_meta(name: str, args: dict) -> dict | None:
       rendered by its unified tool name.
     """
     base, _, leaf = name.partition("---")
-    if base in ("todo_list", "task_control"):
+    if base in ("todo_list", "task_control", "ask_user"):
         return None
     if base == "file_system":
         if leaf in ("grep", "glob"):
@@ -480,11 +483,15 @@ class _TurnMapper:
     in stream order; a todo plan (plan_updated) emits `task` frames rendered as a
     plain plan list — steps are no longer nested under tasks."""
 
-    def __init__(self, session_id: str = "", resolved_permissions: list[dict] | None = None) -> None:
+    def __init__(self, session_id: str = "", resolved_permissions: list[dict] | None = None,
+                 resolved_questions: list[dict] | None = None) -> None:
         self._session_id = session_id
         # Pre-resolved permissions (for attach replay only). Each entry has
         # {tool_name, arguments, state}. Consumed in order (FIFO per tool_name).
         self._resolved_perms: list[dict] = list(resolved_permissions or [])
+        # Same idea for questions: a replayed ask must show what was chosen
+        # rather than buttons for a decision already taken. Matched by call_id.
+        self._resolved_questions: list[dict] = list(resolved_questions or [])
         self._reason_start: float | None = None
         # Reasoning blocks are identified like tool calls are by call_id: every
         # `thought` frame carries its block, so the frontend never has to guess
@@ -536,6 +543,8 @@ class _TurnMapper:
         "tool_call_completed",
         "permission_request",
         "permission_resolved",
+        "question_requested",
+        "question_resolved",
         "error",
     })
 
@@ -641,6 +650,10 @@ class _TurnMapper:
             return self._permission_step(payload)
         if t == "permission_resolved":
             return self._permission_resolved_step(payload)
+        if t == "question_requested":
+            return self._question_step(payload)
+        if t == "question_resolved":
+            return self._question_resolved_step(payload)
         if t == "error":
             return [ChatChunk(type="error", meta={
                 "message": payload.get("message", ""),
@@ -817,6 +830,50 @@ class _TurnMapper:
         if reason:
             meta["reason"] = reason
         return [ChatChunk(type="step", meta=_inline_auth_meta(meta, tool, args))]
+
+    def _question_step(self, payload: dict) -> list[ChatChunk]:
+        """将问题及最终状态映射为问题卡片。"""
+        call_id = str(payload.get("call_id") or "")
+        questions = payload.get("questions")
+        questions = questions if isinstance(questions, list) else []
+        state = "pending"
+        answers: list = []
+        idx = next(
+            (i for i, r in enumerate(self._resolved_questions)
+             if call_id and str(r.get("call_id") or "") == call_id),
+            None,
+        )
+        if idx is not None:
+            record = self._resolved_questions.pop(idx)
+            state = str(record.get("status") or "pending")
+            raw = record.get("answers")
+            answers = raw if isinstance(raw, list) else []
+        pend = self._pending.get(call_id)
+        group = pend[2] if pend else (self._group_seq or 1)
+        meta = {
+            "kind": "question",
+            "state": state,
+            # Present only while the ask is live; its absence is what tells the
+            # frontend to render an outcome rather than inputs.
+            "request_id": str(payload.get("request_id") or "") if state == "pending" else "",
+            "call_id": call_id,
+            "session_id": self._session_id,
+            "questions": questions,
+            "answers": answers,
+            "group": group,
+        }
+        return [ChatChunk(type="step", meta=meta)]
+
+    def _question_resolved_step(self, payload: dict) -> list[ChatChunk]:
+        """向所有客户端同步结局，关闭过期输入控件。"""
+        raw = payload.get("answers")
+        return [ChatChunk(type="step", meta={
+            "kind": "question",
+            "state": str(payload.get("status") or "cancelled"),
+            "call_id": str(payload.get("call_id") or ""),
+            "session_id": self._session_id,
+            "answers": raw if isinstance(raw, list) else [],
+        })]
 
     def flush(self) -> list[ChatChunk]:
         """Close an open thought block and emit any pending (interrupted) tool calls
@@ -1904,7 +1961,61 @@ async def attach(session_id: str) -> AsyncIterator[dict]:
                 })
     except Exception:
         pass
-    mapper = _TurnMapper(session_id, resolved_permissions=resolved_perms)
+    # Same treatment for questions, and for the same reason: an ask whose Future
+    # is still alive replays with working inputs, one that is not replays as the
+    # outcome it reached. There is no "any later event means answered"
+    # shortcut available here even in principle — the turn cannot produce a
+    # single event while it is suspended on the answer.
+    resolved_questions: list[dict] = []
+    try:
+        buf = list(rt.sink._events)
+        ask_events = [
+            ev for ev in buf if ev.get('type') == 'question_requested'
+        ]
+        if ask_events:
+            qhandler = getattr(rt, 'question_handler', None)
+            awaiting = getattr(qhandler, 'awaiting_request_ids', None)
+            pending_ids = set(awaiting()) if awaiting else set()
+            records: list[dict] = []
+            try:
+                found = find_session(session_id)
+                if found:
+                    _proj, _sess, sm = found
+                    log = sm.get_session_log(_sess)
+                    if hasattr(log, 'get_questions'):
+                        records = list(log.get_questions())
+            except Exception:
+                records = []
+            for ev in ask_events:
+                rid = str(ev.get('request_id') or '')
+                if rid and rid in pending_ids:
+                    continue  # genuinely awaiting the user
+                call_id = str(ev.get('call_id') or '')
+                rec = next(
+                    (r for r in records
+                     if call_id and str(r.get('call_id') or '') == call_id),
+                    None,
+                )
+                # 优先使用当前轮缓冲中的结局，不能把另一问题的历史套过来。
+                rec = next((r for r in reversed(buf)
+                            if r.get('type') == 'question_resolved'
+                            and call_id and r.get('call_id') == call_id), None) or rec
+                resolved_questions.append({
+                    'call_id': call_id,
+                    # A resolved ask whose record has not landed yet (the write
+                    # races this read) is reported as cancelled rather than
+                    # answered: claiming answers we cannot show would be worse
+                    # than saying the question is closed.
+                    'status': str((rec or {}).get('status') or 'cancelled'),
+                    'answers': (rec or {}).get('answers') or [],
+                })
+    except Exception:
+        pass
+    mapper = _TurnMapper(
+        session_id,
+        resolved_permissions=resolved_perms,
+        resolved_questions=resolved_questions,
+    )
     pos = 0
     try:
         # The rejoining client (a reload, or a second viewer) has no idea when

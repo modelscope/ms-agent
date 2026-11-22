@@ -230,6 +230,42 @@ class PermissionResolved(AgentEvent):
     action: str = ''  # e.g. allow_once | deny | allow_always
 
 
+# ── question (model-initiated, human-in-the-loop) ─────────────────────────
+
+
+@dataclass(frozen=True)
+class QuestionRequested(AgentEvent):
+    """The model asked the user something and is suspended on the answer.
+
+    The neighbour of ``PermissionRequested`` and deliberately not the same
+    event: an approval carries a tool call to judge, a question carries
+    choices to pick from, and a front-end renders nothing alike for the two.
+    ``questions`` is the serialized :class:`ms_agent.ui.interaction.Question`
+    list, so the wire form needs no second schema.
+    """
+    EVENT_TYPE: ClassVar[str] = 'question_requested'
+    request_id: str = ''
+    call_id: str = ''
+    questions: List[dict] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class QuestionResolved(AgentEvent):
+    """A pending question reached a terminal state.
+
+    Emitted for the outcomes no client caused — an expiry, or a cancelled
+    turn — because those are exactly the ones a live card cannot know about,
+    and it would otherwise keep offering inputs for a decision already made.
+    Carries no ``request_id``: the outcome is final, so the card must render
+    it instead of live controls (the same reasoning as
+    ``permission_resolved``).
+    """
+    EVENT_TYPE: ClassVar[str] = 'question_resolved'
+    call_id: str = ''
+    status: str = ''  # answered | skipped | cancelled | timeout | unavailable
+    answers: List[dict] = field(default_factory=list)
+
+
 # ── context / system notices ──────────────────────────────────────────────
 
 

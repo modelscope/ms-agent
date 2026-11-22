@@ -308,6 +308,11 @@ class LLMAgent(Agent):
         # _select_permission_handler() picks by mode + interactivity.
         self._permission_handler = kwargs.get('permission_handler', None)
 
+        # Optional injected QuestionHandler (TUI/WebUI/Server) — the seam the
+        # ask_user_question tool consults. When None nobody can be asked, and
+        # the tool is not registered at all (see ToolManager).
+        self._question_handler = kwargs.get('question_handler', None)
+
         # Structured event sink — the UI-agnostic output seam (ms_agent.ui).
         # When set, the agent emits semantic AgentEvents (content / reasoning /
         # tool / ...) that a TUI renders and a WebUI backend forwards. When
@@ -940,6 +945,19 @@ class LLMAgent(Agent):
         """Inject a custom PermissionHandler (TUI/WebUI/Server) before run."""
         self._permission_handler = handler
 
+    def _select_question_handler(self):
+        """主 Agent 使用注入的处理器；子 Agent 与无界面运行不可提问。"""
+        from ms_agent.interaction import AutoQuestionHandler
+        if getattr(self.config, 'ms_agent_subagent', False):
+            return AutoQuestionHandler()
+        if self._question_handler is not None:
+            return self._question_handler
+        return AutoQuestionHandler()
+
+    def set_question_handler(self, handler) -> None:
+        """在准备工具前注入处理器。"""
+        self._question_handler = handler
+
     def set_permission_mode(self, mode: str) -> str:
         """Change the permission mode at runtime; returns the normalized mode.
 
@@ -1033,6 +1051,7 @@ class LLMAgent(Agent):
             read_policy=perm_config.safety.read_policy,
             hook_runtime=hook_runtime,
             permission_config=perm_config,
+            question_handler=self._select_question_handler(),
             trust_remote_code=self.trust_remote_code,
             mcp_callable_check=mcp_rt.is_callable if mcp_rt else None,
             mcp_failure_handler=mcp_rt.record_failure if mcp_rt else None,

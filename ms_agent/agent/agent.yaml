@@ -78,6 +78,9 @@ callbacks:
   - input_callback
 
 tools:
+  # 仅在宿主提供 QuestionHandler 时可用；enabled: false 可禁用。
+  ask_user:
+    mcp: false
   file_system:
     mcp: false
     include:

@@ -655,6 +655,25 @@ export const api = {
       body: JSON.stringify(body)
     }),
 
+  // Answer (or skip) a question the model asked. `resolved: false` means the ask
+  // is already closed — it expired, the turn was stopped, or another viewer
+  // answered it — so the card must show an outcome rather than claim this one.
+  // Only option ids travel: the backend recomputes the labels the model reads.
+  answerQuestion: (body: {
+    session_id: string
+    request_id: string
+    status: 'answered' | 'skipped'
+    answers: {
+      question_id: string
+      option_ids: string[]
+      custom_text: string
+    }[]
+  }) =>
+    json<{ resolved: boolean }>('/api/chat/question', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    }),
+
   // Explicitly stop a session's in-flight turn (the composer Stop button).
   // Distinct from merely closing the SSE (navigating away), which keeps the turn
   // running in the background; only this cancels it and seals it as interrupted.

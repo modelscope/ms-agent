@@ -13,6 +13,7 @@ import { ToolCallStepCard } from './steps/ToolCallStepCard'
 import { ArtifactStepCard } from './steps/ArtifactStepCard'
 import { StepCardShell, StepInProgressRow } from './steps/StepCardShell'
 import { AuthConfirmStepCard } from './steps/AuthConfirmStepCard'
+import { QuestionStepCard } from './steps/QuestionStepCard'
 import LoadSkillIcon from '~/assets/icons/load-skill.svg?react'
 import SearchIcon from '~/assets/icons/search.svg?react'
 import MemoryIcon from '~/assets/icons/memory.svg?react'
@@ -180,6 +181,11 @@ export function StepCard({
       if (authState === 'approved' && !meta.request_id) return null
       return <AuthConfirmStepCard step={step} isLast={isLast} />
     }
+    case 'question':
+      // Always rendered, in every state. Unlike an approved authorization there
+      // is no neighbouring tool card that repeats the information: the ask tool
+      // renders none, and the answers went only to the model.
+      return <QuestionStepCard step={step} isLast={isLast} />
     case 'tool_call':
       return (
         <ToolCallStepCard step={step} onOpenStep={onOpenStep} isLast={isLast} />

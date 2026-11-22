@@ -17,7 +17,8 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 from ms_agent.llm.utils import Tool, ToolCall
 from ms_agent.tools.arg_coercion import coerce_arguments
 from ms_agent.tools.agent_tool import AgentTool
-from ms_agent.tools.base import ToolBase
+from ms_agent.tools.ask_user_tool import AskUserTool
+from ms_agent.tools.base import SELF_MANAGED_TIMEOUT, ToolBase
 from ms_agent.tools.code import CodeExecutionTool, LocalCodeExecutionTool
 from ms_agent.tools.filesystem_tool import FileSystemTool
 from ms_agent.tools.image_generator import ImageGenerator
@@ -152,6 +153,7 @@ class ToolManager:
             read_policy: str = 'loose',
             hook_runtime=None,
             permission_config=None,
+            question_handler=None,
             mcp_callable_check: Optional[Callable[[str], bool]] = None,
             mcp_failure_handler: Optional[Callable[
                 [str, str, str, Optional[str]], Awaitable[None]]] = None,
@@ -167,6 +169,7 @@ class ToolManager:
         self._permission_mode = permission_mode
         self._read_policy = read_policy
         self._hook_runtime = hook_runtime
+        self._question_handler = question_handler
         self.mcp_callable_check = mcp_callable_check
         self.mcp_failure_handler = mcp_failure_handler
         self.mcp_unavailable_detail = mcp_unavailable_detail
@@ -225,6 +228,15 @@ class ToolManager:
                 self.extra_tools.append(agent_tool)
         if _tool_on(config, 'todo_list'):
             self.extra_tools.append(TodoListTool(config))
+        # Registered only when a front-end can actually put the question to
+        # someone. Withholding the tool is stronger than exposing it and
+        # failing the call: a tool the model cannot see costs no round trip to
+        # discover, and an agent with no way to ask has to decide — which is
+        # what a headless run wants anyway.
+        if _tool_on(config, 'ask_user') and getattr(
+                question_handler, 'supports_questions', False):
+            self.extra_tools.append(
+                AskUserTool(config, question_handler=question_handler))
         if _tool_on(config, 'web_search'):
             self.extra_tools.append(WebSearchTool(config))
         if hasattr(config, 'tools') and hasattr(config.tools, 'cron'):
@@ -737,6 +749,13 @@ class ToolManager:
                     call_args = dict(tool_args or {})
                     call_id = tool_info.get('id') or str(uuid.uuid4())
                     call_args['__call_id'] = call_id
+                elif isinstance(tool_ins, AskUserTool):
+                    # The ask carries its gating call_id so a front-end can
+                    # render the question on the SAME card as the tool call it
+                    # belongs to (and pair the answer back to it on replay).
+                    call_args = dict(tool_args or {})
+                    call_args['__call_id'] = tool_info.get('id') or str(
+                        uuid.uuid4())
                 elif isinstance(tool_ins,
                                 LocalCodeExecutionTool) and tool_name.endswith(
                                     f'{self.TOOL_SPLITER}shell_executor'):
@@ -746,13 +765,26 @@ class ToolManager:
                     # Align subprocess wait with the host wait (after cap) so inner
                     # ``communicate`` does not expire before the outer ``wait_for``.
                     call_args['timeout'] = int(math.ceil(wait_sec))
-                response = await asyncio.wait_for(
-                    tool_ins.call_tool(
+                if getattr(tool_ins, 'call_timeout',
+                           None) == SELF_MANAGED_TIMEOUT:
+                    # A tool that waits for a PERSON is not computing, so the
+                    # generic budget does not apply to it: at the default it
+                    # would kill a question while the user is still reading it
+                    # and report a timeout to the model. The tool (through its
+                    # handler) owns the deadline. See ToolBase.call_timeout.
+                    response = await tool_ins.call_tool(
                         server_name,
                         tool_name=self._registered_tool_suffix(
                             tool_name, self.TOOL_SPLITER),
-                        tool_args=call_args),
-                    timeout=wait_sec)
+                        tool_args=call_args)
+                else:
+                    response = await asyncio.wait_for(
+                        tool_ins.call_tool(
+                            server_name,
+                            tool_name=self._registered_tool_suffix(
+                                tool_name, self.TOOL_SPLITER),
+                            tool_args=call_args),
+                        timeout=wait_sec)
 
                 # Truncate excessively long tool outputs to prevent context
                 # window explosion — unless the tool declared its own budget or

@@ -1,7 +1,7 @@
 from typing import Literal
 
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from app.backends import get_backend
@@ -55,6 +55,36 @@ async def resolve_permission(body: PermissionResolve) -> dict:
 
     resolved = registry.resolve_permission(
         body.session_id, body.request_id, body.action
+    )
+    return {"resolved": resolved}
+
+
+class QuestionAnswer(BaseModel):
+    """提交选项编号和自由文本；不接受客户端提供的显示标签。"""
+
+    question_id: str = Field(min_length=1, max_length=64)
+    option_ids: list[str] = Field(default_factory=list, max_length=5)
+    custom_text: str = Field(default="", max_length=2000)
+
+
+class QuestionResolve(BaseModel):
+    """回答或跳过一组问题，默认等待不限时。"""
+
+    session_id: str
+    request_id: str
+    status: Literal["answered", "skipped"] = "answered"
+    answers: list[QuestionAnswer] = Field(default_factory=list, max_length=4)
+
+
+@router.post("/question")
+async def resolve_question(body: QuestionResolve) -> dict:
+    from app.backends.ms_agent.runtime import registry
+
+    resolved = registry.resolve_question(
+        body.session_id,
+        body.request_id,
+        body.status,
+        [a.model_dump() for a in body.answers],
     )
     return {"resolved": resolved}
 

@@ -198,3 +198,7 @@ webui/backend/.env.*
 
 # Prepared frontend manifests are included in release archives, not source Git.
 webui/RESOURCE-MANIFEST.json
+
+# 本地调研材料与测试产生的运行记录。
+/agent-ask-user-question-research.md
+/tests/skills/demo_traces/
