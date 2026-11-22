@@ -1519,7 +1519,15 @@ async def _adopt_unwatched_turn(prep: "asyncio.Future", session_id: str) -> None
 
 
 async def stream(req: ChatRequest) -> AsyncIterator[dict]:
-    project, session = await asyncio.to_thread(_resolve_or_create, req)
+    from fastapi import HTTPException
+    from ms_agent.config.secrets import SecretError
+    try:
+        project, session = await asyncio.to_thread(_resolve_or_create, req)
+    except (SecretError, HTTPException) as exc:
+        message = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        yield _delta(ChatChunk(type="error", meta={"message": message, "recoverable": True}))
+        yield _delta(ChatChunk(type="done"))
+        return
     session_id = session.id
 
     user_msg = req.message
@@ -1581,6 +1589,14 @@ async def stream(req: ChatRequest) -> AsyncIterator[dict]:
     )
     try:
         rt, enqueued, intro, sent = await asyncio.shield(prep)
+    except (SecretError, HTTPException) as exc:
+        if title_task is not None:
+            title_task.cancel()
+            await asyncio.gather(title_task, return_exceptions=True)
+        message = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        yield _delta(ChatChunk(type="error", meta={"message": message, "recoverable": True}))
+        yield _delta(ChatChunk(type="done", meta={"session_id": session_id, "project_id": project.id}))
+        return
     except asyncio.CancelledError:
         # This stream dies here; the enqueue behind the shield does not. Hand
         # whatever it starts to the background drain — with no one left to reach

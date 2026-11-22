@@ -14,8 +14,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ms_agent.utils.atomic_file import atomic_write_json
-
 from app.backends.ms_agent.common import home
 from app.backends.ms_agent.settings_store import settings_lock
 
@@ -36,7 +34,8 @@ def _load() -> dict:
 
 
 def _save_unlocked(data: dict) -> None:
-    atomic_write_json(_path(), data)
+    from ms_agent.config.secrets import write_managed_config
+    write_managed_config(_path(), data, home=home())
 
 
 def _save(data: dict) -> None:
@@ -95,14 +94,14 @@ def set_active_model(provider: str, model: str) -> None:
         previous = data.get("llm") or {}
         entry = (data.get("providers") or {}).get(provider) or {}
         selected = resolve_model_settings(data, provider, model)
+        # Only selections/metadata belong in llm; the provider owns its key.
+        selected.pop("api_key", None)
         if "protocol" not in entry and not (previous.get("provider") == provider and "protocol" in previous):
             selected.pop("protocol", None)
-        if not selected.get("api_key"):
-            selected.pop("api_key", None)
         data["llm"] = selected
         data["default_model"] = f"{provider}/{model}"
         prov = data.setdefault("providers", {}).setdefault(provider, {})
-        for key in ("api_key", "base_url"):
+        for key in ("base_url",):
             if key not in prov and data["llm"].get(key):
                 prov[key] = data["llm"][key]
         models = prov.setdefault("models", [])

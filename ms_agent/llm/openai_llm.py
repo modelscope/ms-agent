@@ -88,6 +88,8 @@ class OpenAI(LLM):
                 'OPENAI_BASE_URL') or get_service_config('openai').base_url
         api_key = api_key or getattr(config.llm, 'openai_api_key',
                                      None) or os.environ.get('OPENAI_API_KEY')
+        from ms_agent.config.secrets import resolve_secret
+        api_key = resolve_secret(api_key, config=config)
 
         # Bound the network call so a dead/misconfigured endpoint fails fast
         # instead of hanging the caller indefinitely (openai's default is a

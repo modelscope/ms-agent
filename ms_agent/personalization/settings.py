@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any, Dict
 
 from ms_agent.personalization.types import PersonalizationConfig
-from ms_agent.utils.atomic_file import atomic_write_json
 from ms_agent.utils.file_lock import locked
 from ms_agent.utils.json_store import read_json, json_transaction
 
@@ -50,7 +49,10 @@ class PersonalizationSettings:
         unknown = patch.keys() - {'global_instruction', 'memory_enabled', 'memory_backend'}
         if unknown:
             raise ValueError('Unknown personalization field')
-        with json_transaction(self._path) as data:
+        from functools import partial
+        from ms_agent.config.secrets import write_managed_config
+        with json_transaction(self._path,
+                              writer=partial(write_managed_config, home=self._path.parent)) as data:
             data.setdefault(SECTION_KEY, {}).update(patch)
         return self.load()
 
@@ -62,4 +64,5 @@ class PersonalizationSettings:
         return read_json(self._path)
 
     def _write_full(self, data: Dict[str, Any]) -> None:
-        atomic_write_json(self._path, data)
+        from ms_agent.config.secrets import write_managed_config
+        write_managed_config(self._path, data, home=self._path.parent)

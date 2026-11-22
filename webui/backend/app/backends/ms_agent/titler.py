@@ -70,7 +70,12 @@ def _llm_config() -> tuple[str, str, str, str]:
     except (OSError, ValueError):
         cfg = {}
     model = cfg.get("model") or os.environ.get("MS_AGENT_LLM_MODEL") or ""
-    api_key = cfg.get("api_key") or os.environ.get("OPENAI_API_KEY") or ""
+    from ms_agent.config.model_settings import resolve_model_settings
+    from ms_agent.config.secrets import resolve_secret
+    provider = cfg.get("provider")
+    if provider and model:
+        cfg = resolve_model_settings({"llm": cfg, "providers": providers}, provider, model)
+    api_key = resolve_secret(cfg.get("api_key"), home=home()) or os.environ.get("OPENAI_API_KEY") or ""
     base_url = cfg.get("base_url") or os.environ.get("OPENAI_BASE_URL") or ""
     entry = providers.get(str(cfg.get("provider") or ""))
     protocol = str(entry.get("protocol") or "") if isinstance(entry, dict) else ""

@@ -1614,6 +1614,7 @@ source = { editable = "../../" }
 dependencies = [
     { name = "aiohttp" },
     { name = "croniter" },
+    { name = "cryptography" },
     { name = "dotenv" },
     { name = "httpx" },
     { name = "json5" },
@@ -1653,6 +1654,9 @@ requires-dist = [
     { name = "beautifulsoup4", marker = "extra == 'webui'" },
     { name = "croniter", specifier = ">=1.3.0" },
     { name = "croniter", marker = "extra == 'all'", specifier = ">=1.3.0" },
+    { name = "cryptography", specifier = ">=43.0.0" },
+    { name = "cryptography", marker = "extra == 'all'", specifier = ">=43.0.0" },
+    { name = "cryptography", marker = "extra == 'webui'", specifier = ">=43.0.0" },
     { name = "docker", marker = "extra == 'all'" },
     { name = "docker", marker = "extra == 'code'" },
     { name = "docling", marker = "extra == 'all'", specifier = "<=2.38.1" },
@@ -1774,6 +1778,7 @@ source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
     { name = "beautifulsoup4" },
+    { name = "cryptography" },
     { name = "exa-py" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -1803,6 +1808,7 @@ dev = [
 requires-dist = [
     { name = "anthropic", specifier = ">=0.117.0" },
     { name = "beautifulsoup4" },
+    { name = "cryptography", specifier = ">=43.0.0" },
     { name = "exa-py", specifier = ">=2.16.0" },
     { name = "fastapi", specifier = ">=0.139.0" },
     { name = "fastembed", marker = "extra == 'local-embed'", specifier = ">=0.8" },

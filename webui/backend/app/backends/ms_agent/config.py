@@ -214,11 +214,12 @@ def _resolve_embedder(settings: dict, mem_cfg: dict) -> dict:
     entry = providers.get(pid) or {}
     model = mem_cfg.get("embed_model") or _KNOWN_EMBED_MODELS.get(pid)
     if entry.get("api_key") and entry.get("base_url") and model:
+        from ms_agent.config.secrets import resolve_secret
         return {
             "mode": "provider",
             "provider": pid,
             "model": model,
-            "api_key": entry["api_key"],
+            "api_key": resolve_secret(entry["api_key"], home=home()),
             "base_url": entry["base_url"],
             "fallback_reason": None,
         }
@@ -432,6 +433,8 @@ def _mem0_llm(settings: dict, mem_cfg: dict | None = None) -> dict | None:
     if not api_key:
         logger.warning("no api key for memory fact extraction (provider %r)", pid)
         return None
+    from ms_agent.config.secrets import resolve_secret
+    api_key = resolve_secret(api_key, home=home())
 
     if entry.get("protocol") == "openai":
         base_url = llm.get("base_url") or entry.get("base_url")
@@ -1047,6 +1050,7 @@ def _build_agent(project, session, *, event_sink, input_source, mcp_config=None,
             selected["protocol"] = llm["protocol"]
         OmegaConf.update(cfg, "llm", selected, merge=False)
     cfg = _apply_webui_defaults(cfg)
+    cfg._managed_credentials = True
     cfg = _apply_webui_memory(cfg, project)
     # Restricted-by-default permission; the project sidecar's explicit
     # restricted/full-access choice (composer selector) overrides.

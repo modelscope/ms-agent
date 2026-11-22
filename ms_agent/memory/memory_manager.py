@@ -23,6 +23,13 @@ class SharedMemoryManager:
         differs, so the caller always gets an instance that matches what it
         asked for.
         """
+        from copy import deepcopy
+        from ms_agent.config.secrets import resolve_config_secrets, secret_home
+        config = deepcopy(config)
+        selected = resolve_config_secrets(
+            {'memory': {mem_instance_type: config.memory[mem_instance_type]}},
+            home=secret_home(config))
+        config.memory[mem_instance_type] = OmegaConf.create(selected['memory'][mem_instance_type])
         node = getattr(config.memory, mem_instance_type, OmegaConf.create({}))
         # unified_memory namespaces the user under `namespace.user_id`;
         # legacy memories keep a top-level `user_id`. Honor both.

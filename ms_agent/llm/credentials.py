@@ -37,10 +37,12 @@ class CredentialResolver:
                         config: DictConfig) -> Optional[str]:
         value = _cfg_get(config, f'{spec.name}_api_key')
         if value:
-            return value
+            from ms_agent.config.secrets import resolve_secret
+            return resolve_secret(value, config=config)
         value = _cfg_get(config, 'api_key')
         if value:
-            return value
+            from ms_agent.config.secrets import resolve_secret
+            return resolve_secret(value, config=config)
         for env_var in spec.api_key_env:
             value = os.environ.get(env_var)
             if value:

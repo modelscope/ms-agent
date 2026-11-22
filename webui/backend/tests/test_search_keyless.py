@@ -129,7 +129,9 @@ def test_reset_leaves_other_providers_keys_alone(home):
     block = search_mod._block(json.loads(
         (home / "settings.json").read_text(encoding="utf-8")))
     assert "tavily_api_key" not in block
-    assert block["exa_api_key"] == "exa-XYZ"
+    from ms_agent.config.secrets import resolve_secret
+    assert block["exa_api_key"].startswith("enc:v1:")
+    assert resolve_secret(block["exa_api_key"], home=home) == "exa-XYZ"
 
 
 def test_reset_lands_on_not_configured_even_with_an_env_key(home, monkeypatch):

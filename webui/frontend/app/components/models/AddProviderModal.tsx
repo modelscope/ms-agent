@@ -38,10 +38,10 @@ export function AddProviderModal({ open, provider, onClose, onSaved }: Props) {
   // display name and credential are the user's to change. Base URL and protocol
   // are locked (like the id), so editing one can't repoint it at a different API.
   const isBuiltin = provider?.kind === 'builtin'
-  // A stored credential exists AND is not pending removal. Drives the tag and
-  // the placeholder — derived from `api_key_masked` being non-empty, which is
-  // the only signal the API gives; the mask's VALUE is never rendered.
-  const hasKey = isEdit && !!provider?.api_key_masked && !keyCleared
+  // Retain or explicitly clear both usable and unavailable stored keys.
+  // The API supplies a mask and status; the mask's value is never rendered.
+  const unavailable = provider?.api_key_status === 'unavailable' && !keyCleared
+  const hasKey = isEdit && (!!provider?.api_key_masked || unavailable) && !keyCleared
 
   useEffect(() => {
     if (!open) return
@@ -215,8 +215,10 @@ export function AddProviderModal({ open, provider, onClose, onSaved }: Props) {
               {/* Whether a credential is already stored. Only meaningful when
                   editing — a provider being created has no prior state. */}
               {isEdit && (
-                <KeyStatusTag set={hasKey}>
-                  {hasKey
+                <KeyStatusTag set={hasKey && !unavailable}>
+                  {unavailable
+                    ? t.modelsAdmin.apiKeyUnavailable
+                    : hasKey
                     ? t.modelsAdmin.apiKeyConfigured
                     : t.modelsAdmin.apiKeyMissing}
                 </KeyStatusTag>
@@ -227,7 +229,9 @@ export function AddProviderModal({ open, provider, onClose, onSaved }: Props) {
         >
           <Input.Password
             placeholder={
-              hasKey
+              unavailable
+                ? t.modelsAdmin.apiKeyUnavailableTip
+                : hasKey
                 ? t.modelsAdmin.leaveBlankApiKey
                 : t.modelsAdmin.apiKeyPlaceholder
             }

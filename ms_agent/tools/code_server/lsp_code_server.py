@@ -396,7 +396,8 @@ class PythonLSPServer(LSPServer):
         if removed:
             logger.debug('Removed PYTHONPATH=%r from pyright subprocess env',
                          removed)
-        return env
+        from ms_agent.config.secrets import subprocess_env
+        return subprocess_env(env)
 
     async def start(self) -> bool:
         """Start pyright"""

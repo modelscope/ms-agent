@@ -557,7 +557,9 @@ function ProviderDetail({
         <div className="flex items-center gap-1 text-[13px] leading-5 text-msa-text-3">
           {t.modelsAdmin.apiKey}：
           <KeyStatusTag set={hasKey}>
-            {hasKey
+            {provider.api_key_status === 'unavailable'
+              ? t.modelsAdmin.apiKeyUnavailable
+              : hasKey
               ? t.modelsAdmin.apiKeyConfigured
               : t.modelsAdmin.apiKeyMissing}
           </KeyStatusTag>

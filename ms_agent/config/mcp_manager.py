@@ -61,7 +61,11 @@ class MCPConfigManager:
 
     def _write_json(self, path: Path, data: Dict[str, Any]) -> None:
         with file_lock(path):
-            atomic_write_json(path, data)
+            if path == self.global_settings_path:
+                from .secrets import write_managed_config
+                write_managed_config(path, data, home=self.global_root)
+            else:
+                atomic_write_json(path, data)
 
     def _load_scope_raw(
             self, scope: Literal['global',

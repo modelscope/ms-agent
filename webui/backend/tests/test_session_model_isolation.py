@@ -11,6 +11,7 @@ from app.backends.ms_agent.mapping import encode_model_id
 from app.schemas.agent_settings import AgentSettings
 from app.schemas.session import SessionCreate
 from ms_agent.config.model_settings import ModelSettingsManager
+from ms_agent.config.secrets import resolve_secret
 
 
 @pytest.fixture
@@ -85,13 +86,14 @@ def test_model_snapshot_is_pinned_and_credentials_are_matched(state):
     session = common.sm_for(project).get(a.id)
     _, first = session_models.prepare(project, session)
     assert first.key == ('first', 'M1')
-    assert first.settings['llm']['api_key'] == 'first-test-key'
+    assert first.settings['llm']['api_key'].startswith('enc:v1:')
+    assert resolve_secret(first.settings['llm']['api_key']) == 'first-test-key'
     assert first.settings['llm']['protocol'] == 'openai'
     session_models.change(project, a.id, encode_model_id('second', 'M3'))
     _, second = session_models.prepare(project, session)
     assert first.key == ('first', 'M1')
-    assert first.settings['llm']['api_key'] == 'first-test-key'
-    assert second.settings['llm']['api_key'] == 'second-test-key'
+    assert resolve_secret(first.settings['llm']['api_key']) == 'first-test-key'
+    assert resolve_secret(second.settings['llm']['api_key']) == 'second-test-key'
     assert second.settings['llm']['protocol'] == 'anthropic'
 
 
@@ -109,7 +111,8 @@ def test_build_agent_uses_pinned_model_for_transport_and_generation(state):
                         mcp_config={}, model_snapshot=snapshot)
     cfg = agent.config
     assert cfg.llm.service == 'first' and cfg.llm.model == 'M1'
-    assert cfg.llm.first_api_key == 'first-test-key'
+    assert cfg.llm.first_api_key.startswith('enc:v1:')
+    assert resolve_secret(cfg.llm.first_api_key, config=cfg) == 'first-test-key'
     assert cfg.llm.first_base_url == 'https://first.invalid/v1'
     assert cfg.llm.protocol == 'openai'
     assert cfg.llm.supports_vision is True
@@ -128,7 +131,7 @@ def test_default_change_does_not_invalidate_bound_session(state):
     assert _settings_fingerprint(project, after) == fingerprint
     ModelSettingsManager(path).add_provider('first', api_key='new-test-key')
     _, updated = session_models.prepare(project, session)
-    assert updated.settings['llm']['api_key'] == 'new-test-key'
+    assert resolve_secret(updated.settings['llm']['api_key']) == 'new-test-key'
     assert _settings_fingerprint(project, updated) != fingerprint
 
 
@@ -185,7 +188,7 @@ def test_old_llm_credentials_survive_default_switch_without_reviving_cleared_key
     model_link._save(data)
     session = common.sm_for(project).get(_new().id)
     model_link.set_active_model('second', 'M3')
-    assert session_models.prepare(project, session)[1].settings['llm']['api_key'] == 'legacy-test-key'
+    assert resolve_secret(session_models.prepare(project, session)[1].settings['llm']['api_key']) == 'legacy-test-key'
     ModelSettingsManager(path).add_provider('first', api_key='')
     with pytest.raises(BadRequest):
         session_models.prepare(project, session)

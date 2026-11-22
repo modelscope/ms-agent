@@ -154,6 +154,8 @@ ms-agent ui --host 0.0.0.0 --port 8000
 
 项目配置、会话和托管技能默认保存在 `~/.ms_agent`；可以通过 `MS_AGENT_HOME` 指定其他目录。项目工作目录中的文件保存在原位置。源码安装的后端环境位于 `webui/backend/.venv`，前端依赖和构建结果位于 `webui/frontend/`，与项目数据分开。
 
+保存的模型和搜索 API Key 会加密。主密钥默认位于 `${MS_AGENT_HOME}.secrets/master.key`，通常是 `~/.ms_agent.secrets/master.key`，与应用数据目录分开。升级或搬迁自己的服务时应保留主密钥；分享模板时应排除它。旧配置迁移、外部密钥文件和丢失后的恢复方法见[密钥存储说明](../docs/secret_storage_zh.md)。
+
 按本指南从可编辑源码运行时，WebUI 读取已保存的 SDK 设置，并依次加载仓库根目录、`webui/`、`webui/backend/` 下的 `.env`，后者优先，已设置的进程环境变量优先级最高。可参考 [配置示例](backend/.env.example)。
 
 本地向量记忆需要额外安装 `fastembed`，首次使用时会下载嵌入模型。在 `webui/backend/` 执行 `uv sync --locked --extra local-embed` 将其安装到后端环境。其他模型和搜索服务按各自配置使用，不必为普通对话安装本地嵌入模型。
@@ -197,6 +199,7 @@ Windows 使用相同的安装和启动命令。源码运行时也可使用 Power
 ```bash
 docker run --rm -p 127.0.0.1:9000:8000 \
   -e MS_AGENT_HOME=/data -v ms-agent-data:/data \
+  -v ms-agent-secrets:/data.secrets \
   modelscope-registry.us-west-1.cr.aliyuncs.com/modelscope-repo/ms-agent:TAG
 ```
 

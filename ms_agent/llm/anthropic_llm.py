@@ -136,6 +136,8 @@ class Anthropic(LLM):
         base_url = base_url or config.llm.get(
             'anthropic_base_url') or get_service_config('anthropic').base_url
         api_key = api_key or config.llm.get('anthropic_api_key')
+        from ms_agent.config.secrets import resolve_secret
+        api_key = resolve_secret(api_key, config=config)
 
         if not api_key:
             raise ValueError('Anthropic API key is required.')

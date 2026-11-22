@@ -76,6 +76,13 @@ def test_partial_and_repeated_import_respects_all_four_switches(tmp_path, monkey
     before = (tmp_path / "settings.json").read_bytes()
     replace_settings(tmp_path, tools=tools)
     ensure_tool_settings(tmp_path)
+    # Reimporting plaintext produces fresh randomized ciphertext; compare the
+    # effective config, then check subsequent reads preserve the same bytes.
+    from ms_agent.config.secrets import resolve_config_secrets
+    assert resolve_config_secrets(json.loads((tmp_path / "settings.json").read_bytes()), home=tmp_path) == (
+        resolve_config_secrets(json.loads(before), home=tmp_path))
+    before = (tmp_path / "settings.json").read_bytes()
+    ensure_tool_settings(tmp_path)
     assert (tmp_path / "settings.json").read_bytes() == before
     cfg = build(project, session).config
     assert all(cfg.tools[name].enabled is False for name in DEFAULT_TOOLS)

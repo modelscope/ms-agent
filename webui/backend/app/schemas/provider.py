@@ -14,6 +14,7 @@ class Provider(BaseModel):
     name: str
     base_url: str = ""
     api_key_masked: str = ""
+    api_key_status: Literal["unset", "configured", "unavailable"] = "unset"
     protocol: Protocol = "openai"
     enabled: bool = True
     default_generation_params: dict = Field(default_factory=dict)

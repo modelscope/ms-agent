@@ -12,7 +12,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ms_agent.utils.atomic_file import atomic_write_json
 from ms_agent.utils.file_lock import locked
 from ms_agent.utils.json_store import read_json
 
@@ -45,8 +44,9 @@ def resolve_model_settings(data: dict, provider: str, model: str) -> dict:
 class ModelSettingsManager:
     """CRUD for custom providers/models + default model in settings.json."""
 
-    def __init__(self, global_dir: str | Path = '~/.ms_agent') -> None:
-        self._dir = Path(global_dir).expanduser()
+    def __init__(self, global_dir: str | Path | None = None) -> None:
+        from .secrets import secret_home
+        self._dir = secret_home(home=global_dir)
         self._path = self._dir / 'settings.json'
 
     # -- raw settings.json io --
@@ -55,7 +55,8 @@ class ModelSettingsManager:
         return read_json(self._path)
 
     def _save_raw(self, data: Dict[str, Any]) -> None:
-        atomic_write_json(self._path, data)
+        from .secrets import write_managed_config
+        write_managed_config(self._path, data, home=self._dir)
 
     # -- providers --
 
@@ -101,6 +102,9 @@ class ModelSettingsManager:
             'protocol': protocol,
         })
         if api_key is not None:
+            from .secrets import SecretInputError
+            if api_key.startswith('enc:'):
+                raise SecretInputError('Enter a plaintext API key, not an encrypted credential.')
             entry['api_key'] = api_key
         if base_url is not None:
             entry['base_url'] = base_url

@@ -226,8 +226,9 @@ def get_content_fetcher(fetcher_type: str = 'jina_reader',
         return JinaContentFetcher(config)
     if fetcher_type == 'tavily_extract':
         from ms_agent.tools.search.tavily.fetcher import TavilyExtractFetcher
+        from ms_agent.config.secrets import resolve_secret
         return TavilyExtractFetcher(
-            api_key=kwargs.get('tavily_api_key'),
+            api_key=resolve_secret(kwargs.get('tavily_api_key'), config=kwargs.get('secret_config')),
             extract_depth=str(kwargs.get('tavily_extract_depth', 'advanced')),
             format=str(kwargs.get('tavily_extract_format', 'markdown')),
             timeout=float(kwargs.get('timeout', 45.0)),
@@ -748,23 +749,26 @@ class WebSearchTool(ToolBase):
 
     async def connect(self) -> None:
         """Initialize search engines and content fetcher."""
+        from ms_agent.config.secrets import SecretError, resolve_secret
         for engine_type in self._engine_types:
             try:
                 engine_cls = get_search_engine_class(engine_type)
                 self._engine_classes[engine_type] = engine_cls
 
+                api_key = resolve_secret(self._api_keys.get(engine_type), config=self.config)
+
                 # Create engine instance
                 if engine_type == 'exa':
                     self._engines[engine_type] = engine_cls(
-                        api_key=self._api_keys.get('exa'))
+                        api_key=api_key)
                 elif engine_type == 'serpapi':
                     self._engines[engine_type] = engine_cls(
-                        api_key=self._api_keys.get('serpapi'),
+                        api_key=api_key,
                         provider=self._serpapi_provider,
                     )
                 elif engine_type == 'tavily':
                     self._engines[engine_type] = engine_cls(
-                        api_key=self._api_keys.get('tavily'),
+                        api_key=api_key,
                         request_timeout=self._tavily_request_timeout,
                     )
                 else:  # arxiv
@@ -772,6 +776,8 @@ class WebSearchTool(ToolBase):
 
                 logger.info(f'Initialized search engine: {engine_type}')
             except Exception as e:
+                if isinstance(e, SecretError):
+                    raise
                 logger.warning(
                     f'Failed to initialize {engine_type} engine: {e}')
 
@@ -780,6 +786,7 @@ class WebSearchTool(ToolBase):
 
         wcfg = getattr(getattr(self.config, 'tools', None), 'web_search', None)
         _fk: Dict[str, Any] = {
+            'secret_config': self.config,
             'timeout': self._fetch_timeout,
             'retries': self._fetch_retries,
             'tavily_api_key': self._api_keys.get('tavily'),
@@ -819,7 +826,7 @@ class WebSearchTool(ToolBase):
             optimizer_config = ContentOptimizerConfig(
                 summarizer_model=self._summarizer_model,
                 summarizer_base_url=self._summarizer_base_url,
-                summarizer_api_key=(self._summarizer_api_key
+                summarizer_api_key=(resolve_secret(self._summarizer_api_key, config=self.config)
                                     or os.getenv('DASHSCOPE_API_KEY')
                                     or os.getenv('OPENAI_API_KEY')),
                 max_content_chars=self._max_content_chars,

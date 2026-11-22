@@ -144,8 +144,7 @@ def update_provider(pid: str, body: ProviderUpdate) -> Provider:
                 # the registry default when no override has been saved yet.
                 protocol=(body.protocol if body.protocol is not None else
                           get_provider(pid).protocol),
-                api_key=body.api_key
-                if body.api_key is not None else cur.get("api_key"),
+                api_key=body.api_key,
                 base_url=body.base_url
                 if body.base_url is not None else cur.get("base_url"),
                 models=cur.get("models", []),
@@ -212,19 +211,20 @@ def get_provider_secret(pid: str) -> tuple[str, str, str]:
     default base_url + protocol, with any credential override's api_key.
     Raises NotFound if the provider does not exist.
     """
+    from ms_agent.config.secrets import resolve_secret
     with settings_lock():
         custom = _msm().list_custom_providers()
         if pid in _builtin_ids():
             spec = next(s for s in _specs() if s.name == pid)
             override = custom.get(pid, {}) or {}
             base_url = override.get("base_url") or spec.default_base_url or ""
-            protocol = _protocol(spec.transport)
-            return base_url, protocol, override.get("api_key", "") or ""
+            protocol = override.get("protocol") or _protocol(spec.transport)
+            return base_url, protocol, resolve_secret(override.get("api_key", "") or "", home=home())
         if pid in custom:
             entry = custom[pid] or {}
             protocol = entry.get("protocol")
             protocol = protocol if protocol in ("openai",
                                                 "anthropic") else "openai"
-            return entry.get("base_url", "") or "", protocol, entry.get(
-                "api_key", "") or ""
+            return entry.get("base_url", "") or "", protocol, resolve_secret(
+                entry.get("api_key", "") or "", home=home())
     raise NotFound("Provider not found.")

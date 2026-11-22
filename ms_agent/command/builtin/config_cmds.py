@@ -51,7 +51,8 @@ def _persist_model_to_config(config, new_model: str, service=None):
         OmegaConf.update(patch, 'llm.model', new_model, merge=True)
         if service:
             OmegaConf.update(patch, 'llm.service', service, merge=True)
-        OmegaConf.save(patch, patch_path)
+        from ms_agent.config.secrets import secret_home, write_managed_config
+        write_managed_config(patch_path, patch, home=secret_home(config))
         return patch_path
     except OSError:
         return None
