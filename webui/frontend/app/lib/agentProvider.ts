@@ -67,7 +67,7 @@ export async function assertChatStream(response: Response): Promise<Response> {
  * Must stay in sync with backend/app/schemas/chat.py::ChatChunk.
  */
 export interface AgentChunk {
-  type: "text" | "thought" | "task" | "step" | "session" | "turn" | "error" | "done";
+  type: "text" | "thought" | "task" | "step" | "session" | "turn" | "notice" | "error" | "done" | "input";
   content: string;
   meta?: Record<string, unknown>;
 }
@@ -104,6 +104,8 @@ export type MessageSegment =
   | { type: "skill"; id: string; name?: string };
 
 export interface AgentInput {
+  input_id?: string;
+  expected_turn_id?: string | null;
   session_id?: string | null;
   model_id?: string;
   reasoning_effort?: ReasoningEffort;
@@ -195,6 +197,7 @@ export type AgentPart =
   // A turn/API failure surfaced as its own alert card (not body text), so it
   // reads as a system-level failure. `recoverable` mirrors whether the error
   // re-entered the model context (turn/API errors: false).
+  | { kind: "notice"; text: string; code?: string }
   | { kind: "error"; text: string; recoverable?: boolean }
   // Marks the exact point where the turn was interrupted (Stop button).
   // Rendered as a muted badge; the partial content before it is real
@@ -203,6 +206,8 @@ export type AgentPart =
 
 /** Rich assistant message; user messages reuse the same shape with content only. */
 export interface AgentMessage {
+  messageId?: string;
+  turnId?: string;
   logSeq?: number;
   forkAfterSeq?: number;
   forkOrigin?: ForkOrigin;
@@ -452,6 +457,9 @@ export function applyChunk(base: AgentMessage, c: AgentChunk): AgentMessage {
       if (meta.kind !== IMAGE_DELIVERY && meta.kind !== CONTEXT_COMPACTION)
         finalizeOpenThoughts(parts);
       appendStepPart(parts, meta);
+      return { ...base, parts };
+    case "notice":
+      parts.push({ kind: "notice", text: c.content || "", code: String(meta.code || "") });
       return { ...base, parts };
     case "error": {
       // Its own alert card (ErrorCard) rather than body text — a turn/API
@@ -843,12 +851,13 @@ function upsertTask(
  * no elapsed time, so it carries no duration).
  */
 export interface HistoryPart {
-  kind: "text" | "thought" | "tasks" | "step" | "error" | "interrupted";
+  kind: "text" | "thought" | "tasks" | "step" | "notice" | "error" | "interrupted";
   text?: string;
   // kind="thought": persisted elapsed seconds, so replay shows "thought Ns".
   duration?: number;
   // kind="error": whether the error re-entered model context (turn/API: false).
   recoverable?: boolean;
+  code?: string;
   // kind="tasks": the plan items (labels + status), no nested steps.
   tasks?: {
     id: string;
@@ -861,6 +870,8 @@ export interface HistoryPart {
 }
 
 export interface HistoryMessage {
+  message_id?: string | null;
+  turn_id?: string | null;
   log_seq?: number | null;
   fork_after_seq?: number | null;
   fork_origin?: ForkOrigin | null;
@@ -898,6 +909,8 @@ export function historyToAgentMessages(
   if (!rows) return [];
   return rows.map((row) => {
     const msg: AgentMessage = { role: row.role, content: row.content };
+    if (row.message_id) msg.messageId = row.message_id;
+    if (row.turn_id) msg.turnId = row.turn_id;
     if (row.log_seq != null) msg.logSeq = row.log_seq;
     if (row.fork_after_seq != null) msg.forkAfterSeq = row.fork_after_seq;
     if (row.fork_origin) msg.forkOrigin = row.fork_origin;
@@ -951,6 +964,9 @@ export function historyToAgentMessages(
           // Faithful-interrupt badge: marks the exact stop point in replay,
           // matching what the live view showed when the turn was stopped.
           return { kind: "interrupted" };
+        }
+        if (part.kind === "notice") {
+          return { kind: "notice", text: part.text ?? "", code: part.code };
         }
         if (part.kind === "error") {
           // Same alert card as the live path (never body text).

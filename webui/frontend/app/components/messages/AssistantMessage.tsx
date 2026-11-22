@@ -1,3 +1,4 @@
+import { useT } from '~/lib/i18n'
 import { Markdown } from '~/components/common/Markdown'
 import type { AgentMessage, AgentPart } from '~/lib/agentProvider'
 import type { OnOpenStep, OnOpenFile } from './types'
@@ -129,6 +130,7 @@ export function AssistantMessage({
   onOpenStep?: OnOpenStep
   onOpenFile?: OnOpenFile
 }) {
+  const { t } = useT()
   const parts = message.parts
 
   if (!parts || parts.length === 0) {
@@ -259,10 +261,13 @@ export function AssistantMessage({
   // Errors never fold into the "processed" accordion: a turn/API failure must
   // be visible without expanding anything (a message that is ONLY an error
   // would otherwise be an empty-looking collapsed card).
+  const noticeParts = processParts.filter(
+    (p): p is Extract<AgentPart, { kind: 'notice' }> => p.kind === 'notice'
+  )
   const errorParts = processParts.filter(
     (p): p is Extract<AgentPart, { kind: 'error' }> => p.kind === 'error'
   )
-  const foldableParts = processParts.filter((p) => p.kind !== 'error')
+  const foldableParts = processParts.filter((p) => p.kind !== 'error' && p.kind !== 'notice')
 
   return (
     <div className="space-y-3">
@@ -279,6 +284,12 @@ export function AssistantMessage({
           {renderParts(foldableParts, loopDone)}
         </TurnProcess>
       )}
+      {noticeParts.map((p, i) => (
+        <div key={`notice-${i}`} role="status" className="rounded-xl bg-msa-fill-2 p-3 text-sm text-msa-text-2">
+          {p.code === 'mcp_unavailable' && <div>{t.resources.mcpUnavailable}</div>}
+          <div className="whitespace-pre-line text-xs">{p.text}</div>
+        </div>
+      ))}
       {/* Alert cards sit outside the fold, before the summary. */}
       {errorParts.map((p, i) => (
         <ErrorCard key={`err-${i}`} text={p.text} recoverable={p.recoverable} />

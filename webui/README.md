@@ -8,6 +8,8 @@ follow a task and continue the conversation. [中文说明](README_ZH.md)
   and browse or edit project files.
 - **Follow the agent's progress:** stream replies, reasoning, tool calls and
   generated files as the task runs.
+- **Add input while a task runs:** queue follow-ups or steer the current task,
+  with editable pending messages that survive a page refresh.
 - **Choose models and tools:** configure model providers, connect MCP tools and
   enable the skills each project needs.
 - **Continue with context:** keep session history and manage project memory for
@@ -128,6 +130,28 @@ ms-agent ui
 ```
 
 First change to the directory where you saved them. Model configuration and sessions persist, so you do not need to enter your API key again. If you installed Node.js through nvm, check `node --version` in the new terminal. If the command is missing, run `source "$HOME/.nvm/nvm.sh"` first.
+
+## Add input during a task
+
+Keep typing, attaching files or selecting skills while the agent works. New
+messages **queue by default** and run in order after the current task finishes.
+In **Settings → Personalization → Conversation behavior**, select **Steer** to
+add new messages to the current task after its current model response or started
+tool operations finish. Changing this setting only affects new submissions.
+
+Pending messages appear above the input box, where you can edit or withdraw
+them. Once processing starts, they appear as ordinary messages in the conversation.
+Refreshing the page or switching sessions keeps the task running.
+
+While a task runs, the input's action button shows **Stop** when the draft is
+empty and switches to **Send** when you type, attach files or select a skill.
+Clearing or successfully sending the draft brings back **Stop** if the task is
+still running.
+
+**Stop** cancels the current task and holds pending messages. **Continue sending**
+releases those messages as new tasks; it does not resume cancelled operations.
+You can also send a new task while earlier messages remain on hold. After a server
+restart, pending messages stay on hold until you resume them.
 
 ## Branch a conversation
 
@@ -416,10 +440,41 @@ Local SDK installs keep their existing PATH unless this variable is set.
 Packages installed into a running container's system Python are lost when that
 container is replaced. Put recurring dependencies in a derived image.
 
+### MCP startup and recovery
+
+MCP tools are optional: if some or all servers fail to start, ordinary chat and
+built-in tools remain available. A notice identifies the missing capabilities.
+Startup includes connecting, initializing and fetching the first tool list.
+The default is 60 seconds per server after it obtains a concurrency slot (up to
+8 servers start together), followed by a separate cleanup grace period. Set
+`MCP_STARTUP_TIMEOUT`, or a positive `startup_timeout` in a server's JSON entry,
+to adjust the startup budget. Ordinary tool calls keep their own timeout.
+
+The initial stdio check only confirms that its command exists and displays
+**Connection not verified**. **Test connection** creates an independent connection
+and reads its tools; it does not repair an existing conversation. In the card's
+menu, **Reconnect sessions next turn** schedules affected conversations to
+rebuild before their next idle turn. Current replies continue, and the session
+ID and conversation history are retained. Disabled servers stay disabled.
+Business tool calls are never replayed automatically.
+
+Automatic remote checks allow up to 6 seconds; a manual connection test allows
+up to 45 seconds. A server's smaller `startup_timeout` still applies. Concurrent
+checks share work only when their effective budgets match, and one malformed
+server configuration does not prevent other health results from being returned.
+
+Startup notices expose controlled error categories and HTTP status codes, not
+raw server output, command arguments or connection addresses. Unknown details
+are withheld because they may contain credentials. The model receives a fixed
+capability notice, without external error details.
+Transport library logs also omit raw details within MCP connection tasks;
+other requests using those libraries keep their normal logging.
+
 ### Python package sources
 
 The image uses the Tsinghua PyPI mirror for runtime `pip`, `uv` and `uvx`
-downloads.
+downloads. Runtime npm/npx uses `https://registry.npmmirror.com/`, configured
+in npm's global config (`npm config get globalconfig`).
 
 To use another mirror or a company package index, create two files on the host.
 For example, to use the official PyPI index, save this as `pip.conf`:
@@ -444,9 +499,19 @@ Add these options before the image name in the `docker run` command above:
 --mount type=bind,src="$PWD/uv.toml",dst=/etc/uv/uv.toml,readonly \
 ```
 
-Use file mounts for container-wide defaults: the agent's execution tools do not
-inherit every environment variable passed with `-e`. Package indexes cover
-PyPI packages; Git repositories and model downloads use their own addresses.
+File mounts provide container-wide defaults. MCP subprocesses and the agent's
+shell also inherit explicitly allowed package settings: `PIP_INDEX_URL`,
+`PIP_CONFIG_FILE`, `PIP_CACHE_DIR`, `UV_INDEX_URL`, `UV_DEFAULT_INDEX`,
+`UV_CONFIG_FILE`, `UV_CACHE_DIR`, and npm registry/cache/userconfig/globalconfig
+variables in upper or lower case. Explicit MCP `env` and tool `shell_env` take
+precedence. Other application credentials are not inherited automatically.
+
+Validate actual wheel/tarball downloads in the deployment network, then test
+MCP initialization and tool listing with a fresh cache. A reachable index alone
+is insufficient. There is no automatic switch to a second registry. Cache
+directories must be writable by the runtime user; persistence depends on the
+container's volume mounts. Git repositories and model downloads use their own
+addresses.
 
 ## Troubleshooting
 

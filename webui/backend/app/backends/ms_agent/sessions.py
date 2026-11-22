@@ -128,6 +128,7 @@ def _history_step(
     project=None,
     *,
     has_auth_card: bool = False,
+    attachments: dict[str, list] | None = None,
 ) -> SessionStep | None:
     """Map one persisted assistant tool_call to a step card, or None to drop it.
 
@@ -159,6 +160,8 @@ def _history_step(
     call_id = str(tc.get("id") or "")
     if call_id and call_id in results:
         meta["result"] = results[call_id]
+    if attachments and attachments.get(call_id):
+        meta["attachments"] = attachments[call_id]
     if call_id and call_id in durations:
         meta["duration_ms"] = durations[call_id]
     if call_id and call_id in errored:
@@ -359,11 +362,26 @@ def list_messages(sid: str) -> list[SessionMessage]:
     try:
         log = sm.get_session_log(session)
         rows = log.get_all_messages()
+        for record in log.records():
+            if record.get('_type') != 'input_event':
+                continue
+            item = record.get('input') or {}
+            if item.get('command_delivered'):
+                content = item['request']['message']['content']
+                extra.append({'role': 'user', 'seq': record['seq'],
+                              'content': content, 'message_id': item['input_id'],
+                              'turn_id': item.get('turn_id')})
+            reply = record.get('command_reply')
+            if reply:
+                extra.append({**reply, 'role': 'assistant', 'seq': record['seq'],
+                              'segment_id': reply['message_id']})
         # Display-only records (excluded from the LLM context) are read
         # separately and merged back into the timeline by seq: error records
         # (API/turn errors) and permission records (restricted-mode auth cards).
         if hasattr(log, "get_errors"):
             extra += log.get_errors()
+        if hasattr(log, "get_notices"):
+            extra += log.get_notices()
         if hasattr(log, "get_permissions"):
             extra += log.get_permissions()
         if hasattr(log, "get_skill_invocations"):
@@ -566,6 +584,10 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
         str(r.get("tool_call_id") or ""): str(r.get("content") or "")
         for r in rows if r.get("role") == "tool"
     }
+    attachments = {
+        str(r.get("tool_call_id") or ""): r["attachments"]
+        for r in rows if r.get("role") == "tool" and r.get("attachments")
+    }
     # Persisted tool elapsed time by call id (display only), for the step card.
     durations: dict[str, int] = {
         str(r.get("tool_call_id") or ""): int(r.get("duration_ms"))
@@ -608,6 +630,10 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
     # ``plan_file``), set when the turn rewrote the todo list.
     turn_plan_file: str | None = None
     turn_log_seq: int | None = None
+    segment_id: str | None = None
+    logical_turn: str | None = None
+    skipped = {str(r.get('tool_call_id')) for r in rows
+               if r.get('execution_status') == 'skipped'}
 
     def _perm_key(tool: str, args) -> str:
         # Normalize dict or JSON-string arguments to a canonical form so a
@@ -642,7 +668,7 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
 
     def flush() -> None:
         nonlocal parts, pending_perms, turn_changed, turn_changed_seen
-        nonlocal turn_duration_ms, turn_plan_file, turn_log_seq
+        nonlocal turn_duration_ms, turn_plan_file, turn_log_seq, segment_id
         # Any authorization that never matched a tool step (unusual) still
         # renders, appended in record order so nothing is dropped.
         for rec in pending_perms:
@@ -656,6 +682,8 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
                                      "error") for p in parts):
             messages.append(
                 SessionMessage(role="assistant",
+                               message_id=segment_id,
+                               turn_id=logical_turn,
                                log_seq=turn_log_seq,
                                content=content,
                                parts=parts,
@@ -668,6 +696,7 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
         turn_duration_ms = None
         turn_plan_file = None
         turn_log_seq = None
+        segment_id = None
 
     def append_text(text: str) -> None:
         # Merge consecutive answer rows into the current text block; start a new
@@ -727,6 +756,10 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
                     text=str(row.get("message") or ""),
                     recoverable=bool(row.get("recoverable", False)),
                 ))
+            continue
+        if row.get("_type") == "notice":
+            parts.append(SessionPart(kind="notice", text=str(row.get("text") or ""),
+                                     code=str(row.get("code") or "")))
             continue
         if row.get("_type") == "permission":
             # Buffer until its matching tool_call step is emitted (see
@@ -805,11 +838,15 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
                 messages.append(
                     SessionMessage(
                         role="user",
+                        message_id=row.get('message_id') or f"user-{row.get('seq')}",
+                        turn_id=row.get('turn_id'),
                         content=text,
                         files=files,
                         segments=segments,
                     ))
         elif role == "assistant":
+            segment_id = segment_id or row.get('segment_id') or f"assistant-{row.get('seq')}"
+            logical_turn = row.get('turn_id')
             turn_log_seq = row.get("seq")
             # An interrupted round's unsigned partial reasoning is persisted
             # under a display-only key (replaying it would 400 on Anthropic);
@@ -851,7 +888,8 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
                     # Accumulate this loop's written/edited files (plus
                     # "plan.md" for todo writes) for the turn's changed-files
                     # summary.
-                    wpath = _changed_entry(tc, ws, plan_paths)
+                    was_skipped = str(tc.get('id') or '') in skipped
+                    wpath = None if was_skipped else _changed_entry(tc, ws, plan_paths)
                     if wpath and wpath not in turn_changed_seen:
                         turn_changed_seen.add(wpath)
                         turn_changed.append(wpath)
@@ -860,7 +898,7 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
                     # never refreshed in place) — mirrors the live stream, where
                     # every plan update adds a new frozen block. The composer's
                     # pinned panel is the live/aggregated view.
-                    entries = _plan_entries(tc, results)
+                    entries = None if was_skipped else _plan_entries(tc, results)
                     if entries is not None:
                         parts.append(_plan_part(entries))
                         continue
@@ -889,8 +927,12 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
                                          results,
                                          durations,
                                          project,
+                                         attachments=attachments,
                                          has_auth_card=perm is not None)
                     if step is not None:
+                        if was_skipped:
+                            step.meta['status'] = 'skipped'
+                            step.meta.pop('error', None)
                         step.meta["group"] = group_seq
                         parts.append(SessionPart(kind="step", step=step))
             else:
@@ -1121,10 +1163,13 @@ def changed_files_in_rows(
         plan_paths = plan_paths_in_rows(rows, workspace)
     ordered: list[str] = []
     seen: set[str] = set()
+    skipped = {r.get('tool_call_id') for r in rows if r.get('execution_status') == 'skipped'}
     for row in rows:
         if row.get("role") != "assistant":
             continue
         for tc in row.get("tool_calls") or []:
+            if tc.get('id') in skipped:
+                continue
             path = _changed_entry(tc, workspace, plan_paths)
             if path and path not in seen:
                 seen.add(path)
@@ -1179,10 +1224,13 @@ def list_artifacts(sid: str) -> list[Artifact]:
 
     ordered: list[str] = []
     seen: set[str] = set()
+    skipped = {r.get('tool_call_id') for r in rows if r.get('execution_status') == 'skipped'}
     for row in rows:
         if row.get("role") != "assistant":
             continue
         for tc in row.get("tool_calls") or []:
+            if tc.get('id') in skipped:
+                continue
             rel = _changed_entry(tc, ws, plan_paths)
             if rel and rel != "plan.md" and rel not in seen:
                 seen.add(rel)

@@ -215,6 +215,9 @@ class TuiApp:
             console=self.console,
             renderer=self.renderer)
         self.input._sigint = self
+        # Let the user type while the agent is busy: messages queue and are
+        # delivered the next time the agent goes idle (see tui/input.py).
+        self.input.enable_typeahead()
         from ms_agent.tui.select import bind_sigint_rearm
         bind_sigint_rearm(self._arm_turn_sigint)
         self.agent._input_source = self.input
@@ -230,7 +233,9 @@ class TuiApp:
                 # Lets the menu hold the renderer's draws while it owns the
                 # terminal (a sibling tool finishing mid-menu must not print
                 # into it) — see RichEventSink.hold_output.
-                renderer=self.renderer))
+                renderer=self.renderer,
+                # Pauses the type-ahead reader while the menu owns the terminal.
+                input=self.input))
 
         # ('new', None) | ('resume', '<#|id>') | None, set by session commands.
         self._pending_switch: Optional[Tuple[str, Optional[str]]] = None
@@ -519,6 +524,66 @@ class TuiApp:
                 description='Start a new session',
                 category='session',
                 aliases=('reset', )), _new)
+
+        interject_usage = (
+            'usage: /interject <steer|queue>\n'
+            '  steer  (default) typed messages join the running turn at the\n'
+            '         next tool boundary, without interrupting it\n'
+            '  queue  typed messages wait until the turn ends, then send\n'
+            'Slash/bash commands always queue, in either mode.')
+
+        async def _interject(ctx):
+            arg = (ctx.args or '').strip().lower()
+            if not arg:
+                return CommandResult(
+                    type=CommandResultType.MESSAGE,
+                    content=f'interject mode: {self.input.interject_mode}\n'
+                    f'{interject_usage}')
+            if arg.startswith('s'):
+                mode = self.input.set_interject_mode('steer')
+            elif arg.startswith('q'):
+                mode = self.input.set_interject_mode('queue')
+            else:
+                return CommandResult(
+                    type=CommandResultType.MESSAGE,
+                    content=f'unknown mode: {arg}\n{interject_usage}')
+            return CommandResult(
+                type=CommandResultType.MESSAGE,
+                content=f'interject mode → {mode}')
+
+        self.router.register(
+            CommandDef(
+                name='interject',
+                description=('How typed messages join a running turn '
+                             '(steer, queue)'),
+                category='config'), _interject)
+
+        async def _stop(ctx):
+            # While busy the line is intercepted in
+            # PromptToolkitInput._enqueue_busy_line (it interrupts the turn
+            # there, like ctrl+c) and never reaches this handler — so arriving
+            # here means the prompt was idle and there is nothing to stop.
+            if getattr(self, '_streaming', False):
+                self._on_turn_sigint()
+                return CommandResult(
+                    type=CommandResultType.MESSAGE,
+                    content='(stopping this turn — generated output is kept)')
+            return CommandResult(
+                type=CommandResultType.MESSAGE,
+                content=('/stop interrupts a running turn '
+                         '— nothing is running now.'))
+
+        # priority < 10 makes this a priority command (the router's "instant
+        # /stop" tier); ui_scope defaults to cli+tui+webui so it also shows in
+        # the slash-completion menu.
+        self.router.register(
+            CommandDef(
+                name='stop',
+                description=('Interrupt the running turn, keeping generated '
+                             'output (same as ctrl+c while busy)'),
+                category='session',
+                priority=0,
+                aliases=('cancel', )), _stop)
 
     # -- session lifecycle --
 
@@ -831,9 +896,17 @@ class TuiApp:
                 return 'interrupted'
             raise
 
-    def _note_interrupted(self) -> None:
+    async def _note_interrupted(self) -> None:
+        # Stop the type-ahead reader first so its pinned prompt / patch_stdout
+        # is torn down before we print into the terminal below.
+        await self.input._stop_capture()
         self.renderer.finalize()
-        self.console.print('[dim](interrupted — Ctrl-C or /quit to exit)[/]')
+        # Interrupting a turn keeps the session and any queued/steered messages
+        # — they are delivered next, not discarded. Say so, and how to exit.
+        n = len(getattr(self.input, '_queued', []) or [])
+        kept = f' — {n} queued message(s) kept' if n else ''
+        self.console.print(
+            f'[dim](turn stopped{kept} — Ctrl-C again or /quit to exit)[/]')
         try:
             self._sm.get_session_log(self.session).append({
                 'role': 'assistant',
@@ -859,6 +932,7 @@ class TuiApp:
         try:
             await self._serve_loop(resume)
         finally:
+            await self.input._stop_capture()
             self._disarm_turn_sigint()
         self.console.print('[dim]bye[/]')
 
@@ -903,7 +977,7 @@ class TuiApp:
                 except KeyboardInterrupt:
                     # Ctrl-C interrupts the running turn but keeps the REPL.
                     # Cap the turn so resume does not re-run the prompt.
-                    self._note_interrupted()
+                    await self._note_interrupted()
                     resume = True
                     continue
                 except Exception as e:  # noqa: BLE001 — stay in the REPL
@@ -933,12 +1007,16 @@ class TuiApp:
                     resume = True
                     continue
                 if outcome == 'interrupted':
-                    self._note_interrupted()
+                    await self._note_interrupted()
                     resume = True
                     continue
             finally:
                 self._turn_task = None
                 self._streaming = False
+                # Guarantee the background type-ahead reader is down before the
+                # loop restarts or exits, so no pinned prompt / patch_stdout
+                # outlives the turn it belonged to. Idempotent when not running.
+                await self.input._stop_capture()
             self._name_session_from_log()
             # Resolve a resume target against the live list before pruning.
             switch = self._pending_switch

@@ -111,8 +111,10 @@ def fork_session(manager,
         log_path = stage / f'{child_key}.jsonl'
         with log_path.open('w', encoding='utf-8') as dest:
             for row in [
-                    header,
-                    *[r for r in records if r.get('_type') != 'metadata']
+                    header, *[
+                        r for r in records
+                        if r.get('_type') not in ('metadata', 'input_event')
+                    ]
             ]:
                 dest.write(json.dumps(row, ensure_ascii=False) + '\n')
             dest.flush()

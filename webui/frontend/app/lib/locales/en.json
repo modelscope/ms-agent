@@ -1,4 +1,16 @@
 {
+  "followUp": {
+    "title": "Conversation behavior", "queue": "Queue", "steer": "Steer",
+    "queueDesc": "Process new messages in order after the current task finishes.",
+    "steerDesc": "Add new messages to the current task after the current model response and started tools finish.",
+    "pending": "{count} pending", "expand": "Expand", "collapse": "Collapse",
+    "thisTurn": "This task", "nextTurn": "Next task", "paused": "Pending messages paused",
+    "resume": "Continue sending", "more": "More actions", "edit": "Edit", "withdraw": "Withdraw",
+    "withdrawConfirm": "Withdraw this pending message?", "save": "Save", "cancel": "Cancel",
+    "editConflict": "This message changed or was delivered. Your edit is preserved and can be sent as a follow-up.",
+    "confirming": "Confirming receipt…", "reconnecting": "Connection lost. Reconnecting…",
+    "skipped": "Skipped", "attachments": "{count} attachments"
+  },
   "auth": {
     "title": "Sign in to MS-Agent",
     "description": "Enter the credentials set by the person running this instance.",
@@ -273,7 +285,7 @@
     "mcpEmpty": "No MCP services here yet. ",
     "mcpEmptyHint": "Click the button below to add one~",
     "viaJson": "Configure via JSON",
-    "reconnect": "Test Connection",
+    "reconnect": "Reconnect sessions next turn",
     "tryIt": "View",
     "edit": "Edit",
     "remove": "Remove",
@@ -284,7 +296,7 @@
     "jsonReset": "Reset",
     "jsonInvalid": "JSON is invalid — fix the syntax before saving.",
     "probing": "Checking…",
-    "statusOk": "Connected",
+    "statusOk": "Connection test passed",
     "statusError": "Connection failed",
     "addMcp": "Add MCP",
     "globalMcps": "Global MCPs",
@@ -298,7 +310,11 @@
     "skillEmptyHint": "Click the button below to add one~",
     "addNow": "Add now",
     "more": "More",
-    "download": "Download"
+    "download": "Download",
+    "testConnection": "Test connection",
+    "statusUnverified": "Connection not verified",
+    "reconnectScheduled": "Reconnection scheduled for the next turn. Current replies continue.",
+    "mcpUnavailable": "Some MCP tools are unavailable. Chat and other tools can continue."
   },
   "mcpImport": {
     "hubProjectBadge": "project",
@@ -470,6 +486,10 @@
     "selectedItems": "items"
   },
   "modelsAdmin": {
+    "purposeLabel": "Model purpose",
+    "purposeUnknown": "Unspecified (compatible with existing models)",
+    "purposeChat": "Chat / fact extraction",
+    "purposeEmbedding": "Embedding",
     "addProvider": "Add provider",
     "addModel": "Add Model",
     "providerIdChars": "Use letters, digits, dashes, and underscores.",
@@ -598,7 +618,15 @@
     "memoryLlmDesc": "Model that turns conversations into memories; defaults to the conversation model.",
     "followConversationModel": "Follow conversation model",
     "specificProvider": "Specific provider",
-    "memoryModelPlaceholder": "Select a model",
+    "memoryModelPlaceholder": "Enter or select a model ID",
+    "memoryDirectInput": "Enter a model ID directly or choose a suggestion. Suggestions do not guarantee availability.",
+    "memoryConfigureProviders": "Configure providers",
+    "memoryCatalogFailed": "Could not refresh model suggestions. Try reopening the field.",
+    "memoryCredentialsMissing": "The selected provider has no saved or environment API key. Configure credentials before enabling memory.",
+    "memoryVerify": "Check memory configuration",
+    "memoryVerified": "Credentials resolved and embedding request succeeded. Fact extraction is checked when a conversation runs.",
+    "memoryUnverified": "Changes are not yet verified. Checking sends a small embedding request.",
+    "memoryCheckFailed": "The configuration check failed. Check your connection and try again.",
     "memoryModelRequired": "Select an extraction model",
     "memoryEmbedLabel": "Embedding model",
     "memoryEmbedDesc": "The store is tied to its embedding model, so pin one; changing it needs a Rebuild from the memory card.",

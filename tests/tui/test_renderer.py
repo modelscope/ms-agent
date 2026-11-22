@@ -12,7 +12,7 @@ from ms_agent.ui.events import (ContentDelta, ContentEnd, ErrorRaised, Notice,
                                 PlanEntry, PlanUpdated, ReasoningDelta,
                                 ReasoningEnded, ReasoningStarted,
                                 ToolCallCompleted, ToolCallStarted, TurnCompleted,
-                                TurnStarted, UsageInfo)
+                                TurnStarted, UsageInfo, UserMessage)
 
 
 def _sink():
@@ -289,3 +289,22 @@ def test_release_joins_refresh_thread_before_returning():
     out = _out(console)
     assert out.count('Assistant') == 1
     assert 'partial reply' in out
+
+
+def test_steered_user_message_renders_in_timeline():
+    """A steered interjection is folded into the running turn with no prompt
+    echo, so the renderer draws it as a user turn — otherwise the timeline shows
+    the assistant answering a message the user never sees recorded."""
+    sink, console, _ = _sink()
+    sink.emit(UserMessage(text='also check the docs', steered=True))
+    out = _out(console)
+    assert 'also check the docs' in out
+    assert '❯' in out  # theme.user_symbol
+
+
+def test_idle_user_message_is_not_rendered():
+    """An idle prompt is echoed inline by prompt_toolkit (the typed line stays on
+    screen), so the renderer stays quiet — drawing it would show the line twice."""
+    sink, console, _ = _sink()
+    sink.emit(UserMessage(text='hello'))  # steered defaults to False
+    assert _out(console) == ''

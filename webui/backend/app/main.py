@@ -106,8 +106,12 @@ def create_app() -> FastAPI:
         try:
             await registry.close_all()
         finally:
-            from app.backends.ms_agent import skill_management
-            await skill_management.shutdown()
+            from app.backends.ms_agent import skill_management, mcp_health
+
+            try:
+                await skill_management.shutdown()
+            finally:
+                await mcp_health.shutdown()
             skill_index.stop()
 
     app.include_router(auth.router)
@@ -120,6 +124,7 @@ def create_app() -> FastAPI:
     app.include_router(mcps.router)
     app.include_router(skills.router)
     app.include_router(memory.router)
+    app.include_router(memory.config_router)
     app.include_router(instructions.router)
     app.include_router(providers.router)
     app.include_router(models.router)

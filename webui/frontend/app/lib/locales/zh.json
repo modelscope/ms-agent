@@ -1,4 +1,16 @@
 {
+  "followUp": {
+    "title": "对话行为", "queue": "排队", "steer": "插话",
+    "queueDesc": "当前任务完成后，再依次处理新消息。",
+    "steerDesc": "将新消息加入当前任务；当前模型响应和已开始的工具操作结束后生效。",
+    "pending": "待发送 {count} 条", "expand": "展开", "collapse": "收起",
+    "thisTurn": "本轮", "nextTurn": "下一轮", "paused": "待发送已暂停",
+    "resume": "继续发送", "more": "更多操作", "edit": "编辑", "withdraw": "撤回",
+    "withdrawConfirm": "撤回这条待发送消息？", "save": "保存", "cancel": "取消",
+    "editConflict": "消息已发生变化或已投递。编辑内容已保留，可作为补充消息发送。",
+    "confirming": "正在确认接收…", "reconnecting": "连接已断开，正在重新连接…",
+    "skipped": "已跳过", "attachments": "{count} 个附件"
+  },
   "auth": {
     "title": "登录 MS-Agent",
     "description": "请输入此实例配置的用户名和密码。",
@@ -273,7 +285,7 @@
     "mcpEmpty": "这里还没有 MCP 服务，",
     "mcpEmptyHint": "点击下方按钮开始添加吧～",
     "viaJson": "通过 JSON 配置",
-    "reconnect": "测试连接",
+    "reconnect": "下轮重连相关会话",
     "tryIt": "查看",
     "edit": "编辑",
     "remove": "移除",
@@ -284,7 +296,7 @@
     "jsonReset": "重置",
     "jsonInvalid": "JSON 格式不正确，请先修复后再保存",
     "probing": "检测中…",
-    "statusOk": "已连接",
+    "statusOk": "连接测试通过",
     "statusError": "连接失败",
     "addMcp": "添加 MCP",
     "globalMcps": "全局MCPs",
@@ -298,7 +310,11 @@
     "skillEmptyHint": "点击下方按钮开始添加吧～",
     "addNow": "立即添加",
     "more": "更多",
-    "download": "下载"
+    "download": "下载",
+    "testConnection": "测试连接",
+    "statusUnverified": "连接尚未验证",
+    "reconnectScheduled": "已安排下轮重新连接，当前回复继续。",
+    "mcpUnavailable": "部分 MCP 工具不可用，聊天与其他工具可继续使用。"
   },
   "mcpImport": {
     "hubProjectBadge": "项目",
@@ -470,6 +486,10 @@
     "selectedItems": "项"
   },
   "modelsAdmin": {
+    "purposeLabel": "模型用途",
+    "purposeUnknown": "未指定（兼容已有模型）",
+    "purposeChat": "聊天 / 事实抽取",
+    "purposeEmbedding": "嵌入",
     "addProvider": "添加提供方",
     "addModel": "添加模型",
     "providerIdChars": "仅可使用字母、数字、短横和下划线。",
@@ -598,7 +618,15 @@
     "memoryLlmDesc": "从对话中提取记忆条目所用的模型，默认跟随对话模型。",
     "followConversationModel": "跟随对话模型",
     "specificProvider": "指定提供方",
-    "memoryModelPlaceholder": "选择模型",
+    "memoryModelPlaceholder": "输入或选择模型 ID",
+    "memoryDirectInput": "可直接输入模型 ID，也可选择候选项。候选项不保证当前服务和账户可用。",
+    "memoryConfigureProviders": "配置供应商",
+    "memoryCatalogFailed": "模型候选项刷新失败，请重新打开输入框重试。",
+    "memoryCredentialsMissing": "所选供应商没有已保存或环境变量中的 API Key，请先配置凭据再启用记忆。",
+    "memoryVerify": "验证记忆配置",
+    "memoryVerified": "凭据已解析，嵌入请求成功。事实抽取的可用性会在实际对话时检查。",
+    "memoryUnverified": "配置变更尚未验证。验证会发送一次小型嵌入请求。",
+    "memoryCheckFailed": "配置验证失败，请检查连接后重试。",
     "memoryModelRequired": "请选择事实抽取模型",
     "memoryEmbedLabel": "嵌入模型",
     "memoryEmbedDesc": "记忆库与嵌入模型绑定，固定指定一家；换模型需在记忆卡片点「重建」。",

@@ -93,6 +93,16 @@ class SessionLog:
         """Append multiple messages.  Returns list of seq numbers."""
         return [self.append(m) for m in messages]
 
+    def record_input_event(self, event: Dict[str, Any]) -> None:
+        """Scheduling metadata, deliberately excluded from model context."""
+        self._append_line({
+            **event,
+            '_type': 'input_event',
+            'schema_version': 1,
+            'seq': self._next_seq(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+        })
+
     def record_compaction(self, event: Dict[str, Any]) -> None:
         """Record a compaction event (non-destructive marker)."""
         seq = self._next_seq()
@@ -264,6 +274,18 @@ class SessionLog:
             **event,
         }
         self._append_line(record)
+
+    def record_notice(self, event: Dict[str, Any]) -> None:
+        """A nonterminal capability notice, kept out of the model's history."""
+        self._append_line({
+            **event,
+            '_type': 'notice',
+            'seq': self._next_seq(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+        })
+
+    def get_notices(self) -> List[Dict[str, Any]]:
+        return [row for row in self.records() if row.get('_type') == 'notice']
 
     def record_loop_end(self, event: Dict[str, Any]) -> None:
         """Record a tool-call-loop boundary — a non-message, display-only marker.

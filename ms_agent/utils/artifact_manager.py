@@ -3,7 +3,10 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
+import io
 import json
 from pathlib import Path
 from typing import Any
@@ -26,6 +29,59 @@ class ArtifactManager:
         self.preview_head_chars = preview_head_chars
         self.preview_tail_chars = preview_tail_chars
         self._artifact_root = self._root / artifact_subdir
+
+    def store_image(self, encoded: str, media_type: str) -> dict[str, Any]:
+        """Persist tool pixels as a workspace reference, shared by session forks.
+
+        The content hash avoids duplicate writes and server-controlled paths.
+        Artifacts outlive the connection: replay must still resolve the image.
+        """
+        from PIL import Image, UnidentifiedImageError
+
+        from ms_agent.utils.atomic_file import atomic_write_bytes
+
+        extensions = {
+            'image/png': 'png',
+            'image/jpeg': 'jpg',
+            'image/webp': 'webp',
+            'image/gif': 'gif',
+            'image/bmp': 'bmp',
+            'image/tiff': 'tiff',
+        }
+        limit = 16 * 1024 * 1024
+        if media_type not in extensions:
+            raise ValueError('Unsupported tool image media type')
+        if len(encoded) > 4 * ((limit + 2) // 3):
+            raise ValueError('Tool image exceeds the 16 MiB input limit')
+        try:
+            raw = base64.b64decode(encoded, validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise ValueError('Tool image contains invalid base64') from exc
+        if len(raw) > limit:
+            raise ValueError('Tool image exceeds the 16 MiB input limit')
+        try:
+            with Image.open(io.BytesIO(raw)) as img:
+                if img.width * img.height > 40_000_000:
+                    raise ValueError(
+                        'Tool image exceeds the 40 megapixel limit')
+                if Image.MIME.get(img.format) != media_type:
+                    raise ValueError(
+                        'Tool image bytes do not match its media type')
+                img.verify()
+        except (UnidentifiedImageError, OSError,
+                Image.DecompressionBombError) as exc:
+            raise ValueError('Tool image is not a readable image') from exc
+        digest = hashlib.sha256(raw).hexdigest()
+        path = self._artifact_root / 'images' / f'{digest}.{extensions[media_type]}'
+        if not path.resolve().is_relative_to(self._root):
+            raise ValueError(
+                'Tool image artifact path is outside the workspace')
+        atomic_write_bytes(path, raw)
+        return {
+            'type': 'image',
+            'path': path.relative_to(self._root).as_posix(),
+            'media_type': media_type
+        }
 
     def pack_text_result(
         self,

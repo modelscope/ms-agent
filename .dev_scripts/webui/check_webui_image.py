@@ -32,6 +32,7 @@ import zipfile
 from pathlib import Path
 from omegaconf import OmegaConf
 from ms_agent.tools.code.local_code_executor import LocalCodeExecutionTool
+from ms_agent.tools.mcp_client import stdio_child_env
 
 prefix = Path(sys.prefix)
 assert prefix != Path(sys.base_prefix), 'SDK must run in its image environment'
@@ -54,6 +55,22 @@ with tempfile.TemporaryDirectory() as temporary:
         'tools': {'code_executor': {'include': ['shell_executor']}},
     }))
     shell_env = tool.shell_env
+    # Both subprocess paths must see runtime package defaults, independently
+    # of root's HOME or npm user configuration.
+    for child_env in (shell_env, stdio_child_env(None)):
+        child_env = dict(child_env, HOME=temporary)
+        registry = subprocess.check_output(
+            ['npm', 'config', 'get', 'registry'], env=child_env, text=True).strip()
+        assert registry == 'https://registry.npmmirror.com/', registry
+        npmrc = subprocess.check_output(
+            ['npm', 'config', 'get', 'globalconfig'], env=child_env, text=True).strip()
+        assert Path(npmrc).is_file(), npmrc
+        defaults = subprocess.check_output([
+            '/usr/local/bin/python', '-c',
+            'from pip._internal.commands import create_command; '
+            'print(create_command("install").parse_args([])[0].index_url)'
+        ], env=child_env, text=True).strip()
+        assert defaults == index, defaults
     python = shutil.which('python', path=shell_env['PATH'])
     pip = shutil.which('pip', path=shell_env['PATH'])
     assert python == '/usr/local/bin/python', python
@@ -163,8 +180,12 @@ for proc in Path('/proc').iterdir():
         continue
     try:
         args = (proc / 'cmdline').read_bytes().split(b'\\0')
-        backend = len(args) > 2 and args[1] == b'-c' and args[2].startswith(b'from app.launcher import _run_api;')
-        frontend = len(args) > 1 and args[0].endswith(b'node') and args[1].endswith(b'/server.js')
+        # Rosetta/QEMU can prepend an interpreter and inject Node flags.
+        # Match the service markers, not their absolute argv positions.
+        backend = any(arg == b'-c' and following.startswith(b'from app.launcher import _run_api;')
+                      for arg, following in zip(args, args[1:]))
+        frontend = (any(arg == b'node' or arg.endswith(b'/node') for arg in args)
+                    and any(arg.endswith(b'/server.js') for arg in args))
         if (backend and sys.argv[1] == 'backend') or (frontend and sys.argv[1] == 'frontend'):
             os.kill(int(proc.name), signal.SIGKILL)
             break

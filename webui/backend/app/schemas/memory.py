@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -59,6 +60,30 @@ class MemoryErrorInfo(BaseModel):
 
     code: str
     message: str
+
+
+class MemoryProviderOption(BaseModel):
+    id: str
+    credentials_available: bool
+    endpoint_available: bool
+    embedding_models: list[str] = Field(default_factory=list)
+
+
+class MemoryModelCheck(BaseModel):
+    memory_llm_provider_id: str | None = None
+    memory_llm_model: str | None = None
+    memory_embed_mode: Literal["provider", "local"] = "provider"
+    memory_embed_provider_id: str | None = None
+    memory_embed_model: str | None = None
+    # Only an explicit check/submit calls the service. Opening a dropdown is free.
+    probe: bool = False
+
+
+class MemoryModelCheckResult(BaseModel):
+    valid: bool
+    verified: bool = False
+    embedder: MemoryEmbedderInfo | None = None
+    errors: list[MemoryErrorInfo] = Field(default_factory=list)
 
 
 class MemoryIngestInfo(BaseModel):

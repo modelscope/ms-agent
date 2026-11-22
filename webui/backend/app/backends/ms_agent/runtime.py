@@ -401,6 +401,10 @@ class SessionRuntime:
         # otherwise pins its embedded qdrant lock and its in-RAM vectors until
         # the server restarts.
         self.agent._context_config_signature = self.settings_fingerprint
+        from app.backends.ms_agent.conversations import conversations
+        conversation = conversations.get(session.id)
+        if conversation is not None:
+            self.agent._input_controller = conversation.controller
         self.context_task = None
         self.context_state = None
         self.last_active: float = time.monotonic()
@@ -677,6 +681,8 @@ class RuntimeRegistry:
                 expired.add(rt.session.id)
         for sid in expired:
             await self._evict(sid)
+        from app.backends.ms_agent.conversations import sweep_idle
+        sweep_idle(self.IDLE_TTL_S, self.MAX_RUNTIMES)
 
     async def _evict(self, session_id: str) -> None:
         async with self._create_lock:
@@ -714,16 +720,37 @@ class RuntimeRegistry:
                            exc_info=True)
 
     async def _resolve_mcp(self, project) -> dict:
-        """Resolve enabled MCP servers and probe them (connect+initialize), so an
-        unreachable/invalid server is dropped before it can break the chat turn."""
+        """Resolve configuration only; network startup belongs to the agent task."""
         from ms_agent.tui.managed_config import resolve_mcp_config
-
-        from app.backends.ms_agent import mcp_health
         from app.backends.ms_agent.common import home
 
-        raw = (resolve_mcp_config(home(), project.path, None) or {}).get("mcpServers", {})
-        healthy, _dropped = await mcp_health.filter_healthy(raw)
-        return {"mcpServers": healthy} if healthy else {}
+        return await asyncio.to_thread(
+            resolve_mcp_config, home(), project.path, None) or {}
+
+    async def reconnect_mcp(self, scope: str, name: str) -> int:
+        """Schedule a rebuild at the next idle turn, respecting project overrides."""
+        from ms_agent.config import MCPConfigManager
+        from app.backends.ms_agent.common import home
+
+        def affected(rt):
+            if scope.startswith('project:') and scope != f'project:{rt.project.id}':
+                return False
+            mm = MCPConfigManager(global_root=home(), project_root=rt.project.path)
+            entry = (mm.list('merged') or {}).get(name)
+            if not entry or not entry.get('enabled', True):
+                return False
+            local = (mm.list('project') or {}).get(name)
+            if scope == 'global' and local is not None:
+                return False
+            return name in (getattr(rt.agent, 'mcp_config', {}) or {}).get('mcpServers', {})
+
+        count = 0
+        async with self._create_lock:
+            for rt in list(self._runtimes.values()):
+                if await asyncio.to_thread(affected, rt):
+                    rt.needs_rebuild = True
+                    count += 1
+        return count
 
     async def _apply_mcp_toggle(self, name: str, enabled: bool) -> None:
         for rt in list(self._runtimes.values()):
@@ -928,12 +955,12 @@ class RuntimeRegistry:
         if loop is not None and loop.is_running():
             try:
                 if asyncio.get_running_loop() is loop:
-                    loop.create_task(self.close(session_id))
+                    loop.create_task(self._discard_session(session_id))
                     return
             except RuntimeError:
                 pass
             try:
-                future = asyncio.run_coroutine_threadsafe(self.close(session_id), loop)
+                future = asyncio.run_coroutine_threadsafe(self._discard_session(session_id), loop)
                 future.result(timeout=15)
                 return
             except Exception:
@@ -946,7 +973,14 @@ class RuntimeRegistry:
             except RuntimeError:
                 logger.debug("runtime discard skipped for stopped loop", exc_info=True)
 
+    async def _discard_session(self, session_id: str) -> None:
+        from app.backends.ms_agent.conversations import discard
+        await discard(session_id)
+        await self.close(session_id)
+
     async def close_all(self) -> None:
+        from app.backends.ms_agent.conversations import close_all
+        await close_all()
         for sid in list(self._runtimes):
             await self.close(sid)
 

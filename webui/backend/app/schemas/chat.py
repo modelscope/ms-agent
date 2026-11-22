@@ -46,6 +46,8 @@ class ChatMessage(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    input_id: str | None = Field(default=None, min_length=1, max_length=128)
+    expected_turn_id: str | None = None
     model_id: str | None = None
     reasoning_effort: ReasoningEffort | None = None
     session_id: str | None = None
@@ -84,7 +86,7 @@ class ChatChunk(BaseModel):
     """
 
     type: Literal[
-        "text", "thought", "task", "step", "session", "turn", "error", "done"
+        "text", "thought", "task", "step", "session", "turn", "notice", "error", "done", "input"
     ]
     content: str = ""
     meta: dict = Field(default_factory=dict)

@@ -1,4 +1,6 @@
 import { SERVER_API_BASE } from './env'
+import type { AgentInput } from './agentProvider'
+import type { InputReceipt, ConversationState } from './sessionChat'
 import { redirectIfSignedOut, type AuthStatus } from './auth'
 import type {
   AgentSettings,
@@ -14,6 +16,9 @@ import type {
   MemoryItem,
   MemoryRebuildResult,
   MemoryStatus,
+  MemoryProviderOption,
+  MemoryModelCheckResult,
+  ModelPurpose,
   Model,
   Profile,
   Project,
@@ -432,6 +437,8 @@ export const api = {
    *  failure withholds its tools from a whole conversation), so a miss costs
    *  the full probe — go through `lib/mcpHealth`, which shares one sweep across
    *  every surface, rather than calling this per mount. */
+  reconnectMcp: (id: string) =>
+    json<{ scheduled: number; status: 'scheduled' }>(`/api/mcps/${pid(id)}/reconnect`, { method: 'POST' }),
   listMcpHealth: () => json<McpHealth[]>('/api/mcps/health'),
 
   // Skills
@@ -575,6 +582,17 @@ export const api = {
     json<void>(`/api/skills/${pid(id)}`, { method: 'DELETE' }),
 
   // Memory — project-scoped items. 400s when the project has memory off.
+  listMemoryProviders: () => json<MemoryProviderOption[]>('/api/memory/providers'),
+  checkMemoryModels: (body: {
+    memory_llm_provider_id: string | null
+    memory_llm_model: string | null
+    memory_embed_mode: 'provider' | 'local'
+    memory_embed_provider_id: string | null
+    memory_embed_model: string | null
+    probe?: boolean
+  }, signal?: AbortSignal) => json<MemoryModelCheckResult>('/api/memory/check', {
+    method: 'POST', body: JSON.stringify(body), signal
+  }, { silent: true }),
   // The vector card renders load failures itself (a misconfigured vector
   // backend is a legible state, not a transient error), so it passes
   // `{ silent: true }` to keep the global toast out of it.
@@ -789,6 +807,7 @@ export const api = {
       opts
     ),
   createModel: (body: {
+    purpose?: ModelPurpose
     provider_id: string
     name: string
     display_name?: string
@@ -801,6 +820,7 @@ export const api = {
   updateModel: (
     id: string,
     body: Partial<{
+      purpose: ModelPurpose
       display_name: string
       advanced_params: Record<string, unknown>
       reasoning_effort: ReasoningEffort
@@ -854,11 +874,22 @@ export const api = {
   // Explicitly stop a session's in-flight turn (the composer Stop button).
   // Distinct from merely closing the SSE (navigating away), which keeps the turn
   // running in the background; only this cancels it and seals it as interrupted.
-  interruptChat: (sessionId: string) =>
+  interruptChat: (sessionId: string, expectedTurnId?: string | null) =>
     json<{ stopped: boolean }>('/api/chat/interrupt', {
       method: 'POST',
-      body: JSON.stringify({ session_id: sessionId })
-    }),
+      body: JSON.stringify({ session_id: sessionId, expected_turn_id: expectedTurnId })
+    }, { silent: true }),
+
+  submitInput: (body: AgentInput) => json<InputReceipt>('/api/chat/inputs', {
+    method: 'POST', body: JSON.stringify(body), signal: AbortSignal.timeout(15000)
+  }, { silent: true }),
+  editInput: (sid: string, id: string, revision: number, request: AgentInput) =>
+    json<ConversationState>(`/api/chat/sessions/${sid}/inputs/${id}`, {
+      method: 'PATCH', body: JSON.stringify({ revision, request })
+    }, { silent: true }),
+  withdrawInput: (sid: string, id: string, revision: number) =>
+    json<ConversationState>(`/api/chat/sessions/${sid}/inputs/${id}?revision=${revision}`, { method: 'DELETE' }, { silent: true }),
+  resumeInputs: (sid: string) => json<ConversationState>(`/api/chat/sessions/${sid}/inputs/resume`, { method: 'POST' }, { silent: true }),
 
   // Browser presence heartbeat (~10s cadence, sent by the app shell). Keeps
   // background turns alive across refresh/navigation and returns the sessions

@@ -164,6 +164,14 @@ export function StepCard({
   const open = () => onOpenStep?.(step)
   const running = meta.status === 'running'
 
+  if (meta.status === 'skipped') {
+    return <button type="button" onClick={open}
+      className="flex min-h-9 items-center gap-2 text-left text-xs text-msa-text-3">
+      <span>{String(meta.tool ?? step.kind)}</span>
+      <span>· {t.followUp.skipped}</span>
+    </button>
+  }
+
   switch (step.kind) {
     case 'context_compaction': {
       const before = meta.before_tokens

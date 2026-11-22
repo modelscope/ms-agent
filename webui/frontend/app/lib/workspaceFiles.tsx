@@ -22,6 +22,7 @@ import { useOnWorkspaceChanged } from '~/lib/events'
  * `null` = not loaded yet → consumers fall back to the server-baked flag.
  */
 const WorkspaceFileSetContext = createContext<Set<string> | null>(null)
+const WorkspaceProjectContext = createContext<string | null>(null)
 
 export function WorkspaceFilesProvider({
   projectId,
@@ -65,10 +66,18 @@ export function WorkspaceFilesProvider({
   useOnWorkspaceChanged(onChanged)
 
   return (
-    <WorkspaceFileSetContext.Provider value={fileSet}>
-      {children}
-    </WorkspaceFileSetContext.Provider>
+    <WorkspaceProjectContext.Provider value={projectId}>
+      <WorkspaceFileSetContext.Provider value={fileSet}>
+        {children}
+      </WorkspaceFileSetContext.Provider>
+    </WorkspaceProjectContext.Provider>
   )
+}
+
+/** The active workspace also covers homepage chats whose URL changes without
+ * a router navigation, so route params do not yet contain the project. */
+export function useWorkspaceProjectId(): string | null {
+  return useContext(WorkspaceProjectContext)
 }
 
 /** The current workspace path set, or null while unknown (no provider / not

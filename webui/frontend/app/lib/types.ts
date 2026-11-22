@@ -77,8 +77,9 @@ export interface SessionMessage {
   // meta.status="error"; a kind:"error" part is an API/turn error
   // (recoverable=false).
   parts?: {
-    kind: 'text' | 'thought' | 'tasks' | 'error'
+    kind: 'text' | 'thought' | 'tasks' | 'notice' | 'error'
     text?: string
+    code?: string
     recoverable?: boolean
     tasks?: {
       id: string
@@ -158,6 +159,7 @@ export interface Mcp {
   /** stdio env vars / remote auth headers (ms_agent backend round-trips these). */
   env?: Record<string, string>
   headers?: Record<string, string>
+  startup_timeout?: number | null
   created_at: string
 }
 
@@ -165,7 +167,10 @@ export interface McpHealth {
   id: string
   name: string
   scope: string
-  healthy: boolean
+  healthy: boolean | null
+  level: 'command' | 'connection'
+  checked_at: number
+  expires_at: number
   error?: string | null
 }
 
@@ -421,6 +426,22 @@ export interface Provider {
   created_at: string
 }
 
+export type ModelPurpose = 'unknown' | 'chat' | 'embedding'
+
+export interface MemoryProviderOption {
+  id: string
+  credentials_available: boolean
+  endpoint_available: boolean
+  embedding_models: string[]
+}
+
+export interface MemoryModelCheckResult {
+  valid: boolean
+  verified: boolean
+  embedder: MemoryEmbedderInfo | null
+  errors: MemoryErrorInfo[]
+}
+
 export type ReasoningEffort =
   | 'auto' | 'off' | 'on' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
@@ -447,6 +468,7 @@ export interface ContextBudget {
 }
 
 export interface Model {
+  purpose?: ModelPurpose
   id: string
   provider_id: string
   name: string
@@ -482,6 +504,7 @@ export interface GenerationDefaults {
 }
 
 export interface AgentSettings {
+  follow_up_behavior?: 'queue' | 'steer'
   default_provider_id: string | null
   default_model_id: string | null
   default_memory_enabled: boolean
@@ -558,19 +581,7 @@ export interface ContextStatus {
     buckets: Record<string, number>
     measured_at: string
   } | null
-  operation: {
-    id?: string
-    status:
-      | 'running'
-      | 'completed'
-      | 'failed'
-      | 'cancelled'
-      | 'blocked'
-      | 'interrupted'
-      | 'not_needed'
-    trigger?: string
-    memory_status?: string
-  } | null
+  operation: { id?: string; status: 'running' | 'completed' | 'failed' | 'cancelled' | 'blocked' | 'interrupted' | 'not_needed'; trigger?: string; memory_status?: string } | null
   can_compact: boolean
   busy?: boolean
 }

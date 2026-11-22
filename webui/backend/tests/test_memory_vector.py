@@ -79,9 +79,9 @@ def test_anthropic_protocol_falls_back_to_mem0_native_provider():
 
 
 def test_non_openai_vendor_without_a_native_adapter_is_declined():
-    """Better no `llm` key (mem0 warns and uses its default) than a provider
-    we know cannot be reached -- and never a silent mislabel."""
-    assert C._mem0_llm(_settings("acme", "anthropic", "https://acme.test")) is None
+    """Never silently switch to mem0's unrelated default model."""
+    with pytest.raises(C.MemoryConfigError, match="does not support"):
+        C._mem0_llm(_settings("acme", "anthropic", "https://acme.test"))
 
 
 @pytest.mark.parametrize("settings", [
@@ -89,8 +89,11 @@ def test_non_openai_vendor_without_a_native_adapter_is_declined():
     {"llm": {"provider": "deepseek"}},                        # no model
     {"llm": {"provider": "deepseek", "model": "m"}},          # no credentials
 ])
-def test_incomplete_settings_yield_no_llm_block(settings):
-    assert C._mem0_llm(settings) is None
+def test_incomplete_settings_yield_configuration_error(settings, monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(C.MemoryConfigError):
+        C._mem0_llm(settings)
 
 
 # ── embedder resolution (explicit → conversation provider → local) ─────────
@@ -465,6 +468,8 @@ def _mismatched_store(monkeypatch, vector_project, rows=None):
     mem_dir = Path(str(memory_dir(sdk_proj.path)))
     (mem_dir / "qdrant").mkdir(parents=True)
     (mem_dir / "qdrant" / "meta.json").write_text("{}")
+    monkeypatch.setattr(C, "_read_settings", lambda: _settings(
+        "openai", "openai", "https://example.test/v1"))
     (mem_dir / "ingest_state.json").write_text('{"hashes": ["x"]}')
     monkeypatch.setattr(C, "_probe_embed_dimension", lambda desc: (384, False))
     # The rebuild materializes the embedder before touching anything (for a

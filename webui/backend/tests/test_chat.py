@@ -2007,7 +2007,7 @@ async def test_compaction_stream_continues_until_the_real_turn_end(monkeypatch, 
         monkeypatch.setattr(chat.registry, "get", get_runtime)
         monkeypatch.setattr(chat, "_resolve_or_create", lambda req:
                             (_FakeProject(), _FakeSession()))
-        stream = chat.stream(ChatRequest(
+        stream = chat.run_turn(ChatRequest(
             session_id="sid-1", message=ChatMessage(role="user", content="hi")))
         assert json.loads((await asyncio.wait_for(anext(stream), timeout=2))["data"])["type"] == "session"
     try:
@@ -2048,7 +2048,7 @@ async def test_stream_maps_and_terminates(monkeypatch):
     frames: list[dict] = []
 
     async def _consume():
-        async for frame in chat.stream(req):
+        async for frame in chat.run_turn(req):
             frames.append(frame)
 
     task = asyncio.create_task(_consume())
@@ -2142,7 +2142,7 @@ async def test_stream_done_carries_generated_title_and_category(tmp_path, monkey
     frames: list[dict] = []
 
     async def _consume():
-        async for frame in chat.stream(req):
+        async for frame in chat.run_turn(req):
             frames.append(frame)
 
     task = asyncio.create_task(_consume())
@@ -2169,7 +2169,7 @@ async def test_stream_empty_user_message_ends_immediately(monkeypatch):
 
     req = ChatRequest(session_id="sid-1",
                       message=ChatMessage(role="user", content=""))
-    frames = [f async for f in chat.stream(req)]
+    frames = [f async for f in chat.run_turn(req)]
     assert len(frames) == 1
     assert json.loads(frames[0]["data"])["type"] == "done"
 
@@ -3029,7 +3029,7 @@ async def test_stream_message_kind_short_circuits_without_a_turn(monkeypatch):
 
     req = ChatRequest(session_id="sid-1",
                       message=ChatMessage(role="user", content="/writer"))
-    frames = [json.loads(f["data"]) async for f in chat.stream(req)]
+    frames = [json.loads(f["data"]) async for f in chat.run_turn(req)]
     # The early `session` frame precedes the reply text + terminator.
     assert [f["type"] for f in frames] == ["session", "text", "done"]
     assert frames[1]["content"] == "Skill: Writer"
@@ -3062,7 +3062,7 @@ async def test_stream_slash_submit_enqueues_expanded_prompt_with_marker(
     frames: list[dict] = []
 
     async def _consume():
-        async for f in chat.stream(req):
+        async for f in chat.run_turn(req):
             frames.append(f)
 
     task = asyncio.create_task(_consume())

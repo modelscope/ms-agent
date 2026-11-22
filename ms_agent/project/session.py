@@ -95,9 +95,17 @@ class SessionManager:
                name: str = '',
                model: str | None = None,
                model_provider: str | None = None,
-               reasoning_efforts: dict | None = None) -> Session:
+               reasoning_efforts: dict | None = None,
+               request_id: str | None = None) -> Session:
         self.initialize()
-        session_id = uuid.uuid4().hex[:12]
+        session_id = (
+            uuid.uuid5(uuid.NAMESPACE_URL,
+                       f'ms-agent:{self._project.id}:{request_id}').hex[:24]
+            if request_id else uuid.uuid4().hex[:12])
+        if request_id:
+            existing = self.get(session_id)
+            if existing is not None:
+                return existing
         session_key = f'session_{session_id}'
         session = Session(
             id=session_id,
