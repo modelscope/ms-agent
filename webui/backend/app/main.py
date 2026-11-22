@@ -118,6 +118,7 @@ def create_app() -> FastAPI:
     app.include_router(mcps.router)
     app.include_router(skills.router)
     app.include_router(memory.router)
+    app.include_router(memory.config_router)
     app.include_router(instructions.router)
     app.include_router(providers.router)
     app.include_router(models.router)

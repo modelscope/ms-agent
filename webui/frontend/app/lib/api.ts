@@ -16,6 +16,9 @@ import type {
   MemoryItem,
   MemoryRebuildResult,
   MemoryStatus,
+  MemoryProviderOption,
+  MemoryModelCheckResult,
+  ModelPurpose,
   Model,
   Profile,
   Project,
@@ -483,6 +486,17 @@ export const api = {
     json<void>(`/api/skills/${pid(id)}`, { method: 'DELETE' }),
 
   // Memory — project-scoped items. 400s when the project has memory off.
+  listMemoryProviders: () => json<MemoryProviderOption[]>('/api/memory/providers'),
+  checkMemoryModels: (body: {
+    memory_llm_provider_id: string | null
+    memory_llm_model: string | null
+    memory_embed_mode: 'provider' | 'local'
+    memory_embed_provider_id: string | null
+    memory_embed_model: string | null
+    probe?: boolean
+  }, signal?: AbortSignal) => json<MemoryModelCheckResult>('/api/memory/check', {
+    method: 'POST', body: JSON.stringify(body), signal
+  }, { silent: true }),
   // The vector card renders load failures itself (a misconfigured vector
   // backend is a legible state, not a transient error), so it passes
   // `{ silent: true }` to keep the global toast out of it.
@@ -697,6 +711,7 @@ export const api = {
       opts
     ),
   createModel: (body: {
+    purpose?: ModelPurpose
     provider_id: string
     name: string
     display_name?: string
@@ -709,6 +724,7 @@ export const api = {
   updateModel: (
     id: string,
     body: Partial<{
+      purpose: ModelPurpose
       display_name: string
       advanced_params: Record<string, unknown>
       reasoning_effort: ReasoningEffort

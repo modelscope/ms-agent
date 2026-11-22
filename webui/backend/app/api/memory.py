@@ -16,10 +16,28 @@ from app.schemas.memory import (
     MemoryItemUpdate,
     MemoryRebuildResult,
     MemoryStatus,
+    MemoryModelCheck,
+    MemoryModelCheckResult,
+    MemoryProviderOption,
 )
 
 router = APIRouter(prefix="/api/projects/{project_id}/memory", tags=["memory"],
                    route_class=EnvelopeRoute)
+config_router = APIRouter(prefix="/api/memory", tags=["memory"], route_class=EnvelopeRoute)
+
+
+@config_router.get("/providers")
+def memory_providers() -> list[MemoryProviderOption]:
+    from app.backends.ms_agent.memory_configuration import provider_options
+    return provider_options()
+
+
+@config_router.post("/check")
+def check_memory_models(body: MemoryModelCheck) -> MemoryModelCheckResult:
+    # FastAPI runs this bounded synchronous probe in its worker pool, leaving
+    # the event loop free for health, chat streams and cancellation requests.
+    from app.backends.ms_agent.memory_configuration import check_models
+    return check_models(body)
 
 
 @router.get("/status")

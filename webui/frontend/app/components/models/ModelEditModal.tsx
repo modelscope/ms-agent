@@ -5,7 +5,7 @@ import { effortLabel, thinkingHint } from './ModelCapabilities'
 import { api } from '~/lib/api'
 import { dispatchModelsChanged } from '~/lib/events'
 import { useT } from '~/lib/i18n'
-import type { GenerationDefaults, Model, Provider, ReasoningEffort } from '~/lib/types'
+import type { GenerationDefaults, Model, ModelPurpose, Provider, ReasoningEffort } from '~/lib/types'
 
 function parseParams(json: string): Record<string, unknown> | null {
   try {
@@ -95,6 +95,7 @@ interface Props {
 }
 
 interface FormValues {
+  purpose: ModelPurpose
   provider_id: string
   name: string
   display_name: string
@@ -181,6 +182,7 @@ export function ModelEditModal({
     form.resetFields()
     form.setFieldsValue({
       provider_id: pid,
+      purpose: model?.purpose ?? 'unknown',
       name: model?.name ?? '',
       display_name: model?.display_name ?? '',
       supports_vision: model?.supports_vision == null
@@ -264,6 +266,7 @@ export function ModelEditModal({
     }
     const baseline = original.current
     const patch: Parameters<typeof api.updateModel>[1] = {}
+    if (v.purpose !== (baseline?.purpose ?? 'unknown')) patch.purpose = v.purpose
     const vision = v.supports_vision === 'auto' ? null : v.supports_vision === 'on'
     if (v.display_name !== (baseline?.display_name ?? '')) patch.display_name = v.display_name
     if (vision !== (baseline?.supports_vision ?? null)) patch.supports_vision = vision
@@ -484,6 +487,13 @@ export function ModelEditModal({
             changeOnBlur={false}
             placeholder={t.modelsAdmin.contextDefault}
           />
+        </Form.Item>
+        <Form.Item label={t.modelsAdmin.purposeLabel} name="purpose">
+          <Select options={[
+            { value: 'unknown', label: t.modelsAdmin.purposeUnknown },
+            { value: 'chat', label: t.modelsAdmin.purposeChat },
+            { value: 'embedding', label: t.modelsAdmin.purposeEmbedding }
+          ]} />
         </Form.Item>
         <Form.Item label={t.modelsAdmin.advancedJson}>
           <div className="overflow-hidden rounded-md border border-msa-line-1">

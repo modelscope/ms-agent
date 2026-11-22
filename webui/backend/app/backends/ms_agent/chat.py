@@ -705,6 +705,8 @@ class _TurnMapper:
         meta = {**meta, "tool": name, "arguments": args, "group": group,
                 "call_id": call_id}
         result = payload.get("result")
+        if payload.get("attachments"):
+            meta["attachments"] = payload["attachments"]
         if result is not None:
             meta["result"] = _stringify(result)
         duration_s = payload.get("duration_s")

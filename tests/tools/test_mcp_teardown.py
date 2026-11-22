@@ -219,7 +219,12 @@ class _FakeSession:
 async def test_image_audio_and_structured_results_reach_the_caller(tmp_path):
     client = MCPClient()
     client.output_dir = str(tmp_path)
-    png = base64.b64encode(b'\x89PNG').decode()
+    import io
+    from PIL import Image
+
+    image = io.BytesIO()
+    Image.new('RGB', (2, 2), 'red').save(image, format='PNG')
+    png = base64.b64encode(image.getvalue()).decode()
     wav = base64.b64encode(b'RIFF').decode()
     client.sessions['s'] = _FakeSession(
         SimpleNamespace(

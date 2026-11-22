@@ -65,7 +65,7 @@ export function ModelSelector({
   const providerModels = useMemo(
     () =>
       (models ?? [])
-        .filter((m) => m.provider_id === effectiveProviderId)
+        .filter((m) => m.provider_id === effectiveProviderId && m.purpose !== 'embedding')
         .sort((a, b) =>
           (a.display_name || a.name).localeCompare(b.display_name || b.name)
         ),
