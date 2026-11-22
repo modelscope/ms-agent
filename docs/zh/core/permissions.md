@@ -24,7 +24,7 @@ flowchart TD
 
 ```yaml
 permission:
-  mode: interactive
+  mode: ask
   allow_network: false
   safety_rules:
     allowed_directories: ["${PROJECT_ROOT}"]
@@ -32,7 +32,13 @@ permission:
       read_policy: loose
 ```
 
-`auto`按规则处理并保留强制询问，`strict`拒绝内层不确定的ask，`interactive`交给确认处理器。`restricted`是interactive的兼容名称。TUI默认restricted，不等于基础配置默认auto。
+| 模式 | 不确定调用由谁决定 |
+| --- | --- |
+| `ask` | 交给用户确认；TUI 默认模式 |
+| `auto` | 模型评估；可通过 `decision_provider` 使用当前模型或外部评估智能体 |
+| `full-access` | 允许普通不确定调用，但仍保留安全拒绝和强制询问规则 |
+
+基础配置缺省为 `auto`，界面入口可以覆盖。旧名称仍接受：`restricted` / `interactive` 对应 `ask`，旧 `strict` 对应 `full-access`，`delegate` 对应 `auto`；兼容名称不意味着保留旧模式的所有行为。评估服务失败、超时或无法确认时仍按拒绝或人工兜底处理，不视为自动授权。
 
 ## 列表不是都追加
 

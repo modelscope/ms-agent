@@ -17,6 +17,12 @@ Choose a recognizable name and verify the actual workspace before requesting wri
 
 Changing projects changes workspace and scope, not just the page title. Unsaved editor drafts are not automatically artifacts of another conversation.
 
+## Branch from a completed reply
+
+Click **Branch** beside the copy button below a completed reply to continue in a new conversation with history through that point. Titles advance as `Original title (2)`, `(3)`, and so on. A divider links back to the source. You can branch from an earlier completed reply while the source is running, but not from unfinished or interrupted turns.
+
+The fork inherits tool results, valid summaries, and the source's currently selected model. Opening it does not change the global default model, and its composer starts empty. Conversation records are independent; project files, settings, and memory remain shared. This is not a workspace snapshot or rollback. Unsubmitted source drafts remain when switching back in the same tab, but not after refresh.
+
 ## Save and recover
 
 The SDK persists completed messages and session data. Input drafts and unsaved file edits have different lifecycles. Save files before leaving the page. Reopening history after a service restart resumes conversation, not every interrupted external operation.

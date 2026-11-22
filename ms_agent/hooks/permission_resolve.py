@@ -44,7 +44,7 @@ async def _run_permission_request_hook(
 ) -> HookResult | None:
     if hook_runtime is None or hook_runtime.is_empty:
         return None
-    if permission_config is None or permission_config.mode != 'interactive':
+    if permission_config is None or permission_config.mode != 'ask':
         return None
     if not hook_runtime.registry.get_handlers('PermissionRequest', tool_name):
         return None
@@ -62,7 +62,7 @@ async def resolve_hook_permission_decision(
     force_decision: PermissionDecision | None = None,
     call_id: str = '',
 ) -> PermissionDecision | str:
-    # ``force_decision`` carries a SafetyGuard ``ask`` (interactive): it must
+    # ``force_decision`` carries a SafetyGuard ``ask`` (ask mode): it must
     # reach the handler even when whitelist/memory would otherwise allow, so a
     # broad whitelist can't silently bypass a safety confirmation (REVIEW P1-2).
     if hook_result and hook_result.action == 'deny':

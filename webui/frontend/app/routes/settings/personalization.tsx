@@ -131,6 +131,28 @@ export default function PersonalizationSettings() {
         </div>
       </section>
 
+      <section>
+        <div className="mb-4 text-base font-semibold text-msa-text-1">{t.followUp.title}</div>
+        <Radio.Group
+          className="flex! flex-col gap-3"
+          value={settings?.follow_up_behavior ?? 'queue'}
+          disabled={!settings}
+          onChange={e => updateSettings({ follow_up_behavior: e.target.value })}
+        >
+          {(['queue', 'steer'] as const).map(mode => (
+            <label key={mode} className={`rounded-xl border px-4 py-3 transition-colors ${
+              (settings?.follow_up_behavior ?? 'queue') === mode
+                ? 'border-msa-brand bg-msa-fill-1' : 'border-msa-line-1'
+            }`}>
+              <Radio value={mode}>{t.followUp[mode]}</Radio>
+              <p className="mt-1 pl-6 text-xs leading-relaxed text-msa-text-3">
+                {mode === 'queue' ? t.followUp.queueDesc : t.followUp.steerDesc}
+              </p>
+            </label>
+          ))}
+        </Radio.Group>
+      </section>
+
       {/* Memory settings */}
       <section>
         <div className="mb-4 text-base font-semibold text-msa-text-1">

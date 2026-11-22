@@ -69,7 +69,7 @@ ms-agent ui
 
 1. 获取 [ModelScope API Key](https://modelscope.cn/my/myaccesstoken)。
 2. 打开 **设置 → 模型设置 → ModelScope → 编辑**，填写 Key 并保存。
-3. 点击 **添加模型**，填入服务支持的模型 ID，例如 `Qwen/Qwen3-235B-A22B-Instruct-2507`。
+3. 点击 **添加模型**，填入服务支持的模型 ID，例如 `Qwen/Qwen3.8-Flash-Next`。
 4. 回到对话页，在输入框下选择刚添加的模型。自定义 OpenAI 兼容服务使用“添加提供方”，填写实际 Base URL 和 Key。
 
 保存 Key 不等于已经添加或选中模型。不要将真实 Key 发到聊天或截图中。

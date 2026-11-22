@@ -24,7 +24,7 @@ Network commands are default ask rules, not an irrevocable blacklist. Without an
 
 ```yaml
 permission:
-  mode: interactive
+  mode: ask
   allow_network: false
   safety_rules:
     allowed_directories: ["${PROJECT_ROOT}"]
@@ -32,7 +32,13 @@ permission:
       read_policy: loose
 ```
 
-`auto` resolves rules while retaining mandatory asks; `strict` denies uncertain inner-layer asks; `interactive` delegates confirmation to a handler. `restricted` is an alias for interactive. The TUI default is restricted, unlike the base configuration's auto mode.
+| Mode | Decision on uncertain calls |
+| --- | --- |
+| `ask` | Ask the user; the TUI default |
+| `auto` | Model assessment; `decision_provider` can select the current model or an injected assessment agent |
+| `full-access` | Allow ordinary uncertain calls while retaining safety denials and mandatory asks |
+
+Base configuration defaults to `auto`; interfaces can override it. Legacy names remain accepted: `restricted` / `interactive` map to `ask`, `delegate` maps to `auto`, and legacy `strict` maps to `full-access`. Aliases do not preserve every historical behavior. Assessment failure, timeout, or an unresolved decision still requires denial or human fallback rather than automatic authorization.
 
 ## Not every list is additive
 

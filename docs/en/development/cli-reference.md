@@ -33,9 +33,10 @@ These tables are generated from current argparse definitions, retaining CLI help
 | Argument | Default | Description from CLI |
 | --- | --- | --- |
 | `--config` | — | Path to an agent.yaml (or a task dir / modelscope id). Defaults to the built-in agent.yaml. |
+| `--agent` | — | Install an Agent Hub template and start with it. Copy the id from https://www.modelscope.cn/agents. Example: ms-agent --agent ms-agent/stock_data_agent. A local agent.yaml or task directory is loaded in place. |
 | `--work-dir, --work_dir` | — | Working/project directory (== output_dir). Defaults to the current directory. Framework internals go to &lt;work_dir&gt;/.ms_agent/; sessions are global under ~/.ms_agent/projects/. |
 | `--env` | — | Path to a .env file (defaults to ./.env). |
-| `--permission_mode` | restricted | Permission mode for tool calls. Default `restricted` so non-whitelisted tools ask for confirmation. Choices: auto, strict, restricted, interactive |
+| `--permission_mode` | ask | Permission mode for tool calls: ask (confirm uncertain calls with you), auto (a model decides them), full-access (allow them). Default `ask`. Older names restricted, interactive, strict, delegate are accepted. |
 | `--trust_remote_code` | False | Allow loading external code referenced by the config. |
 | `--mcp-server-file, --mcp_server_file` | — | Path to an MCP servers JSON file ({"mcpServers": {...}}) — stdio / sse / streamable_http servers to connect for this session. |
 | `--emit-events, --emit_events` | — | Also append every structured AgentEvent as JSON lines to this file — the exact wire payloads a WebUI backend would forward. Use it to inspect/validate the event contract. |

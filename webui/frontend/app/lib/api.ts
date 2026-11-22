@@ -1,6 +1,11 @@
 import { SERVER_API_BASE } from './env'
+import type { AgentInput } from './agentProvider'
+import type { InputReceipt, ConversationState } from './sessionChat'
+import { redirectIfSignedOut, type AuthStatus } from './auth'
 import type {
   AgentSettings,
+  CatalogStatus,
+  ContextStatus,
   Artifact,
   GenerationDefaults,
   Instruction,
@@ -15,6 +20,7 @@ import type {
   Profile,
   Project,
   Provider,
+  ReasoningEffort,
   Scope,
   SearchProvider,
   SearchSettings,
@@ -117,6 +123,8 @@ interface JsonOpts {
   // suppresses only those codes (e.g. `[409]` to ignore an idempotent
   // create-conflict while still surfacing genuine failures).
   silent?: boolean | number[]
+  /** Do not join a GET started before a mutation completed. */
+  fresh?: boolean
 }
 
 /** Per-call options shared by REST methods that support silencing errors. */
@@ -170,6 +178,12 @@ export function readFailure(
 // fresh, so mutations + refetches still see up-to-date data).
 const inflightGets = new Map<string, Promise<unknown>>()
 
+let readRequestCookie: (() => string) | null = null
+
+export function registerRequestCookieReader(reader: () => string): void {
+  readRequestCookie = reader
+}
+
 async function json<T>(
   input: RequestInfo,
   init?: RequestInit,
@@ -182,16 +196,22 @@ async function json<T>(
     typeof input === 'string'
       ? input
       : null
-  if (key) {
+  if (key && !opts?.fresh) {
     const pending = inflightGets.get(key)
     if (pending) return pending as Promise<T>
   }
   const run = (async () => {
     let res: Response
     try {
+      // An explicit empty header object lets FormData supply its own boundary.
+      const headers = new Headers(init?.headers ?? { 'Content-Type': 'application/json' })
+      if (typeof window === 'undefined') {
+        const cookie = readRequestCookie?.()
+        if (cookie) headers.set('Cookie', cookie)
+      }
       res = await fetch(resolve(input), {
-        headers: { 'Content-Type': 'application/json' },
-        ...init
+        ...init,
+        headers
       })
     } catch {
       // Network / connection failure — no HTTP response at all.
@@ -200,6 +220,7 @@ async function json<T>(
       throw err
     }
 
+    redirectIfSignedOut(res)
     // Parse the body once; every endpoint returns the JSON envelope (204s and
     // empty bodies are tolerated for safety).
     const text = await res.text()
@@ -268,6 +289,11 @@ const fp = (path: string) =>
  * useXChat (see app/lib/agentProvider.ts), not this module.
  */
 export const api = {
+  getAuthStatus: (opts?: JsonOpts) => json<AuthStatus>('/api/auth/status', undefined, opts),
+  login: (username: string, password: string) => json<null>('/api/auth/login', {
+    method: 'POST', body: JSON.stringify({ username, password })
+  }, { silent: true }),
+  logout: () => json<null>('/api/auth/logout', { method: 'POST' }),
   getRecoveryStatus: () => json<RecoveryStatus>('/api/recovery', undefined, { silent: true }),
   repairDefaultProject: () =>
     json<RecoveryStatus>('/api/recovery/default-project', {
@@ -300,7 +326,7 @@ export const api = {
       memory_backend: MemoryBackend
       mcp_auto_attach: boolean
       skill_auto_attach: boolean
-      permission_mode: 'restricted' | 'auto'
+      permission_mode: 'ask' | 'auto' | 'full-access'
     }>
   ) =>
     json<Project>(`/api/projects/${pid(id)}`, {
@@ -313,21 +339,34 @@ export const api = {
   // Sessions
   listSessions: (projectId?: string) =>
     json<Session[]>(`/api/sessions${q({ project_id: projectId })}`),
+  getContext: (id: string) => json<ContextStatus>(`/api/sessions/${id}/context`, undefined, { silent: true }),
+  retryContext: (id: string) => json<{ status: string }>(`/api/sessions/${id}/context/retry`, { method: 'POST' }),
+  compactContext: (id: string) => json<{ status: string }>(`/api/sessions/${id}/compact`, { method: 'POST' }),
   getSession: (id: string, opts?: ApiCallOpts) =>
     json<Session>(`/api/sessions/${pid(id)}`, {}, opts),
   listSessionMessages: (id: string, opts?: ApiCallOpts) =>
     json<SessionMessage[]>(`/api/sessions/${pid(id)}/messages`, {}, opts),
   getSessionPlan: (id: string, opts?: ApiCallOpts) =>
     json<SessionPlan>(`/api/sessions/${pid(id)}/plan`, {}, opts),
+  forkSession: (id: string, afterSeq: number, requestId: string) =>
+    json<Session>(`/api/sessions/${pid(id)}/fork`, {
+      method: 'POST',
+      body: JSON.stringify({ after_seq: afterSeq, request_id: requestId })
+    }),
   createSession: (body: {
     title: string
     project_id?: string
     preview?: string
     model_id?: string
+    reasoning_effort?: ReasoningEffort
   }) =>
     json<Session>('/api/sessions', {
       method: 'POST',
       body: JSON.stringify(body)
+    }),
+  updateSessionThinking: (id: string, modelId: string, effort: ReasoningEffort) =>
+    json<Session>(`/api/sessions/${pid(id)}/thinking`, {
+      method: 'PATCH', body: JSON.stringify({ model_id: modelId, reasoning_effort: effort })
     }),
   updateSessionModel: (id: string, modelId: string) =>
     json<{ session: Session; settings: AgentSettings }>(`/api/sessions/${pid(id)}/model`, {
@@ -597,6 +636,8 @@ export const api = {
     }),
 
   // Providers + Models
+  getCatalogStatus: () => json<CatalogStatus>('/api/model-catalog'),
+  updateCatalog: () => json<CatalogStatus>('/api/model-catalog/update', { method: 'POST' }),
   listProviders: () => json<Provider[]>('/api/providers'),
   createProvider: (body: {
     id: string
@@ -639,16 +680,17 @@ export const api = {
       opts
     ),
 
-  listModels: (providerId?: string) =>
-    json<Model[]>(`/api/models${q({ provider_id: providerId })}`),
-  /** What the runtime will send for this provider/model before any override. */
+  listModels: (providerId?: string, opts?: ApiCallOpts) =>
+    json<Model[]>(`/api/models${q({ provider_id: providerId })}`, undefined, opts),
+  /** SDK defaults and catalog lookup, including model IDs not yet added. */
   getGenerationDefaults: (
     providerId: string,
     model: string,
-    opts?: ApiCallOpts
+    opts?: ApiCallOpts,
+    reasoningEffort?: ReasoningEffort
   ) =>
     json<GenerationDefaults>(
-      `/api/models/generation-defaults${q({ provider_id: providerId, model })}`,
+      `/api/models/generation-defaults${q({ provider_id: providerId, model, reasoning_effort: reasoningEffort })}`,
       undefined,
       opts
     ),
@@ -657,7 +699,9 @@ export const api = {
     name: string
     display_name?: string
     advanced_params?: Record<string, unknown>
+    reasoning_effort?: ReasoningEffort
     supports_vision?: boolean | null
+    context_limit?: number | null
   }) =>
     json<Model>('/api/models', { method: 'POST', body: JSON.stringify(body) }),
   updateModel: (
@@ -665,7 +709,9 @@ export const api = {
     body: Partial<{
       display_name: string
       advanced_params: Record<string, unknown>
+      reasoning_effort: ReasoningEffort
       supports_vision: boolean | null
+      context_limit: number | null
     }>
   ) =>
     json<Model>(`/api/models/${pid(id)}`, {
@@ -714,11 +760,22 @@ export const api = {
   // Explicitly stop a session's in-flight turn (the composer Stop button).
   // Distinct from merely closing the SSE (navigating away), which keeps the turn
   // running in the background; only this cancels it and seals it as interrupted.
-  interruptChat: (sessionId: string) =>
+  interruptChat: (sessionId: string, expectedTurnId?: string | null) =>
     json<{ stopped: boolean }>('/api/chat/interrupt', {
       method: 'POST',
-      body: JSON.stringify({ session_id: sessionId })
-    }),
+      body: JSON.stringify({ session_id: sessionId, expected_turn_id: expectedTurnId })
+    }, { silent: true }),
+
+  submitInput: (body: AgentInput) => json<InputReceipt>('/api/chat/inputs', {
+    method: 'POST', body: JSON.stringify(body), signal: AbortSignal.timeout(15000)
+  }, { silent: true }),
+  editInput: (sid: string, id: string, revision: number, request: AgentInput) =>
+    json<ConversationState>(`/api/chat/sessions/${sid}/inputs/${id}`, {
+      method: 'PATCH', body: JSON.stringify({ revision, request })
+    }, { silent: true }),
+  withdrawInput: (sid: string, id: string, revision: number) =>
+    json<ConversationState>(`/api/chat/sessions/${sid}/inputs/${id}?revision=${revision}`, { method: 'DELETE' }, { silent: true }),
+  resumeInputs: (sid: string) => json<ConversationState>(`/api/chat/sessions/${sid}/inputs/resume`, { method: 'POST' }, { silent: true }),
 
   // Browser presence heartbeat (~10s cadence, sent by the app shell). Keeps
   // background turns alive across refresh/navigation and returns the sessions

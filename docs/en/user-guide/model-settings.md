@@ -6,8 +6,8 @@ Model setup has three steps: configure a provider connection, add a model, and s
 
 1. Open **Settings → Model settings** and select a provider such as ModelScope.
 2. Choose **Edit**, enter the API key, and save. Keys are write-only; not seeing plaintext does not mean saving failed.
-3. Choose **Add model**, enter the provider's actual model ID, and optionally set a display name.
-4. Enable image understanding only if that particular model supports it.
+3. Choose **Add model**, select or search a served model ID, and optionally set a display name. Enter an ID manually if it is not listed.
+4. **Auto** image understanding follows model metadata; unknown models default to disabled. Enable it manually after confirming a custom deployment supports images.
 5. Return to the conversation and select the provider/model below the input.
 
 The display name is a UI label; the model ID goes to the service. Identically named models from different providers need not accept the same parameters.
@@ -23,6 +23,14 @@ Add a model after saving the provider. Review advanced parameters for the chosen
 The top of the settings page selects a default provider/model. An explicit selection differs from reopening an existing conversation with a saved selection. Restoring history does not mean resetting global defaults. Check the model displayed below the input before sending.
 
 Configuration can refresh through change notifications across open pages. If a value looks stale, reopen the selector or refresh rather than repeatedly adding duplicate models.
+
+## Reasoning, images, and context
+
+For models with reasoning controls, choose a supported level in settings or beside the model name in chat. Sessions retain per-model selections. Explicit changes also update new-chat defaults; reopening history only reads saved session settings. Native reasoning parameters in advanced JSON override shortcuts, disabling the quick selector.
+
+Image understanding supports **Auto / On / Off** overrides. When disabled, attachments pass only paths, not proof that the main model received image pixels. Audio, video, and PDF capability labels do not imply native upload support for those formats.
+
+The context limit can tighten a known window or cap an unknown model; clear it to restore defaults. See [WebUI workspace](webui.md) for the context ring, manual compaction, and capability-data updates, and [Context management](../core/context.md) for budgets.
 
 ## Recover from errors
 

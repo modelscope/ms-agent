@@ -32,7 +32,7 @@ memory:
     ingest_interval: 1
 ```
 
-由此路径载入且未指定 `base_dir` 时，记忆目录根据工作目录落在 `.ms_agent/memory` 下；WebUI 可配置独立作用域。文件后端使用有界记忆，不意味着把全部对话自动复制进 MEMORY.md。管理操作见[管理记忆](../user-guide/memory.md)。
+由此路径载入且未指定 `base_dir` 时，记忆目录根据工作目录落在 `.ms_agent/memory` 下；WebUI 可配置独立作用域。文件后端使用有界记忆，不意味着把全部对话自动复制进 MEMORY.md。管理操作见[记忆管理](../user-guide/memory.md)。
 
 ## 最小自定义后端
 
@@ -58,6 +58,12 @@ assert backend_registry.resolve('demo') is DemoBackend
 ```
 
 在加载配置前导入注册模块，再选择 `storage.backend: demo`。这个例子只展示协议，不存储数据；实际后端需按需要实现 `on_messages`、`search`、工具及压缩回调。关闭时释放其持有的连接或锁。
+
+## 压缩前提取
+
+压缩可先从原始消息中提取长期事实，使用实际记忆模型的预算，给提示、既有记忆和输出预留空间，输入过长则分片。文件后端默认 `char_limit: 2200` 是最终记忆文件的字符限制，不是模型 token 窗口。
+
+提取结果区分 `updated`、`unchanged`、`skipped`、`failed`。分片全部成功才替换记忆文件；普通失败保留旧记忆及原始消息序号，让后续压缩重试，不阻止合格摘要提交。用户取消会中止操作。记忆文件与日志分别写入，崩溃恢复可能重复提取，因此不应承诺跨存储事务。
 
 ## 写入、共享与限制
 

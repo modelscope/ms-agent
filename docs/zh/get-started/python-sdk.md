@@ -16,7 +16,7 @@ async def main():
     config = OmegaConf.create({
         'llm': {
             'service': 'modelscope',
-            'model': 'Qwen/Qwen3-235B-A22B-Instruct-2507',
+            'model': 'Qwen/Qwen3.8-Flash-Next',
             'modelscope_api_key': os.environ['MODELSCOPE_API_KEY'],
         },
         'generation_config': {'stream': False},

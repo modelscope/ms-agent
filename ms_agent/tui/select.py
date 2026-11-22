@@ -17,6 +17,21 @@ import sys
 from typing import List, Optional, Sequence
 
 
+_sigint_rearm = None
+
+
+def bind_sigint_rearm(callback) -> None:
+    """Put the TUI's SIGINT handler back after an arrow menu.
+
+    prompt_toolkit's Application removes the loop handler when the menu
+    exits. A permission menu runs in the middle of a turn, before the next
+    prompt re-arms that handler, so Ctrl-C would be ignored until the user
+    submits another line.
+    """
+    global _sigint_rearm
+    _sigint_rearm = callback
+
+
 async def select_async(options: Sequence[str],
                        *,
                        default: int = 0,
@@ -112,7 +127,16 @@ async def _menu_async(options: Sequence[str],
         erase_when_done=True,
         mouse_support=False,
     )
-    return await app.run_async()
+    try:
+        # Do not let the menu replace the TUI's SIGINT handler. Ctrl-C in
+        # the menu is the c-c key binding above. handle_sigint=True would
+        # remove the loop handler on the way out, and Ctrl-C would do
+        # nothing for the rest of the turn.
+        return await app.run_async(handle_sigint=False)
+    finally:
+        rearm = _sigint_rearm
+        if rearm is not None:
+            rearm()
 
 
 async def _fallback_numeric(n: int) -> Optional[int]:

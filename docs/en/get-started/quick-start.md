@@ -69,7 +69,7 @@ Do not clone over an existing checkout. Enter that checkout and activate the cor
 
 1. Obtain a [ModelScope API key](https://modelscope.cn/my/myaccesstoken).
 2. Open **Settings → Model settings → ModelScope → Edit**, enter the key, and save.
-3. Choose **Add model** and enter an available model ID, such as `Qwen/Qwen3-235B-A22B-Instruct-2507`.
+3. Choose **Add model** and enter an available model ID, such as `Qwen/Qwen3.8-Flash-Next`.
 4. Return to the conversation and select that model below the input. For a custom OpenAI-compatible endpoint, use **Add provider** with its actual Base URL and key.
 
 Saving a key does not add or select a model. Keep real keys out of conversations and screenshots.

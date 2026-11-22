@@ -12,7 +12,7 @@ tools:
   code_executor:
     mcp: false
     implementation: python_env
-    include: [python_executor]
+    include: [shell_executor]
 ```
 
 内置工具写 `mcp: false`；`include`与`exclude`不能同时使用。文件工具实际名称包括 `read_file/write_file/edit_file/glob/grep`，不是旧文档的create_directory/list_files。工作目录由 `output_dir`决定，默认当前目录；权限规则仍会限制具体路径。
@@ -22,7 +22,7 @@ tools:
 | 工具或工具组 | 职责 |
 | --- | --- |
 | file_system | 文件读取、精确编辑、搜索与匹配 |
-| code_executor | shell、Python、Notebook及运行环境操作 |
+| code_executor | 本地 shell；沙箱中的 Python、Notebook及环境操作 |
 | web_search / localsearch | 网络搜索 / 按需本地检索 |
 | todo_list / task_control | 任务计划与执行控制 |
 | agent_tools / split_task | 子智能体任务拆分与委派 |

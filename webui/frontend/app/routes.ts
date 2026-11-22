@@ -6,6 +6,7 @@ import {
 } from '@react-router/dev/routes'
 
 export default [
+  route('login', 'routes/login.tsx'),
   route('recovery', 'routes/recovery.tsx'),
   // Main app shell — sidebar + chat surfaces.
   layout('layouts/app.tsx', [

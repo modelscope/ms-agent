@@ -38,7 +38,7 @@ function placeholderColor(seed: string): string {
 
 /** First letter/digit of the name, for the placeholder tile. */
 function initial(text: string): string {
-  const c = [...text].find((ch) => /[A-Za-z0-9]/.test(ch))
+  const c = [...text].find((ch) => /[\p{L}\p{N}]/u.test(ch))
   return (c ?? '?').toUpperCase()
 }
 

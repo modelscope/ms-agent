@@ -10,22 +10,19 @@ tools:
   code_executor:
     mcp: false
     implementation: python_env
-    include: [python_executor, shell_executor]
+    shell_timeout: 120
+    include: [shell_executor]
 ```
 
-`python_env`选择本地实现。shell/Python调用与Notebook不是同一种状态模型：独立调用不能依赖上一次shell的`cd`或环境激活；Notebook可能保留内核状态。需要固定解释器时使用项目环境的绝对路径或在同一次调用中激活并执行。
+`python_env` 使用本机 shell，不再提供本地 Python / Notebook 执行器。POSIX 使用 `/bin/sh`，Windows 使用 `cmd.exe`；每次调用是独立进程，不能依赖上一次的 `cd`、环境激活或 Python 变量。执行 Python 文件时调用项目解释器路径，或在同一次 shell 调用中激活环境并执行。
 
-| 操作 | 注意事项 |
-| --- | --- |
-| shell_executor | 检查工作目录、PATH、超时和网络授权 |
-| python_executor | 使用当前指定解释器；不要假设跨调用保存变量 |
-| notebook_executor | 依赖Notebook组件；状态和内核重启需明确 |
-| reset_executor | 可能清空执行上下文，不能视为无副作用检查 |
-| get_executor_info | 用于确认实际环境而非推测 |
+本地默认 `shell_timeout` 为 60 秒，示例显式设为 120 秒。`shell_env` 用于传入所需环境变量；工具不会自动继承进程中的所有凭据。Docker 镜像的 `MS_AGENT_SHELL_PATH` 可将 Agent 工具环境与服务自身的环境分开，显式 `shell_env` 优先。
+
+旧本地配置应从过滤列表移除 `python_executor`、`notebook_executor`、`reset_executor`、`get_executor_info`，将 `python_timeout` / `notebook_timeout` 换为 `shell_timeout`、`kernel_env` 换为 `shell_env`。这四个接口仍适用于对应沙箱模式。
 
 ## 沙箱与部署
 
-沙箱实现需要对应依赖、镜像和运行服务。仓库的领域项目可能配置特定镜像；不能仅将implementation换名就声称已隔离。按项目指南准备镜像、挂载、网络和资源限制，再用无害任务验证。
+Docker / Docker Notebook 沙箱支持 Python、Notebook、shell 和文件操作，Notebook 内核可保留变量，重置会清空其状态。容器中的 `/data` 用于挂载共享资料。沙箱实现需要对应依赖、镜像和运行服务。仓库的领域项目可能配置特定镜像；不能仅将implementation换名就声称已隔离。按项目指南准备镜像、挂载、网络和资源限制，再用无害任务验证。
 
 WebUI运行所在机器的文件系统才是Agent看到的环境。远程部署时，浏览器中选择的路径属于服务器，不是浏览器电脑。不要向公共网络直接开放无认证的工作台。
 

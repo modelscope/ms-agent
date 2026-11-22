@@ -3,8 +3,8 @@ name = "ms-agent-webui-backend"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
-    # WebUI exposes shell execution by default. Optional Python/Notebook
-    # dependencies are installed separately when those tools are enabled.
+    # WebUI exposes local shell execution by default. Install task-specific
+    # packages separately in the Python environment used by the shell.
     "anthropic>=0.117.0",
     "beautifulsoup4",
     "exa-py>=2.16.0",

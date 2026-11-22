@@ -12,7 +12,7 @@ tools:
   code_executor:
     mcp: false
     implementation: python_env
-    include: [python_executor]
+    include: [shell_executor]
 ```
 
 Mark built-ins with `mcp: false`. `include` and `exclude` are mutually exclusive. File operations are `read_file/write_file/edit_file/glob/grep`, not the old create_directory/list_files names. `output_dir` selects the workspace and defaults to the current directory; permission rules still restrict individual paths.
@@ -22,7 +22,7 @@ Mark built-ins with `mcp: false`. `include` and `exclude` are mutually exclusive
 | Tool or group | Responsibility |
 | --- | --- |
 | file_system | Read, precisely edit, search, and match files |
-| code_executor | Shell, Python, Notebook, and environment operations |
+| code_executor | Local shell; sandbox Python, Notebook, and environment operations |
 | web_search / localsearch | Web search / on-demand local retrieval |
 | todo_list / task_control | Planning and execution control |
 | agent_tools / split_task | Subagent delegation and task decomposition |

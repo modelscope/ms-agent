@@ -5,12 +5,15 @@ a structured ``{ "newFacts": [...], "factsToRemove": [...] }`` delta.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any, Dict, List, Optional
 
 from ms_agent.utils.logger import get_logger
 from ..config import MemoryConfig
 from ..protocols import MemoryEntry
+from .tool_based import (_collect_in_executor, _evidence_batches,
+                         _evidence_messages, _generation_options)
 
 logger = get_logger()
 
@@ -60,35 +63,41 @@ class LLMMergeExtractor:
         ``factsToRemove`` from ``entry.metadata`` and applying deletions.
         """
         if self.llm is None:
-            logger.warning('[llm_merge] No LLM configured — skipping')
-            return []
+            raise RuntimeError('[llm_merge] No LLM configured')
 
         system_content = MERGE_SYSTEM_PROMPT.format(
             existing_facts=existing_facts or '[]', )
-
-        from ms_agent.llm.utils import Message
-        llm_messages = [Message(role='system', content=system_content)]
-        for m in messages:
-            if isinstance(m, Message):
-                llm_messages.append(m)
-            elif isinstance(m, dict):
-                llm_messages.append(
-                    Message(
-                        role=m.get('role', 'user'),
-                        content=m.get('content', ''),
-                    ))
-
-        try:
-            response = self.llm.generate(llm_messages)
-            if hasattr(response, '__next__'):
-                for msg in response:
-                    response = msg
-        except Exception as e:
-            logger.warning(f'[llm_merge] LLM call failed: {e}')
-            return []
-
-        content = getattr(response, 'content', '') or ''
-        return self._parse_merge_response(content)
+        batches = await asyncio.to_thread(_evidence_batches, self.llm,
+                                          self.config, messages,
+                                          system_content)
+        facts = json.loads(existing_facts or '[]')
+        entries, removed = [], set()
+        for batch in batches:
+            system_content = MERGE_SYSTEM_PROMPT.format(
+                existing_facts=json.dumps(facts, ensure_ascii=False))
+            llm_messages = _evidence_messages(system_content, batch)
+            options = _generation_options(self.llm, self.config, llm_messages)
+            response = await _collect_in_executor(
+                self.llm, llm_messages, max_continue_runs=0, **options)
+            if getattr(response, 'finish_reason',
+                       '') in ('length', 'max_tokens'):
+                raise ValueError(
+                    'Truncated memory update; existing facts retained')
+            additions = self._parse_merge_response(
+                getattr(response, 'content', '') or '')
+            for entry in additions:
+                removed.update(entry.metadata.get('factsToRemove', []))
+            entries = [e for e in entries if e.id not in removed]
+            entries.extend(e for e in additions if e.content.strip())
+            facts = [f for f in facts if f.get('id') not in removed]
+            facts.extend(e.to_dict() for e in additions if e.content.strip())
+        if removed:
+            entries.append(
+                MemoryEntry(
+                    content='',
+                    source='llm_merge',
+                    metadata={'factsToRemove': sorted(removed)}))
+        return entries
 
     @staticmethod
     def _parse_merge_response(text: str) -> List[MemoryEntry]:
@@ -101,16 +110,19 @@ class LLMMergeExtractor:
             ]
             text = '\n'.join(lines)
 
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError:
-            logger.warning(f'[llm_merge] Failed to parse JSON: {text[:200]}')
-            return []
-
+        data = json.loads(text)
+        if not isinstance(data, dict) or not isinstance(
+                data.get('newFacts'), list):
+            raise ValueError(
+                'Invalid memory merge response: expected newFacts list')
+        facts_to_remove = data.get('factsToRemove')
+        if not isinstance(facts_to_remove, list) or not all(
+                isinstance(value, str) for value in facts_to_remove):
+            raise ValueError(
+                'Invalid memory merge response: expected fact IDs')
         entries: List[MemoryEntry] = []
-        facts_to_remove = data.get('factsToRemove', [])
 
-        for fact in data.get('newFacts', []):
+        for fact in data['newFacts']:
             entry = MemoryEntry(
                 content=fact.get('content', ''),
                 category=fact.get('category', 'knowledge'),
@@ -121,4 +133,21 @@ class LLMMergeExtractor:
             if entry.content.strip():
                 entries.append(entry)
 
+        if not entries and facts_to_remove:
+            # Carry a deletion-only delta without persisting an empty fact.
+            entries.append(
+                MemoryEntry(
+                    content='',
+                    source='llm_merge',
+                    metadata={'factsToRemove': facts_to_remove}))
         return entries
+
+
+async def apply_fact_updates(storage, entries):
+    removed = []
+    for entry in entries:
+        for fact_id in entry.metadata.get('factsToRemove', []):
+            if fact_id not in removed:
+                removed.append(fact_id)
+    facts = [entry for entry in entries if entry.content.strip()]
+    await storage.apply_merge(facts, removed)

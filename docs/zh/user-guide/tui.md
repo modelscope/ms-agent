@@ -5,10 +5,10 @@ TUI在终端中持续与Agent协作，使用共享SDK执行和会话服务，不
 ## 启动
 
 ```bash
-ms-agent tui --work-dir ./demo-project
+ms-agent --work-dir ./demo-project
 ```
 
-已有配置时加 `--config ./agent.yaml`；环境变量文件可用 `--env ./.env`。工作目录决定项目范围，启动前先创建或确认该目录。默认权限模式为restricted（interactive别名）。
+不带子命令的 `ms-agent` 默认进入 TUI，显式 `ms-agent tui` 也可以。已有配置时加 `--config ./agent.yaml`；环境变量文件可用 `--env ./.env`。工作目录决定项目范围，启动前先创建或确认该目录。默认权限模式为 `ask`。可用 `--agent` 加载本地配置或 Agent Hub 模板；下载外部模板前检查来源。
 
 首次初始化工具可能需要时间。看到输入提示后发送一个小任务；底部状态栏显示模型、token、权限和会话信息。输入 `/` 可查看补全；上方向键查阅当前输入历史。
 
@@ -23,8 +23,14 @@ ms-agent tui --work-dir ./demo-project
 | `/resume <编号或ID>` | 选择已有会话 |
 | `/new` | 开始新的会话 |
 | `/context` / `/usage` | 查看上下文和用量 |
-| `/compact` | 手动裁剪较早工具输出 |
-| `/stop` | 请求停止当前执行 |
+| `/compact` | 手动压缩上下文，共用 SDK 摘要机制 |
+| `/mcp` / `/skills` | 管理连接、导入及启用资源 |
+| `/search` | 查看或设置搜索服务 |
+| `/memory` | 开启或关闭记忆 |
+| `/profile` | 查看 AGENTS.md 和 PROFILE.md 位置 |
+| `/permission ask\|auto\|full-access` | 查看或切换权限模式 |
+| `/interject steer\|queue` | 选择运行中输入方式 |
+| `/stop` / `/cancel` | 中断当前任务，保留已生成内容 |
 | `/quit` | 退出交互 |
 
 命令集合由当前入口及已装扩展决定，`/help`比其他Agent产品的快捷键表更可靠。不要照抄Hermes的`--tui`或`--continue`参数。
@@ -34,6 +40,12 @@ ms-agent tui --work-dir ./demo-project
 默认输入由prompt_toolkit提供；不是所有终端组合键都具有相同的多行/粘贴行为。长输入先在编辑器准备，再粘贴并检查。图片/附件支持以当前解析器和模型能力为准，不能把文件路径文字当作已上传图片的证明。
 
 工具请求确认时阅读命令和目标，再选择允许/拒绝。Ctrl-C可能中断等待或当前运行；以实际状态为准，若仍在运行使用停止命令或退出。检查已产生文件，取消不是回滚。
+
+## 运行中输入
+
+任务运行时，输入行固定在底部，普通文字可继续编辑并按 Enter 提交。默认 `steer` 将补充要求在当前模型或工具操作结束后加入本任务；`/interject queue` 改为等待当前任务结束，再处理后续输入，`/interject steer` 切回。状态栏显示方式与待处理数量。普通命令排队执行，停止、退出等优先命令不等待任务正常完成。
+
+Ctrl-C 在运行中请求中断当前任务，空闲输入时清除草稿。工具审批仍单独确认。TUI 输入队列是进程内缓冲，不提供 WebUI 的编辑、撤回和重启持久化队列；退出前检查尚未处理的输入。
 
 ## 恢复与事件记录
 

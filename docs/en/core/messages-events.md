@@ -45,4 +45,24 @@ The async generator returned by `await agent.run(query, stream=True)` yields mes
 
 The WebUI adapts SDK events into HTTP streaming responses. Do not bypass that adapter by sending internal Python objects to the browser. Event changes require checking SDK, TUI, ACP translation, and WebUI consumers together.
 
+## Input during execution and event subscriptions
+
+`SessionInputController` separates receiving input from executing tasks. `queue` starts a new task after the current one completes; `steer` joins the current task at model/tool lifecycle boundaries. Steering does not forcibly cancel dispatched tools. Older calls not yet dispatched can be marked `not_executed`, preserving call/result pairing without fabricating successful output.
+
+The WebUI exposes:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /api/chat/inputs` | Admit messages with input-ID deduplication |
+| `GET /api/chat/sessions/{id}/inputs` | Read task and pending-input state |
+| `PATCH /api/chat/sessions/{id}/inputs/{input_id}` | Edit pending input using its revision |
+| `DELETE /api/chat/sessions/{id}/inputs/{input_id}` | Withdraw pending input |
+| `POST /api/chat/sessions/{id}/inputs/resume` | Release held inputs |
+| `GET /api/chat/sessions/{id}/events` | Subscribe to SSE snapshots and deltas |
+| `POST /api/chat/interrupt` | Stop a specified task |
+
+Input states (`pending`, `delivered`, `cancelled`) are separate from task state. Delivery completes when the user message is written; delivered messages cannot be edited or withdrawn. Subscriptions replay with an `epoch:sequence` cursor and fall back to a complete snapshot when it expires. Disconnecting a viewer does not cancel execution. The current implementation requires one API worker and allows up to 20 preparing/pending inputs combined.
+
+The TUI uses its own terminal input buffer, not the WebUI's durable queue or editing API. See [WebUI](../user-guide/webui.md) and [TUI](../user-guide/tui.md) for procedures.
+
 Next: [Agents](agents.md), [Sessions](sessions.md). Implementation: `llm/utils.py`, `ui/events.py`, `ui/input.py`.

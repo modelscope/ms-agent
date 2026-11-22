@@ -28,7 +28,7 @@ flowchart TD
 ```yaml
 llm:
   service: modelscope
-  model: Qwen/Qwen3-235B-A22B-Instruct-2507
+  model: Qwen/Qwen3.8-Flash-Next
 generation_config:
   stream: false
 callbacks: []

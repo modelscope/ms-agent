@@ -28,9 +28,15 @@ compaction:
 
 Sharing a working directory does not mean every interface automatically selects the same session. Use supported selection/recovery operations instead of copying logs and changing IDs.
 
+## Session forks
+
+`manager.fork(session_id, after_seq=..., name=..., request_id=...)` creates an independent session after a completed reply. `after_seq` is a validated log position with paired tool calls/results, not a UI bubble index. `request_id` deduplicates retries and cannot identify different fork points.
+
+A fork copies actual history through that reply and the valid compacted window, recording provenance in `forked_from`. Plans are reconstructed only from task-list results saved before the fork point; without a snapshot, the source's current plan is not inherited. Later conversation records are independent, while project files, settings, and memory remain shared at their current state. Forking does not roll back the filesystem.
+
 ## Interruption and persistence
 
-Replies are saved before waiting for the next input. Interrupted turns retain what actually happened. After cancelling tools, inspect files and external operations: a session log is not a rollback system.
+Replies are saved before waiting for the next input. Interrupted turns retain what actually happened. WebUI pending inputs are appended as `input_event` records in the same log; a service restart restores them on hold without rerunning delivered messages. After cancelling tools, inspect files and external operations: a session log is not a rollback system.
 
 Do not edit JSONL or move active stores while a service is running. Back up metadata, conversation records, and project files together. Changing the working directory also changes the default project key.
 
@@ -40,4 +46,4 @@ Do not edit JSONL or move active stores while a service is running. Back up meta
 - If history is missing, check the working directory, `MS_AGENT_HOME`, and the interface's storage scope.
 - If context is too large, adjust budgets/compaction instead of deleting the original log.
 
-See [Projects and sessions](../user-guide/projects-sessions.md) and [Storage](../development/storage.md). Implementation: `session/session_log.py`, `project/session_manager.py`, interface runtimes.
+See [Projects and sessions](../user-guide/projects-sessions.md) and [Storage](../development/storage.md). Implementation: `session/session_log.py`, `project/session.py`, `project/fork.py`, interface runtimes.

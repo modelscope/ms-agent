@@ -229,6 +229,14 @@ TRANSCRIPTS_OUTSIDE = (
     '`{session_dir}`, and the project\'s other sessions sit beside it. Any '
     '`sessions/` directory inside the working directory is the user\'s own.')
 
+SESSION_PLAN_HINT = (
+    'The current session\'s todo tools use `{plan_json}` and render Markdown '
+    'to `{plan_md}` by default. Use the todo tools to read or update this plan.')
+
+FORK_PLAN_HINT = (
+    'This is a branched session with an independent plan. Paths in inherited '
+    'tool results identify the source sessions, not the current plan.')
+
 #: Filename -> template registry used by workspace_files.ensure logic.
 HOME_FILE_TEMPLATES = {
     'SOUL.md': SOUL_TEMPLATE,

@@ -12,7 +12,21 @@ ms-agent ui --host 127.0.0.1 --port 8080 --no-browser
 
 ## 远程访问
 
-当前应用没有内置登录。只有在反向代理认证、TLS和网络策略准备好后，才考虑 `--host 0.0.0.0`。Agent使用服务器上的文件和工具，不是浏览器本地资源；只挂载和授权必要工作目录。
+WebUI 默认关闭认证，仅供本机使用。开放网络访问前启用下方的内置登录，或使用无法绕过的认证网关，并配置 HTTPS 和网络策略。Agent 使用服务器上的文件和工具，不是浏览器本地资源；只挂载和授权必要工作目录。
+
+### 可选单用户登录
+
+在启动前设置以下变量，也可保存到私有的 `webui/backend/.env`：
+
+```ini
+MS_AGENT_WEBUI_AUTH_ENABLED=true
+MS_AGENT_WEBUI_USERNAME=admin
+MS_AGENT_WEBUI_PASSWORD=请替换为足够长且不重复使用的密码
+```
+
+重启后使用配置的账号登录。每个实例只有一个账号，用户名默认 `admin`；开启认证但未配置密码会拒绝启动。登录状态保留 7 天，重启后仍有效。**设置 → 退出登录** 可退出；修改用户名或密码并重启会使旧登录失效。
+
+开启认证后，页面、文件、配置及流式 API 都需要登录。登录 Cookie 使用 HttpOnly、SameSite=Lax，HTTPS 下使用 Secure；写入请求仅接受同源或 `MS_AGENT_CORS_ORIGINS` 明确允许的来源，不允许通配来源。该功能不是多用户权限隔离，服务仍以同一实例访问项目资源。
 
 `MS_AGENT_FRONTEND_HOSTED_MODE=1`隐藏不适合远程使用的本地路径控件，但不代替后端访问限制。
 

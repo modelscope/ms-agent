@@ -7,7 +7,7 @@
 ```{mermaid}
 flowchart TD
   A[完整会话日志] --> B[选择当前可见窗口]
-  B --> C[工具输出裁剪策略]
+  B --> C[可选工具输出裁剪]
   C --> D[历史摘要策略]
   D --> E{发生压缩?}
   E -->|是| F[追加压缩视图和事件]
@@ -26,7 +26,7 @@ session_log:
 compaction:
   enabled: true
   context_limit: 128000
-  reserved_buffer: 20000
+  compression_ratio: 0.85
   strategies:
     - name: tool_output_pruner
       enabled: true
@@ -35,7 +35,13 @@ compaction:
       enabled: true
 ```
 
-这些是上下文预算，不保证与每个模型的实际窗口完全匹配。`reserved_buffer` 给回复留空间；保护最近工具输出可减少反复读取。`compaction.enabled: false` 停止自动压缩，但仍可以记录会话。
+默认使用摘要策略；工具输出裁剪需显式启用，它可能移除独有证据。自动压缩默认在有效窗口的 85% 触发，实际阈值还受输入上限和输出预留约束。`compaction.enabled: false` 关闭自动压缩，不关闭日志、硬预算检查或显式手动压缩。
+
+## 输入与输出预算
+
+窗口由模型能力、`llm.context_limit` 和兼容的 `compaction.context_limit` / `session_log.context_limit` 共同限制，取有效上限中的较小值；均未知时回退为 128000。手动配置可以缩小已知模型窗口，不能扩大服务实际支持的范围。
+
+输出预留按最终请求的 `max_tokens`、`max_completion_tokens` 或 `max_output_tokens` 计算；未指定时默认不超过 8192、模型输出上限及窗口的八分之一。输入上限还需扣除该预留。旧 `reserved_buffer` 覆盖比例阈值，但不是最终请求的输出 token 参数。
 
 ## 自定义策略对象
 
@@ -60,6 +66,14 @@ assert isinstance(KeepWindow(), ViewStrategy)
 
 ## 与记忆和手动压缩的区别
 
-压缩前可触发记忆 flush 回调，但异步写入不保证先于摘要完成。持久知识由[记忆](memory.md)后端管理。终端 `/compact` 的手动工具输出裁剪与自动摘要管线也不是完全相同的操作。
+自动压缩、SDK `/compact` 和 WebUI 按钮共用 `LLMAgent.compact_context()`。手动压缩在输入等待边界执行，不追加用户消息，也不触发主对话回答；WebUI 尚未提供 slash command 路由，应使用圆环菜单中的按钮。
+
+摘要保留系统消息、最新输入和受保护的完整工具调用组。新窗口与完成事件作为完整记录追加，回放只采用校验通过的窗口；原始历史不被删除。摘要输入可按预算分片，空内容、截断或未缩短上下文的结果不会替换原窗口。
+
+启用[记忆](memory.md)后，压缩提交前先尝试提取长期事实。普通提取失败保留旧记忆和重试来源，合格摘要仍可提交；取消会中止整个操作。
+
+## 失败与续接
+
+摘要失败时保留原上下文；仍超过硬输入预算时保存待处理请求。WebUI 的“重试压缩并继续”及 SDK `ResumeContext` 续接该请求，不重复追加用户消息。发送新指令会取代旧待处理请求。最新输入本身过大时，应缩短内容或换用更大窗口模型，不能靠压缩删除必须保留的输入。
 
 下一步：[会话](sessions.md)、[提示装配](prompts.md)、[存储布局](../development/storage.md)。实现：`session/context_assembler.py`、`session/strategies/`、`LLMAgent._build_compaction_strategies()`。

@@ -32,7 +32,7 @@ memory:
     ingest_interval: 1
 ```
 
-When loaded through this configuration path without `base_dir`, memory is rooted at `.ms_agent/memory` under the working directory. The WebUI can configure separate scopes. Bounded file memory does not automatically copy every conversation into MEMORY.md. See [Managing memory](../user-guide/memory.md).
+When loaded through this configuration path without `base_dir`, memory is rooted at `.ms_agent/memory` under the working directory. The WebUI can configure separate scopes. Bounded file memory does not automatically copy every conversation into MEMORY.md. See [Memory management](../user-guide/memory.md).
 
 ## Minimal custom backend
 
@@ -58,6 +58,12 @@ assert backend_registry.resolve('demo') is DemoBackend
 ```
 
 Import the registration module before configuration is loaded, then select `storage.backend: demo`. This example demonstrates the contract without persistence. A real backend implements ingestion, search, tools, or compaction callbacks as needed, and closes connections and locks it owns.
+
+## Extraction before compaction
+
+Before compaction, long-term facts can be extracted from original messages using the actual memory model's budget, with room for prompts, existing memory, and output. Oversized input is split into chunks. The file backend's default `char_limit: 2200` bounds the final file in characters, not the model's token window.
+
+Results distinguish `updated`, `unchanged`, `skipped`, and `failed`. All chunks must succeed before replacing the memory file. Ordinary failure preserves old memory and original message sequences for a later retry without blocking a valid summary. User cancellation stops the operation. Memory and logs are written separately, so crash recovery may repeat extraction; this is not a cross-store transaction.
 
 ## Writing, sharing, and limits
 

@@ -33,7 +33,8 @@ A field existing does not prove a feature is active. Some components require val
 | llm.openai_api_key / openai_base_url | str | OpenAI-compatible configuration |
 | llm.modelscope_api_key / modelscope_base_url | str | ModelScope legacy configuration |
 | llm.anthropic_api_key / anthropic_base_url | str | Anthropic legacy configuration |
-| llm.supports_vision | bool or unset | Model vision choice; unset can use provider/runtime capability |
+| llm.supports_vision | bool or unset | Image-capability override; unset uses model metadata, unknown models default off |
+| llm.context_limit | int or unset | Manual window cap; only tightens known model limits |
 | llm.vision | mapping | Encoding, dimensions, transcoding, auxiliary vision |
 | generation_config | mapping | Sampling, streaming, tokens, service extensions; protocol-specific |
 | prompt.system | str | Replace the base system layer, not every assembled layer |
@@ -50,7 +51,8 @@ Bundled examples use temperature 0.3, top_k 20, and stream true. This does not g
 | tools.NAME.include / exclude | list[str] | Mutually exclusive filters |
 | tools.NAME.enabled | bool | Enable where supported by the component/configuration layer |
 | tools.plugins | list[str] | Custom Python tool files relative to configuration; distinct from top-level plugin resources |
-| tools.code_executor.implementation | str | python_env selects local execution; others need sandbox configuration |
+| tools.code_executor.implementation | str | python_env selects local shell; Python/Notebook interfaces require sandbox mode |
+| tools.code_executor.shell_timeout / shell_env | number / mapping | Local shell timeout (default 60 seconds) and explicit environment |
 | tools.localsearch.paths | list[str] | Actual local-search roots |
 | knowledge_search_paths | str | Compatible comma-separated CLI roots mapped to localsearch |
 | skills.sources | list[mapping] | Structured type/path/repo_id and related source fields |
@@ -81,22 +83,24 @@ skills:
 | Block | Main fields | Meaning |
 | --- | --- | --- |
 | session_log | enabled, dir, context_limit, reserved_buffer | Recording and budgets; interfaces can override storage |
-| compaction | enabled, context_limit, reserved_buffer, strategies | Built-in pruning/summarization; YAML recognizes built-in names only |
+| compaction | enabled, context_limit, compression_ratio, reserved_buffer, strategies | Summary by default, pruning opt-in; ratio defaults 0.85, legacy reserved_buffer overrides the threshold |
 | unified_memory or memory.unified_memory | enabled, storage, base_dir, ingest_interval, recall_top_k | Backend selection; loading path affects default directory |
 | Legacy memory compressors | context_compressor, refine_condenser, code_condenser | Still used by some applications |
 | personalization | enabled, global_instruction, project_instruction | File-first with legacy fallback; bundled YAML enables, parser defaults false |
 | rag | name, embedding, chunk_size, chunk_overlap, retrieve_only, storage_dir | Traditional RAG, separate from on-demand localsearch |
 
-Common context budgets are 128000, reserved space 20000, and recent-tool protection 40000. Match them to the actual model rather than treating budgets as provider capabilities. See [Memory](../core/memory.md) for backend fields and lifecycle examples.
+Windows combine model metadata and manual caps, falling back to 128000 when unknown. Actual generation parameters determine output reservation; automatic compaction normally starts at 85%. `summary_max_calls` (default 32) and `summary_reasoning_effort` configure summary budgets. Legacy reserved space is not a request output limit. See [Memory](../core/memory.md) for backend fields and lifecycle examples.
 
 ## Permissions
 
-`permission.mode` accepts auto/strict/interactive; restricted is an alias. `whitelist/blacklist/ask_rules` express outer policy. Safety `patterns`, `sensitive_paths`, `sensitive_read_paths`, and `dangerous_removal_paths` **replace default lists**; omit them to retain defaults.
+`permission.mode` accepts `ask` / `auto` / `full-access`. `restricted` / `interactive` alias ask, `delegate` aliases auto, and legacy strict aliases full-access. `decision_provider` selects llm/agent assessment; `provider_timeout` defaults to 30 seconds. `whitelist/blacklist/ask_rules` express outer policy. Safety `patterns`, `sensitive_paths`, `sensitive_read_paths`, and `dangerous_removal_paths` **replace default lists**; omit them to retain defaults.
 
 `allowed_directories/read_only_directories` control paths; `allow_temp_dir` defaults true; `path_validation.read_policy` is loose/strict and `max_command_chars` defaults 8192. Coverage depends on execution paths; see [Permissions](../core/permissions.md).
 
 ## Environment and secrets
 
 Use dotenv/process variables for credentials. Environment overrides do not create arbitrary nested tool fields without restriction. WebUI loading and CLI `--env` differ; identify the entry point first. Never log complete resolved configurations publicly.
+
+Optional WebUI login uses `MS_AGENT_WEBUI_AUTH_ENABLED`, `MS_AGENT_WEBUI_USERNAME`, and `MS_AGENT_WEBUI_PASSWORD`; see [Deployment](../user-guide/deployment.md). Capability-data updates use `MS_AGENT_MODEL_CATALOG=auto|local|bundled`. Queue/steer defaults are saved in SDK settings as `interaction.follow_up_behavior`, not Agent YAML.
 
 Implementation: `config/config.py`, `resolver.py`, `llm/spec.py`, `permission/config.py`, `memory/unified/config.py`, and individual modules.

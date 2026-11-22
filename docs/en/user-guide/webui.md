@@ -17,6 +17,20 @@ Text, reasoning, and tool calls are distinct display items. A tool whose argumen
 
 The permission selector controls interaction. **Always ask** is a suitable initial choice. Review tool, command, and target paths before approval. Approval offers “Reject”, “Run once”, and “Always run”; prefer one-time approval while learning. During generation, use the stop button beside the composer. You can send another message after interruption. Inspect artifacts after stopping; stop is not undo. Do not grant unrestricted access merely to suppress prompts.
 
+## Add input while a task runs
+
+Keep typing, attaching files, or selecting skills while the agent works. New messages queue by default and start separate tasks in order after normal completion. Choose **Steer** in **Settings → Personalization → Conversation behavior** to add later submissions to the current task after its current model response or dispatched tool batch finishes. Steering does not forcibly interrupt those operations or replace tool approval.
+
+Pending messages appear above the composer and can be edited or withdrawn. Delivered messages move into the conversation and cannot be withdrawn. While running, an empty draft shows **Stop**; typing, attachments, or selected skills switch it to **Send**. Sending or clearing the draft restores **Stop** if the task is still active.
+
+Stopping or task failure holds pending inputs and preserves existing artifacts. **Continue sending** releases them as new tasks, not resumed cancelled operations. You may also send another task while earlier inputs stay on hold. Refreshing, switching sessions, or disconnecting does not stop execution, and accepted inputs persist. A service restart restores pending inputs on hold until resumed. Unsubmitted composer drafts are different: they do not survive refresh.
+
+## Model capabilities and context
+
+Choose supported reasoning levels beside the model name and set image understanding to **Auto / On / Off**; see [Model settings](model-settings.md). Capability information comes from models.dev data bundled with the SDK. Source WebUI installations check for updates at startup; wheels/images use local data by default. **Settings → Models → Update catalog** downloads new data that takes effect after restarting the service. Failed updates preserve valid local data. Use `MS_AGENT_MODEL_CATALOG=local` for offline startup, or `bundled` to pin bundled data and disable updates.
+
+The context ring shows the latest request's estimated input. Expand it for system-prompt, tool-definition, and message usage, or choose **Compact context**. Output reservation is separate; changing model/settings waits for the next request to refresh the estimate. Automatic compaction normally starts at 85% of the effective window. It neither deletes original logs nor adds a user message. Failure preserves old context; **Retry compaction and continue** resumes an oversized pending request. Keep important evidence in project files; see [Context management](../core/context.md).
+
 ## Files and attachments
 
 Conversation attachments provide input for a request. Workspace files manage lasting project artifacts. These are separate entry points. Check model/service location before uploading private content.
@@ -36,6 +50,6 @@ Project settings expose workspace, instructions, and skill/MCP scope. Global mod
 
 ## Leave the workspace
 
-Closing a browser does not necessarily stop backend work. Stop the service with Ctrl-C in its terminal; reactivate the environment and run `ms-agent ui` next time. Source changes may trigger a frontend rebuild, while valid existing builds are reused.
+Closing the browser does not stop accepted session tasks; use **Stop** to interrupt them first. Stop the service with Ctrl-C in its terminal; reactivate the environment and run `ms-agent ui` next time. Source changes may trigger a frontend rebuild, while valid existing builds are reused.
 
-This workspace is not a universal launcher for every domain application. Run specialized workflows through their [application guides](../applications/deep-research.md). See [Deployment](deployment.md) for remote access and the lack of built-in login.
+This workspace is not a universal launcher for every domain application. Run specialized workflows through their [application guides](../applications/deep-research.md). See [Projects and sessions](projects-sessions.md) for branching, and [Deployment](deployment.md) for remote access and optional login.

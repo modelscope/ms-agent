@@ -39,6 +39,10 @@ DRIVER_DONE = "__driver_done__"
 class WebInputSource:
     """InputSource whose read_prompt blocks on a queue fed by POST /api/chat.
 
+    ``supports_credential_prompt`` is false: a missing API key must surface as
+    an error with the user message kept in history. The terminal is the
+    surface that pauses the turn and accepts ``/model provider key``.
+
     The first read is the initial prompt (session start / resume next-turn) and
     marks no boundary; every later read means the previous turn finished, so it
     pushes a TURN_END sentinel to the active turn queue before blocking.
@@ -54,12 +58,15 @@ class WebInputSource:
     InputSource implementation and every caller. ``log_getter`` is lazy because
     the session log is created when the agent's run loop starts."""
 
+    supports_credential_prompt = False
+
     def __init__(self, queue: "asyncio.Queue", sink: "QueueEventSink",
                  log_getter=None) -> None:
         self._queue = queue
         self._sink = sink
         self._log_getter = log_getter
         self._first = True
+        self.waiting = asyncio.Event()
         # Attachments for the prompt most recently returned by read_prompt.
         # Consumed (and cleared) by take_attachments immediately after, so a
         # later turn can never inherit them.
@@ -70,7 +77,11 @@ class WebInputSource:
             self._first = False
         else:
             self._sink.push({"type": TURN_END})
-        item = await self._queue.get()
+        self.waiting.set()
+        try:
+            item = await self._queue.get()
+        finally:
+            self.waiting.clear()
         if isinstance(item, tuple):
             text, marker, *rest = item
             attachments = rest[0] if rest else None
@@ -239,7 +250,8 @@ def _ask_timeout_for(permission_mode: str | None) -> float | None:
     is the opposite statement, and there a bound is what keeps an unattended
     session from parking on a question no one will read.
     """
-    if (permission_mode or "").strip().lower() in ("auto", "full", "full_access"):
+    if (permission_mode or "").strip().lower().replace("_", "-") in (
+            "auto", "full", "full-access", "strict"):
         return FULL_ACCESS_ASK_TIMEOUT_S
     return None
 
@@ -386,6 +398,13 @@ class SessionRuntime:
         # runtimes that sat untouched past the TTL — an idle vector project
         # otherwise pins its embedded qdrant lock and its in-RAM vectors until
         # the server restarts.
+        self.agent._context_config_signature = self.settings_fingerprint
+        from app.backends.ms_agent.conversations import conversations
+        conversation = conversations.get(session.id)
+        if conversation is not None:
+            self.agent._input_controller = conversation.controller
+        self.context_task = None
+        self.context_state = None
         self.last_active: float = time.monotonic()
         self.run_task: asyncio.Task = asyncio.create_task(self._drive())
 
@@ -420,6 +439,14 @@ class SessionRuntime:
             await self.input_queue.put(text)
 
     async def aclose(self) -> None:
+        retry_task = getattr(self, 'context_retry_task', None)
+        if retry_task is not None and not retry_task.done():
+            retry_task.cancel()
+            await asyncio.gather(retry_task, return_exceptions=True)
+        task = getattr(self, 'context_task', None)
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
         # Answer anything still waiting on a person BEFORE cancelling the run
         # task. An ask with no deadline (every "always ask" session) suspends
         # its turn until something resolves it, and a suspended turn is exactly
@@ -544,6 +571,7 @@ class RuntimeRegistry:
             rt is not None
             and rt.turn_lock.locked()
             and not rt.run_task.done()
+            and not (getattr(rt, "context_task", None) and not rt.context_task.done())
         )
 
     def is_running(self, session_id: str) -> bool:
@@ -649,6 +677,8 @@ class RuntimeRegistry:
                 expired.add(rt.session.id)
         for sid in expired:
             await self._evict(sid)
+        from app.backends.ms_agent.conversations import sweep_idle
+        sweep_idle(self.IDLE_TTL_S, self.MAX_RUNTIMES)
 
     async def _evict(self, session_id: str) -> None:
         async with self._create_lock:
@@ -866,6 +896,12 @@ class RuntimeRegistry:
         # (reproduced: the whole interrupted turn vanished from the log). With
         # the lock held, that get() waits and rebuilds from the sealed log.
         async with self._create_lock:
+            current = self._runtimes.get(session_id)
+            task = getattr(current, 'context_task', None)
+            if task is not None and not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+                return True
             rt = self._runtimes.pop(session_id, None)
             if rt is None:
                 return False
@@ -894,12 +930,12 @@ class RuntimeRegistry:
         if loop is not None and loop.is_running():
             try:
                 if asyncio.get_running_loop() is loop:
-                    loop.create_task(self.close(session_id))
+                    loop.create_task(self._discard_session(session_id))
                     return
             except RuntimeError:
                 pass
             try:
-                future = asyncio.run_coroutine_threadsafe(self.close(session_id), loop)
+                future = asyncio.run_coroutine_threadsafe(self._discard_session(session_id), loop)
                 future.result(timeout=15)
                 return
             except Exception:
@@ -912,7 +948,14 @@ class RuntimeRegistry:
             except RuntimeError:
                 logger.debug("runtime discard skipped for stopped loop", exc_info=True)
 
+    async def _discard_session(self, session_id: str) -> None:
+        from app.backends.ms_agent.conversations import discard
+        await discard(session_id)
+        await self.close(session_id)
+
     async def close_all(self) -> None:
+        from app.backends.ms_agent.conversations import close_all
+        await close_all()
         for sid in list(self._runtimes):
             await self.close(sid)
 

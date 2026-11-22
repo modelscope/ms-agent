@@ -10,22 +10,19 @@ tools:
   code_executor:
     mcp: false
     implementation: python_env
-    include: [python_executor, shell_executor]
+    shell_timeout: 120
+    include: [shell_executor]
 ```
 
-`python_env` selects local execution. Shell/Python calls and Notebooks have different state models. An independent call cannot rely on a previous shell's `cd` or activation; a Notebook may retain kernel state. Use an absolute interpreter path or activate and execute within the same call.
+`python_env` uses the host shell; local Python and Notebook executors are no longer provided. POSIX uses `/bin/sh` and Windows uses `cmd.exe`. Each call starts a separate process and cannot rely on an earlier `cd`, environment activation, or Python variables. Run Python through a project interpreter path, or activate and execute within one shell call.
 
-| Operation | Check |
-| --- | --- |
-| shell_executor | Working directory, PATH, timeout, network authorization |
-| python_executor | Selected interpreter; do not assume variables persist |
-| notebook_executor | Notebook dependencies, kernel state, reset behavior |
-| reset_executor | Can clear execution context; it is not a read-only probe |
-| get_executor_info | Inspect the actual environment |
+Local `shell_timeout` defaults to 60 seconds; the example explicitly uses 120. Use `shell_env` for required variables: tools do not automatically inherit every credential from the service process. Docker images can use `MS_AGENT_SHELL_PATH` to separate the agent's tool environment from the service environment; explicit `shell_env` takes precedence.
+
+Remove `python_executor`, `notebook_executor`, `reset_executor`, and `get_executor_info` from old local filter lists. Replace `python_timeout` / `notebook_timeout` with `shell_timeout`, and `kernel_env` with `shell_env`. Those four interfaces remain available in the appropriate sandbox mode.
 
 ## Sandboxes and deployment
 
-Sandbox execution requires its dependencies, images, and runtime service. Domain applications may use specific images. Changing an implementation name alone does not establish isolation. Configure mounts, network, and resource limits, then verify with a harmless task.
+Docker / Docker Notebook sandboxes provide Python, Notebook, shell, and file operations. Notebook kernels retain variables until reset, and `/data` exposes mounted shared files. Sandbox execution requires its dependencies, images, and runtime service. Domain applications may use specific images. Changing an implementation name alone does not establish isolation. Configure mounts, network, and resource limits, then verify with a harmless task.
 
 Agents operate on the WebUI server's filesystem. In a remote deployment, paths refer to the server, not the browser's computer. Do not expose an unauthenticated workspace publicly.
 

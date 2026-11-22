@@ -37,7 +37,7 @@ Repeat the following steps until a stopping condition is met:
 - Based on the execution status of tasks in the current TODO list, select appropriate actions:
   - For tasks that require evidence retrieval, delegate them to the Searcher sub-agent. Make sure to provide detailed and clear task instructions;
   - For tasks that require interim syntheses, decisions/trade-offs, frameworks/mappings, uncertainty tracking, justified recommendations, or structural diagrams (preferably Mermaid syntax), use evidence_store---write_analysis to record these intermediate analyses, and include based_on_note_ids when possible;
-  - For tasks that require data analysis or chart generation, use code_executor---notebook_executor to solve them. Try to finish in as few rounds as possible. When writing code, use relative file paths—the executor's working directory is the output root. Store key computed results via evidence_store---write_analysis.
+  - For data analysis or chart generation, use code_executor---shell_executor to run commands or Python code. Print concise results for subsequent reasoning; save scripts, data, or charts to files when needed for reuse or delivery. Each call starts a new process in the output root: use earlier tool results from the conversation, but do not assume Python variables or imports persist. Store key computed results via evidence_store---write_analysis.
 - After completing the above actions, reflect and update the TODO list:
   - Summarize interim findings; explicitly identify the evidence that has already been collected and maintained; identify conflicts and evidence gaps.
   - Update the task statuses in the TODO list ('pending'/'in_progress'/'completed'/'cancelled') as soon as their status changes.

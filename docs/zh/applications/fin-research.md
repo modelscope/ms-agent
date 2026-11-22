@@ -24,14 +24,24 @@ pip install -e '.[research]'
 pip install akshare baostock
 ```
 
-若保留Collector/Analyst默认的Docker Notebook环境，安装相应沙箱依赖并构建镜像：
+若保留 Collector、Analyst 和 Aggregator 默认的 Docker 沙箱环境，安装相应沙箱依赖并构建镜像：
 
 ```bash
 pip install ms-enclave docker websocket-client
 bash projects/fin_research/tools/build_jupyter_image.sh
 ```
 
-选择本地 `python_env` 会改变隔离方式；Notebook与独立Python执行的状态不同。不能将本地Jupyter描述成与Docker相同的安全边界。
+不使用 Docker 时，在 `collector.yaml`、`analyst.yaml` 和 `aggregator.yaml` 中替换整个 `tools.code_executor` 块：
+
+```yaml
+tools:
+  code_executor:
+    mcp: false
+    implementation: python_env
+    include: [shell_executor]
+```
+
+同步修改提示：Collector / Analyst 改用 shell 运行分析脚本，移除 Notebook、重置内核和持久变量要求；Aggregator 将 `/data` 改成实际本地输出目录。Collector / Analyst 的 `<DATA_ROOT>` 会按模式解析。每条命令独立启动，应自行加载模块和数据；提前安装分析依赖。本地执行直接访问宿主资源，不提供 Docker 隔离。
 
 各角色YAML分别配置LLM，通常使用 `OPENAI_API_KEY/OPENAI_BASE_URL`。Searcher的 `tools.search_engine.config_file`指向 `conf.yaml`，其中再配置 `SEARCH_ENGINE`和所需Exa/SerpAPI凭据。不要只配置LLM而遗漏搜索服务。
 

@@ -13,6 +13,7 @@ import { metaDict, pageTitle } from '~/lib/pageTitle'
 import type { Route } from './+types/settings'
 import { getLastAppRoute } from '~/lib/lastAppRoute'
 import { useMatchMedia } from '~/lib/useMatchMedia'
+import { SignOutButton } from '~/components/common/SignOutButton'
 
 /** Fallback for settings routes without their own `meta` (the index route
  * redirects to Models, so it only flashes). Concrete pages override this. */
@@ -122,6 +123,7 @@ export default function SettingsLayout() {
 
       {/* Right content */}
       <main className="min-h-0 min-w-0 flex-1 overflow-auto rounded-2xl bg-msa-fill-0 py-4 px-4 md:py-[24px] md:px-[36px]">
+        <SignOutButton />
         <Outlet />
       </main>
     </div>

@@ -16,7 +16,7 @@ llm:
     max_images: 0
 ```
 
-Merge these fields into an already configured vision model. `supports_vision` is tri-state: unset can fall back to provider declarations and runtime learning; explicit true/false is a user choice. Do not mark a text-only model as image-capable.
+Merge these fields into an already configured vision model. `supports_vision` is tri-state: unset follows model metadata, with unknown models defaulting to disabled; explicit true/false is a user override. Do not mark a text-only model as image-capable.
 
 ## Encoding and budgets
 

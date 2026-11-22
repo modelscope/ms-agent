@@ -7,7 +7,7 @@ Context is the message window sent to the model for the current call, not the co
 ```{mermaid}
 flowchart TD
   A[Complete session log] --> B[Select visible window]
-  B --> C[Prune tool output]
+  B --> C[Optional tool-output pruning]
   C --> D[Summarize history]
   D --> E{Compaction occurred?}
   E -->|Yes| F[Append view and event]
@@ -26,7 +26,7 @@ session_log:
 compaction:
   enabled: true
   context_limit: 128000
-  reserved_buffer: 20000
+  compression_ratio: 0.85
   strategies:
     - name: tool_output_pruner
       enabled: true
@@ -35,7 +35,13 @@ compaction:
       enabled: true
 ```
 
-These are context budgets, not guarantees about every model's actual window. Reserve room for replies; protect recent tool output to avoid repeated reads. Setting `compaction.enabled: false` disables automatic compaction while session recording can remain enabled.
+Summarization is the default strategy. Tool-output pruning is opt-in because it can remove unique evidence. Automatic compaction normally starts at 85% of the effective window; input limits and output reservation can trigger it earlier. `compaction.enabled: false` disables automatic maintenance, not recording, hard-budget checks, or explicit manual compaction.
+
+## Input and output budgets
+
+The effective window takes the smallest valid cap from model metadata, `llm.context_limit`, and legacy `compaction.context_limit` / `session_log.context_limit`. When none is known, it falls back to 128000. A manual cap can tighten a known window, not enlarge what the service supports.
+
+Output reservation follows the final request's `max_tokens`, `max_completion_tokens`, or `max_output_tokens`. Without an explicit value, the default is bounded by 8192, the model's output limit, and one eighth of the window. Input capacity subtracts that reservation. Legacy `reserved_buffer` overrides the ratio-based threshold; it is not the request's output-token parameter.
 
 ## Implement a strategy object
 
@@ -60,6 +66,14 @@ Pass objects to `ContextAssembler(session_log, strategies=[...])`. Returning com
 
 ## Memory and manual compaction
 
-A pre-compaction callback may flush memory, but asynchronous writing is not guaranteed to finish before summarization. Durable knowledge belongs to the [memory backend](memory.md). Terminal `/compact` manually prunes tool output; it is not identical to the automatic summarization pipeline.
+Automatic compaction, SDK `/compact`, and the WebUI button share `LLMAgent.compact_context()`. Manual compaction runs at an input boundary without adding a user message or invoking the main conversation response. The WebUI has no slash-command routing; use the context-ring menu instead.
+
+Summarization protects system messages, the latest input, and complete protected tool-call groups. A complete window and completion event are appended together; replay accepts only validated windows. Original history stays intact. Summary input can be split to fit the budget, and empty, truncated, or non-shrinking results do not replace the window.
+
+With [memory](memory.md) enabled, long-term facts are extracted before committing compaction. Ordinary extraction failure retains old memory and retry sources while allowing a valid summary to commit. Cancellation stops the whole operation.
+
+## Failure and continuation
+
+A failed summary preserves the original context. If that context still exceeds the hard input budget, the SDK saves the pending request. The WebUI's **Retry compaction and continue** and SDK `ResumeContext` continue it without appending another user message. A new instruction replaces the pending request. If the latest input itself is too large, shorten it or choose a larger-window model rather than trying to compress protected input away.
 
 Next: [Sessions](sessions.md), [Prompt assembly](prompts.md), [Storage](../development/storage.md). Implementation: `session/context_assembler.py`, `session/strategies/`, `LLMAgent._build_compaction_strategies()`.

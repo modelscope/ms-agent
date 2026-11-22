@@ -33,7 +33,8 @@
 | llm.openai_api_key / openai_base_url | str | OpenAI兼容路径配置 |
 | llm.modelscope_api_key / modelscope_base_url | str | ModelScope兼容配置 |
 | llm.anthropic_api_key / anthropic_base_url | str | Anthropic兼容配置 |
-| llm.supports_vision | bool或未设置 | 模型读图能力选择，未设置可使用Provider声明/运行时判断 |
+| llm.supports_vision | bool或未设置 | 图片能力覆盖；未设置按模型元数据，未知模型默认关闭 |
+| llm.context_limit | int或未设置 | 手动窗口上限；只能缩小已知模型窗口 |
 | llm.vision | mapping | 图像编码、尺寸、转码和辅助读图配置 |
 | generation_config | mapping | 温度、采样、流式、token及服务扩展参数；支持范围依协议而定 |
 | prompt.system | str | 替换基础系统提示层；不自动移除其他装配层 |
@@ -50,7 +51,8 @@
 | tools.NAME.include / exclude | list[str] | 互斥的工具过滤列表 |
 | tools.NAME.enabled | bool | 支持此开关的工具/配置层启停；核对实际组件 |
 | tools.plugins | list[str] | 自定义Python工具文件，相对配置目录；不同于顶层plugins资源系统 |
-| tools.code_executor.implementation | str | python_env为本地实现；其他实现需相应沙箱配置 |
+| tools.code_executor.implementation | str | python_env为本地 shell；Python/Notebook接口仅用于沙箱 |
+| tools.code_executor.shell_timeout / shell_env | number / mapping | 本地 shell 默认超时60秒及显式环境变量 |
 | tools.localsearch.paths | list[str] | 允许本地检索的实际根目录 |
 | knowledge_search_paths | str | CLI兼容的逗号分隔路径，归入localsearch |
 | skills.sources | list[mapping] | 显式type/path/repo_id等结构化来源 |
@@ -81,22 +83,24 @@ skills:
 | 配置块 | 主要字段 | 说明 |
 | --- | --- | --- |
 | session_log | enabled、dir、context_limit、reserved_buffer | 日志与上下文预算；目录可由入口显式提供 |
-| compaction | enabled、context_limit、reserved_buffer、strategies | 默认策略为工具裁剪和摘要；只识别内置YAML策略名 |
+| compaction | enabled、context_limit、compression_ratio、reserved_buffer、strategies | 默认摘要，裁剪需显式启用；比例默认0.85，旧reserved_buffer覆盖比例阈值 |
 | unified_memory 或 memory.unified_memory | enabled、storage、base_dir、ingest_interval、recall_top_k | 通用记忆后端；具体加载路径影响默认目录 |
 | memory的旧压缩器 | context_compressor、refine_condenser、code_condenser | 部分领域项目仍使用，不自动删除 |
 | personalization | enabled、global_instruction、project_instruction | 文件优先和旧字段回退；通用YAML启用，解析缺省false |
 | rag | name、embedding、chunk_size、chunk_overlap、retrieve_only、storage_dir | 传统RAG，独立于按需localsearch |
 
-默认上下文预算常见值为128000、预留20000、最近工具保护40000；按实际模型设置，不将配置预算当作提供方能力。记忆的后端字段、生命周期和可插拔例子见[记忆模块](../core/memory.md)。
+上下文窗口优先结合模型能力与手动上限，未知时回退128000；输出预留按实际生成参数计算，自动压缩通常在85%触发。`summary_max_calls`（默认32）和 `summary_reasoning_effort` 可配置摘要预算；不要将旧预留字段当作请求输出上限。记忆的后端字段、生命周期和可插拔例子见[记忆模块](../core/memory.md)。
 
 ## 权限
 
-`permission.mode`为auto/strict/interactive，restricted是兼容别名。`whitelist/blacklist/ask_rules`表达外层规则。`safety_rules`中的patterns、sensitive_paths、sensitive_read_paths、dangerous_removal_paths是**替换默认值的列表**，省略才能保留默认保护。
+`permission.mode`为 `ask` / `auto` / `full-access`；`restricted` / `interactive`兼容为ask，`delegate`为auto，旧strict为full-access。`decision_provider`选择llm/agent评估，`provider_timeout`默认30秒。`whitelist/blacklist/ask_rules`表达外层规则。`safety_rules`中的patterns、sensitive_paths、sensitive_read_paths、dangerous_removal_paths是**替换默认值的列表**，省略才能保留默认保护。
 
 `allowed_directories/read_only_directories`控制路径；`allow_temp_dir`默认true；`path_validation.read_policy`为loose/strict，`max_command_chars`默认8192。配置是否覆盖所有工具取决于执行路径，见[权限](../core/permissions.md)。
 
 ## 环境变量与密钥
 
 用 `.env` 或进程变量提供凭据，环境覆盖不是对任意工具嵌套字段无限新增。WebUI配置加载层和CLI的 `--env` 行为不同；定位问题先确认入口。不要将解析后的完整配置写到公开日志。
+
+WebUI 可选登录使用 `MS_AGENT_WEBUI_AUTH_ENABLED`、`MS_AGENT_WEBUI_USERNAME`、`MS_AGENT_WEBUI_PASSWORD`，详见[部署](../user-guide/deployment.md)。模型能力数据更新策略使用 `MS_AGENT_MODEL_CATALOG=auto|local|bundled`；对话默认排队/插话选择保存在 SDK 设置的 `interaction.follow_up_behavior`，不是 Agent YAML。
 
 源码依据：`config/config.py`、`resolver.py`、`llm/spec.py`、`permission/config.py`、`memory/unified/config.py`与具体模块。

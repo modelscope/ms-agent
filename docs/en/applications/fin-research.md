@@ -24,14 +24,24 @@ pip install -e '.[research]'
 pip install akshare baostock
 ```
 
-Keeping the default Docker Notebook environment requires sandbox dependencies and its image:
+Collector, Analyst, and Aggregator use Docker sandboxes by default. Keeping them requires sandbox dependencies and the image:
 
 ```bash
 pip install ms-enclave docker websocket-client
 bash projects/fin_research/tools/build_jupyter_image.sh
 ```
 
-Local `python_env` execution changes isolation. Notebook state differs from independent Python execution; a local kernel is not the same security boundary as Docker.
+Without Docker, replace the entire `tools.code_executor` block in `collector.yaml`, `analyst.yaml`, and `aggregator.yaml`:
+
+```yaml
+tools:
+  code_executor:
+    mcp: false
+    implementation: python_env
+    include: [shell_executor]
+```
+
+Update prompts too: Collector/Analyst must use shell scripts rather than Notebook tools, kernel resets, or persistent variables. Replace Aggregator's `/data` path with the local output directory; Collector/Analyst resolve `<DATA_ROOT>` by mode. Each command starts independently and must load its modules/data. Install analysis dependencies beforehand. Local execution accesses host resources directly, without Docker isolation.
 
 Configure each role's LLM, normally through `OPENAI_API_KEY/OPENAI_BASE_URL`. Searcher's `tools.search_engine.config_file` points to `conf.yaml`, whose `SEARCH_ENGINE` configuration supplies Exa/SerpAPI credentials. LLM credentials alone do not configure search.
 

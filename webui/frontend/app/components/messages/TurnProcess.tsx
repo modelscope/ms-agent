@@ -82,7 +82,11 @@ export function TurnProcess({
     return (
       <div className="space-y-3">
         <div className="flex items-center gap-1.5 text-sm font-medium text-msa-text-3">
-          <TaskIcon className="h-5 w-5 shrink-0" />
+          <span
+            className={`flex h-5 w-5 shrink-0 items-center justify-center ${live ? 'msa-agent-working' : ''}`}
+          >
+            <TaskIcon className="h-5 w-5" />
+          </span>
           <span>
             {t.chat.processing}
             {timing}

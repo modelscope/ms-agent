@@ -12,7 +12,21 @@ The selected port must be free and differ from the internal API port. The launch
 
 ## Remote access
 
-The application has no built-in login. Configure reverse-proxy authentication, TLS, and network rules before considering `--host 0.0.0.0`. Agents access server files/tools, not browser-local resources. Expose only necessary workspaces.
+Authentication is off by default for local use. Before exposing the service, enable built-in login or an authenticated gateway that cannot be bypassed, plus HTTPS and network rules. Agents access server files/tools, not browser-local resources. Expose only necessary workspaces.
+
+### Optional single-user login
+
+Set these before starting, or keep them in a private `webui/backend/.env`:
+
+```ini
+MS_AGENT_WEBUI_AUTH_ENABLED=true
+MS_AGENT_WEBUI_USERNAME=admin
+MS_AGENT_WEBUI_PASSWORD=replace-with-a-long-unique-password
+```
+
+Restart and sign in with the configured account. Each instance has one account; the username defaults to `admin`. Enabling authentication without a password prevents startup. Login lasts seven days and survives restarts. Use **Settings → Sign out** to log out; changing the username/password and restarting invalidates old sessions.
+
+Authentication protects pages, files, settings, and streaming APIs. Cookies use HttpOnly and SameSite=Lax, with Secure under HTTPS. Writes accept only same-origin requests or explicit `MS_AGENT_CORS_ORIGINS`, not wildcard origins. This is not multi-user authorization: project resources still belong to one instance.
 
 `MS_AGENT_FRONTEND_HOSTED_MODE=1` hides local-path controls unsuitable for hosted use; it does not enforce backend access restrictions.
 

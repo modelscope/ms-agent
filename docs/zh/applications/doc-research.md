@@ -23,7 +23,7 @@ flowchart TD
 pip install -e '.[research]'
 export OPENAI_API_KEY='<your-api-key>'
 export OPENAI_BASE_URL='https://api-inference.modelscope.cn/v1'
-export OPENAI_MODEL_ID='Qwen/Qwen3-235B-A22B-Instruct-2507'
+export OPENAI_MODEL_ID='Qwen/Qwen3.8-Flash-Next'
 ms-agent app --app_type doc_research --server_name 127.0.0.1 --server_port 7860
 ```
 

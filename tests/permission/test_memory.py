@@ -103,3 +103,12 @@ class TestEdgeCases:
 
         mem = PermissionMemory(project_path=project_path)
         assert mem.list_all() == []
+
+    def test_default_global_file_follows_ms_agent_home(self, tmp_path, monkeypatch):
+        home = tmp_path / 'home'
+        monkeypatch.setenv('MS_AGENT_HOME', str(home))
+        mem = PermissionMemory(project_path=None)
+        mem.add('web_search---*', scope='global')
+        assert (home / 'permission_memory.json').is_file()
+        reloaded = PermissionMemory(project_path=None)
+        assert reloaded.matches('web_search---fetch_page', {})

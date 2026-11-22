@@ -16,7 +16,7 @@ llm:
     max_images: 0
 ```
 
-将这些字段合并到已配置的视觉模型中。`supports_vision`是三态：未设置时可回退到Provider声明和运行时学习；显式false/true是用户选择。不要给纯文本模型强行标true。
+将这些字段合并到已配置的视觉模型中。`supports_vision`是三态：未设置时按模型元数据识别，未知模型默认关闭；显式false/true是用户覆盖。不要给纯文本模型强行标true。
 
 ## 编码与预算
 
