@@ -260,6 +260,8 @@ class AnthropicMessagesTransport(Transport):
                     'tool_use_id': tool_use_id,
                     'content': result_content,
                 }
+                if getattr(msg, 'is_error', False):
+                    result_block['is_error'] = True
                 # Anthropic requires ALL tool_results for one assistant turn's
                 # tool_use blocks in the SINGLE user message immediately after it.
                 # Parallel tool calls arrive as consecutive tool Messages, so

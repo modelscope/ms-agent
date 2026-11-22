@@ -136,21 +136,25 @@ pnpm typecheck           # runs react-router typegen + tsc --noEmit
 | -------- | ----------------------------------------------------------------------------------------------------- |
 | Frontend | React 19, React Router v8 (SSR), Tailwind CSS v4, Ant Design 6, @ant-design/x 2, Vite 8, TypeScript 6 |
 | Backend  | Python 3.12, FastAPI, sse-starlette, pydantic-settings, managed by `uv`                               |
-| Chat     | SSE streaming via `POST /api/chat`, events: `delta` / `done`                                          |
+| Chat     | `POST /api/chat/inputs` admits messages; `GET /api/chat/sessions/{id}/events` streams session events; legacy `POST /api/chat` remains supported |
 | i18n     | EN / 中文, via `app/lib/i18n.tsx` (`useT` hook), persisted in cookie                                  |
 
 ## Architecture
 
 - **Frontend entry**: `frontend/app/root.tsx` → layouts (`app.tsx`, `settings.tsx`) → routes
-- **Chat system**: `@ant-design/x-sdk` (`useXChat`, `XRequest`) + custom `AgentChatProvider` in `app/lib/agentProvider.ts`
+- **Chat system**: `app/lib/sessionChat.ts` owns submission, reconnect and the
+  session reducer; `app/lib/agentProvider.ts` supplies shared chunk/history
+  projection. `Conversation` owns execution independently of SSE viewers; the
+  SDK `SessionInputController` owns durable input scheduling.
 - **Design tokens**: Defined in `app/lib/designTokens.ts`, consumed via CSS variables (`--msa-*`), applied through Tailwind (`text-msa-text-1`, `bg-msa-fill-2`, etc.)
 - **Backend**: `backend/app/api/` handles HTTP requests and response envelopes;
   `backend/app/backends/ms_agent/` adapts SDK projects, sessions, chat, models,
   skills, MCP, memory and files. Management routes call adapters directly; chat
-  streams through `get_backend().chat_stream`. Execution and persistence belong
+  legacy streams use `get_backend().chat_stream`; session inputs and events use
+  the conversation adapter. Execution and persistence belong
   in SDK services, not duplicated interface code.
 - **Contracts**: update backend models, `frontend/app/lib/types.ts` and
-  `frontend/app/lib/agentProvider.ts` together when changing event payloads.
+  `frontend/app/lib/agentProvider.ts` and `sessionChat.ts` together when changing event payloads.
   Preserve frame order, identifiers and completion handling. In-memory session
   runtime requires one API worker; shutdown must close owned SDK resources and
   file watchers.

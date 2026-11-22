@@ -188,12 +188,20 @@ def fork_points(records: list[dict],
             continue
         if kind == 'metadata':
             continue
+        if kind == 'input_event':
+            continue  # inbox state never extends a conversation fork boundary
         if kind == 'context_resume' and row.get('seal_seqs'):
             # A successful retry can complete the same user turn. The error
             # seal remains in history but no longer disqualifies its new reply.
             failed, final, checkpoint = False, None, False
             pending.clear()
         if role == 'user':
+            if row.get('delivery') == 'steer':
+                # A continuation within one task cannot expose the preceding
+                # intermediate assistant segment as a completed reply.
+                final, checkpoint = None, False
+                has_user = True
+                continue
             finish()
             has_user, failed, final, checkpoint = True, False, None, False
             pending.clear()

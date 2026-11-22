@@ -8,6 +8,13 @@ from app.backends.ms_agent.common import find_session
 from app.backends.ms_agent.runtime import registry, _settings_fingerprint
 
 
+def _check_input_owner(session_id: str) -> None:
+    from app.backends.ms_agent.conversations import conversations
+    conversation = conversations.get(session_id)
+    if conversation is not None and conversation.controller.active_turn:
+        raise Conflict('Wait for the current task to finish before changing its context.')
+
+
 def status(session_id: str) -> dict:
     from app.backends.ms_agent import session_models
     from app.backends.ms_agent.models import generation_defaults
@@ -53,9 +60,11 @@ async def start(session_id: str) -> dict:
     if not found:
         raise NotFound('Conversation not found.')
     project, session, _ = found
+    _check_input_owner(session_id)
     if registry.is_running(session_id):
         raise Conflict('Wait for the current turn to finish before compacting.')
     rt = await registry.get(project, session)
+    _check_input_owner(session_id)
     if rt.turn_lock.locked():
         raise Conflict('A conversation or compaction is already running.')
     await rt.turn_lock.acquire()
@@ -101,6 +110,7 @@ async def retry(session_id: str) -> dict:
     if not found:
         raise NotFound('Conversation not found.')
     project, session, manager = found
+    _check_input_owner(session_id)
     if registry.is_running(session_id):
         raise Conflict('A conversation is already running.')
     pending = manager.get_session_log(session).get_metadata().get('pending_context')
@@ -108,6 +118,7 @@ async def retry(session_id: str) -> dict:
         raise Conflict('No paused context request to resume.')
     rt = await _acquire_live_runtime(project, session)
     try:
+        _check_input_owner(session_id)
         current = manager.get_session_log(session).get_metadata().get('pending_context')
         if not current or current.get('status') != 'paused':
             raise Conflict('The paused request has already been handled.')
