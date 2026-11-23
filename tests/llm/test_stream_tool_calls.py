@@ -9,7 +9,8 @@ from unittest.mock import patch
 from omegaconf import OmegaConf
 
 from ms_agent.llm import LLM
-from ms_agent.llm.utils import Message, Tool
+from ms_agent.llm.cost import response_usage
+from ms_agent.llm.utils import Message, Tool, ToolCall
 
 
 def tool_delta(index, arguments=None, call_id=None, name=None):
@@ -114,6 +115,9 @@ class StreamToolCallCases:
         self.assertEqual(request['tools'][0]['function']['name'], 'weather')
         self.assertEqual(messages[-1].prompt_tokens, 7)
         self.assertEqual(messages[-1].completion_tokens, 5)
+        self.assertEqual(messages[-1].finish_reason, finish_reason)
+        self.assertEqual(messages[-1].api_calls, 1)
+        self.assertEqual(len(messages[-1].usage_records), 1)
         return messages
 
     def assert_calls(self, message, cities):
@@ -143,6 +147,44 @@ class StreamToolCallCases:
             {'tool_calls': [tool_delta(1, '"city":"Tokyo"}')]},
         ])
         self.assert_calls(messages[-1], ['Paris', 'Tokyo'])
+
+    def test_tool_merge_preserves_usage_and_finish_reason(self):
+        previous = Message(
+            role='assistant',
+            tool_calls=[ToolCall(index=0, id='call-0', type='function',
+                                 tool_name='weather', arguments='{')],
+            **response_usage({'prompt_tokens': 3, 'completion_tokens': 2},
+                             record_id='request'))
+        current = Message(
+            role='assistant', finish_reason='tool_calls',
+            tool_calls=[
+                ToolCall(index=0, id=None, type=None, tool_name=None,
+                         arguments='"city":"Paris"}'),
+                ToolCall(index=1, id='call-1', type='function',
+                         tool_name='weather', arguments='{"city":"Tokyo"}'),
+            ],
+            **response_usage({'prompt_tokens': 7, 'completion_tokens': 5},
+                             record_id='request'))
+
+        merged = self.engine._merge_stream_message(previous, current)
+        self.assert_calls(merged, ['Paris', 'Tokyo'])
+        self.assertEqual((merged.prompt_tokens, merged.completion_tokens), (7, 5))
+        self.assertEqual(len(merged.usage_records), 1)
+        self.assertEqual(merged.api_calls, 1)
+        self.assertEqual(merged.finish_reason, 'tool_calls')
+        self.assertEqual(previous.prompt_tokens, 3)
+        self.assertEqual(previous.tool_calls[0]['arguments'], '{')
+
+        trailer = Message(
+            role='assistant',
+            **response_usage({'prompt_tokens': 7, 'completion_tokens': 5},
+                             record_id='request'))
+        repeated = self.engine._merge_stream_message(merged, trailer)
+        self.assertEqual((repeated.prompt_tokens, repeated.completion_tokens),
+                         (7, 5))
+        self.assertEqual(len(repeated.usage_records), 1)
+        self.assertEqual(repeated.finish_reason, 'tool_calls')
+        self.assert_calls(repeated, ['Paris', 'Tokyo'])
 
     def test_multiple_calls_in_first_and_following_chunks(self):
         messages = self.stream([

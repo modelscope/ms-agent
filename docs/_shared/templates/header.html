@@ -1,0 +1,14 @@
+{% extends "!header.html" %}
+{% block header_logo %}
+<a class="ms-brand" href="{{ pathto(master_doc) }}" aria-label="MS-Agent {{ '文档首页' if ms_zh else 'documentation home' }}">
+  <img src="{{ pathto('_static/images/ms-agent-logo.png', 1) }}" alt="MS-Agent" width="180" height="29" />
+</a>
+{% endblock %}
+{% block header_main_nav %}<span class="ms-header-label">{{ '文档' if ms_zh else 'Docs' }}</span>{% endblock %}
+{% block extra_header_link_icons %}
+<nav class="ms-header-links" aria-label="{{ '站点选项' if ms_zh else 'Site options' }}">
+<a href="{{ ms_language_url }}" class="ms-language" lang="{{ 'en' if ms_zh else 'zh' }}">{{ 'English' if ms_zh else '中文' }}</a>
+<a href="https://github.com/modelscope/ms-agent" class="ms-github">GitHub</a>
+{{ self.theme_switcher() }}
+</nav>
+{% endblock %}

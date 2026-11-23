@@ -8,6 +8,8 @@ follow a task and continue the conversation. [中文说明](README_ZH.md)
   and browse or edit project files.
 - **Follow the agent's progress:** stream replies, reasoning, tool calls and
   generated files as the task runs.
+- **Add input while a task runs:** queue follow-ups or steer the current task,
+  with editable pending messages that survive a page refresh.
 - **Choose models and tools:** configure model providers, connect MCP tools and
   enable the skills each project needs.
 - **Continue with context:** keep session history and manage project memory for
@@ -15,9 +17,7 @@ follow a task and continue the conversation. [中文说明](README_ZH.md)
 
 ## Quick start
 
-**The new WebUI is not yet available on PyPI. Clone the source and install it in
-editable mode as described below.** The published `ms-agent==1.6.0` uses the older
-WebUI and does not provide the workspace described in this guide.
+Install and start the WebUI from source with the following steps.
 
 ### 1. Prepare the environment
 
@@ -31,36 +31,12 @@ WebUI and does not provide the workspace described in this guide.
 
 #### First-time Setup
 
-The commands below use a macOS / Linux shell. If you do not yet have suitable Python and Node.js versions, follow the setup below. Otherwise, skip to [check and activate your environment](#check-and-activate-your-environment). First run `git --version`; if macOS prompts you to install Command Line Tools, complete that installation before continuing.
+See the [documentation quick start](../docs/en/get-started/quick-start.md) for complete setup, including Python through uv, Node.js through nvm, and Windows environment activation. The steps below remain a standalone launch guide when Python and Node.js are already available.
 
-##### Install Node.js
+<a id="install-nodejs"></a>
+<a id="install-python"></a>
 
-Install [nvm](https://github.com/nvm-sh/nvm), then use it to install Node.js. This keeps Node in your user directory, so installing pnpm does not require `sudo`:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-export NVM_DIR="$HOME/.nvm"
-source "$NVM_DIR/nvm.sh"
-nvm install 22.22.0
-npm install --global pnpm@10.17.1
-node --version
-pnpm --version
-```
-
-##### Install Python
-
-Install uv and use it to download Python 3.12 and create an environment with pip. Run this in the directory where you plan to keep the project:
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-export PATH="$HOME/.local/bin:$PATH"
-uv venv --python 3.12 --seed ms-agent-env
-source ms-agent-env/bin/activate
-python --version
-pip --version
-```
-
-Keep this terminal and environment active, then continue with the uv check and source installation below.
+If you need Python or Node.js, complete “Prepare Python” and its environment-setup dropdown in the quick start before continuing.
 
 #### Check and Activate Your Environment
 
@@ -78,7 +54,7 @@ python3 -m venv ms-agent-env
 source ms-agent-env/bin/activate
 ```
 
-Activate an existing virtual or Conda environment instead if you already have one. If you created and activated an environment above, you can skip this step. In Windows PowerShell, use `python -m venv ms-agent-env` and `.\ms-agent-env\Scripts\Activate.ps1`. Run all subsequent commands in the activated environment.
+Activate an existing virtual or Conda environment instead if you already have one. If you created and activated an environment in the quick start, you can skip this step. In Windows PowerShell, use `python -m venv ms-agent-env` and `.\ms-agent-env\Scripts\Activate.ps1`. Run all subsequent commands in the activated environment.
 
 Install uv and check that it is available in the current terminal:
 
@@ -113,7 +89,7 @@ printed in the terminal. Press **Ctrl-C** to stop the service.
 For ModelScope, obtain an API key from the [access token page](https://modelscope.cn/my/myaccesstoken).
 
 1. Open **Settings → Models**, select **ModelScope → Edit**, enter your API key, and save. Built-in providers already have an endpoint. For another OpenAI-compatible service, use **Add provider** to enter its Base URL and key.
-2. Click **Add model** under that provider and enter a model ID supported by the service, such as `Qwen/Qwen3-235B-A22B-Instruct-2507`. Availability and quotas depend on your provider account.
+2. Click **Add model** under that provider and enter a model ID supported by the service, such as `Qwen/Qwen3.8-Flash-Next`. If that id returns 400, enter another chat model the provider currently serves. Availability and quotas depend on your provider account.
 3. Return to chat, use the default project or create one, select the new model below the input, and send your first message. Attach files or images when relevant.
 4. Configure a project workspace, skills, and MCP tools as needed.
 
@@ -128,6 +104,129 @@ ms-agent ui
 ```
 
 First change to the directory where you saved them. Model configuration and sessions persist, so you do not need to enter your API key again. If you installed Node.js through nvm, check `node --version` in the new terminal. If the command is missing, run `source "$HOME/.nvm/nvm.sh"` first.
+
+## Add input during a task
+
+Keep typing, attaching files or selecting skills while the agent works. New
+messages **queue by default** and run in order after the current task finishes.
+In **Settings → Personalization → Conversation behavior**, select **Steer** to
+add new messages to the current task after its current model response or started
+tool operations finish. Changing this setting only affects new submissions.
+
+Pending messages appear above the input box, where you can edit or withdraw
+them. Once processing starts, they appear as ordinary messages in the conversation.
+Refreshing the page or switching sessions keeps the task running.
+
+While a task runs, the input's action button shows **Stop** when the draft is
+empty and switches to **Send** when you type, attach files or select a skill.
+Clearing or successfully sending the draft brings back **Stop** if the task is
+still running.
+
+**Stop** cancels the current task and holds pending messages. **Continue sending**
+releases those messages as new tasks; it does not resume cancelled operations.
+You can also send a new task while earlier messages remain on hold. After a server
+restart, pending messages stay on hold until you resume them.
+
+## Branch a conversation
+
+Click **Branch** beside the copy button below a completed reply to
+continue in a new session, named `Original title (2)`, then `(3)`, and so on.
+The new session keeps the history through that reply, including tool results
+and saved summaries. A divider links back to the original conversation.
+
+You can branch from an earlier reply while the original session is still
+running. Interrupted or unfinished turns cannot be selected. The new session
+starts with the original session's selected model and an empty input box;
+opening it does not change your default model. The original input draft stays
+in that browser tab when you return, but is not saved across a page refresh.
+
+Sessions have independent histories and share the project's current files,
+settings and memory. Branching does not copy or roll back the workspace.
+
+<a id="model-capabilities-and-context"></a>
+
+## Models and context
+
+### Catalog updates
+
+WebUI uses the models.dev snapshot bundled with the SDK to look up model
+capabilities, context limits and prices. Models missing from the catalog can
+still be added manually. Access depends on your provider account and endpoint.
+
+| Installation | Default update behavior |
+| --- | --- |
+| Source checkout, including `pip install -e .` | Check at WebUI startup; reuse a successful check for 24 hours and retry a failed check after 15 minutes |
+| Wheel or image | Use bundled data or a newer compatible local cache |
+| Either installation | Choose **Settings → Models → Update catalog** to download data, then restart the service to apply it |
+
+Update requests have an 8-second timeout. Downloads go to
+`$MS_AGENT_HOME/cache/models.dev/v1`; failed updates leave the current local data
+available. Settings shows the active catalog and any version awaiting a restart.
+On restart, the SDK selects the newer compatible bundle or cache.
+
+`MS_AGENT_MODEL_CATALOG` controls updates:
+
+| Value | Behavior |
+| --- | --- |
+| `auto` (default) | Apply the installation-specific defaults above |
+| `local` | Skip startup checks; allow manual updates |
+| `bundled` | Use only the bundled snapshot; disable updates |
+
+`ms-agent ui --skip-install` also skips automatic catalog checks. Installing with
+pip, querying metadata and building packages do not download a catalog. TUI
+update controls are not available yet.
+
+### Thinking and images
+
+Choose a reasoning setting in model settings or beside the chat model selector.
+Each conversation remembers the choice for each model. Changing it also updates
+the default for new conversations; returning to an existing conversation restores
+its saved choice. Only supported settings are listed. Native thinking parameters
+in Advanced JSON take priority and disable the shortcut.
+
+Image understanding supports **Auto / On / Off**. Auto reads the catalog and is
+off for unknown models. Existing On/Off choices are preserved; select Auto to
+restore detection. When image understanding is off, WebUI warns and passes file
+paths rather than image pixels. Use On for a custom deployment known to support
+images. Catalog audio, video and PDF labels describe model capabilities; those
+native upload formats are not supported by this interface.
+
+### Context usage and compression
+
+The circle to the left of the attachment button shows estimated usage for the
+last assembled request. Click it to view system prompt, tool definition and
+message usage, or choose **Compress context**. Output reservation is shown
+separately. Changing the model or configuration clears the old estimate until
+the next request.
+
+The context limit in model settings can reduce a known model's window or provide
+a limit for an unknown model. Clear it to restore defaults. Automatic compression
+normally starts near 85% of the effective window, or earlier when input limits
+and output reservation require it.
+
+Manual and automatic compression use the same SDK operation as `/compact`.
+WebUI does not yet route slash commands. Compression runs without adding a user
+message, continues if you leave the page, and can be cancelled with Stop. On
+completion, the history shows the trigger and estimated token counts before and
+after compression. Original messages remain in the session log.
+
+If summarization fails, the previous context is retained. When that context is
+too large to send, **Retry compression and continue** resumes the saved request
+without adding a duplicate message. If the latest input alone is too large,
+shorten it or choose a larger model/window.
+
+### Memory and usage records
+
+When project memory is enabled, compression can first extract durable facts.
+An ordinary memory failure retains the previous memory and retry sources while
+allowing a valid summary to commit. System instructions are reloaded before the
+next request. Summaries use a separate, lower-cost reasoning setting and may
+omit details; keep important evidence in project files.
+
+The SDK records response usage independently of successful compaction. Cost
+estimates are marked complete, partial or unknown; amounts are not shown in
+WebUI. See [Context](../docs/en/core/context.md), [Models](../docs/en/core/models.md),
+and [Memory](../docs/en/core/memory.md) for storage, recovery, and pricing details.
 
 ## Edit project files
 
@@ -154,8 +253,9 @@ ms-agent ui --no-browser
 ms-agent ui --host 0.0.0.0 --port 8000
 ```
 
-The application has no built-in login. Configure access control through a
-reverse proxy or network settings when sharing it with other users.
+Authentication is off by default for local use. Before exposing the service
+to a network, enable the built-in login below or place it behind an
+authenticated gateway that cannot be bypassed.
 
 | Option | Description |
 | --- | --- |
@@ -172,6 +272,36 @@ reverse proxy or network settings when sharing it with other users.
 Explicit ports must be available and different for the frontend and API. If a
 service exits unexpectedly, the launcher stops the other service and reports
 an error.
+
+## Optional login
+
+MS-Agent is a framework for local agent work. Its WebUI listens on
+`127.0.0.1` by default and opens directly into chat. To require a login, set
+these variables before starting it (or add them to `webui/backend/.env`):
+
+```dotenv
+MS_AGENT_WEBUI_AUTH_ENABLED=true
+MS_AGENT_WEBUI_USERNAME=admin
+MS_AGENT_WEBUI_PASSWORD=replace-with-a-long-unique-password
+```
+
+Restart `ms-agent ui`, then sign in with that username and password. This is
+one account for the instance; there is no registration. The username defaults
+to `admin`, and an enabled instance refuses to start without a password.
+Login lasts seven days, including across service restarts. Use **Settings →
+Sign out** on a shared browser. Changing either credential and restarting
+invalidates existing logins; forgotten credentials can be replaced the same way.
+
+When enabled, login protects both pages and backend APIs, including files,
+settings and conversation streams. Cookies are HttpOnly and SameSite=Lax;
+HTTPS login also sets Secure. Browser writes must come from the same origin
+or an explicit `MS_AGENT_CORS_ORIGINS` entry; wildcard origins are rejected
+when authentication is enabled. Use HTTPS when accessing an instance remotely.
+
+Set `MS_AGENT_WEBUI_AUTH_ENABLED=false` (the default) to open chat without
+logging in. Disabling login does not restrict API access by itself.
+The launcher warns when binding beyond loopback with authentication disabled.
+`MS_AGENT_FRONTEND_HOSTED_MODE` changes visible controls, not access control.
 
 ## Configuration and data
 
@@ -272,10 +402,41 @@ Local SDK installs keep their existing PATH unless this variable is set.
 Packages installed into a running container's system Python are lost when that
 container is replaced. Put recurring dependencies in a derived image.
 
+### MCP startup and recovery
+
+MCP tools are optional: if some or all servers fail to start, ordinary chat and
+built-in tools remain available. A notice identifies the missing capabilities.
+Startup includes connecting, initializing and fetching the first tool list.
+The default is 60 seconds per server after it obtains a concurrency slot (up to
+8 servers start together), followed by a separate cleanup grace period. Set
+`MCP_STARTUP_TIMEOUT`, or a positive `startup_timeout` in a server's JSON entry,
+to adjust the startup budget. Ordinary tool calls keep their own timeout.
+
+The initial stdio check only confirms that its command exists and displays
+**Connection not verified**. **Test connection** creates an independent connection
+and reads its tools; it does not repair an existing conversation. In the card's
+menu, **Reconnect sessions next turn** schedules affected conversations to
+rebuild before their next idle turn. Current replies continue, and the session
+ID and conversation history are retained. Disabled servers stay disabled.
+Business tool calls are never replayed automatically.
+
+Automatic remote checks allow up to 6 seconds; a manual connection test allows
+up to 45 seconds. A server's smaller `startup_timeout` still applies. Concurrent
+checks share work only when their effective budgets match, and one malformed
+server configuration does not prevent other health results from being returned.
+
+Startup notices expose controlled error categories and HTTP status codes, not
+raw server output, command arguments or connection addresses. Unknown details
+are withheld because they may contain credentials. The model receives a fixed
+capability notice, without external error details.
+Transport library logs also omit raw details within MCP connection tasks;
+other requests using those libraries keep their normal logging.
+
 ### Python package sources
 
 The image uses the Tsinghua PyPI mirror for runtime `pip`, `uv` and `uvx`
-downloads.
+downloads. Runtime npm/npx uses `https://registry.npmmirror.com/`, configured
+in npm's global config (`npm config get globalconfig`).
 
 To use another mirror or a company package index, create two files on the host.
 For example, to use the official PyPI index, save this as `pip.conf`:
@@ -300,9 +461,19 @@ Add these options before the image name in the `docker run` command above:
 --mount type=bind,src="$PWD/uv.toml",dst=/etc/uv/uv.toml,readonly \
 ```
 
-Use file mounts for container-wide defaults: the agent's execution tools do not
-inherit every environment variable passed with `-e`. Package indexes cover
-PyPI packages; Git repositories and model downloads use their own addresses.
+File mounts provide container-wide defaults. MCP subprocesses and the agent's
+shell also inherit explicitly allowed package settings: `PIP_INDEX_URL`,
+`PIP_CONFIG_FILE`, `PIP_CACHE_DIR`, `UV_INDEX_URL`, `UV_DEFAULT_INDEX`,
+`UV_CONFIG_FILE`, `UV_CACHE_DIR`, and npm registry/cache/userconfig/globalconfig
+variables in upper or lower case. Explicit MCP `env` and tool `shell_env` take
+precedence. Other application credentials are not inherited automatically.
+
+Validate actual wheel/tarball downloads in the deployment network, then test
+MCP initialization and tool listing with a fresh cache. A reachable index alone
+is insufficient. There is no automatic switch to a second registry. Cache
+directories must be writable by the runtime user; persistence depends on the
+container's volume mounts. Git repositories and model downloads use their own
+addresses.
 
 ## Troubleshooting
 

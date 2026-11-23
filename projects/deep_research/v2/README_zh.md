@@ -44,9 +44,8 @@ cp projects/deep_research/.env.example .env
 OPENAI_API_KEY=your_api_key
 OPENAI_BASE_URL=https://your-openai-compatible-endpoint/v1
 
-# 搜索引擎配置（二选一，或使用默认的 arxiv 无需配置）
-EXA_API_KEY=your_exa_key              # 推荐，注册：https://exa.ai
-# SERPAPI_API_KEY=your_serpapi_key    # 或者选择 SerpApi，注册：https://serpapi.com
+# 当前 searcher.yaml 使用 Tavily 搜索与正文提取
+TAVILY_API_KEY=your_tavily_key
 ```
 
 #### 模型配置（⚠️ 首次运行必读）
@@ -98,26 +97,25 @@ self_reflection:
 
 #### 搜索引擎配置
 
-编辑 `searcher.yaml`，配置搜索引擎：
+当前 `searcher.yaml` 使用 Tavily。以下是相关字段；保留文件中的其他工具与参数：
 
 ```yaml
 tools:
   web_search:
-    engines:
-      - exa      # 或 serpapi（需要在 .env 配置对应的 API key）
-      - arxiv    # arxiv 无需 API key，始终可用
-    api_key: <EXA_API_KEY>  # 使用 EXA 时
-    # 或使用 SerpApi 时，额外配置（取消注释）：
-    # serpapi_provider: google  # 可选：google, bing, baidu
+    mcp: false
+    engines: [tavily]
+    tavily_api_key: <TAVILY_API_KEY>
+    fetcher: tavily_extract
+    fetch_content: true
 ```
 
-**默认配置：** 如果不配置搜索引擎 API key，系统会使用 `arxiv`（仅限学术文献搜索）。
+缺少 Tavily Key 不会自动切换到 arXiv。使用其他引擎时，需要同时修改 `engines`、凭据和正文提取配置；arXiv 仅覆盖学术文献，也依赖网络可访问性。完整入口与 v1/v2 区别见[文档](../../../docs/zh/applications/deep-research.md)。
 
 #### 高级配置（可选）
 
 ##### 网页摘要功能
 
-默认开启，用于压缩长网页内容以减少上下文膨胀、加速搜索调研过程、节约成本：
+当前 Tavily 配置默认关闭额外网页摘要，直接使用返回的正文。需要压缩长页面时可显式启用；它会增加模型调用：
 
 ```yaml
 tools:

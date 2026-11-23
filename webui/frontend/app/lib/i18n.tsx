@@ -1,7 +1,7 @@
 import xEnUS from '@ant-design/x/locale/en_US'
 import xZhCN from '@ant-design/x/locale/zh_CN'
-import enUS from 'antd/locale/en_US'
-import zhCN from 'antd/locale/zh_CN'
+import enUSModule from 'antd/locale/en_US'
+import zhCNModule from 'antd/locale/zh_CN'
 import {
   createContext,
   useCallback,
@@ -14,6 +14,15 @@ import en from './locales/en.json'
 import zh from './locales/zh.json'
 
 export type Lang = 'en' | 'zh'
+
+// Node SSR loads antd's CJS locale shim natively, so the default import is
+// `{ default: locale }` there; bundlers already unwrap it on the client.
+function unwrapDefault<T>(mod: T): T {
+  return (mod as { default?: T }).default ?? mod
+}
+
+const enUS = unwrapDefault(enUSModule)
+const zhCN = unwrapDefault(zhCNModule)
 
 export const LANG_COOKIE = 'ms-agent-webui:lang'
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365 // 1 year

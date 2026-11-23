@@ -155,7 +155,7 @@ def test_listing_hides_framework_internal_dot_dirs():
 
     pid = _new_project("ws-hidden")
     root = pathlib.Path(workspace._project_path(pid))
-    for d in (".locks", ".ms_agent_artifacts", ".index", ".temp"):
+    for d in (".locks", ".ms_agent_artifacts", ".index", ".temp", ".fork-staging"):
         (root / d).mkdir(parents=True, exist_ok=True)
         (root / d / "x.lock").write_text("x")
     (root / ".github").mkdir(exist_ok=True)
@@ -165,7 +165,7 @@ def test_listing_hides_framework_internal_dot_dirs():
     paths = {f.path for f in workspace.list_files(pid)}
     assert "kept.txt" in paths
     assert ".github" in paths or ".github/ci.yml" in paths  # user dot-dir kept
-    hidden = {".locks", ".ms_agent_artifacts", ".index", ".temp"}
+    hidden = {".locks", ".ms_agent_artifacts", ".index", ".temp", ".fork-staging"}
     assert not any(p.split("/")[0] in hidden for p in paths)
 
 

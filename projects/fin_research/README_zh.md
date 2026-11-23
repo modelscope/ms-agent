@@ -84,7 +84,7 @@ pip install akshare baostock
 
 ### 沙箱环境
 
-Collector 与 Analyst 默认使用 Docker 沙箱以安全执行代码（可选）：
+Collector、Analyst 和 Aggregator 默认在 Docker 沙箱中执行代码，并通过输出目录共享数据和报告。运行前，请先安装沙箱依赖并构建镜像：
 
 ```bash
 # 安装 ms-enclave（https://github.com/modelscope/ms-enclave）
@@ -94,32 +94,23 @@ pip install ms-enclave docker websocket-client
 bash projects/fin_research/tools/build_jupyter_image.sh
 ```
 
-如果不希望安装Docker等依赖，也可以选择配置本地代码执行工具，推荐将`analyst.yaml`和`collector.yaml`中默认的`tools`配置修改为：
+如需完全使用本地环境，请将 `collector.yaml`、`analyst.yaml` 和 `aggregator.yaml` 中的整个 `tools.code_executor` 配置块替换为：
 
 ```yaml
 tools:
   code_executor:
     mcp: false
     implementation: python_env
-    exclude:
-      - python_executor
+    include:
       - shell_executor
-      - file_operation
 ```
 
-该配置下默认依赖Jupyter Kernel执行代码，提供对环境变量的隔离，并支持shell命令执行，相应的依赖将在第一次运行代码时自动安装（包括数据分析和代码执行需要的依赖）。如果希望只使用更轻量的Python执行环境而不引入其他依赖，可以修改为：
+同时调整提示词，使其与本地执行方式一致：
 
-```yaml
-tools:
-  code_executor:
-    mcp: false
-    implementation: python_env
-    exclude:
-      - notebook_executor
-      - file_operation
-```
+- Collector 和 Analyst：通过 `shell_executor` 完成数据分析和文件操作，移除 Notebook 专用工具、内核重置及变量跨调用保留等要求。每次命令独立运行，需在本次调用中准备所需模块和数据。
+- Aggregator：将提示词中的沙箱路径 `/data` 改为本地输出目录。Collector 和 Analyst 的 `<DATA_ROOT>` 占位符会根据执行模式自动替换。
 
-该配置使用独立的Python执行器和Shell命令执行器，适合轻量级代码执行场景。
+本地模式直接使用宿主机资源，不提供沙箱隔离。运行前，请在本地执行环境中安装所需分析依赖。
 
 ## 🚀 快速开始
 

@@ -398,6 +398,7 @@ def get_status(pid: str):
         _project_memory_models,
         _read_settings,
         _resolve_embedder,
+        _mem0_llm,
     )
     from app.schemas.memory import (
         MemoryEmbedderInfo,
@@ -446,6 +447,15 @@ def get_status(pid: str):
                 fallback_reason=desc.get("fallback_reason"))
     except MemoryConfigError as exc:
         error = MemoryErrorInfo(code=exc.code, message=str(exc))
+
+    if error is None:
+        from app.backends.ms_agent.memory_configuration import current_build_error
+        error = current_build_error(proj)
+    if error is None:
+        try:
+            _mem0_llm(_read_settings(), _project_memory_models(proj))
+        except MemoryConfigError as exc:
+            error = MemoryErrorInfo(code=exc.code, message=str(exc))
 
     ingest = None
     status = _live_ingest_status(proj)
@@ -684,6 +694,7 @@ async def _rebuild_store(proj, mem_dir: Path) -> tuple[int, bool]:
         _commit_embedder_identity,
         _load_embedder_identity,
         _mem0_options_for,
+        _mem0_llm,
         _new_embedder_identity,
         _project_memory_models,
         _read_settings,
@@ -726,6 +737,11 @@ async def _rebuild_store(proj, mem_dir: Path) -> tuple[int, bool]:
         # The store already speaks this embedder — switching away and back
         # again is not a reason to touch it.
         return 0, True
+
+    try:
+        _mem0_llm(settings, mem_cfg)
+    except MemoryConfigError as exc:
+        raise BadRequest(f"Memory cannot be rebuilt: {exc}") from exc
 
     # Residue from an interrupted attempt. Inert, but it would confuse this one.
     for stale in mem_dir.glob("qdrant.new-*"):

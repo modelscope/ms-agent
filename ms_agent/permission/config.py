@@ -170,6 +170,39 @@ _DEFAULT_BLACKLIST: tuple[str, ...] = ()
 #: default these hold in every mode, including full-access: reaching the network
 #: or another host is worth one deliberate click even from a user who has
 #: otherwise waved the agent through. ``allow_network: true`` drops them.
+
+CANONICAL_PERMISSION_MODES = ('ask', 'auto', 'full-access')
+
+#: Older names still accepted on the CLI, in YAML, and by ``/permission``.
+_PERMISSION_MODE_ALIASES = {
+    'ask': 'ask',
+    'interactive': 'ask',
+    'restricted': 'ask',
+    'auto': 'auto',
+    'delegate': 'auto',
+    'delegated': 'auto',
+    'full-access': 'full-access',
+    'full_access': 'full-access',
+    'full': 'full-access',
+    'strict': 'full-access',
+}
+
+
+def normalize_permission_mode(mode: str) -> str:
+    """Return the canonical mode: ``ask``, ``auto``, or ``full-access``.
+
+    ``ask`` confirms uncertain calls with the user. ``auto`` sends them to
+    the model or agent decision provider. ``full-access`` allows them.
+    Hard safety denials stay denied in every mode.
+    """
+    key = (mode or '').strip().lower()
+    normalized = _PERMISSION_MODE_ALIASES.get(key)
+    if normalized is None:
+        raise ValueError(f"Unknown permission mode '{mode}' "
+                         '(ask | auto | full-access)')
+    return normalized
+
+
 _DEFAULT_ASK_RULES: tuple[str, ...] = (
     'code_executor---shell_executor:curl *',
     'code_executor---shell_executor:wget *',
@@ -184,7 +217,7 @@ _DEFAULT_ASK_RULES: tuple[str, ...] = (
 @dataclass(frozen=True)
 class PermissionConfig:
     """Top-level permission configuration from agent YAML."""
-    mode: Literal['auto', 'strict', 'interactive'] = 'auto'
+    mode: Literal['ask', 'auto', 'full-access'] = 'auto'
     whitelist: tuple[str, ...] = ()
     blacklist: tuple[str, ...] = _DEFAULT_BLACKLIST
     # Defaulted here as well as in from_dict: a config with no ``permission``
@@ -192,6 +225,14 @@ class PermissionConfig:
     # must still be confirmed there.
     ask_rules: tuple[str, ...] = _DEFAULT_ASK_RULES
     safety: SafetyConfig = SafetyConfig()
+    #: Who decides an uncertain call in ``auto`` mode. ``llm`` uses the
+    #: session model; ``agent`` requires an injected provider that is not
+    #: the requester.
+    decision_provider: Literal['llm', 'agent'] | None = None
+    provider_timeout: float = 30.0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, 'mode', normalize_permission_mode(self.mode))
 
     @classmethod
     def from_dict(cls,
@@ -200,9 +241,12 @@ class PermissionConfig:
         if not d:
             return cls()
 
-        raw_mode = d.get('mode', 'auto')
-        _MODE_ALIASES = {'restricted': 'interactive'}
-        mode = _MODE_ALIASES.get(raw_mode, raw_mode)
+        mode = normalize_permission_mode(d.get('mode', 'auto'))
+        decision_provider = d.get('decision_provider')
+        if decision_provider not in (None, 'llm', 'agent'):
+            raise ValueError(
+                "decision_provider must be either 'llm' or 'agent'")
+        provider_timeout = float(d.get('provider_timeout', 30.0))
         whitelist = tuple(d.get('whitelist', ()))
         user_ask_rules = tuple(d.get('ask_rules', ()))
         user_blacklist = tuple(d.get('blacklist', ()))
@@ -236,4 +280,6 @@ class PermissionConfig:
             blacklist=blacklist,
             ask_rules=ask_rules,
             safety=safety,
+            decision_provider=decision_provider,
+            provider_timeout=provider_timeout,
         )

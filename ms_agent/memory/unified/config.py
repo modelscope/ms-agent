@@ -53,8 +53,10 @@ class MemoryConfig:
     summary_model: Optional[str] = None
 
     # Session
-    context_window_tokens: int = 65536
+    # None inherits the actual extraction model's effective context budget.
+    context_window_tokens: Optional[int] = None
     max_completion_tokens: int = 4096
+    max_extraction_calls: int = 32
     safety_buffer: int = 1024
     max_consolidation_rounds: int = 5
     consolidation_target_ratio: float = 0.5
@@ -100,8 +102,8 @@ class MemoryConfig:
 
         session = raw.get('session', {}) or {}
         for k in ('context_window_tokens', 'max_completion_tokens',
-                  'safety_buffer', 'max_consolidation_rounds',
-                  'consolidation_target_ratio'):
+                  'max_extraction_calls', 'safety_buffer',
+                  'max_consolidation_rounds', 'consolidation_target_ratio'):
             if k in session:
                 flat[k] = session[k]
 

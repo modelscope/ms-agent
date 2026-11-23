@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { AddProviderModal } from '~/components/models/AddProviderModal'
 import { ModelEditModal } from '~/components/models/ModelEditModal'
+import { CatalogSettings } from '~/components/models/CatalogSettings'
+import { ModelCapabilities } from '~/components/models/ModelCapabilities'
 import { ProviderTags } from '~/components/models/ProviderTags'
 import { ProviderLogo } from '~/components/models/ProviderLogo'
 import { EmptyState, EmptyStateAction } from '~/components/common/EmptyState'
@@ -155,6 +157,7 @@ export default function ModelsSettings() {
   const defaultModelOptions = useMemo(
     () =>
       models
+        .filter((m) => m.purpose !== 'embedding')
         .filter((m) =>
           settings?.default_provider_id
             ? m.provider_id === settings.default_provider_id
@@ -180,6 +183,7 @@ export default function ModelsSettings() {
 
   return (
     <div className="flex h-full flex-col">
+      <CatalogSettings />
       {/* Default model picker */}
       <section className="mb-6 shrink-0">
         <div className="mb-3 text-base font-semibold text-msa-text-1">
@@ -198,6 +202,7 @@ export default function ModelsSettings() {
                 label: p.name,
                 disabled: !p.enabled
               }))}
+              showSearch={{ optionFilterProp: 'label' }}
               // The closed box shows the logo + name; the tags (built-in pill,
               // key glyph) ride the dropdown OPTIONS, where the user is choosing
               // and the "is this ready to use" signal actually helps. Both are
@@ -240,6 +245,7 @@ export default function ModelsSettings() {
               value={resolvedDefaultModelId}
               onChange={(v) => updateSettings({ default_model_id: v })}
               options={defaultModelOptions}
+              showSearch={{ optionFilterProp: 'label' }}
               open={defaultModelOpen}
               onOpenChange={setDefaultModelOpen}
               // A provider with no models leaves this picker with nothing to
@@ -436,7 +442,7 @@ export default function ModelsSettings() {
           // below would otherwise restore the previously persisted provider and
           // drop the model out of sight. Awaited, since a concurrent GET can
           // still answer with the pre-save settings.
-          if (asDefault) {
+          if (asDefault && m.purpose !== 'embedding') {
             try {
               await updateSettings({
                 default_provider_id: m.provider_id,
@@ -593,20 +599,31 @@ function ProviderDetail({
                 >
                   {m.name}
                 </div>
+                <ModelCapabilities model={m} />
               </div>
               <Tooltip title={t.modelsAdmin.editModel}>
-                <EditIcon
-                  className="h-5 w-5 shrink-0 cursor-pointer text-msa-text-3 transition-colors hover:text-msa-purple-6"
+                <button
+                  type="button"
+                  aria-label={`${t.modelsAdmin.editModel}: ${m.display_name || m.name}`}
+                  className="shrink-0 cursor-pointer border-none bg-transparent p-0 text-msa-text-3 transition-colors hover:text-msa-purple-6 focus-visible:outline focus-visible:outline-msa-line-3"
                   onClick={() => onEditModel(m)}
-                />
+                >
+                  <EditIcon className="h-5 w-5" />
+                </button>
               </Tooltip>
               <Popconfirm
-                title={t.modelsAdmin.confirmDelete}
+                title={t.modelsAdmin.deleteNamedModel.replace('{name}', m.display_name || m.name)}
                 okType="danger"
                 onConfirm={() => onDeleteModel(m)}
               >
                 <Tooltip title={t.modelsAdmin.deleteModel}>
-                  <DeleteIcon className="h-5 w-5 shrink-0 cursor-pointer text-msa-text-3 transition-colors hover:text-msa-purple-6" />
+                  <button
+                    type="button"
+                    aria-label={`${t.modelsAdmin.deleteModel}: ${m.display_name || m.name}`}
+                    className="shrink-0 cursor-pointer border-none bg-transparent p-0 text-msa-text-3 transition-colors hover:text-msa-purple-6 focus-visible:outline focus-visible:outline-msa-line-3"
+                  >
+                    <DeleteIcon className="h-5 w-5" />
+                  </button>
                 </Tooltip>
               </Popconfirm>
             </div>

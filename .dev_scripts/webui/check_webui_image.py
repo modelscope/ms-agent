@@ -32,6 +32,7 @@ import zipfile
 from pathlib import Path
 from omegaconf import OmegaConf
 from ms_agent.tools.code.local_code_executor import LocalCodeExecutionTool
+from ms_agent.tools.mcp_client import stdio_child_env
 
 prefix = Path(sys.prefix)
 assert prefix != Path(sys.base_prefix), 'SDK must run in its image environment'
@@ -54,6 +55,22 @@ with tempfile.TemporaryDirectory() as temporary:
         'tools': {'code_executor': {'include': ['shell_executor']}},
     }))
     shell_env = tool.shell_env
+    # Both subprocess paths must see runtime package defaults, independently
+    # of root's HOME or npm user configuration.
+    for child_env in (shell_env, stdio_child_env(None)):
+        child_env = dict(child_env, HOME=temporary)
+        registry = subprocess.check_output(
+            ['npm', 'config', 'get', 'registry'], env=child_env, text=True).strip()
+        assert registry == 'https://registry.npmmirror.com/', registry
+        npmrc = subprocess.check_output(
+            ['npm', 'config', 'get', 'globalconfig'], env=child_env, text=True).strip()
+        assert Path(npmrc).is_file(), npmrc
+        defaults = subprocess.check_output([
+            '/usr/local/bin/python', '-c',
+            'from pip._internal.commands import create_command; '
+            'print(create_command("install").parse_args([])[0].index_url)'
+        ], env=child_env, text=True).strip()
+        assert defaults == index, defaults
     python = shutil.which('python', path=shell_env['PATH'])
     pip = shutil.which('pip', path=shell_env['PATH'])
     assert python == '/usr/local/bin/python', python
@@ -66,7 +83,7 @@ with tempfile.TemporaryDirectory() as temporary:
     async def shell(command):
         await tool.connect()
         try:
-            assert tool.kernel_session._client is None, 'Shell-only mode started Jupyter'
+            assert not hasattr(tool, 'kernel_session'), 'Local tool must not create a Jupyter kernel'
             result = json.loads(await tool.shell_executor(command))
             assert result['success'], result
         finally:
@@ -99,7 +116,8 @@ with tempfile.TemporaryDirectory() as temporary:
 print('Agent package installation, service isolation and index configuration passed')
 '''
     subprocess.run(['docker', 'exec', name, 'python', '-c', code],
-                   check=True, timeout=120)
+                   check=True,
+                   timeout=120)
 
 
 def main():
@@ -122,15 +140,15 @@ def main():
     assert labels['com.modelscope.ms-agent.wheel-sha256'] == wheel_sha
     name = 'ms-agent-smoke-' + uuid.uuid4().hex[:12]
     volume = name + '-data'
-    label_args = ['--label', args.resource_label] if args.resource_label else []
+    label_args = ['--label', args.resource_label
+                  ] if args.resource_label else []
     docker('volume', 'create', *label_args, volume)
     state = None
     try:
         for scenario in ('normal', 'restart', 'backend', 'frontend'):
             docker('run', *label_args, '--cpus', '2', '--memory', '4g',
-                   '--detach', '--name', name, '--publish',
-                   '127.0.0.1::8000', '--mount',
-                   'type=volume,source=' + volume + ',target=/data',
+                   '--detach', '--name', name, '--publish', '127.0.0.1::8000',
+                   '--mount', 'type=volume,source=' + volume + ',target=/data',
                    args.image)
             try:
                 mapping = docker('port', name, '8000/tcp')
@@ -162,8 +180,12 @@ for proc in Path('/proc').iterdir():
         continue
     try:
         args = (proc / 'cmdline').read_bytes().split(b'\\0')
-        backend = len(args) > 2 and args[1] == b'-c' and args[2].startswith(b'from app.launcher import _run_api;')
-        frontend = len(args) > 1 and args[0].endswith(b'node') and args[1].endswith(b'/server.js')
+        # Rosetta/QEMU can prepend an interpreter and inject Node flags.
+        # Match the service markers, not their absolute argv positions.
+        backend = any(arg == b'-c' and following.startswith(b'from app.launcher import _run_api;')
+                      for arg, following in zip(args, args[1:]))
+        frontend = (any(arg == b'node' or arg.endswith(b'/node') for arg in args)
+                    and any(arg.endswith(b'/server.js') for arg in args))
         if (backend and sys.argv[1] == 'backend') or (frontend and sys.argv[1] == 'frontend'):
             os.kill(int(proc.name), signal.SIGKILL)
             break

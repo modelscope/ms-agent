@@ -4,6 +4,7 @@ dict ({command,args} stdio | {url,transport} remote). Ids encode scope+name;
 description lives in the sidecar."""
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import shlex
@@ -87,6 +88,7 @@ def _to_schema(scope: str, name: str, entry: dict) -> Mcp:
         scope=scope,
         env=entry.get("env") or {},
         headers=entry.get("headers") or {},
+        startup_timeout=entry.get("startup_timeout"),
         created_at=created,
     )
 
@@ -167,54 +169,52 @@ def _enabled_entries() -> list[tuple[str, str, str, dict]]:
     return out
 
 
-def health() -> list[McpHealth]:
-    """Probe every enabled MCP (connect+initialize) and report status + reason.
-    On-demand only — never call from list_mcps (each probe is a network handshake
-    up to the timeout)."""
-    import asyncio
+def _health_row(mid, name, scope, result):
+    return McpHealth(id=mid, name=name, scope=scope,
+                     healthy=result.healthy, error=result.error,
+                     level=result.level, checked_at=result.checked_at,
+                     expires_at=result.expires_at)
 
+
+async def health() -> list[McpHealth]:
     from app.backends.ms_agent import mcp_health
 
-    entries = _enabled_entries()
-    if not entries:
-        return []
-
-    async def _run():
-        # Cached (60 s): the list page probes every enabled server at once, so
-        # without it each visit re-paid the full timeout for every dead entry.
-        return await asyncio.gather(
-            *(mcp_health.check_server_cached(name, entry)
-              for _, name, _, entry in entries)
-        )
-
-    results = asyncio.run(_run())
-    return [
-        McpHealth(id=mid, name=name, scope=scope, healthy=ok, error=err)
-        for (mid, name, scope, _entry), (ok, err) in zip(entries, results)
-    ]
+    entries = await asyncio.to_thread(_enabled_entries)
+    results = await asyncio.gather(*(
+        mcp_health.check_server_cached(name, entry, scope=scope)
+        for _, name, scope, entry in entries))
+    return [_health_row(mid, name, scope, result)
+            for (mid, name, scope, _), result in zip(entries, results)]
 
 
-def health_one(mcp_id: str) -> McpHealth:
-    """Probe a single MCP server by id and return its health + error reason."""
-    import asyncio
-
-    from app.backends.ms_agent import mcp_health
-
+def _entry_for_probe(mcp_id):
     scope, name = _decode_id(mcp_id)
     mm, sdk_scope = _mm_for(scope)
     entry = _live(mm, name, sdk_scope)
     if entry is None:
         raise NotFound("MCP server not found.")
-    # A user asking "reconnect" wants the truth NOW, not a cached verdict — and
-    # the fresh answer replaces the cached one so the next session build agrees.
-    # Only THIS server's verdict is dropped (a full clear made the next sweep
-    # re-pay every dead entry's timeout), and the probe is DEEP: for stdio a
-    # real spawn+initialize — the shallow existence check kept a green light on
-    # a package that crashes at startup. The budget covers a cold uvx install.
-    mcp_health.invalidate_server(name, entry)
-    ok, err = asyncio.run(
-        mcp_health.check_server_cached(name, entry, timeout=45.0, deep=True))
-    return McpHealth(id=mcp_id, name=name, scope=scope, healthy=ok, error=err)
+    if not entry.get('enabled', True):
+        raise BadRequest("Enable this MCP before testing or reconnecting it.")
+    return scope, name, entry
+
+
+async def health_one(mcp_id: str) -> McpHealth:
+    from app.backends.ms_agent import mcp_health
+
+    scope, name, entry = await asyncio.to_thread(_entry_for_probe, mcp_id)
+    result = await mcp_health.check_server_cached(
+        name, entry, timeout=45.0, deep=True, scope=scope, refresh=True)
+    return _health_row(mcp_id, name, scope, result)
+
+
+async def reconnect(mcp_id: str):
+    from app.backends.ms_agent import mcp_health
+    from app.backends.ms_agent.runtime import registry
+    from app.schemas.mcp import McpReconnect
+
+    scope, name, entry = await asyncio.to_thread(_entry_for_probe, mcp_id)
+    mcp_health.invalidate_server(name, entry, scope)
+    return McpReconnect(scheduled=await registry.reconnect_mcp(scope, name))
 
 
 def create_mcp(body: McpCreate) -> Mcp:
@@ -228,6 +228,8 @@ def create_mcp(body: McpCreate) -> Mcp:
             raise Conflict("An MCP server with this name already exists here.")
         server = _server(body.transport, body.endpoint, body.env, body.headers)
         server["enabled"] = body.enabled
+        if body.startup_timeout is not None:
+            server["startup_timeout"] = body.startup_timeout
         # `add` replaces the whole row, so re-adding over a mask clears it.
         mm.add(body.name, server, scope=sdk_scope)
         mid = _encode_id(body.scope, body.name)
@@ -275,6 +277,8 @@ def _update_mcp_locked(mcp_id: str, body: McpUpdate) -> Mcp:
         # toggling a server used to reshuffle the list.
         patch = _server(transport, endpoint, env, headers)
         patch["enabled"] = enabled
+        if "startup_timeout" in body.model_fields_set:
+            patch["startup_timeout"] = body.startup_timeout
         # A merge cannot drop keys, so clearing env/headers has to be explicit.
         if body.env is not None and not env:
             patch["env"] = {}
@@ -288,6 +292,9 @@ def _update_mcp_locked(mcp_id: str, body: McpUpdate) -> Mcp:
         # added_at still says when the server was ADDED.
         server = _server(transport, endpoint, env, headers)
         server["enabled"] = enabled
+        budget = body.startup_timeout if "startup_timeout" in body.model_fields_set else cur.get("startup_timeout")
+        if budget is not None:
+            server["startup_timeout"] = budget
         if cur.get("meta"):
             server["meta"] = cur["meta"]
         mm.remove(name, sdk_scope)
@@ -333,6 +340,8 @@ def replace_mcps(scope: str, bodies: list[McpCreate]) -> list[Mcp]:
             seen.add(body.name)
             server = _server(body.transport, body.endpoint, body.env, body.headers)
             server["enabled"] = body.enabled
+            if body.startup_timeout is not None:
+                server["startup_timeout"] = body.startup_timeout
             meta = (current.get(body.name) or {}).get("meta")
             if meta:
                 server["meta"] = meta

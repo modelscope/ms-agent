@@ -131,7 +131,10 @@ export function NewProjectModal({
     const v = await form.validateFields()
     // The memory-model group is not part of the antd Form, so validate it here.
     // Only guards the vector backend (the file backend has no such fields).
-    if (memoryBackend === 'vector') {
+    const memoryChanged = !project || !project.memory_enabled ||
+      Object.entries(memoryModels).some(([key, value]) =>
+        key !== 'memory_recall_top_k' && value !== (project[key as keyof Project] ?? null))
+    if (memoryEnabled && memoryBackend === 'vector' && memoryChanged) {
       const errs = memoryModelErrors(memoryModels)
       if (Object.keys(errs).length > 0) {
         setMemoryErrors(errs)
@@ -141,6 +144,17 @@ export function NewProjectModal({
     }
     setSubmitting(true)
     try {
+      if (memoryEnabled && memoryBackend === 'vector' && memoryChanged) {
+        const checked = await api.checkMemoryModels({ ...memoryModels, probe: true }).catch(() => {
+          message.error(t.personalization.memoryCheckFailed)
+          return null
+        })
+        if (!checked) return
+        if (!checked.valid) {
+          message.error(checked.errors.map((e) => e.message).join('\n'))
+          return
+        }
+      }
       if (isEditing) {
         // Update existing project
         const updated = await api.updateProject(project.id, {

@@ -50,7 +50,10 @@ def _mask(api_key: str) -> str:
 def project_to_schema(project) -> ProjectSchema:
     from ms_agent.project.types import DEFAULT_PROJECT_ID
 
-    from app.backends.ms_agent.config import _project_memory_models
+    from app.backends.ms_agent.config import (
+        _project_memory_models,
+        read_project_permission_mode,
+    )
 
     meta = sidecar.get("projects", project.id, {}) or {}
     # The EFFECTIVE group, not the raw sidecar: a project saved without an
@@ -86,7 +89,7 @@ def project_to_schema(project) -> ProjectSchema:
         memory_recall_top_k=mem.get("recall_top_k"),
         mcp_auto_attach=meta.get("mcp_auto_attach", True),
         skill_auto_attach=meta.get("skill_auto_attach", True),
-        permission_mode=meta.get("permission_mode", "restricted"),
+        permission_mode=read_project_permission_mode(meta),
         created_at=project.created_at,
     )
 
@@ -105,6 +108,9 @@ def session_to_schema(session) -> SessionSchema:
         unread=bool(meta.get("unread", False)),
         category=meta.get("category", ""),
         model_id=encode_model_id(*key) if key else "",
+        reasoning_efforts={encode_model_id(provider, model): effort
+                           for provider, models in getattr(session, 'reasoning_efforts', {}).items()
+                           for model, effort in models.items()},
     )
 
 
@@ -174,8 +180,12 @@ def decode_model_id(model_id: str) -> tuple[str, str]:
 
 
 def model_to_schema(provider_id: str, name: str) -> ModelSchema:
+    from app.backends.ms_agent.models import generation_defaults
+    from app.backends.ms_agent.config import _KNOWN_EMBED_MODELS
+
     mid = encode_model_id(provider_id, name)
     meta = sidecar.get("models", mid, {}) or {}
+    defaults = generation_defaults(provider_id, name)
     return ModelSchema(
         id=mid,
         provider_id=provider_id,
@@ -183,7 +193,13 @@ def model_to_schema(provider_id: str, name: str) -> ModelSchema:
         display_name=meta.get("display_name") or name,
         is_builtin=False,
         advanced_params=meta.get("advanced_params", {}),
-        # Absent in the sidecar => None => "unset", not False (see the schema).
+        purpose=meta.get("purpose") or (
+            "embedding" if _KNOWN_EMBED_MODELS.get(provider_id) == name else "unknown"),
         supports_vision=meta.get("supports_vision"),
+        effective_supports_vision=defaults.effective_supports_vision,
+        context_limit=meta.get("context_limit"),
+        catalog=defaults.catalog,
+        context_budget=defaults.context_budget,
+        generation_defaults=defaults,
         created_at=_now(),
     )

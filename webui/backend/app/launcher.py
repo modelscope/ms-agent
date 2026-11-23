@@ -122,13 +122,15 @@ def _check_children(processes) -> None:
 
 
 def _wait_for_http(
-    url: str, processes, deadline: float, *, kind: str, expected: str | None = None
+    url: str, processes, deadline: float, *, kind: str, expected: str | None = None,
+    headers: dict[str, str] | None = None,
 ) -> None:
     last_error = "not ready"
     while time.monotonic() < deadline:
         _check_children(processes)
         try:
-            with _LOOPBACK_OPENER.open(url, timeout=2) as response:
+            request = urllib.request.Request(url, headers=headers or {})
+            with _LOOPBACK_OPENER.open(request, timeout=2) as response:
                 content = response.read()
                 valid = response.status == 200
                 if kind == "health":
@@ -238,6 +240,16 @@ def main(argv: list[str] | None = None) -> None:
             # Load source dotenv before copying the child environment; installed
             # mode disables dotenv discovery outside a checkout.
             from app.core import settings as _settings  # noqa: F401
+            from app.core.auth import COOKIE_NAME, WebUIAuth
+
+            auth = WebUIAuth(_settings.settings)
+            probe_headers = {"Cookie": f"{COOKIE_NAME}={auth.issue_session()}"} if auth.enabled else {}
+            if not auth.enabled and host not in {"127.0.0.1", "::1", "localhost"}:
+                print(
+                    "WebUI authentication is disabled. Use an authenticated gateway "
+                    "or set MS_AGENT_WEBUI_AUTH_ENABLED=true when sharing this address.",
+                    file=sys.stderr,
+                )
 
             env = os.environ.copy()
             env.update(
@@ -284,7 +296,8 @@ def main(argv: list[str] | None = None) -> None:
             url = public_url(host, public)
             _wait_for_http(url + "/api/health", processes, deadline, kind="health")
             _wait_for_http(
-                url + "/", processes, deadline, kind="page", expected=css_href
+                url + "/", processes, deadline, kind="page", expected=css_href,
+                headers=probe_headers,
             )
             _wait_for_http(
                 url + css_href,
@@ -292,6 +305,7 @@ def main(argv: list[str] | None = None) -> None:
                 deadline,
                 kind="css",
                 expected=sha256(frontend / "build/client" / css_href.lstrip("/")),
+                headers=probe_headers,
             )
             _check_children(processes)
             print(f"\nMS-Agent WebUI ready: {url}\n", flush=True)

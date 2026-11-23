@@ -746,6 +746,26 @@ class WebSearchTool(ToolBase):
             out = _json_dumps(response)
         return out
 
+    async def reload_from_config(self) -> None:
+        """Rebuild engines after ``tools.web_search`` changes on this config."""
+        fresh = type(self)(self.config)
+        keep = {
+            '_engines',
+            '_engine_classes',
+            '_content_fetcher',
+            '_content_optimizer',
+            '_executor',
+            '_summary_usage_total',
+            '_summary_usage_model',
+        }
+        for key, value in vars(fresh).items():
+            if key in keep:
+                continue
+            setattr(self, key, value)
+        self._engines.clear()
+        self._engine_classes.clear()
+        await self.connect()
+
     async def connect(self) -> None:
         """Initialize search engines and content fetcher."""
         for engine_type in self._engine_types:

@@ -170,7 +170,7 @@ def test_config_can_still_override_the_agent_defaults():
     assert env['GIT_PAGER'] == 'cat'  # untouched keys keep the safe default
 
 
-def test_image_shell_path_does_not_change_kernel_or_parent_environment():
+def test_image_shell_path_does_not_change_parent_environment():
     parent = {'PATH': '/opt/service/bin:/usr/local/bin:/usr/bin',
               'MS_AGENT_SHELL_PATH': '/usr/local/bin:/usr/bin',
               'VIRTUAL_ENV': '/opt/service', 'PYTHONPATH': '/opt/service/lib',
@@ -178,9 +178,7 @@ def test_image_shell_path_does_not_change_kernel_or_parent_environment():
     with mock.patch.dict(os.environ, parent, clear=True):
         tool = _bare_tool()
         shell = tool._build_env('shell_env')
-        kernel = tool._build_env('kernel_env')
         assert shell['PATH'] == parent['MS_AGENT_SHELL_PATH']
-        assert kernel['PATH'] == parent['PATH']
         assert dict(os.environ) == parent
     assert not {'VIRTUAL_ENV', 'PYTHONPATH', 'SECRET_TOKEN'} & shell.keys()
 

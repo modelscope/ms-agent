@@ -12,6 +12,7 @@ import os
 import re
 import time
 from collections.abc import AsyncIterator
+from contextlib import aclosing
 from mimetypes import guess_type
 
 from app.backends.ms_agent.common import (
@@ -198,7 +199,9 @@ def _resolve_or_create(req: ChatRequest):
         project = resolve_project(None)  # unknown id -> default project
     from app.backends.ms_agent import session_models
 
-    session = session_models.create(project, model_id=req.model_id)
+    session = session_models.create(project, model_id=req.model_id,
+                                    reasoning_effort=req.reasoning_effort,
+                                    request_id=req.input_id)
     return project, session
 
 
@@ -447,6 +450,32 @@ def _inline_auth_meta(meta: dict, tool: str, args: dict) -> dict:
     return {**meta, **step}
 
 
+def _context_compaction_meta(payload: dict) -> dict | None:
+    """Display-only completion, shared by live events and SessionLog replay.
+
+    Logs use tokens_before/tokens_after; UI events use before_tokens/after_tokens.
+    Older successful records have no status, and older UI events default both
+    counts to zero. Never turn a retained/failed attempt into a success notice
+    or present those default counts as measured usage.
+    """
+    if payload.get("status") not in (None, "", "completed", "success"):
+        return None
+    if payload.get("error") or payload.get("is_error") or payload.get("success") is False:
+        return None
+    meta: dict = {"kind": "context_compaction"}
+    before = payload.get("before_tokens", payload.get("tokens_before"))
+    after = payload.get("after_tokens", payload.get("tokens_after"))
+    if type(before) is int and before > 0 and type(after) is int and after >= 0:
+        meta.update(before_tokens=before, after_tokens=after)
+    for key in ('operation_id', 'trigger'):
+        if payload.get(key):
+            meta[key] = payload[key]
+    memory = payload.get('memory_status') or (payload.get('memory') or {}).get('status')
+    if memory:
+        meta['memory_status'] = memory
+    return meta
+
+
 class _TurnMapper:
     """Assemble the frontend's ordered-parts view-model (agentProvider.ts) from
     the SDK's flat semantic event stream. Stateful per turn: streams reasoning as
@@ -531,6 +560,8 @@ class _TurnMapper:
         return chunks
 
     def _map(self, payload: dict, t: str | None, now: float) -> list[ChatChunk]:
+        if t == 'input_delivered':
+            return [*self.flush(), ChatChunk(type='input', meta=payload)]
         if t == "content_delta":
             return [ChatChunk(type="text", content=payload.get("text", ""))]
         if t == "reasoning_started":
@@ -619,12 +650,20 @@ class _TurnMapper:
             return self._permission_step(payload)
         if t == "permission_resolved":
             return self._permission_resolved_step(payload)
+        if t == "context_compacted":
+            # Informational only: no tool group, thought seal or turn boundary.
+            meta = _context_compaction_meta(payload)
+            return [ChatChunk(type="step", meta=meta)] if meta is not None else []
+        if t == "notice":
+            return [ChatChunk(type="notice", content=payload.get("text", ""),
+                              meta={"level": payload.get("level", "info"),
+                                    "code": payload.get("code", "")})]
         if t == "error":
             return [ChatChunk(type="error", meta={
                 "message": payload.get("message", ""),
                 "recoverable": bool(payload.get("recoverable", False)),
             })]
-        # user_message / turn_started / content_end / context_compacted -> none.
+        # user_message / turn_started / content_end -> none.
         return []
 
     def _tool_running_step(self, name: str, args: dict, group: int,
@@ -666,12 +705,17 @@ class _TurnMapper:
         meta = {**meta, "tool": name, "arguments": args, "group": group,
                 "call_id": call_id}
         result = payload.get("result")
+        if payload.get("attachments"):
+            meta["attachments"] = payload["attachments"]
         if result is not None:
             meta["result"] = _stringify(result)
         duration_s = payload.get("duration_s")
         if isinstance(duration_s, (int, float)):
             meta["duration_ms"] = int(duration_s * 1000)
-        if payload.get("error"):
+        if payload.get('execution_status') == 'skipped':
+            meta['status'] = 'skipped'
+            meta['skip_reason'] = payload.get('skip_reason')
+        elif payload.get("error"):
             meta = {**meta, "status": "error", "error": str(payload.get("error"))}
         return [ChatChunk(type="step", meta=meta)]
 
@@ -1358,7 +1402,7 @@ async def _apply_title(project, session_id: str, text: str) -> dict | None:
 
 
 async def _start_turn(project, session, user_msg, prompt: str,
-                      attachments: list[dict] | None):
+                      attachments: list[dict] | None, prepared=None):
     """Acquire the turn lock, then get this turn onto the runtime's queue.
 
     Lives outside the stream so it can run under `asyncio.shield`. On a cold
@@ -1399,6 +1443,17 @@ async def _start_turn(project, session, user_msg, prompt: str,
         # this turn's is not known until the enqueue below. Anything reading
         # `turn_user` in between must see nothing rather than the last turn's.
         rt.turn_user = None
+        if prepared is not None:
+            rt.sink.new_turn()
+            await rt.enqueue(prepared['prompt'], attachments=prepared.get('attachments'))
+            typed, _ = _content_parts(user_msg)
+            rt.turn_user = {'content': typed, 'segments': (
+                [s.model_dump() for s in user_msg.content]
+                if isinstance(user_msg.content, list) else None)}
+            rt.turn_started_at = time.monotonic()
+            rt.turn_started_wall = time.time()
+            started = True
+            return rt, True, None, prepared['prompt']
         _sync_runtime_skills(rt, project)
 
         # Skill-update notice (tail-only sync): compare the freshly-synced
@@ -1519,6 +1574,55 @@ async def _adopt_unwatched_turn(prep: "asyncio.Future", session_id: str) -> None
 
 
 async def stream(req: ChatRequest) -> AsyncIterator[dict]:
+    """Legacy one-turn SSE, backed by the same durable input controller."""
+    from app.backends.ms_agent.conversations import get, submit
+    receipt = await submit(req)
+    conversation = get(receipt['session_id'])
+    input_id = receipt['input']['input_id']
+    yield _delta(ChatChunk(type='session', meta={
+        'session_id': receipt['session_id'], 'project_id': receipt['project_id']}))
+    previous = receipt['input']
+    if (previous['state'] == 'cancelled' or (
+            previous['state'] == 'delivered'
+            and previous.get('turn_id') != conversation.turn_id)):
+        yield _delta(ChatChunk(type='done', meta={
+            'session_id': receipt['session_id'], 'already_delivered': True}))
+        return
+    target = None
+    cursor = None if previous['state'] == 'delivered' else receipt['cursor']
+    async with aclosing(conversation.subscribe(cursor)) as subscription:
+        async for event in subscription:
+            payload = json.loads(event['data'])
+            if payload['type'] == 'snapshot':
+                chunks = payload['frames']
+            elif payload['type'] == 'chunk':
+                chunks = [payload['chunk']]
+            elif payload['type'] == 'failure':
+                yield _delta(ChatChunk(type='error', meta={'message': payload['message']}))
+                yield _delta(ChatChunk(type='done', meta={'session_id': receipt['session_id']}))
+                return
+            else:
+                chunks = []
+            for chunk in chunks:
+                if chunk['type'] == 'input' and chunk['meta']['input_id'] == input_id:
+                    target = chunk['meta']['turn_id']
+                if target:
+                    yield {'data': json.dumps(chunk, separators=(',', ':'))}
+                    if chunk['type'] == 'done':
+                        return
+            # A snapshot may replace expired input/done frames. Only use durable
+            # completion there: older buffered events must still replay in order.
+            current = conversation.controller.inputs[input_id]
+            if current['state'] == 'cancelled' or (
+                    payload['type'] == 'snapshot' and current['state'] == 'delivered'
+                    and current.get('turn_id') != conversation.turn_id):
+                yield _delta(ChatChunk(type='done', meta={
+                    'session_id': receipt['session_id'],
+                    'already_delivered': current['state'] == 'delivered'}))
+                return
+
+
+async def run_turn(req: ChatRequest, prepared=None) -> AsyncIterator[dict]:
     project, session = await asyncio.to_thread(_resolve_or_create, req)
     session_id = session.id
 
@@ -1577,15 +1681,22 @@ async def stream(req: ChatRequest) -> AsyncIterator[dict]:
     # take effect only once the enqueue had landed; everything before that was
     # a hole where navigating away dropped the turn outright.
     prep = asyncio.ensure_future(
-        _start_turn(project, session, user_msg, prompt, attachments)
+        _start_turn(project, session, user_msg, prompt, attachments, prepared)
     )
     try:
-        rt, enqueued, intro, sent = await asyncio.shield(prep)
+        # Managed conversations outlive viewers already. Their cancellation is
+        # an explicit Stop/shutdown and must cancel startup as well.
+        rt, enqueued, intro, sent = await (
+            prep if prepared is not None else asyncio.shield(prep))
     except asyncio.CancelledError:
         # This stream dies here; the enqueue behind the shield does not. Hand
         # whatever it starts to the background drain — with no one left to reach
         # the turn boundary, nothing else would release the lock or flag the row.
-        asyncio.create_task(_adopt_unwatched_turn(prep, session_id))
+        if prepared is None:
+            asyncio.create_task(_adopt_unwatched_turn(prep, session_id))
+        if title_task is not None:
+            title_task.cancel()
+            await asyncio.gather(title_task, return_exceptions=True)
         raise
     if not enqueued:
         # A command that only prints: no turn was started, lock already back.
@@ -1619,7 +1730,8 @@ async def stream(req: ChatRequest) -> AsyncIterator[dict]:
         # once all of this turn's plan reports are known.
         for c in chunks:
             meta = getattr(c, "meta", None) or {}
-            if c.type == "step" and meta.get("kind") in ("file_write", "file_edit"):
+            if (c.type == "step" and meta.get("kind") in ("file_write", "file_edit")
+                    and meta.get('status') not in ('running', 'skipped', 'error')):
                 p = str(meta.get("path") or "")
                 if p and p not in changed_seen:
                     changed_seen.add(p)
@@ -1719,6 +1831,14 @@ async def stream(req: ChatRequest) -> AsyncIterator[dict]:
                 for chunk in flushed:
                     yield _delta(chunk)
                 _persist_loop_end()  # durable loop boundary (before the done frame)
+                from ms_agent.session.replay import fork_points
+                log = getattr(getattr(rt, "agent", None), "session_log", None)
+                positions = fork_points(log.records()) if log is not None else []
+                latest = next((r for r in reversed(log.records()) if r.get("role")
+                               and r.get("_source") != "compaction"), {}) if log is not None else {}
+                positions = [p for p in positions if p.assistant_seq == latest.get("seq")]
+                fork_meta = ({"fork_after_seq": positions[-1].after_seq,
+                              "log_seq": positions[-1].assistant_seq} if positions else {})
                 done = ChatChunk(
                     type="done",
                     meta={
@@ -1726,6 +1846,7 @@ async def stream(req: ChatRequest) -> AsyncIterator[dict]:
                         "project_id": project.id,
                         "usage": usage,
                         **_loop_meta(),
+                        **fork_meta,
                         **(await _title_meta()),
                     },
                 )
@@ -1785,6 +1906,9 @@ async def stream(req: ChatRequest) -> AsyncIterator[dict]:
                 last_turn_sync = time.monotonic()
     finally:
         rt.watchers -= 1  # this live consumer is gone (finished or left)
+        if prepared is not None and not completed and title_task is not None:
+            title_task.cancel()
+            await asyncio.gather(title_task, return_exceptions=True)
         if completed:
             if rt.turn_lock.locked():
                 rt.turn_lock.release()

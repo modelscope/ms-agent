@@ -115,6 +115,9 @@ const ANTD_OVERRIDES: Record<string, (Comp: AnyComp) => ReactNode> = {
       <div />
     </Dropdown>
   ),
+  Popconfirm: (Popconfirm) => (
+    <Popconfirm title="Confirm" open><button>Action</button></Popconfirm>
+  ),
   Input: (Input) => (
     <>
       <Input />
