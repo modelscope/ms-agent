@@ -1,46 +1,34 @@
 # Skill management: manual checklist
 
-Start this branch's WebUI and create an isolated test project without overwriting everyday skills. See the [WebUI guide](../user-guide/webui.md) for startup and [design and implementation](skill-management.md) for the code and execution boundaries.
+Start the service using the [WebUI guide](../user-guide/webui.md) and use an isolated test project. Install V1 of a skill you control, then publish V2, keeping a readable version marker in its files. See [implementation notes](skill-management.md) for boundaries.
 
 ## Installation and sources
 
 | Done | Action | Expected result |
 | --- | --- | --- |
-| ☐ | Choose Add skill → Install from link and enter a public GitHub repository/subdirectory | Real candidates, inspectable sources and destination; multiple candidates can be selected |
-| ☐ | Enter a ModelScope Skill page | Provenance retains its exact entry ID and commit, visible in details |
-| ☐ | Enter `https://modelscope.cn/collections/Gaodekaifangpingtai/gaodekaifangpingtai-skill` | Current collection candidates and repository sources appear; unavailable entries have individual errors |
-| ☐ | Select all in a collection with conflicting names, then choose one in a conflict group | Unambiguous candidates are selected; conflicting entries cannot overwrite each other |
-| ☐ | Install several candidates, reviewing static findings when required | Per-item progress; successful items appear in the chosen scope; installation executes no packaged scripts |
-| ☐ | Inspect the same source again | Installed candidates cannot be selected again; other sources with the same name show conflicts |
-| ☐ | Import locally, then link a source in details | Identical content only adds provenance; different content requires explicit backup/replacement confirmation |
+| ☐ | Install from GitHub and ModelScope Skill URLs into global and project scopes | Inspectable candidates, sources, and commits; correct destination; scan confirmation when required |
+| ☐ | Select multiple skills from a [public collection](https://modelscope.cn/collections/Gaodekaifangpingtai/gaodekaifangpingtai-skill), then update one member when an update is available | Individual errors; independent updates and restore; membership changes do not add/remove local files |
+| ☐ | Repeat installation, or select all conflicting candidates and then choose one | Installed items cannot be selected again; conflicting names do not overwrite each other |
+| ☐ | Import locally, then link a source | Identical content adds provenance; different content requires confirmed backup/replacement |
 
 ## Updates, restore, and execution boundaries
 
-Use a repository you control: publish and install V1, then commit V2. A `SKILL.md` and a plain file containing a version marker are sufficient; no permanent example project is needed. Do not modify third-party repositories.
-
 | Done | Action | Expected result |
 | --- | --- | --- |
-| ☐ | Check for updates | Changed skill content shows an update; changes to other skills in the repository do not |
-| ☐ | Review file changes and confirm an update | Correct text diffs; recognizable binary/permission changes; concise success feedback |
-| ☐ | In the next turn of the same conversation, request an actual read of the skill's version marker | A tool reads the new content, visible in its call record |
-| ☐ | After using the test skill, update while idle, then send only “continue” | Model input and raw session history contain the internal notice; the model reloads the skill; the user bubble contains only “continue” |
-| ☐ | Continue without another edit; then restart the service, edit, and continue | No repeated reminder for unchanged files; new changes remain detectable after restart |
-| ☐ | Queue or steer during a reply and attempt an update; stop, update, and resume | Continuous execution blocks updates; stopping permits them; queued skill calls use fresh content and carry a reminder |
-| ☐ | Restore the previous version, then check again | V1 is restored and the update becomes available again |
-| ☐ | Add a local custom file before updating | Local changes are shown and preserved by default; after confirmed replacement, restore can recover the custom file |
-| ☐ | Edit local files after preview, then apply | The old plan expires as stale and requires a new preview |
-| ☐ | Update or delete during a model task in the same scope | A task-running error; retry works after completion or stopping |
-| ☐ | Repeat updates and restore for one collection member | Only that installation changes; collection membership changes do not add/remove local files |
+| ☐ | Publish V2, check updates, review changes, and confirm | Target skill shows an update; text, binary, and permission changes are recognizable; other skills' changes cause no false update |
+| ☐ | After using V1, update while idle and send only “continue” in the same conversation | Internal notice reaches the model; a tool reads V2; the user bubble still contains only “continue” |
+| ☐ | Continue without edits; then restart, edit, and continue | No duplicate notice in the first case; new changes detected in the second |
+| ☐ | Queue or steer during a reply and attempt update/delete; stop, update, and resume | Continuous execution blocks mutations; stopping permits updates; resumed skill calls use fresh content |
+| ☐ | Add a custom local file, update, then restore | Local changes block replacement by default; after confirmation, restore recovers custom files and checks find the update again |
+| ☐ | Edit files after preview, then apply | Stale plan rejected; new preview required |
 
 ## Cancellation, failures, and presentation
 
 | Done | Action | Expected result |
 | --- | --- | --- |
-| ☐ | Cancel during download, then reopen | No partially installed directory or late progress |
-| ☐ | Retry a partially failed batch | Successful items stay installed; only unfinished items are retried |
-| ☐ | Simulate a list failure, then retry | Existing cards remain; initial failure is not presented as an empty list |
-| ☐ | Change global/project scope while loading | Old responses do not replace the new scope |
-| ☐ | Disable automatic checks, then check manually | Automatic checks stop; manual checks still work |
-| ☐ | Switch languages, light/dark themes, and use a narrow window | Long sources remain readable, no horizontal overflow, usable scrolling and footer actions |
+| ☐ | Cancel a download; retry a partially failed batch | No partial installation or late progress; successful items are not repeated |
+| ☐ | Switch scope while loading; retry a failed list request | Old responses do not replace the new scope; failures retain cards and do not appear as empty lists |
+| ☐ | Disable automatic checks, then check manually | Automatic checks stop; manual checks work |
+| ☐ | Switch languages, light/dark themes, and use a narrow window | Readable sources, no page overflow, usable scrolling and action buttons |
 
-Use automated tests for interrupted transactions, failed message persistence, notice retries after cancellation, malicious archives, credential redirects, and concurrency. Do not inject these faults into an everyday workspace. Verify notices from model input or raw session records, not solely from the model's self-report. Public sources change; check actual membership and commits instead of relying on a fixed candidate count.
+Verify notices from model input, tool calls, and session records, not only the model's self-report. Automated tests cover interrupted transactions, failed message writes, malicious archives, credential redirects, and concurrency; do not inject these faults into everyday workspaces.
