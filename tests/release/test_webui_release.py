@@ -174,6 +174,19 @@ def test_httpx_requirement_is_not_mistaken_for_a_url(tmp_path):
     assert module.parse_requirements(str(requirements))[0] == ['httpx>=0.28.1']
 
 
+def test_mcp_requirement_keeps_the_capability_server_api():
+    from packaging.requirements import Requirement
+
+    spec = importlib.util.spec_from_file_location('sdk_setup', ROOT / 'setup.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    requirements = module.parse_requirements(str(ROOT / 'requirements/framework.txt'))[0]
+    requirement = next(Requirement(value) for value in requirements
+                       if Requirement(value).name == 'mcp')
+    assert requirement.specifier.contains('1.28.1')
+    assert not requirement.specifier.contains('2.0.0')
+
+
 def test_pypi_retry_uploads_only_missing_identical_release_files():
     release = {
         'files': {

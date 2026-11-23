@@ -12,11 +12,11 @@ from ms_agent.session.session_log import SessionLog
 
 
 @pytest.fixture(autouse=True)
-def _isolated_user_tree(tmp_path, monkeypatch):
-    """Keep the catalog's implicit <home>/skills scan out of these tests —
-    other suites materialize skills into the shared test home."""
+def _isolated_skill_trees(tmp_path, monkeypatch):
+    """Keep installed and user skills outside the fixture catalog."""
     import ms_agent.skill.catalog as cat_mod
 
+    monkeypatch.setattr(cat_mod, "BUILTIN_SKILLS_DIR", tmp_path / "_no_builtin_tree")
     monkeypatch.setattr(cat_mod, "USER_SKILLS_DIR", tmp_path / "_no_user_tree")
     monkeypatch.setattr(cat_mod, "global_standard_skills_tree",
                         lambda: tmp_path / "_no_standard_tree")
