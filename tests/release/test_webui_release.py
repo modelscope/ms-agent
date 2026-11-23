@@ -174,6 +174,13 @@ def test_httpx_requirement_is_not_mistaken_for_a_url(tmp_path):
     assert module.parse_requirements(str(requirements))[0] == ['httpx>=0.28.1']
 
 
+def test_dependency_key_accepts_reordered_version_bounds():
+    assert check.dependency_key('anthropic>=0.117.0,<2') == check.dependency_key(
+        'anthropic<2,>=0.117.0')
+    assert check.dependency_key('anthropic>=0.117.0,<2') != check.dependency_key(
+        'anthropic>=0.117.0,<3')
+
+
 @pytest.mark.parametrize('filename,name,supported', [
     ('framework.txt', 'mcp', '1.28.1'),
     ('webui.txt', 'anthropic', '0.117.0'),

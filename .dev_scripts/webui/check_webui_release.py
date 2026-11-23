@@ -28,7 +28,11 @@ def check_tag(version, tag):
 
 
 def dependency_key(value):
-    return re.sub(r'\s+', '', value).lower().replace('_', '-')
+    value = re.sub(r'\s+', '', value).lower().replace('_', '-')
+    parts = re.split(r'(?=[<>=!~])', value, maxsplit=1)
+    if len(parts) == 1:
+        return value
+    return parts[0] + ','.join(sorted(set(parts[1].split(','))))
 
 
 def check_source(tag=None):
