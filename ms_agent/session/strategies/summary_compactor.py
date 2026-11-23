@@ -23,9 +23,19 @@ SUMMARY_PROMPT = """Summarize this conversation to help continue the work.
 Focus on:
 - Goal: What is the user trying to accomplish?
 - Instructions: Important user requirements or constraints
+- Decisions: Confirmed user choices and corrections, including answers returned by
+  question tools; preserve the question/topic, exact chosen values and their scope
 - Discoveries: Notable findings during the conversation
 - Accomplished: What's done, in progress, and remaining
 - Relevant files: Files read, edited, or created
+
+Prioritize critical user decisions and explicit task boundaries over routine tool logs.
+Distinguish confirmed choices from assistant suggestions, default assumptions and
+unanswered, skipped or timed-out questions; never treat a non-answer as consent.
+For the same decision and scope, keep the latest explicit user correction.
+Retain plan-only/research-only constraints and completed or stopped status; do not
+invent authorization to implement or reopen settled choices without new evidence.
+Carry these facts through every partial summary and merge.
 
 Preserve verbatim, never rewrite or drop: the LATEST <system-reminder>
 skill-update notice, if any (the system prompt's skill list may be stale;
@@ -121,7 +131,8 @@ class SummaryCompactor:
             True,
             'content':
             f'[Conversation Summary]\n{summary}\n\n'
-            'Please continue based on this summary.',
+            'Use this summary as context for the latest user request. '
+            'Continue only within its scope and stop when it is complete.',
         })
         result.extend(m for m in kept if m.get('role') != 'system')
         invalidate_usage(result)

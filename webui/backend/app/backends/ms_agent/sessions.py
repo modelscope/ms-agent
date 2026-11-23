@@ -245,7 +245,7 @@ def _permission_step(row: dict) -> SessionStep | None:
 
 
 def _question_step(row: dict) -> SessionStep | None:
-    """将问题及最终状态映射为问题卡片。"""
+    """Map recorded questions and outcomes to a question card."""
     questions = row.get("questions")
     answers = row.get("answers")
     return SessionStep(
@@ -613,7 +613,7 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
         and isinstance(r.get("duration_ms"), (int, float))
     }
 
-    # 问题结局可能早于或晚于包含思考的工具调用行写入，显示位置按 call_id 还原。
+    # Outcomes may persist before or after tool calls; restore position by call_id.
     question_records = {
         str(row.get('call_id')): row for row in rows
         if row.get('_type') == 'question' and row.get('call_id')
@@ -798,7 +798,7 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
             pending_perms.append(row)
             continue
         if row.get("_type") == "question":
-            # 可关联的记录由对应工具行渲染；无调用的旧记录仍按原位置保留。
+            # Linked records render with their tool calls; keep orphan records here.
             if str(row.get('call_id') or '') not in question_calls:
                 qstep = _question_step(row)
                 if qstep is not None:

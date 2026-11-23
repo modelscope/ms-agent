@@ -1,5 +1,5 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
-"""用户提问能力及其回归测试。"""
+"""Host-side user question handlers."""
 
 from .handler import (QUESTION_ASK_TIMEOUT, AutoQuestionHandler,
                       QuestionEventEmitter, WebQuestionHandler,

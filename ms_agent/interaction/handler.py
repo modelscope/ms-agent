@@ -1,5 +1,5 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
-"""界面无关的提问等待服务，不复用权限记忆或自动批准规则。"""
+"""UI-independent question handling, separate from permission decisions."""
 from __future__ import annotations
 
 import asyncio
@@ -12,7 +12,7 @@ from uuid import uuid4
 from ms_agent.ui.interaction import (CUSTOM_OPTION_ID, Answer, AnswerStatus,
                                      Question, QuestionReply)
 
-# 默认不限时；环境配置在构造时读取，以兼容宿主稍后加载 .env。
+# Wait indefinitely by default; read environment overrides at construction.
 QUESTION_ASK_TIMEOUT: float | None = None
 
 UNAVAILABLE_NOTE = (
@@ -43,7 +43,7 @@ class QuestionEventEmitter(Protocol):
 
 
 class AutoQuestionHandler:
-    """无交互通道的默认处理器，不自动生成答案。"""
+    """Report unavailable interaction without fabricating answers."""
 
     supports_questions = False
 
@@ -63,7 +63,7 @@ class _PendingQuestion:
 
 
 class WebQuestionHandler:
-    """按请求编号等待外部答案；不复用任何权限记忆。"""
+    """Await answers by request ID, independently of permission state."""
 
     supports_questions = True
 
@@ -90,11 +90,8 @@ class WebQuestionHandler:
         loop = asyncio.get_running_loop()
         future: 'asyncio.Future[QuestionReply]' = loop.create_future()
         questions = list(questions)
-        # Registered BEFORE the event goes out, so an answer that arrives
-        # immediately still finds a record to resolve. Emitting INSIDE the try
-        # is the other half of that: an emit that raises or is cancelled must
-        # not leave the pending record behind, or the question stays "open"
-        # forever with no card anywhere able to close it.
+        # Register before emitting so immediate answers resolve correctly.
+        # Emit inside try/finally so failures cannot leak a pending request.
         self._pending[request_id] = _PendingQuestion(
             future=future,
             questions=questions,
@@ -126,7 +123,7 @@ class WebQuestionHandler:
     # -- host-facing state ---------------------------------------------------
 
     def awaiting_request_ids(self) -> set:
-        """当前有效请求，供重连时查询。"""
+        """Return pending request IDs for reconnects."""
         return {
             request_id
             for request_id, pending in self._pending.items()
@@ -134,7 +131,7 @@ class WebQuestionHandler:
         }
 
     def is_awaiting(self, request_id: str) -> bool:
-        """请求是否仍在等待回答。"""
+        """Check whether a request still awaits an answer."""
         pending = self._pending.get(request_id)
         return pending is not None and not pending.future.done()
 
@@ -146,7 +143,7 @@ class WebQuestionHandler:
     # -- resolution ----------------------------------------------------------
 
     def resolve(self, request_id: str, answers: List[Answer]) -> bool:
-        """校验所有题目的答案，重复或无效提交返回 False。"""
+        """Validate a complete answer set; reject invalid or repeated submissions."""
         pending = self._pending.get(request_id)
         if pending is None or pending.future.done():
             # Covers the ordinary races: a second click, a submission from
@@ -169,7 +166,7 @@ class WebQuestionHandler:
         return True
 
     def cancel_pending(self, note: str = CANCELLED_NOTE) -> int:
-        """同步结束所有待答请求；宿主随后可取消执行任务。"""
+        """Resolve pending requests before the host cancels execution."""
         resolved = 0
         for request_id, pending in list(self._pending.items()):
             if pending.future.done():
@@ -185,7 +182,7 @@ class WebQuestionHandler:
     @staticmethod
     def _validate(questions: List[Question],
                   answers: List[Answer]) -> List[Answer] | None:
-        """核对题目和选项编号，并从原选项计算显示标签。"""
+        """Validate IDs and derive labels from the original options."""
         by_id = {q.id: q for q in questions}
         seen: set = set()
         out: List[Answer] = []
@@ -227,7 +224,7 @@ class WebQuestionHandler:
                 ))
         if seen != set(by_id):
             return None
-        # 提交顺序不决定答案顺序，由原问题列表统一排序。
+        # Preserve question order regardless of submission order.
         answers_by_id = {a.question_id: a for a in out}
         return [answers_by_id[q.id] for q in questions]
 

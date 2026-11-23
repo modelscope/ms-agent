@@ -1,5 +1,5 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
-"""用户提问能力及其回归测试。"""
+"""Question waiting, validation and cancellation regressions."""
 import asyncio
 
 from ms_agent.interaction import AutoQuestionHandler, WebQuestionHandler

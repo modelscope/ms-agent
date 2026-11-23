@@ -118,7 +118,7 @@ def _build_sub_agent(spec: _AgentToolSpec, default_trust_remote_code: bool):
 
 
 def _withhold_ask_user(agent) -> None:
-    """子 Agent 不直接提问，由主 Agent 汇总缺失信息。"""
+    """Keep user questions in the main agent, which collects missing input."""
     tools_cfg = getattr(agent.config, 'tools', None)
     if tools_cfg is None or 'ask_user' not in tools_cfg:
         return

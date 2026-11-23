@@ -252,7 +252,7 @@ class PermissionResolved(AgentEvent):
 
 @dataclass(frozen=True)
 class QuestionRequested(AgentEvent):
-    """模型发起提问；questions 使用统一 Question 契约的序列化结果。"""
+    """Request user input with serialized Question contracts."""
     EVENT_TYPE: ClassVar[str] = 'question_requested'
     request_id: str = ''
     call_id: str = ''
@@ -261,7 +261,7 @@ class QuestionRequested(AgentEvent):
 
 @dataclass(frozen=True)
 class QuestionResolved(AgentEvent):
-    """广播每种提问结局；客户端按 call_id 更新原卡片并关闭输入。"""
+    """Broadcast an outcome so clients close the matching call_id card."""
     EVENT_TYPE: ClassVar[str] = 'question_resolved'
     call_id: str = ''
     status: str = ''  # answered | skipped | cancelled | timeout | unavailable

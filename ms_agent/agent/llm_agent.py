@@ -1100,7 +1100,7 @@ class LLMAgent(Agent):
         self._permission_handler = handler
 
     def _select_question_handler(self):
-        """主 Agent 使用注入的处理器；子 Agent 与无界面运行不可提问。"""
+        """Use host interaction for main agents; subagents cannot ask directly."""
         from ms_agent.interaction import AutoQuestionHandler
         if getattr(self.config, 'ms_agent_subagent', False):
             return AutoQuestionHandler()
@@ -1109,7 +1109,7 @@ class LLMAgent(Agent):
         return AutoQuestionHandler()
 
     def set_question_handler(self, handler) -> None:
-        """在准备工具前注入处理器。"""
+        """Inject the question handler before preparing tools."""
         self._question_handler = handler
 
     def set_permission_mode(self, mode: str) -> str:

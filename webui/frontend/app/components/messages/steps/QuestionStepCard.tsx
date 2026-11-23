@@ -40,7 +40,7 @@ interface AnswerRecord {
   labels?: string[]
 }
 
-/** 逐题选择与输入，统一提交；回答后在原卡片显示完整问答摘要。 */
+/** Submit answers together, then show the full question-and-answer summary. */
 export function QuestionStepCard({
   step,
   isLast
@@ -89,10 +89,10 @@ export function QuestionStepCard({
     setQs((prev) => ({ ...prev, submitting: true }))
     try {
       const { resolved } = await api.answerQuestion(body)
-      // 过期或已被其他标签页回答不能推断为「取消」；服务端结局优先。
+      // A stale submission is not a cancellation; the server outcome wins.
       setLocalState(resolved ? next : 'closed')
     } catch {
-      // 网络失败保留输入，允许重试。
+      // Preserve input on network failure so the user can retry.
     } finally {
       inFlight.current = false
       setQs((prev) => ({ ...prev, submitting: false }))

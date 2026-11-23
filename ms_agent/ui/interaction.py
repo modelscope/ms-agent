@@ -1,17 +1,12 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
-"""用户提问能力及其回归测试。"""
+"""Shared user question and answer contracts."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Protocol, runtime_checkable
 
-#: Option id reserved for the free-text answer a question offers.
-#:
-#: The client appends that option itself, which is why the id is a constant
-#: rather than something the model authors: asked to provide one, a model
-#: writes "Other" / "以上都不是" / "custom" interchangeably, and a renderer
-#: cannot reliably turn any of those into a text input.
+#: Client-owned free-text option ID; independent of model-authored labels.
 CUSTOM_OPTION_ID = '__custom__'
 
 #: Product bounds on one ask. Not protocol limits — they exist to keep the
@@ -26,7 +21,7 @@ MAX_HEADER_CHARS = 12
 
 @dataclass(frozen=True)
 class QuestionOption:
-    """选项编号用于关联答案，显示文案可独立调整。"""
+    """Stable option IDs associate answers independently of display labels."""
     id: str
     label: str
     description: str = ''
@@ -70,17 +65,17 @@ class Question:
 
 
 class AnswerStatus(str, Enum):
-    """区分回答、跳过、取消、超时和无交互通道。"""
+    """Distinguish answers, skips, cancellations, timeouts and unavailable UI."""
     ANSWERED = 'answered'
     SKIPPED = 'skipped'  # a person declined to answer
     CANCELLED = 'cancelled'  # turn stopped / session closed under the ask
-    TIMEOUT = 'timeout'  # nobody ever saw it
+    TIMEOUT = 'timeout'  # no answer before the deadline
     UNAVAILABLE = 'unavailable'  # no interactive channel at all
 
 
 @dataclass(frozen=True)
 class Answer:
-    """单题答案；labels 由服务端根据 option_ids 计算。"""
+    """One answer; the handler derives labels from option_ids."""
     question_id: str
     option_ids: List[str] = field(default_factory=list)
     labels: List[str] = field(default_factory=list)
@@ -113,7 +108,7 @@ class QuestionReply:
 
 
 def answers_from_dicts(payload: Any) -> List[Answer]:
-    """解析传输数据，完整性由回答服务校验。"""
+    """Parse transport payloads; the handler validates completeness."""
     out: List[Answer] = []
     for item in payload or []:
         if not isinstance(item, dict):
@@ -130,7 +125,7 @@ def answers_from_dicts(payload: Any) -> List[Answer]:
 
 @runtime_checkable
 class QuestionHandler(Protocol):
-    """宿主注入的回答入口；无交互通道时不注册提问工具。"""
+    """Host interaction contract; unavailable hosts withhold the question tool."""
 
     supports_questions: bool
 

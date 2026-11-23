@@ -1,4 +1,4 @@
-/** 问答卡状态：逐题保留选择和自由输入，切题不提交也不丢弃内容。 */
+/** Per-question choices and drafts; navigation neither submits nor clears them. */
 
 /** Option id the backend reserves for a free-text answer (ui/interaction.py). */
 export const CUSTOM_OPTION_ID = '__custom__'
@@ -108,7 +108,7 @@ export function select(
       ? current.filter((id) => id !== optionId)
       : [...current, optionId]
     : [optionId]
-  // 改选固定选项只改变选用状态，已输入的文字仍留在原题。
+  // Changing selection preserves the question's draft.
   return { state: store(state, state.tab, next) }
 }
 

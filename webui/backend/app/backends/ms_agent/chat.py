@@ -854,7 +854,7 @@ class _TurnMapper:
         return [ChatChunk(type="step", meta=_inline_auth_meta(meta, tool, args))]
 
     def _question_step(self, payload: dict) -> list[ChatChunk]:
-        """将问题及最终状态映射为问题卡片。"""
+        """Map a question and its state to a question card."""
         call_id = str(payload.get("call_id") or "")
         questions = payload.get("questions")
         questions = questions if isinstance(questions, list) else []
@@ -887,7 +887,7 @@ class _TurnMapper:
         return [ChatChunk(type="step", meta=meta)]
 
     def _question_resolved_step(self, payload: dict) -> list[ChatChunk]:
-        """向所有客户端同步结局，关闭过期输入控件。"""
+        """Synchronize outcomes so clients close stale inputs."""
         raw = payload.get("answers")
         return [ChatChunk(type="step", meta={
             "kind": "question",
@@ -2066,7 +2066,7 @@ async def attach(session_id: str) -> AsyncIterator[dict]:
                 })
     except Exception:
         pass
-    # 重连时按真实等待状态回放问题，不推断用户已经回答。
+    # Replay actual pending state on reconnect; never infer an answer.
     resolved_questions: list[dict] = []
     try:
         buf = list(rt.sink._events)

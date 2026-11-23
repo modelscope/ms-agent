@@ -1,5 +1,5 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
-"""用户提问能力及其回归测试。"""
+"""Model-facing user question tool."""
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
@@ -14,12 +14,14 @@ from ms_agent.ui.interaction import (MAX_HEADER_CHARS, MAX_OPTIONS,
 TOOL_NAME = 'ask_user_question'
 
 DESCRIPTION = """Use this tool when you need to ask the user questions during execution. This allows you to:
-1. Gather user preferences or requirements
-2. Clarify ambiguous instructions
-3. Get decisions on implementation choices as you work
+1. Gather user preferences or requirements.
+2. Clarify ambiguous instructions.
+3. Get decisions on implementation choices as you work.
 4. Offer choices to the user about what direction to take.
 
 Usage notes:
+- Prefer this tool when a missing user decision blocks the CURRENT requested task. Ordinary conversational clarification can remain plain text; do not turn every question into a tool call.
+- Respect the user's explicit scope and stopping point. For plan-only or research-only requests, clarify only what is needed to complete that deliverable; once it is complete, present it and stop. Do not ask to start implementation or another phase unless the user requested that transition.
 - Ask only about choices that change the OUTCOME and that you cannot settle by reading the project or picking a reasonable default. An interruption the user could have avoided costs more than a decision you document.
 - Users can always type their own answer, so do NOT add an "Other" / "None of these" option — one is provided automatically.
 - Use multiSelect: true when the choices are not mutually exclusive.
@@ -33,7 +35,7 @@ class AskUserToolError(ValueError):
 
 
 def _parse_questions(raw: Any) -> List[Question]:
-    """校验模型参数并分配本次调用内稳定的题目和选项编号。"""
+    """Validate questions and assign call-local question and option IDs."""
     if not isinstance(raw, list) or not raw:
         raise AskUserToolError(
             'questions must be a non-empty array of question objects.')
@@ -255,7 +257,7 @@ class AskUserTool(ToolBase):
 
     @staticmethod
     def _format(questions: List[Question], reply) -> str:
-        """按原问题标题返回用户答案。"""
+        """Format answers under their original question headers."""
         by_id = {q.id: q for q in questions}
         lines: List[str] = []
         for answer in reply.answers:
@@ -266,4 +268,5 @@ class AskUserTool(ToolBase):
             lines.append(f'**{label}**: {", ".join(answer.labels)}')
         body = '\n'.join(lines) if lines else 'No answers were provided.'
         return (f'User answered your questions:\n{body}\n\n'
-                'You can now continue with these answers in mind.')
+                'You can now continue with these answers in mind, '
+                "within the user's requested scope.")

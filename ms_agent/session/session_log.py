@@ -326,7 +326,7 @@ class SessionLog:
         self._append_line(record)
 
     def record_question(self, event: Dict[str, Any]) -> None:
-        """仅供界面回放；答案已经作为工具结果进入模型上下文。"""
+        """Record UI-only history; answers enter model context as tool results."""
         seq = self._next_seq()
         record = {
             '_type': 'question',
@@ -558,7 +558,7 @@ class SessionLog:
         return perms
 
     def get_questions(self) -> List[Dict[str, Any]]:
-        """读取问题历史记录，按 seq 保留时间顺序。"""
+        """Read question history in sequence order."""
         questions: List[Dict[str, Any]] = []
         if not self._path.exists():
             return questions

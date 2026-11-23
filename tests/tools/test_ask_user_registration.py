@@ -1,5 +1,5 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
-"""用户提问能力及其回归测试。"""
+"""Question tool registration and timeout integration."""
 import asyncio
 import os
 import sys

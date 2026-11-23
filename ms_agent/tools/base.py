@@ -59,7 +59,7 @@ class ToolBase:
 
     @property
     def call_timeout(self) -> Optional[float]:
-        """None 使用通用超时；SELF_MANAGED_TIMEOUT 由工具自行管理等待。"""
+        """Use the generic timeout for None; SELF_MANAGED_TIMEOUT delegates it."""
         return None
 
     def exclude_func(self, tool_config: DictConfig):

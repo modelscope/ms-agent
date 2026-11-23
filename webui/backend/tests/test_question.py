@@ -1,4 +1,4 @@
-"""用户提问能力及其回归测试。"""
+"""Question API, streaming and replay regressions."""
 import asyncio
 from types import SimpleNamespace
 

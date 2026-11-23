@@ -349,7 +349,7 @@ def _persisting_permission_handler(sink, session_log_getter, timeout=None):
 
 
 def _persisting_question_handler(sink, session_log_getter):
-    """持久化并广播每种结局，包括执行任务取消。"""
+    """Persist and broadcast outcomes, including task cancellation."""
     from ms_agent.interaction import WebQuestionHandler
     from ms_agent.interaction.handler import CANCELLED_NOTE
     from ms_agent.ui.interaction import AnswerStatus, QuestionReply
@@ -360,7 +360,7 @@ def _persisting_question_handler(sink, session_log_getter):
             try:
                 reply = await super().ask(questions, call_id=call_id)
             except asyncio.CancelledError:
-                # aclose 可能在同一执行段结束等待并取消任务，仍须保存结局。
+                # Preserve the outcome if aclose resolves and cancels in one tick.
                 self._settle(questions, call_id, QuestionReply(
                     status=AnswerStatus.CANCELLED, note=CANCELLED_NOTE))
                 raise
@@ -961,7 +961,7 @@ class RuntimeRegistry:
         status: str,
         answers: list | None = None,
     ) -> bool:
-        """直接提交至本会话处理器；不获取正在等待答案的 turn_lock。"""
+        """Submit without taking turn_lock, which the awaiting task holds."""
         rt = self._runtimes.get(session_id)
         handler = getattr(rt, "question_handler", None) if rt else None
         if handler is None:
