@@ -1930,6 +1930,29 @@ class LLMAgent(Agent):
                 last.content = append_text(last.content, block)
                 return
 
+    def _attach_skill_update_notice(self, messages):
+        """Use the current catalog at a new turn, commit only after logging it.
+
+        Queue admission and in-task steering must not advance this baseline.
+        The unchanged sidecar format also resumes older WebUI sessions.
+        Hosts must opt in; TUI continues delivering its own notices.
+        """
+        skills = getattr(getattr(self, 'config', None), 'skills', None)
+        catalog = getattr(self, '_skill_catalog', None)
+        log = getattr(self, 'session_log', None)
+        if (not getattr(skills, 'update_notice', False)
+                or not getattr(skills, 'update_notice_in_sdk', False)
+                or catalog is None
+                or log is None or not messages
+                or messages[-1].role != 'user'):
+            return None
+        from ms_agent.skill.notice import pending_notice
+
+        notice, commit = pending_notice(catalog, log)
+        if notice:
+            messages[-1].content = prepend_text(messages[-1].content, notice)
+        return commit
+
     # ── prompt-files update notices (hot-reload perception) ──────────────
     #
     # The head hot-reloads silently (content compare each round). These
@@ -3485,6 +3508,7 @@ class LLMAgent(Agent):
                         messages, submit, hook_event='UserPromptSubmit')
 
                 await self.do_rag(messages)
+                commit_skills = self._attach_skill_update_notice(messages)
                 # Durable recall attach BEFORE seeding: the block becomes part
                 # of this turn in the log (skill-notice style), so it survives
                 # context reassembly and keeps the prefix cache maximal.
@@ -3502,6 +3526,8 @@ class LLMAgent(Agent):
                     # notice exists for, and recording late would miss it.
                     self.session_log.active_model = (
                         self._capability_signature())
+                if commit_skills is not None:
+                    commit_skills()
 
             resume_waiting = bool(restored_from_log and messages
                                   and messages[-1].role == 'assistant'
@@ -3659,9 +3685,11 @@ class LLMAgent(Agent):
                 # query strips reminder blocks so notices never pollute it).
                 commit_surface = None
                 commit_model = None
+                commit_skills = None
                 if (len(messages) > step_end_len and
                         not getattr(messages[-1], '_input_prepared', False)):
                     self._prepare_controlled_input(messages)
+                    commit_skills = self._attach_skill_update_notice(messages)
                     commit_surface = self._attach_prompt_update_notice(
                         messages)
                     commit_model = self._attach_model_switch_notice(messages)
@@ -3679,6 +3707,8 @@ class LLMAgent(Agent):
                     # interrupted persist re-fires it next time (over-notify,
                     # never silent-drop).
                     commit_surface()
+                if commit_skills is not None:
+                    commit_skills()
                 if commit_model is not None:
                     commit_model()
 
