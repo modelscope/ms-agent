@@ -44,9 +44,8 @@ Edit `.env` and set the following **required** environment variables:
 OPENAI_API_KEY=your_api_key
 OPENAI_BASE_URL=https://your-openai-compatible-endpoint/v1
 
-# Search Engine Configuration (choose one, or use default arxiv with no config needed)
-EXA_API_KEY=your_exa_key              # Recommended, register at: https://exa.ai
-# SERPAPI_API_KEY=your_serpapi_key    # Or choose SerpApi, register at: https://serpapi.com
+# 当前 searcher.yaml 使用 Tavily 搜索与正文提取
+TAVILY_API_KEY=your_tavily_key
 ```
 
 #### Model Configuration (⚠️ Required for First Run)
@@ -98,26 +97,25 @@ self_reflection:
 
 #### Search Engine Configuration
 
-Edit `searcher.yaml` to configure search engines:
+Current `searcher.yaml` uses Tavily. These are the relevant fields; preserve the file's other tools and parameters:
 
 ```yaml
 tools:
   web_search:
-    engines:
-      - exa      # or serpapi (requires corresponding API key in .env)
-      - arxiv    # arxiv requires no API key, always available
-    api_key: <EXA_API_KEY>  # When using EXA
-    # Or when using SerpApi, add (uncomment):
-    # serpapi_provider: google  # Options: google, bing, baidu
+    mcp: false
+    engines: [tavily]
+    tavily_api_key: <TAVILY_API_KEY>
+    fetcher: tavily_extract
+    fetch_content: true
 ```
 
-**Default:** If no search engine API key is configured, system will use `arxiv` (academic literature search only).
+A missing Tavily key does not automatically switch to arXiv. To choose another engine, change `engines`, credentials, and content extraction together. arXiv covers academic literature and still requires network access. See the [documentation](../../../docs/en/applications/deep-research.md) for entry points and v1/v2 boundaries.
 
 #### Advanced Configuration (Optional)
 
 ##### Web Page Summarization
 
-Enabled by default to compress long web content, reducing context bloat, speeding up research, and saving cost:
+The current Tavily configuration disables extra summarization and uses the returned content directly. Enable it explicitly when long pages need compression; this adds model calls:
 
 ```yaml
 tools:

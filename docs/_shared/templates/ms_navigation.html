@@ -1,0 +1,17 @@
+<nav class="ms-navigation" aria-label="{{ '文档导航' if ms_zh else 'Documentation' }}">
+  <a class="ms-nav-home" href="{{ pathto('index') }}">{{ '文档首页' if ms_zh else 'Documentation home' }}</a>
+  {% for section in ms_nav %}
+  <details class="ms-nav-section" {% if section.active or (pagename == 'index' and loop.first) %}open{% endif %}>
+    <summary>{{ section.title }}</summary>
+    <ul>
+      {% for group in section.groups %}
+      {% if group.title %}<li><details class="ms-nav-group" {% if group.active %}open{% endif %}><summary>{{ group.title }}</summary><ul>{% endif %}
+      {% for entry in group.entries %}
+      <li><a href="{{ pathto(entry.doc) }}" {% if pagename == entry.doc %}aria-current="page"{% endif %}>{{ entry.title }}</a></li>
+      {% endfor %}
+      {% if group.title %}</ul></details></li>{% endif %}
+      {% endfor %}
+    </ul>
+  </details>
+  {% endfor %}
+</nav>

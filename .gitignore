@@ -84,6 +84,8 @@ instance/
 # Sphinx documentation
 docs/en/_build/
 docs/zh/_build/
+# 文档模板是源文件，不属于生成的 HTML 页面。
+!docs/_shared/templates/*.html
 
 # PyBuilder
 target/
