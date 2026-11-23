@@ -225,10 +225,12 @@ def get_content_fetcher(fetcher_type: str = 'jina_reader',
         )
         return JinaContentFetcher(config)
     if fetcher_type == 'tavily_extract':
-        from ms_agent.tools.search.tavily.fetcher import TavilyExtractFetcher
         from ms_agent.config.secrets import resolve_secret
+        from ms_agent.tools.search.tavily.fetcher import TavilyExtractFetcher
         return TavilyExtractFetcher(
-            api_key=resolve_secret(kwargs.get('tavily_api_key'), config=kwargs.get('secret_config')),
+            api_key=resolve_secret(
+                kwargs.get('tavily_api_key'),
+                config=kwargs.get('secret_config')),
             extract_depth=str(kwargs.get('tavily_extract_depth', 'advanced')),
             format=str(kwargs.get('tavily_extract_format', 'markdown')),
             timeout=float(kwargs.get('timeout', 45.0)),
@@ -784,7 +786,8 @@ class WebSearchTool(ToolBase):
                 engine_cls = get_search_engine_class(engine_type)
                 self._engine_classes[engine_type] = engine_cls
 
-                api_key = resolve_secret(self._api_keys.get(engine_type), config=self.config)
+                api_key = resolve_secret(
+                    self._api_keys.get(engine_type), config=self.config)
 
                 # Create engine instance
                 if engine_type in ('exa', 'context'):
@@ -854,7 +857,8 @@ class WebSearchTool(ToolBase):
             optimizer_config = ContentOptimizerConfig(
                 summarizer_model=self._summarizer_model,
                 summarizer_base_url=self._summarizer_base_url,
-                summarizer_api_key=(resolve_secret(self._summarizer_api_key, config=self.config)
+                summarizer_api_key=(resolve_secret(
+                    self._summarizer_api_key, config=self.config)
                                     or os.getenv('DASHSCOPE_API_KEY')
                                     or os.getenv('OPENAI_API_KEY')),
                 max_content_chars=self._max_content_chars,
