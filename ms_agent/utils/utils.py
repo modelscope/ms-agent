@@ -282,9 +282,12 @@ def text_hash(text: str, keep_n_chars: int = 8) -> str:
         keep_n_chars (int): The number of characters to keep from the end of the hash.
 
     Returns:
-        str: The last 8 characters of the SHA256 hash in hexadecimal,
-             or an empty string if the input is invalid.
+        str: The last keep_n_chars characters of the SHA256 hash in hexadecimal,
+             or an empty string if the input is invalid or keep_n_chars <= 0.
     """
+    if keep_n_chars <= 0:
+        return ''
+
     try:
         # Encode the text to bytes (UTF-8 is a common choice)
         text_bytes = text.encode('utf-8')
