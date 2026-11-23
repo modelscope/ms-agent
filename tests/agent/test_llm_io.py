@@ -412,8 +412,9 @@ async def test_cancel_stalled_tcp_read_releases_model_worker(monkeypatch, protoc
                 await reached(reading)
                 await asyncio.sleep(.05)  # Let the worker enter recv().
                 await cancel(task)
+                # Stay below the client's 2s read timeout, allowing scheduler jitter.
                 assert await asyncio.wait_for(
-                    io.run_in_llm_executor(lambda: 'next request'), .5) == 'next request'
+                    io.run_in_llm_executor(lambda: 'next request'), 1) == 'next request'
                 assert not release.is_set()
     finally:
         release.set()
