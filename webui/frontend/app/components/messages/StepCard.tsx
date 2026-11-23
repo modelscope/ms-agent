@@ -214,7 +214,7 @@ export function StepCard({
       // Always rendered, in every state. Unlike an approved authorization there
       // is no neighbouring tool card that repeats the information: the ask tool
       // renders none, and the answers went only to the model.
-      return <QuestionStepCard step={step} isLast={isLast} />
+      return <QuestionStepCard key={String(meta.call_id ?? meta.request_id ?? '')} step={step} isLast={isLast} />
     case 'tool_call':
       return (
         <ToolCallStepCard step={step} onOpenStep={onOpenStep} isLast={isLast} />

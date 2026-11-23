@@ -396,3 +396,78 @@ def test_question_marker_is_excluded_from_model_context(tmp_path):
                          'questions': [], 'answers': []})
     assert [m.get('role') for m in log.get_all_messages()] == ['user']
     assert log.get_questions()[0]['status'] == 'answered'
+
+
+@pytest.mark.parametrize('state', ['answered', 'skipped', 'cancelled', 'timeout'])
+@pytest.mark.parametrize('marker_first', [True, False])
+def test_question_replay_uses_call_position_not_marker_seq(state, marker_first):
+    from app.backends.ms_agent.sessions import _reconstruct
+    call = {'id': 'ask-call', 'tool_name': 'ask_user---ask_user_question',
+            'arguments': {'questions': []}}
+    assistant = {'role': 'assistant', 'content': '先确认格式',
+                 'reasoning_content': '提问前的思考', 'tool_calls': [call]}
+    marker = {'_type': 'question', 'call_id': 'ask-call', 'status': state,
+              'questions': [q.to_dict() for q in _QUESTIONS],
+              'answers': [{'question_id': 'q0', 'labels': ['Excel']}]}
+    pair = [marker, assistant] if marker_first else [assistant, marker]
+    rows = [{'role': 'user', 'content': '请提问'}, *pair,
+            {'role': 'tool', 'tool_call_id': 'ask-call', 'content': '结果'},
+            {'role': 'assistant', 'reasoning_content': '收到结果后的思考',
+             'content': '已完成'}]
+    rows = [{**row, 'seq': i} for i, row in enumerate(rows)]
+    message = _reconstruct(rows)[1]
+    kinds = [p.step.kind if p.kind == 'step' else p.kind for p in message.parts]
+    assert kinds == ['thought', 'text', 'question', 'thought', 'text']
+    step = message.parts[2].step
+    assert step.meta['group'] == 1 and step.meta['state'] == state
+    assert step.meta['call_id'] == 'ask-call'
+    assert 'request_id' not in step.meta
+
+
+def test_cancelled_question_stays_after_its_interrupted_thought():
+    from app.backends.ms_agent.sessions import _reconstruct
+    rows = [
+        {'role': 'user', 'content': '请提问', 'seq': 0},
+        {'_type': 'question', 'call_id': 'ask', 'status': 'cancelled', 'seq': 1,
+         'questions': [], 'answers': []},
+        {'role': 'assistant', 'interrupted_reasoning': '正在分析', 'content': '',
+         'interrupted': True, 'seq': 2, 'tool_calls': [
+             {'id': 'ask', 'tool_name': 'ask_user---ask_user_question', 'arguments': {}}]},
+    ]
+    kinds = [p.step.kind if p.kind == 'step' else p.kind
+             for p in _reconstruct(rows)[1].parts]
+    assert kinds == ['thought', 'question', 'interrupted']
+
+
+def test_same_question_arguments_in_two_rounds_keep_separate_positions():
+    from app.backends.ms_agent.sessions import _reconstruct
+    marker = {'_type': 'question', 'questions': [], 'answers': []}
+    rows = [{'role': 'user', 'content': '问两次'}]
+    for i, status in enumerate(['answered', 'skipped']):
+        rows += [dict(marker, call_id=f'call-{i}', status=status),
+                 {'role': 'assistant', 'reasoning_content': f'思考{i}',
+                  'tool_calls': [{'id': f'call-{i}',
+                                  'tool_name': 'ask_user---ask_user_question',
+                                  'arguments': {}}]}]
+    rows += [{'role': 'assistant', 'content': '结束'}]
+    parts = _reconstruct([{**r, 'seq': i} for i, r in enumerate(rows)])[1].parts
+    assert [p.kind for p in parts] == ['thought', 'step', 'thought', 'step', 'text']
+    assert [p.step.meta['state'] for p in parts if p.kind == 'step'] == ['answered', 'skipped']
+    assert [p.step.meta['group'] for p in parts if p.kind == 'step'] == [1, 2]
+
+
+def test_question_replay_keeps_sibling_tool_and_orphan_records():
+    from app.backends.ms_agent.sessions import _reconstruct
+    rows = [
+        {'role': 'user', 'content': '并行调用'},
+        {'_type': 'question', 'call_id': 'ask', 'status': 'answered'},
+        {'role': 'assistant', 'reasoning_content': '思考', 'tool_calls': [
+            {'id': 'read', 'tool_name': 'file_system---read_file', 'arguments': {'path': 'x'}},
+            {'id': 'ask', 'tool_name': 'ask_user---ask_user_question', 'arguments': {}}]},
+        {'_type': 'question', 'call_id': 'orphan', 'status': 'cancelled'},
+        {'role': 'assistant', 'content': '完成'},
+    ]
+    parts = _reconstruct([{**r, 'seq': i} for i, r in enumerate(rows)])[1].parts
+    assert [p.step.kind if p.kind == 'step' else p.kind for p in parts] == [
+        'thought', 'file_read', 'question', 'question', 'text']
+    assert parts[1].step.meta['group'] == parts[2].step.meta['group'] == 1

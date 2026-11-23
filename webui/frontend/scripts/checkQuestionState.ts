@@ -15,11 +15,9 @@ import {
   CUSTOM_OPTION_ID,
   allAnswered,
   answerLabels,
-  cancelCustom,
   createQuestionState,
   editCustom,
   isAnswered,
-  saveCustom,
   select,
   setTab,
   syncQuestionState,
@@ -63,160 +61,92 @@ const q = (
 const start = (questions: QuestionView[]): QuestionState =>
   createQuestionState(questions.length)
 
-// ── one question ───────────────────────────────────────────────────────────
-
+// 选择和切题不隐式提交，单题也允许提交前回改。
 {
   const questions = [q('q0', 'Format')]
   const step = select(start(questions), questions, 'q0_o0')
-  check(
-    'a single single-select question submits on selection',
-    step.submit === true && step.state.picked[0]?.[0] === 'q0_o0',
-    'picking is the whole interaction; a Submit button would never be pressed'
-  )
+  check('单题选择保留在原题', step.state.tab === 0 && allAnswered(step.state, questions))
+  check('点选不自动提交', !('submit' in step))
+  const replaced = select(step.state, questions, 'q0_o1').state
+  check('单选回改只选中最新选项', replaced.picked[0]?.join() === 'q0_o1')
 }
-
 {
   const questions = [q('q0', 'Features', true)]
-  const first = select(start(questions), questions, 'q0_o0')
-  let s = first.state
-  const stillOpen = first.submit !== true && allAnswered(s, questions)
+  let s = select(start(questions), questions, 'q0_o0').state
   s = select(s, questions, 'q0_o1').state
-  check(
-    'multi-select accumulates and never auto-submits',
-    stillOpen && s.picked[0]?.length === 2,
-    JSON.stringify(s.picked)
-  )
+  check('多选保留全部选项', s.picked[0]?.length === 2)
   s = select(s, questions, 'q0_o0').state
-  check('picking a chosen option again removes it', s.picked[0]?.length === 1)
+  check('再次点击取消选项', s.picked[0]?.join() === 'q0_o1')
 }
 
-// ── several questions ──────────────────────────────────────────────────────
-
+// 自由输入即更新该题的本地答案，只有最终提交才发送至后台。
 {
-  const questions = [q('q0', 'Format'), q('q1', 'Chart'), q('q2', 'Name')]
+  const questions = [q('q0', 'Format')]
+  let s = select(start(questions), questions, CUSTOM_OPTION_ID).state
+  check('空自由输入不算已回答', !allAnswered(s, questions) && !isAnswered(s, 0))
+  s = editCustom(s, '  Parquet  ', questions)
+  check('输入原文留在状态中', s.custom[0] === '  Parquet  ')
+  check('非空输入被选用', allAnswered(s, questions))
+  check('提交时仅修剪首尾空白', toAnswers(s, questions)[0]?.custom_text === 'Parquet')
+  check('显示标签采用真实输入', answerLabels(s, questions, 0)[0] === '  Parquet  ')
+  s = editCustom(s, '   ', questions)
+  check('清空输入取消自由答案', !isAnswered(s, 0) && !allAnswered(s, questions))
+}
+{
+  const questions = [q('q0', 'Format'), q('q1', 'Language'), q('q2', 'Charts', true), q('q3', 'Name')]
   let s = start(questions)
-  s = select(s, questions, 'q0_o0').state
-  check('answering advances to the next unanswered tab', s.tab === 1)
-  s = select(s, questions, 'q1_o1').state
-  check('and keeps advancing', s.tab === 2)
-  check(
-    'submit stays unavailable while a question is unanswered',
-    !allAnswered(s, questions)
-  )
-  s = select(s, questions, 'q2_o0').state
-  check('submit unlocks once every question is answered', allAnswered(s, questions))
-  check(
-    'the last answer does not auto-submit a multi-question ask',
-    select(start(questions), questions, 'q0_o0').submit !== true
-  )
-}
-
-{
-  const questions = [q('q0', 'Format'), q('q1', 'Chart')]
-  let s = start(questions)
-  s = select(s, questions, 'q0_o0').state // now on tab 1
-  s = setTab(s, 0)
-  s = select(s, questions, 'q0_o1').state
-  check(
-    'going back replaces that answer rather than adding one',
-    s.picked[0]?.length === 1 && s.picked[0]?.[0] === 'q0_o1'
-  )
-  check(
-    'and it does not advance past a tab that is already answered',
-    s.tab === 1,
-    `tab=${s.tab}`
-  )
-}
-
-// ── free text ──────────────────────────────────────────────────────────────
-
-{
-  const questions = [q('q0', 'Format')]
-  let s = select(start(questions), questions, CUSTOM_OPTION_ID).state
-  check(
-    'choosing "type your own" opens the field instead of answering',
-    s.editing === true && !isAnswered(s, 0)
-  )
-  s = editCustom(s, '  Parquet  ')
-  const saved = saveCustom(s, questions)
-  s = saved.state
-  check(
-    'saving stores the text under the reserved custom id',
-    s.picked[0]?.[0] === CUSTOM_OPTION_ID && s.custom[0] === 'Parquet',
-    JSON.stringify([s.picked[0], s.custom[0]])
-  )
-  check('and submits, being the only question', saved.submit === true)
-  check('the label shown is the text itself', answerLabels(s, questions, 0)[0] === 'Parquet')
-}
-
-{
-  const questions = [q('q0', 'Format')]
-  let s = select(start(questions), questions, CUSTOM_OPTION_ID).state
-  s = editCustom(s, 'Parquet')
-  s = saveCustom(s, questions).state
-  s = select(s, questions, CUSTOM_OPTION_ID).state
-  s = editCustom(s, '   ')
-  s = saveCustom(s, questions).state
-  check(
-    'emptying the field clears the answer it used to be',
-    !isAnswered(s, 0) && s.custom[0] === '',
-    'otherwise a custom selection is submitted with nothing behind it'
-  )
-}
-
-{
-  const questions = [q('q0', 'Format')]
-  let s = select(start(questions), questions, CUSTOM_OPTION_ID).state
-  s = editCustom(s, 'Parquet')
-  s = saveCustom(s, questions).state
-  s = select(s, questions, 'q0_o0').state
-  check(
-    'picking an option drops the free text it replaces',
-    s.picked[0]?.[0] === 'q0_o0' && s.custom[0] === '',
-    'sending both would leave the backend to guess which the user meant'
-  )
-}
-
-{
-  const questions = [q('q0', 'Format'), q('q1', 'Chart')]
-  let s = select(start(questions), questions, CUSTOM_OPTION_ID).state
-  s = editCustom(s, 'draft for q0')
+  for (let i = 0; i < questions.length; i++) {
+    s = setTab(s, i)
+    s = editCustom(s, `第${i + 1}题草稿\n第二行`, questions)
+  }
+  for (let round = 0; round < 5; round++) {
+    for (let i = questions.length - 1; i >= 0; i--) {
+      s = setTab(s, i)
+      check(`往返${round + 1}：第${i + 1}题输入未丢失`, s.custom[i] === `第${i + 1}题草稿\n第二行`)
+      check(`往返${round + 1}：第${i + 1}题选中状态保留`, s.picked[i]?.includes(CUSTOM_OPTION_ID) === true)
+    }
+  }
+  check('四题均有答案才允许提交', allAnswered(s, questions))
+  const payload = toAnswers(s, questions)
+  check('每题答案准确对应原题', payload.every((a, i) => a.question_id === questions[i]?.id && a.custom_text.startsWith(`第${i + 1}题`)))
   s = setTab(s, 1)
-  check(
-    'leaving a tab abandons its uncommitted draft',
-    s.editing === false && s.draft === '',
-    'carrying it over would attach it to a different question'
-  )
-  s = cancelCustom(editCustom(s, 'x'))
-  check('cancelling clears the draft too', s.draft === '')
-}
-
-// ── the request body ───────────────────────────────────────────────────────
-
-{
-  const questions = [q('q0', 'Format'), q('q1', 'Features', true)]
-  let s = start(questions)
-  s = select(s, questions, 'q0_o0').state
-  s = select(s, questions, 'q1_o0').state
   s = select(s, questions, 'q1_o1').state
-  const answers = toAnswers(s, questions)
-  check(
-    'answers are emitted in question order, ids only',
-    answers.length === 2 &&
-      answers[0]!.question_id === 'q0' &&
-      answers[1]!.option_ids.length === 2 &&
-      !('labels' in answers[0]!),
-    JSON.stringify(answers)
-  )
+  check('选固定项不会删掉输入', s.custom[1] === '第2题草稿\n第二行')
+  check('未选用的输入不提交', toAnswers(s, questions)[1]?.custom_text === '')
+  s = setTab(setTab(s, 3), 1)
+  check('切回仍可看到未选用输入', s.custom[1]?.startsWith('第2题') === true)
+  s = select(s, questions, CUSTOM_OPTION_ID).state
+  check('可重新选用保留的输入', toAnswers(s, questions)[1]?.custom_text.startsWith('第2题') === true)
+  s = editCustom(s, '', questions)
+  check('某题清空后禁止整组提交', !allAnswered(s, questions))
+  check('不越过第一题', setTab(s, -1) === s)
+  check('不越过最后一题', setTab(s, 4) === s)
+  const busy = { ...s, submitting: true }
+  check('提交期间不能切题', setTab(busy, 0) === busy)
+  check('提交期间不能改输入', editCustom(busy, '新值', questions) === busy)
 }
-
 {
-  const questions = [q('q0', 'Format'), q('q1', 'Chart')]
-  const grown = syncQuestionState(start([q('q0', 'Format')]), questions.length)
-  check(
-    'state resized for a different ask keeps no stale slots',
-    grown.picked.length === 2 && grown.picked[1]?.length === 0
-  )
+  const questions = [q('q0', 'Features', true)]
+  let s = select(start(questions), questions, 'q0_o0').state
+  s = select(s, questions, 'q0_o1').state
+  s = editCustom(s, '额外要求', questions)
+  check('多选可以同时包含自由输入', s.picked[0]?.length === 3)
+  s = select(s, questions, CUSTOM_OPTION_ID).state
+  check('取消自定义不丢弃文本', s.custom[0] === '额外要求' && toAnswers(s, questions)[0]?.custom_text === '')
+  s = select(s, questions, CUSTOM_OPTION_ID).state
+  check('重新选用不必再次输入', toAnswers(s, questions)[0]?.custom_text === '额外要求')
+  s = editCustom(s, '', questions)
+  check('清空只移除自定义答案', s.picked[0]?.length === 2 && allAnswered(s, questions))
+}
+{
+  const questions = [q('q0', 'Format', false, false)]
+  const s = start(questions)
+  check('禁止自由输入时不修改状态', editCustom(s, 'text', questions) === s)
+  check('禁止自由输入时不可选择自定义', select(s, questions, CUSTOM_OPTION_ID).state === s)
+  check('未知选项不可选中', select(s, questions, 'unknown').state === s)
+  check('无题目不可提交', !allAnswered(createQuestionState(0), []))
+  const grown = syncQuestionState(s, 2)
+  check('新增题目初始为空', grown.custom[1] === '' && grown.picked[1]?.length === 0)
 }
 
 // ── the streaming merge ────────────────────────────────────────────────────
@@ -295,18 +225,6 @@ function reduce(frames: AgentChunk[]): AgentMessage {
     'an orphan outcome still renders (a replay may start mid-ask)',
     parts.filter((p) => p.kind === 'step').length === 1
   )
-}
-
-{
-  const questions = [q('q0', 'Features', true)]
-  let s = select(start(questions), questions, CUSTOM_OPTION_ID).state
-  s = saveCustom(editCustom(s, '额外要求'), questions).state
-  s = select(s, questions, 'q0_o0').state
-  check('多选包含自由文本', toAnswers(s, questions)[0]?.custom_text === '额外要求')
-  s = saveCustom(editCustom(select(s, questions, CUSTOM_OPTION_ID).state, ''), questions).state
-  check('清空自由文本不会丢失其余选项', toAnswers(s, questions)[0]?.option_ids[0] === 'q0_o0')
-  check('无题目不可提交', !allAnswered(createQuestionState(0), []))
-  check('未知选项不可选中', select(start(questions), questions, 'unknown').state.picked[0]?.length === 0)
 }
 
 if (failed) {

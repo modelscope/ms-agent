@@ -1,25 +1,4 @@
-/**
- * Pure state machine for the question card's tab flow.
- *
- * Kept free of React so it can be reasoned about (and tested) on its own: the
- * card is a rendering of this state, and every interaction is one transition
- * here. Modelled on opencode's question reducer for the same reason it exists
- * there — tabs, per-question selection and a free-text mode add up to more
- * combinations than component state should carry inline.
- *
- * Answering rules (fixed, so the card never has to decide):
- * - single question, single-select   -> picking submits immediately
- * - single question, multi-select    -> picking toggles; submit when ready
- * - several questions, single-select -> picking advances to the next
- *                                      unanswered tab; submit once all are done
- * - several questions, multi-select  -> picking toggles, no advance
- * - "type your own"                  -> enters editing mode; saving stores the
- *                                      text as that question's answer under the
- *                                      reserved CUSTOM_OPTION_ID
- * - skip                             -> the whole ask, never one question: a
- *                                      half-empty answer set has no meaning to
- *                                      the model
- */
+/** 问答卡状态：逐题保留选择和自由输入，切题不提交也不丢弃内容。 */
 
 /** Option id the backend reserves for a free-text answer (ui/interaction.py). */
 export const CUSTOM_OPTION_ID = '__custom__'
@@ -53,10 +32,6 @@ export interface QuestionState {
   picked: string[][]
   /** Free text per question index (only meaningful with CUSTOM_OPTION_ID). */
   custom: string[]
-  /** True while the free-text field is open for the current tab. */
-  editing: boolean
-  /** Draft of the free-text field (committed by saveCustom). */
-  draft: string
   /** True from submit until the server's outcome frame lands. */
   submitting: boolean
 }
@@ -66,8 +41,6 @@ export function createQuestionState(count: number): QuestionState {
     tab: 0,
     picked: Array.from({ length: count }, () => []),
     custom: Array.from({ length: count }, () => ''),
-    editing: false,
-    draft: '',
     submitting: false
   }
 }
@@ -87,14 +60,16 @@ export function syncQuestionState(
 }
 
 export function isAnswered(state: QuestionState, index: number): boolean {
-  return (state.picked[index] ?? []).length > 0
+  const ids = state.picked[index] ?? []
+  return ids.length > 0 &&
+    (!ids.includes(CUSTOM_OPTION_ID) || !!state.custom[index]?.trim())
 }
 
 export function allAnswered(
   state: QuestionState,
   questions: QuestionView[]
 ): boolean {
-  return questions.length > 0 && !state.editing && questions.every((q, i) => {
+  return questions.length > 0 && questions.every((q, i) => {
     const ids = state.picked[i] ?? []
     return ids.length > 0 &&
       (q.multi_select || ids.length === 1) &&
@@ -106,18 +81,12 @@ export function allAnswered(
 
 export function setTab(state: QuestionState, tab: number): QuestionState {
   if (tab < 0 || tab >= state.picked.length || tab === state.tab) return state
-  // Leaving a tab abandons an uncommitted draft rather than carrying it to the
-  // next question, where it would belong to a different answer.
-  return { ...state, tab, editing: false, draft: '' }
+  if (state.submitting) return state
+  return { ...state, tab }
 }
 
-/**
- * The outcome of a selection: the new state, plus whether the card should
- * submit now (the single-question single-select shortcut).
- */
 export interface QuestionStep {
   state: QuestionState
-  submit?: boolean
 }
 
 export function select(
@@ -130,86 +99,34 @@ export function select(
 
   if (optionId === CUSTOM_OPTION_ID) {
     if (question.allow_custom === false) return { state }
-    // Never a one-click answer: it needs text, so it opens the field instead.
-    return {
-      state: { ...state, editing: true, draft: state.custom[state.tab] ?? '' }
-    }
+  } else if (!question.options.some((option) => option.id === optionId)) {
+    return { state }
   }
-
-  if (!question.options.some((option) => option.id === optionId)) return { state }
-  if (question.multi_select) {
-    const current = state.picked[state.tab] ?? []
-    const next = current.includes(optionId)
+  const current = state.picked[state.tab] ?? []
+  const next = question.multi_select
+    ? current.includes(optionId)
       ? current.filter((id) => id !== optionId)
       : [...current, optionId]
-    return { state: store(state, state.tab, next) }
-  }
-
-  // Single-select replaces, and drops any free text this question had: the
-  // answer is now an option, and leaving the text behind would send both.
-  let next = store(state, state.tab, [optionId])
-  next = { ...next, custom: replaceAt(next.custom, state.tab, ''), editing: false, draft: '' }
-  if (questions.length === 1) return { state: next, submit: true }
-  const nextUnanswered = questions.findIndex(
-    (_, i) => i !== state.tab && !isAnswered(next, i)
-  )
-  return {
-    state: nextUnanswered === -1 ? next : { ...next, tab: nextUnanswered }
-  }
+    : [optionId]
+  // 改选固定选项只改变选用状态，已输入的文字仍留在原题。
+  return { state: store(state, state.tab, next) }
 }
 
-export function editCustom(state: QuestionState, draft: string): QuestionState {
-  return { ...state, draft }
-}
-
-export function cancelCustom(state: QuestionState): QuestionState {
-  return { ...state, editing: false, draft: '' }
-}
-
-export function saveCustom(
+export function editCustom(
   state: QuestionState,
+  value: string,
   questions: QuestionView[]
-): QuestionStep {
+): QuestionState {
   const question = questions[state.tab]
-  if (!question || question.allow_custom === false || state.submitting) return { state }
-  const value = state.draft.trim()
-  if (!value) {
-    // An emptied field clears the answer it used to be, rather than leaving a
-    // custom selection with nothing behind it.
-    const cleared = store(
-      state,
-      state.tab,
-      (state.picked[state.tab] ?? []).filter((id) => id !== CUSTOM_OPTION_ID)
-    )
-    return {
-      state: {
-        ...cleared,
-        custom: replaceAt(cleared.custom, state.tab, ''),
-        editing: false,
-        draft: ''
-      }
-    }
-  }
-
+  if (!question || question.allow_custom === false || state.submitting) return state
   const current = state.picked[state.tab] ?? []
-  const picked = question.multi_select
-    ? current.includes(CUSTOM_OPTION_ID)
-      ? current
-      : [...current, CUSTOM_OPTION_ID]
-    : [CUSTOM_OPTION_ID]
-  let next = store(state, state.tab, picked)
-  next = {
-    ...next,
-    custom: replaceAt(next.custom, state.tab, value),
-    editing: false,
-    draft: ''
-  }
-  if (questions.length === 1 && !question.multi_select) {
-    return { state: next, submit: true }
-  }
-  const nextUnanswered = questions.findIndex((_, i) => !isAnswered(next, i))
-  return { state: !question.multi_select && nextUnanswered >= 0
-    ? { ...next, tab: nextUnanswered } : next }
+  const picked = value.trim()
+    ? question.multi_select
+      ? [...current.filter((id) => id !== CUSTOM_OPTION_ID), CUSTOM_OPTION_ID]
+      : [CUSTOM_OPTION_ID]
+    : current.filter((id) => id !== CUSTOM_OPTION_ID)
+  return { ...store(state, state.tab, picked),
+    custom: replaceAt(state.custom, state.tab, value) }
 }
 
 /** The request body's `answers`, in question order. */
@@ -221,7 +138,7 @@ export function toAnswers(
     question_id: question.id,
     option_ids: state.picked[i] ?? [],
     custom_text: (state.picked[i] ?? []).includes(CUSTOM_OPTION_ID)
-      ? state.custom[i] ?? '' : ''
+      ? (state.custom[i] ?? '').trim() : ''
   }))
 }
 

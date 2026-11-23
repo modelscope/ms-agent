@@ -613,6 +613,18 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
         and isinstance(r.get("duration_ms"), (int, float))
     }
 
+    # 问题结局可能早于或晚于包含思考的工具调用行写入，显示位置按 call_id 还原。
+    question_records = {
+        str(row.get('call_id')): row for row in rows
+        if row.get('_type') == 'question' and row.get('call_id')
+    }
+    question_calls = {
+        str(call.get('id')) for row in rows if row.get('role') == 'assistant'
+        for call in row.get('tool_calls') or [] if isinstance(call, dict)
+        and str(call.get('id')) in question_records
+    }
+    rendered_questions: set[str] = set()
+
     # Workspace root + the session's plan-file locations (reported by the todo
     # tool in these rows), for classifying file writes into the changed-files
     # summary: out-of-workspace writes and plan files are not deliverables.
@@ -786,12 +798,11 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
             pending_perms.append(row)
             continue
         if row.get("_type") == "question":
-            # Emitted in place, not buffered: a question has no tool step to sit
-            # beside (the ask tool renders no card), and its seq already puts it
-            # exactly where the model asked it.
-            qstep = _question_step(row)
-            if qstep is not None:
-                parts.append(SessionPart(kind="step", step=qstep))
+            # 可关联的记录由对应工具行渲染；无调用的旧记录仍按原位置保留。
+            if str(row.get('call_id') or '') not in question_calls:
+                qstep = _question_step(row)
+                if qstep is not None:
+                    parts.append(SessionPart(kind="step", step=qstep))
             continue
         if row.get("_type") == "skill_invocation":
             # A slash-skill turn persists the EXPANDED prompt as the user row
@@ -948,6 +959,14 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
                             pstep.meta["group"] = group_seq
                             parts.append(
                                 SessionPart(kind="step", step=pstep))
+                    call_id = str(tc.get('id') or '')
+                    if call_id in question_records:
+                        if call_id not in rendered_questions:
+                            qstep = _question_step(question_records[call_id])
+                            qstep.meta['group'] = group_seq
+                            parts.append(SessionPart(kind='step', step=qstep))
+                            rendered_questions.add(call_id)
+                        continue
                     step = _history_step(tc,
                                          errored,
                                          results,

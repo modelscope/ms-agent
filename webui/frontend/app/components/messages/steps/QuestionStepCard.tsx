@@ -1,4 +1,6 @@
-import { Typography } from 'antd'
+import { Tooltip } from 'antd'
+import { IconButton } from '~/components/common/IconButton'
+import { ScrollArea } from '~/components/common/ScrollArea'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { MsaButton } from '~/components/common/MsaButton'
 import { MsaTextArea } from '~/components/common/MsaTextArea'
@@ -10,11 +12,9 @@ import {
   CUSTOM_OPTION_ID,
   allAnswered,
   answerLabels,
-  cancelCustom,
   createQuestionState,
   editCustom,
   isAnswered,
-  saveCustom,
   select,
   setTab,
   syncQuestionState,
@@ -24,6 +24,7 @@ import type { QuestionState, QuestionView } from '../questionState'
 import AskIcon from '~/assets/icons/custom-instruction.svg?react'
 import ArrowDownIcon from '~/assets/icons/arrow-down.svg?react'
 import TaskDoneIcon from '~/assets/icons/task-done.svg?react'
+import EditIcon from '~/assets/icons/edit.svg?react'
 
 type AskState =
   | 'pending'
@@ -39,18 +40,7 @@ interface AnswerRecord {
   labels?: string[]
 }
 
-/**
- * The card the model asks through: one tab per question, options as rows, a
- * "type your own" row, and Submit / Skip.
- *
- * Pending is the only interactive state and it stays EXPANDED — a turn cannot
- * advance until this is answered, so collapsing it would hide the one control
- * that unblocks the conversation. Every terminal state collapses to a one-line
- * summary of what was chosen (or of why nothing was).
- *
- * All tab/selection logic lives in ../questionState so it stays testable; this
- * component is the rendering plus the one network call.
- */
+/** 逐题选择与输入，统一提交；回答后在原卡片显示完整问答摘要。 */
 export function QuestionStepCard({
   step,
   isLast
@@ -78,14 +68,13 @@ export function QuestionStepCard({
   }, [questions.length])
 
   const pending = state === 'pending'
-  const [expanded, setExpanded] = useState((isLast ?? false) || pending)
+  const [expanded, setExpanded] = useState(pending || state === 'answered')
   const { animating, onTransitionEnd } = useCollapseTransition(expanded)
 
-  // Auto-collapse once newer parts arrive — except while pending, where the
-  // inputs must stay reachable.
   useEffect(() => {
-    if (!isLast && !pending) setExpanded(false)
-  }, [isLast, pending])
+    if (state === 'answered') setExpanded(true)
+    else if (!isLast && !pending) setExpanded(false)
+  }, [isLast, pending, state])
 
   const requestId = String(step.meta.request_id ?? '')
   const sessionId = String(step.meta.session_id ?? '')
@@ -126,103 +115,93 @@ export function QuestionStepCard({
       answers: []
     })
 
-  const onSelect = (optionId: string) => {
-    const stepped = select(qs, questions, optionId)
-    setQs(stepped.state)
-    if (stepped.submit) {
-      void submit('answered', {
-        session_id: sessionId,
-        request_id: requestId,
-        status: 'answered',
-        answers: toAnswers(stepped.state, questions)
-      })
-    }
-  }
-
-  const onSaveCustom = () => {
-    const stepped = saveCustom(qs, questions)
-    setQs(stepped.state)
-    if (stepped.submit) {
-      void submit('answered', {
-        session_id: sessionId,
-        request_id: requestId,
-        status: 'answered',
-        answers: toAnswers(stepped.state, questions)
-      })
-    }
-  }
+  const onSelect = (optionId: string) =>
+    setQs((prev) => select(prev, questions, optionId).state)
 
   const current = questions[qs.tab]
   const ready = allAnswered(qs, questions)
+  const customSelected = (qs.picked[qs.tab] ?? []).includes(CUSTOM_OPTION_ID)
+  const customValue = qs.custom[qs.tab] ?? ''
+  const inputId = `question-${String(step.meta.call_id ?? requestId)}-${qs.tab}`
+  const moveQuestion = (offset: number) =>
+    setQs((prev) => setTab(prev, prev.tab + offset))
+  const continueAnswering = () => {
+    if (ready) void onSubmit()
+    else moveQuestion(1)
+  }
 
   return (
-    <div className="w-full overflow-hidden rounded-xl border border-msa-line-1 bg-msa-fill-1">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center gap-2 border-none px-3 py-2 text-left transition-colors outline-none cursor-pointer bg-msa-fill-1"
-      >
-        <span className="flex h-4 w-4 shrink-0 items-center justify-center text-msa-text-3">
-          <AskIcon className="h-4 w-4" />
-        </span>
-        <Typography.Text className="!text-sm !text-msa-text-1 truncate">
-          {t.chat.questionTitle}
-        </Typography.Text>
-        {!pending && (
-          <span className="min-w-0 flex-1 truncate text-xs text-msa-text-3">
-            {outcomeNote(t, state, step, questions)}
-          </span>
+    <section data-question-card className="w-full overflow-hidden rounded-xl border border-msa-line-1 bg-msa-fill-1">
+      <div className="flex items-center gap-2 px-3 py-2.5">
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((v) => !v)}
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 border-none bg-transparent text-left text-sm font-medium text-msa-text-1"
+        >
+          <AskIcon className="h-4 w-4 shrink-0 text-msa-text-3" />
+          <span>{state === 'answered' ? t.chat.questionAnswersTitle : t.chat.questionTitle}</span>
+          {!pending && state !== 'answered' && (
+            <span className="truncate text-xs font-normal text-msa-text-3">
+              {outcomeNote(t, state, step, questions)}
+            </span>
+          )}
+        </button>
+        {live && questions.length > 1 && (
+          <nav aria-label={t.chat.questionNavigator} className="flex shrink-0 items-center gap-1">
+            <Tooltip title={t.chat.questionPrevious}>
+              <IconButton
+                size="sm"
+                aria-label={t.chat.questionPrevious}
+                disabled={qs.submitting || qs.tab === 0}
+                onClick={() => moveQuestion(-1)}
+                icon={<ArrowDownIcon className="h-3 w-3 rotate-90" />}
+              />
+            </Tooltip>
+            <span aria-live="polite" className="min-w-10 text-center text-xs tabular-nums text-msa-text-3">
+              {qs.tab + 1} / {questions.length}
+            </span>
+            <Tooltip title={t.chat.questionNext}>
+              <IconButton
+                size="sm"
+                aria-label={t.chat.questionNext}
+                disabled={qs.submitting || qs.tab === questions.length - 1}
+                onClick={() => moveQuestion(1)}
+                icon={<ArrowDownIcon className="h-3 w-3 -rotate-90" />}
+              />
+            </Tooltip>
+          </nav>
         )}
-        <ArrowDownIcon
-          className={`h-3 w-3 shrink-0 text-msa-text-3 transition-transform duration-200 ${
-            expanded ? 'rotate-180' : ''
-          }`}
-        />
-      </button>
-
+        <Tooltip title={expanded ? t.chat.questionCollapse : t.chat.questionExpand}>
+          <IconButton
+            size="sm"
+            aria-label={expanded ? t.chat.questionCollapse : t.chat.questionExpand}
+            aria-expanded={expanded}
+            onClick={() => setExpanded((v) => !v)}
+            icon={<ArrowDownIcon className={`h-3 w-3 transition-transform ${expanded ? 'rotate-180' : ''}`} />}
+          />
+        </Tooltip>
+      </div>
       <div
-        className={`grid duration-200 ease-in-out ${
-          animating ? 'transition-[grid-template-rows]' : ''
-        }`}
+        className={`grid duration-200 ease-in-out ${animating ? 'transition-[grid-template-rows]' : ''}`}
         style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
         onTransitionEnd={onTransitionEnd}
       >
         <div className="overflow-hidden">
-          <div className="border-t border-msa-line-1 px-3 py-2 space-y-2">
-            {/* Tabs — only when there is more than one question. */}
-            {questions.length > 1 && (
-              <div className="flex flex-wrap gap-1" role="tablist">
-                {questions.map((q, i) => (
-                  <button
-                    key={q.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={i === qs.tab}
-                    disabled={qs.submitting}
-                    onClick={() => setQs((prev) => setTab(prev, i))}
-                    className={`flex items-center gap-1 rounded-lg border border-solid px-2 py-1 text-xs cursor-pointer ${
-                      i === qs.tab
-                        ? 'border-msa-line-1 bg-msa-fill-0 text-msa-text-1'
-                        : 'border-transparent bg-transparent text-msa-text-3 hover:bg-msa-fill-2'
-                    }`}
-                  >
-                    {isAnswered(qs, i) && (
-                      <TaskDoneIcon className="h-3 w-3 text-msa-text-brand1" />
-                    )}
-                    {q.header || `${i + 1}`}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Live: the current question and its options. */}
-            {live && current && (
-              <>
-                <div className="text-sm text-msa-text-1">
-                  {current.question}
+          <ScrollArea pad={12} className="max-h-[min(26rem,55dvh)] py-2 space-y-4">
+            {live && current ? (
+              <div key={current.id} data-question-body className="space-y-3">
+                <div className="flex items-start gap-2 text-sm font-semibold text-msa-text-1">
+                  <span className="tabular-nums">{qs.tab + 1}.</span>
+                  <span className="min-w-0 break-words">{current.question}</span>
+                  {current.multi_select && (
+                    <span className="shrink-0 rounded px-1.5 py-0.5 text-xs font-normal text-msa-text-3 bg-msa-fill-2">
+                      {t.chat.questionMultiSelect}
+                    </span>
+                  )}
                 </div>
-                <div className="flex flex-col gap-1">
-                  {current.options.map((option) => {
+                <div role={current.multi_select ? 'group' : 'radiogroup'} aria-label={current.question} className="space-y-1">
+                  {current.options.map((option, index) => {
                     const picked = (qs.picked[qs.tab] ?? []).includes(option.id)
                     return (
                       <button
@@ -232,117 +211,96 @@ export function QuestionStepCard({
                         aria-checked={picked}
                         disabled={qs.submitting}
                         onClick={() => onSelect(option.id)}
-                        className={`rounded-lg border border-solid px-2 py-1.5 text-left text-sm cursor-pointer ${
-                          picked
-                            ? 'border-msa-text-brand1 bg-msa-fill-0 text-msa-text-1'
-                            : 'border-msa-line-1 bg-msa-fill-0 text-msa-text-1 hover:bg-msa-fill-2'
+                        className={`flex w-full items-start gap-3 rounded-lg border px-2 py-2 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-msa-text-brand1 ${
+                          picked ? 'border-msa-text-brand1 bg-msa-fill-2' : 'border-transparent bg-transparent hover:bg-msa-fill-2'
                         }`}
                       >
-                        <div>{option.label}</div>
-                        {option.description && (
-                          <div className="text-xs text-msa-text-3">
-                            {option.description}
-                          </div>
-                        )}
+                        <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded border text-xs font-medium ${
+                          picked ? 'border-msa-text-brand1 text-msa-text-brand1' : 'border-msa-line-1 text-msa-text-3'
+                        }`}>
+                          {picked ? <TaskDoneIcon className="h-3.5 w-3.5" /> : String.fromCharCode(65 + index)}
+                        </span>
+                        <span className="min-w-0 flex-1 space-y-1 break-words">
+                          <span className="block text-sm font-medium text-msa-text-1">{option.label}</span>
+                          {option.description && <span className="block text-xs leading-relaxed text-msa-text-3">{option.description}</span>}
+                        </span>
                       </button>
                     )
                   })}
-
-                  {/* Free text. Rendered by the CLIENT, never authored by the
-                      model — see ui/interaction.py's CUSTOM_OPTION_ID. */}
-                  {current.allow_custom !== false &&
-                    (qs.editing ? (
-                      <div className="space-y-1">
-                        <MsaTextArea
-                          autoFocus
-                          maxLength={2000}
-                          value={qs.draft}
-                          placeholder={t.chat.questionCustomPlaceholder}
-                          autoSize={{ minRows: 1, maxRows: 4 }}
-                          onChange={(e) =>
-                            setQs((prev) => editCustom(prev, e.target.value))
-                          }
-                          onPressEnter={(e) => {
-                            if (e.shiftKey || e.nativeEvent.isComposing) return
-                            e.preventDefault()
-                            onSaveCustom()
-                          }}
-                        />
-                        <div className="flex justify-end gap-2">
-                          <MsaButton
-                            variant="outlined"
-                            onClick={() => setQs((prev) => cancelCustom(prev))}
-                          >
-                            {t.chat.questionCancelCustom}
-                          </MsaButton>
-                          <MsaButton variant="outlined" onClick={onSaveCustom}>
-                            {t.chat.questionSaveCustom}
-                          </MsaButton>
-                        </div>
-                      </div>
-                    ) : (
+                </div>
+                {current.allow_custom !== false && (
+                  <div className={`rounded-lg border p-2 space-y-1.5 ${customSelected ? 'border-msa-text-brand1 bg-msa-fill-2' : 'border-msa-line-1'}`}>
+                    <div className="flex items-center gap-2">
                       <button
                         type="button"
+                        role={current.multi_select ? 'checkbox' : 'radio'}
+                        aria-label={t.chat.questionCustomOption}
+                        aria-checked={customSelected}
                         disabled={qs.submitting}
                         onClick={() => onSelect(CUSTOM_OPTION_ID)}
-                        className="rounded-lg border border-dashed border-msa-line-1 bg-msa-fill-0 px-2 py-1.5 text-left text-sm text-msa-text-2 hover:bg-msa-fill-2 cursor-pointer"
+                        className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded border border-msa-line-1 bg-transparent text-msa-text-3"
                       >
-                        {qs.custom[qs.tab]
-                          ? qs.custom[qs.tab]
-                          : t.chat.questionCustomOption}
+                        {customSelected ? <TaskDoneIcon className="h-4 w-4 text-msa-text-brand1" /> : <EditIcon className="h-4 w-4" />}
                       </button>
-                    ))}
-                </div>
-
-                <div className="flex justify-end gap-2 pt-1">
-                  <MsaButton
-                    variant="outlined"
-                    disabled={qs.submitting}
-                    onClick={onSkip}
-                  >
-                    {t.chat.questionSkip}
-                  </MsaButton>
-                  {/* A single single-select question submits on selection, so
-                      its Submit button would never be the thing that sends. */}
-                  {(questions.length > 1 || current.multi_select) && (
-                    <MsaButton
-                      variant="primary"
-                      disabled={qs.submitting || !ready}
-                      onClick={onSubmit}
-                    >
-                      {t.chat.questionSubmit}
-                    </MsaButton>
-                  )}
-                </div>
-              </>
-            )}
-
-            {/* Terminal: what was asked and what came back. */}
-            {!live && (
-              <div className="space-y-1">
-                {questions.map((q, i) => (
-                  <div key={q.id} className="text-sm">
-                    <span className="text-msa-text-3">
-                      {q.header || q.question}
-                    </span>{' '}
-                    <span className="text-msa-text-1">
-                      {state === 'answered'
-                        ? resolvedLabels(step, qs, questions, i).join('、') || '—'
-                        : '—'}
-                    </span>
-                  </div>
-                ))}
-                {questions.length === 0 && (
-                  <div className="text-sm text-msa-text-3">
-                    {outcomeNote(t, state, step, questions)}
+                      <label htmlFor={inputId} className="text-xs text-msa-text-3">{t.chat.questionCustomOption}</label>
+                    </div>
+                    <MsaTextArea
+                      id={inputId}
+                      maxLength={2000}
+                      value={customValue}
+                      disabled={qs.submitting}
+                      placeholder={t.chat.questionCustomPlaceholder}
+                      autoSize={{ minRows: 1, maxRows: 4 }}
+                      onFocus={() => {
+                        if (customValue.trim() && !customSelected)
+                          setQs((prev) => editCustom(prev, prev.custom[prev.tab] ?? '', questions))
+                      }}
+                      onChange={(e) => setQs((prev) => editCustom(prev, e.target.value, questions))}
+                    />
+                    {customValue.trim() && (
+                      <p role="status" className={`m-0 text-xs ${customSelected ? 'text-msa-text-brand1' : 'text-msa-text-3'}`}>
+                        {customSelected ? t.chat.questionCustomSelected : t.chat.questionCustomRetained}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
+            ) : (
+              <div className="space-y-4" data-question-summary>
+                {questions.map((q, i) => (
+                  <div key={q.id} className="space-y-1 text-sm">
+                    <p className="m-0 break-words font-medium text-msa-text-1">{q.question}</p>
+                    <p className="m-0 whitespace-pre-wrap break-words text-msa-text-3">
+                      {state === 'answered' ? resolvedLabels(step, qs, questions, i).join('、') || '—' : '—'}
+                    </p>
+                  </div>
+                ))}
+                {!questions.length && <p className="m-0 text-xs text-msa-text-3">{outcomeNote(t, state, step, questions)}</p>}
+              </div>
             )}
-          </div>
+          </ScrollArea>
+          {live && current && (
+            <div className="flex items-center justify-between gap-2 border-t border-msa-line-1 px-3 py-2">
+              <span className="text-xs tabular-nums text-msa-text-3">
+                {t.chat.questionAnsweredCount
+                  .replace('{answered}', String(questions.filter((_, i) => isAnswered(qs, i)).length))
+                  .replace('{total}', String(questions.length))}
+              </span>
+              <div className="flex items-center gap-2">
+                <MsaButton variant="ghost" disabled={qs.submitting} onClick={onSkip}>{t.chat.questionSkip}</MsaButton>
+                <MsaButton
+                  variant="primary"
+                  disabled={qs.submitting || (!ready && (!isAnswered(qs, qs.tab) || qs.tab === questions.length - 1))}
+                  onClick={continueAnswering}
+                >
+                  {ready ? t.chat.questionSubmit : t.chat.questionContinue}
+                </MsaButton>
+              </div>
+            </div>
+          )}
         </div>
       </div>
-    </div>
+    </section>
   )
 }
 
