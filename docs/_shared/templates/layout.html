@@ -1,0 +1,15 @@
+{% extends "!layout.html" %}
+{%- block extrahead %}
+{{ super() }}
+<script>
+  // 主题初始化时，只要浏览器偏好暗色就会先加 dark，等脚本加载后才按保存的选择移除，切页会闪烁；已保存选择时以它为准。
+  (function () {
+    try {
+      var saved = localStorage.getItem("_x_darkMode");
+      var dark = saved === "true" || (saved !== "false" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.classList.toggle("dark", dark);
+      document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    } catch (e) {}
+  })();
+</script>
+{%- endblock extrahead %}

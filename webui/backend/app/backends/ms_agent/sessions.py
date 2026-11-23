@@ -244,6 +244,21 @@ def _permission_step(row: dict) -> SessionStep | None:
     return SessionStep(kind=kind, meta=meta)
 
 
+def _question_step(row: dict) -> SessionStep | None:
+    """Map recorded questions and outcomes to a question card."""
+    questions = row.get("questions")
+    answers = row.get("answers")
+    return SessionStep(
+        kind="question",
+        meta={
+            "state": str(row.get("status") or "answered"),
+            "call_id": str(row.get("call_id") or ""),
+            "questions": questions if isinstance(questions, list) else [],
+            "answers": answers if isinstance(answers, list) else [],
+        },
+    )
+
+
 def _plan_entries(tc: dict, results: dict[str, str]) -> list | None:
     """Extract the plan (todo) items from a persisted ``todo_list---todo_write``
     call, or None if this call isn't a plan write.
@@ -377,13 +392,16 @@ def list_messages(sid: str) -> list[SessionMessage]:
                               'segment_id': reply['message_id']})
         # Display-only records (excluded from the LLM context) are read
         # separately and merged back into the timeline by seq: error records
-        # (API/turn errors) and permission records (restricted-mode auth cards).
+        # (API/turn errors), permission records (restricted-mode auth cards) and
+        # question records (what the model asked and what was chosen).
         if hasattr(log, "get_errors"):
             extra += log.get_errors()
         if hasattr(log, "get_notices"):
             extra += log.get_notices()
         if hasattr(log, "get_permissions"):
             extra += log.get_permissions()
+        if hasattr(log, "get_questions"):
+            extra += log.get_questions()
         if hasattr(log, "get_skill_invocations"):
             extra += log.get_skill_invocations()
         if hasattr(log, "get_loop_ends"):
@@ -595,6 +613,18 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
         and isinstance(r.get("duration_ms"), (int, float))
     }
 
+    # Outcomes may persist before or after tool calls; restore position by call_id.
+    question_records = {
+        str(row.get('call_id')): row for row in rows
+        if row.get('_type') == 'question' and row.get('call_id')
+    }
+    question_calls = {
+        str(call.get('id')) for row in rows if row.get('role') == 'assistant'
+        for call in row.get('tool_calls') or [] if isinstance(call, dict)
+        and str(call.get('id')) in question_records
+    }
+    rendered_questions: set[str] = set()
+
     # Workspace root + the session's plan-file locations (reported by the todo
     # tool in these rows), for classifying file writes into the changed-files
     # summary: out-of-workspace writes and plan files are not deliverables.
@@ -767,6 +797,13 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
             # authorized, matching the live frame order.
             pending_perms.append(row)
             continue
+        if row.get("_type") == "question":
+            # Linked records render with their tool calls; keep orphan records here.
+            if str(row.get('call_id') or '') not in question_calls:
+                qstep = _question_step(row)
+                if qstep is not None:
+                    parts.append(SessionPart(kind="step", step=qstep))
+            continue
         if row.get("_type") == "skill_invocation":
             # A slash-skill turn persists the EXPANDED prompt as the user row
             # (that is what the model must see); this marker precedes it and
@@ -922,6 +959,14 @@ def _reconstruct(rows: list[dict], project=None) -> list[SessionMessage]:
                             pstep.meta["group"] = group_seq
                             parts.append(
                                 SessionPart(kind="step", step=pstep))
+                    call_id = str(tc.get('id') or '')
+                    if call_id in question_records:
+                        if call_id not in rendered_questions:
+                            qstep = _question_step(question_records[call_id])
+                            qstep.meta['group'] = group_seq
+                            parts.append(SessionPart(kind='step', step=qstep))
+                            rendered_questions.add(call_id)
+                        continue
                     step = _history_step(tc,
                                          errored,
                                          results,

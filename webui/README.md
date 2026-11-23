@@ -17,9 +17,7 @@ follow a task and continue the conversation. [中文说明](README_ZH.md)
 
 ## Quick start
 
-**The new WebUI is not yet available on PyPI. Clone the source and install it in
-editable mode as described below.** The published `ms-agent==1.6.0` uses the older
-WebUI and does not provide the workspace described in this guide.
+Install and start the WebUI from source with the following steps.
 
 ### 1. Prepare the environment
 
@@ -33,36 +31,12 @@ WebUI and does not provide the workspace described in this guide.
 
 #### First-time Setup
 
-The commands below use a macOS / Linux shell. If you do not yet have suitable Python and Node.js versions, follow the setup below. Otherwise, skip to [check and activate your environment](#check-and-activate-your-environment). First run `git --version`; if macOS prompts you to install Command Line Tools, complete that installation before continuing.
+See the [documentation quick start](../docs/en/get-started/quick-start.md) for complete setup, including Python through uv, Node.js through nvm, and Windows environment activation. The steps below remain a standalone launch guide when Python and Node.js are already available.
 
-##### Install Node.js
+<a id="install-nodejs"></a>
+<a id="install-python"></a>
 
-Install [nvm](https://github.com/nvm-sh/nvm), then use it to install Node.js. This keeps Node in your user directory, so installing pnpm does not require `sudo`:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-export NVM_DIR="$HOME/.nvm"
-source "$NVM_DIR/nvm.sh"
-nvm install 22.22.0
-npm install --global pnpm@10.17.1
-node --version
-pnpm --version
-```
-
-##### Install Python
-
-Install uv and use it to download Python 3.12 and create an environment with pip. Run this in the directory where you plan to keep the project:
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-export PATH="$HOME/.local/bin:$PATH"
-uv venv --python 3.12 --seed ms-agent-env
-source ms-agent-env/bin/activate
-python --version
-pip --version
-```
-
-Keep this terminal and environment active, then continue with the uv check and source installation below.
+If you need Python or Node.js, complete “Prepare Python” and its environment-setup dropdown in the quick start before continuing.
 
 #### Check and Activate Your Environment
 
@@ -80,7 +54,7 @@ python3 -m venv ms-agent-env
 source ms-agent-env/bin/activate
 ```
 
-Activate an existing virtual or Conda environment instead if you already have one. If you created and activated an environment above, you can skip this step. In Windows PowerShell, use `python -m venv ms-agent-env` and `.\ms-agent-env\Scripts\Activate.ps1`. Run all subsequent commands in the activated environment.
+Activate an existing virtual or Conda environment instead if you already have one. If you created and activated an environment in the quick start, you can skip this step. In Windows PowerShell, use `python -m venv ms-agent-env` and `.\ms-agent-env\Scripts\Activate.ps1`. Run all subsequent commands in the activated environment.
 
 Install uv and check that it is available in the current terminal:
 
@@ -251,8 +225,8 @@ omit details; keep important evidence in project files.
 
 The SDK records response usage independently of successful compaction. Cost
 estimates are marked complete, partial or unknown; amounts are not shown in
-WebUI. See [Model catalog and context compaction](../docs/en/Components/ModelCatalog.md)
-for storage, recovery and pricing details.
+WebUI. See [Context](../docs/en/core/context.md), [Models](../docs/en/core/models.md),
+and [Memory](../docs/en/core/memory.md) for storage, recovery, and pricing details.
 
 ## Edit project files
 

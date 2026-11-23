@@ -11,10 +11,16 @@ prompt_toolkit / omegaconf.
 from ms_agent.ui.events import (
     AgentEvent, AgentEventSink, ContentDelta, ContentEnd, ContextCompacted,
     ContextUpdated, ErrorRaised, JsonlEventSink, Notice, PermissionRequested,
-    PermissionResolved, PlanEntry, PlanUpdated, ReasoningDelta, ReasoningEnded,
-    ReasoningStarted, RecordingSink, TeeEventSink, ToolCallCompleted,
-    ToolCallStarted, TurnCompleted, TurnStarted, UsageInfo, UserMessage)
+    PermissionResolved, PlanEntry, PlanUpdated, QuestionRequested,
+    QuestionResolved, ReasoningDelta, ReasoningEnded, ReasoningStarted,
+    RecordingSink, TeeEventSink, ToolCallCompleted, ToolCallStarted,
+    TurnCompleted, TurnStarted, UsageInfo, UserMessage)
 from ms_agent.ui.input import InputSource, StdinInputSource
+from ms_agent.ui.interaction import (CUSTOM_OPTION_ID, MAX_HEADER_CHARS,
+                                     MAX_OPTIONS, MAX_QUESTIONS, MIN_OPTIONS,
+                                     Answer, AnswerStatus, Question,
+                                     QuestionHandler, QuestionOption,
+                                     QuestionReply, answers_from_dicts)
 
 __all__ = [
     # events
@@ -34,6 +40,8 @@ __all__ = [
     'PlanUpdated',
     'PermissionRequested',
     'PermissionResolved',
+    'QuestionRequested',
+    'QuestionResolved',
     'ContextCompacted',
     'ContextUpdated',
     'Notice',
@@ -45,4 +53,17 @@ __all__ = [
     # input
     'InputSource',
     'StdinInputSource',
+    # interaction (model-initiated questions)
+    'Answer',
+    'AnswerStatus',
+    'Question',
+    'QuestionHandler',
+    'QuestionOption',
+    'QuestionReply',
+    'answers_from_dicts',
+    'CUSTOM_OPTION_ID',
+    'MAX_QUESTIONS',
+    'MIN_OPTIONS',
+    'MAX_OPTIONS',
+    'MAX_HEADER_CHARS',
 ]

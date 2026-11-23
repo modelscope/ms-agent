@@ -727,6 +727,10 @@ _PERMISSION_WHITELIST = [
     "todo_list---*",
     "unified_memory---*",
     "skills---*",
+    # The ask tool's whole purpose is to consult the user, so gating it behind
+    # an authorization card would ask permission to ask permission — two cards
+    # for one interaction, the first of them meaningless.
+    "ask_user---*",
 ]
 
 
@@ -984,19 +988,21 @@ _MCP_META = frozenset({
 
 
 def build_agent(project, session, *, event_sink, input_source, mcp_config=None,
-                permission_handler=None, model_snapshot=None):
+                permission_handler=None, model_snapshot=None, question_handler=None):
     token = _model_snapshot.set(model_snapshot)
     try:
         return _build_agent(project, session, event_sink=event_sink, input_source=input_source,
-                            mcp_config=mcp_config, permission_handler=permission_handler)
+                            mcp_config=mcp_config, permission_handler=permission_handler,
+                            question_handler=question_handler)
     finally:
         _model_snapshot.reset(token)
 
 
 def _build_agent(project, session, *, event_sink, input_source, mcp_config=None,
-                 permission_handler=None):
+                 permission_handler=None, question_handler=None):
     from ms_agent.agent.llm_agent import LLMAgent
     from ms_agent.config import ConfigResolver
+    from ms_agent.interaction import AutoQuestionHandler
     from ms_agent.permission.handler import AutoPermissionHandler
     from ms_agent.tui.managed_config import (
         merge_skills_into_config,
@@ -1136,4 +1142,8 @@ def _build_agent(project, session, *, event_sink, input_source, mcp_config=None,
     # (tests/scripts) get auto-allow so restricted mode can't hang them on a
     # CLI prompt.
     agent.set_permission_handler(permission_handler or AutoPermissionHandler())
+    # Same shape for questions, with the opposite default: a direct caller gets
+    # a handler that declares it cannot ask, which withholds the ask tool
+    # entirely rather than letting a script hang on a card nobody will see.
+    agent.set_question_handler(question_handler or AutoQuestionHandler())
     return agent

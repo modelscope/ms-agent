@@ -39,6 +39,15 @@ def test_disabled_definition_is_byte_stable(home, tmp_path):
     assert 'pirate' not in content2
 
 
+def test_default_prompt_respects_scoped_tasks_and_stopping_points(home, tmp_path):
+    content = _agent(tmp_path)._build_system_content()
+    assert "Stay within the user's requested scope and stopping point" in content
+    for scope in ('plan-only', 'research-only', 'advice-only'):
+        assert scope in content
+    assert 'deliver the requested result and stop' in content
+    assert 'do not start implementation or ask to authorize a new phase' in content
+
+
 def test_enabled_definition_layers_in_order(home, tmp_path):
     agent = _agent(tmp_path, personalization={'enabled': True})
     # ensure ran lazily; make the files carry real content

@@ -1,10 +1,7 @@
-docutils>=0.16.0
-myst_parser
-recommonmark
-sphinx>=5.3.0
-sphinx-book-theme
-sphinx-copybutton
-sphinx-design
-sphinx_markdown_tables
-sphinxawesome-theme
-sphinxcontrib-mermaid
+docutils==0.22.4
+myst_parser==5.2.0
+sphinx==9.1.1
+sphinx-design==0.8.0
+sphinxawesome-theme==6.0.6
+sphinxcontrib-mermaid==2.1.1
+jieba==0.42.1
