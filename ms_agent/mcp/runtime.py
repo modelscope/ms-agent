@@ -99,7 +99,7 @@ def classify_mcp_failure(exc: BaseException) -> MCPFailureKind:
         if 'transient' in kinds:
             return 'transient'
         return 'none'
-    if isinstance(exc, asyncio.TimeoutError):
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
         return 'transient'
     if isinstance(exc, (BrokenPipeError, ConnectionResetError)):
         return 'hard'
@@ -141,7 +141,7 @@ def is_connection_error(exc: BaseException) -> bool:
 
 def short_connect_reason(exc: BaseException, timeout: float) -> str:
     """One short clause for a connect that did not succeed."""
-    if isinstance(exc, TimeoutError):
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
         label = str(int(timeout)) if timeout >= 1 else f'{timeout:g}'
         return f'{label}秒内没有连上'
     return safe_mcp_error(exc)

@@ -1,5 +1,6 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import os
+import sys
 import threading
 import weakref
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -88,7 +89,7 @@ class DaemonThreadPoolExecutor(ThreadPoolExecutor):
     some background executor work is still blocked in I/O.
     """
 
-    def _adjust_thread_count(self) -> None:  # pragma: no cover
+    def _adjust_thread_count(self) -> None:
         # Based on CPython ThreadPoolExecutor._adjust_thread_count, but mark
         # threads as daemon before starting.
         if self._idle_semaphore.acquire(timeout=0):
@@ -105,11 +106,16 @@ class DaemonThreadPoolExecutor(ThreadPoolExecutor):
             from concurrent.futures.thread import (  # type: ignore
                 _threads_queues, _worker)
 
+            if sys.version_info >= (3, 14):
+                args = (weakref.ref(self, weakref_cb),
+                        self._create_worker_context(), self._work_queue)
+            else:
+                args = (weakref.ref(self, weakref_cb), self._work_queue,
+                        self._initializer, self._initargs)
             t = threading.Thread(
                 name=thread_name,
                 target=_worker,
-                args=(weakref.ref(self, weakref_cb), self._work_queue,
-                      self._initializer, self._initargs),
+                args=args,
             )
             t.daemon = True
             t.start()

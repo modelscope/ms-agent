@@ -305,7 +305,7 @@ def test_shared_download_is_bounded(updater, small, monkeypatch, kind):
     if kind == 'gzip':
         assert updater.download() == raw
     else:
-        with pytest.raises((ValueError, TimeoutError)):
+        with pytest.raises((ValueError, asyncio.TimeoutError, TimeoutError)):
             updater.download()
 
 
