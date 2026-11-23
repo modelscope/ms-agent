@@ -214,7 +214,7 @@ MS_AGENT_WEBUI_PASSWORD=请替换为足够长且不重复使用的密码
 
 项目配置、会话和托管技能默认保存在 `~/.ms_agent`；可以通过 `MS_AGENT_HOME` 指定其他目录。项目工作目录中的文件保存在原位置。源码安装的后端环境位于 `webui/backend/.venv`，前端依赖和构建结果位于 `webui/frontend/`，与项目数据分开。
 
-保存的模型和搜索 API Key 会加密。主密钥默认位于 `${MS_AGENT_HOME}.secrets/master.key`，通常是 `~/.ms_agent.secrets/master.key`，与应用数据目录分开。升级或搬迁自己的服务时应保留主密钥；分享模板时应排除它。旧配置迁移、外部密钥文件和丢失后的恢复方法见[密钥存储说明](../docs/secret_storage_zh.md)。
+保存的模型和搜索 API Key 会加密。主密钥默认位于规范化后的 `${MS_AGENT_HOME}.secrets/master.key`，通常是 `~/.ms_agent.secrets/master.key`，与应用数据目录分开。升级或搬迁自己的服务时应保留主密钥；分享模板时应排除它。共享配置的 WebUI、TUI、CLI 和 SDK 应一起升级，旧版不能读取新密文。迁移、外部密钥文件与恢复方法见[密钥保存与恢复](../docs/zh/user-guide/credentials.md)，扩展接口见[凭据存储设计](../docs/zh/development/credential-storage.md)。
 
 按本指南从可编辑源码运行时，WebUI 读取已保存的 SDK 设置，并依次加载仓库根目录、`webui/`、`webui/backend/` 下的 `.env`，后者优先，已设置的进程环境变量优先级最高。可参考 [配置示例](backend/.env.example)。
 
@@ -263,7 +263,7 @@ docker run --rm -p 127.0.0.1:9000:8000 \
   modelscope-registry.us-west-1.cr.aliyuncs.com/modelscope-repo/ms-agent:TAG
 ```
 
-打开 **http://127.0.0.1:9000**。`ms-agent-data` 保存应用数据，替换容器时保留该数据卷；需要操作宿主机的项目文件时，另行挂载对应目录。更改访问端口只需调整 `9000:8000` 左侧的值。
+打开 **http://127.0.0.1:9000**。`ms-agent-data` 保存应用数据，`ms-agent-secrets` 保存默认主密钥；替换容器时须保留两个卷。需要操作宿主机的项目文件时，另行挂载对应目录。更改访问端口只需调整 `9000:8000` 左侧的值。平台提供只读主密钥时，按[部署指南](../docs/zh/user-guide/deployment.md)替换默认密钥卷。
 
 设置 `MS_AGENT_FRONTEND_HOSTED_MODE=1` 可隐藏不适合远程用户操作的本地路径控件；访问控制仍需单独配置。
 

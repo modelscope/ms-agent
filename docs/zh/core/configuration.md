@@ -46,6 +46,8 @@ max_chat_round: 1
 
 调试时先确认工作目录、`MS_AGENT_HOME`、实际配置文件及入口，再检查最终字段。打印配置前删去密钥和敏感 URL。
 
+受管配置中的登记凭据字段会自动迁移并加密；任意源 `agent.yaml` 不会因此被改写。配置对象保留密文，消费端调用前解密；自定义写入与工具的接入要求见[凭据存储设计](../development/credential-storage.md)。
+
 ## 编程式合并
 
 ```python

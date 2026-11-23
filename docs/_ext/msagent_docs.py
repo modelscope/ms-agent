@@ -11,7 +11,7 @@ SECTIONS = [
      [('', '', 'introduction quick-start python-sdk')]),
     ('使用教程', 'User guide', 'user-guide',
      [('', '',
-       'webui tui cli projects-sessions model-settings skills-mcp memory scheduled-tasks deployment troubleshooting'
+       'webui tui cli projects-sessions model-settings credentials skills-mcp memory scheduled-tasks deployment troubleshooting'
        )]),
     ('核心模块', 'Core modules', 'core', [
         ('配置与执行', 'Configuration & execution',
@@ -30,7 +30,7 @@ SECTIONS = [
        )]),
     ('开发与参考', 'Development & reference', 'development',
      [('', '',
-       'configuration-reference cli-reference storage glossary architecture contributing'
+       'configuration-reference cli-reference storage credential-storage glossary architecture contributing'
        ),
       ('设计提案（RFC）', 'Design proposals (RFCs)',
        'rfcs/plugins rfcs/hooks-executors rfcs/mcp-runtime-api')]),

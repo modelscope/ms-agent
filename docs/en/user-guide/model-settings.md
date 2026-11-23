@@ -51,4 +51,6 @@ Under **Context token limit**, the model editor shows the model maximum, current
 
 Do not include keys in screenshots or prompts. Test one text request without tools, then add attachments/tools to isolate failures.
 
+Saved keys are encrypted. If a credential is unavailable, check the instance master key before repeatedly changing models. Legacy settings migrate automatically, and older TUI/CLI installations sharing them need to be upgraded. See [Saving and recovering credentials](credentials.md) for locations, scope, and recovery.
+
 See [Models](../core/models.md) for provider fields and routing boundaries.

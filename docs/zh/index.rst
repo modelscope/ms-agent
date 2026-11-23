@@ -69,6 +69,7 @@ MS-Agent 文档
    user-guide/cli
    user-guide/projects-sessions
    user-guide/model-settings
+   user-guide/credentials
    user-guide/skills-mcp
    user-guide/memory
    user-guide/scheduled-tasks
@@ -128,6 +129,7 @@ MS-Agent 文档
    development/configuration-reference
    development/cli-reference
    development/storage
+   development/credential-storage
    development/glossary
    development/architecture
    development/contributing

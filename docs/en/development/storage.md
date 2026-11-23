@@ -7,6 +7,7 @@ The workspace holds user artifacts; application home holds global settings and m
 | Location | Content |
 | --- | --- |
 | `$MS_AGENT_HOME`, default `~/.ms_agent` | Global settings, skill/MCP configuration, project management, logs |
+| Normalized home plus `.secrets/master.key`, default `~/.ms_agent.secrets/master.key` | Instance master key; stored separately and paired with data for private recovery |
 | `<work_dir>` / `output_dir` | User-selected files and artifacts |
 | `<work_dir>/.ms_agent` | Memory, snapshots, indexes, locks, and tool artifacts; MCP images live in `artifacts/images/` |
 | `$MS_AGENT_HOME/projects/<key>` | SDK sessions grouped by workspace; interfaces can specify finer layouts |
@@ -35,6 +36,6 @@ Stop writes, back up configuration, metadata, conversations, and actual files, a
 
 ## Security
 
-Dotenv, settings, and logs can contain credentials or sensitive tasks. Restrict access and do not publish entire application homes. Confirm build-cache cleanup separately from artifact deletion.
+Registered credentials in managed settings are encrypted, and new history snapshots strip credentials. Dotenv files, unregistered fields, messages, and logs can still contain sensitive content. Restrict access and do not publish entire homes or master keys. Private backups need the matching key; shared templates must clear credentials and exclude the key. See [Saving and recovering credentials](../user-guide/credentials.md). Confirm build-cache cleanup separately from artifact deletion.
 
 Related: [Projects and sessions](../user-guide/projects-sessions.md), [Deployment](../user-guide/deployment.md). Implementation: `project/paths.py`, `session_manager.py`, `config/resolver.py`.
