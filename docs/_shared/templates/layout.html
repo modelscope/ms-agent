@@ -6,9 +6,9 @@
   (function () {
     try {
       var saved = localStorage.getItem("_x_darkMode");
-      if (saved === "true" || saved === "false") {
-        document.documentElement.classList.toggle("dark", saved === "true");
-      }
+      var dark = saved === "true" || (saved !== "false" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.classList.toggle("dark", dark);
+      document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
     } catch (e) {}
   })();
 </script>

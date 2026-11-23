@@ -8,7 +8,7 @@
 | --- | --- |
 | `$MS_AGENT_HOME`，默认 `~/.ms_agent` | 全局设置、技能/MCP配置、项目管理、日志等 |
 | `<work_dir>` / `output_dir` | 用户选择的工作文件和产物 |
-| `<work_dir>/.ms_agent` | 记忆、快照、索引、锁和临时产物 |
+| `<work_dir>/.ms_agent` | 记忆、快照、索引、锁和工具产物；MCP 图片位于 `artifacts/images/` |
 | `$MS_AGENT_HOME/projects/<key>` | 按工作目录分组的SDK会话；入口可指定更细布局 |
 | `webui/backend/.venv` | 源码WebUI后端依赖环境 |
 | `webui/frontend/node_modules`、`build` | 前端依赖和生成页面，不是项目备份 |
@@ -31,7 +31,7 @@ print(memory_dir('./workspace'))
 
 当前写入优先 `.ms_agent`；旧 `.ms-agent`、旧sessions或snapshot位置可能仍有读取兼容。不要因为新目录存在就批量删除旧数据。
 
-迁移前停止相关写入，备份配置、元数据、会话和真实工作文件，记录版本。恢复到新位置后检查模型、技能/MCP、记忆与会话；不要复制运行中的数据库锁作为正常数据。
+迁移前停止相关写入，备份配置、元数据、会话和真实工作文件，记录版本。会话中的 MCP 图片引用依赖工作区文件，备份会话时也应保存对应产物。恢复到新位置后检查模型、技能/MCP、记忆与会话；不要复制运行中的数据库锁作为正常数据。
 
 ## 安全
 

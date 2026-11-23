@@ -13,7 +13,7 @@ Saved messages remain accessible after refresh; unsent input and editor drafts a
 
 ## Understand execution
 
-Text, reasoning, and tool calls are distinct display items. A tool whose arguments are still being generated has not executed. Approval requests must be resolved before execution continues. During processing, inspect the current stage rather than equating silence with inactivity. Completed activity may collapse under “Processed”; expand it, the tool group, and an individual call to inspect arguments and results.
+Text, reasoning, and tool calls are distinct display items. A tool whose arguments are still being generated has not executed. Approval requests must be resolved before execution continues. During processing, inspect the current stage rather than equating silence with inactivity. Completed activity may collapse under “Processed”; expand it, the tool group, and an individual call to inspect arguments and results. You can also preview images returned by MCP tools here. The model receives those images only if its capabilities and settings allow image input. See [Multimodal input](../core/multimodal.md).
 
 The permission selector controls interaction. **Always ask** is a suitable initial choice. Review tool, command, and target paths before approval. Approval offers “Reject”, “Run once”, and “Always run”; prefer one-time approval while learning. During generation, use the stop button beside the composer. You can send another message after interruption. Inspect artifacts after stopping; stop is not undo. Do not grant unrestricted access merely to suppress prompts.
 

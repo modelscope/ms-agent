@@ -31,7 +31,7 @@ This is a minimal enabling fragment, not a complete subtask definition. Model, p
 
 Define the goal, input files, output location, completion checks, and prohibited operations. An independent context does not automatically contain the primary conversation's details. A shared workspace does not make concurrent writes safe.
 
-Verify evidence and artifacts, not just a “done” message. Treat failures, cancellations, timeouts, and partial output separately. Scheduling/task-control mechanisms do not imply that arbitrary background work survives process restarts.
+Verify evidence and artifacts, not just a “done” message. Treat failures, cancellations, timeouts, and partial output separately. Only persisted tasks with a recovery entry point can continue after a process restart; other background work must be started again. Use the scheduling/task-control mechanisms appropriate to your task.
 
 ## Local delegation and protocols
 

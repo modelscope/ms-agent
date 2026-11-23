@@ -7,7 +7,7 @@
 {% block header_main_nav %}<span class="ms-header-label">{{ '文档' if ms_zh else 'Docs' }}</span>{% endblock %}
 {% block extra_header_link_icons %}
 <nav class="ms-header-links" aria-label="{{ '站点选项' if ms_zh else 'Site options' }}">
-<a href="{{ ms_language_url }}" class="ms-language" lang="{{ 'en' if ms_zh else 'zh' }}">{{ 'English' if ms_zh else '中文' }}</a>
+{% if ms_language_url %}<a href="{{ ms_language_url }}" class="ms-language" lang="{{ 'en' if ms_zh else 'zh' }}">{{ 'English' if ms_zh else '中文' }}</a>{% else %}<span class="ms-language" role="link" aria-disabled="true" tabindex="0" title="{{ ms_language_missing }}" aria-label="{{ ms_language_missing }}">{{ 'English' if ms_zh else '中文' }}</span>{% endif %}
 <a href="https://github.com/modelscope/ms-agent" class="ms-github">GitHub</a>
 {{ self.theme_switcher() }}
 </nav>

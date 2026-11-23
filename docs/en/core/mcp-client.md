@@ -48,6 +48,8 @@ Failed servers are removed from the available tool surface while other MCP serve
 
 Management probes use independent connections and do not repair existing sessions. The WebUI can schedule reconnects before the next idle turn, preserving current work and history; see [Skills and MCP](../user-guide/skills-mcp.md). Further independent `MCPRuntime` management extensions are in the [MCP RFC](../development/rfcs/mcp-runtime-api.md).
 
+Image tool results are stored as workspace attachments and delivered according to the model protocol. Invalid images mark the result as an error. See [Multimodal input](multimodal.md) for storage, capability requirements, and limits.
+
 On failure, check executable paths, cwd, environment, protocol version, and network. Keep stdio server logs off stdout. Connect only to trusted services; tool-returned text is not automatically an instruction to execute.
 
 Implementation: `tools/mcp_client.py`, `config/mcp_manager.py`, `config/mcp_schema.py`, `mcp/`.

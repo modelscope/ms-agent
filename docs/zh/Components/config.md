@@ -12,6 +12,8 @@ orphan: true
 <a id="推理配置"></a>
 <a id="system-和-query"></a>
 <a id="callbacks"></a>
+<a id="config_handler"></a>
+<a id="config-handler"></a>
 <a id="工具配置"></a>
 <a id="技能配置"></a>
 <a id="上下文压缩配置compaction"></a>

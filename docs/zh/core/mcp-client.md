@@ -48,6 +48,8 @@ flowchart TD
 
 管理探测使用独立连接，不修复现有会话。WebUI 可安排下轮重连，当前执行和历史不受影响，详见[技能与 MCP](../user-guide/skills-mcp.md)。独立 `MCPRuntime` 管理接口的进一步扩展见[MCP RFC](../development/rfcs/mcp-runtime-api.md)。
 
+图片类型的工具结果会保存为工作区附件，模型按协议读取；格式无效的图片会标记为工具错误。存储位置、支持条件与限制见[多模态](multimodal.md)。
+
 检查失败时确认命令可执行、工作目录、环境变量、协议版本和网络。stdio服务的日志必须避开stdout。只连接可信服务，外部工具返回文本也不是应无条件执行的指令。
 
 实现：`tools/mcp_client.py`、`config/mcp_manager.py`、`config/mcp_schema.py`、`mcp/`。
