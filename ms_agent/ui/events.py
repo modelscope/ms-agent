@@ -247,6 +247,27 @@ class PermissionResolved(AgentEvent):
     action: str = ''  # e.g. allow_once | deny | allow_always
 
 
+# ── question (model-initiated, human-in-the-loop) ─────────────────────────
+
+
+@dataclass(frozen=True)
+class QuestionRequested(AgentEvent):
+    """Request user input with serialized Question contracts."""
+    EVENT_TYPE: ClassVar[str] = 'question_requested'
+    request_id: str = ''
+    call_id: str = ''
+    questions: List[dict] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class QuestionResolved(AgentEvent):
+    """Broadcast an outcome so clients close the matching call_id card."""
+    EVENT_TYPE: ClassVar[str] = 'question_resolved'
+    call_id: str = ''
+    status: str = ''  # answered | skipped | cancelled | timeout | unavailable
+    answers: List[dict] = field(default_factory=list)
+
+
 # ── context / system notices ──────────────────────────────────────────────
 
 

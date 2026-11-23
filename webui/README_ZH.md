@@ -10,7 +10,7 @@
 
 ## 快速开始
 
-**新版 WebUI 尚未发布到 PyPI，请按以下流程克隆源码并可编辑安装。** PyPI 上的 `ms-agent==1.6.0` 使用旧版 WebUI，不能用于体验本指南介绍的新版工作台。
+以下从源码安装并启动 WebUI。
 
 ### 1. 准备环境
 
@@ -24,36 +24,12 @@
 
 #### 首次配置
 
-以下命令默认使用 macOS / Linux 的 shell。如果还没有合适的 Python 或 Node.js，可以按下面的流程安装；已有环境的用户可跳到[检查并激活环境](#检查并激活环境)。先运行 `git --version`；如果使用 macOS 时提示安装 Command Line Tools，完成安装后再继续。
+完整的环境安装与首次使用见[文档快速开始](../docs/zh/get-started/quick-start.md)，包括使用 uv 准备 Python、使用 nvm 安装 Node.js，以及 Windows 环境激活方式。下方保留已有 Python/Node.js 时可独立执行的启动流程。
 
-##### 安装 Node.js
+<a id="安装-nodejs"></a>
+<a id="安装-python"></a>
 
-安装 [nvm](https://github.com/nvm-sh/nvm)，并通过它安装 Node.js。Node 安装在用户目录中，后续安装 pnpm 无需 `sudo`：
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-export NVM_DIR="$HOME/.nvm"
-source "$NVM_DIR/nvm.sh"
-nvm install 22.22.0
-npm install --global pnpm@10.17.1
-node --version
-pnpm --version
-```
-
-##### 安装 Python
-
-安装 uv，用它下载 Python 3.12 并创建带 pip 的环境。在准备存放项目的目录执行：
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-export PATH="$HOME/.local/bin:$PATH"
-uv venv --python 3.12 --seed ms-agent-env
-source ms-agent-env/bin/activate
-python --version
-pip --version
-```
-
-保持这个终端和环境，继续下面的 uv 检查及源码安装即可。
+首次安装 Python 或 Node.js，请先完成快速开始中的“准备 Python 环境”及其环境安装折叠项，再回到这里。
 
 #### 检查并激活环境
 
@@ -71,7 +47,7 @@ python3 -m venv ms-agent-env
 source ms-agent-env/bin/activate
 ```
 
-已有虚拟环境或 Conda 环境的用户直接激活即可；如果已按上面的流程创建并激活环境，无需重复操作。Windows PowerShell 使用 `python -m venv ms-agent-env` 和 `.\ms-agent-env\Scripts\Activate.ps1`。后续命令都在已激活的环境中运行。
+已有虚拟环境或 Conda 环境的用户直接激活即可；如果已按快速开始创建并激活环境，无需重复操作。Windows PowerShell 使用 `python -m venv ms-agent-env` 和 `.\ms-agent-env\Scripts\Activate.ps1`。后续命令都在已激活的环境中运行。
 
 安装 uv，并确认当前终端能找到它：
 
@@ -114,6 +90,7 @@ ms-agent ui
 
 请先切换到实际存放它们的目录。模型配置和会话会保留，无需重复填写 API Key。如果通过 nvm 安装 Node.js，确认新终端能运行 `node --version`；找不到命令时，先执行 `source "$HOME/.nvm/nvm.sh"`。
 
+完整操作指引见 [WebUI 教程](../docs/zh/user-guide/webui.md)、[模型设置](../docs/zh/user-guide/model-settings.md)和[技能与 MCP](../docs/zh/user-guide/skills-mcp.md)。
 ## 在任务进行中补充输入
 
 智能体工作时，仍可输入、添加附件或选择技能。新消息**默认排队**，当前任务完成后依次执行。在 **设置 → 个性化 → 对话行为** 中选择 **插话**，新消息会在当前模型响应或已启动的工具操作结束后加入当前任务。修改设置只影响之后提交的消息。
@@ -178,7 +155,7 @@ WebUI 使用 SDK 随包提供的 models.dev 快照查询模型能力、上下文
 
 开启项目记忆后，压缩前可先提取长期事实。普通记忆提取失败时保留旧记忆和重试来源，合格摘要仍可提交。系统指令会在下一次请求前重新加载。摘要使用单独的低开销思考设置，可能遗漏细节，重要证据应保存在项目文件中。
 
-SDK 独立记录每次响应的用量，压缩失败不会丢弃已经收到的数据。费用估算标记为完整、部分或未知，金额目前不在 WebUI 展示。存储、恢复和定价细节见 [模型目录与上下文压缩](../docs/zh/Components/model-catalog.md)。
+SDK 独立记录每次响应的用量，压缩失败不会丢弃已经收到的数据。费用估算标记为完整、部分或未知，金额目前不在 WebUI 展示。存储、恢复和定价细节见 [上下文](../docs/zh/core/context.md)、[模型](../docs/zh/core/models.md)与[记忆](../docs/zh/core/memory.md)。
 
 ## 安装与更新 Skill
 

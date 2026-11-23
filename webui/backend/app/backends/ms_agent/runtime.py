@@ -178,6 +178,17 @@ class _PermissionEmitter:
         self._sink.push(event)
 
 
+class _QuestionEmitter:
+    """Same shape as _PermissionEmitter, for WebQuestionHandler's raw
+    `question_requested` dict."""
+
+    def __init__(self, sink: "QueueEventSink") -> None:
+        self._sink = sink
+
+    def emit(self, event: dict) -> None:
+        self._sink.push(event)
+
+
 #: How long a full-access session waits for an answer before giving up on it.
 #: Long enough to survive a meeting, short enough that a session started and
 #: walked away from does not sit on its turn forever. Only reachable in that
@@ -337,6 +348,54 @@ def _persisting_permission_handler(sink, session_log_getter, timeout=None):
         _PermissionEmitter(sink), timeout=timeout)
 
 
+def _persisting_question_handler(sink, session_log_getter):
+    """Persist and broadcast outcomes, including task cancellation."""
+    from ms_agent.interaction import WebQuestionHandler
+    from ms_agent.interaction.handler import CANCELLED_NOTE
+    from ms_agent.ui.interaction import AnswerStatus, QuestionReply
+
+    class _PersistingWebQuestionHandler(WebQuestionHandler):
+
+        async def ask(self, questions, call_id=""):
+            try:
+                reply = await super().ask(questions, call_id=call_id)
+            except asyncio.CancelledError:
+                # Preserve the outcome if aclose resolves and cancels in one tick.
+                self._settle(questions, call_id, QuestionReply(
+                    status=AnswerStatus.CANCELLED, note=CANCELLED_NOTE))
+                raise
+            self._settle(questions, call_id, reply)
+            return reply
+
+        @staticmethod
+        def _settle(questions, call_id, reply) -> None:
+            answers = [a.to_dict() for a in reply.answers]
+            try:
+                log = session_log_getter()
+                if log is not None and hasattr(log, "record_question"):
+                    log.record_question({
+                        # The gating tool_call's id pairs this record with the
+                        # exact call on replay, the way permission records do.
+                        "call_id": str(call_id or ""),
+                        "status": reply.status.value,
+                        "questions": [q.to_dict() for q in questions],
+                        "answers": answers,
+                    })
+            except Exception:  # never let persistence break the turn
+                logger.debug("question record skipped", exc_info=True)
+            # No request_id: the outcome is final, so every card must render it
+            # instead of controls. The frontend merges it onto the open ask by
+            # call_id.
+            sink.push({
+                "type": "question_resolved",
+                "call_id": str(call_id or ""),
+                "status": reply.status.value,
+                "answers": answers,
+            })
+
+    return _PersistingWebQuestionHandler(_QuestionEmitter(sink))
+
+
 class SessionRuntime:
     def __init__(self, project, session, mcp_config: dict | None = None, model_snapshot=None) -> None:
         from app.backends.ms_agent import model_link
@@ -387,6 +446,14 @@ class SessionRuntime:
             lambda: getattr(self.agent, "session_log", None),
             timeout=_ask_timeout_for(getattr(project, "permission_mode", None)),
         )
+        # Questions the model puts to the user suspend on this handler until
+        # POST /api/chat/question answers them. Separate from the permission
+        # handler on purpose: an approval is a verdict, an answer is content,
+        # and no standing rule can supply the second.
+        self.question_handler = _persisting_question_handler(
+            self.sink,
+            lambda: getattr(self.agent, "session_log", None),
+        )
         self.agent = build_agent(
             project,
             session,
@@ -394,6 +461,7 @@ class SessionRuntime:
             input_source=self.input_source,
             mcp_config=mcp_config,
             permission_handler=self.permission_handler,
+            question_handler=self.question_handler,
             model_snapshot=model_snapshot,
         )
         # Last user-driven activity (monotonic). The idle sweeper evicts
@@ -450,10 +518,20 @@ class SessionRuntime:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
         # Answer anything still waiting on a person BEFORE cancelling the run
-        # task. An ask with no deadline (every "always ask" session) suspends
-        # its turn until something resolves it, and a suspended turn is exactly
-        # what cancellation has to interrupt — resolving first lets the turn
-        # unwind on its own instead of being torn out mid-await.
+        # task. An ask with no deadline (every "always ask" session, and every
+        # question) suspends its turn until something resolves it, and a
+        # suspended turn is exactly what cancellation has to interrupt —
+        # resolving first lets the turn unwind on its own instead of being torn
+        # out mid-await.
+        try:
+            cancelled = self.question_handler.cancel_pending()
+            if cancelled:
+                logger.info(
+                    "closed %d unanswered question(s) for session %s",
+                    cancelled, self.session.id)
+        except Exception:
+            logger.debug("pending question cleanup skipped", exc_info=True)
+
         try:
             cancelled = self.permission_handler.cancel_pending(
                 "Session closed before this was answered.")
@@ -481,13 +559,13 @@ class SessionRuntime:
 class RuntimeRegistry:
     """In-process registry — the whole chat runtime is single-process state.
 
-    Live agents, their event queues, turn locks and pending permission Futures
-    all live in this process's memory. Running uvicorn with multiple workers
-    would scatter requests across processes that cannot see each other's
-    runtimes (a /api/chat/permission answer landing on the wrong worker can
-    never resolve the ask). Keep `--workers 1` (uvicorn's default); the
-    multi-worker upgrade path is sticky session routing or a dedicated
-    agent-runner process."""
+    Live agents, their event queues, turn locks and the pending Futures behind
+    every permission ask and every question all live in this process's memory.
+    Running uvicorn with multiple workers would scatter requests across
+    processes that cannot see each other's runtimes (a /api/chat/permission or
+    /api/chat/question answer landing on the wrong worker can never resolve the
+    ask). Keep `--workers 1` (uvicorn's default); the multi-worker upgrade path
+    is sticky session routing or a dedicated agent-runner process."""
 
     # Idle eviction: a runtime untouched this long is torn down, and when it
     # was its project's last live runtime the project's shared memory store is
@@ -879,6 +957,28 @@ class RuntimeRegistry:
         except ValueError:
             return False
         return True
+
+    def resolve_question(
+        self,
+        session_id: str,
+        request_id: str,
+        status: str,
+        answers: list | None = None,
+    ) -> bool:
+        """Submit without taking turn_lock, which the awaiting task holds."""
+        rt = self._runtimes.get(session_id)
+        handler = getattr(rt, "question_handler", None) if rt else None
+        if handler is None:
+            return False
+        if not handler.is_awaiting(request_id):
+            return False
+        if status == "skipped":
+            return handler.skip(request_id) if not answers else False
+        if status != "answered":
+            return False
+        from ms_agent.ui.interaction import answers_from_dicts
+
+        return handler.resolve(request_id, answers_from_dicts(answers or []))
 
     def set_project_permission_mode(self, project_id: str, mode: str) -> int:
         """Hot-apply a project's permission mode to its LIVE runtimes.

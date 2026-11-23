@@ -26,9 +26,8 @@
 
 3. **安装依赖**
    ```bash
-   pip install .
-   cd projects/singularity_cinema
-   pip install -r requirements.txt
+   # 在仓库根目录执行；[cinema] extra 会安装视频生成所需依赖（edge_tts / moviepy）
+   pip install -e '.[cinema]'
    ```
 
 ---

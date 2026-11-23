@@ -112,7 +112,20 @@ def _build_sub_agent(spec: _AgentToolSpec, default_trust_remote_code: bool):
                     tools_dict.pop(key, None)
                 agent.config.tools = OmegaConf.create(tools_dict)
 
+    _withhold_ask_user(agent)
+
     return agent
+
+
+def _withhold_ask_user(agent) -> None:
+    """Keep user questions in the main agent, which collects missing input."""
+    tools_cfg = getattr(agent.config, 'tools', None)
+    if tools_cfg is None or 'ask_user' not in tools_cfg:
+        return
+    tools_dict = OmegaConf.to_container(tools_cfg, resolve=True)
+    if isinstance(tools_dict, dict):
+        tools_dict.pop('ask_user', None)
+        agent.config.tools = OmegaConf.create(tools_dict)
 
 
 def _run_agent_in_subprocess(

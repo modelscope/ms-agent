@@ -24,7 +24,11 @@ _CLAUDE_TOOL_TO_CONFIG_KEYS: dict[str, tuple[str, ...]] = {
     'Glob': ('file_system', ),
     'Skill': (),  # skills are injected separately
     'TodoWrite': ('todo_list', ),
-    'AskUserQuestion': (),  # no dedicated tool yet
+    # Maps to the ask_user tool, though a SUB-agent (which is what a plugin
+    # agent is) does not get to ask: _withhold_ask_user strips the key when the
+    # sub-agent is built. Declared anyway so the translation stays truthful and
+    # so lifting that restriction is a one-place change.
+    'AskUserQuestion': ('ask_user', ),
     'Task': ('agent_tools', ),
 }
 

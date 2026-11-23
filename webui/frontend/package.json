@@ -10,6 +10,7 @@
   "scripts": {
     "gen:antd-css": "tsx scripts/genAntdCss.tsx",
     "check:frames": "tsx scripts/checkThoughtFrames.ts",
+    "check:questions": "tsx scripts/checkQuestionState.ts",
     "check:inputs": "tsx scripts/checkSessionInputs.ts",
     "check:auth": "tsx scripts/checkAuthRedirects.ts",
     "check:skills": "tsx scripts/checkSkillOperations.ts",

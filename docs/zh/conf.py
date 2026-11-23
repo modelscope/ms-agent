@@ -11,21 +11,26 @@
 import os
 import sys
 from dataclasses import asdict
+from pathlib import Path
+
+DOCS = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(DOCS / '_ext'))
 
 from sphinxawesome_theme import ThemeOptions
 
 sys.path.insert(0, os.path.abspath('../../'))
 
 project = 'MS-Agent'
-copyright = '2022-2024, Alibaba ModelScope'
+copyright = '2022-2026, Alibaba ModelScope'
 author = 'ModelScope Authors'
 version_file = '../../ms_agent/version.py'
 
 
 def get_version():
+    namespace: dict = {}
     with open(version_file, 'r', encoding='utf-8') as f:
-        exec(compile(f.read(), version_file, 'exec'))
-    return locals()['__version__']
+        exec(compile(f.read(), version_file, 'exec'), namespace)
+    return namespace['__version__']
 
 
 # The full version, including alpha/beta/rc tags
@@ -41,7 +46,9 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.viewcode',
     'sphinx_design',
+    'sphinxcontrib.mermaid',
     'myst_parser',
+    'msagent_docs',
 ]
 
 # build the templated autosummary files
@@ -64,10 +71,12 @@ autodoc_default_options = {
     'member-order': 'bysource',
 }
 
-templates_path = ['_templates']
+templates_path = ['../_shared/templates', '_templates']
 exclude_patterns = []
 
 language = 'zh_CN'
+html_search_language = 'zh'
+sd_card_legacy_separators = False
 
 # The master toctree document.
 root_doc = 'index'
@@ -87,15 +96,26 @@ source_suffix = ['.rst', '.md']
 
 html_title = 'MS-Agent'
 html_theme = 'sphinxawesome_theme'
-html_static_path = ['_static']
+html_static_path = ['../_shared/static', '_static']
+html_css_files = ['ms-agent.css']
+html_js_files = ['ms-agent.js']
 html_favicon = './_static/images/ms_agent_icon.svg'
 html_permalinks_icon = '<span>#</span>'
 html_sidebars: dict[str, list[str]] = {
-    'blog/**': ['sidebar_main_nav_links.html'],
+    '**': ['ms_navigation.html'],
 }
 
 pygments_style = 'default'
 pygments_style_dark = 'one-dark'
+mermaid_light_theme = 'default'
+mermaid_dark_theme = 'dark'
+mermaid_init_config = {
+    'startOnLoad': False,
+    'themeVariables': {
+        'fontFamily': 'system-ui, sans-serif', 'fontSize': '14px',
+    },
+    'flowchart': {'rankSpacing': 28, 'nodeSpacing': 24, 'padding': 12},
+}
 # -- Extension configuration -------------------------------------------------
 
 # Auto-generated header anchors
@@ -116,8 +136,8 @@ theme_options = ThemeOptions(
         'Docs': 'index',
         # 'Blogs': 'blog/index'
     },
-    logo_light='./_static/images/ms_agent_icon.svg',
-    logo_dark='./_static/images/ms_agent_icon.svg',
+    logo_light='./_static/images/ms-agent-logo.png',
+    logo_dark='./_static/images/ms-agent-logo.png',
     extra_header_link_icons={
         'language': {
             'link':
