@@ -76,7 +76,8 @@ class TokenizerUtil:
         Returns:
             List of token counts corresponding to each input text, or an integer if a single string is provided.
         """
-        if isinstance(contents, str):
+        single = isinstance(contents, str)
+        if single:
             contents = [contents]
 
         counts = []
@@ -86,6 +87,4 @@ class TokenizerUtil:
             else:
                 counts.append(len(self.tokenizer.encode(content.strip())))
 
-        if len(contents) == 1:
-            return counts[0]
-        return counts
+        return counts[0] if single else counts
