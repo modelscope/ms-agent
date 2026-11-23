@@ -64,7 +64,9 @@ def test_bootstrap_migrates_only_legacy_builtin_display_names(
     bootstrap._migrate_provider_brand_names(str(tmp_path))
 
     migrated = json.loads(settings_path.read_text(encoding="utf-8"))
-    providers = migrated["providers"]
+    from ms_agent.config.secrets import resolve_config_secrets
+    assert migrated["providers"]["kimi"]["api_key"].startswith("enc:v1:")
+    providers = resolve_config_secrets(migrated, home=tmp_path)["providers"]
     assert providers["kimi"] == {
         **original["providers"]["kimi"],
         "name": "Kimi (Moonshot AI)",

@@ -3068,6 +3068,18 @@ class LLMAgent(Agent):
             # so this legacy resume does not ask for the key again.
             from ms_agent.utils.history_secrets import refill_history_config
             refill_history_config(config, getattr(self, 'output_dir', None))
+            from ms_agent.config.secrets import HOME_FIELD, secret_home
+            from omegaconf import open_dict
+            with open_dict(config):
+                config[HOME_FIELD] = str(secret_home(self.config))
+                if getattr(self.config, '_managed_credentials', False):
+                    # Historical config restores execution state, not retired
+                    # WebUI credentials. Include auxiliary model/tool configs.
+                    config.llm = self.config.llm
+                    config.tools = self.config.tools
+                    if getattr(self.config, 'memory', None) is not None:
+                        config.memory = self.config.memory
+                    config._managed_credentials = True
             if hasattr(config, 'runtime'):
                 runtime = Runtime(llm=self.llm)
                 runtime.from_dict(config.runtime)

@@ -39,6 +39,12 @@ def distributions(tmp_path_factory):
     work = tmp_path_factory.mktemp('catalog-packaging')
     egg = work / 'egg'
     egg.mkdir()
+    # Reusing build/ must not retain files from an earlier unsafe package.
+    for name in ('temp/private.py',
+                 'ms_agent/agent/output/.memory/Agent-default.yaml'):
+        stale = work / 'build/lib' / name
+        stale.parent.mkdir(parents=True, exist_ok=True)
+        stale.write_text('synthetic credential from an earlier build')
     run_python("""
 import runpy, sys
 setup, egg, build, dist = sys.argv[1:]
@@ -110,6 +116,38 @@ print(json.dumps(model_catalog.catalog_info()))
     info = json.loads(output.strip().splitlines()[-1])
     manifest = json.loads((ROOT / 'ms_agent/llm/data/models_dev.manifest.json').read_bytes())
     assert info == dict(manifest, available=True, location='bundled')
+
+
+def test_distributions_exclude_local_execution_state(distributions):
+    wheel = next((distributions / 'dist').glob('*.whl'))
+    source = next((distributions / 'dist').glob('*.tar.gz'))
+    forbidden = {'temp', '.memory', '.ms_agent', '.ms-agent', 'output',
+                 'outputs', '.venv', 'node_modules'}
+    with zipfile.ZipFile(wheel) as whl, tarfile.open(source) as sdist:
+        names = whl.namelist() + [name.split('/', 1)[-1] for name in sdist.getnames()]
+        for name in names:
+            parts = Path(name).parts
+            assert not forbidden.intersection(parts), name
+            assert not any(part.endswith('.secrets') for part in parts), name
+            assert not any(part.startswith('.env') and part != '.env.example'
+                           for part in parts), name
+
+
+def test_project_copy_excludes_credentials_and_keeps_examples(tmp_path):
+    spec = importlib.util.spec_from_file_location('_safe_setup', ROOT / 'setup.py')
+    setup = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(setup)
+    source, target = tmp_path / 'project', tmp_path / 'bundle'
+    for name in ('config.yaml', '.env.example', '.env', '.env.custom',
+                 '.ms_agent/config.yaml', '.memory/Agent-default.yaml',
+                 'data.secrets/master.key', 'output/history.yaml'):
+        path = source / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('synthetic credential fixture')
+    (source / 'linked-key').symlink_to(source / '.env')
+    shutil.copytree(source, target, ignore=setup.runtime_artifacts)
+    assert {p.relative_to(target).as_posix() for p in target.rglob('*')} == {
+        'config.yaml', '.env.example'}
 
 
 def test_catalog_can_load_without_site_packages():

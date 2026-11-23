@@ -23,5 +23,8 @@ class InteractionSettings:
     def update(self, value):
         if value not in ('queue', 'steer'):
             raise ValueError('Unknown follow-up behavior')
-        with json_transaction(self.path) as data:
+        from functools import partial
+        from .secrets import write_managed_config
+        with json_transaction(self.path, writer=partial(
+                write_managed_config, home=self.path.parent)) as data:
             data.setdefault('interaction', {})['follow_up_behavior'] = value

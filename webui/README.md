@@ -323,6 +323,16 @@ remain at their original paths. For source installations, the backend environmen
 lives in `webui/backend/.venv`, while frontend dependencies and build output live
 in `webui/frontend/`, separate from project data.
 
+Saved model and search API keys are encrypted. The instance master key defaults
+to the normalized home plus `.secrets/master.key` (normally `~/.ms_agent.secrets/master.key`),
+outside the application data directory. Keep it when upgrading or moving your
+own deployment; exclude it when sharing a template. Upgrade WebUI, TUI, CLI and
+SDK installations sharing configuration together; older versions cannot read
+ciphertext. See
+[saving and recovering credentials](../docs/en/user-guide/credentials.md) for migration,
+external key files and recovery after key loss, and
+[credential storage design](../docs/en/development/credential-storage.md) for extension interfaces.
+
 The editable source installation described here reads saved SDK settings and
 loads `.env` files from the repository root, `webui/` and `webui/backend/`, in
 that order. Later files take precedence; process environment variables win over
@@ -385,12 +395,16 @@ the published image tag you want to use:
 ```bash
 docker run --rm -p 127.0.0.1:9000:8000 \
   -e MS_AGENT_HOME=/data -v ms-agent-data:/data \
+  -v ms-agent-secrets:/data.secrets \
   modelscope-registry.us-west-1.cr.aliyuncs.com/modelscope-repo/ms-agent:TAG
 ```
 
-Open **http://127.0.0.1:9000**. The `ms-agent-data` volume stores application data;
-keep it when replacing the container. Mount project directories separately to
-work on host files. To change the access port, change the left side of `9000:8000`.
+Open **http://127.0.0.1:9000**. `ms-agent-data` stores application data and
+`ms-agent-secrets` stores the default master key; retain both when replacing the
+container. Mount project directories separately to work on host files. To change
+the access port, change the left side of `9000:8000`. For a platform-provided
+read-only key, follow [Deployment](../docs/en/user-guide/deployment.md) instead of
+mounting the default key volume.
 
 `MS_AGENT_FRONTEND_HOSTED_MODE=1` hides local-path controls that are unsuitable
 for remote users; access control still needs to be configured separately.

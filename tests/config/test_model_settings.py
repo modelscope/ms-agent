@@ -1,4 +1,5 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
+from ms_agent.config.secrets import resolve_secret
 import json
 
 from ms_agent.config.model_settings import ModelSettingsManager
@@ -66,7 +67,7 @@ def test_patch_provider_does_not_reset_protocol(tmp_path):
     m.patch_provider('acme', api_key='new')
     entry = m.list_custom_providers()['acme']
     assert entry['protocol'] == 'anthropic'
-    assert entry['api_key'] == 'new'
+    assert resolve_secret(entry['api_key'], home=tmp_path) == 'new'
     assert entry['base_url'] == 'https://old/v1'
     m.patch_provider('acme', clear_api_key=True)
     assert 'api_key' not in m.list_custom_providers()['acme']

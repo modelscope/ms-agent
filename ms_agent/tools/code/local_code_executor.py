@@ -231,7 +231,8 @@ class LocalCodeExecutionTool(ToolBase):
             paths = [str(path) for path in plugin_bins if path]
             if paths:
                 env['PATH'] = os.pathsep.join(paths + [env.get('PATH', '')])
-        return env
+        from ms_agent.config.secrets import subprocess_env
+        return subprocess_env(env)
 
     def _shell_environment_hint(self) -> str:
         path = self.shell_env.get('PATH', '')

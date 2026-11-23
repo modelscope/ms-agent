@@ -32,23 +32,45 @@ MS_AGENT_WEBUI_PASSWORD=请替换为足够长且不重复使用的密码
 
 ## Docker
 
+(credential-volumes)=
+### 持久化数据与主密钥
+
 选择已发布且包含目标功能的镜像标签，在以下命令中替换 `TAG`：
 
 ```bash
 docker run --rm -p 127.0.0.1:9000:8000 \
   -e MS_AGENT_HOME=/data -v ms-agent-data:/data \
+  -v ms-agent-secrets:/data.secrets \
   modelscope-registry.us-west-1.cr.aliyuncs.com/modelscope-repo/ms-agent:TAG
 ```
 
-访问 `http://127.0.0.1:9000`。数据卷保存应用数据；需要项目文件时另行挂载。容器替换后运行中临时安装的软件不一定保留，应在派生镜像或项目环境中声明依赖。可用功能取决于所选镜像标签，请核对该标签对应的版本与发布说明；需要较新功能时选择包含相应提交的镜像。
+访问 `http://127.0.0.1:9000`。两个卷分别保存应用数据和默认主密钥 `/data.secrets/master.key`；需要项目文件时另行挂载。**使用加密功能时只挂载 `/data`，重建容器会丢失默认钥匙，已有凭据将不可用。** 容器中临时安装的软件也可能不保留，应在派生镜像或项目环境中声明依赖。可用功能取决于镜像标签，请核对对应版本与发布说明。
+
+非 root 部署时，应将 `/data` 和 `/data.secrets` 的挂载目录所有者设置为实际运行用户，并确保该用户可写。镜像构建阶段不设置密钥目录的 `700` 权限；程序首次创建默认主密钥时仍会将该目录设为 `700`，新密钥文件为 `600`，因此仅放宽目录权限不能代替正确设置所有者。
+
+### 使用平台提供的主密钥
+
+如果平台已提供持久化 Fernet 密钥文件，可以替代默认主密钥卷，只读挂载：
+
+```bash
+docker run --rm -p 127.0.0.1:9000:8000 \
+  -e MS_AGENT_HOME=/data -v ms-agent-data:/data \
+  -e MS_AGENT_SECRET_KEY_FILE=/run/secrets/ms-agent-master \
+  --mount type=bind,src=/secure/ms-agent-master,dst=/run/secrets/ms-agent-master,readonly \
+  modelscope-registry.us-west-1.cr.aliyuncs.com/modelscope-repo/ms-agent:TAG
+```
+
+将宿主机路径替换为实际文件，确保运行用户可读。文件必须预先包含有效 Fernet 主密钥；若已有加密数据，应使用对应的原钥匙。不要同时设置 `MS_AGENT_SECRET_KEY`。两种方案都应在容器重建后验证原凭据仍可用；上面的本机监听不代替远程部署的认证与 HTTPS。
 
 ## 备份与升级
 
 1. 停止相关任务和服务，确认没有写入正在进行。
-2. 备份 `MS_AGENT_HOME`以及实际项目工作目录；敏感配置加密或限制访问。
-3. 记录代码/包版本和依赖，更新后先验证一个测试项目。
-4. 检查模型选择、历史、文件、技能与MCP，再恢复调度任务。
+2. 备份 `MS_AGENT_HOME`、实际项目工作目录和对应主密钥，分开控制访问。模板分享应清空凭据并排除钥匙，不能直接公开私有备份。
+3. 记录代码/包版本和依赖，同步升级共享 home 或项目的 WebUI、TUI、CLI 和 SDK；旧版不能读取新密文。
+4. 确保配置可写且主密钥可读或可创建，启动新版完成旧配置迁移。用已有会话验证续聊、压缩与记忆读写，再检查文件、技能和 MCP，最后恢复调度任务。
 
 源码后端环境和前端依赖/构建目录不是会话备份。不要只复制 `webui/frontend/build`就认为业务数据已保存。新终端仍需激活Python与Node环境。
+
+迁移失败时保留的管理页面不代表所有配置都已加密。先排查并完成迁移，再导出或分享；恢复钥匙、重置凭据和回滚的边界见[密钥保存与恢复](credentials.md)。
 
 开发热更新、运行镜像和环境变量细节见[WebUI维护指南](https://github.com/modelscope/ms-agent/blob/main/webui/README_ZH.md)，存储职责见[存储布局](../development/storage.md)。

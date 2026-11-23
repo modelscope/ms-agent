@@ -1,4 +1,5 @@
 """Tests for builtin commands: /usage, /model, /config, /quit, /compact, /context."""
+from ms_agent.config.secrets import resolve_secret
 import json
 import pytest
 from dataclasses import dataclass, field
@@ -592,7 +593,7 @@ class TestModel:
         assert 'Provider acme saved' in added.content
         assert 'Switch with /model acme <model>' in added.content
         data = json.loads((tmp_path / 'ms_home' / 'settings.json').read_text())
-        assert data['providers']['acme']['api_key'] == 'sk-secret'
+        assert resolve_secret(data['providers']['acme']['api_key'], home=tmp_path / "ms_home") == 'sk-secret'
         assert data['providers']['acme']['base_url'] == 'https://acme/v1'
         listed = await router.dispatch(make_ctx('/model list', runtime=runtime))
         assert 'sk-secret' not in listed.content
@@ -600,7 +601,7 @@ class TestModel:
         await router.dispatch(
             make_ctx('/model provider key acme sk-new', runtime=runtime))
         data = json.loads((tmp_path / 'ms_home' / 'settings.json').read_text())
-        assert data['providers']['acme']['api_key'] == 'sk-new'
+        assert resolve_secret(data['providers']['acme']['api_key'], home=tmp_path / "ms_home") == 'sk-new'
         await router.dispatch(
             make_ctx('/model catalog add acme a-1', runtime=runtime))
         await router.dispatch(
@@ -1071,7 +1072,7 @@ class TestModelProbe:
         assert '没有换成它' in result.content
         assert '可复制' in result.content
         data = json.loads((tmp_path / 'ms_home' / 'settings.json').read_text())
-        assert data['providers']['acme']['api_key'] == 'sk-test'
+        assert resolve_secret(data['providers']['acme']['api_key'], home=tmp_path / "ms_home") == 'sk-test'
 
     @pytest.mark.asyncio
     async def test_url_change_does_not_send_the_saved_key(
@@ -1096,7 +1097,7 @@ class TestModelProbe:
         data = json.loads((tmp_path / 'ms_home' / 'settings.json').read_text())
         assert data['providers']['acme']['base_url'] == (
             'https://other.example/v1')
-        assert data['providers']['acme']['api_key'] == 'sk-test'
+        assert resolve_secret(data['providers']['acme']['api_key'], home=tmp_path / "ms_home") == 'sk-test'
 
     @pytest.mark.asyncio
     async def test_set_url_only_does_not_probe(self, tmp_path, monkeypatch):
@@ -1118,7 +1119,7 @@ class TestModelProbe:
         assert calls == []
         data = json.loads((tmp_path / 'ms_home' / 'settings.json').read_text())
         assert data['providers']['acme']['base_url'] == 'https://set.example/v1'
-        assert data['providers']['acme']['api_key'] == 'sk-test'
+        assert resolve_secret(data['providers']['acme']['api_key'], home=tmp_path / "ms_home") == 'sk-test'
 
     @pytest.mark.asyncio
     async def test_new_key_is_sent_only_to_the_saved_url(
@@ -1154,7 +1155,7 @@ class TestModelProbe:
         assert '没有保存' not in result.content
         assert '没有换成它' not in result.content
         data = json.loads((tmp_path / 'ms_home' / 'settings.json').read_text())
-        assert data['providers']['acme']['api_key'] == 'sk-offline'
+        assert resolve_secret(data['providers']['acme']['api_key'], home=tmp_path / "ms_home") == 'sk-offline'
 
     @pytest.mark.asyncio
     async def test_unreachable_keeps_a_key_and_url_written_together(
@@ -1176,7 +1177,7 @@ class TestModelProbe:
         assert calls == [('https://gate.example/v1', 'sk-together')]
         assert '这个地址现在连不上，密钥还没向供应商确认。' in result.content
         data = json.loads((tmp_path / 'ms_home' / 'settings.json').read_text())
-        assert data['providers']['gate']['api_key'] == 'sk-together'
+        assert resolve_secret(data['providers']['gate']['api_key'], home=tmp_path / "ms_home") == 'sk-together'
         assert data['providers']['gate']['base_url'] == 'https://gate.example/v1'
 
     @pytest.mark.asyncio

@@ -137,11 +137,14 @@ class TestConfigResolver:
         config = resolver.resolve()
         assert hasattr(config, 'llm')
 
-    def test_corrupt_global_settings_no_error(self, global_dir):
+    def test_corrupt_global_settings_fails_without_echoing_contents(self, global_dir):
         (global_dir / 'settings.json').write_text('not json{{{')
         resolver = ConfigResolver(global_dir=str(global_dir))
-        config = resolver.resolve()
-        assert hasattr(config, 'llm')
+        from ms_agent.config.secrets import SecretError
+        with pytest.raises(SecretError, match='Cannot parse') as exc:
+            resolver.resolve()
+        assert 'not json' not in str(exc.value)
+        assert (global_dir / 'settings.json').read_text() == 'not json{{{'
 
     def test_missing_project_patch_no_error(self, resolver, tmp_path):
         config = resolver.resolve(project_path=str(tmp_path / 'no_project'))

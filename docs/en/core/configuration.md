@@ -46,6 +46,8 @@ Add only what you need. A `tools.<name>` entry without `mcp: false` may be inter
 
 When debugging, check the working directory, `MS_AGENT_HOME`, configuration file, and entry point before inspecting resolved fields. Remove credentials and sensitive URLs before logging configuration.
 
+Registered credentials in managed configuration migrate automatically and are encrypted; arbitrary source `agent.yaml` files are not rewritten. Configuration objects retain ciphertext, and consumers decrypt before use. See [Credential storage design](../development/credential-storage.md) for custom writers and tools.
+
 ## Merge programmatically
 
 ```python

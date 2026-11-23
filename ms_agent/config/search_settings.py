@@ -8,11 +8,12 @@ the settings file owns, matching the WebUI search page.
 """
 from __future__ import annotations
 
-import json
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from ms_agent.utils.file_lock import locked
+from ms_agent.utils.json_store import read_json
 
 _PROVIDER_META: Dict[str, tuple[str, Optional[str]]] = {
     'tavily': ('Tavily Search', 'tavily_api_key'),
@@ -85,29 +86,16 @@ class SearchSettingsManager:
     """Read/write ``tools.web_search`` in settings.json."""
 
     def __init__(self, global_dir: str | Path | None = None) -> None:
-        if global_dir is None:
-            from ms_agent.project.paths import global_home
-            self._dir = global_home()
-        else:
-            self._dir = Path(os.path.expanduser(str(global_dir)))
+        from .secrets import secret_home
+        self._dir = secret_home(home=global_dir)
         self._path = self._dir / 'settings.json'
 
     def _load_raw(self) -> Dict[str, Any]:
-        if not self._path.is_file():
-            return {}
-        try:
-            with open(self._path, encoding='utf-8') as f:
-                data = json.load(f)
-            return data if isinstance(data, dict) else {}
-        except (json.JSONDecodeError, OSError):
-            return {}
+        return read_json(self._path)
 
     def _save_raw(self, data: Dict[str, Any]) -> None:
-        self._dir.mkdir(parents=True, exist_ok=True)
-        tmp = self._path.with_suffix('.json.tmp')
-        with open(tmp, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, self._path)
+        from .secrets import write_managed_config
+        write_managed_config(self._path, data, home=self._dir)
 
     def _block(self, data: Dict[str, Any]) -> Dict[str, Any]:
         tools = data.get('tools')
@@ -142,6 +130,7 @@ class SearchSettingsManager:
             })
         return rows
 
+    @locked(lambda self, *args, **kwargs: self._path)
     def set_engine(self, engine: str) -> SearchSettings:
         engine = engine.strip().lower()
         if engine not in supported_engine_ids():
@@ -154,6 +143,7 @@ class SearchSettingsManager:
         self._save_raw(data)
         return self.get()
 
+    @locked(lambda self, *args, **kwargs: self._path)
     def set_enabled(self, enabled: bool) -> SearchSettings:
         data = self._load_raw()
         block = self._ensure_block(data)
@@ -161,6 +151,7 @@ class SearchSettingsManager:
         self._save_raw(data)
         return self.get()
 
+    @locked(lambda self, *args, **kwargs: self._path)
     def set_api_key(self, key: str | None, engine: str | None = None) -> SearchSettings:
         current = self.get()
         engine = (engine or current.engine).strip().lower()
@@ -170,6 +161,9 @@ class SearchSettingsManager:
         data = self._load_raw()
         block = self._ensure_block(data)
         value = (key or '').strip()
+        if value.startswith('enc:'):
+            from .secrets import SecretInputError
+            raise SecretInputError('Enter a plaintext API key, not an encrypted credential.')
         if value:
             block[field] = value
         else:
@@ -201,8 +195,13 @@ class SearchSettingsManager:
             block['enabled'] = True
         return block
 
-    @staticmethod
-    def _has_key(block: Dict[str, Any], engine: str) -> bool:
-        return any(
-            str(block.get(field) or '').strip()
-            for field in key_fields_for(engine))
+    def _has_key(self, block: Dict[str, Any], engine: str) -> bool:
+        from .secrets import SecretError, resolve_secret
+        for field in key_fields_for(engine):
+            value = block.get(field)
+            if value:
+                try:
+                    return bool(resolve_secret(value, home=self._dir))
+                except SecretError:
+                    return False
+        return False

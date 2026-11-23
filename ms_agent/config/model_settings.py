@@ -12,7 +12,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ms_agent.utils.atomic_file import atomic_write_json
 from ms_agent.utils.file_lock import locked
 from ms_agent.utils.json_store import read_json
 
@@ -60,8 +59,9 @@ def strip_provider_model_prefix(provider: str | None, model: str | None) -> str:
 class ModelSettingsManager:
     """CRUD for custom providers/models + default model in settings.json."""
 
-    def __init__(self, global_dir: str | Path = '~/.ms_agent') -> None:
-        self._dir = Path(global_dir).expanduser()
+    def __init__(self, global_dir: str | Path | None = None) -> None:
+        from .secrets import secret_home
+        self._dir = secret_home(home=global_dir)
         self._path = self._dir / 'settings.json'
 
     # -- raw settings.json io --
@@ -70,7 +70,15 @@ class ModelSettingsManager:
         return read_json(self._path)
 
     def _save_raw(self, data: Dict[str, Any]) -> None:
-        atomic_write_json(self._path, data)
+        from .secrets import write_managed_config
+        write_managed_config(self._path, data, home=self._dir)
+
+    @staticmethod
+    def _clear_legacy_key(data: dict, provider_id: str) -> None:
+        llm = data.get('llm') or {}
+        if llm.get('provider') == provider_id:
+            llm.pop('api_key', None)
+            llm.pop(f'{provider_id}_api_key', None)
 
     # -- providers --
 
@@ -116,12 +124,17 @@ class ModelSettingsManager:
             'protocol': protocol,
         })
         if api_key is not None:
+            from .secrets import SecretInputError
+            if api_key.startswith('enc:'):
+                raise SecretInputError('Enter a plaintext API key, not an encrypted credential.')
             entry['api_key'] = api_key
         if base_url is not None:
             entry['base_url'] = base_url
         entry['models'] = list(
             models if models is not None else entry.get('models', []))
         providers[provider_id] = entry
+        if api_key is not None:
+            self._clear_legacy_key(data, provider_id)
         self._save_raw(data)
         return entry
 
@@ -172,6 +185,8 @@ class ModelSettingsManager:
         elif base_url is not None:
             entry['base_url'] = base_url
         providers[provider_id] = entry
+        if api_key is not None or clear_api_key:
+            self._clear_legacy_key(data, provider_id)
         self._save_raw(data)
         return entry
 
@@ -225,6 +240,9 @@ class ModelSettingsManager:
             llm = data.get('llm')
             if not isinstance(llm, dict):
                 llm = {}
+            if llm.get('provider') != provider:
+                for field in ('api_key', 'base_url', 'protocol'):
+                    llm.pop(field, None)
             llm['provider'] = provider
             llm['model'] = model
             data['llm'] = llm

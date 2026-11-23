@@ -420,6 +420,7 @@ export interface Provider {
   name: string
   base_url: string
   api_key_masked: string
+  api_key_status?: 'unset' | 'configured' | 'unavailable'
   protocol: Protocol
   enabled: boolean
   default_generation_params: Record<string, unknown>
@@ -539,6 +540,7 @@ export interface SearchProvider {
  * config only: a key the SDK might pick up from the environment is not counted,
  * since this page can neither show nor clear one. */
 export interface SearchSettings {
+  key_status?: 'unset' | 'configured' | 'unavailable'
   enabled: boolean
   provider: string
   has_key: boolean

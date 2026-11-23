@@ -45,11 +45,11 @@ export default function SearchSettingsPage() {
   const provider = providers.find((p) => p.id === settings?.provider) ?? null
   const needsKey = provider?.requires_key ?? true
   const hasKey = !!settings?.has_key
+  const keyUnavailable = settings?.key_status === 'unavailable'
   const providerId = settings?.provider ?? ''
   const keyDraft = keyDrafts[providerId] ?? ''
-  // `has_key` now means "this page has one on file", so it is exactly the
-  // condition under which a reset has something to remove.
-  const canReset = hasKey
+  // An unavailable stored key can still be explicitly removed.
+  const canReset = hasKey || keyUnavailable
 
   const save = async (patch: {
     enabled?: boolean
@@ -154,7 +154,9 @@ export default function SearchSettingsPage() {
                 {/* Since the key itself can't be shown, this tag is the only
                     signal that one is stored — see KeyStatusTag. */}
                 <KeyStatusTag set={hasKey}>
-                  {hasKey
+                  {keyUnavailable
+                    ? t.settings.searchKeyUnavailable
+                    : hasKey
                     ? t.settings.searchKeyConfigured
                     : keyless
                       ? t.settings.searchKeyOptional

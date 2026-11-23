@@ -76,13 +76,14 @@ class ConfigResolver:
 
     def __init__(
         self,
-        global_dir: Union[str, Path] = '~/.ms_agent',
+        global_dir: Union[str, Path, None] = None,
         project_root: Union[str, Path, None] = None,
         agent_config: DictConfig | ListConfig | None = None,
         mcp_manager: MCPConfigManager | None = None,
         defaults: Optional[Dict[str, Any]] = None,
     ) -> None:
-        self._global_dir = Path(global_dir).expanduser()
+        from .secrets import secret_home
+        self._global_dir = secret_home(home=global_dir)
         self.project_root = (
             Path(project_root).expanduser() if project_root else None)
         self.agent_config = agent_config
@@ -159,6 +160,11 @@ class ConfigResolver:
 
         from ms_agent.config.config import Config
         merged = Config.fill_missing_fields(merged)
+        # Runtime context supplied by the resolver, never by an imported file.
+        from omegaconf import open_dict
+        from .secrets import HOME_FIELD, secret_home
+        with open_dict(merged):
+            merged[HOME_FIELD] = str(secret_home(home=self._global_dir))
 
         if effective_project_path:
             # Mark that this resolve already merged the work-dir project patch
@@ -265,6 +271,8 @@ class ConfigResolver:
         settings_file = self._global_dir / GLOBAL_SETTINGS_FILE
         if not settings_file.exists():
             return None
+        from .secrets import migrate_file
+        migrate_file(settings_file, home=self._global_dir)
         try:
             with open(settings_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
@@ -283,6 +291,8 @@ class ConfigResolver:
         Both are optional; new ``.ms_agent/`` is preferred over legacy
         ``.ms-agent/``.
         """
+        from .secrets import migrate_project
+        migrate_project(project_path, home=self._global_dir)
         layers: List[DictConfig] = []
 
         yaml_file = _project_internal_file(project_path, PROJECT_CONFIG_FILE)
@@ -402,6 +412,9 @@ class ConfigResolver:
         agent_fields: Dict[str, Any] = {}
         if 'llm' in settings:
             llm = settings['llm']
+            if llm.get('provider') and llm.get('model'):
+                from .model_settings import resolve_model_settings
+                llm = {**resolve_model_settings(settings, llm['provider'], llm['model']), **llm}
             agent_llm: Dict[str, Any] = {}
             if 'provider' in llm:
                 agent_llm['service'] = llm['provider']

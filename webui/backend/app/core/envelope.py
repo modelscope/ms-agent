@@ -190,7 +190,11 @@ async def _validation_exception_handler(
     if errors:
         message = _friendly_validation_message(errors[0])
     # Keep the raw error list in `data` for debugging / field-level UIs.
-    return error_response(422, message, data=errors)
+    # Validation input can contain a submitted credential, including an entire
+    # malformed body. Field locations/types suffice for client diagnostics.
+    safe_errors = [{key: value for key, value in error.items() if key != "input"}
+                   for error in errors]
+    return error_response(422, message, data=safe_errors)
 
 
 async def _unhandled_exception_handler(
@@ -201,6 +205,12 @@ async def _unhandled_exception_handler(
 
 def register_exception_handlers(app: FastAPI) -> None:
     """Install envelope-shaped handlers for HTTP, validation, and crash errors."""
+    from ms_agent.config.secrets import SecretError, SecretInputError
+
+    async def secret_exception_handler(request: Request, exc: SecretError) -> JSONResponse:
+        return error_response(400 if isinstance(exc, SecretInputError) else 409, str(exc))
+
+    app.add_exception_handler(SecretError, secret_exception_handler)
     app.add_exception_handler(StarletteHTTPException, _http_exception_handler)
     app.add_exception_handler(RequestValidationError,
                               _validation_exception_handler)

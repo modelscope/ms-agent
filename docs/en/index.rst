@@ -70,6 +70,7 @@ MCP connections, or workflows as needed.
    user-guide/cli
    user-guide/projects-sessions
    user-guide/model-settings
+   user-guide/credentials
    user-guide/skills-mcp
    user-guide/skill-management
    user-guide/memory
@@ -130,6 +131,7 @@ MCP connections, or workflows as needed.
    development/configuration-reference
    development/cli-reference
    development/storage
+   development/credential-storage
    development/glossary
    development/architecture
    development/contributing

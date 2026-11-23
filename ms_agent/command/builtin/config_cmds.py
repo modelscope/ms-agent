@@ -84,7 +84,8 @@ def _persist_model_to_config(config, new_model: str, service=None):
         OmegaConf.update(patch, 'llm.model', new_model, merge=True)
         if service:
             OmegaConf.update(patch, 'llm.service', service, merge=True)
-        OmegaConf.save(patch, patch_path)
+        from ms_agent.config.secrets import secret_home, write_managed_config
+        write_managed_config(patch_path, patch, home=secret_home(config))
         return patch_path
     except OSError:
         return None
@@ -363,7 +364,8 @@ def _provider_kind(provider, override) -> str:
 def _effective_api_key(pid: str, override: dict) -> str:
     key = str(override.get('api_key') or '').strip()
     if key:
-        return key
+        from ms_agent.config.secrets import resolve_secret
+        return resolve_secret(key)
     from ms_agent.llm.spec import get_registry
     spec = get_registry().get(pid)
     if spec is None:

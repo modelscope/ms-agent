@@ -283,6 +283,8 @@ def main(argv: list[str] | None = None) -> None:
                 MS_AGENT_API_BASE_URL=api_url,
                 MS_AGENT_FRONTEND_API_BASE_URL=api_url,
             )
+            from ms_agent.config.secrets import subprocess_env
+            env = subprocess_env(env)
             processes.append(
                 (
                     "frontend",

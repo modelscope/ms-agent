@@ -121,6 +121,9 @@ def builtin_provider_to_schema(spec, override: dict | None = None) -> ProviderSc
     """A registry ProviderSpec, optionally merged with a settings.json custom
     entry of the same id (how a user sets creds for a built-in provider)."""
     override = override or {}
+    from ms_agent.config.secrets import credential_view
+    from app.backends.ms_agent.common import home
+    key_status, key_masked = credential_view(override.get("api_key"), home=home())
     meta = sidecar.get("providers", spec.name, {}) or {}
     # Honor a user's protocol override (e.g. pointing a built-in provider at
     # another vendor's Anthropic-compatible endpoint); fall back to the spec's
@@ -139,7 +142,8 @@ def builtin_provider_to_schema(spec, override: dict | None = None) -> ProviderSc
         # this, `name` was the odd one out.
         name=override.get("name") or spec.display_name or spec.name,
         base_url=override.get("base_url") or spec.default_base_url,
-        api_key_masked=_mask(override.get("api_key", "")),
+        api_key_masked=key_masked,
+        api_key_status=key_status,
         protocol=protocol,
         enabled=meta.get("enabled", True),
         default_generation_params=meta.get("default_generation_params", {}),
@@ -150,6 +154,9 @@ def builtin_provider_to_schema(spec, override: dict | None = None) -> ProviderSc
 
 def custom_provider_to_schema(pid: str, entry: dict) -> ProviderSchema:
     entry = entry or {}
+    from ms_agent.config.secrets import credential_view
+    from app.backends.ms_agent.common import home
+    key_status, key_masked = credential_view(entry.get("api_key"), home=home())
     meta = sidecar.get("providers", pid, {}) or {}
     proto = entry.get("protocol")
     protocol = proto if proto in ("openai", "anthropic") else "openai"
@@ -158,7 +165,8 @@ def custom_provider_to_schema(pid: str, entry: dict) -> ProviderSchema:
         kind="custom",
         name=entry.get("name", pid),
         base_url=entry.get("base_url", ""),
-        api_key_masked=_mask(entry.get("api_key", "")),
+        api_key_masked=key_masked,
+        api_key_status=key_status,
         protocol=protocol,
         enabled=meta.get("enabled", True),
         default_generation_params=meta.get("default_generation_params", {}),

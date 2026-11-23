@@ -26,11 +26,11 @@ def read_json(path: str | Path) -> dict[str, Any]:
 
 
 @contextmanager
-def json_transaction(path: str | Path):
+def json_transaction(path: str | Path, *, writer=atomic_write_json):
     """Apply changes to the latest object; abort on errors, skip unchanged writes."""
     with file_lock(path):
         data = read_json(path)
         before = copy.deepcopy(data)
         yield data
         if data != before:
-            atomic_write_json(path, data)
+            writer(path, data)

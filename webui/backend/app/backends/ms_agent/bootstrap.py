@@ -43,6 +43,17 @@ def bootstrap() -> None:
         from app.backends.ms_agent.session_models import migrate
         for session in sessions.list():
             migrate(project, session)
+    from ms_agent.config.secrets import SecretError, migrate_home
+    try:
+        migrate_home(home())
+    except SecretError as exc:
+        import logging
+        logging.getLogger(__name__).warning("Credential migration pending: %s", exc)
+        # The management UI must remain available for recovery. Avoid other
+        # rewrites when legacy plaintext cannot yet be safely migrated.
+        _ensure_prompt_files(home())
+        _export_fastembed_cache()
+        return
     _ensure_prompt_files(home())
     _seed_tools_settings(home())
     _seed_llm_settings(home())
@@ -107,7 +118,8 @@ def _migrate_provider_brand_names(home_dir: str) -> None:
                         entry["name"] = canonical_name
                         changed = True
             if changed:
-                atomic_write_json(path, data)
+                from ms_agent.config.secrets import write_managed_config
+                write_managed_config(path, data, home=home_dir)
 
         sidecar.merge("flags", migration_key, {"migrated": True})
     except Exception:  # a migration must never block boot
@@ -165,14 +177,13 @@ def _seed_llm_settings(home_dir: str) -> None:
     # CredentialResolver pick up that provider's own env vars
     # (DASHSCOPE_API_KEY, DEEPSEEK_API_KEY, …).
     if provider == "openai":
-        if settings.openai_api_key:
-            llm["api_key"] = settings.openai_api_key
         if settings.openai_base_url:
             llm["base_url"] = settings.openai_base_url
     data["llm"] = llm
     data.setdefault("default_model", f"{provider}/{model}")
 
-    atomic_write_json(path, data)
+    from ms_agent.config.secrets import write_managed_config
+    write_managed_config(path, data, home=home_dir)
 
 
 

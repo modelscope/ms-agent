@@ -79,7 +79,10 @@ def update_settings(body: AgentSettings) -> AgentSettings:
                 validate_selection(provider, model)
                 model_link.set_active_model(provider, model)
             else:
-                with json_transaction(Path(home()) / "settings.json") as data:
+                from functools import partial
+                from ms_agent.config.secrets import write_managed_config
+                with json_transaction(Path(home()) / "settings.json",
+                                      writer=partial(write_managed_config, home=home())) as data:
                     model_link.preserve_legacy_credentials(data)
                     data.pop("default_model", None)
                     data["llm"] = {}

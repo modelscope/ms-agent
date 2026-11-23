@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+from ms_agent.config.secrets import resolve_secret
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -193,7 +194,8 @@ def test_default_tui_uses_webui_default_model(tmp_path, monkeypatch):
     assert cfg.llm.service == 'openai'
     assert cfg.llm.model == 'qwen3.7-plus'
     assert cfg.llm.use_provider_router is True
-    assert cfg.llm.openai_api_key == 'sk-from-catalog'
+    assert cfg.llm.openai_api_key.startswith('enc:v1:')
+    assert resolve_secret(cfg.llm.openai_api_key, home=home) == 'sk-from-catalog'
     assert cfg.llm.protocol == 'openai'
 
 

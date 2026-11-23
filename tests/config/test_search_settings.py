@@ -1,3 +1,4 @@
+from ms_agent.config.secrets import resolve_secret
 import json
 
 from ms_agent.config.search_settings import SearchSettingsManager
@@ -20,7 +21,7 @@ def test_set_engine_preserves_other_keys(tmp_path):
     data = json.loads((tmp_path / 'settings.json').read_text())
     block = data['tools']['web_search']
     assert block['engine'] == 'tavily'
-    assert block['exa_api_key'] == 'exa-secret'
+    assert resolve_secret(block['exa_api_key'], home=tmp_path) == 'exa-secret'
     assert block.get('mcp') is False
 
 

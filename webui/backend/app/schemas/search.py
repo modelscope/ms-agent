@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel
 
 
@@ -39,6 +41,7 @@ class SearchSettings(BaseModel):
     enabled: bool
     provider: str
     has_key: bool
+    key_status: Literal["unset", "configured", "unavailable"] = "unset"
     # Whether the SELECTED provider works without a key. Carried on the settings
     # object (not just the provider list) so the composer can decide whether to
     # warn from the one object it already loads.

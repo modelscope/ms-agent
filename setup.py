@@ -23,6 +23,17 @@ model_catalog = importlib.util.module_from_spec(_catalog_spec)
 _catalog_spec.loader.exec_module(model_catalog)
 
 
+def runtime_artifacts(directory, names):
+    """Exclude local execution state when copying bundled examples/skills."""
+    excluded = {'.git', '.venv', 'venv', '__pycache__', 'node_modules',
+                '.memory', '.ms_agent', '.ms-agent', 'output', 'outputs'}
+    return [name for name in names
+            if name in excluded or name.endswith(('.secrets', '.pyc', '.pyo'))
+            or (name.startswith('.env') and name != '.env.example')
+            or name == '.DS_Store'
+            or Path(directory, name).is_symlink()]
+
+
 def readme():
     with open('README.md', encoding='utf-8') as f:
         content = f.read()
@@ -145,6 +156,16 @@ class build_py(_build_py):
         model_catalog.validate_bundle()
         if (webui_packaging.WEBUI / webui_packaging.MANIFEST).is_file():
             webui_packaging.validate_release()
+        # A previous build may contain files no longer selected by packaging.
+        # Rebuild the library tree so stale local data cannot survive in wheels.
+        library = Path(self.build_lib).resolve()
+        source = Path(__file__).resolve().parent
+        if (library == source or source.is_relative_to(library)
+                or library.is_relative_to(source / 'ms_agent')):
+            raise RuntimeError(
+                'build_lib must be separate from SDK source files')
+        if library.exists():
+            shutil.rmtree(library)
         super().run()
 
         # Copy the repository root's `projects/` into the build directory's `ms_agent/projects/`
@@ -156,7 +177,7 @@ class build_py(_build_py):
             if os.path.exists(dst):
                 shutil.rmtree(dst)
 
-            shutil.copytree(src, dst)
+            shutil.copytree(src, dst, ignore=runtime_artifacts)
 
         webui_packaging.copy_resources(Path(self.build_lib) / 'ms_agent/webui')
 
@@ -173,8 +194,7 @@ class build_py(_build_py):
             shutil.copytree(
                 skill_src,
                 skill_dst,
-                ignore=shutil.ignore_patterns('__pycache__', '*.pyc',
-                                              '.DS_Store'),
+                ignore=runtime_artifacts,
             )
 
     def get_source_files(self):
@@ -248,7 +268,7 @@ if __name__ == '__main__':
         author_email='contact@modelscope.cn',
         keywords='python, agent, LLM',
         url='https://github.com/modelscope/ms-agent',
-        packages=find_packages(exclude=('configs', 'demo')),
+        packages=find_packages(include=('ms_agent', 'ms_agent.*')),
         python_requires='>=3.10',
         include_package_data=True,
         cmdclass={

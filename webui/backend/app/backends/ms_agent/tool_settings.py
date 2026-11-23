@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from pathlib import Path
 
 from ms_agent.config.tool_settings import merge_tool_settings
@@ -44,6 +42,7 @@ def ensure_tool_settings(home_dir: str | Path) -> dict:
     """
     path = Path(home_dir) / "settings.json"
     with file_lock(path):
+        from ms_agent.config.secrets import SecretError, migrate_file
         for _ in range(3):
             before = _read(path)
             try:
@@ -55,20 +54,22 @@ def ensure_tool_settings(home_dir: str | Path) -> dict:
                           if isinstance(exc, (UnicodeDecodeError, json.JSONDecodeError))
                           else str(exc))
                 raise BadRequest(f"Invalid WebUI settings: {detail}") from exc
+            try:
+                if migrate_file(path, home=home_dir):
+                    continue
+            except SecretError:
+                # A read may supply defaults, but must not rewrite a mixed
+                # legacy file under a key that cannot decrypt its credentials.
+                return normalized
+            from ms_agent.config.secrets import contains_ciphertext, protect_config
+            normalized = protect_config(normalized, home=home_dir,
+                                        existing_ciphertext=contains_ciphertext(data))
             if normalized == data:
                 return data
 
-            path.parent.mkdir(parents=True, exist_ok=True)
-            fd, temporary = tempfile.mkstemp(prefix=".settings-", dir=path.parent)
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                    json.dump(normalized, stream, ensure_ascii=False, indent=2)
-                    stream.write("\n")
-                if _read(path) != before:
-                    continue
-                os.replace(temporary, path)
-                return normalized
-            finally:
-                if os.path.exists(temporary):
-                    os.unlink(temporary)
+            if _read(path) != before:
+                continue
+            from ms_agent.config.secrets import write_managed_config
+            write_managed_config(path, normalized, home=home_dir)
+            return normalized
     raise Conflict("settings.json changed during normalization; please retry.")

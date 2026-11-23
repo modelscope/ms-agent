@@ -203,15 +203,13 @@ def save_history(output_dir: str, task: str, config: DictConfig,
     os.makedirs(cache_dir, exist_ok=True)
     config_file = os.path.join(cache_dir, f'{task}.yaml')
     message_file = os.path.join(cache_dir, f'{task}.json')
-    # The yaml is a turn cache. Keys stay in settings.json / mcp.json.
+    from ms_agent.config.secrets import secret_home, write_managed_config
+    from ms_agent.utils.atomic_file import atomic_write_json
     from .history_secrets import config_for_history_disk
-    with open(config_file, 'w') as f:
-        OmegaConf.save(config_for_history_disk(config), f)
-    with open(message_file, 'w') as f:
-        json.dump([message.to_dict() for message in messages],
-                  f,
-                  indent=4,
-                  ensure_ascii=False)
+    write_managed_config(config_file, config_for_history_disk(config),
+                         home=secret_home(config))
+    atomic_write_json(message_file, [message.to_dict() for message in messages],
+                      indent=4, fsync=True)
 
 
 def read_history(output_dir: str, task: str):

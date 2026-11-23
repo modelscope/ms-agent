@@ -112,6 +112,8 @@ class MsAgentWorkspace(WorkspaceSpec):
             except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
                 return content
             scrub_json_secrets(data)
+            from ms_agent.config.secrets import clear_secrets
+            data = clear_secrets(data)
             return json.dumps(
                 data, ensure_ascii=False, indent=2).encode('utf-8')
         if rel_path == 'skills.json':

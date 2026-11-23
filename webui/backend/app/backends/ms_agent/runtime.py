@@ -234,6 +234,8 @@ def _settings_fingerprint(project, model_snapshot=None) -> str:
     paths.extend(root / name for root in (Path(home()), Path(project.path))
                  for name in ("AGENTS.md", "SOUL.md", "PROFILE.md"))
     digest = hashlib.sha256()
+    from ms_agent.config.secrets import master_fingerprint
+    digest.update(master_fingerprint(home()).encode())
     if model_snapshot is not None:
         import json
         digest.update(json.dumps(model_snapshot.settings, sort_keys=True).encode())

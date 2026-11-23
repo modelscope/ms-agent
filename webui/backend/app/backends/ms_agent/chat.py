@@ -1612,7 +1612,15 @@ async def _adopt_unwatched_turn(prep: "asyncio.Future", session_id: str) -> None
 async def stream(req: ChatRequest) -> AsyncIterator[dict]:
     """Legacy one-turn SSE, backed by the same durable input controller."""
     from app.backends.ms_agent.conversations import get, submit
-    receipt = await submit(req)
+    from fastapi import HTTPException
+    from ms_agent.config.secrets import SecretError
+    try:
+        receipt = await submit(req)
+    except (SecretError, HTTPException) as exc:
+        message = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        yield _delta(ChatChunk(type="error", meta={"message": message, "recoverable": True}))
+        yield _delta(ChatChunk(type="done"))
+        return
     conversation = get(receipt['session_id'])
     input_id = receipt['input']['input_id']
     yield _delta(ChatChunk(type='session', meta={
@@ -1659,7 +1667,15 @@ async def stream(req: ChatRequest) -> AsyncIterator[dict]:
 
 
 async def run_turn(req: ChatRequest, prepared=None) -> AsyncIterator[dict]:
-    project, session = await asyncio.to_thread(_resolve_or_create, req)
+    from fastapi import HTTPException
+    from ms_agent.config.secrets import SecretError
+    try:
+        project, session = await asyncio.to_thread(_resolve_or_create, req)
+    except (SecretError, HTTPException) as exc:
+        message = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        yield _delta(ChatChunk(type="error", meta={"message": message, "recoverable": True}))
+        yield _delta(ChatChunk(type="done"))
+        return
     session_id = session.id
 
     user_msg = req.message
@@ -1724,6 +1740,14 @@ async def run_turn(req: ChatRequest, prepared=None) -> AsyncIterator[dict]:
         # an explicit Stop/shutdown and must cancel startup as well.
         rt, enqueued, intro, sent = await (
             prep if prepared is not None else asyncio.shield(prep))
+    except (SecretError, HTTPException) as exc:
+        if title_task is not None:
+            title_task.cancel()
+            await asyncio.gather(title_task, return_exceptions=True)
+        message = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        yield _delta(ChatChunk(type="error", meta={"message": message, "recoverable": True}))
+        yield _delta(ChatChunk(type="done", meta={"session_id": session_id, "project_id": project.id}))
+        return
     except asyncio.CancelledError:
         # This stream dies here; the enqueue behind the shield does not. Hand
         # whatever it starts to the background drain — with no one left to reach

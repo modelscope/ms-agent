@@ -1061,6 +1061,7 @@ def _build_agent(project, session, *, event_sink, input_source, mcp_config=None,
             selected["protocol"] = llm["protocol"]
         OmegaConf.update(cfg, "llm", selected, merge=False)
     cfg = _apply_webui_defaults(cfg)
+    cfg._managed_credentials = True
     cfg = _apply_webui_memory(cfg, project)
     # Restricted-by-default permission; the project sidecar's explicit
     # restricted/full-access choice (composer selector) overrides.

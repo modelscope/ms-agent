@@ -24,8 +24,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ms_agent.utils.atomic_file import atomic_write_json
-
 from app.backends.ms_agent.common import home
 from app.backends.ms_agent.settings_store import settings_lock
 from app.backends.errors import BadRequest
@@ -110,7 +108,8 @@ def _load() -> dict:
 
 
 def _save(data: dict) -> None:
-    atomic_write_json(_settings_path(), data)
+    from ms_agent.config.secrets import write_managed_config
+    write_managed_config(_settings_path(), data, home=home())
 
 
 def _block(data: dict) -> dict:
@@ -141,8 +140,20 @@ def _has_key(block: dict, provider: str) -> bool:
     """Whether THIS page has a key on file for the provider. Environment
     variables are not consulted on purpose (see module docstring): the tag is a
     statement about the config the page owns and can edit or clear."""
-    return any(
-        str(block.get(field) or "").strip() for field in _key_fields(provider))
+    return _key_status(block, provider) == "configured"
+
+
+def _key_status(block: dict, provider: str) -> str:
+    from ms_agent.config.secrets import SecretError, resolve_secret
+    for field in _key_fields(provider):
+        value = block.get(field)
+        if not value:
+            continue
+        try:
+            return "configured" if resolve_secret(value, home=home()) else "unset"
+        except SecretError:
+            return "unavailable"
+    return "unset"
 
 
 def get_settings() -> SearchSettings:
@@ -160,6 +171,7 @@ def get_settings() -> SearchSettings:
         enabled=bool(block.get("enabled", True)),
         provider=engine,
         has_key=_has_key(block, engine),
+        key_status=_key_status(block, engine),
         supports_keyless=_supports_keyless(engine),
     )
 
@@ -189,6 +201,9 @@ def update_settings(body: SearchSettingsUpdate) -> SearchSettings:
         block["enabled"] = bool(body.enabled)
         if body.api_key is not None and key_field is not None:
             key = body.api_key.strip()
+            from ms_agent.config.secrets import SecretInputError
+            if key.startswith("enc:"):
+                raise SecretInputError("Enter a plaintext API key, not an encrypted credential.")
             if key:
                 block[key_field] = key
             else:

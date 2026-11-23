@@ -1,4 +1,5 @@
 """TUI /search writes the same tools.web_search block WebUI uses."""
+from ms_agent.config.secrets import resolve_secret
 import json
 
 import pytest
@@ -68,11 +69,11 @@ class TestSearchCommand:
             make_ctx('/search key sk-exa-test'))
         assert 'saved' in result.content
         data = json.loads((isolate_home / 'settings.json').read_text())
-        assert data['tools']['web_search']['exa_api_key'] == 'sk-exa-test'
+        assert resolve_secret(data['tools']['web_search']['exa_api_key'], home=isolate_home) == 'sk-exa-test'
         await make_router().dispatch(make_ctx('/search engine tavily'))
         data = json.loads((isolate_home / 'settings.json').read_text())
         assert data['tools']['web_search']['engine'] == 'tavily'
-        assert data['tools']['web_search']['exa_api_key'] == 'sk-exa-test'
+        assert resolve_secret(data['tools']['web_search']['exa_api_key'], home=isolate_home) == 'sk-exa-test'
 
     @pytest.mark.asyncio
     async def test_key_clear(self, isolate_home):

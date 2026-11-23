@@ -7,6 +7,7 @@ dependencies = [
     # packages separately in the Python environment used by the shell.
     "anthropic>=0.117.0",
     "beautifulsoup4",
+    "cryptography>=43.0.0",
     "exa-py>=2.16.0",
     "fastapi>=0.139.0",
     "httpx>=0.28.1",

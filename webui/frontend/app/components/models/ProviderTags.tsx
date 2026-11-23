@@ -17,6 +17,7 @@ import KeyIcon from '~/assets/icons/key.svg?react'
 export function ProviderTags({ provider }: { provider: Provider }) {
   const { t } = useT()
   const hasKey = !!provider.api_key_masked
+  const unavailable = provider.api_key_status === 'unavailable'
   return (
     <>
       {provider.kind === 'builtin' && (
@@ -34,6 +35,13 @@ export function ProviderTags({ provider }: { provider: Provider }) {
             className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-msa-fill-green text-msa-deco-green2"
           >
             <KeyIcon className="h-4 w-4" />
+          </span>
+        </Tooltip>
+      )}
+      {unavailable && (
+        <Tooltip title={t.modelsAdmin.apiKeyUnavailableTip}>
+          <span className="shrink-0 rounded bg-msa-fill-2 px-2 py-0.5 text-xs text-msa-text-2">
+            {t.modelsAdmin.apiKeyUnavailable}
           </span>
         </Tooltip>
       )}

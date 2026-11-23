@@ -60,6 +60,8 @@ def config_for_history_disk(config):
         return config
     if not isinstance(data, dict):
         return config
+    from ms_agent.config.secrets import clear_secrets
+    data = clear_secrets(data)
     blank_config_secrets(data)
     try:
         return OmegaConf.create(data)

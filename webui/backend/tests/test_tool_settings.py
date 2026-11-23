@@ -30,13 +30,16 @@ def test_missing_defaults_persist_without_session_or_credential_changes(tmp_path
     }
     path = write_settings(tmp_path, original)
     actual = tool_settings.ensure_tool_settings(tmp_path)
-    assert actual["llm"] == original["llm"]
+    from ms_agent.config.secrets import resolve_config_secrets
+    runtime = resolve_config_secrets(actual, home=tmp_path)
+    assert actual["llm"]["api_key"].startswith("enc:v1:")
+    assert runtime["llm"] == original["llm"]
     assert actual["theme"] == "dark"
     assert actual["tools"]["todo_list"] == {
         "enabled": False, "mcp": False, "auto_render_md": False}
     assert actual["tools"]["file_system"]["include"] == ["read_file"]
     assert actual["tools"]["custom_mcp"] == original["tools"]["custom_mcp"]
-    assert actual["tools"]["web_search"]["exa_api_key"] == "search-test-key"
+    assert runtime["tools"]["web_search"]["exa_api_key"] == "search-test-key"
     assert actual["tools"]["web_search"]["engine"] == "exa"
     assert json.loads(path.read_text()) == actual
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
