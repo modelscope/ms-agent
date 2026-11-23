@@ -282,6 +282,9 @@ def get_search_engine_class(engine_type: str) -> Type[SearchEngine]:
     if engine_type == 'exa':
         from ms_agent.tools.search.exa import ExaSearch
         return ExaSearch
+    elif engine_type == 'context':
+        from ms_agent.tools.search.context import ContextSearch
+        return ContextSearch
     elif engine_type in ('serpapi', 'serp', 'google', 'bing', 'baidu'):
         from ms_agent.tools.search.serpapi import SerpApiSearch
         return SerpApiSearch
@@ -321,6 +324,9 @@ def get_search_engine(engine_type: str,
             api_key=api_key or os.getenv('EXA_API_KEY'),
             api_keys=kwargs.get('api_keys') or os.getenv('EXA_API_KEYS'),
         )
+    elif engine_type == 'context':
+        from ms_agent.tools.search.context import ContextSearch
+        return ContextSearch(api_key=api_key)
     elif engine_type in ('serpapi', 'serp', 'google', 'bing', 'baidu'):
         from ms_agent.tools.search.serpapi import SerpApiSearch
         default_provider = ('google' if engine_type in ('serpapi', 'serp') else
@@ -395,7 +401,7 @@ class WebSearchTool(ToolBase):
     SERVER_NAME = 'web_search'
 
     # Registry of supported search engines
-    SUPPORTED_ENGINES = ('exa', 'serpapi', 'arxiv', 'tavily')
+    SUPPORTED_ENGINES = ('exa', 'context', 'serpapi', 'arxiv', 'tavily')
 
     # Process-wide (class-level) usage tracking for summarization calls.
     # This is intentionally separate from LLMAgent usage totals.
@@ -505,6 +511,9 @@ class WebSearchTool(ToolBase):
                 or os.getenv('EXA_API_KEYS') or os.getenv('EXA_API_KEY'))
             if tool_cfg else
             (os.getenv('EXA_API_KEYS') or os.getenv('EXA_API_KEY')),
+            'context': (getattr(tool_cfg, 'context_api_key', None)
+                        or os.getenv('CONTEXT_DEV_API_KEY'))
+            if tool_cfg else os.getenv('CONTEXT_DEV_API_KEY'),
             'serpapi': (getattr(tool_cfg, 'serpapi_api_key', None)
                         or os.getenv('SERPAPI_API_KEY'))
             if tool_cfg else os.getenv('SERPAPI_API_KEY'),
@@ -778,9 +787,8 @@ class WebSearchTool(ToolBase):
                 api_key = resolve_secret(self._api_keys.get(engine_type), config=self.config)
 
                 # Create engine instance
-                if engine_type == 'exa':
-                    self._engines[engine_type] = engine_cls(
-                        api_key=api_key)
+                if engine_type in ('exa', 'context'):
+                    self._engines[engine_type] = engine_cls(api_key=api_key)
                 elif engine_type == 'serpapi':
                     self._engines[engine_type] = engine_cls(
                         api_key=api_key,
@@ -1648,6 +1656,10 @@ class WebSearchTool(ToolBase):
     async def arxiv_search(self, **kwargs) -> str:
         """Search using arXiv engine."""
         return await self._execute_search('arxiv', kwargs)
+
+    async def context_search(self, **kwargs) -> str:
+        """Search using Context."""
+        return await self._execute_search('context', kwargs)
 
     async def serpapi_search(self, **kwargs) -> str:
         """Search using SerpApi engine."""

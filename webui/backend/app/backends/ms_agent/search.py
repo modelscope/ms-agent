@@ -35,6 +35,7 @@ from app.schemas.search import SearchProvider, SearchSettings, SearchSettingsUpd
 _PROVIDER_META: dict[str, tuple[str, str | None]] = {
     "tavily": ("Tavily Search", "tavily_api_key"),
     "exa": ("Exa Search", "exa_api_key"),
+    "context": ("Context", "context_api_key"),
     "serpapi": ("SerpAPI", "serpapi_api_key"),
     # Public arXiv API — the SDK builds ArxivSearch() with no arguments.
     "arxiv": ("arXiv", None),
@@ -53,7 +54,7 @@ def _supports_keyless(provider: str) -> bool:
 # Exa's pre-per-engine field name, still honoured by the SDK for exa only.
 _LEGACY_EXA_FIELDS = ("exa_api_keys", "api_key")
 
-_FALLBACK_ORDER = ("tavily", "exa", "serpapi", "arxiv")
+_FALLBACK_ORDER = ("tavily", "exa", "context", "serpapi", "arxiv")
 
 
 def _supported_ids() -> list[str]:

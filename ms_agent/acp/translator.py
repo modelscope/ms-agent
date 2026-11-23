@@ -18,6 +18,7 @@ _TOOL_KIND_MAP: Dict[str, str] = {
     'web_search': 'search',
     'arxiv_search': 'search',
     'exa_search': 'search',
+    'context_search': 'search',
     'serpapi_search': 'search',
     'google_search': 'search',
     'filesystem': 'read',

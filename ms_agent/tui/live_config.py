@@ -174,6 +174,7 @@ def _search_in_sync(tool, block: dict) -> bool:
     fields = {
         'tavily': 'tavily_api_key',
         'exa': 'exa_api_key',
+        'context': 'context_api_key',
         'serpapi': 'serpapi_api_key',
     }
     for engine in wanted:

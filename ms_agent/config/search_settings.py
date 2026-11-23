@@ -18,12 +18,13 @@ from ms_agent.utils.json_store import read_json
 _PROVIDER_META: Dict[str, tuple[str, Optional[str]]] = {
     'tavily': ('Tavily Search', 'tavily_api_key'),
     'exa': ('Exa Search', 'exa_api_key'),
+    'context': ('Context', 'context_api_key'),
     'serpapi': ('SerpAPI', 'serpapi_api_key'),
     'arxiv': ('arXiv', None),
 }
 _KEYLESS = frozenset({'tavily', 'arxiv'})
 _LEGACY_EXA_FIELDS = ('exa_api_keys', 'api_key')
-_FALLBACK_ORDER = ('tavily', 'exa', 'serpapi', 'arxiv')
+_FALLBACK_ORDER = ('tavily', 'exa', 'context', 'serpapi', 'arxiv')
 
 # Tavily is the only web-wide engine that works with no key (keyless tier).
 # WebUI persists this block; TUI injects the same one at resolve time so a

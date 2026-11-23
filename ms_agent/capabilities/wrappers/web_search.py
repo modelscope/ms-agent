@@ -18,6 +18,7 @@ _fetcher: Any = None
 # stay key-free while still giving an actionable message for keyed engines.
 _ENGINE_ENV_REQUIREMENTS: dict[str, list[str]] = {
     'exa': ['EXA_API_KEY', 'EXA_API_KEYS'],
+    'context': ['CONTEXT_DEV_API_KEY'],
     'serpapi': ['SERPAPI_API_KEY'],
     'serp': ['SERPAPI_API_KEY'],
     'google': ['SERPAPI_API_KEY'],
@@ -48,15 +49,15 @@ WEB_SEARCH_DESCRIPTOR = CapabilityDescriptor(
     name='web_search',
     version='0.1.0',
     granularity='tool',
-    summary=(
-        'Search the web using multiple engines '
-        '(arxiv / exa / serpapi / tavily, plus google/bing/baidu aliases) '
-        'and optionally fetch full page content.'),
+    summary=
+    ('Search the web using multiple engines '
+     '(arxiv / exa / context / serpapi / tavily, plus google/bing/baidu aliases) '
+     'and optionally fetch full page content.'),
     description=(
         'Performs a web search and returns structured results including '
         'title, URL, and summary for each hit.  Supported engines: '
         'arxiv (default, no key), exa (EXA_API_KEY or EXA_API_KEYS), '
-        'serpapi / serp / '
+        'context (CONTEXT_DEV_API_KEY), serpapi / serp / '
         'google / bing / baidu (SERPAPI_API_KEY), tavily (TAVILY_API_KEY). '
         'Set fetch_content=true to additionally retrieve and return page '
         'text (truncated to 10 000 chars).'),
@@ -77,7 +78,8 @@ WEB_SEARCH_DESCRIPTOR = CapabilityDescriptor(
                 'string',
                 'description':
                 ("Search engine: 'arxiv' (default, no key), 'exa', "
-                 "'serpapi'/'serp'/'google'/'bing'/'baidu', or 'tavily'"),
+                 "'context', 'serpapi'/'serp'/'google'/'bing'/'baidu', or 'tavily'"
+                 ),
                 'default':
                 'arxiv',
             },

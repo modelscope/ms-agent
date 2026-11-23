@@ -35,6 +35,8 @@ tools:
 
 可用项取决于依赖、配置和动态装配，不是全部默认启用。LSP目录检查当前只索引文件，不能替代类型检查或测试。大结果可能被裁剪/落盘，按返回路径读取，不要求模型重复调用。
 
+使用 Context 搜索时，设置 `CONTEXT_DEV_API_KEY` 并显式配置 `tools.web_search.engine: context`。设置 `fetch_content: false` 可仅搜索并返回 Highlights；启用内容抓取时仍使用现有网页抓取流程。托管搜索设置会加密其 `context_api_key`，现有默认设置保持不变。
+
 ## 自定义工具
 
 保存为配置目录中的 `tools/custom_tool.py`：

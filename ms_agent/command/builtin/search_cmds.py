@@ -21,7 +21,7 @@ def _usage() -> str:
         'usage:\n'
         '  /search\n'
         '  /search list\n'
-        '  /search engine <tavily|exa|serpapi>\n'
+        '  /search engine <tavily|exa|context|serpapi>\n'
         '  /search key <value>\n'
         '  /search key clear\n'
         '  /search enable|disable\n'
@@ -122,7 +122,7 @@ async def cmd_search(ctx: CommandContext) -> CommandResult:
     if action == 'engine':
         if not rest:
             return arg_error(
-                '/search engine <tavily|exa|serpapi>', ctx=ctx)
+                '/search engine <tavily|exa|context|serpapi>', ctx=ctx)
         engine = rest[0].strip().lower()
         visible = [
             row['id'] for row in mgr.list_engines()
