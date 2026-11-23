@@ -1,0 +1,80 @@
+/* 文档共用样式；不依赖业务 WebUI。 */
+:root { --ms-accent: #2461d7; --ms-soft: #f3f6fc; --ms-line: #e1e7ef; --ms-muted: #647084; }
+html.dark { --ms-accent: #9cbcff; --ms-soft: #192434; --ms-line: #2b394d; --ms-muted: #acb7c8; }
+html.dark body, html.dark header, html.dark #left-sidebar { background-color:#101620; color:#e4eaf3; }
+body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif; }
+.container { max-width: 1320px; }
+#content { min-width: 0; font-size: 16px; line-height: 1.8; overflow-wrap:anywhere; }
+#content h1 { font-size: 2.35rem; letter-spacing: -.035em; line-height: 1.25; margin-bottom: 1.3rem; }
+#content h2 { font-size: 1.55rem; line-height: 1.4; margin-top: 2.3rem; border-top: 1px solid var(--ms-line); border-bottom:0; padding-top: 1.4rem; }
+body:has(.ms-hero) #page main { display:block; max-width:900px; }
+body:has(.ms-hero) main + aside, body:has(.ms-hero) #right-sidebar { display:none; }
+body:has(.ms-hero) #content h2 { margin-top:1.8rem; }
+#left-sidebar > a img { width:135px; height:auto; max-height:28px; object-fit:contain; }
+html.dark #left-sidebar > a img { background:#f8fafc; border-radius:4px; }
+#content h3 { font-size: 1.15rem; margin-top: 1.7rem; }
+#content p { margin-block: .85rem; }
+#content a:not(.sd-stretched-link):not(.headerlink) { text-underline-offset: .22em; }
+#content ul, #content ol { padding-left: 1.4rem; }
+#content li { margin-block: .3rem; }
+#content .highlight { border: 1px solid var(--ms-line); border-radius: 10px; overflow: auto; }
+#content pre { font-size: 13px; line-height: 1.65; padding: 1.1rem; white-space: pre; }
+#content code { overflow-wrap: anywhere; }
+#content :not(pre) > code .pre { white-space:normal; overflow-wrap:anywhere; }
+#content table { display: block; max-width: 100%; overflow-x: auto; font-size: 14px; line-height: 1.65; }
+#content th { text-align: left; white-space: nowrap; background: var(--ms-soft); }
+#content td, #content th { padding: .7rem .8rem; border-color: var(--ms-line); }
+#content .admonition { border-radius: 10px; margin-block: 1.5rem; }
+#content .mermaid { padding: 1rem; margin-block: 1.5rem; background: var(--ms-soft); border: 1px solid var(--ms-line); border-radius: 12px; overflow: auto; }
+#content .mermaid svg { display:block; height:auto; margin-inline:auto; }
+#content .mermaid p { margin:0; line-height:1.35; }
+#content .mermaid .label { font-size:14px; }
+html.dark #content .mermaid { background: #f3f6fc; color: #182334; }
+.ms-brand { display:flex; align-items:center; margin-right:1.2rem; }
+.ms-brand img { width: 180px; height: auto; max-height:36px; object-fit:contain; }
+html.dark .ms-brand { background: #f8fafc; border-radius:6px; padding:5px 8px; }
+.ms-header-label, .ms-header-links { font-size:14px; }
+.ms-header-label { align-self:center; color:var(--ms-muted); }
+.ms-header-links { display:flex; gap:16px; align-items:center; white-space:nowrap; }
+.ms-navigation { padding: 1.5rem .5rem 2rem 0; font-size:14px; line-height:1.5; }
+.ms-nav-home { display:block; color:var(--ms-muted); padding:8px 10px; margin-bottom:14px; }
+.ms-nav-section { margin: 7px 0; }
+.ms-navigation summary { cursor:pointer; padding:9px 10px; font-weight:600; border-radius:7px; }
+.ms-navigation summary:hover { background:var(--ms-soft); }
+.ms-nav-section[open] > summary { color:var(--ms-accent); }
+.ms-nav-group > summary { padding:7px 10px; margin:2px 0 2px 5px; font-weight:400; border-radius:6px; }
+.ms-navigation ul { list-style:none; padding:0; margin:3px 0 10px 12px; border-left:1px solid var(--ms-line); }
+.ms-navigation ul ul { margin:0 0 4px 20px; }
+#left-sidebar .ms-navigation li a { display:block; padding:7px 10px; margin:2px 0 2px 5px; border-radius:6px; }
+.ms-navigation li a:hover { background:var(--ms-soft); }
+.ms-navigation a[aria-current=page] { color:var(--ms-accent); background:var(--ms-soft); font-weight:600; }
+#content .sd-card { border:1px solid var(--ms-line); border-radius:12px; box-shadow:none; background:transparent; transition: border-color .15s, transform .15s; }
+#content .sd-card:hover { border-color:var(--ms-accent); transform:translateY(-2px); }
+#content .sd-card-body { padding:1.25rem; }
+#content .sd-card-title { font-size:1.05rem; }
+#content .sd-card-text { color:var(--ms-muted); font-size:14px; line-height:1.7; }
+#content .sd-card-footer { background:transparent; border-top:1px solid var(--ms-line); padding:.6rem 1.25rem; font-size:13px; line-height:1.6; }
+#content .sd-card-body > p:last-child { margin-bottom:0; }
+#content .sd-card-body > .sd-card-text { margin-top:.4rem; }
+#content .sd-card-footer > p { margin:0; }
+#content .ms-feature { height:100%; }
+#content .ms-feature .sd-card-body { padding-bottom:1rem; }
+#content .ms-feature:hover { transform:none; border-color:var(--ms-line); }
+#content .ms-feature .sd-card-title { display:flex; align-items:center; margin-bottom:.45rem; }
+#content .ms-feature .sd-octicon { color:var(--ms-accent); flex:none; }
+#content .ms-app { height:100%; }
+#content .ms-app .sd-card-body { padding:1rem 1.1rem; }
+#content .ms-app .sd-card-title { font-size:1rem; margin-bottom:.35rem; }
+#content .ms-app .sd-card-text { font-size:13.5px; line-height:1.65; }
+#content .ms-app strong { color:hsl(var(--foreground)); font-weight:600; }
+.ms-hero { padding:1.1rem 0 .7rem; }
+.ms-hero .eyebrow { color:var(--ms-accent); font-size:12px; font-weight:600; letter-spacing:.1em; }
+.ms-hero .lead { font-size:18px; line-height:1.85; max-width:660px; color:var(--ms-muted); }
+.ms-hero .actions { display:flex; gap:12px; flex-wrap:wrap; margin:1.5rem 0; }
+.ms-hero .actions a { padding:9px 18px; border-radius:8px; border:1px solid var(--ms-line); text-decoration:none; font-size:14px; }
+.ms-hero .actions a:first-child { background:var(--ms-accent); color:#fff; border-color:var(--ms-accent); }
+html.dark .ms-hero .actions a:first-child { color:#10233e; }
+:focus-visible { outline:2px solid var(--ms-accent); outline-offset:3px; }
+@media(min-width:1280px) { #page main { grid-template-columns:minmax(0,1fr) 195px; gap:32px; } }
+@media(max-width:767px) { .container { padding-inline:16px; } #content h1 {font-size:1.85rem;} #content {font-size:16px;} .ms-github {display:none;} .ms-header-links {gap:10px;} #left-sidebar {max-width:320px;} .ms-hero .lead {font-size:16px;} }
+@media(prefers-reduced-motion:reduce) { #content .sd-card {transition:none;} #content .sd-card:hover {transform:none;} }

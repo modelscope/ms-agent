@@ -27,9 +27,8 @@ This project requires both Python and Node.js.
 
 3. **Install dependencies**
    ```bash
-   pip install .
-   cd projects/singularity_cinema
-   pip install -r requirements.txt
+   # Run from the repo root; the [cinema] extra installs the video-generation deps (edge_tts / moviepy)
+   pip install -e '.[cinema]'
    ```
 
 ---
