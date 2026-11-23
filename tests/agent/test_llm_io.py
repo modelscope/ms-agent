@@ -21,6 +21,45 @@ from ms_agent.llm.transport.openai_compat import OpenAICompatTransport
 from ms_agent.llm.utils import Message
 
 
+def test_owned_response_defers_close_until_the_reader_exits():
+    entered, release = threading.Event(), threading.Event()
+    closed_by = []
+    network = Mock()
+    response = SimpleNamespace(is_closed=False, http_version='HTTP/1.1',
+                               extensions={'network_stream': network})
+    owned = io.OwnedResponse(SimpleNamespace(
+        response=response, close=lambda: closed_by.append(threading.get_ident())))
+
+    def read():
+        entered.set()
+        assert release.wait(5)
+        return threading.get_ident()
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(owned.read, read)
+        try:
+            assert entered.wait(5)
+            owned.close()
+            network.get_extra_info.return_value.shutdown.assert_called_once()
+            assert not closed_by
+        finally:
+            release.set()
+        reader = future.result(timeout=5)
+    assert closed_by == [reader]
+    owned.close()
+    assert closed_by == [reader]
+
+
+@pytest.mark.parametrize('started', [False, True])
+def test_owned_response_closes_immediately_without_an_active_reader(started):
+    stream = Mock()
+    owned = io.OwnedResponse(stream)
+    if started:
+        assert owned.read(lambda: 'chunk') == 'chunk'
+    owned.close()
+    stream.close.assert_called_once_with()
+
+
 def test_dashscope_anthropic_client_accepts_the_custom_transport():
     pytest.importorskip('anthropic')
     from ms_agent.llm.anthropic_llm import Anthropic
@@ -412,9 +451,8 @@ async def test_cancel_stalled_tcp_read_releases_model_worker(monkeypatch, protoc
                 await reached(reading)
                 await asyncio.sleep(.05)  # Let the worker enter recv().
                 await cancel(task)
-                # Stay below the client's 2s read timeout, allowing scheduler jitter.
                 assert await asyncio.wait_for(
-                    io.run_in_llm_executor(lambda: 'next request'), 1) == 'next request'
+                    io.run_in_llm_executor(lambda: 'next request'), .5) == 'next request'
                 assert not release.is_set()
     finally:
         release.set()

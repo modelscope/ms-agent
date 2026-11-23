@@ -14,7 +14,7 @@ from typing import Any, Dict, Generator, Iterable, List, Optional
 from ms_agent.llm import LLM, multimodal
 from ms_agent.llm.cost import (merge_usage, normalize_usage, response_usage,
                                set_response_usage, update_openai_usage)
-from ms_agent.llm.io import interrupt_stream
+from ms_agent.llm.io import OwnedResponse, interrupt_stream
 from ms_agent.llm.thinking import (THINKING_PARAM_KEYS, apply_effort,
                                    create_with_thinking_fallback)
 from ms_agent.llm.utils import Message, Tool, ToolCall, normalize_finish_reason
@@ -336,8 +336,8 @@ class OpenAI(LLM):
     def _track_stream(self, stream):
         # Retain the HTTP stream, not the lazy thinking/vision wrapper: closing
         # an unstarted or currently executing generator cannot close its socket.
-        self._active_stream = stream
-        return stream
+        self._active_stream = OwnedResponse(stream)
+        return self._active_stream
 
     def interrupt(self) -> None:
         stream = getattr(self, '_active_stream', None)

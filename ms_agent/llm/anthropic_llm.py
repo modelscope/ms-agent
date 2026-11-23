@@ -7,7 +7,7 @@ from typing import Any, Dict, Generator, Iterator, List, Optional, Union
 from ms_agent.llm import LLM
 from ms_agent.llm.cost import (response_usage, set_response_usage,
                                update_usage_snapshot)
-from ms_agent.llm.io import OpenedStream, interrupt_stream
+from ms_agent.llm.io import OpenedStream, OwnedResponse, interrupt_stream
 from ms_agent.llm.thinking import (THINKING_PARAM_KEYS, apply_effort,
                                    create_with_thinking_fallback)
 from ms_agent.llm.utils import Message, Tool, ToolCall, normalize_finish_reason
@@ -338,6 +338,7 @@ class Anthropic(LLM):
         )
         tool_call_id_map = {}  # index -> tool_call_id (用于去重 yield)
         with stream_manager as stream:
+            stream = OwnedResponse(stream)
             self._active_stream = stream
             try:
                 full_content = ''
