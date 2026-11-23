@@ -4,8 +4,7 @@ import {
   Checkbox,
   Dropdown,
   Pagination,
-  Segmented,
-  Tooltip
+  Segmented
 } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import MoreIcon from '~/assets/icons/more.svg?react'
@@ -191,13 +190,11 @@ export function SkillCollection({
               ]
             }}
           >
-            <Tooltip title={t.resources.more}>
-              <Button
-                type="text"
-                aria-label={t.resources.more}
-                icon={<MoreIcon className="h-5 w-5" />}
-              />
-            </Tooltip>
+            <Button
+              type="text"
+              aria-label={t.resources.more}
+              icon={<MoreIcon className="h-5 w-5" />}
+            />
           </Dropdown>
         </div>
       </div>

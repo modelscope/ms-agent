@@ -1,4 +1,4 @@
-import { Button, Dropdown, Popconfirm, Tooltip } from 'antd'
+import { Button, Dropdown, Popconfirm } from 'antd'
 import type { MenuProps } from 'antd'
 import { useMemo, useState } from 'react'
 import { MsaSwitch } from '~/components/common/MsaSwitch'
@@ -101,15 +101,13 @@ export function SkillCard({
             okButtonProps={{ danger: true }}
           >
             <Dropdown menu={menu} trigger={['click']} placement="bottomRight">
-              <Tooltip title={t.resources.more}>
-                <Button
-                  aria-label={t.resources.more}
-                  size="small"
-                  type="text"
-                  icon={<MoreIcon className="h-5 w-5" />}
-                  className="!text-msa-text-3"
-                />
-              </Tooltip>
+              <Button
+                aria-label={t.resources.more}
+                size="small"
+                type="text"
+                icon={<MoreIcon className="h-5 w-5" />}
+                className="!text-msa-text-3"
+              />
             </Dropdown>
           </Popconfirm>
         </span>
