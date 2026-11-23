@@ -13,48 +13,54 @@ MS-Agent 支持自由组合模型、工具、技能与子智能体，基于可�
 :class-card: ms-feature
 
 以配置组合角色、模型、工具与技能，快速搭建专业智能体。开放式任务由主智能体动态委派子智能体，阶段明确的流程交给工作流编排。
-+++
+```{card-footer}
 [子智能体](../core/subagents.md) · [工作流](../core/workflows.md)
+```
 :::
 
 :::{grid-item-card} {octicon}`gear;1.1em;sd-mr-2` 可定制 Harness
 :class-card: ms-feature
 
 按需组合上下文管理、权限控制与结果检查，定制智能体的执行策略。通过生命周期扩展点，把业务规则接入规划、工具调用与任务收尾，决定智能体如何行动、何时交由人工确认。
-+++
+```{card-footer}
 [Callbacks](../core/callbacks.md) · [Hooks](../core/hooks.md) · [权限](../core/permissions.md)
+```
 :::
 
 :::{grid-item-card} {octicon}`history;1.1em;sd-mr-2` 长程自主执行
 :class-card: ms-feature
 
 灵活定制上下文压缩与记忆模块，保持上下文可控，沉淀项目知识；结合自主调度与分层权限，让长周期任务持续推进，减少人工值守。
-+++
+```{card-footer}
 [上下文](../core/context.md) · [记忆](../core/memory.md) · [调度](../core/scheduling.md) · [权限](../core/permissions.md)
+```
 :::
 
 :::{grid-item-card} {octicon}`sync;1.1em;sd-mr-2` 技能复用与进化
 :class-card: ms-feature
 
 将领域知识与操作方法封装为按需加载的 Agent Skills，在不同任务间复用。技能进化机制分析执行轨迹与评测反馈，自动修订技能，只保留通过验证的改进。
-+++
+```{card-footer}
 [Skills](../core/skills.md) · [Skill Evolution](../applications/skill-evolution.md)
+```
 :::
 
 :::{grid-item-card} {octicon}`plug;1.1em;sd-mr-2` 开放协议与生态
 :class-card: ms-feature
 
 支持 ModelScope、DashScope、DeepSeek、Kimi、OpenAI、Anthropic 等主流模型服务；通过 MCP 连接外部工具，也能把框架能力发布为 MCP 服务；以 ACP 接入编辑器、以 A2A 协作远程智能体，并兼容 Claude Code、Codex 等社区插件。
-+++
+```{card-footer}
 [模型](../core/models.md) · [MCP](../core/mcp-client.md) · [ACP](../core/acp.md) · [A2A](../core/a2a.md) · [Agent Hub](../core/agent-hub.md)
+```
 :::
 
 :::{grid-item-card} {octicon}`device-desktop;1.1em;sd-mr-2` 多端开箱即用
 :class-card: ms-feature
 
 WebUI 集中管理项目、会话与文件，实时呈现执行过程与产物；TUI 适合在终端持续协作，CLI 便于脚本与自动化；Python SDK 支持将框架能力嵌入业务系统。
-+++
+```{card-footer}
 [WebUI](../user-guide/webui.md) · [TUI](../user-guide/tui.md) · [CLI](../user-guide/cli.md) · [SDK](python-sdk.md)
+```
 :::
 
 ::::

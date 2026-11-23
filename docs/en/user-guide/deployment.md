@@ -40,7 +40,7 @@ docker run --rm -p 127.0.0.1:9000:8000 \
   modelscope-registry.us-west-1.cr.aliyuncs.com/modelscope-repo/ms-agent:TAG
 ```
 
-Open `http://127.0.0.1:9000`. The volume preserves application data; mount project files separately. Packages installed into a running container may disappear on replacement. Declare durable dependencies in a derived image or project environment. Source availability does not establish that a particular image has been published.
+Open `http://127.0.0.1:9000`. The volume preserves application data; mount project files separately. Packages installed into a running container may disappear on replacement. Declare durable dependencies in a derived image or project environment. Available features depend on the selected image tag. Check its version and release notes, and choose an image containing the relevant commits for newer features.
 
 ## Back up and upgrade
 

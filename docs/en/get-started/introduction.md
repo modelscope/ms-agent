@@ -13,48 +13,54 @@ MS-Agent lets you freely combine models, tools, skills, and subagents. Built on 
 :class-card: ms-feature
 
 Assemble specialized agents from roles, models, tools, and skills in configuration. A lead agent delegates open-ended work to subagents on the fly, while well-defined processes run as workflows.
-+++
+```{card-footer}
 [Subagents](../core/subagents.md) · [Workflows](../core/workflows.md)
+```
 :::
 
 :::{grid-item-card} {octicon}`gear;1.1em;sd-mr-2` Customizable harness
 :class-card: ms-feature
 
 Combine context management, permission control, and result checks to shape how the agent executes. Lifecycle extension points bring your business rules into planning, tool calls, and task completion—deciding how the agent acts and when a person signs off.
-+++
+```{card-footer}
 [Callbacks](../core/callbacks.md) · [Hooks](../core/hooks.md) · [Permissions](../core/permissions.md)
+```
 :::
 
 :::{grid-item-card} {octicon}`history;1.1em;sd-mr-2` Long-horizon execution
 :class-card: ms-feature
 
 Customize context compaction and memory to keep context under control and retain project knowledge. Autonomous scheduling and layered permissions keep long-running tasks moving with less human supervision.
-+++
+```{card-footer}
 [Context](../core/context.md) · [Memory](../core/memory.md) · [Scheduling](../core/scheduling.md) · [Permissions](../core/permissions.md)
+```
 :::
 
 :::{grid-item-card} {octicon}`sync;1.1em;sd-mr-2` Reusable, evolving skills
 :class-card: ms-feature
 
 Package domain knowledge and procedures as on-demand Agent Skills reused across tasks. Skill evolution analyzes execution traces and evaluation feedback to revise skills automatically, keeping only validated improvements.
-+++
+```{card-footer}
 [Skills](../core/skills.md) · [Skill Evolution](../applications/skill-evolution.md)
+```
 :::
 
 :::{grid-item-card} {octicon}`plug;1.1em;sd-mr-2` Open protocols and ecosystem
 :class-card: ms-feature
 
 Work with ModelScope, DashScope, DeepSeek, Kimi, OpenAI, Anthropic, and other providers. Connect tools through MCP or publish framework capabilities as MCP services, reach editors through ACP and remote agents through A2A, and reuse community plugins from Claude Code, Codex, and more.
-+++
+```{card-footer}
 [Models](../core/models.md) · [MCP](../core/mcp-client.md) · [ACP](../core/acp.md) · [A2A](../core/a2a.md) · [Agent Hub](../core/agent-hub.md)
+```
 :::
 
 :::{grid-item-card} {octicon}`device-desktop;1.1em;sd-mr-2` Ready in every interface
 :class-card: ms-feature
 
 The WebUI brings projects, sessions, and files together with live execution and artifacts. The TUI supports continuous terminal work, the CLI fits scripts and automation, and the Python SDK lets you embed framework capabilities in business systems.
-+++
+```{card-footer}
 [WebUI](../user-guide/webui.md) · [TUI](../user-guide/tui.md) · [CLI](../user-guide/cli.md) · [SDK](python-sdk.md)
+```
 :::
 
 ::::

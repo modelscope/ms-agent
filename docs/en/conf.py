@@ -75,6 +75,8 @@ templates_path = ['../_shared/templates', '_templates']
 exclude_patterns = []
 
 language = 'en'
+html_search_language = 'en'
+sd_card_legacy_separators = False
 
 # The master toctree document.
 root_doc = 'index'
@@ -105,14 +107,12 @@ html_sidebars: dict[str, list[str]] = {
 
 pygments_style = 'default'
 pygments_style_dark = 'one-dark'
-mermaid_light_theme = mermaid_dark_theme = 'base'
+mermaid_light_theme = 'default'
+mermaid_dark_theme = 'dark'
 mermaid_init_config = {
     'startOnLoad': False,
     'themeVariables': {
         'fontFamily': 'system-ui, sans-serif', 'fontSize': '14px',
-        'primaryColor': '#e7efff', 'primaryTextColor': '#18304c',
-        'primaryBorderColor': '#8faad2', 'lineColor': '#657b9d',
-        'secondaryColor': '#f3f6fc', 'tertiaryColor': '#ffffff',
     },
     'flowchart': {'rankSpacing': 28, 'nodeSpacing': 24, 'padding': 12},
 }

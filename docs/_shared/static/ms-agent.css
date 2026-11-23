@@ -10,8 +10,9 @@ body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","
 body:has(.ms-hero) #page main { display:block; max-width:900px; }
 body:has(.ms-hero) main + aside, body:has(.ms-hero) #right-sidebar { display:none; }
 body:has(.ms-hero) #content h2 { margin-top:1.8rem; }
+#left-sidebar { overflow-x:hidden; }
 #left-sidebar > a img { width:135px; height:auto; max-height:28px; object-fit:contain; }
-html.dark #left-sidebar > a img { background:#f8fafc; border-radius:4px; }
+.ms-language[aria-disabled="true"] { color:var(--ms-muted); cursor:not-allowed; }
 #content h3 { font-size: 1.15rem; margin-top: 1.7rem; }
 #content p { margin-block: .85rem; }
 #content a:not(.sd-stretched-link):not(.headerlink) { text-underline-offset: .22em; }
@@ -26,13 +27,20 @@ html.dark #left-sidebar > a img { background:#f8fafc; border-radius:4px; }
 #content td, #content th { padding: .7rem .8rem; border-color: var(--ms-line); }
 #content .admonition { border-radius: 10px; margin-block: 1.5rem; }
 #content .mermaid { padding: 1rem; margin-block: 1.5rem; background: var(--ms-soft); border: 1px solid var(--ms-line); border-radius: 12px; overflow: auto; }
-#content .mermaid svg { display:block; height:auto; margin-inline:auto; }
+#content .mermaid-container { min-width:0; max-width:100%; }
+#content .mermaid svg { display:block; max-width:none !important; height:auto; margin-inline:auto; }
+#content .mermaid { white-space:normal; }
+#content table code, #content table code .pre { white-space:nowrap; overflow-wrap:normal; word-break:normal; }
+#content .ms-config-table td:first-child { white-space:nowrap; min-width:12rem; }
+#content .ms-config-table td:last-child { min-width:19rem; white-space:normal; }
+html.dark .mermaid-fullscreen-modal { background:rgba(16,22,32,.96); }
+html.dark .mermaid-container-fullscreen, html.dark .mermaid-fullscreen-modal .mermaid { background:var(--ms-soft); color:#e4eaf3; }
 #content .mermaid p { margin:0; line-height:1.35; }
 #content .mermaid .label { font-size:14px; }
-html.dark #content .mermaid { background: #f3f6fc; color: #182334; }
+.mermaid svg { font-family:inherit; }
 .ms-brand { display:flex; align-items:center; margin-right:1.2rem; }
 .ms-brand img { width: 180px; height: auto; max-height:36px; object-fit:contain; }
-html.dark .ms-brand { background: #f8fafc; border-radius:6px; padding:5px 8px; }
+.ms-sidebar-brand { display:flex; align-items:center; margin-right:2rem; }
 .ms-header-label, .ms-header-links { font-size:14px; }
 .ms-header-label { align-self:center; color:var(--ms-muted); }
 .ms-header-links { display:flex; gap:16px; align-items:center; white-space:nowrap; }

@@ -25,15 +25,47 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   const sidebar = document.querySelector('#left-sidebar');
   if (sidebar && menu) new MutationObserver(() => {
-    const expanded = !sidebar.classList.contains('-translate-x-full');
+    const expanded = sidebar.classList.contains('translate-x-0');
     menu.setAttribute('aria-expanded', String(expanded));
     if (!expanded && sidebar.contains(document.activeElement)) menu.focus();
   }).observe(sidebar, { attributes: true, attributeFilter: ['class'] });
-  // Mermaid 扩展默认把图放大到整栏；保留原始图幅，窄屏仅缩小。
+  let fullscreenTrigger = null;
+  const restoreFullscreenFocus = () => requestAnimationFrame(() => fullscreenTrigger?.focus());
+  document.addEventListener('click', (event) => {
+    const button = event.target.closest('.mermaid-fullscreen-btn');
+    if (button) fullscreenTrigger = button;
+    if (event.target.closest('.mermaid-fullscreen-close') ||
+        event.target.classList.contains('mermaid-fullscreen-modal')) restoreFullscreenFocus();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') restoreFullscreenFocus();
+  });
+  // Mermaid 按当前页面主题渲染，不让系统暗色偏好覆盖用户选择的浅色。
+  const syncTheme = () => document.documentElement.setAttribute('data-theme',
+    document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+  syncTheme();
+  new MutationObserver(syncTheme).observe(document.documentElement,
+    { attributes: true, attributeFilter: ['class'] });
+  // 搜索摘要提取的是未执行脚本的 HTML；去掉图表源码而保留正文。
+  if (typeof Search !== 'undefined' && Search.htmlToText) {
+    const original = Search.htmlToText;
+    Search.htmlToText = (html, anchor) => {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      doc.querySelectorAll('.mermaid, .no-search').forEach((node) => node.remove());
+      return original(doc.documentElement.outerHTML, anchor);
+    };
+  }
+  // 保留原始图幅；窄屏在图表容器内横向滚动，不缩小文字。
   const sizeDiagrams = () => {
     document.querySelectorAll('#content .mermaid svg').forEach((svg) => {
       const width = svg.viewBox?.baseVal?.width;
       if (width > 0) svg.style.width = `${width}px`;
+      const container = svg.closest('.mermaid');
+      if (container) {
+        container.setAttribute('tabindex', '0');
+        container.setAttribute('role', 'region');
+        container.setAttribute('aria-label', zh ? '图表，可横向滚动' : 'Diagram, scroll horizontally');
+      }
     });
   };
   sizeDiagrams();

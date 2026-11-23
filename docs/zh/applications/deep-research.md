@@ -21,7 +21,7 @@ flowchart TD
  E --> F[检查引用和最终报告]
 ```
 
-文件化证据便于检查和继续研究，但不会自动消除引用错误。历史评测应连同模型组合与提交版本阅读，不把当时排名当作持续保证。
+文件化证据便于检查和继续研究，但不会自动消除引用错误。历史评测应连同模型组合与提交版本阅读，排名对应当次提交的模型和评测配置。
 
 ## v2首次运行前
 
@@ -31,7 +31,7 @@ flowchart TD
 - `searcher.yaml`：搜索模型、搜索引擎、网页摘要模型与预算。
 - `reporter.yaml`：写作模型和质量检查。
 
-它们位于 `projects/deep_research/v2/`。所有模型ID都必须能被所选端点访问，摘要和质量检查也会额外调用模型。**当前Searcher默认搜索配置使用Tavily，需 `TAVILY_API_KEY`**；不沿用旧说明中“未设Key自动使用arXiv”的假设。
+它们位于 `projects/deep_research/v2/`。所有模型ID都必须能被所选端点访问，摘要和质量检查也会额外调用模型。**当前Searcher默认搜索配置使用Tavily，需 `TAVILY_API_KEY`**；如果改用其他搜索服务，请在 `searcher.yaml` 的 `tools.web_search` 中显式配置，并准备对应凭据。
 
 ```bash
 ms-agent run --config projects/deep_research/v2/researcher.yaml \
@@ -43,14 +43,14 @@ ms-agent run --config projects/deep_research/v2/researcher.yaml \
 
 ## v1兼容路径
 
-v1基础流程使用 `ResearchWorkflow`，扩展流程使用 `ResearchWorkflowBeta`，在 `ms_agent/workflow/deep_research/` 中维护。FinResearch的舆情节点仍依赖v1扩展，不能因v2存在就删除它。
+v1基础流程使用 `ResearchWorkflow`，扩展流程使用 `ResearchWorkflowBeta`，在 `ms_agent/workflow/deep_research/` 中维护。FinResearch 的舆情节点仍使用 v1 扩展；维护这些应用时请沿用 v1 对应的接口与配置。
 
-旧搜索配置使用 `SEARCH_ENGINE` 等结构，和v2 `tools.web_search`不同。模型选择以具体代码/配置为准，不固定宣称查询改写总使用某个Gemini模型。保留已有v1应用时使用[项目说明](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research)核对其接口。
+旧搜索配置使用 `SEARCH_ENGINE` 等结构，和v2 `tools.web_search`不同。查询改写及其他步骤的实际模型见项目配置和相应 Workflow 初始化参数。维护已有 v1 应用时使用[项目说明](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research)核对其接口。
 
 ## 查看结果与限制
 
-查看指定输出目录里的计划、搜索证据、中间稿和最终报告；以实际运行打印的文件为准，不承诺所有工具写同一个文件名。检查引用是否支持结论、资料时间是否一致，以及未完成的搜索步骤。
+查看指定输出目录里的计划、搜索证据、中间稿和最终报告；根据运行日志中的产物路径打开文件，不同工具会生成各自的文件名。检查引用是否支持结论、资料时间是否一致，以及未完成的搜索步骤。
 
-来源可能变化或不可访问，文档解析和模型都有成本；报告并非自动事实核验。安装/导入验证不等于真实研究E2E或评测成绩复现。
+来源可能变化或不可访问，文档解析和模型都有成本；报告并非自动事实核验。完成一次真实研究需要可用的模型、搜索及解析服务；先按上面的命令运行小主题，逐项检查证据和报告。复现评测时，再按 `run_benchmark.sh` 准备对应数据集、模型组合、服务凭据与预算。
 
 后续：[v2详细配置](https://github.com/modelscope/ms-agent/blob/main/projects/deep_research/v2/README.md)、[检索](../core/retrieval.md)、[工作流](../core/workflows.md)。

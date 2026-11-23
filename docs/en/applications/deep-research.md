@@ -21,7 +21,7 @@ flowchart TD
  E --> F[Review citations and report]
 ```
 
-File-backed evidence supports inspection and continued work; it does not eliminate citation errors. Read historical benchmarks with their model combinations and submitted versions rather than treating old rankings as ongoing guarantees.
+File-backed evidence supports inspection and continued work; it does not eliminate citation errors. Read historical benchmarks with their model combinations and submitted versions since each ranking belongs to that particular submission.
 
 ## Before running v2
 
@@ -31,7 +31,7 @@ Install `pip install -e '.[research]'` from the source root. Configure `OPENAI_A
 - `searcher.yaml`: search model/engines, webpage summarization, budgets.
 - `reporter.yaml`: writing model and checks.
 
-These files live in `projects/deep_research/v2/`. Every selected model must be available at the endpoint; summarization and quality checks make additional calls. **The current Searcher configuration defaults to Tavily and needs `TAVILY_API_KEY`.** Do not assume the older “automatically use arXiv without a key” instructions apply.
+These files live in `projects/deep_research/v2/`. Every selected model must be available at the endpoint; summarization and quality checks make additional calls. **The current Searcher configuration defaults to Tavily and needs `TAVILY_API_KEY`.** To use another search service, configure `tools.web_search` in `searcher.yaml` explicitly and provide that service's credentials.
 
 ```bash
 ms-agent run --config projects/deep_research/v2/researcher.yaml \
@@ -43,14 +43,14 @@ Start with a bounded topic, inspect search evidence and report paths, then expan
 
 ## v1 compatibility
 
-The basic pipeline uses `ResearchWorkflow`; the extended pipeline uses `ResearchWorkflowBeta` in `ms_agent/workflow/deep_research/`. FinResearch still relies on the extended v1 pipeline for sentiment research.
+The basic pipeline uses `ResearchWorkflow`; the extended pipeline uses `ResearchWorkflowBeta` in `ms_agent/workflow/deep_research/`. FinResearch still uses the extended v1 pipeline for sentiment research; keep the v1 interfaces and configuration when maintaining these integrations.
 
-Legacy search configuration uses structures such as `SEARCH_ENGINE`, distinct from v2 `tools.web_search`. Follow actual model configuration rather than assuming query rewriting always uses a specific Gemini model. Consult the [project documentation](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research) when maintaining v1 integrations.
+Legacy search configuration uses structures such as `SEARCH_ENGINE`, distinct from v2 `tools.web_search`. Find query-rewriting and other model selections in the project configuration and the corresponding Workflow initialization parameters. Consult the [project documentation](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research) when maintaining v1 integrations.
 
 ## Results and limitations
 
-Inspect plans, search evidence, drafts, and final reports in the selected output directory. Use paths reported by the run; different tools need not use one fixed filename. Check whether citations support conclusions, source dates align, and research steps actually finished.
+Inspect plans, search evidence, drafts, and final reports in the selected output directory. Open files at the artifact paths reported in the run log; individual tools generate their own filenames. Check whether citations support conclusions, source dates align, and research steps actually finished.
 
-Sources change or fail, and parsing/model calls cost resources. A report is not automatic fact verification. Installation/import checks do not reproduce research E2E or benchmark scores.
+Sources change or fail, and parsing/model calls cost resources. A report is not automatic fact verification. A real research run needs working model, search, and parsing services. Run the bounded example above, then inspect its evidence and report. For benchmark reproduction, follow `run_benchmark.sh` with the matching dataset, models, service credentials, and budget.
 
 Next: [v2 configuration](https://github.com/modelscope/ms-agent/blob/main/projects/deep_research/v2/README.md), [Retrieval](../core/retrieval.md), [Workflows](../core/workflows.md).

@@ -12,6 +12,8 @@ orphan: true
 <a id="inference-configuration"></a>
 <a id="system-and-query"></a>
 <a id="callbacks"></a>
+<a id="config_handler"></a>
+<a id="config-handler"></a>
 <a id="tool-configuration"></a>
 <a id="skills-configuration"></a>
 <a id="context-compaction-configuration"></a>
