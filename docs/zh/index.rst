@@ -70,6 +70,7 @@ MS-Agent 文档
    user-guide/projects-sessions
    user-guide/model-settings
    user-guide/skills-mcp
+   user-guide/skill-management
    user-guide/memory
    user-guide/scheduled-tasks
    user-guide/deployment
@@ -131,6 +132,8 @@ MS-Agent 文档
    development/glossary
    development/architecture
    development/contributing
+   development/skill-management
+   development/skill-management-checklist
    development/rfcs/plugins
    development/rfcs/hooks-executors
    development/rfcs/mcp-runtime-api

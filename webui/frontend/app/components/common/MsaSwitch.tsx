@@ -3,19 +3,22 @@ interface MsaSwitchProps {
   onChange?: (checked: boolean) => void
   disabled?: boolean
   className?: string
+  ariaLabel?: string
 }
 
 export function MsaSwitch({
   checked = false,
   onChange,
   disabled = false,
-  className = ''
+  className = '',
+  ariaLabel
 }: MsaSwitchProps) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-label={ariaLabel}
       disabled={disabled}
       onClick={() => onChange?.(!checked)}
       className={`

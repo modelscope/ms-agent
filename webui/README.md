@@ -228,6 +228,14 @@ estimates are marked complete, partial or unknown; amounts are not shown in
 WebUI. See [Context](../docs/en/core/context.md), [Models](../docs/en/core/models.md),
 and [Memory](../docs/en/core/memory.md) for storage, recovery, and pricing details.
 
+## Install and update skills
+
+Open **Settings → MCP & Skills → Skills**, or a project's **Skills** panel. Choose **Add skill → Install from link** and paste a GitHub repository, subdirectory, or ModelScope Skill or collection URL. Select one or more skills and choose a global or project installation.
+
+The open app checks linked skills periodically; **Check for updates** also runs a manual check. Open a card marked **Update available**, review the file changes, and confirm the update. The details menu offers **Restore previous version** afterward. Replacing local changes requires confirmation and keeps one backup. Checks and previews remain available during active tasks; replacing files waits until those tasks finish.
+
+Local imports continue to work. Use **Link source** in an untracked managed skill's details to enable updates. Skills discovered in standard directories remain read-only. See [Skill installation and updates](../docs/en/user-guide/skill-management.md) for source rules and the shared SDK API.
+
 ## Edit project files
 
 Open a project's workspace to create files or folders, rename entries in place,
@@ -354,6 +362,10 @@ Install frontend dependencies before running backend tests; launcher tests use
 the frontend’s `tsx` tool. Run `uv run pytest` in `webui/backend/`, and `pnpm typecheck` and `pnpm build` in
 `webui/frontend/`. Use the full `pnpm build` command to generate matching CSS,
 client files and server output.
+
+Run `pnpm check:skills` in `webui/frontend/` for Skill operation progress,
+partial-result and cancellation regression checks. It uses controlled HTTP
+responses and does not contact Skill registries or models.
 
 Windows supports the same installation and startup commands. Source checkouts
 also provide a PowerShell wrapper:

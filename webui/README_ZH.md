@@ -157,6 +157,14 @@ WebUI 使用 SDK 随包提供的 models.dev 快照查询模型能力、上下文
 
 SDK 独立记录每次响应的用量，压缩失败不会丢弃已经收到的数据。费用估算标记为完整、部分或未知，金额目前不在 WebUI 展示。存储、恢复和定价细节见 [上下文](../docs/zh/core/context.md)、[模型](../docs/zh/core/models.md)与[记忆](../docs/zh/core/memory.md)。
 
+## 安装与更新 Skill
+
+在 **设置 → MCP / Skills → Skills** 或项目的 **Skills** 面板，点击 **添加 Skill → 从链接安装**，粘贴 GitHub 仓库、子目录或 ModelScope Skill / 合集页面链接。可以多选 Skill，安装位置可选全局或项目。
+
+应用打开时会低频检查已关联来源的 Skill，也可点击 **检查更新**。点击标为 **待更新** 的卡片查看文件差异，再确认更新；更新后的详情菜单提供 **恢复旧版**。本地修改会先提示，明确覆盖时保留一份备份。相关任务运行期间可以检查和预览，文件替换需等待任务结束。
+
+原有本地导入继续可用。没有来源记录的托管 Skill 可在详情中 **关联来源**；标准目录中的 Skill 保持只读发现。来源规则与 SDK 接口见 [Skill 安装与更新](../docs/zh/user-guide/skill-management.md)。
+
 ## 编辑项目文件
 
 打开项目的工作区，可以新建文件或文件夹、直接重命名，并编辑文本文件。切换文件时，尚未保存的编辑会暂存在当前页面；按 **Cmd/Ctrl+S** 保存当前文件，或在关闭工作区编辑器时选择 **全部保存并关闭**。离开页面或刷新浏览器前请先保存，这些草稿不会自动持久化。
@@ -241,6 +249,8 @@ pnpm dev
 访问 **http://localhost:5173**。前端开发服务器默认连接本机 8000 端口的后端。
 
 运行后端测试前需先安装前端依赖，启动测试会使用其中的 `tsx` 执行构建清单脚本。运行检查：在 `webui/backend/` 执行 `uv run pytest`；在 `webui/frontend/` 执行 `pnpm typecheck` 和 `pnpm build`。完整构建会同时生成 CSS、页面和服务端文件，请使用 `pnpm build`，不要只运行其中一个子步骤。
+
+在 `webui/frontend/` 执行 `pnpm check:skills`，可回归验证 Skill 操作的中间进度、部分结果和取消行为。该检查使用可控 HTTP 响应，不访问 Skill 平台或调用模型。
 
 Windows 使用相同的安装和启动命令。源码运行时也可使用 PowerShell 脚本：
 

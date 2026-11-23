@@ -144,6 +144,11 @@ class Conversation:
     async def _run(self):
         from app.backends.ms_agent.chat import run_turn, _LOCK_ACQUIRE_TIMEOUT
         from app.backends.ms_agent.runtime import registry
+        from ms_agent.config.skills_manager import SkillsConfigManager
+        from ms_agent.skill.management.io import complete_io
+        from ms_agent.skill.management.usage import SkillUseLease
+
+        lease = None
         try:
             while True:
                 # Manual compaction/context retry can own the runtime without
@@ -157,6 +162,15 @@ class Conversation:
                 item = self.controller.start_next()
                 if item is None:
                     break
+                if lease is None:
+                    # Keep managed skill mutations blocked across consecutive
+                    # queued turns, including the gap between runtime locks.
+                    manager = SkillsConfigManager(home())
+                    lease = SkillUseLease([
+                        manager.global_skills_tree(),
+                        manager.project_skills_tree(self.project.path),
+                    ])
+                    await complete_io(lease.__enter__)
                 self.history = self._history()
                 self.turn_id = self.controller.active_turn
                 self.started_at = time.monotonic()
@@ -222,6 +236,8 @@ class Conversation:
             self.publish(self.snapshot())
             self.publish({'type': 'failure', 'message': str(exc)})
         finally:
+            if lease is not None:
+                lease.close()
             self.last_active = time.monotonic()
 
     def _append_frame(self, chunk):

@@ -1,3 +1,4 @@
+import asyncio
 import threading
 from contextlib import asynccontextmanager
 
@@ -41,6 +42,8 @@ def create_app() -> FastAPI:
         await prepare_startup()
         try:
             bootstrap()
+            from app.backends.ms_agent import skill_management
+            await asyncio.to_thread(skill_management.recover)
         except DefaultProjectMissingError:
             app.state.recovery = recovery.RecoveryStatus(required=True)
         await _log_effective_home()
@@ -103,9 +106,12 @@ def create_app() -> FastAPI:
         try:
             await registry.close_all()
         finally:
-            from app.backends.ms_agent import mcp_health
+            from app.backends.ms_agent import skill_management, mcp_health
 
-            await mcp_health.shutdown()
+            try:
+                await skill_management.shutdown()
+            finally:
+                await mcp_health.shutdown()
             skill_index.stop()
 
     app.include_router(auth.router)

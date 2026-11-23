@@ -105,7 +105,12 @@ export interface SessionMessage {
   }[]
   // Configuration-style content echo (user rows only): same segment shape the
   // composer sends, rebuilt by the backend so skill pills re-render on replay.
-  segments?: { type: 'text' | 'skill'; text?: string; id?: string; name?: string }[]
+  segments?: {
+    type: 'text' | 'skill'
+    text?: string
+    id?: string
+    name?: string
+  }[]
 }
 
 /** One item of a session's live todo plan, read from the workspace plan.json
@@ -179,6 +184,140 @@ export interface Skill {
   created_at: string
   origin: 'managed' | 'legacy-path' | 'standard' | 'external' | 'content'
   removable: boolean
+  installation?: {
+    id: string
+    source: SkillSource
+    version_label?: string | null
+    revision_short?: string
+    updated_at?: string
+    backup_at?: string | null
+  } | null
+  update?: {
+    remote_status:
+      | 'unchecked'
+      | 'current'
+      | 'available'
+      | 'failed'
+      | 'unsupported'
+      | 'pinned'
+    local_status: 'clean' | 'modified' | 'unknown' | 'missing'
+    checked_at?: string | null
+    stale?: boolean
+    error?: SkillManagementError | null
+  } | null
+  capabilities?: {
+    can_check?: boolean
+    can_update?: boolean
+    can_restore?: boolean
+    can_link?: boolean
+  }
+}
+
+export interface SkillSource {
+  provider: 'github' | 'modelscope'
+  repository: string
+  ref: string
+  revision: string
+  selector_kind: 'branch' | 'tag' | 'commit'
+  subdir: string
+  url: string
+  registry_id?: string | null
+}
+
+export interface SkillManagementError {
+  code: string
+  message: string
+  retry_after?: number | null
+}
+
+export interface SkillSourcePreview {
+  id: string
+  source: SkillSource | {
+    kind: 'collection'
+    provider: 'modelscope'
+    repository: string
+    title: string
+    url: string
+  }
+  expires_at: string
+  candidates: {
+    id: string
+    name: string
+    description: string
+    subdir: string
+    runtime_skill_id: string
+    version_label?: string | null
+    conflict?: string | null
+    source?: SkillSource | null
+    source_label?: string | null
+    error?: SkillManagementError | null
+  }[]
+}
+
+export interface SkillPlanItem {
+  id: string
+  name: string
+  runtime_skill_id: string
+  source: SkillSource
+  local_status: 'clean' | 'modified' | 'unknown' | 'missing'
+  version_label?: string | null
+  previous_version?: string | null
+  conflict?: string | null
+  changes: {
+    path: string
+    kind: 'added' | 'removed' | 'modified'
+    old_size: number
+    new_size: number
+    binary: boolean
+  }[]
+  safety?: {
+    risk_level: string
+    findings: {
+      category: string
+      severity: string
+      description: string
+      evidence: string
+    }[]
+  } | null
+}
+
+export interface SkillPlan {
+  id: string
+  kind: 'install' | 'update' | 'restore' | 'link'
+  items: SkillPlanItem[]
+  expires_at: string
+}
+
+export interface SkillItemResult {
+  item_id: string
+  status: 'succeeded' | 'failed'
+  installation_id?: string | null
+  runtime_skill_id?: string | null
+  error?: SkillManagementError | null
+}
+
+export interface SkillOperation<T = unknown> {
+  id: string
+  kind: string
+  status:
+    | 'queued'
+    | 'running'
+    | 'succeeded'
+    | 'partial'
+    | 'failed'
+    | 'cancelled'
+    | 'interrupted'
+  result: T | null
+  error: SkillManagementError | null
+  completed: number
+  total: number | null
+}
+
+export interface SkillDiff {
+  path: string
+  binary: boolean
+  diff: string | null
+  truncated: boolean
 }
 
 export interface MemoryItem {

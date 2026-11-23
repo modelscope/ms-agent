@@ -55,10 +55,18 @@ def test_local_same_page(page):
                               page) == ('/en/' + page + '.html', False)
 
 
-def test_local_legacy_normalizes():
+@pytest.mark.parametrize('old, current', [
+    ('Components/Config', 'development/configuration-reference'),
+    ('Components/SkillManagement', 'user-guide/skill-management'),
+    ('Components/skill-management', 'user-guide/skill-management'),
+    ('design/skill-update-management', 'development/skill-management'),
+    ('design/skill-update-implementation', 'development/skill-management'),
+    ('design/skill-update-walkthrough', 'development/skill-management-checklist'),
+])
+def test_local_legacy_normalizes(old, current):
     assert SITE.language_link(
-        application(preview=True), 'Components/Config') == (
-            '/en/development/configuration-reference.html', False)
+        application(preview=True), old) == (
+            '/en/' + current + '.html', False)
 
 
 @pytest.mark.parametrize('target', [
@@ -195,3 +203,9 @@ def test_old_url_and_anchors_preserved(built_site):
     assert doc.find(id='config_handler')
     assert doc.find(id='callbacks')
     assert doc.select('a[href*="configuration-reference.html"]')
+    skill_path = ('Components/skill-management.html' if lang == 'zh'
+                  else 'Components/SkillManagement.html')
+    skill = BeautifulSoup((output / skill_path).read_text(), 'html.parser')
+    assert skill.find(id='sdk-示例' if lang == 'zh' else 'sdk-example')
+    assert skill.select('a[href="../user-guide/skill-management.html"]')
+    assert skill.select('a[href="../development/skill-management.html"]')

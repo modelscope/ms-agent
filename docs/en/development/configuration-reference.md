@@ -85,6 +85,7 @@ Bundled examples use temperature 0.3, top_k 20, and stream true. This does not g
 | `skills.enable_manage` | bool | Expose management tools separately from loading |
 | `skills.prompt_injection` | str | all / always_only / none |
 | `skills.update_notice` | bool | Default false; stabilizes skill summaries only |
+| `skills.update_notice_in_sdk` | bool | Default false; with `update_notice`, enables SDK session notices. WebUI enables it by default; TUI keeps independent delivery. See [design and implementation](skill-management.md) |
 | `skills.search` | mapping | BM25/vector/hybrid selection and dependencies |
 | `skills.safety` | mapping | Enabling, trust policy, optional LLM checks |
 | `hooks` | mapping | Event→matcher groups→handlers; command executor currently implemented |

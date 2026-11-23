@@ -193,6 +193,21 @@ class SkillsConfigManager:
         scope: str = 'global',
         project_path: Optional[str] = None,
     ) -> List[str]:
+        from ms_agent.skill.management import (SkillManagementService,
+                                               SkillScope, skill_mutation)
+        target = SkillScope(project_path if scope == 'project' else None)
+        manager = SkillManagementService(str(self._global_dir))
+        with skill_mutation(manager.tree(target)):
+            result = self._import_from_path(source, scope, project_path)
+            manager.invalidate_local(target)
+            return result
+
+    def _import_from_path(
+        self,
+        source: str,
+        scope: str = 'global',
+        project_path: Optional[str] = None,
+    ) -> List[str]:
         """Copy Skill directories into this scope's managed live tree.
 
         A directory with ``SKILL.md`` is one skill; otherwise each immediate
@@ -228,6 +243,21 @@ class SkillsConfigManager:
         return imported
 
     def remove_imported(
+        self,
+        skill_id: str,
+        scope: str = 'global',
+        project_path: Optional[str] = None,
+    ) -> Path:
+        from ms_agent.skill.management import (SkillManagementService,
+                                               SkillScope, skill_mutation)
+        target = SkillScope(project_path if scope == 'project' else None)
+        manager = SkillManagementService(str(self._global_dir))
+        with skill_mutation(manager.tree(target)):
+            result = self._remove_imported(skill_id, scope, project_path)
+            manager.forget(target, skill_id)
+            return result
+
+    def _remove_imported(
         self,
         skill_id: str,
         scope: str = 'global',

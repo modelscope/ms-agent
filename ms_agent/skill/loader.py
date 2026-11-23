@@ -3,12 +3,36 @@ from __future__ import annotations
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import os
 import re
+from functools import wraps
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Union
 
 from ms_agent.utils.logger import logger
 from .discovery import SkillDescriptor
 from .schema import SkillSchema, SkillSchemaParser
+
+
+def _managed_reads(function):
+    @wraps(function)
+    def guarded(self, skills):
+        from ms_agent.project.paths import global_home
+        from ms_agent.skill.management.usage import skill_read
+        values = [skills] if isinstance(skills, str) else skills or []
+        trees = set()
+        for value in values:
+            if not isinstance(value, str):
+                continue
+            path = Path(value).expanduser().resolve()
+            for candidate in (path, *path.parents):
+                if candidate.name == 'skills' and (
+                        candidate.parent.name in ('.ms_agent', '.ms-agent')
+                        or candidate.parent == global_home().resolve()
+                        or (candidate.parent / 'skill-installs.json').exists()):
+                    trees.add(candidate)
+                    break
+        with skill_read(trees):
+            return function(self, skills)
+    return guarded
 
 
 class SkillLoader:
@@ -27,6 +51,7 @@ class SkillLoader:
                                     tuple[tuple[int, int, int],
                                           Optional[SkillDescriptor]]] = {}
 
+    @_managed_reads
     def load_skills(
         self, skills: Union[str, List[str], List[SkillSchema]]
     ) -> Dict[str, SkillSchema]:
@@ -84,6 +109,7 @@ class SkillLoader:
 
         return all_skills
 
+    @_managed_reads
     def discover_skills(
             self, skills: Union[str, List[str]]) -> Dict[str, SkillDescriptor]:
         """Discover local skills without traversing their support files.

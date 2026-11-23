@@ -24,7 +24,7 @@ import {
 import { useT } from '~/lib/i18n'
 import { usePresence } from '~/lib/presenceContext'
 import { useUrlPath } from '~/lib/useUrlPath'
-import type { Project, Session } from '~/lib/types'
+import type { Project, Session, Skill } from '~/lib/types'
 import SidebarToggleIcon from '~/assets/icons/sidebar-toggle.svg?react'
 import McpIcon from '~/assets/icons/mcp.svg?react'
 import SkillIcon from '~/assets/icons/skill.svg?react'
@@ -42,6 +42,7 @@ const REPO_URL = 'https://github.com/modelscope/ms-agent'
 interface AppLoaderData {
   projects: Project[]
   sessions: Session[]
+  globalSkills: Skill[]
 }
 
 const DEFAULT_PROJECT_ID = 'default'
@@ -287,6 +288,11 @@ export function Sidebar({
                 <SidebarNavItem
                   to="/settings/mcp-skills?tab=skills"
                   label={t.nav.skillManage}
+                  count={
+                    data?.globalSkills.filter(
+                      (skill) => skill.update?.remote_status === 'available'
+                    ).length
+                  }
                   icon={<SkillIcon className="h-5 w-5" />}
                   onNavigate={onNavigate}
                 />
@@ -406,13 +412,15 @@ function SidebarNavItem({
   label,
   icon,
   onNavigate,
-  className
+  className,
+  count
 }: {
   to: string
   label: string
   icon: React.ReactNode
   onNavigate?: () => void
   className?: string
+  count?: number
 }) {
   return (
     <NavLink
@@ -422,6 +430,11 @@ function SidebarNavItem({
     >
       <span className="shrink-0 flex items-center">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
+      {!!count && (
+        <span className="rounded-md bg-msa-fill-3 px-1.5 text-xs text-msa-text-2">
+          {count}
+        </span>
+      )}
     </NavLink>
   )
 }

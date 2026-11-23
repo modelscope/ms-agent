@@ -419,7 +419,9 @@ class SessionRuntime:
             self.input_queue, self.sink,
             log_getter=lambda: getattr(self.agent, "session_log", None),
         )
-        self.turn_lock = asyncio.Lock()
+        from ms_agent.skill.management.usage import SkillTurnLock
+
+        self.turn_lock = SkillTurnLock()
         # The user message that opened the CURRENT turn, as the composer showed
         # it (pre-expansion text plus any configuration segments), or None
         # between turns. Handed to re-attaching viewers on the `turn` frame,
@@ -550,6 +552,8 @@ class SessionRuntime:
             await self.agent.cleanup_tools()
         except Exception:
             logger.debug("agent cleanup skipped", exc_info=True)
+        if self.turn_lock.locked():
+            self.turn_lock.release()
 
 
 class RuntimeRegistry:
