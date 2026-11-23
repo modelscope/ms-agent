@@ -22,6 +22,8 @@
 | [uv](https://docs.astral.sh/uv/) | 0.5 或更高版本 | 准备独立的后端 Python 环境 |
 | Git | 当前可用版本 | 克隆源码 |
 
+<a id="首次配置"></a>
+
 #### 首次配置
 
 完整的环境安装与首次使用见[文档快速开始](../docs/zh/get-started/quick-start.md)，包括使用 uv 准备 Python、使用 nvm 安装 Node.js，以及 Windows 环境激活方式。下方保留已有 Python/Node.js 时可独立执行的启动流程。
@@ -71,12 +73,12 @@ ms-agent ui
 
 ### 3. 开始对话
 
-使用 ModelScope 时，可在[访问令牌页面](https://modelscope.cn/my/myaccesstoken)获取 API Key。
+1. 打开 **设置 → 模型设置**。对 ModelScope、OpenAI、Alibaba (DashScope) 这类已列出的内置服务商，选中后点击 **编辑**，填写 API Key 并保存。内置服务商已配置接口地址。ModelScope 的 Key 可在[访问令牌页面](https://modelscope.cn/my/myaccesstoken)获取。
+2. 如果列表里没有你的服务，点击 **添加提供方**。填写 **提供方 ID**、服务商提供的 API 地址（界面中的 **Base URL**）和 **API Key**，选择 **协议** 后保存。**展示名称** 可留空。不要把网页控制台地址或完整的 `chat/completions` 路径当作 Base URL。
+3. 在所选服务商下点击 **添加模型**，填写该服务提供的模型 ID。ModelScope 可以使用 `Qwen/Qwen3.8-Flash-Next` 作为示例；其他服务商请填写其提供的模型 ID。保存 Key 并不等于已经添加或选中模型。
+4. 返回对话页，使用默认项目或新建项目，在输入框下方选中刚添加的模型，把权限留在 **总是询问**，先发送一句简短的文本请求，例如：“用两句话介绍你能怎样帮助我。” 需要文件或图片时再附加。
 
-1. 打开 **设置 → 模型设置**，选择 **ModelScope → 编辑**，填写 API Key 并保存。内置服务商已配置接口地址；其他 OpenAI 兼容服务可通过“添加提供方”填写 Base URL 和 Key。
-2. 在该服务商下点击 **添加模型**，填写服务实际支持的模型 ID，例如 `Qwen/Qwen3.8-Flash-Next`。如果这个 id 返回 400，请改填该服务商当前可用的对话模型。模型是否可用及调用额度以服务商账号为准。
-3. 返回对话页，使用默认项目或新建项目，在输入框下方选择刚添加的模型，发送第一条消息；需要时可附上文件或图片。
-4. 按需为项目配置工作目录、技能和 MCP 工具。
+密钥和会话保存在本机（默认目录是 `~/.ms_agent`），也可以用 `MS_AGENT_HOME` 指定其他目录。不要把 `.env` 提交到 Git，也不要把真实 Key 发到聊天或截图中。
 
 ### 4. 下次启动
 
@@ -90,7 +92,7 @@ ms-agent ui
 
 请先切换到实际存放它们的目录。模型配置和会话会保留，无需重复填写 API Key。如果通过 nvm 安装 Node.js，确认新终端能运行 `node --version`；找不到命令时，先执行 `source "$HOME/.nvm/nvm.sh"`。
 
-完整操作指引见 [WebUI 教程](../docs/zh/user-guide/webui.md)、[模型设置](../docs/zh/user-guide/model-settings.md)和[技能与 MCP](../docs/zh/user-guide/skills-mcp.md)。
+完整操作指引见 [WebUI 教程](../docs/zh/user-guide/webui.md)、[模型设置](../docs/zh/user-guide/model-settings.md)和[技能与 MCP](../docs/zh/user-guide/skills-mcp.md)。若请求失败，见[故障排查](../docs/zh/user-guide/troubleshooting.md)。
 ## 在任务进行中补充输入
 
 智能体工作时，仍可输入、添加附件或选择技能。新消息**默认排队**，当前任务完成后依次执行。在 **设置 → 个性化 → 对话行为** 中选择 **插话**，新消息会在当前模型响应或已启动的工具操作结束后加入当前任务。修改设置只影响之后提交的消息。

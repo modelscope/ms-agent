@@ -64,8 +64,8 @@ For earlier demos and documentation, see [ModelScope-Agent 0.8.0 and earlier](ht
 * 🚀 Mar 23, 2026: Release MS-Agent v1.6.0, which includes the following updates:
   - **Context Compression**: Added context compression mechanism with token usage monitoring, overflow detection, and automatic context compaction via pruning historical tool outputs and LLM-based summarization.
   - **Agentic Insight v2 Enhancements**: Major architecture and performance improvements to the deep research system; achieves **55.43** on DeepResearch Bench with GPT5 and Qwen3.5-plus/flash. See [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2).
-  - **Knowledge Search**: Integrated Sirchmunk for intelligent retrieval over local codebases and documentation during agent conversations. See [Config Docs](docs/en/Components/Config.md).
-  - **Multimodal Model Input**: Support image, video, and other multimodal inputs. See [Multimodal Docs](docs/en/Components/MultimodalSupport.md).
+  - **Knowledge Search**: Integrated Sirchmunk for intelligent retrieval over local codebases and documentation during agent conversations. See the [retrieval guide](docs/en/core/retrieval.md).
+  - **Multimodal Model Input**: Support image, video, and other multimodal inputs. See the [multimodal guide](docs/en/core/multimodal.md).
 
 * 🚀 Feb 06, 2026: Release MS-Agent v1.6.0rc1, which includes the following updates:
   - **Agentic Insight v2**: A fully refactored deep-research system with better performance, scalability, and trustworthiness, with a WebUI entry point. See [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2).
@@ -86,12 +86,12 @@ For earlier demos and documentation, see [ModelScope-Agent 0.8.0 and earlier](ht
   - Support financial data collection via [Akshare](https://github.com/akfamily/akshare) and [Baostock](http://baostock.com/mainContent?file=home.md)
   - Support DagWorkflow for workflow orchestration
   - Optimize the DeepResearch workflow for stability and efficiency
-  - FinResearch official documentation: [FinResearch Doc](https://ms-agent-en.readthedocs.io/en/latest/Projects/FinResearch.html)
+  - FinResearch official documentation: [FinResearch Doc](docs/en/applications/fin-research.md)
   - DEMO: [FinResearchStudio](https://modelscope.cn/studios/ms-agent/FinResearch)
   - Examples: [FinResearchExamples](https://www.modelscope.cn/models/ms-agent/fin_research_examples)
 
 * 🚀 Nov 07, 2025: Release MS-Agent v1.4.0, which includes the following updates:
-  - 🔥 We present [**MS-Agent Skills**](docs/en/Components/AgentSkills.md), an **Implementation** of [Anthropic-Agent-Skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills) Protocol.
+  - 🔥 We present [**MS-Agent Skills**](docs/en/core/skills.md), an **Implementation** of [Anthropic-Agent-Skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills) Protocol.
   - 🔥 Add [Docs](https://ms-agent-en.readthedocs.io/en) and [中文文档](https://ms-agent.readthedocs.io/zh-cn)
   - 🔥 Support Sandbox Framework [ms-enclave](https://github.com/modelscope/ms-enclave)
 
@@ -214,7 +214,7 @@ https://github.com/user-attachments/assets/43b3c1cc-555a-4184-b1dd-66e0a21e7a12
 > [!IMPORTANT]
 > **Install the new WebUI from source.** You will need Git, **Python 3.12+**, **Node.js 22.22.0+**, **pnpm 10.17.1**, and **uv 0.5+**.
 
-If this is your first installation, follow the [environment setup guide](webui/README.md#first-time-setup). If Python and Node.js are already installed, check their versions with `python3 --version` and `node --version`. To create a Python environment, run the following in the directory where you plan to keep the project:
+If you still need to install Python or Node.js, follow the environment section in the [Quick start](docs/en/get-started/quick-start.md#prepare-python). If they are already installed, check the versions with `python3 --version` and `node --version`. To create a Python environment, run the following in the directory where you plan to keep the project:
 
 ```bash
 python3 -m venv ms-agent-env
@@ -232,27 +232,29 @@ pip install -e .
 ms-agent ui
 ```
 
-On first launch, MS-Agent sets up the backend environment with uv, installs frontend
-dependencies, and builds the frontend. Stay connected to the internet until setup finishes.
-The browser then opens at the URL printed in the terminal, usually
-**http://127.0.0.1:8000**.
-In **Settings → Models**, select a provider, click **Edit** to save your API key,
-then use **Add model** to enter a model ID. Return to the chat page and select the model
-below the message box to start a conversation. Press Ctrl-C to stop the service.
+The first start sets up the backend with uv, installs frontend dependencies, and builds the pages. Keep an internet connection during setup. The browser opens at the address printed in the terminal, usually **http://127.0.0.1:8000**. If the port is already in use, the app chooses another one—use the address it prints. Press Ctrl-C in that terminal to stop the service.
+
+Then configure a model and send a first message:
+
+1. Open **Settings → Models**. For a built-in provider such as ModelScope, OpenAI, or Alibaba (DashScope), select it, click **Edit**, enter your API key, and save. You can get a ModelScope key from the [access token page](https://modelscope.cn/my/myaccesstoken).
+2. If your service is not in the list, click **Add provider**. Enter a **Provider ID**, the **Base URL** supplied by your provider, and an **API Key**. Choose a **Protocol**, then save. A **Display Name** is optional. Do not use a website console or the full `chat/completions` path as the Base URL.
+3. Under the selected provider, click **Add model** and enter a model ID from that service. For ModelScope, one example is `Qwen/Qwen3.8-Flash-Next`. For other providers, use the model ID they give you. Saving a key does not add or select a model.
+4. Return to the chat, select that model under the input, leave the permission setting at **Always ask**, and send a short text request such as: “Describe in two sentences how you can help me.”
+
+Keys and sessions are saved on this computer (by default under `~/.ms_agent`). Do not commit `.env` files, and do not put real keys in the chat or in screenshots. After a successful reply, continue with the [WebUI guide](docs/en/user-guide/webui.md) and [model settings](docs/en/user-guide/model-settings.md). If a request fails, see [Troubleshooting](docs/en/user-guide/troubleshooting.md).
 
 ```bash
 ms-agent ui --port 8080    # Choose another port
 ms-agent ui --no-browser  # Do not open a browser
 ```
 
-For virtual environment setup, development, Docker, and configuration, see the
-[WebUI guide](webui/README.md).
+More installation and development options are in the [WebUI README](webui/README.md).
 
 <a id="terminal-and-sdk"></a>
 
 ### ⌨️ Terminal and SDK
 
-TUI, CLI, and the Python SDK require **Python 3.10+**; Node.js and pnpm are not needed. You can [install Python with uv](webui/README.md#install-python) if you do not have a compatible version. Otherwise, check `python3 --version`, then create and activate an environment:
+TUI, CLI, and the Python SDK require **Python 3.10+**; Node.js and pnpm are not needed. You can [install Python with uv](docs/en/get-started/quick-start.md#prepare-python) if you do not have a compatible version. Otherwise, check `python3 --version`, then create and activate an environment:
 
 ```bash
 python3 -m venv ms-agent-env
@@ -331,21 +333,21 @@ pip install -e '.[cinema]'
 pip install -e '.[all]'
 ```
 
-See the [installation guide](docs/en/GetStarted/Installation.md#optional-dependencies-extras) for the full list. Keep the quotes: macOS defaults to zsh, which otherwise treats square brackets as filename patterns.
+See the [Quick start](docs/en/get-started/quick-start.md#add-dependencies-when-needed) for the full list. Keep the quotes: macOS defaults to zsh, which otherwise treats square brackets as filename patterns.
 
-The current [PyPI release](https://pypi.org/project/ms-agent/) is 1.6.0. It has the older WebUI and dependency set, lacks the current TUI, and does not provide `retrieval` or `cinema` extras. Install from source when setting up a new environment; see the installation guide for version differences and known installation issues.
+The current [PyPI release](https://pypi.org/project/ms-agent/) is 1.6.0. It has the older WebUI and dependency set, lacks the current TUI, and does not provide `retrieval` or `cinema` extras. Install from source when setting up a new environment; see the Quick start for version differences and known installation issues.
 
 </details>
 
-When you open a new terminal, activate the Python environment again. WebUI users can then run `ms-agent ui`; terminal and SDK users also need to set their API key again, or save it in a `.env` file as described in the configuration guide.
+When you open a new terminal, activate the Python environment again. WebUI users can then run `ms-agent ui`. Terminal and SDK users also need to set their API key again, or save it in a local `.env` file (do not commit that file). See the [configuration reference](docs/en/development/configuration-reference.md).
 
 <a id="configuration-and-extensions"></a>
 
 ### ⚙️ Configuration and Extensions
 
-After your first conversation, choose another model, connect MCP tools, or load skills as needed. Manage these in WebUI settings, or follow the [model and configuration reference](docs/en/Components/Config.md), [tools and MCP guide](docs/en/Components/Tools.md), and [Agent Skills guide](docs/en/Components/AgentSkills.md) for terminal and SDK usage. Try tool calls online in the [MCP Playground](https://modelscope.cn/mcp/playground).
+After your first conversation, you can choose another model, connect MCP tools, or load skills. In the WebUI, manage these in Settings; see the [model settings](docs/en/user-guide/model-settings.md) and [skills and MCP](docs/en/user-guide/skills-mcp.md) guides. For terminal and SDK usage, see the [tools](docs/en/core/tools.md) and [skills](docs/en/core/skills.md) pages. Try tool calls online in the [MCP Playground](https://modelscope.cn/mcp/playground).
 
-For scheduled jobs with `ms-agent cron`, Agent Hub with `ms-agent agent`, and more commands, see the [CLI reference](docs/en/GetStarted/CLI.md).
+For scheduled jobs with `ms-agent cron`, Agent Hub with `ms-agent agent`, and more commands, see the [CLI reference](docs/en/development/cli-reference.md).
 
 <a id="applications"></a>
 
@@ -369,7 +371,7 @@ As of April 9, 2026, Agentic Insight v2 scored **55.31 on DeepResearch Bench** w
 
 Coordinate requirements analysis, architecture design, file planning, coding, and refinement through a multi-agent development workflow. Generate files in dependency order and iterate using LSP diagnostics and runtime feedback. A seven-stage standard workflow supports detailed project design; a four-stage alternative supports rapid prototyping.
 
-[Design and usage guide](docs/en/Projects/CodeGenesis.md) · [Source code](projects/code_genesis) · [Workflow diagram](projects/code_genesis/asset/workflow.jpg)
+[Design and usage guide](docs/en/applications/code-genesis.md) · [Source code](projects/code_genesis) · [Workflow diagram](projects/code_genesis/asset/workflow.jpg)
 
 <a id="finresearch--financial-data-meets-market-research"></a>
 
@@ -409,8 +411,10 @@ For tasks that can be evaluated automatically, run the current skills, collect t
 
 ## 📚 Documentation
 
-- [User guide](https://ms-agent-en.readthedocs.io/en/latest/): getting started, core components, extensions, and configuration.
-- [Contributor guide](docs/en/Components/ContributorGuide.md): contribute to the framework and applications.
+- [Quick start](docs/en/get-started/quick-start.md): install the WebUI or the terminal and complete your first task
+- [WebUI guide](docs/en/user-guide/webui.md): everyday use in the browser
+- [User documentation](https://ms-agent-en.readthedocs.io/en/latest/): the full hosted manual
+- [Contributor guide](docs/en/development/contributing.md): contribute to the framework and applications
 
 <a id="license"></a>
 

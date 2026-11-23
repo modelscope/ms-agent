@@ -64,8 +64,8 @@
 - 🚀 **2026年3月23日：发布 MS-Agent v1.6.0，主要更新内容如下：**
   - **上下文压缩**：新增上下文压缩机制，支持 Token 用量监控与溢出检测，通过裁剪历史工具输出和 LLM 摘要自动压缩对话上下文。
   - **Agentic Insight v2 增强**：深度研究系统架构与性能大幅优化，基于 GPT5、Qwen3.5-plus/flash 模型组合在 DeepResearch Bench 上的评分达到 **55.43** 分。详情请参考 [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2)。
-  - **知识库搜索**：集成 Sirchmunk 智能检索，支持在 Agent 对话中自动检索本地代码库与文档，详情请参考[配置文档](docs/zh/Components/config.md)。
-  - **多模态模型输入**：支持图片、视频等多模态输入，详情请参考[多模态文档](docs/zh/Components/multimodal-support.md)。
+  - **知识库搜索**：集成 Sirchmunk 智能检索，支持在 Agent 对话中自动检索本地代码库与文档，详情请参考[检索说明](docs/zh/core/retrieval.md)。
+  - **多模态模型输入**：支持图片、视频等多模态输入，详情请参考[多模态说明](docs/zh/core/multimodal.md)。
 
 * 🚀 **2026年2月6日：发布 MS-Agent v1.6.0rc1，主要更新内容如下：**
   - **Agentic Insight v2**：完整重构的深度研究系统，性能更优、可扩展性更强、可信度更高，提供了 WebUI 入口，详情请参考 [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2)
@@ -85,12 +85,12 @@
   - 支持基于[Akshare](https://github.com/akfamily/akshare)和[Baostock](http://baostock.com/mainContent?file=home.md)的金融数据获取工具
   - 支持以Dag形式编排工作流
   - 优化DeepResearch稳定性与效率
-  - 官方文档： [金融深度研究](https://ms-agent.readthedocs.io/zh-cn/latest/Projects/fin-research.html)
+  - 官方文档： [金融深度研究](docs/zh/applications/fin-research.md)
   - 魔搭创空间DEMO: [FinResearchStudio](https://modelscope.cn/studios/ms-agent/FinResearch)
   - 报告样例: [FinResearchExamples](https://www.modelscope.cn/models/ms-agent/fin_research_examples)
 
 * 🚀 2025.11.07：发布MS-Agent v1.4.0，包含以下更新：
-  - 🔥 新增 [**MS-Agent Skills**](docs/zh/Components/agent-skills.md), 基于 [**Anthropic-Agent-Skills**](https://docs.claude.com/en/docs/agents-and-tools/agent-skills) 协议实现.
+  - 🔥 新增 [**MS-Agent Skills**](docs/zh/core/skills.md), 基于 [**Anthropic-Agent-Skills**](https://docs.claude.com/en/docs/agents-and-tools/agent-skills) 协议实现.
   - 🔥 新增 [中文文档](https://ms-agent.readthedocs.io/zh-cn)和[英文文档](https://ms-agent-en.readthedocs.io/en)
   - 🔥 支持沙箱框架 [ms-enclave](https://github.com/modelscope/ms-enclave)
 
@@ -216,14 +216,14 @@ https://github.com/user-attachments/assets/43b3c1cc-555a-4184-b1dd-66e0a21e7a12
 > [!IMPORTANT]
 > **新版 WebUI 请优先从源码安装。** 需要 Git、**Python 3.12+**、**Node.js 22.22.0+**、**pnpm 10.17.1** 和 **uv 0.5+**。
 
-首次配置环境，请先完成 [环境准备](webui/README_ZH.md#首次配置)。已有 Python 和 Node.js 时，用 `python3 --version`、`node --version` 确认版本；如果尚未创建 Python 环境，可在准备存放项目的目录执行：
+如果还需要安装 Python 或 Node.js，请先看 [快速开始](docs/zh/get-started/quick-start.md#准备-python-环境) 中的环境准备。已经装好时，用 `python3 --version`、`node --version` 确认版本。如果还没有 Python 环境，可在准备存放项目的目录执行：
 
 ```bash
 python3 -m venv ms-agent-env
 source ms-agent-env/bin/activate
 ```
 
-创建前请确认 `python3` 为 3.12+。已有虚拟环境或 Conda 环境的用户直接激活即可。然后在同一终端中安装并启动：
+创建前请确认 `python3` 为 3.12+。已有虚拟环境或 Conda 环境时，直接激活即可。然后在同一终端中安装并启动：
 
 ```bash
 npm install --global pnpm@10.17.1
@@ -234,20 +234,29 @@ pip install -e .
 ms-agent ui
 ```
 
-首次启动会通过 uv 准备后端环境、安装前端依赖并构建页面和样式，需要保持网络连接。就绪后浏览器会打开终端显示的地址，通常是 **http://127.0.0.1:8000**。在 **设置 → 模型设置** 选择服务商，点击 **编辑** 保存 API Key，再通过 **添加模型** 填写模型 ID。返回对话页，在输入框下方选中该模型即可开始使用。按 Ctrl-C 停止服务。
+首次启动会用 uv 准备后端环境、安装前端依赖并构建页面。请保持网络连接，等到终端打印就绪地址。浏览器通常会打开 **http://127.0.0.1:8000**；如果该端口已被占用，以终端打印的地址为准。在启动终端按 Ctrl-C 可停止服务。
+
+然后配置模型，并发送第一条消息：
+
+1. 打开 **设置 → 模型设置**。对 ModelScope、OpenAI、Alibaba (DashScope) 这类已列出的内置服务商，选中后点击 **编辑**，填写 API Key 并保存。ModelScope 的 Key 可在[访问令牌页面](https://modelscope.cn/my/myaccesstoken)获取。
+2. 如果列表里没有你的服务，点击 **添加提供方**。填写 **提供方 ID**、服务商提供的 API 地址（界面中的 **Base URL**）和 **API Key**，选择 **协议** 后保存。**展示名称** 可留空。不要把网页控制台地址或完整的 `chat/completions` 路径当作 Base URL。
+3. 在所选服务商下点击 **添加模型**，填写该服务提供的模型 ID。ModelScope 可以使用 `Qwen/Qwen3.8-Flash-Next` 作为示例；其他服务商请填写其提供的模型 ID。保存 Key 并不等于已经添加或选中模型。
+4. 回到对话页，在输入框下方选中刚添加的模型，把权限留在 **总是询问**，先发送一句简短的文本请求，例如：“用两句话介绍你能怎样帮助我。”
+
+密钥和会话保存在本机（默认目录是 `~/.ms_agent`）。不要把 `.env` 提交到 Git，也不要把真实 Key 发到聊天或截图中。收到正常回复后，可继续阅读 [WebUI 教程](docs/zh/user-guide/webui.md) 和[模型设置](docs/zh/user-guide/model-settings.md)。若请求失败，见[故障排查](docs/zh/user-guide/troubleshooting.md)。
 
 ```bash
 ms-agent ui --port 8080    # 指定访问端口
 ms-agent ui --no-browser  # 不自动打开浏览器
 ```
 
-虚拟环境准备、开发、Docker 和配置说明见 [WebUI 完整指南](webui/README_ZH.md)。
+更多安装方式与开发说明见 [WebUI 说明](webui/README_ZH.md)。
 
 <a id="终端与-sdk"></a>
 
 ### ⌨️ 终端与 SDK
 
-TUI、CLI 和 Python SDK 需要 **Python 3.10+**，无需安装 Node.js 或 pnpm。还没有合适的 Python 时，可用 [uv 准备 Python 环境](webui/README_ZH.md#安装-python)。已有 Python 时，先用 `python3 --version` 确认版本，再创建并激活环境：
+TUI、CLI 和 Python SDK 需要 **Python 3.10+**，无需安装 Node.js 或 pnpm。还没有合适的 Python 时，可用[快速开始](docs/zh/get-started/quick-start.md#准备-python-环境)中的 uv 方式准备环境。已有 Python 时，先用 `python3 --version` 确认版本，再创建并激活环境：
 
 ```bash
 python3 -m venv ms-agent-env
@@ -326,21 +335,21 @@ pip install -e '.[cinema]'
 pip install -e '.[all]'
 ```
 
-完整列表见[安装指南](docs/zh/GetStarted/installation.md#可选依赖extras)。这些命令中的引号需要保留，避免 macOS 默认的 zsh 将方括号作为文件匹配表达式。
+完整列表见[快速开始](docs/zh/get-started/quick-start.md#按需增加依赖)。这些命令中的引号需要保留，避免 macOS 默认的 zsh 将方括号作为文件匹配表达式。
 
-[PyPI 已发布版本](https://pypi.org/project/ms-agent/)目前为 1.6.0，使用旧版 WebUI 和依赖组合，不包含当前源码的 TUI，也没有 `retrieval`、`cinema` extras。新环境请使用上面的源码安装；版本差异与已知安装问题见安装指南。
+[PyPI 已发布版本](https://pypi.org/project/ms-agent/)目前为 1.6.0，使用旧版 WebUI 和依赖组合，不包含当前源码的 TUI，也没有 `retrieval`、`cinema` extras。新环境请使用上面的源码安装；版本差异与已知安装问题见快速开始。
 
 </details>
 
-重新打开终端后，需要再次激活 Python 环境。WebUI 用户运行 `ms-agent ui` 即可；终端与 SDK 用户还需重新设置 API Key，或按配置文档将其保存在 `.env` 文件中。
+重新打开终端后，需要再次激活 Python 环境。WebUI 用户运行 `ms-agent ui` 即可。终端与 SDK 用户还需重新设置 API Key，或将其保存在本地 `.env` 文件中（不要提交该文件）。详见[配置参考](docs/zh/development/configuration-reference.md)。
 
 <a id="配置与扩展"></a>
 
 ### ⚙️ 配置与扩展
 
-完成首次对话后，可以按需更换模型、接入 MCP 工具或加载技能。WebUI 可在设置中管理这些配置；终端与 SDK 的用法见[模型与配置参考](docs/zh/Components/config.md)、[工具与 MCP](docs/zh/Components/tools.md)和[Agent Skills](docs/zh/Components/agent-skills.md)。也可以在 [MCP Playground](https://modelscope.cn/mcp/playground) 在线体验工具调用。
+完成首次对话后，可以更换模型、接入 MCP 工具或加载技能。WebUI 可在设置中管理这些配置，详见[模型设置](docs/zh/user-guide/model-settings.md)和[技能与 MCP](docs/zh/user-guide/skills-mcp.md)。终端与 SDK 的用法见[工具](docs/zh/core/tools.md)和[技能](docs/zh/core/skills.md)。也可以在 [MCP Playground](https://modelscope.cn/mcp/playground) 在线体验工具调用。
 
-定时任务 `ms-agent cron`、Agent Hub `ms-agent agent` 及更多命令见 [CLI 参考](docs/zh/GetStarted/cli.md)。
+定时任务 `ms-agent cron`、Agent Hub `ms-agent agent` 及更多命令见 [CLI 参考](docs/zh/development/cli-reference.md)。
 
 <a id="应用项目"></a>
 
@@ -364,7 +373,7 @@ pip install -e '.[all]'
 
 将需求分析、架构设计、文件规划、编码与修正组织为多智能体开发流程。按文件依赖关系安排生成顺序，结合 LSP 诊断与运行反馈迭代代码；提供七阶段标准流程和四阶段简化流程，适配需要详细设计的项目与快速原型。
 
-[设计与使用指南](docs/zh/Projects/code-genesis.md) · [项目源码](projects/code_genesis) · [工作流示意](projects/code_genesis/asset/workflow.jpg)
+[设计与使用指南](docs/zh/applications/code-genesis.md) · [项目源码](projects/code_genesis) · [工作流示意](projects/code_genesis/asset/workflow.jpg)
 
 <a id="finresearch--结合金融数据与市场信息的研究"></a>
 
@@ -404,8 +413,10 @@ pip install -e '.[all]'
 
 ## 📚 文档
 
-- [用户文档](https://ms-agent.readthedocs.io/zh-cn/latest/)：快速开始、核心组件、能力扩展与配置参考。
-- [贡献指南](docs/zh/Components/contributor-guide.md)：参与框架与应用开发。
+- [快速开始](docs/zh/get-started/quick-start.md)：安装 WebUI 或终端，完成第一次对话
+- [WebUI 教程](docs/zh/user-guide/webui.md)：在浏览器中的日常使用
+- [用户文档站点](https://ms-agent.readthedocs.io/zh-cn/latest/)：完整在线手册
+- [贡献指南](docs/zh/development/contributing.md)：参与框架与应用开发
 
 <a id="许可证"></a>
 

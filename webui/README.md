@@ -29,6 +29,8 @@ Install and start the WebUI from source with the following steps.
 | [uv](https://docs.astral.sh/uv/) | 0.5 or newer | Separate backend Python environment |
 | Git | A current version | Clone the source |
 
+<a id="first-time-setup"></a>
+
 #### First-time Setup
 
 See the [documentation quick start](../docs/en/get-started/quick-start.md) for complete setup, including Python through uv, Node.js through nvm, and Windows environment activation. The steps below remain a standalone launch guide when Python and Node.js are already available.
@@ -86,12 +88,12 @@ printed in the terminal. Press **Ctrl-C** to stop the service.
 
 ### 3. Start a conversation
 
-For ModelScope, obtain an API key from the [access token page](https://modelscope.cn/my/myaccesstoken).
+1. Open **Settings → Models**. For a built-in provider such as ModelScope, OpenAI, or Alibaba (DashScope), select it, click **Edit**, enter your API key, and save. Built-in providers already have an endpoint. You can get a ModelScope key from the [access token page](https://modelscope.cn/my/myaccesstoken).
+2. If your service is not in the list, click **Add provider**. Enter a **Provider ID**, the **Base URL** supplied by your provider, and an **API Key**. Choose a **Protocol**, then save. A **Display Name** is optional. Do not use a website console or the full `chat/completions` path as the Base URL.
+3. Under the selected provider, click **Add model** and enter a model ID from that service. For ModelScope, one example is `Qwen/Qwen3.8-Flash-Next`. For other providers, use the model ID they give you. Saving a key does not add or select a model.
+4. Return to chat, use the default project or create one, select the new model below the input, leave the permission setting at **Always ask**, and send a short text request such as: “Describe in two sentences how you can help me.” Attach files or images later, when you need them.
 
-1. Open **Settings → Models**, select **ModelScope → Edit**, enter your API key, and save. Built-in providers already have an endpoint. For another OpenAI-compatible service, use **Add provider** to enter its Base URL and key.
-2. Click **Add model** under that provider and enter a model ID supported by the service, such as `Qwen/Qwen3.8-Flash-Next`. If that id returns 400, enter another chat model the provider currently serves. Availability and quotas depend on your provider account.
-3. Return to chat, use the default project or create one, select the new model below the input, and send your first message. Attach files or images when relevant.
-4. Configure a project workspace, skills, and MCP tools as needed.
+Keys and sessions are saved on this computer (by default under `~/.ms_agent`). You can set `MS_AGENT_HOME` to use another directory. Do not commit `.env` files, and do not put real keys in the chat or in screenshots.
 
 ### 4. Start Again Later
 
@@ -104,6 +106,8 @@ ms-agent ui
 ```
 
 First change to the directory where you saved them. Model configuration and sessions persist, so you do not need to enter your API key again. If you installed Node.js through nvm, check `node --version` in the new terminal. If the command is missing, run `source "$HOME/.nvm/nvm.sh"` first.
+
+For everyday use after this first reply, see the [WebUI guide](../docs/en/user-guide/webui.md), [model settings](../docs/en/user-guide/model-settings.md), and [skills and MCP](../docs/en/user-guide/skills-mcp.md). If a request fails, see [Troubleshooting](../docs/en/user-guide/troubleshooting.md).
 
 ## Add input during a task
 
