@@ -1,4 +1,5 @@
 import { StyleProvider } from '@ant-design/cssinjs'
+import { SkillUpdateChecks } from '~/components/resources/SkillUpdateChecks'
 import { XProvider } from '@ant-design/x'
 import { App as AntdApp } from 'antd'
 import { useEffect } from 'react'
@@ -265,6 +266,7 @@ function ThemedRoot({ children }: { children: React.ReactNode }) {
           <NProgressHandler />
           <ApiErrorBridge />
           {auth.authenticated ? <ServerEventsBridge /> : null}
+          {auth.authenticated ? <SkillUpdateChecks /> : null}
           {children}
         </AntdApp>
       </XProvider>

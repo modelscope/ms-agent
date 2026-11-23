@@ -13,6 +13,7 @@
     "check:questions": "tsx scripts/checkQuestionState.ts",
     "check:inputs": "tsx scripts/checkSessionInputs.ts",
     "check:auth": "tsx scripts/checkAuthRedirects.ts",
+    "check:skills": "tsx scripts/checkSkillOperations.ts",
     "dev": "pnpm gen:antd-css && react-router dev",
     "build": "pnpm gen:antd-css && react-router build && tsx scripts/buildManifest.ts",
     "build:image": "pnpm build && tsx scripts/traceRuntime.ts",

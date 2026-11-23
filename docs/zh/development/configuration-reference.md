@@ -85,6 +85,7 @@ class ReviewedHandler(ConfigLifecycleHandler):
 | `skills.enable_manage` | bool | 是否开放管理工具，和只读技能加载分开 |
 | `skills.prompt_injection` | str | all / always_only / none |
 | `skills.update_notice` | bool | 默认false；仅稳定技能摘要段 |
+| `skills.update_notice_in_sdk` | bool | 默认false；与 `update_notice` 同时启用时由 SDK 发送会话通知。WebUI 默认启用，TUI 保留独立通知。见[设计与实现](skill-management.md) |
 | `skills.search` | mapping | BM25/vector/hybrid等选择及依赖 |
 | `skills.safety` | mapping | 启用、信任策略和可选LLM检查 |
 | `hooks` | mapping | 事件→matcher组→hooks；当前command执行器 |

@@ -53,4 +53,6 @@ Default BM25 retrieval needs no embedding model. Vector/hybrid modes require add
 
 `ms-agent-skills` is one capability-gateway skill package, not the collection of all skills or an automatic WebUI installer. See [Capability service](capability-gateway.md).
 
-Next: [Skills and MCP](../user-guide/skills-mcp.md), [Plugins](plugins.md). Implementation: `skill/catalog.py`, `schema.py`, `runtime.py`, `prompt_injector.py`, `config/skills_manager.py`.
+Managed installation, updates, and restore belong to `ms_agent.skill.management`, separate from discovery and runtime loading. WebUI opts into `skills.update_notice_in_sdk`, committing the notice baseline when the SDK persists the message. TUI retains its independent notifications. See [skill management design and implementation](../development/skill-management.md) for APIs and consistency boundaries.
+
+Next: [Skills and MCP](../user-guide/skills-mcp.md), [installation and updates](../user-guide/skill-management.md), [Plugins](plugins.md). Implementation: `skill/catalog.py`, `schema.py`, `runtime.py`, `prompt_injector.py`, `config/skills_manager.py`.

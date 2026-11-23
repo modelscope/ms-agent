@@ -1481,12 +1481,25 @@ async def _start_turn(project, session, user_msg, prompt: str,
     Returns `(rt, enqueued, intro, sent)`. `enqueued` False means no turn was
     started and the lock is already back — `intro` then carries a non-turn reply
     for the caller to stream in its place. `sent` is the prompt AS ENQUEUED
-    (slash expansion and the skill notice rewrite it in here), which the caller
+    (slash expansion rewrites it here), which the caller
     needs to seal a failed turn: the typed text would persist the wrong user row.
     """
     rt = None
     marker: dict | None = None
     started = False
+    from ms_agent.config.skills_manager import SkillsConfigManager
+    from ms_agent.skill.management.io import complete_io
+    from ms_agent.skill.management.usage import SkillUseLease
+    from app.backends.ms_agent.common import home
+
+    manager = SkillsConfigManager(home())
+    lease = SkillUseLease([manager.global_skills_tree(),
+                           manager.project_skills_tree(project.path)])
+    try:
+        await complete_io(lease.__enter__)
+    except BaseException:
+        lease.close()
+        raise
     # Declare the turn running from HERE rather than from the enqueue. Acquiring
     # the runtime below takes seconds on a cold session and only ends by taking
     # `turn_lock`, so that whole stretch used to read as idle to presence,
@@ -1496,39 +1509,20 @@ async def _start_turn(project, session, user_msg, prompt: str,
     registry.mark_starting(session.id, project.id)
     try:
         rt = await _acquire_live_runtime(project, session)
+        # The host lock outlives SSE disconnects and owns the accepted turn.
+        # Tests may supply a plain Lock; production runtimes use SkillTurnLock.
+        if hasattr(rt.turn_lock, "skill_lease"):
+            rt.turn_lock.skill_lease = lease
         # The lock is ours, so the previous turn's question is history now and
         # this turn's is not known until the enqueue below. Anything reading
         # `turn_user` in between must see nothing rather than the last turn's.
         rt.turn_user = None
         if prepared is not None:
-            rt.sink.new_turn()
-            await rt.enqueue(prepared['prompt'], attachments=prepared.get('attachments'))
-            typed, _ = _content_parts(user_msg)
-            rt.turn_user = {'content': typed, 'segments': (
-                [s.model_dump() for s in user_msg.content]
-                if isinstance(user_msg.content, list) else None)}
-            rt.turn_started_at = time.monotonic()
-            rt.turn_started_wall = time.time()
-            started = True
-            return rt, True, None, prepared['prompt']
+            attachments = prepared.get('attachments')
+        # Admission may precede execution by many turns or a process restart.
+        # Expand the original request against the current catalog under the
+        # turn lease, never the skill body frozen in prepared['prompt'].
         _sync_runtime_skills(rt, project)
-
-        # Skill-update notice (tail-only sync): compare the freshly-synced
-        # catalog against what this session was last told (skill_surface.json)
-        # and, on drift, prefix this turn's prompt with a <system-reminder>
-        # carrying the full current list. The sidecar is committed only after
-        # the turn is actually enqueued — an intro-only reply or a failed
-        # enqueue re-fires the notice next turn instead of losing it.
-        notice: str | None = None
-        commit_notice = None
-        catalog0 = _catalog_for(rt)
-        if catalog0 is not None:
-            try:
-                from app.backends.ms_agent.skill_notice import pending_notice
-
-                notice, commit_notice = pending_notice(catalog0, project, session)
-            except Exception:
-                logger.debug("skill notice check failed", exc_info=True)
         user_typed = prompt  # pre-expansion text, for the display marker
 
         # Slash-skill invocation, two tiers (Route A doesn't route commands,
@@ -1548,35 +1542,20 @@ async def _start_turn(project, session, user_msg, prompt: str,
                     return rt, False, content, ""
                 prompt = content  # "submit": run the enriched skill prompt as the turn
 
-        if notice:
-            # Prepend AFTER expansion so token stripping never sees the
-            # notice. The model reads the notice; the UI shows the typed text
-            # via the display marker (same mechanism as slash expansion).
-            prompt = notice + "\n\n" + prompt
-            if marker is None:
-                marker = {"original_text": user_typed, "skill_ids": []}
+        # The SDK appends internal notices at delivery. Preserve the original
+        # bubble even for ordinary text; managed inputs already persist their
+        # display marker through SessionInputController.
+        if marker is None:
+            marker = {"original_text": user_typed, "skill_ids": []}
 
-        if marker is not None and isinstance(
-            getattr(user_msg, "content", None), list
-        ):
+        if isinstance(getattr(user_msg, "content", None), list):
             # Persist the configuration-style segments AS SENT (skill id +
             # display name + text) so history replays exactly what the user
             # saw in the composer (pills with readable names, not raw ids).
             marker["segments"] = [s.model_dump() for s in user_msg.content]
-        elif marker is None and isinstance(
-            getattr(user_msg, "content", None), list
-        ) and any(s.type == "skill" for s in user_msg.content):
-            # Skill pills were sent but nothing expanded (e.g. the skill was
-            # deleted): still persist a display marker so the echo keeps the
-            # pills instead of silently dropping them.
-            marker = {
-                "original_text": user_typed,
-                "skill_ids": [],
-                "segments": [s.model_dump() for s in user_msg.content],
-            }
-
         rt.sink.new_turn()  # this turn owns the event buffer from here
-        await rt.enqueue(prompt, marker=marker, attachments=attachments)
+        await rt.enqueue(prompt, marker=marker if prepared is None else None,
+                         attachments=attachments)
         # The turn's user message, for viewers that join before the SDK appends
         # it to the session log (see SessionRuntime.turn_user). The pre-expansion
         # text, and the composer's segments when there were any — i.e. exactly
@@ -1594,14 +1573,14 @@ async def _start_turn(project, session, user_msg, prompt: str,
         # (e.g. "was plan.json written during THIS turn" in sessions.read_plan).
         rt.turn_started_wall = time.time()
         started = True
-        if notice and commit_notice is not None:
-            commit_notice()  # the model has now been told — persist the surface
         return rt, True, "", prompt
     finally:
         # Running-state goes back to `turn_lock`, which a started turn is already
         # holding — seamless for anything polling it. A turn that never started
         # leaves nothing behind, which is what readers should see.
         registry.clear_starting(session.id)
+        if not started or not hasattr(getattr(rt, "turn_lock", None), "skill_lease"):
+            lease.close()
         # The lock is handed to whoever will see the turn end (the live stream's
         # finally, or the drain). Released here only when no turn was started:
         # an intro-only reply, or a failure anywhere above.

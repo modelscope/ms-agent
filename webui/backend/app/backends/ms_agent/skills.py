@@ -34,6 +34,7 @@ from pathlib import Path, PurePosixPath
 from app.backends.errors import BadRequest, Conflict, NotFound
 from app.backends.ms_agent import sidecar
 from app.backends.ms_agent.common import home, pm
+from app.backends.ms_agent.skill_management import coordinated_mutation
 from app.core.filetypes import guess_type
 from app.schemas.skill import (
     Skill,
@@ -277,6 +278,9 @@ def list_skills(scope: str | None = None) -> list[Skill]:
             seen.add((item.name, item.scope))
             rows.append(item)
     rows.sort(key=lambda r: (r.scope, r.name))
+    from app.backends.ms_agent.skill_management import enrich
+    for sc, _ in _scopes_to_scan(scope):
+        enrich(rows, sc)
     return rows
 
 
@@ -599,6 +603,7 @@ def _migrate_legacy_source(
     _invalidate_scope(scope)
 
 
+@coordinated_mutation(lambda body: body.scope)
 def import_skills_from_path(body: SkillPathImport) -> list[Skill]:
     """Copy all Skills below a server-readable directory into this scope."""
     _valid_scope(body.scope)
@@ -812,6 +817,7 @@ def _materialize_bundle(body: SkillCreate) -> Skill:
         raise
 
 
+@coordinated_mutation(lambda body: body.scope)
 def create_skill(body: SkillCreate) -> Skill:
     _valid_scope(body.scope)
     if body.kind == "bundle":
@@ -859,7 +865,8 @@ def get_skill(sid: str) -> Skill:
         if found is None:
             raise NotFound("Skill not found.")
         skill, enabled = found
-        return _discovered_to_schema(scope, skill_id, skill, enabled)
+        from app.backends.ms_agent.skill_management import enrich
+        return enrich([_discovered_to_schema(scope, skill_id, skill, enabled)], scope)[0]
     row = sidecar.get("skills", sid)
     if not row:
         raise NotFound("Skill not found.")
@@ -969,6 +976,7 @@ def update_skill(sid: str, body: SkillUpdate) -> Skill:
     return Skill.model_validate(row)
 
 
+@coordinated_mutation(lambda sid: get_skill(sid).scope)
 def delete_skill(sid: str) -> None:
     if sid.startswith(_SRC):
         scope, skill_id = _dec_src(sid)
@@ -992,6 +1000,8 @@ def delete_skill(sid: str) -> None:
             # removing the directory (filesystem = existence truth).
             shutil.rmtree(skill_path, ignore_errors=True)
             forget_path = skill_path
+            from app.backends.ms_agent.skill_management import service, sdk_scope
+            service().forget(sdk_scope(scope), skill_id)
         elif origin == "legacy-path":
             # A legacy path may contribute several Skill cards.  The source
             # is the actual registration unit, so remove that one reference

@@ -1954,6 +1954,9 @@ class _FakeSession:
 class _FakeProject:
     id = "pid-1"  # done frames now carry project_id (for the new-session redirect)
 
+    def __init__(self):
+        self.path = os.path.join(os.environ['MS_AGENT_HOME'], 'test-project')
+
 
 class _FakeRuntime:
 
@@ -2052,7 +2055,7 @@ async def test_stream_maps_and_terminates(monkeypatch):
 
     # The stream attaches its sink then enqueues the prompt; wait for that.
     text = await asyncio.wait_for(fake_rt.input_queue.get(), timeout=2)
-    assert text == "hi"
+    assert text == ("hi", {"original_text": "hi", "skill_ids": []})
 
     from ms_agent.ui.events import (
         ContentDelta,

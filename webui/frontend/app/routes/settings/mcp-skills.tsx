@@ -1,4 +1,4 @@
-import { Tabs } from 'antd'
+import { Dropdown, Tabs } from 'antd'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router'
 import './mcp-skills.css'
@@ -13,7 +13,7 @@ import type { Route } from './+types/mcp-skills'
 import AddIcon from '~/assets/icons/add.svg?react'
 
 type McpImportSource = 'custom' | null
-type SkillImportSource = 'local' | null
+type SkillImportSource = 'local' | 'link' | null
 
 export function meta({ matches }: Route.MetaArgs) {
   const t = metaDict(matches)
@@ -61,15 +61,32 @@ export default function SettingsMcpSkills() {
         </MsaButton>
       </>
     ) : (
-      <MsaButton
-        variant="primary"
-        key="add-skill"
-        className="rounded-[12px] text-[13px]"
-        icon={<AddIcon className="h-5 w-5" />}
-        onClick={() => setSkillImporting('local')}
+      <Dropdown
+        trigger={['click']}
+        menu={{
+          items: [
+            {
+              key: 'link',
+              label: t.skillManagement.fromLink,
+              onClick: () => setSkillImporting('link')
+            },
+            {
+              key: 'local',
+              label: t.skillManagement.fromLocal,
+              onClick: () => setSkillImporting('local')
+            }
+          ]
+        }}
       >
-        {t.resources.addSkill}
-      </MsaButton>
+        <MsaButton
+          variant="primary"
+          key="add-skill"
+          className="rounded-[12px] text-[13px]"
+          icon={<AddIcon className="h-5 w-5" />}
+        >
+          {t.resources.addSkill}
+        </MsaButton>
+      </Dropdown>
     )
 
   // Desktop / wide enough: the action buttons sit on the tab bar's extra slot

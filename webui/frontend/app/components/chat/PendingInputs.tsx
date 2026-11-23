@@ -1,4 +1,4 @@
-import { App, Button, Dropdown, Popconfirm, Tooltip } from 'antd'
+import { App, Button, Dropdown, Popconfirm } from 'antd'
 import { useState } from 'react'
 import { ApiError, api } from '~/lib/api'
 import { useT } from '~/lib/i18n'
@@ -74,7 +74,7 @@ export function PendingInputs({ sessionId, inputs, onSend }: {
               <span onClick={event => event.stopPropagation()}>{t.followUp.withdraw}</span>
             </Popconfirm> }
           ] }}>
-            <Tooltip title={t.followUp.more}><Button type="text" className="min-h-11 min-w-11" aria-label={t.followUp.more}>···</Button></Tooltip>
+            <Button type="text" className="min-h-11 min-w-11" aria-label={t.followUp.more}>···</Button>
           </Dropdown>
         </div>
       ))}

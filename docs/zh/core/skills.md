@@ -53,4 +53,6 @@ flowchart TD
 
 当前 `ms-agent-skills` 是通过MCP访问框架能力的单个技能包，不是所有技能的集合，也不是自动安装WebUI的助手。用法见[MCP能力服务](capability-gateway.md)。
 
-下一步：[技能与 MCP](../user-guide/skills-mcp.md)、[Plugins](plugins.md)。实现：`skill/catalog.py`、`schema.py`、`runtime.py`、`prompt_injector.py`、`config/skills_manager.py`。
+托管 Skill 的安装、更新和恢复由 `ms_agent.skill.management` 负责，与目录发现和运行时加载分离。WebUI 显式启用 `skills.update_notice_in_sdk`，由 SDK 在消息持久化时提交通知基线；TUI 保留原有独立通知。接口与一致性边界见[Skill 管理设计与实现](../development/skill-management.md)。
+
+下一步：[技能与 MCP](../user-guide/skills-mcp.md)、[安装与更新](../user-guide/skill-management.md)、[Plugins](plugins.md)。实现：`skill/catalog.py`、`schema.py`、`runtime.py`、`prompt_injector.py`、`config/skills_manager.py`。

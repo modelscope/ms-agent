@@ -47,10 +47,13 @@ def _apply_webui_defaults(config):
         "skills.enable_manage": False,
         "skills.disabled": [],
         # Skill changes are announced as in-conversation <system-reminder>
-        # notices (chat._maybe_skill_notice); the SDK then keeps the system
+        # notices at the SDK's durable user-turn boundary; keep the system
         # prompt byte-stable per session (head_refresh_enabled=False) so the
         # provider prefix cache never breaks on a skill change.
         "skills.update_notice": True,
+        # Opt in separately: update_notice alone preserves host-owned delivery
+        # for existing SDK clients, including TUI.
+        "skills.update_notice_in_sdk": True,
     }.items():
         if OmegaConf.select(config, key, default=None) is None:
             OmegaConf.update(config, key, value, merge=True)

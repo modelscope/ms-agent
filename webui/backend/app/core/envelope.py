@@ -55,6 +55,12 @@ def _broadcast_change(request: Request, status: int) -> None:
     if request.method not in _CHANGE_METHODS or not (200 <= status < 300):
         return
     path = request.url.path
+    if path.startswith('/api/skills/') and (
+        status == 202 or path.startswith('/api/skills/operations/')
+    ):
+        # Async Skill operations announce committed content / check results
+        # when ready; acknowledging queued work is not a resource mutation.
+        return
     if any(path.startswith(p) for p in _NO_BROADCAST_PREFIXES):
         return
     # Imported lazily so this core module stays free of app-package import order
