@@ -1646,8 +1646,8 @@ requires-dist = [
     { name = "agent-client-protocol", marker = "extra == 'all'", specifier = ">=0.9.0" },
     { name = "aiohttp" },
     { name = "aiohttp", marker = "extra == 'all'" },
-    { name = "anthropic", marker = "extra == 'all'", specifier = ">=0.117.0" },
-    { name = "anthropic", marker = "extra == 'webui'", specifier = ">=0.117.0" },
+    { name = "anthropic", marker = "extra == 'all'", specifier = ">=0.117.0,<2" },
+    { name = "anthropic", marker = "extra == 'webui'", specifier = ">=0.117.0,<2" },
     { name = "arxiv", marker = "extra == 'all'" },
     { name = "arxiv", marker = "extra == 'research'" },
     { name = "beautifulsoup4", marker = "extra == 'all'" },
@@ -1804,7 +1804,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anthropic", specifier = ">=0.117.0" },
+    { name = "anthropic", specifier = ">=0.117.0,<2" },
     { name = "beautifulsoup4" },
     { name = "cryptography", specifier = ">=43.0.0" },
     { name = "exa-py", specifier = ">=2.16.0" },

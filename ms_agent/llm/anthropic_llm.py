@@ -131,7 +131,10 @@ class Anthropic(LLM):
         api_key: Optional[str] = None,
     ):
         super().__init__(config)
-        assert_package_exist('anthropic', 'anthropic')
+        assert_package_exist(
+            'anthropic',
+            "Install the Anthropic integration with "
+            "`pip install 'anthropic>=0.117.0,<2'`.")
         import anthropic
 
         self.model: str = config.llm.model

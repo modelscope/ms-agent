@@ -21,6 +21,20 @@ from ms_agent.llm.transport.openai_compat import OpenAICompatTransport
 from ms_agent.llm.utils import Message
 
 
+def test_dashscope_anthropic_client_accepts_the_custom_transport():
+    pytest.importorskip('anthropic')
+    from ms_agent.llm.anthropic_llm import Anthropic
+
+    config = OmegaConf.create({'llm': {'model': 'probe'}})
+    llm = Anthropic(config, api_key='local-test',
+                    base_url='https://dashscope.example.test/compatible-mode/v1')
+    try:
+        assert llm._is_dashscope
+        assert not llm.client.is_closed()
+    finally:
+        llm.client.close()
+
+
 class ResponseBody(httpx.SyncByteStream):
 
     def __init__(self, stream, *, wait_for_body=False, protocol='openai'):

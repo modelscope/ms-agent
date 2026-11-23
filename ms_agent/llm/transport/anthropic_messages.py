@@ -45,7 +45,10 @@ class AnthropicMessagesTransport(Transport):
         provider_id: str = '',
     ):
         self.provider_id = provider_id
-        assert_package_exist('anthropic', 'anthropic')
+        assert_package_exist(
+            'anthropic',
+            "Install the Anthropic integration with "
+            "`pip install 'anthropic>=0.117.0,<2'`.")
         import anthropic
 
         if not api_key:
