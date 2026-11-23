@@ -53,8 +53,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system --python /usr/local/bin/python --require-hashes --no-deps \
         -r /opt/ms-agent-release/shell-requirements.txt
 # Create the persistent data directory and the preloaded WebUI dependency cache.
-RUN mkdir -p /data /data.secrets /opt/ms-agent-webui-cache \
-    && chmod 700 /data.secrets
+# Deployments must assign mounted data/key directories to the runtime user.
+RUN mkdir -p /data /data.secrets /opt/ms-agent-webui-cache
 WORKDIR /app
 # This uses the installed wheel and the final runtime's Node version. No source
 # checkout or frontend compilation is performed inside the image.

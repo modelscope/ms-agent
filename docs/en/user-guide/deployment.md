@@ -46,6 +46,8 @@ docker run --rm -p 127.0.0.1:9000:8000 \
 
 Open `http://127.0.0.1:9000`. The two volumes preserve application data and the default master key at `/data.secrets/master.key`; mount project files separately. **With encryption enabled, mounting only `/data` loses the default key on container recreation and makes saved credentials unusable.** Packages installed into a running container may also disappear. Declare durable dependencies in a derived image or project environment. Check the selected image's version and release notes for available features.
 
+For non-root deployments, make the runtime user the owner of the mounted `/data` and `/data.secrets` directories and ensure both are writable. The image build does not set the key directory to mode `700`. When the application first creates the default master key, it still sets that directory to `700` and creates the key file with mode `600`, so relaxing directory permissions alone does not replace correct ownership.
+
 ### Use a platform-provided master key
 
 If the platform provides a persistent Fernet key file, mount it read-only instead of the default key volume:
