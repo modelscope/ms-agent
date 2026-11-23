@@ -174,6 +174,24 @@ def test_httpx_requirement_is_not_mistaken_for_a_url(tmp_path):
     assert module.parse_requirements(str(requirements))[0] == ['httpx>=0.28.1']
 
 
+@pytest.mark.parametrize('force_kill', [False, True])
+def test_install_check_terminates_preparation_before_cleanup(monkeypatch, force_kill):
+    from unittest.mock import Mock, call
+    import check_webui_install as install_check
+
+    process = Mock()
+    expired = subprocess.TimeoutExpired(['prepare'], .01)
+    process.wait.side_effect = [expired, expired, 0] if force_kill else [expired, 0]
+    process.poll.return_value = None
+    monkeypatch.setattr(install_check.subprocess, 'Popen', Mock(return_value=process))
+    with pytest.raises(subprocess.TimeoutExpired):
+        install_check.run_preparation(['prepare'], ROOT, {}, None, timeout=.01)
+    process.terminate.assert_called_once_with()
+    assert process.wait.call_args_list == ([call(timeout=.01), call(timeout=20), call(timeout=10)]
+                                           if force_kill else [call(timeout=.01), call(timeout=20)])
+    assert process.kill.call_count == int(force_kill)
+
+
 def test_dependency_key_accepts_reordered_version_bounds():
     assert check.dependency_key('anthropic>=0.117.0,<2') == check.dependency_key(
         'anthropic<2,>=0.117.0')
