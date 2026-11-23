@@ -857,10 +857,10 @@ class WebSearchTool(ToolBase):
             optimizer_config = ContentOptimizerConfig(
                 summarizer_model=self._summarizer_model,
                 summarizer_base_url=self._summarizer_base_url,
-                summarizer_api_key=(resolve_secret(
+                summarizer_api_key=resolve_secret(
                     self._summarizer_api_key, config=self.config)
-                                    or os.getenv('DASHSCOPE_API_KEY')
-                                    or os.getenv('OPENAI_API_KEY')),
+                or os.getenv('DASHSCOPE_API_KEY')
+                or os.getenv('OPENAI_API_KEY'),
                 max_content_chars=self._max_content_chars,
                 summarizer_max_workers=self._summarizer_max_workers,
                 summarization_timeout=self._summarization_timeout,
