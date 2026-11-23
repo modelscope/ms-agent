@@ -181,11 +181,11 @@ def test_dependency_key_accepts_reordered_version_bounds():
         'anthropic>=0.117.0,<3')
 
 
-@pytest.mark.parametrize('filename,name,supported', [
-    ('framework.txt', 'mcp', '1.28.1'),
-    ('webui.txt', 'anthropic', '0.117.0'),
+@pytest.mark.parametrize('filename,name,supported,unsupported', [
+    ('framework.txt', 'mcp', '1.28.1', '2.0.0'),
+    ('webui.txt', 'anthropic', '0.117.0', '1.0.0'),
 ])
-def test_requirements_preserve_supported_transport_apis(filename, name, supported):
+def test_requirements_preserve_supported_transport_apis(filename, name, supported, unsupported):
     from packaging.requirements import Requirement
 
     spec = importlib.util.spec_from_file_location('sdk_setup', ROOT / 'setup.py')
@@ -195,7 +195,7 @@ def test_requirements_preserve_supported_transport_apis(filename, name, supporte
     requirement = next(Requirement(value) for value in requirements
                        if Requirement(value).name == name)
     assert requirement.specifier.contains(supported)
-    assert not requirement.specifier.contains('2.0.0')
+    assert not requirement.specifier.contains(unsupported)
 
 
 def test_pypi_retry_uploads_only_missing_identical_release_files():

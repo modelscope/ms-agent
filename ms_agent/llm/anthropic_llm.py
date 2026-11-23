@@ -134,7 +134,7 @@ class Anthropic(LLM):
         assert_package_exist(
             'anthropic',
             "Install the Anthropic integration with "
-            "`pip install 'anthropic>=0.117.0,<2'`.")
+            "`pip install 'anthropic>=0.117.0,<1'`.")
         import anthropic
 
         self.model: str = config.llm.model
