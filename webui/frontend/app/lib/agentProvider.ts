@@ -145,6 +145,7 @@ export type StepKind =
   | "browser"
   | "artifact"
   | "authorization"
+  | "question"
   | "tasks"
   // Display-only notice, not a tool: optional before_tokens/after_tokens in
   // meta, no group/status/call_id. Does not finish a thought or the turn.
@@ -723,6 +724,33 @@ function appendStepPart(parts: AgentPart[], meta: Record<string, unknown>): void
   }
   // A real step landed: the round is represented by its own cards now.
   sweepComposing(parts);
+
+  // A question's OUTCOME frame (answered / skipped / cancelled / timed out)
+  // carries no `questions` — the ask frame did. The generic call_id merge below
+  // replaces meta wholesale, which would leave the card with an outcome and
+  // nothing to show it against, so this one merges instead of replacing.
+  if (meta.kind === "question") {
+    const qCallId = String(meta.call_id ?? "");
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const p = parts[i];
+      if (p.kind !== "step" || p.step.kind !== "question") continue;
+      const sameCall = !!qCallId && String(p.step.meta.call_id ?? "") === qCallId;
+      const requestId = String(meta.request_id ?? "");
+      const sameRequest = !!requestId && String(p.step.meta.request_id ?? "") === requestId;
+      if (!sameCall && !sameRequest) continue;
+      const questions = Array.isArray(meta.questions)
+        ? meta.questions
+        : p.step.meta.questions;
+      parts[i] = {
+        kind: "step",
+        step: { kind: "question", meta: { ...p.step.meta, ...meta, questions,
+          request_id: meta.state === "pending" ? meta.request_id : "" } },
+      };
+      return;
+    }
+    parts.push({ kind: "step", step: { kind: "question", meta } });
+    return;
+  }
 
   const isRunning = meta.status === "running";
   // Paths this step just wrote, handed to the workspace listeners so a freshly

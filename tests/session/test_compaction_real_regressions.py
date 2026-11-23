@@ -1,4 +1,5 @@
 import asyncio
+import json
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -11,7 +12,8 @@ from ms_agent.memory.unified.config import MemoryConfig
 from ms_agent.memory.unified.orchestrator import MemoryOrchestrator
 from ms_agent.session.context_assembler import ContextAssembler, _dicts_to_messages
 from ms_agent.session.session_log import SessionLog
-from ms_agent.session.strategies.summary_compactor import SummaryCompactor
+from ms_agent.session.strategies.summary_compactor import (SUMMARY_PROMPT,
+                                                         SummaryCompactor)
 
 
 def test_default_pipeline_preserves_tool_evidence_until_summarized():
@@ -34,6 +36,57 @@ def test_default_pipeline_preserves_tool_evidence_until_summarized():
     assert meta
     assert any('Key=KMS-5729' in m.content for c in llm.generate.call_args_list for m in c.args[0])
     assert any('Key=KMS-5729' in m.get('content', '') for m in compacted)
+    context_summary = next(m for m in compacted if m.get('context_summary'))
+    assert 'Continue only within its scope and stop when it is complete.' in context_summary['content']
+
+
+@pytest.mark.parametrize('answer', ['Excel', 'Parquet（压缩版）'])
+def test_summary_receives_question_answers_and_decision_rules_in_every_pass(answer):
+    """Keep question evidence and decision guidance across summary passes."""
+    from ms_agent.interaction.handler import SKIPPED_NOTE
+
+    def question_call(call_id, header, labels):
+        questions = [{'header': header, 'question': f'{header}?',
+                      'options': [{'label': label, 'description': label} for label in labels]}]
+        return {'role': 'assistant', 'tool_calls': [{
+            'id': call_id, 'tool_name': 'ask_user---ask_user_question',
+            'arguments': json.dumps({'questions': questions}),
+        }]}
+
+    rows = [
+        {'role': 'user', 'content': 'Only research; do not implement. Stop when done.'},
+        {'role': 'assistant', 'content': 'Research notes: ' + 'X' * 5000},
+        question_call('ask-1', 'Format', ['Excel', 'CSV']),
+        {'role': 'tool', 'tool_call_id': 'ask-1',
+         'content': f'User answered your questions:\n**Format**: {answer}'},
+        {'role': 'user', 'content': 'Correction: use CSV only for the appendix; keep the main format.'},
+        question_call('ask-2', 'Location', ['Local', 'Remote']),
+        {'role': 'tool', 'tool_call_id': 'ask-2', 'content': SKIPPED_NOTE},
+    ]
+    llm = SimpleNamespace(generate=Mock(return_value=Message('assistant', 'Condensed decision context.')))
+    result = SummaryCompactor(llm)._generate_summary(rows, {
+        'context_limit': 8000, 'input_limit': 6000, 'compression_threshold': 4000,
+        'summary_input_char_limit': 1024, 'summary_max_tokens': 100,
+        'summary_target_tokens': 8,
+    })
+    assert result == 'Condensed decision context.'
+    calls = llm.generate.call_args_list
+    assert {c.args[0][0].content for c in calls} == {SUMMARY_PROMPT}
+    assert all(c.args[0][0].role == 'system' and c.args[0][1].role == 'user' for c in calls)
+    assert all(rule in SUMMARY_PROMPT for rule in (
+        'question tools', 'exact chosen values and their scope',
+        'confirmed choices', 'default assumptions', 'non-answer as consent',
+        'latest explicit user correction', 'plan-only/research-only',
+        'every partial summary and merge',
+    ))
+    payloads = [json.loads(c.args[0][1].content) for c in calls]
+    assert {p['kind'] for p in payloads} == {'conversation_fragment', 'partial_summaries'}
+    source = ''.join(p['text'] for p in payloads if p['kind'] == 'conversation_fragment')
+    assert 'Only research; do not implement. Stop when done.' in source
+    assert '"tool_name": "ask_user---ask_user_question"' in source
+    assert f'TOOL_RESULT ask-1: User answered your questions:\n**Format**: {answer}' in source
+    assert 'Correction: use CSV only for the appendix; keep the main format.' in source
+    assert f'TOOL_RESULT ask-2: {SKIPPED_NOTE}' in source
 
 
 def test_truncated_nonempty_summary_never_replaces_history(tmp_path):

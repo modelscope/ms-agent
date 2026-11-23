@@ -39,6 +39,7 @@ def test_disabled_by_default_preserves_existing_api(monkeypatch):
 @pytest.mark.parametrize("method,path", [
     ("GET", "/api/projects"), ("POST", "/api/mcps"),
     ("GET", "/api/events"), ("POST", "/api/chat"),
+    ("POST", "/api/chat/question"),
     ("GET", "/api/projects/_default/workspace/files"),
     ("POST", "/api/recovery/default-project"),
     ("GET", "/docs"), ("GET", "/openapi.json"),

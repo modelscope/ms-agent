@@ -10,6 +10,10 @@ from ms_agent.utils.constants import DEFAULT_OUTPUT_DIR
 #: bounds its own output and must never be cut by the generic truncator.
 SELF_MANAGED_OUTPUT = math.inf
 
+#: Return this from :attr:`ToolBase.call_timeout` to declare that a tool owns
+#: its own deadline and must never be bounded by the host's generic wait.
+SELF_MANAGED_TIMEOUT = math.inf
+
 #: Where to keep text from when an oversized output IS cut generically.
 TRUNCATE_KEEP_HEAD = 'head'
 TRUNCATE_KEEP_TAIL = 'tail'
@@ -52,6 +56,11 @@ class ToolBase:
         (a long run whose verdict is last), or ``'both'`` (default).
         """
         return TRUNCATE_KEEP_BOTH
+
+    @property
+    def call_timeout(self) -> Optional[float]:
+        """Use the generic timeout for None; SELF_MANAGED_TIMEOUT delegates it."""
+        return None
 
     def exclude_func(self, tool_config: DictConfig):
         if tool_config is not None:

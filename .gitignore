@@ -205,3 +205,6 @@ webui/backend/.env.*
 
 # Prepared frontend manifests are included in release archives, not source Git.
 webui/RESOURCE-MANIFEST.json
+
+# Test-generated execution traces.
+/tests/skills/demo_traces/

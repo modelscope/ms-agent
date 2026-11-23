@@ -325,6 +325,17 @@ class SessionLog:
         }
         self._append_line(record)
 
+    def record_question(self, event: Dict[str, Any]) -> None:
+        """Record UI-only history; answers enter model context as tool results."""
+        seq = self._next_seq()
+        record = {
+            '_type': 'question',
+            'seq': seq,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            **event,
+        }
+        self._append_line(record)
+
     def record_skill_invocation(self, event: Dict[str, Any]) -> None:
         """Record a slash-skill invocation — a display-only marker.
 
@@ -545,6 +556,23 @@ class SessionLog:
             if record.get('_type') == 'permission':
                 perms.append(record)
         return perms
+
+    def get_questions(self) -> List[Dict[str, Any]]:
+        """Read question history in sequence order."""
+        questions: List[Dict[str, Any]] = []
+        if not self._path.exists():
+            return questions
+        for line in self._path.read_text(encoding='utf-8').splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if record.get('_type') == 'question':
+                questions.append(record)
+        return questions
 
     def get_loop_ends(self) -> List[Dict[str, Any]]:
         """All tool-call-loop boundary markers in chronological order (each

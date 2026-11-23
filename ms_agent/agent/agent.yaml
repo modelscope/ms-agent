@@ -78,6 +78,9 @@ callbacks:
   - input_callback
 
 tools:
+  # Requires a host QuestionHandler; set enabled: false to disable.
+  ask_user:
+    mcp: false
   file_system:
     mcp: false
     include:
