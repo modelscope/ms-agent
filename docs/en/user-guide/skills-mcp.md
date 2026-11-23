@@ -5,7 +5,7 @@ Skills provide task knowledge; MCP connects external tools. Importing a skill do
 ## Use a skill
 
 1. Open **Skill management** or **Settings → MCP & Skills**.
-2. Click “Add skill” and choose folder upload or directory path. Upload reads the browser's machine; a directory path refers to the backend machine. Include `SKILL.md` and required scripts/references. Import copies the directory rather than continuously synchronizing the source.
+2. Click “Add skill” to [install from a link](skill-management.md), upload a folder, or enter a directory path. Upload reads the browser's machine; a directory path refers to the backend machine. Include `SKILL.md` and required scripts/references. Local import copies the directory rather than continuously synchronizing the source.
 3. Check enabled entries and counts in the project/conversation Skills selector.
 4. Try a small task matching its description and inspect actual instruction loading and tool execution.
 

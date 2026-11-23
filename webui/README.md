@@ -234,7 +234,7 @@ Open **Settings → MCP & Skills → Skills**, or a project's **Skills** panel. 
 
 The open app checks linked skills periodically; **Check for updates** also runs a manual check. Open a card marked **Update available**, review the file changes, and confirm the update. The details menu offers **Restore previous version** afterward. Replacing local changes requires confirmation and keeps one backup. Checks and previews remain available during active tasks; replacing files waits until those tasks finish.
 
-Local imports continue to work. Use **Link source** in an untracked managed skill's details to enable updates. Skills discovered in standard directories remain read-only. See [Skill installation and updates](../docs/en/Components/SkillManagement.md) for source rules and the shared SDK API.
+Local imports continue to work. Use **Link source** in an untracked managed skill's details to enable updates. Skills discovered in standard directories remain read-only. See [Skill installation and updates](../docs/en/user-guide/skill-management.md) for source rules and the shared SDK API.
 
 ## Edit project files
 

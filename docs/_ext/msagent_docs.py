@@ -11,7 +11,7 @@ SECTIONS = [
      [('', '', 'introduction quick-start python-sdk')]),
     ('使用教程', 'User guide', 'user-guide',
      [('', '',
-       'webui tui cli projects-sessions model-settings skills-mcp memory scheduled-tasks deployment troubleshooting'
+       'webui tui cli projects-sessions model-settings skills-mcp skill-management memory scheduled-tasks deployment troubleshooting'
        )]),
     ('核心模块', 'Core modules', 'core', [
         ('配置与执行', 'Configuration & execution',
@@ -30,7 +30,7 @@ SECTIONS = [
        )]),
     ('开发与参考', 'Development & reference', 'development',
      [('', '',
-       'configuration-reference cli-reference storage glossary architecture contributing'
+       'configuration-reference cli-reference storage glossary architecture contributing skill-management skill-management-checklist'
        ),
       ('设计提案（RFC）', 'Design proposals (RFCs)',
        'rfcs/plugins rfcs/hooks-executors rfcs/mcp-runtime-api')]),
@@ -54,6 +54,7 @@ LEGACY_DOCS = {
     'components/tools': 'core/tools',
     'components/workflow': 'core/workflows',
     'components/agentskills': 'core/skills',
+    'components/skillmanagement': 'user-guide/skill-management',
     'components/multimodalsupport': 'core/multimodal',
     'components/contributorguide': 'development/contributing',
     'components/capabilitygateway': 'core/capability-gateway',
@@ -68,6 +69,9 @@ LEGACY_DOCS = {
     'architecture/rfcs/hooksexecutors': 'development/rfcs/hooks-executors',
     'architecture/rfcs/mcpruntimeapi': 'development/rfcs/mcp-runtime-api',
     'design/webuiinsessioninput': 'core/messages-events',
+    'design/skillupdatemanagement': 'development/skill-management',
+    'design/skillupdateimplementation': 'development/skill-management',
+    'design/skillupdatewalkthrough': 'development/skill-management-checklist',
     'design/hooksdesign': 'core/hooks',
     'design/permissiondesign': 'core/permissions',
     'design/pluginsdesign': 'core/plugins',
