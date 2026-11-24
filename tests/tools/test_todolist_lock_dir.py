@@ -31,6 +31,31 @@ def _make(tmp_path, **tool_fields) -> TodoListTool:
     return tool
 
 
+def test_write_text_keeps_previous_plan_when_commit_fails(tmp_path, monkeypatch):
+    # A crash while publishing the plan must leave the last complete plan
+    # readable, not a truncated JSON file. os.replace is the commit point of
+    # the shared atomic writer.
+    from ms_agent.tools.todolist_tool import _safe_read_json, _write_text
+
+    plan = tmp_path / "plan.json"
+    original = {"schema_version": 1, "todos": [{"id": "1", "content": "KEEP ME"}]}
+    plan.write_text(json.dumps(original), encoding="utf-8")
+
+    real_replace = os.replace
+
+    def crash_replace(src, dst):
+        if str(dst) == str(plan):
+            raise OSError("simulated crash at commit")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr("ms_agent.utils.atomic_file.os.replace", crash_replace)
+
+    with pytest.raises(OSError):
+        _write_text(str(plan), json.dumps({"todos": []}))
+
+    assert _safe_read_json(str(plan)) == original
+
+
 def test_lock_dir_defaults_to_internal_ms_agent_locks(tmp_path):
     # No explicit lock_subdir -> canonical <output_dir>/.ms_agent/locks, so the
     # workspace root is never littered with a ".locks" dir.
