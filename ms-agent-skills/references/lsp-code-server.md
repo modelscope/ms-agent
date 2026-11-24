@@ -5,7 +5,7 @@
 Activate these tools when the user asks to:
 - Validate or check code for errors
 - Verify that generated code compiles correctly
-- Run diagnostics on a project directory
+- Index a project directory before checking individual files; indexing does not return diagnostics.
 - Check imports, type errors, or syntax issues
 - Iteratively fix code by checking after each edit
 

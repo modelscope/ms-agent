@@ -182,7 +182,7 @@ The tool prefix depends on your agent host:
 
 | Tool | Type | Duration | Reference |
 |------|------|----------|-----------|
-| `lsp_check_directory` | full scan | minutes | [lsp-code-server.md](references/lsp-code-server.md) |
+| `lsp_check_directory` | index only (no diagnostics) | minutes | [lsp-code-server.md](references/lsp-code-server.md) |
 | `lsp_update_and_check` | incremental | seconds | [lsp-code-server.md](references/lsp-code-server.md) |
 
 ### File Editing
@@ -219,9 +219,10 @@ User wants to...
 │   ├── Short task (< 5 minutes) → delegate_task(query="...")
 │   └── Long task → submit_agent_task → check_agent_task → get_agent_result
 │
-├── Validate code for errors
-│   ├── Full project → lsp_check_directory(directory="src/", language="typescript")
-│   └── Single file → lsp_update_and_check(file_path="...", content="...", language="...")
+├── Work with code diagnostics
+│   ├── Index files only → lsp_check_directory(directory="src/", language="typescript")
+│   ├── Check a single file after editing → lsp_update_and_check(file_path="...", content="...", language="...")
+│   └── Check the whole project → run its compiler, type checker, or tests
 │
 └── Edit a file precisely
     ├── Know exact text → replace_file_contents (concurrent-safe)
