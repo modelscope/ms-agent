@@ -73,12 +73,13 @@ ms-agent ui
 
 ### 3. 开始对话
 
-1. 打开 **设置 → 模型设置**。对 ModelScope、OpenAI、Alibaba (DashScope) 这类已列出的内置服务商，选中后点击 **编辑**，填写 API Key 并保存。内置服务商已配置接口地址。ModelScope 的 Key 可在[访问令牌页面](https://modelscope.cn/my/myaccesstoken)获取。
-2. 如果列表里没有你的服务，点击 **添加提供方**。填写 **提供方 ID**、服务商提供的 API 地址（界面中的 **Base URL**）和 **API Key**，选择 **协议** 后保存。**展示名称** 可留空。不要把网页控制台地址或完整的 `chat/completions` 路径当作 Base URL。
-3. 在所选服务商下点击 **添加模型**，填写该服务提供的模型 ID。ModelScope 可以使用 `Qwen/Qwen3.8-Flash-Next` 作为示例；其他服务商请填写其提供的模型 ID。保存 Key 并不等于已经添加或选中模型。
-4. 返回对话页，使用默认项目或新建项目，在输入框下方选中刚添加的模型，把权限留在 **总是询问**，先发送一句简短的文本请求，例如：“用两句话介绍你能怎样帮助我。” 需要文件或图片时再附加。
+1. 打开 **设置 → 模型设置**，配置服务商：
+   - **内置服务商**：选择 ModelScope、OpenAI 等已列出的服务商，点击 **编辑** 填写 API Key 并保存，接口地址已预设。ModelScope 的 Key 可在[访问令牌页面](https://modelscope.cn/my/myaccesstoken)获取。
+   - **自定义服务商**：点击 **添加提供方**，填写 **提供方 ID**、**Base URL** 和 **API Key**，选择 **协议** 后保存。Base URL 使用服务商提供的 API 根地址，**展示名称** 可留空。
+2. 在该服务商下点击 **添加模型**，填写其支持的模型 ID，例如 ModelScope 的 `Qwen/Qwen3.8-Flash-Next`。保存 Key 不会自动添加或选中模型。
+3. 返回对话页，使用默认项目或新建项目，在输入框下方选中模型。权限模式保持为 **总是询问**，发送一句简短请求，例如：“用两句话介绍你能怎样帮助我。”
 
-密钥和会话保存在本机（默认目录是 `~/.ms_agent`），也可以用 `MS_AGENT_HOME` 指定其他目录。不要把 `.env` 提交到 Git，也不要把真实 Key 发到聊天或截图中。
+密钥和会话默认保存在本机的 `~/.ms_agent` 目录，可用 `MS_AGENT_HOME` 指定其他目录。不要提交 `.env` 文件，也不要在聊天内容或截图中暴露 API Key。
 
 ### 4. 下次启动
 
@@ -93,6 +94,7 @@ ms-agent ui
 请先切换到实际存放它们的目录。模型配置和会话会保留，无需重复填写 API Key。如果通过 nvm 安装 Node.js，确认新终端能运行 `node --version`；找不到命令时，先执行 `source "$HOME/.nvm/nvm.sh"`。
 
 完整操作指引见 [WebUI 教程](../docs/zh/user-guide/webui.md)、[模型设置](../docs/zh/user-guide/model-settings.md)和[技能与 MCP](../docs/zh/user-guide/skills-mcp.md)。若请求失败，见[故障排查](../docs/zh/user-guide/troubleshooting.md)。
+
 ## 在任务进行中补充输入
 
 智能体工作时，仍可输入、添加附件或选择技能。新消息**默认排队**，当前任务完成后依次执行。在 **设置 → 个性化 → 对话行为** 中选择 **插话**，新消息会在当前模型响应或已启动的工具操作结束后加入当前任务。修改设置只影响之后提交的消息。

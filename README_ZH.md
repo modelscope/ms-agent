@@ -234,16 +234,17 @@ pip install -e .
 ms-agent ui
 ```
 
-首次启动会用 uv 准备后端环境、安装前端依赖并构建页面。请保持网络连接，等到终端打印就绪地址。浏览器通常会打开 **http://127.0.0.1:8000**；如果该端口已被占用，以终端打印的地址为准。在启动终端按 Ctrl-C 可停止服务。
+首次启动会通过 uv 准备后端环境、安装前端依赖并构建前端。请保持网络连接，等待准备完成。浏览器会打开终端显示的地址，通常是 **http://127.0.0.1:8000**；如果该端口被占用，会自动选择其他端口。在启动终端按 Ctrl-C 可停止服务。
 
 然后配置模型，并发送第一条消息：
 
-1. 打开 **设置 → 模型设置**。对 ModelScope、OpenAI、Alibaba (DashScope) 这类已列出的内置服务商，选中后点击 **编辑**，填写 API Key 并保存。ModelScope 的 Key 可在[访问令牌页面](https://modelscope.cn/my/myaccesstoken)获取。
-2. 如果列表里没有你的服务，点击 **添加提供方**。填写 **提供方 ID**、服务商提供的 API 地址（界面中的 **Base URL**）和 **API Key**，选择 **协议** 后保存。**展示名称** 可留空。不要把网页控制台地址或完整的 `chat/completions` 路径当作 Base URL。
-3. 在所选服务商下点击 **添加模型**，填写该服务提供的模型 ID。ModelScope 可以使用 `Qwen/Qwen3.8-Flash-Next` 作为示例；其他服务商请填写其提供的模型 ID。保存 Key 并不等于已经添加或选中模型。
-4. 回到对话页，在输入框下方选中刚添加的模型，把权限留在 **总是询问**，先发送一句简短的文本请求，例如：“用两句话介绍你能怎样帮助我。”
+1. 打开 **设置 → 模型设置**，选择服务商，点击 **编辑** 填写 API Key 并保存。ModelScope 的 Key 可在[访问令牌页面](https://modelscope.cn/my/myaccesstoken)获取。若服务商未列出，先按[模型设置指南](docs/zh/user-guide/model-settings.md)添加。
+2. 在该服务商下点击 **添加模型**，填写其支持的模型 ID，例如 ModelScope 的 `Qwen/Qwen3.8-Flash-Next`。保存 Key 不会自动添加或选中模型。
+3. 回到对话页，在输入框下方选中模型，权限模式保持为 **总是询问**，发送一句简短请求，例如：“用两句话介绍你能怎样帮助我。”
 
-密钥和会话保存在本机（默认目录是 `~/.ms_agent`）。不要把 `.env` 提交到 Git，也不要把真实 Key 发到聊天或截图中。收到正常回复后，可继续阅读 [WebUI 教程](docs/zh/user-guide/webui.md) 和[模型设置](docs/zh/user-guide/model-settings.md)。若请求失败，见[故障排查](docs/zh/user-guide/troubleshooting.md)。
+密钥和会话默认保存在本机的 `~/.ms_agent` 目录。不要提交 `.env` 文件，也不要在聊天内容或截图中暴露 API Key。
+
+后续操作见 [WebUI 教程](docs/zh/user-guide/webui.md)；若请求失败，见[故障排查](docs/zh/user-guide/troubleshooting.md)。
 
 ```bash
 ms-agent ui --port 8080    # 指定访问端口

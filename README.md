@@ -232,16 +232,17 @@ pip install -e .
 ms-agent ui
 ```
 
-The first start sets up the backend with uv, installs frontend dependencies, and builds the pages. Keep an internet connection during setup. The browser opens at the address printed in the terminal, usually **http://127.0.0.1:8000**. If the port is already in use, the app chooses another one—use the address it prints. Press Ctrl-C in that terminal to stop the service.
+On first launch, MS-Agent uses uv to set up the backend, installs frontend dependencies, and builds the frontend. Stay connected to the internet until setup finishes. The browser opens at the address printed in the terminal, usually **http://127.0.0.1:8000**. If that port is busy, the app chooses another. Press Ctrl-C in the terminal to stop the service.
 
-Then configure a model and send a first message:
+Then configure a model and send your first message:
 
-1. Open **Settings → Models**. For a built-in provider such as ModelScope, OpenAI, or Alibaba (DashScope), select it, click **Edit**, enter your API key, and save. You can get a ModelScope key from the [access token page](https://modelscope.cn/my/myaccesstoken).
-2. If your service is not in the list, click **Add provider**. Enter a **Provider ID**, the **Base URL** supplied by your provider, and an **API Key**. Choose a **Protocol**, then save. A **Display Name** is optional. Do not use a website console or the full `chat/completions` path as the Base URL.
-3. Under the selected provider, click **Add model** and enter a model ID from that service. For ModelScope, one example is `Qwen/Qwen3.8-Flash-Next`. For other providers, use the model ID they give you. Saving a key does not add or select a model.
-4. Return to the chat, select that model under the input, leave the permission setting at **Always ask**, and send a short text request such as: “Describe in two sentences how you can help me.”
+1. Open **Settings → Models**, select your provider, and click **Edit** to save your API key. ModelScope keys are available on the [access token page](https://modelscope.cn/my/myaccesstoken). If your provider is not listed, follow the [model settings guide](docs/en/user-guide/model-settings.md) to add it first.
+2. Click **Add model** under that provider and enter a supported model ID, such as `Qwen/Qwen3.8-Flash-Next` for ModelScope. Saving a key does not add or select a model.
+3. Return to chat, select the model below the message box, keep permissions set to **Always ask**, and send a short request such as “Describe in two sentences how you can help me.”
 
-Keys and sessions are saved on this computer (by default under `~/.ms_agent`). Do not commit `.env` files, and do not put real keys in the chat or in screenshots. After a successful reply, continue with the [WebUI guide](docs/en/user-guide/webui.md) and [model settings](docs/en/user-guide/model-settings.md). If a request fails, see [Troubleshooting](docs/en/user-guide/troubleshooting.md).
+Keys and sessions are stored locally under `~/.ms_agent` by default. Do not commit `.env` files or expose API keys in conversations or screenshots.
+
+Continue with the [WebUI guide](docs/en/user-guide/webui.md), or see [Troubleshooting](docs/en/user-guide/troubleshooting.md) if a request fails.
 
 ```bash
 ms-agent ui --port 8080    # Choose another port
