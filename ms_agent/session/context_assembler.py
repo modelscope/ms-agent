@@ -203,7 +203,17 @@ class ContextAssembler:
         def apply():
             # Cancellation may arrive while queued in the bounded executor.
             if not abandoned.is_set():
-                return strategy.apply(visible, all_msgs, config)
+                if llm is None:
+                    return strategy.apply(visible, all_msgs, config)
+                from ms_agent.llm.router import LLMProvider
+                from ms_agent.utils.llm_utils import (raise_if_cancelled,
+                                                      request_cancellation)
+                owner = llm.transport if isinstance(llm, LLMProvider) else llm
+                with request_cancellation(owner, abandoned):
+                    raise_if_cancelled(abandoned)
+                    result = strategy.apply(visible, all_msgs, config)
+                    raise_if_cancelled(abandoned, owner)
+                    return result
 
         worker = asyncio.create_task(run_in_llm_executor(apply))
         try:

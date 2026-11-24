@@ -14,7 +14,8 @@ from typing import Any, Dict, Generator, Iterable, List, Optional
 from ms_agent.llm import LLM, multimodal
 from ms_agent.llm.cost import (merge_usage, normalize_usage, response_usage,
                                set_response_usage, update_openai_usage)
-from ms_agent.llm.io import OwnedResponse, interrupt_stream
+from ms_agent.llm.io import (OwnedResponse, create_owned_response,
+                             create_owned_stream, interrupt_stream)
 from ms_agent.llm.thinking import (THINKING_PARAM_KEYS, apply_effort,
                                    create_with_thinking_fallback)
 from ms_agent.llm.utils import Message, Tool, ToolCall, normalize_finish_reason
@@ -252,7 +253,8 @@ class OpenAI(LLM):
             tools = None
         return tools
 
-    @retry(max_attempts=LLM.retry_count, delay=3.0)
+    @retry(max_attempts=LLM.retry_count, delay=3.0,
+           cancellation_owner=lambda self: self)
     def generate(self,
                  messages: List[Message],
                  tools: Optional[List[Tool]] = None,
@@ -340,6 +342,9 @@ class OpenAI(LLM):
         return self._active_stream
 
     def interrupt(self) -> None:
+        cancelled = getattr(self, '_request_cancel', None)
+        if cancelled is not None:
+            cancelled.set()
         stream = getattr(self, '_active_stream', None)
         interrupt_stream(stream)
         if getattr(self, '_active_stream', None) is stream:
@@ -383,9 +388,13 @@ class OpenAI(LLM):
             if isinstance(m, dict))
 
         def create(messages, **params):
-            result = self.client.chat.completions.create(
-                model=self.model, messages=messages, tools=tools, **params)
-            return self._track_stream(result) if is_streaming else result
+            resource = self.client.chat.completions
+            if is_streaming:
+                return self._track_stream(resource.create(
+                    model=self.model, messages=messages, tools=tools, **params))
+            return create_owned_response(
+                resource, self, model=self.model, messages=messages,
+                tools=tools, **params)
 
         return create_with_vision_fallback(
             lambda messages, **kw: create_with_thinking_fallback(
@@ -994,7 +1003,8 @@ class OpenAI(LLM):
         # used to lower the knob (`apply_effort`) without owning the repair, so
         # the refusal reached the caller raw.
         response = create_with_thinking_fallback(
-            lambda **kw: self._responses_client.responses.create(
+            lambda **kw: create_owned_response(
+                self._responses_client.responses, self,
                 model=self.model, input=input_items, **kw),
             self._responses_client,
             self.model,
@@ -1050,9 +1060,9 @@ class OpenAI(LLM):
             kwargs['tools'] = resp_tools
 
         stream = create_with_thinking_fallback(
-            lambda **kw: self._track_stream(
-                self._responses_client.responses.create(
-                    model=self.model, input=input_items, **kw)),
+            lambda **kw: create_owned_stream(
+                self._responses_client.responses, self,
+                model=self.model, input=input_items, **kw),
             self._responses_client,
             self.model,
             logger,

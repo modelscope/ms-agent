@@ -2520,25 +2520,35 @@ class LLMAgent(Agent):
         output_key = _output_token_parameter(self.config)
         if not generation.get(output_key):
             output_kwargs[output_key] = budget['output_reserve']
+        from ms_agent.llm.router import LLMProvider
+        from ms_agent.utils.llm_utils import (raise_if_cancelled,
+                                              request_cancellation)
+
         lock = threading.Lock()
         llm = self.llm
+        owner = llm.transport if isinstance(llm, LLMProvider) else llm
+        cancelled = threading.Event()
         abandoned = False
         response = None
 
         def generate():
             nonlocal response
-            result = llm.generate(messages, tools=tools, **output_kwargs)
-            with lock:
-                discard = abandoned
-                if not discard:
-                    response = result
-            if discard:
-                self._close_llm_stream(llm, result)
-            return result
+            with request_cancellation(owner, cancelled):
+                raise_if_cancelled(cancelled)
+                result = llm.generate(messages, tools=tools, **output_kwargs)
+                raise_if_cancelled(cancelled, owner)
+                with lock:
+                    discard = abandoned
+                    if not discard:
+                        response = result
+                if discard:
+                    self._close_llm_stream(llm, result)
+                return result
 
         try:
             return await run_in_llm_executor(generate)
         except asyncio.CancelledError:
+            cancelled.set()
             with lock:
                 abandoned = True
                 result = response
@@ -2627,7 +2637,11 @@ class LLMAgent(Agent):
                 # ui.events.ToolCallComposing).
                 _composing: Dict[int, int] = {}
                 _reported_images = False
+                from ms_agent.llm.router import LLMProvider
+                from ms_agent.utils.llm_utils import request_cancellation
                 _llm = self.llm
+                _owner = (_llm.transport
+                          if isinstance(_llm, LLMProvider) else _llm)
                 _gen = await self._generate_response(messages, tools)
                 _NO_MORE = object()
                 _stopped = threading.Event()
@@ -2639,7 +2653,9 @@ class LLMAgent(Agent):
                         if _stopped.is_set():
                             return _NO_MORE
                         try:
-                            return next(_g)
+                            with request_cancellation(
+                                    _owner, _stopped, bind_owner=False):
+                                return next(_g)
                         except StopIteration:
                             return _NO_MORE
                         finally:

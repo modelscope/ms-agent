@@ -80,7 +80,7 @@ class LLMProvider:
     def capabilities(self) -> ProviderCapabilities:
         return self.spec.capabilities
 
-    @smart_retry()
+    @smart_retry(cancellation_owner=lambda self: self.transport)
     def generate(
         self,
         messages: List[Message],
@@ -104,6 +104,9 @@ class LLMProvider:
         """Abort an in-flight streaming generation so the server stops producing
         tokens (see ``Transport.interrupt``). Called by the agent loop when a
         turn is abandoned mid-stream."""
+        cancelled = getattr(self.transport, '_request_cancel', None)
+        if cancelled is not None:
+            cancelled.set()
         self.transport.interrupt()
 
 

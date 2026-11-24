@@ -50,6 +50,8 @@ class OwnedResponse:
 
     def read(self, function, *args):
         with self._lock:
+            if self._closed or self._close_requested:
+                raise StopIteration
             self._reading = True
         try:
             return function(*args)
@@ -57,9 +59,11 @@ class OwnedResponse:
             with self._lock:
                 self._reading = False
                 close_requested = self._close_requested
-                self._close_requested = False
+                if close_requested:
+                    self._closed = True
+                    self._close_requested = False
             if close_requested:
-                self.close()
+                self._close_stream()
 
     def __iter__(self):
         return self
@@ -82,6 +86,9 @@ class OwnedResponse:
                 self._close_requested = True
                 return
             self._closed = True
+        self._close_stream()
+
+    def _close_stream(self):
         try:
             self._stream.close()
         except Exception:
@@ -124,6 +131,27 @@ class OpenedStream:
         self.__exit__(None, None, None)
 
 
+def create_owned_stream(resource, owner, **kwargs):
+    from ms_agent.utils.llm_utils import (raise_if_cancelled,
+                                          request_cancellation)
+
+    with request_cancellation(owner) as cancelled:
+        stream = None
+        try:
+            raise_if_cancelled(cancelled)
+            stream = OwnedResponse(resource.create(**kwargs))
+            raise_if_cancelled(cancelled)
+            owner._active_stream = stream
+            raise_if_cancelled(cancelled)
+            return stream
+        except BaseException:
+            interrupt_stream(stream)
+            if getattr(owner, '_active_stream', None) is stream:
+                owner._active_stream = None
+            raise_if_cancelled(cancelled)
+            raise
+
+
 def create_owned_response(resource, owner, **kwargs):
     """Expose response ownership before synchronous JSON parsing blocks on body I/O.
 
@@ -132,24 +160,29 @@ def create_owned_response(resource, owner, **kwargs):
     """
     import inspect
     from types import SimpleNamespace
+    from ms_agent.utils.llm_utils import (raise_if_cancelled,
+                                          request_cancellation)
 
-    if inspect.getattr_static(resource, 'with_streaming_response',
-                              None) is None:
-        return resource.create(**kwargs)
-    cancelled = threading.Event()
-    owner._request_cancel = cancelled
-    active = None
-    try:
-        with resource.with_streaming_response.create(**kwargs) as raw:
-            active = OwnedResponse(SimpleNamespace(
-                response=raw.http_response, close=raw.close))
-            owner._active_stream = active
-            if cancelled.is_set():
-                interrupt_stream(active)
-                raise asyncio.CancelledError()
-            return active.read(raw.parse)
-    finally:
-        if getattr(owner, '_active_stream', None) is active:
-            owner._active_stream = None
-        if getattr(owner, '_request_cancel', None) is cancelled:
-            owner._request_cancel = None
+    with request_cancellation(owner) as cancelled:
+        active = None
+        try:
+            raise_if_cancelled(cancelled)
+            if inspect.getattr_static(resource, 'with_streaming_response',
+                                      None) is None:
+                result = resource.create(**kwargs)
+            else:
+                with resource.with_streaming_response.create(**kwargs) as raw:
+                    raise_if_cancelled(cancelled)
+                    active = OwnedResponse(SimpleNamespace(
+                        response=raw.http_response, close=raw.close))
+                    owner._active_stream = active
+                    raise_if_cancelled(cancelled)
+                    result = active.read(raw.parse)
+            raise_if_cancelled(cancelled)
+            return result
+        except Exception:
+            raise_if_cancelled(cancelled)
+            raise
+        finally:
+            if getattr(owner, '_active_stream', None) is active:
+                owner._active_stream = None

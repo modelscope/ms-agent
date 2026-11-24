@@ -1,5 +1,6 @@
 """Deterministic compaction scheduling tests: no credentials or model network I/O."""
 import asyncio
+import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -228,6 +229,121 @@ async def test_cancel_drains_late_summary_without_commit_or_next_step(tmp_path, 
     finally:
         llm.release.set()
         await stop(task)
+
+
+@pytest.mark.parametrize('protocol', ['openai', 'anthropic'])
+@pytest.mark.parametrize('legacy', [False, True])
+@pytest.mark.parametrize('phase', ['body', 'backoff'])
+@run_async
+async def test_sdk_summary_cancel_stops_retries_and_allows_reuse(
+        tmp_path, monkeypatch, protocol, legacy, phase):
+    import httpx
+    from ms_agent.llm.router import LLMProvider
+    from ms_agent.llm.openai_llm import OpenAI
+    from ms_agent.llm.transport.openai_compat import OpenAICompatTransport
+    from ms_agent.utils.llm_utils import wait_before_retry
+
+    loop = asyncio.get_running_loop()
+    entered = asyncio.Event()
+    release, closed, finished = (threading.Event() for _ in range(3))
+    requests = []
+    if protocol == 'anthropic':
+        pytest.importorskip('anthropic')
+        from ms_agent.llm.anthropic_llm import Anthropic
+        from ms_agent.llm.transport.anthropic_messages import AnthropicMessagesTransport
+        cls = Anthropic if legacy else AnthropicMessagesTransport
+        payload = {
+            'id': 'summary', 'type': 'message', 'role': 'assistant',
+            'model': 'probe', 'stop_reason': 'end_turn',
+            'content': [{'type': 'text', 'text': 'Concise prior findings.'}],
+            'usage': {'input_tokens': 1, 'output_tokens': 1},
+        }
+    else:
+        cls = OpenAI if legacy else OpenAICompatTransport
+        payload = {
+            'id': 'summary', 'object': 'chat.completion', 'created': 0,
+            'model': 'probe', 'choices': [{'index': 0, 'finish_reason': 'stop',
+                'message': {'role': 'assistant', 'content': 'Concise prior findings.'}}],
+            'usage': {'prompt_tokens': 1, 'completion_tokens': 1, 'total_tokens': 2},
+        }
+
+    class Body(httpx.SyncByteStream):
+        def __iter__(self):
+            loop.call_soon_threadsafe(entered.set)
+            try:
+                assert release.wait(5)
+                if closed.is_set():
+                    raise httpx.ReadError('summary interrupted')
+                yield json.dumps(payload).encode()
+            finally:
+                finished.set()
+
+        def close(self):
+            closed.set()
+            release.set()
+
+    def handle(request):
+        requests.append(request)
+        if len(requests) == 1:
+            if phase == 'backoff':
+                return httpx.Response(503, json={'error': {
+                    'type': 'server_error', 'message': 'temporary failure'}})
+            return httpx.Response(200, stream=Body(),
+                                  headers={'Content-Type': 'application/json'})
+        return httpx.Response(200, json=payload)
+
+    def wait(delay, cancelled, owner=None):
+        loop.call_soon_threadsafe(entered.set)
+        wait_before_retry(delay, cancelled, owner)
+
+    monkeypatch.setattr('ms_agent.utils.llm_utils.wait_before_retry', wait)
+    monkeypatch.setattr('ms_agent.llm.retry.wait_before_retry', wait)
+    config = OmegaConf.create({'llm': {'model': 'probe'},
+                              'generation_config': {'stream': False}})
+    credentials = {'api_key': 'local-test', 'base_url': 'http://model.test/v1'}
+    engine = (cls(config, **credentials) if legacy else cls(
+        model='probe', generation_config={'stream': False}, **credentials))
+    engine.client.close()
+    engine.client = type(engine.client)(
+        **credentials, max_retries=0, timeout=2,
+        http_client=httpx.Client(transport=httpx.MockTransport(handle)))
+    provider = (engine if legacy else LLMProvider(config, spec=None, transport=engine))
+    log = SessionLog(tmp_path)
+    history(log)
+    before = snapshot(log)
+    strategy = SummaryCompactor(provider)
+    memory = NS(flush=AsyncMock())
+    agent = make_agent(log, [strategy], [memory])
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        monkeypatch.setattr(io, '_executor', pool)
+        task = asyncio.create_task(run_agent(agent))
+        try:
+            await asyncio.wait_for(entered.wait(), 2)
+            task.cancel()
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(task, .5)
+            assert len(requests) == 1
+            if phase == 'body':
+                assert closed.is_set() and finished.is_set()
+            assert snapshot(log)[1:] == before[1:]
+            assert log.get_context_operations()[-1]['status'] == 'cancelled'
+            assert not strategy._usage_records
+            memory.flush.assert_not_awaited()
+            agent.step_started.assert_not_called()
+            agent._event_sink.emit.assert_not_called()
+            assert getattr(engine, '_request_cancel', None) is None
+            assert await asyncio.wait_for(
+                io.run_in_llm_executor(lambda: 'worker released'), .5) == 'worker released'
+            await asyncio.wait_for(run_agent(agent), 2)
+            assert len(log.get_compaction_events()) == 1
+            agent.step_started.assert_called_once()
+            assert not any(isinstance(c.args[0], ErrorRaised)
+                           for c in agent._event_sink.emit.call_args_list)
+        finally:
+            release.set()
+            await stop(task)
+            engine.client.close()
 
 
 @pytest.mark.parametrize('provider_facade', [False, True])
