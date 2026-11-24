@@ -107,3 +107,25 @@ def test_without_retry_if_behaviour_is_unchanged():
 
     _run(boom)
     assert len(calls) == 3
+
+
+def test_closing_retry_stream_closes_active_attempt_before_returning():
+    closed = []
+    attempts = []
+
+    @async_retry(max_attempts=3, delay=0)
+    async def stream():
+        attempts.append(1)
+        try:
+            yield 'partial'
+        finally:
+            closed.append(1)
+
+    async def drive():
+        result = stream()
+        assert await anext(result) == 'partial'
+        await result.aclose()
+        assert closed == [1]
+        assert attempts == [1]
+
+    asyncio.run(drive())

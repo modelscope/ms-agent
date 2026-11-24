@@ -3,7 +3,7 @@ import asyncio
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from functools import wraps
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
@@ -421,3 +421,90 @@ def test_interrupt_preserves_shared_or_released_connection(http_version, closed)
     io.interrupt_stream(stream)
     network.get_extra_info.assert_not_called()
     stream.close.assert_called_once()
+
+
+@pytest.mark.parametrize('entrypoint', ['step', 'run_loop', 'run'])
+@run_async
+async def test_closing_stream_propagates_to_model_and_partial_round(
+        entrypoint):
+    from ms_agent.agent.runtime import Runtime
+
+    body = ResponseBody(True)
+    agent = make_agent(lambda request: httpx.Response(
+        200, stream=body, headers={'Content-Type': 'text/event-stream'}))
+    agent.tag = 'close-test'
+    agent.config_handler = None
+    agent.runtime = Runtime(round=1)
+    agent.session_log = None
+    agent.context_assembler = None
+    agent._skill_runtime = None
+    agent.memory_tools = []
+    agent.tool_manager.extra_tools = []
+    for method in ('register_callback_from_config', 'prepare_llm',
+                   'prepare_runtime', '_init_session_log',
+                   '_schedule_add_memory_after_task',
+                   '_persist_partial_round'):
+        setattr(agent, method, Mock())
+    for method in ('prepare_tools', 'prepare_skills', 'load_memory',
+                   'prepare_rag', 'prepare_knowledge_search'):
+        setattr(agent, method, AsyncMock())
+    agent.condense_memory = AsyncMock(side_effect=lambda messages: messages)
+    agent.read_history = lambda messages: (agent.config, agent.runtime,
+                                           messages)
+    agent._apply_pending_rollback = lambda messages: messages
+    messages = [Message(role='user', content='Say OK')]
+    stream = (await agent.run(messages, stream=True)
+              if entrypoint == 'run' else getattr(agent, entrypoint)(messages))
+    try:
+        chunk = await anext(stream)
+        assert chunk[-1].content == 'OK'
+        assert not body.closed.is_set()
+        await stream.aclose()
+        assert body.closed.is_set(), 'model stream outlived its consumer'
+        assert agent.llm._active_stream is None
+        if entrypoint != 'step':
+            agent._persist_partial_round.assert_called_once()
+    finally:
+        await stream.aclose()
+        agent.llm.client.close()
+
+
+@pytest.mark.parametrize('early_close', [False, True])
+@run_async
+async def test_step_with_usage_closes_child_inside_scope(
+        monkeypatch, early_close):
+    from ms_agent.llm import cost
+
+    trace = []
+    finalizer = asyncio.Event()
+
+    @contextmanager
+    def usage_scope(sink, config, operation):
+        assert operation == 'conversation'
+        trace.append('scope entered')
+        try:
+            yield
+        finally:
+            trace.append('scope exited')
+
+    async def step(messages):
+        try:
+            yield 'reply'
+        finally:
+            trace.append('step finalized')
+            finalizer.set()
+
+    monkeypatch.setattr(cost, 'usage_scope', usage_scope)
+    agent = SimpleNamespace(config={}, session_log=None, step=step)
+    stream = LLMAgent._step_with_usage(agent, [])
+    try:
+        assert await anext(stream) == 'reply'
+        if early_close:
+            await stream.aclose()
+        else:
+            with pytest.raises(StopAsyncIteration):
+                await anext(stream)
+        assert finalizer.is_set()
+        assert trace == ['scope entered', 'step finalized', 'scope exited']
+    finally:
+        await stream.aclose()
