@@ -6,6 +6,11 @@ from pathlib import Path
 from sphinxcontrib.mermaid import mermaid
 from urllib.parse import urlsplit
 
+LATEST_LANGUAGE_URLS = {
+    'en': 'https://ms-agent-en.readthedocs.io/en/latest/',
+    'zh': 'https://ms-agent.readthedocs.io/zh-cn/latest/',
+}
+
 SECTIONS = [
     ('快速开始', 'Getting started', 'get-started',
      [('', '', 'introduction quick-start python-sdk')]),
@@ -37,8 +42,7 @@ SECTIONS = [
 ]
 PAGES = {
     prefix + '/' + slug
-    for _, _, prefix, groups in SECTIONS
-    for _, _, slugs in groups
+    for _, _, prefix, groups in SECTIONS for _, _, slugs in groups
     for slug in slugs.split()
 }
 
@@ -123,17 +127,22 @@ def canonical_page(pagename):
 
 
 def language_link(app, pagename):
-    """只链接部署方明确声明存在的版本和页面；缺失时不回退到 latest。"""
+    """latest 默认链接双语页面；其他版本使用显式清单，不跨版本回退。"""
     other = 'en' if app.config.language.startswith('zh') else 'zh'
     page = canonical_page(pagename)
-    if app.config.msagent_preview:
+    builds = app.config.msagent_language_builds
+    default_latest = (
+        builds is None and app.config.msagent_docs_version == 'latest')
+    if app.config.msagent_preview or default_latest:
         root = Path(app.confdir).parent / other
         if page in {'search', 'genindex'} or any(
             (root / (page + suffix)).is_file() for suffix in ('.md', '.rst')):
-            return '/' + other + '/' + page + '.html', False
+            base = ('/' + other + '/' if app.config.msagent_preview else
+                    LATEST_LANGUAGE_URLS[other])
+            return base + page + '.html', False
         return None, True
-    target = app.config.msagent_language_builds.get(
-        app.config.msagent_docs_version, {}).get(other, {})
+    target = (builds or {}).get(app.config.msagent_docs_version,
+                                {}).get(other, {})
     base = target.get('base_url', '')
     parsed = urlsplit(base)
     if (page not in target.get('pages', [])
@@ -191,9 +200,9 @@ def setup(app):
         types=[str])
     app.add_config_value(
         'msagent_language_builds',
-        json.loads(os.environ.get('MSAGENT_LANGUAGE_BUILDS', '{}')),
+        json.loads(os.environ.get('MSAGENT_LANGUAGE_BUILDS', 'null')),
         'html',
-        types=[dict])
+        types=[dict, type(None)])
     app.connect('doctree-read', prepare_search)
     app.connect('html-page-context', page_context)
     app.connect('build-finished', finish_build)
