@@ -1,6 +1,7 @@
 """文档构建、检索和语言链接回归；不依赖模型或真实部署。"""
 import importlib.util
 import json
+import os
 import pytest
 import subprocess
 import sys
@@ -25,8 +26,37 @@ def application(version='latest',
             language=language,
             msagent_preview=preview,
             msagent_docs_version=version,
-            msagent_language_builds=builds or {}),
+            msagent_language_builds=builds),
     )
+
+
+@pytest.mark.parametrize('language,base', [
+    ('zh_CN', 'https://ms-agent-en.readthedocs.io/en/latest/'),
+    ('en', 'https://ms-agent.readthedocs.io/zh-cn/latest/'),
+])
+@pytest.mark.parametrize('page', ['index', 'core/context', 'search', 'genindex'])
+def test_latest_without_manifest(language, base, page):
+    assert SITE.language_link(application(language=language),
+                              page) == (base + page + '.html', False)
+
+
+@pytest.mark.parametrize('version', ['local', 'stable', 'v1.7.0', 'preview-1063'])
+def test_other_versions_without_manifest_stay_disabled(version):
+    assert SITE.language_link(application(version=version),
+                              'index') == (None, True)
+
+
+@pytest.mark.parametrize('builds', [{}, {'latest': {}}, {'latest': {'en': {}}}])
+def test_explicit_manifest_can_disable_latest(builds):
+    assert SITE.language_link(application(builds=builds),
+                              'index') == (None, True)
+
+
+@pytest.mark.parametrize('preview', [False, True])
+def test_missing_translation_stays_disabled(tmp_path, preview):
+    app = application(preview=preview)
+    app.confdir = tmp_path / 'zh'
+    assert SITE.language_link(app, 'core/context') == (None, True)
 
 
 @pytest.mark.parametrize('version', ['latest', 'v1.7.0', 'preview-1063'])
@@ -55,6 +85,7 @@ def test_local_same_page(page):
                               page) == ('/en/' + page + '.html', False)
 
 
+@pytest.mark.parametrize('preview', [False, True])
 @pytest.mark.parametrize('old, current', [
     ('Components/Config', 'development/configuration-reference'),
     ('Components/SkillManagement', 'user-guide/skill-management'),
@@ -63,10 +94,10 @@ def test_local_same_page(page):
     ('design/skill-update-implementation', 'development/skill-management'),
     ('design/skill-update-walkthrough', 'development/skill-management-checklist'),
 ])
-def test_local_legacy_normalizes(old, current):
+def test_legacy_normalizes(old, current, preview):
+    base = '/en/' if preview else 'https://ms-agent-en.readthedocs.io/en/latest/'
     assert SITE.language_link(
-        application(preview=True), old) == (
-            '/en/' + current + '.html', False)
+        application(preview=preview), old) == (base + current + '.html', False)
 
 
 @pytest.mark.parametrize('target', [
@@ -130,18 +161,37 @@ def built_site(request, tmp_path_factory):
         'html',
         '-W',
         '--keep-going',
-        '-D',
-        'msagent_preview=1',
         str(ROOT / 'docs' / lang),
         str(output),
     ]
+    env = dict(os.environ, READTHEDOCS_VERSION='latest')
+    env.pop('MSAGENT_LANGUAGE_BUILDS', None)
     result = subprocess.run(
-        command, cwd=ROOT, capture_output=True, text=True, timeout=180)
+        command, cwd=ROOT, env=env, capture_output=True, text=True, timeout=180)
     assert result.returncode == 0, result.stdout + result.stderr
     assert 'design.card_legacy' not in result.stderr
     raw = (output / 'searchindex.js').read_text()
     index = json.loads(raw[len('Search.setIndex('):-1])
     return lang, output, index
+
+
+def test_production_language_links(built_site):
+    from bs4 import BeautifulSoup
+    lang, output, _ = built_site
+    base = ('https://ms-agent-en.readthedocs.io/en/latest/' if lang == 'zh'
+            else 'https://ms-agent.readthedocs.io/zh-cn/latest/')
+    other = 'en' if lang == 'zh' else 'zh'
+    for html in output.rglob('*.html'):
+        if '_static' in html.parts:
+            continue
+        page = html.relative_to(output).with_suffix('').as_posix()
+        target = SITE.canonical_page(page)
+        doc = BeautifulSoup(html.read_text(), 'html.parser')
+        link = doc.select_one('a.ms-language')
+        assert link is not None, page
+        assert link['href'] == base + target + '.html', page
+        assert link['lang'] == other, page
+        assert link.get('aria-disabled') != 'true', page
 
 
 def test_no_migration_results(built_site):

@@ -14,9 +14,13 @@
 
 2. 跨语言部署 / Cross-language deployment
 
-    生产构建使用 `READTHEDOCS_VERSION` 作为版本键（也可在 `conf.py` 设置 `msagent_docs_version`）。部署方需通过 `MSAGENT_LANGUAGE_BUILDS` JSON 环境变量，或 `conf.py` 的 `msagent_language_builds`，明确提供已发布的目标语言基址和页面清单。例如以下配置仅声明 `latest` 的两个目标页面：
+    生产构建使用 `READTHEDOCS_VERSION` 作为版本键（也可在 `conf.py` 设置 `msagent_docs_version`）。官方两个 `latest` 站点默认互相链接：未设置语言清单时，按另一语言的源文件生成对应页面链接，无需额外环境变量。旧路径先归一到新页，缺少译文时禁用切换。该默认行为假定两个站点均已部署同一版文档；源码检查不代表远端构建已完成。
 
-    Production builds use `READTHEDOCS_VERSION` as the lookup key (or set `msagent_docs_version` in `conf.py`). Supply `MSAGENT_LANGUAGE_BUILDS` as a JSON environment variable, or `msagent_language_builds` in `conf.py`, with the published target bases and page inventories:
+    Production builds use `READTHEDOCS_VERSION` as the lookup key (or set `msagent_docs_version` in `conf.py`). The two official `latest` sites link to each other by default: without a language inventory, links follow the other language's source files and need no extra environment variable. Legacy paths normalize first; missing translations disable the switch. This default assumes both sites have deployed the same documentation revision; source checks do not verify remote build completion.
+
+    若需自定义站点地址或严格限制已发布页面，可通过 `MSAGENT_LANGUAGE_BUILDS` JSON 环境变量，或 `conf.py` 的 `msagent_language_builds`，提供目标语言基址和页面清单。显式清单会完全替代默认行为，包括 `latest`；空字典 `{}` 禁用生产环境的语言切换。例如以下配置仅允许 `latest` 的两个目标页面：
+
+    To use custom site URLs or restrict links to confirmed published pages, supply `MSAGENT_LANGUAGE_BUILDS` as a JSON environment variable, or `msagent_language_builds` in `conf.py`, with target bases and page inventories. An explicit inventory fully replaces the default, including for `latest`; an empty dictionary `{}` disables production language links. This example allows only two target pages in `latest`:
 
     ```python
     msagent_language_builds = {
@@ -33,13 +37,17 @@
     }
     ```
 
-    标签和分支预览各使用独立版本键与基址；只有确认对应构建完成的页面才加入清单，不由另一语言的源码存在推断部署状态。没有版本或页面记录时，切换禁用并显示缺失提示，不回退到 `latest`。旧路径先归一到新页。两个 Read the Docs 项目均从 `requirements/docs.txt` 安装相同的固定文档依赖，中文索引使用 `jieba`。
+    `stable`、发布标签和分支预览仍需显式清单，各使用对应版本键与基址；只有确认对应构建完成的页面才加入清单。没有版本或页面记录时，切换禁用并显示缺失提示，不回退到 `latest`。两个 Read the Docs 项目均从 `requirements/docs.txt` 安装相同的固定文档依赖，中文索引使用 `jieba`。
 
-    Use separate keys/bases for release tags and branch previews. Populate inventories from confirmed completed builds, not presumed translations or branch names. Missing versions/pages disable the switch with a notice; legacy paths normalize first, and there is no `latest` fallback. Both Read the Docs projects install the same pinned documentation dependencies from `requirements/docs.txt`; Chinese indexing uses `jieba`.
+    `stable`, release tags, and branch previews still require explicit inventories with their own version keys and bases. Populate them from confirmed completed builds. Missing versions/pages disable the switch with a notice, and there is no `latest` fallback. Both Read the Docs projects install the same pinned documentation dependencies from `requirements/docs.txt`; Chinese indexing uses `jieba`.
 
     本地预览仍用 `-D msagent_preview=1` 和同一服务根目录下的 `/zh/`、`/en/`。本地测试不验证远端版本的可用性。
 
     Local previews keep `-D msagent_preview=1` with `/zh/` and `/en/` under one server root. They do not verify remote build availability.
+
+    运行 `python -m pytest tests/doc/test_site.py` 验证双语生产构建：测试设置 `READTHEDOCS_VERSION=latest` 并移除语言清单环境变量，检查实际 HTML 中的语言链接；不使用本地预览模式代替生产验证。
+
+    Run `python -m pytest tests/doc/test_site.py` to validate both production builds. The tests set `READTHEDOCS_VERSION=latest`, remove the language inventory environment variable, and inspect language links in the generated HTML; local preview mode does not substitute for production validation.
 
 3. doc string format
 
