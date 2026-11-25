@@ -558,13 +558,18 @@ class AnthropicMessagesTransport(Transport):
     def _format_output_message(completion) -> Message:
         content = ''
         reasoning_content = ''
+        reasoning_signature = ''
         tool_calls = []
         for block in completion.content:
             if block.type == 'text':
                 content += block.text
             elif block.type == 'thinking':
-                # Legacy engine dropped this; capture it here.
+                # Legacy engine dropped this; capture it here, including the
+                # opaque signature so a tool follow-up can replay the block
+                # verbatim (the provider rejects a signed thinking turn whose
+                # signature was lost). Same as the streaming path.
                 reasoning_content += getattr(block, 'thinking', '')
+                reasoning_signature = getattr(block, 'signature', '') or ''
             elif block.type == 'tool_use':
                 tool_calls.append(
                     ToolCall(
@@ -578,6 +583,7 @@ class AnthropicMessagesTransport(Transport):
             role='assistant',
             content=content,
             reasoning_content=reasoning_content,
+            reasoning_signature=reasoning_signature,
             tool_calls=tool_calls if tool_calls else None,
             finish_reason=normalize_finish_reason(
                 getattr(completion, 'stop_reason', None)),
