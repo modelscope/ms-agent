@@ -93,6 +93,10 @@ def parse_schedule(schedule_str: str,
 
     # 2. Try ISO timestamp for one-shot: "2025-01-01T09:00:00"
     if _ISO_RE.match(raw):
+        try:
+            datetime.fromisoformat(raw)
+        except ValueError as exc:
+            raise ValueError(f'Invalid ISO timestamp: {raw!r}') from exc
         return CronSchedule(
             kind='once',
             run_at=raw,

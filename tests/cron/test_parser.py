@@ -64,6 +64,16 @@ class TestParseScheduleInterval:
 
 
 class TestParseScheduleOnce:
+    @pytest.mark.parametrize('value', [
+        '2026-02-30T09:00:00',
+        '2026-11-23T25:00:00',
+        '2026-11-23T09:99:00',
+        '2026-11-23T09:00:00trailing',
+    ])
+    def test_rejects_invalid_timestamp(self, value):
+        with pytest.raises(ValueError, match='timestamp'):
+            parse_schedule(value)
+
     def test_iso_timestamp(self):
         result = parse_schedule('2025-06-01T09:00:00')
         assert result.kind == 'once'
@@ -72,6 +82,13 @@ class TestParseScheduleOnce:
     def test_iso_with_space(self):
         result = parse_schedule('2025-06-01 09:00:00')
         assert result.kind == 'once'
+
+    @pytest.mark.parametrize('value', [
+        '2026-11-23T09:00:00+08:00',
+        '2026-11-23T09:00:00.123456+00:00',
+    ])
+    def test_preserves_valid_timestamp(self, value):
+        assert parse_schedule(value).run_at == value
 
 
 class TestParseScheduleErrors:
