@@ -66,20 +66,20 @@ class RateLimiter:
 
     async def _wait_if_needed(self):
         """Check and wait to satisfy rate limits"""
-        now = time.time()
-
-        # 1. Check minimum request interval
-        if self._last_request_time > 0:
-            elapsed = now - self._last_request_time
-            if elapsed < self.min_request_interval:
-                wait_time = self.min_request_interval - elapsed
-                logger.debug(
-                    f'Enforcing min interval: waiting {wait_time:.3f}s')
-                await asyncio.sleep(wait_time)
-                now = time.time()
-
-        # 2. Check requests per second limit
         async with self._lock:
+            now = time.time()
+
+            # 1. Check minimum request interval
+            if self._last_request_time > 0:
+                elapsed = now - self._last_request_time
+                if elapsed < self.min_request_interval:
+                    wait_time = self.min_request_interval - elapsed
+                    logger.debug(
+                        f'Enforcing min interval: waiting {wait_time:.3f}s')
+                    await asyncio.sleep(wait_time)
+                    now = time.time()
+
+            # 2. Check requests per second limit
             # Clean up expired request records (older than 1 second)
             cutoff_time = now - 1.0
             while self._request_times and self._request_times[0] < cutoff_time:
