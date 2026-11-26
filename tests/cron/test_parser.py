@@ -26,6 +26,12 @@ class TestParseScheduleCron:
         assert result.expr == '0 9 * * *'
         assert result.timezone == 'Asia/Shanghai'
 
+    def test_reject_unknown_cron_timezone(self):
+        with pytest.raises(ValueError, match='Unknown cron timezone'):
+            parse_schedule('0 9 * * * Invalid/Timezone')
+        with pytest.raises(ValueError, match='Unknown cron timezone'):
+            parse_schedule('0 9 * * *', default_timezone='Invalid/Timezone')
+
     def test_default_timezone(self):
         result = parse_schedule('0 9 * * *', default_timezone='US/Eastern')
         assert result.timezone == 'US/Eastern'
