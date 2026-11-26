@@ -192,6 +192,8 @@
 
 ## 🚀 安装
 
+可从 [PyPI](https://pypi.org/project/ms-agent/) 或[源码](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/get-started/quick-start.md#source-install)安装，以下以 PyPI 安装为例。
+
 选择适合你的入口。推荐先从 **WebUI** 体验项目、会话与工具协作；也可以直接使用终端界面，或将 SDK 集成到 Python 应用中。
 
 | 使用入口 | 适合的场景 |
@@ -214,7 +216,7 @@ MS-Agent WebUI 是面向本地项目的智能体工作台。你可以在浏览�
 https://github.com/user-attachments/assets/43b3c1cc-555a-4184-b1dd-66e0a21e7a12
 
 > [!IMPORTANT]
-> **推荐从 PyPI 安装 MS-Agent 1.7.0。** WebUI 需要 **Python 3.12+**、**Node.js 22.22.0+** 和 **pnpm 10.17.1**。
+> WebUI 需要 **Python 3.12+**、**Node.js 22.22.0+** 和 **pnpm 10.17.1**。
 
 先用 `python3 --version` 和 `node --version` 确认版本，环境安装方法见[快速开始](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/get-started/quick-start.md#准备-python-环境)。确认 Python 为 3.12+ 后，创建并激活虚拟环境；已有环境可直接激活：
 
@@ -308,7 +310,7 @@ asyncio.run(main())
 ```
 
 <details>
-<summary>可选依赖与源码安装</summary>
+<summary>可选依赖</summary>
 
 在同一 Python 环境中按需安装扩展依赖：
 
@@ -319,9 +321,7 @@ asyncio.run(main())
 | 视频生成 | `python -m pip install -U "ms-agent[cinema]"` |
 | 全部运行时扩展，含 WebUI（Python 3.12+） | `python -m pip install -U "ms-agent[all]"` |
 
-完整列表见[快速开始](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/get-started/quick-start.md#按需增加依赖)。这些命令中的引号需要保留，避免 macOS 默认的 zsh 将方括号作为文件匹配表达式。
-
-需要参与开发或体验尚未发布的功能时，请按[源码安装说明](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/get-started/quick-start.md#source-install)操作。
+完整列表见[快速开始](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/get-started/quick-start.md#按需增加依赖)。
 
 </details>
 

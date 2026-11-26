@@ -188,6 +188,8 @@ Built-in applications bring models, tools, and multi-agent collaboration togethe
 
 ## 🚀 Installation
 
+Install from [PyPI](https://pypi.org/project/ms-agent/) or [source](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/get-started/quick-start.md#source-install). The steps below use PyPI.
+
 Choose the interface that fits your work. Start with **WebUI** to explore projects, sessions, and tool use. You can also work in the terminal or integrate the SDK into a Python application.
 
 | Interface | Best suited for |
@@ -212,7 +214,7 @@ or edit project files without leaving the interface.
 https://github.com/user-attachments/assets/43b3c1cc-555a-4184-b1dd-66e0a21e7a12
 
 > [!IMPORTANT]
-> **Install MS-Agent 1.7.0 from PyPI.** The WebUI requires **Python 3.12+**, **Node.js 22.22.0+**, and **pnpm 10.17.1**.
+> The WebUI requires **Python 3.12+**, **Node.js 22.22.0+**, and **pnpm 10.17.1**.
 
 Check the versions with `python3 --version` and `node --version`; see the [Quick start](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/get-started/quick-start.md#prepare-python) for environment setup. With Python 3.12+, create and activate a virtual environment, or activate an existing one:
 
@@ -306,7 +308,7 @@ asyncio.run(main())
 ```
 
 <details>
-<summary>Optional dependencies and source installation</summary>
+<summary>Optional dependencies</summary>
 
 Install extensions in the same Python environment as needed:
 
@@ -317,9 +319,7 @@ Install extensions in the same Python environment as needed:
 | Video generation | `python -m pip install -U "ms-agent[cinema]"` |
 | All runtime extensions, including WebUI (Python 3.12+) | `python -m pip install -U "ms-agent[all]"` |
 
-See the [Quick start](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/get-started/quick-start.md#add-dependencies-when-needed) for the full list. Keep the quotes: macOS defaults to zsh, which otherwise treats square brackets as filename patterns.
-
-For development or unreleased features, follow [source installation](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/get-started/quick-start.md#source-install).
+See the [Quick start](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/get-started/quick-start.md#add-dependencies-when-needed) for the full list.
 
 </details>
 
