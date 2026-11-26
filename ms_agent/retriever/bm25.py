@@ -6,11 +6,15 @@ from typing import Dict, List, Optional
 
 from .base import BaseRetriever, SearchResult
 
-_TOKEN_RE = re.compile(r'[\w\u4e00-\u9fff]+', re.UNICODE)
+# Han words are not separated by spaces. Keep individual Han characters
+# searchable without splitting Latin identifiers or downloading a tokenizer.
+_TOKEN_RE = re.compile(
+    r'[\u3400-\u4dbf\u4e00-\u9fff]|[^\W\u3400-\u4dbf\u4e00-\u9fff]+',
+    re.UNICODE)
 
 
 def _tokenize(text: str) -> List[str]:
-    """Simple regex tokenizer that handles Latin and CJK characters."""
+    """Tokenize Han characters individually and other word characters in runs."""
     return _TOKEN_RE.findall(text.lower())
 
 
