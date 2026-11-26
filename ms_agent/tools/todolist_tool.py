@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from ms_agent.llm.utils import Tool
 from ms_agent.tools.base import ToolBase
+from ms_agent.utils.atomic_file import atomic_write_text
 from ms_agent.utils.utils import file_lock, render_markdown_todo
 
 
@@ -30,11 +31,9 @@ def _safe_read_json(path: str) -> Optional[Any]:
 
 
 def _write_text(path: str, content: str) -> None:
-    parent = os.path.dirname(path)
-    if parent:
-        _ensure_dir(parent)
-    with open(path, 'w', encoding='utf-8') as f:
-        f.write(content)
+    # Truncating in place leaves a torn plan.json if the process dies mid-write;
+    # the shared helper publishes the whole file with a temp file plus rename.
+    atomic_write_text(path, content)
 
 
 def _validate_status(status: str) -> str:
