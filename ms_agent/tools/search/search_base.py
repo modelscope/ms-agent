@@ -14,6 +14,7 @@ T = TypeVar('T')
 
 class SearchEngineType(enum.Enum):
     EXA = 'exa'
+    CONTEXT = 'context'
     SERPAPI = 'serpapi'
     ARXIV = 'arxiv'
     TAVILY = 'tavily'
@@ -22,6 +23,7 @@ class SearchEngineType(enum.Enum):
 # Mapping from engine type to tool name
 ENGINE_TOOL_NAMES: Dict[str, str] = {
     'exa': 'exa_search',
+    'context': 'context_search',
     'serpapi': 'serpapi_search',
     'arxiv': 'arxiv_search',
     'tavily': 'tavily_search',

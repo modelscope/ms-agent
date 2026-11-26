@@ -31,8 +31,11 @@ search engines and optional full-page content fetching.
 |---|---|---|---|
 | `arxiv` | — | Academic papers, research | No (default) |
 | `exa` | — | General web, semantic search | `EXA_API_KEY` or `EXA_API_KEYS` (comma-separated key pool) |
+| `context` | — | Web search with query-relevant Highlights | `CONTEXT_DEV_API_KEY` |
 | `serpapi` | `serp`, `google`, `bing`, `baidu` | Google/Bing/Baidu results via SerpAPI | `SERPAPI_API_KEY` |
 | `tavily` | — | AI-oriented web search | `TAVILY_API_KEY` |
+
+Context uses query-relevant Highlights in result summaries. If Highlights are unavailable, summaries are explicitly labeled as search descriptions. Incomplete search responses fail instead of appearing as empty results. Calls consume the configured Context account's API credits.
 
 ### Examples
 
@@ -72,7 +75,7 @@ field with the page text (truncated to 10,000 characters).
 ### Step 1: Choose the Right Engine
 
 - For academic/research questions → `arxiv`
-- For general web info → `exa`, `tavily`, or `serpapi` (and aliases)
+- For general web info → `exa`, `context`, `tavily`, or `serpapi` (and aliases)
 - If unsure → start with `arxiv`, fall back to `exa` or `tavily`
 
 ### Step 2: Execute the Search

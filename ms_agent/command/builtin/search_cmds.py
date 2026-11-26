@@ -4,10 +4,9 @@ from __future__ import annotations
 from ms_agent.command.router import CommandRouter
 from ms_agent.command.types import (CommandContext, CommandDef, CommandResult,
                                     CommandResultType)
-from ms_agent.command.usage import (arg_error, ledger_file, status_then_usage)
+from ms_agent.command.usage import arg_error, ledger_file, status_then_usage
 
 _HIDDEN_SEARCH_ENGINES = frozenset({'arxiv'})
-
 
 CMD_SEARCH = CommandDef(
     name='search',
@@ -17,16 +16,14 @@ CMD_SEARCH = CommandDef(
 
 
 def _usage() -> str:
-    return (
-        'usage:\n'
-        '  /search\n'
-        '  /search list\n'
-        '  /search engine <tavily|exa|serpapi>\n'
-        '  /search key <value>\n'
-        '  /search key clear\n'
-        '  /search enable|disable\n'
-        f'Saved in {ledger_file("settings.json")}.'
-    )
+    return ('usage:\n'
+            '  /search\n'
+            '  /search list\n'
+            '  /search engine <tavily|exa|context|serpapi>\n'
+            '  /search key <value>\n'
+            '  /search key clear\n'
+            '  /search enable|disable\n'
+            f'Saved in {ledger_file("settings.json")}.')
 
 
 def _mgr():
@@ -101,8 +98,7 @@ async def cmd_search(ctx: CommandContext) -> CommandResult:
             )
             if notice:
                 extra = f'{extra}  {notice}'
-            lines.append(
-                f'  {mark} {row["id"]}  {row["label"]}  {key}{extra}')
+            lines.append(f'  {mark} {row["id"]}  {row["label"]}  {key}{extra}')
         return CommandResult(
             type=CommandResultType.MESSAGE, content='\n'.join(lines))
 
@@ -122,7 +118,7 @@ async def cmd_search(ctx: CommandContext) -> CommandResult:
     if action == 'engine':
         if not rest:
             return arg_error(
-                '/search engine <tavily|exa|serpapi>', ctx=ctx)
+                '/search engine <tavily|exa|context|serpapi>', ctx=ctx)
         engine = rest[0].strip().lower()
         visible = [
             row['id'] for row in mgr.list_engines()
@@ -131,9 +127,8 @@ async def cmd_search(ctx: CommandContext) -> CommandResult:
         if engine not in visible:
             return CommandResult(
                 type=CommandResultType.MESSAGE,
-                content=(
-                    f'Unknown search engine: {engine}. '
-                    f'Supported: {", ".join(visible)}'),
+                content=(f'Unknown search engine: {engine}. '
+                         f'Supported: {", ".join(visible)}'),
             )
         try:
             cur = mgr.set_engine(engine)

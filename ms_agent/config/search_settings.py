@@ -18,12 +18,13 @@ from ms_agent.utils.json_store import read_json
 _PROVIDER_META: Dict[str, tuple[str, Optional[str]]] = {
     'tavily': ('Tavily Search', 'tavily_api_key'),
     'exa': ('Exa Search', 'exa_api_key'),
+    'context': ('Context', 'context_api_key'),
     'serpapi': ('SerpAPI', 'serpapi_api_key'),
     'arxiv': ('arXiv', None),
 }
 _KEYLESS = frozenset({'tavily', 'arxiv'})
 _LEGACY_EXA_FIELDS = ('exa_api_keys', 'api_key')
-_FALLBACK_ORDER = ('tavily', 'exa', 'serpapi', 'arxiv')
+_FALLBACK_ORDER = ('tavily', 'exa', 'context', 'serpapi', 'arxiv')
 
 # Tavily is the only web-wide engine that works with no key (keyless tier).
 # WebUI persists this block; TUI injects the same one at resolve time so a
@@ -63,7 +64,7 @@ def key_fields_for(engine: str) -> tuple[str, ...]:
         return ()
     if engine == 'exa':
         return (field, *_LEGACY_EXA_FIELDS)
-    return (field,)
+    return (field, )
 
 
 def requires_key(engine: str) -> bool:
@@ -134,9 +135,8 @@ class SearchSettingsManager:
     def set_engine(self, engine: str) -> SearchSettings:
         engine = engine.strip().lower()
         if engine not in supported_engine_ids():
-            raise ValueError(
-                f'Unknown search engine: {engine}. '
-                f'Supported: {", ".join(supported_engine_ids())}')
+            raise ValueError(f'Unknown search engine: {engine}. '
+                             f'Supported: {", ".join(supported_engine_ids())}')
         data = self._load_raw()
         block = self._ensure_block(data)
         block['engine'] = engine
@@ -152,7 +152,9 @@ class SearchSettingsManager:
         return self.get()
 
     @locked(lambda self, *args, **kwargs: self._path)
-    def set_api_key(self, key: str | None, engine: str | None = None) -> SearchSettings:
+    def set_api_key(self,
+                    key: str | None,
+                    engine: str | None = None) -> SearchSettings:
         current = self.get()
         engine = (engine or current.engine).strip().lower()
         field = key_field_for(engine)
@@ -163,7 +165,8 @@ class SearchSettingsManager:
         value = (key or '').strip()
         if value.startswith('enc:'):
             from .secrets import SecretInputError
-            raise SecretInputError('Enter a plaintext API key, not an encrypted credential.')
+            raise SecretInputError(
+                'Enter a plaintext API key, not an encrypted credential.')
         if value:
             block[field] = value
         else:

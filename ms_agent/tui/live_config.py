@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any
-
 from omegaconf import OmegaConf
+from typing import Any
 
 from ms_agent.llm.message_text import prepend_text
 from ms_agent.utils import get_logger
@@ -22,8 +21,7 @@ _SKILL_NOTICE = (
     'Skill inventory updated. The list in the system prompt is from '
     'session start; skills_list is current. Do not mention this notice '
     'to the user.\n'
-    '</system-reminder>'
-)
+    '</system-reminder>')
 
 
 def _token(payload: Any) -> str:
@@ -143,8 +141,7 @@ def _note_unreadable_config(agent) -> None:
             try:
                 json.loads(path.read_text(encoding='utf-8'))
             except json.JSONDecodeError:
-                _emit_once(
-                    agent, f'json:{path}', f'{name} 读不进去。请检查格式。')
+                _emit_once(agent, f'json:{path}', f'{name} 读不进去。请检查格式。')
             except OSError:
                 continue
         skills = root / 'skills'
@@ -153,9 +150,7 @@ def _note_unreadable_config(agent) -> None:
         try:
             next(skills.iterdir(), None)
         except OSError:
-            _emit_once(
-                agent, f'skills:{skills}',
-                '技能目录读不了。请检查这个目录的权限。')
+            _emit_once(agent, f'skills:{skills}', '技能目录读不了。请检查这个目录的权限。')
 
 
 def _search_in_sync(tool, block: dict) -> bool:
@@ -174,6 +169,7 @@ def _search_in_sync(tool, block: dict) -> bool:
     fields = {
         'tavily': 'tavily_api_key',
         'exa': 'exa_api_key',
+        'context': 'context_api_key',
         'serpapi': 'serpapi_api_key',
     }
     for engine in wanted:
@@ -211,7 +207,8 @@ async def _sync_search(agent) -> None:
     if tool is None or not getattr(tool, '_engines', None):
         agent._search_fp = token
         return
-    if getattr(agent, '_search_fp', None) is None and _search_in_sync(tool, block):
+    if getattr(agent, '_search_fp', None) is None and _search_in_sync(
+            tool, block):
         agent._search_fp = token
         return
     reload = getattr(tool, 'reload_from_config', None)

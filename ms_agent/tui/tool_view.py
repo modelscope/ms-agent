@@ -26,6 +26,7 @@ _VERBS = {
     'execute': 'Run',
     'run_command': 'Run',
     'exa_search': 'Search',
+    'context_search': 'Search',
     'web_search': 'Search',
     'search': 'Search',
     'skill_view': 'View skill',

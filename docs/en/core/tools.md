@@ -35,6 +35,8 @@ Mark built-ins with `mcp: false`. `include` and `exclude` are mutually exclusive
 
 Availability depends on dependencies, configuration, and dynamic assembly. These are not all enabled by default. LSP directory checks currently index files, not a replacement for type checks/tests. Large output may be shortened or spilled to disk; follow returned paths rather than repeatedly calling the tool.
 
+For Context search, set `CONTEXT_DEV_API_KEY` and explicitly configure `tools.web_search.engine: context`. Set `fetch_content: false` for Highlights-only search; enabling content fetching keeps the existing page-fetch pipeline. Managed search settings encrypt its `context_api_key`. Existing defaults do not change.
+
 ## Custom tool
 
 Save as `tools/custom_tool.py` beside your configuration:

@@ -31,6 +31,7 @@ _FIELDS = {
     'tools.web_search.exa_api_key',
     'tools.web_search.exa_api_keys',
     'tools.web_search.tavily_api_key',
+    'tools.web_search.context_api_key',
     'tools.web_search.serpapi_api_key',
     'tools.web_search.summarizer_api_key',
     'memory.*.llm.config.api_key',
